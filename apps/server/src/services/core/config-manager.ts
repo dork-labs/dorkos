@@ -2734,10 +2734,14 @@ export const CONFIG_MIGRATIONS = {
   // `(storedVersion, projectVersion]`). Enforced by
   // `__tests__/migration-safety.ts`.
   //
-  // Merged and therefore closed, tag or no tag: this body has already run on
-  // every machine that built and ran DorkOS since it landed. Anything further
-  // opens `'0.61.0'`, and `merged-migration-hashes.ts` fails the build if this
-  // one changes.
+  // Merged and therefore closed. It has run for nobody yet — VERSION still
+  // reads 0.59.0, and `conf` runs a key only in
+  // `(storedVersion, projectVersion]` — but it goes live the moment the release
+  // bump lands, which happens before any tag exists and with no gate in
+  // between. So it is frozen from merge, not from the bump: there is no point
+  // after merging at which somebody checks whether this body is still the one
+  // that should ship. Anything further opens `'0.61.0'`, and
+  // `merged-migration-hashes.ts` fails the build if this one changes.
   '0.60.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;

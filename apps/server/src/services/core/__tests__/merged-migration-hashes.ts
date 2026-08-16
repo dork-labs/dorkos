@@ -35,11 +35,15 @@
  *
  * ## What the pins below are anchored to
  *
- * They were taken on 2026-08-15 from the file as it then stood. For every key up
- * to `0.59.0` that is also provably the released content: `migration-safety.ts`
- * compares each shipped key against its own release tag, and passes. `0.60.0`
- * was open at that moment, and is the first key this rule protects that the
- * tag-based one cannot.
+ * They were taken on 2026-08-15 from the file as it then stood. For every key at
+ * or below `0.59.0` that is also the content the newest release carries:
+ * `migration-safety.ts` reads `config-manager.ts` as of the NEWEST `v*` tag
+ * (`v0.59.0`) and requires every key present there to be byte-identical, and it
+ * passes. Note what that does and does not say — it compares against one tag,
+ * not against the release each key first shipped in, so it proves the bodies
+ * match `v0.59.0`, not that they never moved before it. `0.60.0` is absent from
+ * that tag, so nothing compares it at all, and it is the first key this rule
+ * protects that the tag-based one cannot.
  */
 
 /**
@@ -48,15 +52,15 @@
  * @see `migration-append-only.ts` for what the hash covers.
  */
 export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
-  '1.0.0': 'd9581dbbbe076c86',
-  '0.44.0': 'f2ba94bca78b88c3',
-  '0.45.0': 'b31feaeea4ceca19',
-  '0.46.0': '8104c026de215139',
-  '0.48.0': 'e0024e01ef32c58e',
-  '0.50.0': '9eeaa46d0a851342',
-  '0.52.0': 'e890f012cf25c0eb',
-  '0.55.0': '73ed2c988c6fcada',
-  '0.57.0': '954f0446102992bc',
-  '0.59.0': '0afd094bc50a5128',
-  '0.60.0': 'b62005fab21738cc',
+  '1.0.0': '9a591bc7ff1a3550',
+  '0.44.0': 'd2106597bd208151',
+  '0.45.0': '292d5e311cd9c205',
+  '0.46.0': '773a11b00bd2ee3e',
+  '0.48.0': '704ab3fe78619f5a',
+  '0.50.0': '6a3bcd3c7a5b56c7',
+  '0.52.0': '3e3196cd69d496ca',
+  '0.55.0': '5347a36ea943854b',
+  '0.57.0': 'e415a30a8bc51166',
+  '0.59.0': '126395e65f206262',
+  '0.60.0': '45129eaa96cce263',
 };

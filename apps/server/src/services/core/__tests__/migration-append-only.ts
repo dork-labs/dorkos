@@ -41,23 +41,39 @@
  * exactly the keys named in `RETIRED_SIDEBAR_KEYS`, so a closure that followed
  * calls alone would freeze the code and leave the list it acts on editable.
  *
- * The text is normalized before hashing: comments removed, trailing commas
- * before a closer removed, whitespace runs collapsed to one space. That is
+ * The text is normalized before hashing: comments removed, a trailing comma or
+ * semicolon before a closer removed, whitespace runs collapsed to one space and
+ * dropped entirely beside brackets, separators, `.` and `<`/`>`. That is
  * deliberately robust to Prettier churn — reflowing a call across lines, or
  * re-indenting after an unrelated edit, must not fire a guard whose entire value
- * is that it only ever fires for real. It also leaves a stale COMMENT inside a
+ * is that it only ever fires for real.
+ *
+ * The robustness claim is measured, not asserted, and the measurement is what
+ * built the list above. Reformatting `config-manager.ts` at print widths 60, 80,
+ * 100, 140 and 200 moves no pin. Each rule earned its place by a width that
+ * broke without it: 140 and 200 join a body's last statement onto one line and
+ * move all eleven pins without the semicolon rule; 80 breaks a member access
+ * onto its own line (`}) .retired`); 60 breaks a generic across lines
+ * (`Record< string, … >`). A future `.prettierrc` change must not mass-repin
+ * this table — eleven pins moving at once is how a guard gets bulk-bumped and
+ * stops meaning anything.
+ *
+ * It also leaves a stale COMMENT inside a
  * shipped body correctable in place, which the byte-identity rule next door
  * refuses; the two rules disagree there on purpose, and the stricter one wins
  * for keys that have shipped.
  *
  * **The boundary, stated so nobody over-trusts it.** The closure never leaves
- * `config-manager.ts`: an imported constant, a schema default in
- * `packages/shared`, or a change in `conf` itself can all change what a
- * migration does with no pin moving. Following imports was considered and left
- * out on purpose — it would reach the whole config schema, so every ordinary
- * field addition would break every pin and the pins would be bumped
- * reflexively, which is worse than a boundary written down. The migration table
- * itself is also never followed into (see {@link MIGRATION_TABLE}).
+ * `config-manager.ts`, and three keys already reach past that edge into
+ * `@dorkos/shared/config-schema`: `0.55.0` reads `ONBOARDING_STEPS`, `0.59.0`
+ * reads `ComposerPrefsSchema`, and `0.57.0` calls `toSidebarItemRef` and
+ * `normalizeSidebarPrefs`. Narrowing that enum makes a shipped migration delete
+ * more; editing those functions rewrites what a shipped rename produces. No pin
+ * moves for either. Following imports was considered and left out on purpose —
+ * it would reach the whole config schema, so every ordinary field addition would
+ * break every pin and the pins would be bumped reflexively, which is worse than
+ * a boundary written down. The migration table itself is also never followed
+ * into (see {@link MIGRATION_TABLE}).
  *
  * Pure on purpose, like `migration-safety.ts`: text in, verdict out, so the
  * cases that must FAIL are fixture-testable. `migration-append-only.test.ts`
@@ -71,8 +87,16 @@ import { extractMigrationBodies } from './migration-safety.js';
 /** How many hex characters of the SHA-256 a pin carries. */
 const HASH_LENGTH = 16;
 
-/** A top-level function declaration, at column zero. */
-const TOP_LEVEL_FUNCTION = /^(?:export )?function ([A-Za-z_$][\w$]*)\s*\(/gm;
+/**
+ * A top-level function declaration, at column zero.
+ *
+ * `async` and `*` are matched even though this file has neither today. A form
+ * this pattern does not know is not skipped loudly — it is simply never seen, so
+ * a migration reaching it would be pinned with a hole in the middle. The count
+ * cross-check in {@link extractTopLevelDeclarations} is what makes that class of
+ * miss impossible to have silently, but only for forms the pattern can express.
+ */
+const TOP_LEVEL_FUNCTION = /^(?:export )?(?:async )?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
 
 /** A top-level `const`/`let` declaration, at column zero. */
 const TOP_LEVEL_BINDING = /^(?:export )?(?:const|let) ([A-Za-z_$][\w$]*)(?=\s*[:=])/gm;
@@ -169,12 +193,26 @@ function maskNonCode(source: string): string {
  * @param source - Any TypeScript source text.
  * @returns A same-length string with comment characters replaced by spaces.
  */
-function stripComments(source: string): string {
+export function stripComments(source: string): string {
   return blankOut(source, false);
 }
 
 /** A line that is exactly `}` — the end of a top-level declaration. */
 const CLOSING_LINE = /\n\}(?=\n|$)/;
+
+/**
+ * How many times a global pattern matches, without disturbing shared state.
+ *
+ * @param pattern - A `g`-flagged pattern; its `lastIndex` is reset first.
+ * @param text - The text to count matches in.
+ * @returns The number of matches.
+ */
+function countMatches(pattern: RegExp, text: string): number {
+  pattern.lastIndex = 0;
+  let n = 0;
+  while (pattern.exec(text) !== null) n++;
+  return n;
+}
 
 /**
  * Every top-level function in the file, mapped to its own source text.
@@ -207,6 +245,26 @@ const CLOSING_LINE = /\n\}(?=\n|$)/;
 export function extractTopLevelDeclarations(source: string): Record<string, string> {
   const masked = maskNonCode(source);
   const found: Record<string, string> = {};
+
+  // The mask is the guard's one silent failure mode, so it is cross-checked
+  // rather than trusted. `blankOut` does not understand REGEX LITERALS: a quote
+  // inside one (`/it's/`) reads as a string opening, and everything to the next
+  // quote — possibly several declarations — is blanked away. Nothing throws;
+  // the guard simply stops seeing part of the file, and every pin still passes.
+  // Counting the same pattern over the RAW source and demanding agreement turns
+  // that into a loud failure. A raw match the mask correctly excluded (a
+  // declaration inside a template literal) also lands here, and stopping to look
+  // is the right answer there too.
+  const rawCount = countMatches(TOP_LEVEL_FUNCTION, source);
+  const maskedCount = countMatches(TOP_LEVEL_FUNCTION, masked);
+  if (rawCount !== maskedCount) {
+    throw new Error(
+      `the append-only guard sees ${maskedCount} top-level functions after masking but ` +
+        `${rawCount} in the raw source. Something in this file confuses the comment/string ` +
+        'scanner — a regex literal containing a quote is the usual cause — so declarations are ' +
+        'invisible to the pins. Fix the scanner; do not repin around it.'
+    );
+  }
 
   TOP_LEVEL_FUNCTION.lastIndex = 0;
   for (let m = TOP_LEVEL_FUNCTION.exec(masked); m !== null; m = TOP_LEVEL_FUNCTION.exec(masked)) {
@@ -258,19 +316,26 @@ function endOfStatement(masked: string, from: number): number {
 /**
  * Reduce a run of code to the text whose change is a real change.
  *
- * Comments are already blanked by the caller. Trailing commas before a closer go
- * (Prettier adds one the moment a call breaks across lines), whitespace runs
- * collapse to one space, and the space beside a bracket, comma or semicolon goes
- * entirely — those, and only those, are where Prettier introduces a line break,
- * so removing them makes reflow invisible. Whitespace between two words is left
- * alone, because `return foo` and `returnfoo` are not the same program.
+ * Comments are already blanked by the caller. Whitespace runs collapse to one
+ * space, and the space beside a bracket, comma, semicolon, `.` or `<`/`>` goes
+ * entirely — those are the places Prettier introduces a line break, so removing
+ * them makes reflow invisible. Whitespace between two words is left alone,
+ * because `return foo` and `returnfoo` are not the same program.
+ *
+ * A trailing comma OR semicolon immediately before a closer is dropped, because
+ * both are Prettier's, not the author's: a call gains a trailing comma the
+ * moment it breaks across lines, and a body's last statement gains or loses its
+ * own line — `void 0;}` against `void 0}` — with the print width. Measured, not
+ * assumed: at `--print-width 140` the semicolon rule alone is the difference
+ * between all eleven pins moving and none of them moving. The `.` and `<`/`>`
+ * entries were found the same way, at widths 80 and 60 (see the module header).
  */
 function collapseCode(text: string): string {
   return text
-    .replace(/,(\s*[)\]}])/g, '$1')
+    .replace(/[,;](\s*[)\]}])/g, '$1')
     .replace(/\s+/g, ' ')
-    .replace(/\s+([)\]},;])/g, '$1')
-    .replace(/([([{,;])\s+/g, '$1');
+    .replace(/\s+([)\]},;.>])/g, '$1')
+    .replace(/([([{,;<])\s+/g, '$1');
 }
 
 /**
@@ -420,8 +485,10 @@ export function checkAppendOnly(
         `migration "${key}" changed after it was pinned (pinned ${pin}, now ${hash}). ${RULE} ` +
           `Change of mind: open a NEW key strictly above the newest v* tag, written to tell a ` +
           `value this body seeded from one a person chose. Repinning is the escape hatch and it ` +
-          `needs a recorded justification that NO install can have run the old body — on this ` +
-          `repository that has never once been true.`
+          `needs a recorded justification that NO install can have run the old body. For any key ` +
+          `at or below the version this repository currently carries, that has never been true — ` +
+          `and a key above it stops being safe the moment the release bump lands, which is not a ` +
+          `moment anybody is notified of.`
       );
     }
   }

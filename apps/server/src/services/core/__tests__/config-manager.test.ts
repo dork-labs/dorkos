@@ -2523,6 +2523,28 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     const result = checkAppendOnly(readConfigManager(), MERGED_MIGRATION_HASHES);
     expect(result.ok, result.problems.join('\n\n')).toBe(true);
   });
+
+  it('lists its keys in ascending semver order, after the legacy sentinel', () => {
+    // Neither guard sees a REORDER: hashes are per key and the tag comparison is
+    // per key too, so swapping two blocks leaves every check green while
+    // changing what actually happens — `conf` runs migrations in the table's
+    // INSERTION order, not in version order, and several bodies here depend on
+    // running after another (`backfillWorkbenchTerminalGraceTtl` after
+    // `backfillWorkbenchDefaults`, the trust-stop backfills after the two
+    // `runtimes` ones). Ascending order is what makes insertion order and
+    // version order the same thing, so it is asserted rather than hashed — a
+    // hash of the key list would go red without saying why.
+    //
+    // `'1.0.0'` is exempt and pinned to the front. It is the legacy sentinel
+    // that seeds `version: 1`, and it is above every version this app has ever
+    // carried, so `key <= projectVersion` excludes it and it runs for nobody
+    // while DorkOS is 0.x. Its position cannot matter until the app reaches
+    // 1.0.0, at which point running first is what a seed body wants anyway.
+    const keys = Object.keys(CONFIG_MIGRATIONS);
+    expect(keys[0]).toBe('1.0.0');
+    const rest = keys.slice(1);
+    expect(rest).toEqual([...rest].sort((a, b) => semver.compare(a, b)));
+  });
 });
 
 describe('backfillRuntimesDefaults migration', () => {

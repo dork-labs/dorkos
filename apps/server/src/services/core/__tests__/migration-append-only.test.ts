@@ -109,6 +109,40 @@ describe('extractTopLevelDeclarations', () => {
     expect(migrationClosure('0.59.0', source)).not.toContain("store.set('other', 1);");
   });
 
+  it('sees an async declaration and a generator', () => {
+    // Neither form exists in config-manager.ts today, which is exactly why the
+    // pattern has to know them: the miss would be silent, and a migration
+    // reaching such a helper would be pinned with a hole in the middle.
+    const source = [
+      'export async function backfillAsync(store: unknown): Promise<void> {',
+      '  await Promise.resolve(store);',
+      '}',
+      '',
+      'export function* walkThings(): Generator<number> {',
+      '  yield 1;',
+      '}',
+    ].join('\n');
+    const names = Object.keys(extractTopLevelDeclarations(source));
+    expect(names).toContain('backfillAsync');
+    expect(names).toContain('walkThings');
+  });
+
+  it('raises rather than losing declarations to a quote-bearing regex literal', () => {
+    // The scanner's one silent failure mode: the apostrophe in `/it's/` reads as
+    // a string opening, so everything to the next quote is blanked — taking
+    // whole declarations out of the guard's view with nothing thrown and every
+    // pin still green. The count cross-check is what makes that loud.
+    const source = [
+      'export function stripApostrophes(text: string): string {',
+      "  return text.replace(/it's/g, 'its');",
+      '}',
+      '',
+      helper('backfillAfterTheRegex', "store.set('after', 1);"),
+    ].join('\n');
+
+    expect(() => extractTopLevelDeclarations(source)).toThrow(/top-level functions after masking/);
+  });
+
   it('raises rather than truncating when a declaration never closes', () => {
     expect(() =>
       extractTopLevelDeclarations('export function open(a: string) {\n  return a;')
@@ -131,6 +165,28 @@ describe('normalizeForHash', () => {
     const flat = 'call(alpha, beta);';
     const broken = 'call(\n      alpha,\n      beta,\n    );';
     expect(normalizeForHash(broken)).toBe(normalizeForHash(flat));
+  });
+
+  it('ignores a member access Prettier broke onto its own line', () => {
+    // Found at `--print-width 80` against the real file: `(x as {...})\n.retired`
+    // left a space before the dot that no other rule removed.
+    expect(normalizeForHash('(stored as { retired: unknown[] })\n      .retired;')).toBe(
+      normalizeForHash('(stored as { retired: unknown[] }).retired;')
+    );
+  });
+
+  it('ignores a generic Prettier broke across lines', () => {
+    // Found at `--print-width 60`: `Record<\n  string,\n  unknown\n>`.
+    expect(normalizeForHash('const s: Record<\n  string,\n  unknown\n> = {};')).toBe(
+      normalizeForHash('const s: Record<string, unknown> = {};')
+    );
+  });
+
+  it('ignores whether a body ends with its own semicolon before the brace', () => {
+    // Prettier moves the last statement of a body on and off its own line as the
+    // print width changes, taking the semicolon with it. Measured: at
+    // `--print-width 140` this single difference moved all eleven real pins.
+    expect(normalizeForHash('{ backfill(store); }')).toBe(normalizeForHash('{ backfill(store) }'));
   });
 
   it('keeps the contents of a string, including something that looks like a comment', () => {
