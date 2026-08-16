@@ -87,7 +87,10 @@ function conventionRefusal(error: z.ZodError): string {
   const isSoul = issue.path[0] === 'soulContent';
   const file = isSoul ? 'SOUL.md' : 'NOPE.md';
   const max = isSoul ? SOUL_MAX_CHARS : NOPE_MAX_CHARS;
-  return `${file} is too long — the whole file has to fit in ${max.toLocaleString('en-US')} characters.`;
+  // A colon rather than a dash: this sentence is composed with the caller's own
+  // ("Couldn't save your instructions — …"), and two dashes in one line read as
+  // an aside inside an aside.
+  return `${file} is too long: the whole file has to fit in ${max.toLocaleString('en-US')} characters.`;
 }
 
 /** Minimal MeshCore surface needed for the post-write DB sync (ADR-0043). */

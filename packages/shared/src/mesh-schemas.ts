@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { AGENT_NAME_REGEX } from './validation.js';
 import { EFFORT_LEVELS } from './constants.js';
+import { SOUL_MAX_CHARS, NOPE_MAX_CHARS } from './convention-files.js';
 
 extendZodWithOpenApi(z);
 
@@ -619,11 +620,19 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
 
 export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;
 
-/** Request body for PATCH /api/mesh/agents/:id/conventions — update convention file content and personality toggles. */
+/**
+ * Request body for PATCH /api/mesh/agents/:id/conventions — update convention
+ * file content and personality toggles.
+ *
+ * The budgets are {@link SOUL_MAX_CHARS} and {@link NOPE_MAX_CHARS} rather than
+ * literals, because this schema is what ENFORCES them and three other places
+ * describe them: the editor's counter, the Save gate, and the sentence the
+ * server refuses with. A literal here let those drift from the rule.
+ */
 export const UpdateAgentConventionsSchema = z
   .object({
-    soulContent: z.string().max(4000).optional(),
-    nopeContent: z.string().max(2000).optional(),
+    soulContent: z.string().max(SOUL_MAX_CHARS).optional(),
+    nopeContent: z.string().max(NOPE_MAX_CHARS).optional(),
     traits: TraitsSchema.optional(),
     conventions: ConventionsSchema.optional(),
   })

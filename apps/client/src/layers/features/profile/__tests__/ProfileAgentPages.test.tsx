@@ -21,6 +21,7 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { SOUL_MAX_CHARS, buildSoulContent } from '@dorkos/shared/convention-files';
 import { DEFAULT_TRAITS, renderTraits } from '@dorkos/shared/trait-renderer';
 import { createMockTransport } from '@dorkos/test-utils';
+import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
@@ -93,7 +94,20 @@ async function renderProfile(
   options: { start?: ProfilePageId; transport?: ReturnType<typeof mockTransport> } = {}
 ) {
   const harness = buildProfileDeepLinkHarness('/');
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  // The REAL error policy, caches included. A client declared from scratch here
+  // carries no `MutationCache.onError`, so "this surface reports a failure
+  // exactly once" would be asserted against a surface that has no app-wide
+  // toast to double up with — which is the trap `createQueryClientConfig`'s own
+  // doc warns about. Only the query retry and gc are overridden, so a test that
+  // rejects a read fails fast instead of retrying.
+  const config = createQueryClientConfig();
+  const queryClient = new QueryClient({
+    ...config,
+    defaultOptions: {
+      ...config.defaultOptions,
+      queries: { ...config.defaultOptions?.queries, retry: false, gcTime: 0 },
+    },
+  });
   const transport = options.transport ?? mockTransport();
 
   function Wrapper({ children }: { children: ReactNode }) {
@@ -482,9 +496,18 @@ describe('Instructions and Boundaries', () => {
     await userEvent.click(button);
     await waitFor(() => expect(transport.updateAgentByPath).toHaveBeenCalled());
 
-    save.fail(new Error('SOUL.md is too long — the whole file has to fit in 4,000.'));
+    save.fail(new Error('SOUL.md is too long: the whole file has to fit in 4,000 characters.'));
 
-    await waitFor(() => expect(toasts.error).toHaveBeenCalledWith(expect.stringMatching(/SOUL/)));
+    // ONE toast, not two. The page used to toast for itself beside the app-wide
+    // mutation handler, so a refusal was reported twice in two different voices
+    // — the page's precise sentence and a generic "Action failed. Please try
+    // again." The page now names the action through `meta.errorLabel` and the
+    // one handler composes it with the server's own sentence.
+    await waitFor(() => expect(toasts.error).toHaveBeenCalledTimes(1));
+    expect(toasts.error).toHaveBeenCalledWith(
+      'Couldn’t save your instructions — SOUL.md is too long: the whole file has to fit in 4,000 characters.',
+      expect.anything()
+    );
     expect(toasts.success).not.toHaveBeenCalled();
     // The draft survives the rollback, and stays dirty — a refusal is a reason
     // to try again, not to lose what you wrote.

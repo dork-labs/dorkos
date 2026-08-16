@@ -28,14 +28,14 @@ vi.mock('@dorkos/shared/manifest', () => ({
 const mockReadConventionFile = vi.fn().mockResolvedValue(null);
 const mockWriteConventionFile = vi.fn().mockResolvedValue(undefined);
 
-vi.mock('@dorkos/shared/convention-files', () => ({
+// Spread over the original rather than replaced: the module also carries the
+// character budgets, and `UpdateAgentConventionsSchema` is built from them —
+// a hand-written copy here is a second source of truth for the rule this file
+// tests the enforcement of.
+vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/convention-files')>()),
   readConventionFile: (...args: unknown[]) => mockReadConventionFile(...args),
   writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
-  // The real budgets: `agent-updater` names them when it refuses a file, and a
-  // mock that left them undefined would fail on the message rather than on the
-  // rule under test.
-  SOUL_MAX_CHARS: 4000,
-  NOPE_MAX_CHARS: 2000,
   buildSoulContent: vi.fn(
     (traitBlock: string, prose: string) =>
       `<!-- TRAITS:START -->\n${traitBlock}\n<!-- TRAITS:END -->\n\n${prose}`
