@@ -66,8 +66,11 @@ export function useRightPanelLayoutPersistence(): void {
 
   useEffect(() => {
     if (agentKey === KEY_PENDING) return;
-    loadRightPanelForAgent(agentKey);
-  }, [agentKey, loadRightPanelForAgent]);
+    // The cwd travels with the key: a link that asked for the panel named a
+    // DIRECTORY, and the key may be an agent id, so the store cannot tell on its
+    // own whether a pending link was about the agent binding now.
+    loadRightPanelForAgent(agentKey, cwd);
+  }, [agentKey, cwd, loadRightPanelForAgent]);
 
   // Detach to global scope when leaving the session route (stable dep → runs on
   // unmount only, not on every agentKey change).

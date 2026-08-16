@@ -10,6 +10,7 @@ import { ChevronLeft } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { profileStatusText } from '../lib/profile-status';
 import { hasUnsavedProfileEdits } from '../model/profile-leave-guard';
+import { useProfileScope } from '../model/profile-scope';
 import { DiscardChangesDialog } from './DiscardChangesDialog';
 import { ProfileFace } from './ProfileFace';
 
@@ -37,6 +38,9 @@ export interface ProfilePageProps {
  * the way out before the destination.
  */
 export function ProfilePage({ member, title, meta, onBack, children }: ProfilePageProps) {
+  // Whose panel this page belongs to — the leave guard counts per panel, so
+  // a dirty editor in the sheet cannot hold the docked profile's back button.
+  const scope = useProfileScope();
   const heading = useRef<HTMLHeadingElement>(null);
   const status = profileStatusText(member);
   // Asked at the moment you leave, not held as state: the pages that save on a
@@ -49,7 +53,7 @@ export function ProfilePage({ member, title, meta, onBack, children }: ProfilePa
   }, []);
 
   function back() {
-    if (hasUnsavedProfileEdits()) return setConfirming(true);
+    if (hasUnsavedProfileEdits(scope)) return setConfirming(true);
     onBack();
   }
 

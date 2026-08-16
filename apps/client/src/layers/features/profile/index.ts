@@ -16,6 +16,17 @@
 export { ProfileView, type ProfileViewProps } from './ui/ProfileView';
 export { ProfileSheet, type ProfileSheetProps } from './ui/ProfileSheet';
 export { ProfileSheetContainer, type ProfileSheetContainerProps } from './ui/ProfileSheetContainer';
+// The docked home: the right-panel tab on a session. `ProfileDock` is reached
+// through the contribution registry (lazily), so the barrel carries it for the
+// registration and the playground; everything else opens the panel through
+// `openProfileDocked` instead of rendering it.
+export { ProfileDock } from './ui/ProfileDock';
+export { PROFILE_PANEL_ID, useProfileStore } from './model/profile-store';
+export { useProfileShortcut } from './model/use-profile-shortcut';
+export {
+  useProfileDockDeepLink,
+  useLegacyProfileLinkRedirect,
+} from './model/use-profile-dock-deep-link';
 export { AccountMenu, type AccountMenuProps } from './ui/AccountMenu';
 // `AccountMenuRows` is deliberately NOT on the barrel: the two surfaces that
 // draw it — the disc's own menu and the sidebar footer's `⋯` fold — both reach

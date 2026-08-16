@@ -15,8 +15,8 @@ import {
   AgentAvatar,
   type ExecutionException,
 } from '@/layers/entities/agent';
-import { useAppStore, useSettingsDeepLink } from '@/layers/shared/model';
-import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { useSettingsDeepLink } from '@/layers/shared/model';
+import { useProfileStore } from '@/layers/features/profile';
 
 /** How one deviation is worded in a row's summary. */
 function deviationText(field: 'runtime' | 'model' | 'effort', label: string): string {
@@ -53,12 +53,13 @@ export interface ExecutionExceptionsStripProps {
  *
  * A row is a link, not an editor. Fixing one thing in a list of exceptions
  * always turns into wanting to see the rest of that agent's settings, so the row
- * opens the agent's own Config tab and the fix happens where the context is.
+ * opens that agent's profile and the fix happens where the context is — on the
+ * profile's root, where "Runs on" is the row this list is about.
  *
- * Opening the hub straight from `useAgentHubStore.getState()` is the same call
- * the sidebar, the agents list, the identity chip and the command palette all
- * make — the hub's open intent is a store action every surface reaches for, and
- * a prop threaded through the Settings dialog for this one row would be the
+ * Opening it straight from `useProfileStore.getState()` is the same call the
+ * sidebar, the agents list, the identity chip and the command palette all
+ * make — opening a profile is a store action every surface reaches for, and a
+ * prop threaded through the Settings dialog for this one row would be the
  * exception, not the rule.
  *
  * @param props - See {@link ExecutionExceptionsStripProps}; the live tab passes
@@ -72,19 +73,12 @@ export function ExecutionExceptionsStrip({
   const live = useExecutionExceptions({ checkModels: injected === undefined });
   const exceptions = injected ?? live.exceptions;
   const settings = useSettingsDeepLink();
-  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
-  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
 
   function openAgent(projectPath: string) {
-    // All three, in this order, and every one of them is load-bearing — the same
-    // trio the sidebar's "open profile" and the agents list's "manage" do.
-    // `openHub` alone only says WHICH agent; without the panel being opened and
-    // pointed at the hub tab, the dialog closes onto an unchanged dashboard and
-    // the click reads as having done nothing.
+    // Close first: the profile opens behind this dialog, and leaving the dialog
+    // up would read as the click having done nothing.
     settings.close();
-    useAgentHubStore.getState().openHub(projectPath, 'config');
-    setActiveRightPanelTab('agent-hub');
-    setRightPanelOpen(true);
+    useProfileStore.getState().openProfileDocked(projectPath);
   }
 
   if (exceptions.length === 0) return null;

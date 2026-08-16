@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /**
- * The status line's agent chip opens the profile drawer (DOR-957).
+ * The status line's agent chip opens the profile (DOR-957).
  *
- * The chip knows the agent by its DIRECTORY; the drawer knows it by the id the
+ * The chip knows the agent by its DIRECTORY; the sheet knows it by the id the
  * mesh registered. So the fixture keeps those visibly different and the
  * assertion is on the id that reached the URL — a chip that passed its path
- * along would open a drawer that finds nobody, and "something opened" would not
+ * along would open a sheet that finds nobody, and "something opened" would not
  * have caught it.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
@@ -17,7 +17,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
-import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { useProfileStore } from '@/layers/features/profile';
 import {
   buildProfileDeepLinkHarness,
   type ProfileDeepLinkHarness,
@@ -47,8 +47,12 @@ let harness: ProfileDeepLinkHarness;
 
 beforeEach(() => {
   harness = buildProfileDeepLinkHarness();
-  useAgentHubStore.setState({ agentPath: null });
-  useAppStore.setState({ rightPanelOpen: false });
+  useProfileStore.setState({ dockedEntries: {} });
+  useAppStore.setState({
+    rightPanelOpen: false,
+    explicitAgentPath: null,
+    activeRightPanelTab: null,
+  });
 });
 
 afterEach(cleanup);
@@ -95,13 +99,14 @@ describe('AgentIdentityChip — click opens the profile', () => {
 
     expect(harness.openProfileId()).toBe(AGENT_MEMBER_ID);
     expect(harness.openProfileId()).not.toBe(AGENT_PATH);
-    // And it did NOT take the degraded path — the Hub was never opened.
-    expect(useAgentHubStore.getState().agentPath).toBeNull();
+    // And it did NOT take the degraded path — the panel was never opened.
+    expect(useAppStore.getState().explicitAgentPath).toBeNull();
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
   });
 
-  it('falls back to the Agent Hub when the mesh cannot name this agent', async () => {
-    // Never a dead click: with no roster id there is no drawer to open, so the
-    // chip keeps the behaviour it had before this change.
+  it('falls back to the docked profile when the mesh cannot name this agent', async () => {
+    // Never a dead click: with no roster id there is no sheet to address, but
+    // the panel is bound to a directory and the chip always has one.
     const user = userEvent.setup();
     const fleetSettled = renderChip([]);
     await fleetSettled();
@@ -109,6 +114,8 @@ describe('AgentIdentityChip — click opens the profile', () => {
     await user.click(await screen.findByRole('button', { name: /Alpha/ }));
 
     expect(harness.openProfileId()).toBeNull();
-    expect(useAgentHubStore.getState().agentPath).toBe(AGENT_PATH);
+    expect(useAppStore.getState().explicitAgentPath).toBe(AGENT_PATH);
+    expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
   });
 });

@@ -71,6 +71,10 @@ describe('sessionRouteLoader', () => {
    * Invoke the loader the way the router does — through `loaderDeps`, so the
    * test exercises the same param extraction production uses — and catch the
    * redirect throw.
+   *
+   * The redirect's `search` is a function of the search that arrived (the
+   * router applies it against the live location), so it is resolved here the
+   * same way, against the parsed URL. Cases below then read a plain object.
    */
   async function callLoader(searchStr: string) {
     const search = sessionSearchSchema.parse(
@@ -84,7 +88,12 @@ describe('sessionRouteLoader', () => {
       return { redirected: false } as const;
     } catch (thrown: unknown) {
       // TanStack Router redirect() throws a Response-like object with an `options` property
-      const opts = (thrown as { options: Record<string, unknown> }).options;
+      const opts = { ...(thrown as { options: Record<string, unknown> }).options };
+      const next = opts.search;
+      opts.search =
+        typeof next === 'function'
+          ? (next as (prev: Record<string, unknown>) => Record<string, unknown>)(search)
+          : next;
       return { redirected: true, redirect: opts };
     }
   }
@@ -152,6 +161,30 @@ describe('sessionRouteLoader', () => {
     expect(result.redirected).toBe(true);
     expect(result.redirect).toMatchObject({
       search: { session: 's1', dir: '/my/project' },
+    });
+  });
+
+  it('keeps the rest of the link — the half that says what to open', async () => {
+    // The loader's job is choosing a session, and it spelled its whole redirect
+    // out of `loaderDeps` — which deliberately names only the params that
+    // decide that. Everything else was deleted on the way. So
+    // `/session?dir=…&panel=profile&profilePage=rooms` resolved a session and
+    // threw the profile link away before any component could read it (spec
+    // `profile-unification` §1.6). `?settings=` and `?profile=` had the same
+    // hole.
+    const result = await callLoader(
+      '?dir=/my/project&panel=profile&profilePage=rooms&profile=member-1&settings=tools'
+    );
+
+    expect(result.redirected).toBe(true);
+    expect(result.redirect).toMatchObject({
+      search: {
+        dir: '/my/project',
+        panel: 'profile',
+        profilePage: 'rooms',
+        profile: 'member-1',
+        settings: 'tools',
+      },
     });
   });
 

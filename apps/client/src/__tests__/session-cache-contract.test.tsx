@@ -130,7 +130,16 @@ async function loaderRedirectSession(
     });
     return null;
   } catch (thrown: unknown) {
-    return (thrown as { options: { search: { session: string } } }).options.search.session;
+    // The redirect's search is a function of the search that arrived — the
+    // router applies it against the live location — so it is resolved here the
+    // same way. This loader only fires when there is no `?session=`, so an
+    // empty previous search is the honest stand-in.
+    const { search } = (thrown as { options: { search: unknown } }).options;
+    const resolved =
+      typeof search === 'function'
+        ? (search as (prev: Record<string, unknown>) => { session: string })({})
+        : (search as { session: string });
+    return resolved.session;
   }
 }
 

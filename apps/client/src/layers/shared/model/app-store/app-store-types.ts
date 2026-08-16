@@ -62,12 +62,13 @@ export interface CoreSlice {
 
   /**
    * Path of the agent the operator *explicitly* opened to inspect this session
-   * (through the Agent Hub — `openHub`), or null when none has been picked.
+   * (through the docked profile — `openProfileDocked`), or null when none has
+   * been picked.
    *
    * This is the honest, click-driven counterpart to {@link selectedCwd}, which
    * is auto-set to the server's default working directory at startup. The
-   * right-panel visibility predicates read it to keep the Agent Profile tab
-   * hidden off `/session` until the user actually selects an agent, rather than
+   * right-panel visibility predicates read it to keep the Profile tab hidden
+   * off `/session` until the user actually selects an agent, rather than
    * surfacing the ambient startup agent nobody chose. Published here (mirrored
    * from the agent-hub feature store) so cross-feature, synchronous readers can
    * see it without importing that feature — the same role {@link currentAgentId}
@@ -78,10 +79,10 @@ export interface CoreSlice {
    * clears this field when the opened agent no longer resolves — so an
    * opened-then-deleted agent's Profile tab disappears off /session rather than
    * lingering on a stale selection. It is otherwise only set forward by the
-   * explicit-selection writers (`openHub`/`setAgentPath`); no route change or
-   * ambient cwd shift clears it. The AgentHub component still degrades to
-   * AgentNotFound (non-crashing) if rendered on a dead path before the reconcile
-   * fires or on /session, where the tab is always visible.
+   * explicit-selection writer (`openProfileDocked`); no route change or ambient
+   * cwd shift clears it. `ProfileDock` still degrades to "Agent not found"
+   * (non-crashing) if rendered on a dead path before the reconcile fires, or on
+   * /session, where the tab is always visible.
    */
   explicitAgentPath: string | null;
   /** Set the explicitly-opened agent path (null clears it). No-op when unchanged. */

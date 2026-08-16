@@ -8,12 +8,12 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { ExecutionException } from '@/layers/entities/agent';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
-import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { useProfileStore } from '@/layers/features/profile';
 import { ExecutionExceptionsStrip } from '../ui/runtimes/ExecutionExceptionsStrip';
 
 // No RouterProvider here — the strip only asks the deep-link hook to CLOSE the
-// dialog, which the openHub assertion below stands in for. URL behavior is
-// covered by `use-dialog-deep-link.test.tsx`.
+// dialog, which the close-then-open assertion below stands in for. URL behavior
+// is covered by `use-dialog-deep-link.test.tsx`.
 const mockCloseSettings = vi.fn();
 vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
   useSettingsDeepLink: () => ({
@@ -211,16 +211,17 @@ describe('ExecutionExceptionsStrip', () => {
     expect(rows[0]).toBe(broken);
   });
 
-  it('opens the agent’s own Config tab, and gets the dialog out of the way first', async () => {
-    const openHub = vi.spyOn(useAgentHubStore.getState(), 'openHub');
+  it('opens the agent’s own profile, and gets the dialog out of the way first', async () => {
+    const openProfileDocked = vi.spyOn(useProfileStore.getState(), 'openProfileDocked');
     renderStrip({ '/a': agent('alpha', { model: 'opus' }) });
     await userEvent.click(await screen.findByTestId('execution-exception'));
     expect(mockCloseSettings).toHaveBeenCalled();
-    expect(openHub).toHaveBeenCalledWith('/a', 'config');
+    expect(openProfileDocked).toHaveBeenCalledWith('/a');
     // Naming the agent is not the same as showing it: without these the dialog
     // closes onto an unchanged dashboard.
+    expect(useAppStore.getState().explicitAgentPath).toBe('/a');
     expect(useAppStore.getState().rightPanelOpen).toBe(true);
-    expect(useAppStore.getState().activeRightPanelTab).toBe('agent-hub');
+    expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
   });
 
   it('calls a pinned model the runtime no longer offers broken', async () => {

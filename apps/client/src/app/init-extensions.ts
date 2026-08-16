@@ -19,6 +19,7 @@ import {
   PALETTE_DEV_ACTIONS,
 } from '@/layers/features/command-palette';
 import { SIDEBAR_FOOTER_BUTTONS } from '@/layers/features/session-list';
+import { PROFILE_PANEL_ID } from '@/layers/features/profile';
 import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
 
 /**
@@ -165,26 +166,32 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     priority: 5,
   });
 
-  // Agent Hub as right-panel contribution (lazy-loaded).
+  // The profile's docked home as a right-panel contribution (lazy-loaded) — the
+  // same profile the Team page opens in a sheet, beside the session it is about
+  // (spec `profile-unification` §1.6).
   //
-  // Visibility is selection-honest, so the Agent Profile never shows an agent the
+  // Visibility is selection-honest, so the Profile never shows an agent the
   // operator did not choose:
   //   • /marketplace* → hidden. There is no agent context to profile there.
   //   • /session       → shown. The panel profiles the session's own agent.
   //   • anywhere else  → shown ONLY once the operator has explicitly opened an
-  //                      agent this session (openHub sets `explicitAgentPath`).
+  //                      agent this session (openProfileDocked sets
+  //                      `explicitAgentPath`).
   // Without the last rule the tab would surface the ambient startup agent — the
   // server's default cwd, which nobody picked — and often render a misleading
   // "Agent not found" (see AGENTS.md, the "describe what happens for the user"
   // filter). `explicitAgentPath` is the click-driven signal; `cwd`/`agentId` are
   // ambient and deliberately not used to gate this tab. In the embed the constant
   // `/session` pathname keeps the panel on the session's own agent.
+  //
+  // The icon stays a Lucide `User`: the registry takes a `LucideIcon`, not a
+  // node, so the identity's own face cannot be the tab icon yet (§8).
   register('right-panel', {
-    id: 'agent-hub',
-    title: 'Agent Profile',
+    id: PROFILE_PANEL_ID,
+    title: 'Profile',
     icon: User,
     component: lazy(() =>
-      import('@/layers/features/agent-hub').then((m) => ({ default: m.AgentHub }))
+      import('@/layers/features/profile').then((m) => ({ default: m.ProfileDock }))
     ),
     visibleWhen: ({ pathname, explicitAgentPath }) => {
       if (pathname.startsWith('/marketplace')) return false;

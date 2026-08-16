@@ -1,6 +1,6 @@
 /**
  * Clear the app store's `explicitAgentPath` when the agent it points at no
- * longer exists, so a deleted agent's Agent Profile tab disappears off /session
+ * longer exists, so a deleted agent's Profile tab disappears off /session
  * instead of lingering on a stale selection.
  *
  * @module entities/agent/model/use-reconcile-explicit-agent-path
@@ -14,11 +14,11 @@ import { useCurrentAgent } from './use-current-agent';
  *
  * The sibling of {@link useSyncCurrentAgentId}: where that mirrors the ambient
  * cwd's agent id forward, this heals the click-driven `explicitAgentPath` latch
- * backward. When the operator opens an agent to inspect (Agent Hub → `openHub`),
- * the path is stored and the Agent Profile tab is gated on it off /session. If
- * that agent is later deleted, resolving the path yields no manifest — this hook
- * then clears the field, so the tab is removed rather than rendering
- * `AgentNotFound` forever. Otherwise the selection stays sticky for the session
+ * backward. When the operator opens an agent to inspect (its profile →
+ * `openProfileDocked`), the path is stored and the Profile tab is gated on it
+ * off /session. If that agent is later deleted, resolving the path yields no
+ * manifest — this hook then clears the field, so the tab is removed rather than
+ * saying "Agent not found" forever. Otherwise the selection stays sticky for the session
  * (founder-accepted), exactly as before.
  *
  * Reuses {@link useCurrentAgent} (transport `getAgentByPath`), so it works under

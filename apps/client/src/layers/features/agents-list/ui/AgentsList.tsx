@@ -14,8 +14,7 @@ import { useFilterState, useTransport } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
 import { ScrollArea } from '@/layers/shared/ui/scroll-area';
 import { Skeleton } from '@/layers/shared/ui/skeleton';
-import { useAgentHubStore } from '@/layers/features/agent-hub';
-import { useAppStore } from '@/layers/shared/model';
+import { useProfileStore } from '@/layers/features/profile';
 import {
   agentFilterSchema,
   agentSortMenuOptions,
@@ -162,17 +161,9 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
     filterState.sortDirection,
   ]);
 
-  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
-  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
-
-  const handleManage = useCallback(
-    (projectPath: string) => {
-      useAgentHubStore.getState().openHub(projectPath);
-      setActiveRightPanelTab('agent-hub');
-      setRightPanelOpen(true);
-    },
-    [setActiveRightPanelTab, setRightPanelOpen]
-  );
+  const handleManage = useCallback((projectPath: string) => {
+    useProfileStore.getState().openProfileDocked(projectPath);
+  }, []);
 
   // ── Callbacks for column cell renderers ────────────────────────
   const handleNavigate = useCallback(

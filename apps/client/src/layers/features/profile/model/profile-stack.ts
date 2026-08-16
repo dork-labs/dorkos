@@ -136,6 +136,35 @@ export function currentPage(stack: ProfileStackState): ProfilePageId | null {
 }
 
 /**
+ * Whose profile is one level down, or `null` when the current one is the root.
+ *
+ * What the back bar names. A chained profile — an owner, an agent somebody
+ * manages — is a frame like any other, so it needs a visible way back and the
+ * name of the place it goes; only the browser's own Back button knew this
+ * before.
+ *
+ * @param stack - The stack to read.
+ */
+export function beneathMemberId(stack: ProfileStackState): string | null {
+  const profiles = stack.entries.filter((entry) => entry.kind === 'profile');
+  if (profiles.length === 0) return null;
+  return profiles.at(-2)?.memberId ?? stack.rootMemberId;
+}
+
+/**
+ * The frame key a chained profile is drawn under.
+ *
+ * Qualified with a prefix so it can never collide with a page id — the two
+ * share one namespace, because the control that pushes either tags itself with
+ * the key (`data-profile-return`) and takes focus back when it is popped.
+ *
+ * @param memberId - Whose profile is being drawn.
+ */
+export function profileFrameKey(memberId: string): string {
+  return `profile:${memberId}`;
+}
+
+/**
  * Whose profile the stack is currently about — the last profile pushed onto it,
  * or the root when none has been.
  *

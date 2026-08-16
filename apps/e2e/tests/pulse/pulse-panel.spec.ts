@@ -33,8 +33,8 @@ test.describe('Pulse — right inspector panel @smoke', () => {
     await rightPanel.goto('/session');
     await rightPanel.open();
 
-    await expect(rightPanel.agentProfileTab).toBeVisible();
-    await expect(rightPanel.agentProfileTab).toHaveAttribute('aria-selected', 'true');
+    await expect(rightPanel.profileTab).toBeVisible();
+    await expect(rightPanel.profileTab).toHaveAttribute('aria-selected', 'true');
     // Pulse is still a reachable tab, just not the active one here.
     await expect(rightPanel.pulseTab).toHaveAttribute('aria-selected', 'false');
   });

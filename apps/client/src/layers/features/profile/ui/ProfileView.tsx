@@ -21,11 +21,15 @@ import { messageTarget } from '../lib/profile-message';
 import { rowsFor, type ProfileRowsContext } from '../lib/profile-rows';
 import { useManagedAgentFacts } from '../model/use-managed-agent-facts';
 import {
+  beneathMemberId,
   currentPage,
+  profileFrameKey,
   type ProfileStackEntry,
   type ProfileStackState,
 } from '../model/profile-stack';
 import { ProfileActionsMenu } from './ProfileActionsMenu';
+import { ProfileScope } from '../model/profile-scope';
+import { ProfileBackBar } from './ProfileBackBar';
 import { ProfileHeader } from './ProfileHeader';
 import { ProfilePage } from './ProfilePage';
 import { ProfileRows } from './ProfileRows';
@@ -136,6 +140,17 @@ export function ProfileView({
   const definition = shown ? profilePage(shown) : null;
   const PageContent = definition?.component;
 
+  // A chained profile is a frame like a page is, and needs the same way out.
+  // Only on this profile's own root: from a page pushed off it, `ProfilePage`'s
+  // own bar is the way back, one step at a time.
+  const beneath = beneathMemberId(stack);
+  const beneathMember = beneath === null ? undefined : roster.find((row) => row.id === beneath);
+  // The frame the stack is on, derived from what is SHOWN. Reading the stack's
+  // top entry instead would name a page the gate turned away — leaving a chained
+  // profile keyed on a page that is not on screen, so the next push neither
+  // remounts nor animates.
+  const frameKey = shown ?? (beneath === null ? null : profileFrameKey(member.id));
+
   return (
     <div
       data-slot="profile"
@@ -148,36 +163,43 @@ export function ProfileView({
       // this one is read from inside the header for the kebab's corner.
       className="group/profile flex min-h-0 flex-1 flex-col"
     >
-      <ProfileStack frameKey={shown}>
-        {definition && PageContent ? (
-          <ProfilePage member={member} title={definition.title} onBack={onPop}>
-            <Suspense fallback={<Skeleton className="h-24 w-full" />}>
-              <PageContent member={member} roster={roster} onPush={onPush} />
-            </Suspense>
-          </ProfilePage>
-        ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <ProfileHeader
-              member={member}
-              relationship={relationship}
-              owner={owner}
-              onOpenOwner={
-                owner ? () => onPush({ kind: 'profile', memberId: owner.id }) : undefined
-              }
-              onMessage={canMessage ? message : undefined}
-              // Only an agent you manage: DorkBot's face is part of DorkOS
-              // (its Personality row says so), and nobody else's identity is
-              // yours to restyle. A face that opened nothing would be the dead
-              // affordance this design exists to remove.
-              onFaceActivate={
-                canEditAppearance ? () => onPush({ kind: 'page', page: 'appearance' }) : undefined
-              }
-              actionsMenu={<ProfileActionsMenu member={member} relationship={relationship} />}
-            />
-            <ProfileRows member={member} ctx={ctx} onPush={onPush} />
-          </div>
-        )}
-      </ProfileStack>
+      {/* Two homes can be on screen at once — the docked profile of the session
+          you are in, and a sheet over it for somebody else. Everything that
+          would otherwise be "the profile" as a global — the face's shared-layout
+          id, the count of unsaved editors — is keyed on this pair instead. */}
+      <ProfileScope home={home} memberId={member.id}>
+        <ProfileStack frameKey={frameKey} depth={stack.entries.length}>
+          {definition && PageContent ? (
+            <ProfilePage member={member} title={definition.title} onBack={onPop}>
+              <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+                <PageContent member={member} roster={roster} onPush={onPush} />
+              </Suspense>
+            </ProfilePage>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {beneathMember && <ProfileBackBar label={beneathMember.displayName} onBack={onPop} />}
+              <ProfileHeader
+                member={member}
+                relationship={relationship}
+                owner={owner}
+                onOpenOwner={
+                  owner ? () => onPush({ kind: 'profile', memberId: owner.id }) : undefined
+                }
+                onMessage={canMessage ? message : undefined}
+                // Only an agent you manage: DorkBot's face is part of DorkOS
+                // (its Personality row says so), and nobody else's identity is
+                // yours to restyle. A face that opened nothing would be the dead
+                // affordance this design exists to remove.
+                onFaceActivate={
+                  canEditAppearance ? () => onPush({ kind: 'page', page: 'appearance' }) : undefined
+                }
+                actionsMenu={<ProfileActionsMenu member={member} relationship={relationship} />}
+              />
+              <ProfileRows member={member} ctx={ctx} onPush={onPush} />
+            </div>
+          )}
+        </ProfileStack>
+      </ProfileScope>
     </div>
   );
 }

@@ -225,8 +225,8 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
   };
 });
 
-vi.mock('@/layers/features/agent-hub', () => ({
-  useAgentHubStore: { getState: () => ({ openHub: vi.fn() }) },
+vi.mock('@/layers/features/profile', () => ({
+  useProfileStore: { getState: () => ({ openProfileDocked: vi.fn() }) },
 }));
 
 // The room-management slice brings a chip picker, a dialog and their own query

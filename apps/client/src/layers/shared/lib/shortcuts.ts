@@ -88,7 +88,7 @@ export const SHORTCUTS = {
   AGENT_PROFILE: {
     id: 'agent-profile',
     key: 'mod+shift+a',
-    label: 'Agent profile',
+    label: 'Profile',
     group: 'navigation',
   },
   // In-window tabs (DOR-540), registered by `useAppTabShortcuts` — in the

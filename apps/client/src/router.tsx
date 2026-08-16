@@ -332,9 +332,19 @@ export async function sessionRouteLoader({
     throw new Error(SESSION_LOOKUP_FAILED_MESSAGE);
   }
 
+  // Built ON TOP of the search that arrived, not from `deps` alone. `deps` is
+  // deliberately narrow — it decides when this loader RE-RUNS, and a dialog
+  // param must never re-run session selection — but a redirect that spelled out
+  // its whole search from `deps` also deleted everything `deps` omits. So
+  // `/session?dir=…&panel=profile&profilePage=rooms` resolved a session and
+  // threw the half of the link that says what to open away, before any
+  // component could read it (spec `profile-unification` §1.6). The launch
+  // params below still override `prev`, so they are dropped for a resumed
+  // conversation exactly as before.
   throw redirect({
     to: '/session',
-    search: {
+    search: (prev) => ({
+      ...prev,
       session: resolved.sessionId,
       dir,
       runtime,
@@ -344,7 +354,7 @@ export async function sessionRouteLoader({
       // belongs to a conversation that is starting, not to one they are
       // resuming ten turns in.
       seed: resolved.isNew ? deps.seed : undefined,
-    },
+    }),
     replace: true,
   });
 }

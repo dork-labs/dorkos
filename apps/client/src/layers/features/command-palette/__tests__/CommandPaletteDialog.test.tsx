@@ -214,10 +214,11 @@ vi.mock('motion/react', () => ({
   LayoutGroup: ({ children }: { children?: React.ReactNode }) => children,
 }));
 
-const mockOpenHub = vi.fn();
-vi.mock('@/layers/features/agent-hub', () => ({
-  useAgentHubStore: Object.assign(() => ({}), {
-    getState: () => ({ openHub: mockOpenHub }),
+const mockOpenProfileDocked = vi.fn();
+vi.mock('@/layers/features/profile', () => ({
+  PROFILE_PANEL_ID: 'profile',
+  useProfileStore: Object.assign(() => ({}), {
+    getState: () => ({ openProfileDocked: mockOpenProfileDocked }),
   }),
 }));
 
@@ -618,15 +619,15 @@ describe('CommandPaletteDialog', () => {
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 
-  it('opens agent hub in right panel when Edit Settings is clicked in sub-menu', () => {
+  it('opens the agent’s profile in the right panel from the sub-menu', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     const editItem = screen.getByText('Edit Worker Settings').closest('[data-slot="command-item"]');
     if (editItem) fireEvent.click(editItem as Element);
-    expect(mockOpenHub).toHaveBeenCalledWith('/projects/current');
-    expect(mockSetActiveRightPanelTab).toHaveBeenCalledWith('agent-hub');
-    expect(mockSetRightPanelOpen).toHaveBeenCalledWith(true);
+    // One call now, not three: naming the agent, selecting the tab and opening
+    // the panel are all "open the profile", and the store does them together.
+    expect(mockOpenProfileDocked).toHaveBeenCalledWith('/projects/current');
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 

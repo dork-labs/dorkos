@@ -41,14 +41,20 @@ describe('useRightPanelLayoutPersistence', () => {
     mockCwd = '/Users/dev/proj';
     mockAgent = agentWithId('agent-01H');
     renderHook(() => useRightPanelLayoutPersistence());
-    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith('agent-01H');
+    // The directory travels with the key: a pending deep link named a DIRECTORY,
+    // and the key may be an agent id, so the store cannot tell on its own
+    // whether that link was about the agent binding now (DOR-227 leak).
+    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith('agent-01H', '/Users/dev/proj');
   });
 
   it('falls back to the cwd once the lookup settles to no registered agent', () => {
     mockCwd = '/Users/dev/untracked';
     mockAgent = null;
     renderHook(() => useRightPanelLayoutPersistence());
-    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith('/Users/dev/untracked');
+    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith(
+      '/Users/dev/untracked',
+      '/Users/dev/untracked'
+    );
   });
 
   it('defers binding entirely while the agent lookup is pending (cold cache)', () => {
@@ -73,7 +79,7 @@ describe('useRightPanelLayoutPersistence', () => {
     rerender();
 
     expect(mockLoadRightPanelForAgent).toHaveBeenCalledTimes(1);
-    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith('agent-01H');
+    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith('agent-01H', '/Users/dev/proj');
   });
 
   it('binds the cwd when a pending lookup settles to null (no agent registered)', () => {
@@ -87,7 +93,10 @@ describe('useRightPanelLayoutPersistence', () => {
     rerender();
 
     expect(mockLoadRightPanelForAgent).toHaveBeenCalledTimes(1);
-    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith('/Users/dev/untracked');
+    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith(
+      '/Users/dev/untracked',
+      '/Users/dev/untracked'
+    );
   });
 
   it('detaches to the global layout (null key) when no cwd resolves', () => {
@@ -95,7 +104,7 @@ describe('useRightPanelLayoutPersistence', () => {
     mockCwd = null;
     mockIsPending = true;
     renderHook(() => useRightPanelLayoutPersistence());
-    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith(null);
+    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith(null, null);
   });
 
   it('detaches to the global layout (null key) on unmount', () => {

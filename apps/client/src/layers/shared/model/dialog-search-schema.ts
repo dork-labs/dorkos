@@ -18,10 +18,16 @@ export const dialogSearchSchema = z.object({
   // Settings
   settings: z.string().optional(),
   settingsSection: z.string().optional(),
-  // Agent dialog (legacy — use panel=agent-hub for new links)
+  // Legacy agent dialog. Nothing writes these any more; they are still parsed so
+  // `useLegacyProfileLinkRedirect` can see an old bookmark and rewrite it to
+  // `?panel=profile`. `agentPath` survives the rewrite — it says WHICH agent —
+  // and is the external form the Settings runtimes strip and the e2e deep links
+  // use today.
   agent: z.string().optional(),
   agentPath: z.string().optional(),
-  // Shell-level right panel
+  // Shell-level right panel: which tab, and (legacy) which of the Agent Hub's
+  // inner tabs. `hubTab` is read only by the redirect above; `profilePage` is
+  // its successor.
   panel: z.string().optional(),
   hubTab: z.string().optional(),
   // Profile — the one param that names a subject rather than a tab: the roster

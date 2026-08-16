@@ -2,19 +2,20 @@ import type { Page, Locator } from '@playwright/test';
 import { BasePage } from './BasePage';
 import { RightPanelPage } from './RightPanelPage';
 
-/** The right panel's share of the window while the hub surface is exercised. */
+/** The right panel's share of the window while the profile surface is exercised. */
 const RIGHT_PANEL_PCT = 45;
 
 /**
  * Page Object for the managed-MCP OAuth sign-in surface (DOR-943 client half,
- * DOR-952 e2e). The surface lives in the Agent Hub's Toolkit tab, under the
- * "Tools & MCP" accordion — the `AgentMcpServers` section that joins an agent's
- * managed servers with their live `getMcpStatus` by name.
+ * DOR-952 e2e). The surface is the profile's **Tools & MCP** page — the
+ * `AgentMcpServers` section that joins an agent's managed servers with their
+ * live `getMcpStatus` by name.
  *
- * Reached by deep-linking the Agent Hub onto the seeded agent (`?panel=agent-hub`
- * on `/session`, where the panel's tab is registered unconditionally), then
- * opening the Toolkit tab and expanding the accordion — the way a person gets
- * there, with no in-app opener priming the store first.
+ * Reached by deep-linking the docked profile straight onto that page
+ * (`?panel=profile&profilePage=tools`), the way a person would follow a link —
+ * with no in-app opener priming any store first. It used to be the Agent Hub's
+ * Toolkit tab behind a "Tools & MCP" accordion; the hub is gone and the
+ * accordion with it, so the page IS the surface now (spec `profile-unification`).
  */
 export class McpOAuthSigninPage {
   readonly page: Page;
@@ -22,39 +23,34 @@ export class McpOAuthSigninPage {
 
   /** The `AgentMcpServers` section (`<section aria-label="MCP servers">`). */
   readonly mcpSection: Locator;
-  /** The Toolkit tab in the Agent Hub tab bar. */
-  readonly toolkitTab: Locator;
-  /** The "Tools & MCP" accordion toggle inside the Toolkit tab. */
-  readonly toolsAndMcpToggle: Locator;
+  /** The profile page's own heading, which names where the deep link landed. */
+  readonly pageTitle: Locator;
 
   constructor(page: Page) {
     this.page = page;
     this.basePage = new BasePage(page);
     this.mcpSection = page.getByRole('region', { name: 'MCP servers' });
-    this.toolkitTab = page.getByRole('tab', { name: 'Toolkit' });
-    this.toolsAndMcpToggle = page.getByRole('button', { name: /Tools & MCP/i });
+    this.pageTitle = page.locator('[data-slot="profile-page-title"]');
   }
 
   /**
-   * Open the seeded agent's managed-MCP surface: deep-link the hub onto it, open
-   * the Toolkit tab, and expand the "Tools & MCP" accordion.
+   * Open the seeded agent's managed-MCP surface: deep-link the profile onto its
+   * Tools & MCP page.
    *
    * @param agentDir - The seeded agent's directory (from `seed-oauth-mcp-agent`).
    */
   async open(agentDir: string): Promise<void> {
     // Give the right panel a real width BEFORE mount (it reads the persisted
-    // layout once), then open it — otherwise the hub's tab strip is squished to
-    // zero width and the main column intercepts every click.
+    // layout once), otherwise the panel is squished to zero width and the main
+    // column intercepts every click.
     const rightPanel = new RightPanelPage(this.page);
     await rightPanel.seedSplit(RIGHT_PANEL_PCT);
     await this.page.goto(
-      `/session?panel=agent-hub&hubTab=config&dir=${encodeURIComponent(agentDir)}`,
+      `/session?panel=profile&profilePage=tools&agentPath=${encodeURIComponent(agentDir)}&dir=${encodeURIComponent(agentDir)}`,
       { waitUntil: 'domcontentloaded' }
     );
     await this.basePage.waitForAppReady();
     await rightPanel.ensureTabStripOpen();
-    await this.toolkitTab.click();
-    await this.toolsAndMcpToggle.click();
     await this.mcpSection.waitFor({ state: 'visible' });
   }
 

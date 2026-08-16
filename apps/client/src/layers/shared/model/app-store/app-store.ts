@@ -131,7 +131,7 @@ export const useAppStore = create<AppState>()(
         setCurrentAgentId: (id) =>
           set((s) => (s.currentAgentId === id ? s : { currentAgentId: id })),
 
-        // Mirrored from the agent-hub store's explicit selection (openHub);
+        // Mirrored from the profile store's explicit selection (openProfileDocked);
         // transient. Guard no-op writes so subscribers only fire on real changes.
         explicitAgentPath: null,
         setExplicitAgentPath: (path) =>

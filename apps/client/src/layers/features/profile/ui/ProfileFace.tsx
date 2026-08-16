@@ -9,15 +9,23 @@ import { motion, useReducedMotion } from 'motion/react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { IdentityAvatar } from '@/layers/shared/ui';
 import { teamMemberFace } from '@/layers/entities/team';
+import { profileScopeKey, useProfileScope, type ProfileScopeValue } from '../model/profile-scope';
 
 /**
- * The shared-layout id both faces carry.
+ * The shared-layout id the portrait and the strip share.
  *
- * One profile has exactly one face on screen at a time, so one id is enough —
- * and it is what makes the portrait *shrink into* the strip rather than one
- * disc vanishing while another appears somewhere else.
+ * One PROFILE has exactly one face on screen at a time, which is what makes the
+ * portrait *shrink into* the strip rather than one disc vanishing while another
+ * appears somewhere else. But the app can have two profiles up at once — the
+ * docked profile of the session you are in, and a sheet over it for somebody
+ * else — and a single global id would have `motion` fly one identity's face
+ * across the screen into the other's. Keyed by panel and identity
+ * (`profile-scope`), each profile's face travels only within its own.
  */
-const FACE_LAYOUT_ID = 'profile-face';
+function faceLayoutId(scope: ProfileScopeValue | null): string | undefined {
+  const key = profileScopeKey(scope);
+  return key === null ? undefined : `profile-face:${key}`;
+}
 
 /** How long the portrait takes to become the strip. Position only, ~250 ms. */
 const FACE_TRANSITION = { duration: 0.25, ease: [0.4, 0, 0.2, 1] } as const;
@@ -42,6 +50,7 @@ export interface ProfileFaceProps {
 export function ProfileFace({ member, size, className }: ProfileFaceProps) {
   const face = teamMemberFace(member);
   const reduced = useReducedMotion();
+  const scope = useProfileScope();
 
   const avatar = (
     <IdentityAvatar
@@ -59,7 +68,7 @@ export function ProfileFace({ member, size, className }: ProfileFaceProps) {
 
   return (
     <motion.span
-      layoutId={FACE_LAYOUT_ID}
+      layoutId={faceLayoutId(scope)}
       transition={FACE_TRANSITION}
       className={className}
       style={{ display: 'inline-flex' }}

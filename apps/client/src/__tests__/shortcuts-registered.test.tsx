@@ -37,7 +37,8 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { renderHook, render, cleanup } from '@testing-library/react';
 import { SHORTCUTS, getShortcutsGrouped, type ShortcutDef } from '@/layers/shared/lib';
-import { useRightPanelShortcut, useAgentProfileShortcut } from '@/layers/features/right-panel';
+import { useRightPanelShortcut } from '@/layers/features/right-panel';
+import { useProfileShortcut } from '@/layers/features/profile';
 import { useAppTabShortcuts } from '@/layers/features/app-tabs';
 import { useSessionPopoverShortcut } from '@/layers/features/status';
 import { useNewSessionShortcut } from '@/layers/features/dashboard-sidebar';
@@ -96,7 +97,7 @@ const PROVED: Record<string, Prover> = {
     return press({ key: '.', code: 'Period', metaKey: true });
   },
   'agent-profile': () => {
-    renderHook(() => useAgentProfileShortcut());
+    renderHook(() => useProfileShortcut());
     return press({ key: 'A', code: 'KeyA', metaKey: true, shiftKey: true });
   },
   'session-details': () => {

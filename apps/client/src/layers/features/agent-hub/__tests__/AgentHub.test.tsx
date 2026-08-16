@@ -61,13 +61,6 @@ vi.mock('@/layers/entities/agent', () => ({
   AvatarPickerPanel: () => <div data-testid="avatar-picker-panel" />,
 }));
 
-// Deep-link hooks call TanStack Router internals — stub them out so tests
-// don't need a full RouterProvider wrapper.
-vi.mock('../model/use-agent-hub-deep-link', () => ({
-  useAgentHubDeepLink: vi.fn(),
-  useAgentDialogRedirect: vi.fn(),
-}));
-
 // AgentHub reads the pathname to decide whether the selectedCwd fallback is
 // honest (only on /session). Mutable so tests can exercise off-session routes.
 // Named `mock*` so vitest's mock hoisting permits the reference.

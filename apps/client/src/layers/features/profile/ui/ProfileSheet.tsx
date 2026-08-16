@@ -39,7 +39,10 @@ export function ProfileSheet({ open, onOpenChange, ...view }: ProfileSheetProps)
   // throw away an unsaved SOUL.md without a word. The ‹ Profile button asks the
   // same question from `ProfilePage`, so wherever you leave from, you are asked.
   function change(next: boolean) {
-    if (!next && hasUnsavedProfileEdits()) return setConfirming(true);
+    // Named rather than read from context: this sits OUTSIDE the scope it is
+    // asking about — it is the component that establishes which panel this is.
+    if (!next && hasUnsavedProfileEdits({ home: 'sheet', memberId: view.member.id }))
+      return setConfirming(true);
     onOpenChange(next);
   }
 

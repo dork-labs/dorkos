@@ -22,6 +22,7 @@ import {
 } from '@/layers/entities/session';
 import type { RoomSummary } from '@/layers/entities/room';
 import { useInteractionStore } from '@/layers/entities/interactions';
+import { PROFILE_PANEL_ID } from '@/layers/features/profile';
 import { composeCommandDraft } from './palette-command-draft';
 import { runPaletteCommandHandler } from './palette-command-handlers';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
@@ -275,8 +276,8 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           setPickerOpen(true);
           return;
         case 'openAgentProfile':
-          // Open the right panel on the agent-hub tab for the current agent.
-          setActiveRightPanelTab('agent-hub');
+          // Open the right panel on the Profile tab for the current agent.
+          setActiveRightPanelTab(PROFILE_PANEL_ID);
           setRightPanelOpen(true);
           return;
         default:
