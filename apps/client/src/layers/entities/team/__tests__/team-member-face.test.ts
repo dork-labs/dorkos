@@ -24,9 +24,12 @@ const PHOTO = '/api/profile/avatar/person-dorian?v=abc123';
 
 /** Every surface that draws a `TeamMember`'s disc, relative to `src/layers/`. */
 const ROSTER_SURFACES = [
-  'features/profile/ui/ProfileDrawer.tsx',
+  'features/profile/ui/ProfileFace.tsx',
+  'features/profile/ui/ProfileHeader.tsx',
+  'features/profile/ui/ProfileRow.tsx',
+  'features/profile/ui/pages/ManagesPage.tsx',
+  'features/profile/ui/fields/ProfileFields.tsx',
   'features/profile/ui/AccountMenu.tsx',
-  'features/profile/ui/ProfilePanel.tsx',
   'features/team-roster/ui/TeamMemberCard.tsx',
   'features/team-roster/ui/TeamRosterGrid.tsx',
 ];

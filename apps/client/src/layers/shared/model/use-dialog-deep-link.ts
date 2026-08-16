@@ -32,7 +32,7 @@ type AnySearchUpdater = (prev: Record<string, unknown>) => Record<string, unknow
 const DIALOG_SEARCH_PARAMS = {
   settings: ['settings', 'settingsSection'],
   tasks: ['tasks'],
-  profile: ['profile'],
+  profile: ['profile', 'profilePage'],
 } as const satisfies Record<string, readonly string[]>;
 
 /** A dialog with both a store open flag and a URL open signal. */
@@ -240,15 +240,24 @@ export function useTasksDeepLink(): DialogDeepLink<never> {
   return useSimpleDialogDeepLink('tasks');
 }
 
-/** The profile drawer's URL state: which identity is open, and how to change it. */
+/** The profile's URL state: which identity is open, on which page, and how to change it. */
 export interface ProfileDeepLink {
-  /** True if the profile drawer should be open. */
+  /** True if the profile should be open. */
   isOpen: boolean;
   /** Whose profile, in roster ids, or `null` when none is open. */
   memberId: string | null;
-  /** Open the drawer on one identity. */
-  open: (memberId: string) => void;
-  /** Close the drawer. Clears both halves of the signal. */
+  /**
+   * Which page of that profile is pushed, or `null` for its root.
+   *
+   * A raw string: the page ids belong to the profile feature, and `shared/`
+   * may not import it. The feature parses it and falls back to the root.
+   */
+  page: string | null;
+  /** Open the profile on one identity, optionally straight onto one of its pages. */
+  open: (memberId: string, page?: string) => void;
+  /** Push a page of the open profile, or go back to its root with `null`. */
+  setPage: (page: string | null) => void;
+  /** Close the profile. Clears both halves of the signal. */
   close: () => void;
 }
 
@@ -266,22 +275,40 @@ export interface ProfileDeepLink {
  * store fallback for Settings cannot do, since a tab has no equivalent.
  */
 export function useProfileDeepLink(): ProfileDeepLink {
-  const search = useSafeSearch() as { profile?: string };
+  const search = useSafeSearch() as { profile?: string; profilePage?: string };
   const navigate = useSafeNavigate();
   const inPlaceNav = useInPlaceNavigate();
   const storeMemberId = useAppStore((s) => s.profileMemberId);
+  const storePage = useAppStore((s) => s.profilePage);
   const setProfileOpen = useAppStore((s) => s.setProfileOpen);
+  const setStorePage = useAppStore((s) => s.setProfilePage);
   const openProfileForMember = useAppStore((s) => s.openProfileForMember);
 
   const memberId = navigate ? (search.profile ?? null) : storeMemberId;
+  const page = navigate ? (search.profilePage ?? null) : storePage;
 
   const open = useCallback(
-    (id: string) => {
-      if (!inPlaceNav) return openProfileForMember(id);
-      const updater: AnySearchUpdater = (prev) => ({ ...prev, profile: id });
+    (id: string, toPage?: string) => {
+      if (!inPlaceNav) return openProfileForMember(id, toPage);
+      // A history push, not a replace: a chained profile (an owner, an agent
+      // they manage) is a place you can come back from, and the phone's back
+      // gesture is what people will reach for.
+      const updater: AnySearchUpdater = (prev) => ({ ...prev, profile: id, profilePage: toPage });
       inPlaceNav({ search: updater });
     },
     [inPlaceNav, openProfileForMember]
+  );
+
+  const setPage = useCallback(
+    (next: string | null) => {
+      if (!inPlaceNav) return setStorePage(next);
+      const updater: AnySearchUpdater = (prev) => ({ ...prev, profilePage: next ?? undefined });
+      // Opening a page pushes, so Back closes the page rather than the profile.
+      // Going back to the root REPLACES, so the two directions do not stack up
+      // a history of the same profile alternating with itself.
+      inPlaceNav({ search: updater, replace: next === null });
+    },
+    [inPlaceNav, setStorePage]
   );
 
   const close = useCallback(() => {
@@ -292,7 +319,7 @@ export function useProfileDeepLink(): ProfileDeepLink {
     inPlaceNav({ search: updater });
   }, [inPlaceNav, setProfileOpen]);
 
-  return { isOpen: memberId !== null, memberId, open, close };
+  return { isOpen: memberId !== null, memberId, page, open, setPage, close };
 }
 
 /**

@@ -11,7 +11,7 @@ import {
 import { cn } from '@/layers/shared/lib';
 import { countOwnedAgents, findTeamOwner, teamMemberFace } from '@/layers/entities/team';
 import { TeamMemberCard, TeamRosterGrid } from '@/layers/features/team-roster';
-import { ProfileDrawer } from '@/layers/features/profile';
+import { ProfileSheet, profileStack } from '@/layers/features/profile';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -132,7 +132,7 @@ function RosterFlipDemo() {
   );
 }
 
-/** The profile drawer, openable, so its 300ms entrance can be watched rather than read. */
+/** The profile sheet, openable, so its 300ms entrance can be watched rather than read. */
 function DrawerTimingDemo() {
   const [open, setOpen] = useState(false);
   const member = byId('agent-warden');
@@ -140,13 +140,16 @@ function DrawerTimingDemo() {
   return (
     <>
       <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        Open the profile drawer
+        Open the profile
       </Button>
-      <ProfileDrawer
+      <ProfileSheet
         member={member}
-        owner={findTeamOwner(member, MOCK_TEAM_ROSTER)}
+        roster={MOCK_TEAM_ROSTER}
+        stack={profileStack(member.id)}
         open={open}
         onOpenChange={setOpen}
+        onPush={() => undefined}
+        onPop={() => undefined}
       />
     </>
   );

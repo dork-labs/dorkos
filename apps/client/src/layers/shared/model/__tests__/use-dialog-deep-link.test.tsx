@@ -550,6 +550,105 @@ describe('useProfileDeepLink', () => {
     expect(useAppStore.getState().profileMemberId).toBeNull();
   });
 
+  // ── the pushed page (`?profilePage=`, spec `profile-unification` §1.6) ──
+  //
+  // A page of a profile is an address too, so a link can land on Sessions and a
+  // reload comes back to it.
+  it('reads the pushed page off the URL, and none when there is none', async () => {
+    const withPage = buildHarness('/?profile=agent-warden&profilePage=manages');
+    const rendered = renderHook(() => useProfileDeepLink(), { wrapper: withPage.Wrapper });
+    await withPage.waitForRouterReady();
+    expect(rendered.result.current.page).toBe('manages');
+
+    const withoutPage = buildHarness('/?profile=agent-warden');
+    const plain = renderHook(() => useProfileDeepLink(), { wrapper: withoutPage.Wrapper });
+    await withoutPage.waitForRouterReady();
+    expect(plain.result.current.page).toBeNull();
+  });
+
+  it('open(id, page) lands straight on that page', async () => {
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await act(async () => {
+      result.current.open('person-dorian', 'manages');
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().profilePage).toBe('manages');
+    });
+    expect(harness.readSearch().profile).toBe('person-dorian');
+  });
+
+  it('open(id) on a new subject drops the page the last one was on', async () => {
+    // Pages belong to a profile, not to the panel. Carrying `manages` across to
+    // an agent that has no such page is a link to nowhere.
+    const harness = buildHarness('/?profile=person-dorian&profilePage=manages');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await act(async () => {
+      result.current.open('agent-warden');
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().profile).toBe('agent-warden');
+    });
+    expect(harness.readSearch().profilePage).toBeUndefined();
+  });
+
+  it('setPage(page) pushes, so Back closes the page rather than the profile', async () => {
+    const harness = buildHarness('/?profile=agent-warden');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    harness.actions.length = 0;
+
+    await act(async () => {
+      result.current.setPage('manages');
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().profilePage).toBe('manages');
+    });
+    expect(harness.actions).toContain('PUSH');
+  });
+
+  it('setPage(null) replaces, so the profile does not stack up against itself', async () => {
+    const harness = buildHarness('/?profile=agent-warden&profilePage=manages');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    harness.actions.length = 0;
+
+    await act(async () => {
+      result.current.setPage(null);
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().profilePage).toBeUndefined();
+    });
+    expect(harness.readSearch().profile).toBe('agent-warden');
+    expect(harness.actions).toContain('REPLACE');
+    expect(harness.actions).not.toContain('PUSH');
+  });
+
+  it('close() clears the page along with the subject', async () => {
+    const harness = buildHarness('/?profile=agent-warden&profilePage=manages');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await act(async () => {
+      result.current.close();
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().profile).toBeUndefined();
+    });
+    // A page left on the URL with nobody's profile open is a param that reopens
+    // nothing and confuses the next link that lands here.
+    expect(harness.readSearch().profilePage).toBeUndefined();
+  });
+
   it('leaves every other dialog’s params alone', async () => {
     const harness = buildHarness(
       '/?settings=tools&settingsSection=external-mcp&profile=agent-warden'

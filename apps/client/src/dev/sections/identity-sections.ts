@@ -124,20 +124,21 @@ export const IDENTITY_SECTIONS: PlaygroundSection[] = [
   },
   // ProfileShowcases
   {
-    id: 'profile-drawer',
-    title: 'Profile Drawer',
+    id: 'profile',
+    title: 'Profile',
     page: 'identity',
     category: 'Identity',
     keywords: [
       'profile',
-      'drawer',
       'identity',
       'person',
       'agent',
       'handle',
       'email',
-      'edit',
+      'rows',
+      'push',
       'sheet',
+      'portrait',
     ],
   },
   // AccountShowcases

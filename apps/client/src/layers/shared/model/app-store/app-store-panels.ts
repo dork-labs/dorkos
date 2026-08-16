@@ -66,8 +66,15 @@ export interface PanelsSlice {
    * Cleared whenever the drawer closes.
    */
   profileMemberId: string | null;
+  /**
+   * Which page of that profile is pushed, or `null` for its root — the store
+   * half of `?profilePage=`, and the only way the embed can push one at all.
+   */
+  profilePage: string | null;
+  /** Push a page of the open profile, or go back to its root with `null`. */
+  setProfilePage: (page: string | null) => void;
   /** Open the drawer on one identity — the only way it opens meaningfully. */
-  openProfileForMember: (memberId: string) => void;
+  openProfileForMember: (memberId: string, page?: string) => void;
 
   relayOpen: boolean;
   setRelayOpen: (open: boolean) => void;
@@ -144,9 +151,16 @@ export const createPanelsSlice: StateCreator<
   // Closing drops the subject with it: a drawer that reopened on whoever was in
   // it last would be showing a stale answer to a question nobody asked.
   setProfileOpen: (open) =>
-    set(open ? { profileOpen: true } : { profileOpen: false, profileMemberId: null }),
+    set(
+      open
+        ? { profileOpen: true }
+        : { profileOpen: false, profileMemberId: null, profilePage: null }
+    ),
   profileMemberId: null,
-  openProfileForMember: (memberId) => set({ profileOpen: true, profileMemberId: memberId }),
+  profilePage: null,
+  setProfilePage: (page) => set({ profilePage: page }),
+  openProfileForMember: (memberId, page) =>
+    set({ profileOpen: true, profileMemberId: memberId, profilePage: page ?? null }),
 
   relayOpen: false,
   setRelayOpen: (open) => set({ relayOpen: open }),

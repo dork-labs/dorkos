@@ -1,13 +1,16 @@
 /**
  * @vitest-environment jsdom
  *
- * The half of the drawer that talks to the roster and to the URL.
+ * The half of the profile that talks to the roster and to the URL (spec
+ * `profile-unification` §1.6).
  *
- * Three things are pinned here that the presentational tests cannot see: that a
- * closed drawer costs no request (it mounts on every route, so an ungated read
+ * Four things are pinned here that the view's own tests cannot see: that a
+ * closed profile costs no request (it mounts on every route, so an ungated read
  * would be a roster fetch on every page load), that a link to an identity the
- * roster does not hold clears itself instead of riding the URL forever, and
- * that a *failed* read is treated as "could not look", not "they are gone".
+ * roster does not hold clears itself instead of riding the URL forever, that a
+ * *failed* read is treated as "could not look" rather than "they are gone", and
+ * that `?profilePage=` opens a page — including when the page names nothing
+ * this build has.
  */
 import { createContext, useContext, type ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -27,10 +30,10 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
-import { useInteractionStore } from '@/layers/entities/interactions';
 import { TransportProvider, mergeDialogSearch, useAppStore } from '@/layers/shared/model';
+import { TooltipProvider } from '@/layers/shared/ui';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
-import { ProfileDrawerContainer } from '../ui/ProfileDrawerContainer';
+import { ProfileSheetContainer } from '../ui/ProfileSheetContainer';
 
 const WARDEN = 'agent-warden';
 const OPERATOR = 'person-dorian';
@@ -73,7 +76,10 @@ function renderContainer({
     history: createMemoryHistory({ initialEntries: [url] }),
   });
 
-  const transport = createMockTransport({ getTeamRoster } as Partial<Transport>);
+  const transport = createMockTransport({
+    getTeamRoster,
+    getAgentByPath: vi.fn().mockResolvedValue(null),
+  } as Partial<Transport>);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -84,7 +90,9 @@ function renderContainer({
       value={
         <QueryClientProvider client={queryClient}>
           <TransportProvider transport={transport}>
-            <ProfileDrawerContainer open={open} onOpenChange={onOpenChange} />
+            <TooltipProvider>
+              <ProfileSheetContainer open={open} onOpenChange={onOpenChange} />
+            </TooltipProvider>
           </TransportProvider>
         </QueryClientProvider>
       }
@@ -102,18 +110,25 @@ function renderContainer({
   };
 }
 
+/** The profile panel, portalled into `document.body`. */
+const panel = () => document.body.querySelector('[data-slot="profile"]');
+
 beforeEach(() => {
   vi.clearAllMocks();
-  useAppStore.setState({ settingsOpen: false, profileOpen: false, profileMemberId: null });
-  useInteractionStore.getState().reset();
+  useAppStore.setState({
+    settingsOpen: false,
+    profileOpen: false,
+    profileMemberId: null,
+    profilePage: null,
+  });
 });
 
 afterEach(() => {
   cleanup();
 });
 
-describe('ProfileDrawerContainer — what it costs when nothing is open', () => {
-  it('asks for no roster while the drawer is closed', async () => {
+describe('what it costs when nothing is open', () => {
+  it('asks for no roster while the profile is closed', async () => {
     // The container mounts on every route through `DialogHost`. An ungated read
     // here is a `GET /api/team` on every page load, for nobody.
     const harness = renderContainer({ open: false, url: '/' });
@@ -124,34 +139,30 @@ describe('ProfileDrawerContainer — what it costs when nothing is open', () => 
   });
 
   it('asks for no roster when the open flag has no subject behind it', async () => {
-    // The store half can be flipped on without a member id; that is an open
-    // drawer with nobody in it, and it has nothing to look up.
     useAppStore.setState({ profileOpen: true });
     const harness = renderContainer({ open: true, url: '/' });
     await harness.ready();
 
     expect(harness.getTeamRoster).not.toHaveBeenCalled();
-    expect(document.body.querySelector('[data-slot="profile-drawer"]')).toBeNull();
+    expect(panel()).toBeNull();
   });
 });
 
-describe('ProfileDrawerContainer — resolving ?profile=', () => {
+describe('resolving ?profile=', () => {
   it('reads the roster once and draws the identity the URL names', async () => {
     const harness = renderContainer({ url: `/?profile=${WARDEN}` });
     await harness.ready();
 
     expect(await screen.findByText('Warden')).toBeInTheDocument();
     expect(harness.getTeamRoster).toHaveBeenCalledTimes(1);
-    expect(document.body.querySelector('[data-member-id]')?.getAttribute('data-member-id')).toBe(
-      WARDEN
-    );
+    expect(panel()?.getAttribute('data-member-id')).toBe(WARDEN);
   });
 
   it('resolves the owner from the same roster read', async () => {
     const harness = renderContainer({ url: `/?profile=${WARDEN}` });
     await harness.ready();
 
-    expect(await screen.findByText('Managed by @dorian')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Managed by You' })).toBeInTheDocument();
   });
 
   it('clears a link to an identity the roster does not hold', async () => {
@@ -159,7 +170,7 @@ describe('ProfileDrawerContainer — resolving ?profile=', () => {
     await harness.ready();
 
     await waitFor(() => expect(harness.search().profile).toBeUndefined());
-    expect(document.body.querySelector('[data-slot="profile-drawer"]')).toBeNull();
+    expect(panel()).toBeNull();
   });
 
   it('keeps the link when the roster could not be read at all', async () => {
@@ -173,7 +184,7 @@ describe('ProfileDrawerContainer — resolving ?profile=', () => {
 
     await waitFor(() => expect(harness.getTeamRoster).toHaveBeenCalled());
     await waitFor(() => expect(harness.search().profile).toBe(WARDEN));
-    expect(document.body.querySelector('[data-slot="profile-drawer"]')).toBeNull();
+    expect(panel()).toBeNull();
   });
 
   it('draws nothing, and clears nothing, while the read is still in flight', async () => {
@@ -183,44 +194,66 @@ describe('ProfileDrawerContainer — resolving ?profile=', () => {
     });
     await harness.ready();
 
-    expect(document.body.querySelector('[data-slot="profile-drawer"]')).toBeNull();
+    expect(panel()).toBeNull();
     expect(harness.search().profile).toBe(WARDEN);
   });
 });
 
-describe('ProfileDrawerContainer — its two actions', () => {
-  it('sends Edit to the Settings profile tab, and leaves the drawer open', async () => {
+describe('resolving ?profilePage=', () => {
+  it('opens straight onto the page the link names', async () => {
+    const harness = renderContainer({ url: `/?profile=${OPERATOR}&profilePage=manages` });
+    await harness.ready();
+
+    expect(await screen.findByRole('heading', { name: 'Manages' })).toBeInTheDocument();
+  });
+
+  it('lands on the root when the link names a page this build has not got', async () => {
+    // A bookmark minted against a later build, or a typo. The subject is still
+    // good, so the profile opens — on its root, rather than on nothing.
+    const harness = renderContainer({ url: `/?profile=${OPERATOR}&profilePage=not-a-page` });
+    await harness.ready();
+
+    expect(await screen.findByRole('heading', { name: 'Dorian' })).toBeInTheDocument();
+    expect(document.body.querySelector('[data-slot="profile-page"]')).toBeNull();
+  });
+
+  it('writes the page onto the URL when a row pushes it', async () => {
     const harness = renderContainer({ url: `/?profile=${OPERATOR}` });
     await harness.ready();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Edit profile' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Manages/ }));
 
-    await waitFor(() => expect(harness.search().settings).toBe('profile'));
+    await waitFor(() => expect(harness.search().profilePage).toBe('manages'));
+  });
+
+  it('takes the page back off when you go back, and keeps the subject', async () => {
+    const harness = renderContainer({ url: `/?profile=${OPERATOR}&profilePage=manages` });
+    await harness.ready();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Back to profile' }));
+
+    await waitFor(() => expect(harness.search().profilePage).toBeUndefined());
     expect(harness.search().profile).toBe(OPERATOR);
   });
 
-  it('opens a session in the agent’s own project directory', async () => {
-    const placed = MOCK_TEAM_ROSTER.map((member) =>
-      member.id === WARDEN && member.agent
-        ? { ...member, agent: { ...member.agent, projectPath: '/Users/dorian/code/dorkos' } }
-        : member
-    );
-    const harness = renderContainer({
-      url: `/?profile=${WARDEN}`,
-      getTeamRoster: vi.fn().mockResolvedValue({ members: placed }),
-    });
+  it('rewrites the subject when a chained profile is pushed, and drops the page', async () => {
+    const harness = renderContainer({ url: `/?profile=${OPERATOR}&profilePage=manages` });
     await harness.ready();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Open a session' }));
+    await userEvent.click(await screen.findByText('Warden'));
 
-    await waitFor(() => expect(harness.pathname()).toBe('/session'));
-    expect(harness.search().dir).toBe('/Users/dorian/code/dorkos');
-    // The roster's door records the AGENT (DOR-1156). It names a directory and
-    // not a session — which conversation opens is resolved afterwards — so the
-    // agent is the only honest thing to write, and it is the one ⌘K and the New
-    // menu's "last used" read.
-    expect(Object.keys(useInteractionStore.getState().opened)).toEqual([
-      'agent:/Users/dorian/code/dorkos',
-    ]);
+    await waitFor(() => expect(harness.search().profile).toBe(WARDEN));
+    expect(harness.search().profilePage).toBeUndefined();
+  });
+});
+
+describe('the address rule', () => {
+  it('sheets a profile on /session while nothing knows that session’s agent', async () => {
+    // The docked home is W2.3's. Until it can answer, every link is a sheet —
+    // which is exactly what the drawer did.
+    const harness = renderContainer({ url: `/session?profile=${WARDEN}` });
+    await harness.ready();
+
+    expect(await screen.findByText('Warden')).toBeInTheDocument();
   });
 });
