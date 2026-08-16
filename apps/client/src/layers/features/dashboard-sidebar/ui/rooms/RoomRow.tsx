@@ -378,7 +378,8 @@ export function RoomRow({
     onNewGroup: () => onRequestNewGroup(roomRef),
     onAddAgents: () => setDetailsFocus('add'),
     onOpenMembers: () => setDetailsFocus('members'),
-    onViewAgentProfile: (soleAgentPath === null ? undefined : viewAgentProfile(soleAgentPath)) ?? null,
+    onViewAgentProfile:
+      (soleAgentPath === null ? undefined : viewAgentProfile(soleAgentPath)) ?? null,
     onRename: startRename,
     onEditTopic: () => setDetailsFocus('topic'),
     onLeave: () => setLeaveOpen(true),
