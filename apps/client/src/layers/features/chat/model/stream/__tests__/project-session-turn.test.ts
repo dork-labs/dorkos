@@ -648,6 +648,45 @@ describe('projectSessionMessages', () => {
     expect(messages[3].content).toBe('doing it that way');
   });
 
+  it('renders a staged message as a quiet note, splitting the turn but not as a bubble (task 4.6)', () => {
+    // Purpose: staging added context for the NEXT turn without cutting into this
+    // one, so it must render as a quiet transcript entry — flagged `_stagedContext`
+    // so the list draws it as a note, never a user/assistant message bubble.
+    const messages = projectSessionMessages(history, [
+      { seq: 1, type: 'turn_start', userMessage: 'do the thing' },
+      { seq: 2, type: 'text_delta', text: 'working on it' },
+      {
+        seq: 3,
+        type: 'context_staged',
+        content: 'for later: keep the public API stable',
+        messageId: 'm-3',
+      },
+      { seq: 4, type: 'text_delta', text: 'still working' },
+    ]);
+    // history(2) + assistant-before + staged-note + assistant-after
+    expect(messages).toHaveLength(5);
+    const note = messages[3];
+    expect(note.id).toBe('staged-m-3');
+    expect(note.content).toBe('for later: keep the public API stable');
+    expect(note._stagedContext).toBe(true);
+    // Bracketed by assistant text on both sides, in reading order — the note is
+    // not the end of the turn.
+    expect(messages[2].content).toBe('working on it');
+    expect(messages[4].content).toBe('still working');
+    expect(messages[4].id).toBe('__in_progress_turn__');
+  });
+
+  it('does not tag an ordinary steer as staged context', () => {
+    // Guards the split's discriminator: a steer is a user bubble, a stage is a
+    // quiet note — the projector must not confuse the two.
+    const messages = projectSessionMessages(history, [
+      { seq: 1, type: 'turn_start', userMessage: 'go' },
+      { seq: 2, type: 'turn_input', content: 'also do X', disposition: 'steer', messageId: 'm-4' },
+    ]);
+    expect(messages[2].id).toBe('steer-m-4');
+    expect(messages[2]._stagedContext).toBeUndefined();
+  });
+
   it('renders the optimistic user message after history and before the in-progress bubble', () => {
     // Purpose (DOR-74): the just-sent user message has no /events event and is not
     // yet in the snapshot, so the projection must render it from

@@ -106,3 +106,53 @@ describe('the status showcases render the real components', () => {
     ).not.toContain('border-destructive/30 bg-destructive/5');
   });
 });
+
+describe('the composer disposition showcase renders the real components', () => {
+  // The "Composer dispositions" section (DOR-1198) is where the split action's
+  // states get eyes on them: idle Send, busy-with-steer, busy-without-steer, and
+  // the downgraded chip. It MUST render the real Composer.Input and the real
+  // QueuePanel — a replica would be a second drawing of the exact thing this
+  // section exists to prove, and would drift the moment the composer moves.
+  const source = showcaseSource('showcases', 'InputShowcases.tsx');
+
+  /** The body of one top-level `function <name>(` in the file, up to the next one. */
+  function functionBody(name: string): string {
+    const start = source.indexOf(`function ${name}(`);
+    expect(start, `${name} is gone from InputShowcases`).toBeGreaterThan(-1);
+    const rest = source.slice(start + `function ${name}(`.length);
+    const next = rest.indexOf('\nfunction ');
+    return next === -1 ? rest : rest.slice(0, next);
+  }
+
+  /** Just the "Composer dispositions" PlaygroundSection block. */
+  const dispositionSection = (() => {
+    const start = source.indexOf('title="Composer dispositions"');
+    expect(start, 'the Composer dispositions section is gone').toBeGreaterThan(-1);
+    const rest = source.slice(start);
+    return rest.slice(0, rest.indexOf('</PlaygroundSection>'));
+  })();
+
+  it('imports the real Composer.Input and QueuePanel', () => {
+    expect(source).toMatch(/import \{ Composer \} from '@\/layers\/features\/composer'/);
+    expect(source).toMatch(
+      /import \{ QueuePanel \} from '@\/layers\/features\/chat\/ui\/input\/QueuePanel'/
+    );
+  });
+
+  it('drives its busy states through the real Composer.Input, not a hand-rolled replica', () => {
+    // The section mounts its composer states through ComposerInputDemo, whose one
+    // job is to render the REAL Composer.Input with mock state. If that wrapper is
+    // ever rebuilt as a replica — a raw <textarea> and fake send buttons — this
+    // reds, which is the whole point (DOR-1186).
+    expect(dispositionSection).toContain('<ComposerInputDemo');
+    const demo = functionBody('ComposerInputDemo');
+    expect(demo, 'ComposerInputDemo no longer renders the real Composer.Input').toContain(
+      '<Composer.Input'
+    );
+    expect(demo, 'ComposerInputDemo hand-rolls a <textarea> replica').not.toContain('<textarea');
+  });
+
+  it('draws the downgraded chip with the real QueuePanel, not a copy of its rows', () => {
+    expect(dispositionSection).toContain('<QueuePanel');
+  });
+});
