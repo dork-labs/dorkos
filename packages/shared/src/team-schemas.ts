@@ -309,13 +309,14 @@ export const OPERATOR_FALLBACK_DISPLAY_NAME = 'You';
  * would be a second projection of the room domain free to disagree with the
  * first.
  *
- * **`kind`, `slug` and `name` are exactly the three fields `roomName` and
- * `roomDisplayTitle` take** (`entities/room/lib/room-display`, whose input is
- * `Pick<Room, 'kind' | 'slug' | 'title'>`). That is the whole reason `slug`
- * rides along rather than the server pre-rendering `#general`: a channel reads
- * as its slug and a DM as its title, and the cockpit already owns that rule in
- * one place. A payload that decided it here would be a second copy of the rule,
- * free to drift from the sidebar.
+ * **`kind`, `slug` and `name` carry exactly what `roomName` and
+ * `roomDisplayTitle` need** (`entities/room/lib/room-display`, whose input is
+ * `Pick<Room, 'kind' | 'slug' | 'title'>` — so a consumer passes
+ * `{ kind, slug, title: room.name }`, this payload's only renaming). That is
+ * the whole reason `slug` rides along rather than the server pre-rendering
+ * `#general`: a channel reads as its slug and a DM as its title, and the
+ * cockpit already owns that rule in one place. A payload that decided it here
+ * would be a second copy of the rule, free to drift from the sidebar.
  */
 export const MemberRoomSchema = z
   .object({
@@ -336,8 +337,7 @@ export const MemberRoomSchema = z
      * `null` for a direct message, which has no slug at all, and `null` is
      * possible on a channel too (the column is nullable). Both cases fall back
      * to {@link MemberRoomSchema} `name`, which is exactly what `roomName`
-     * does — so a consumer hands these three fields straight to it rather than
-     * branching itself.
+     * does — so a consumer defers to it rather than branching itself.
      */
     slug: z.string().nullable(),
     kind: RoomKindSchema,
