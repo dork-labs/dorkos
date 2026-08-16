@@ -52,7 +52,11 @@ function renderHooks(url: string) {
     createRoute({
       getParentRoute: () => rootRoute,
       path,
-      validateSearch: zodValidator(testSearchSchema.extend({ dir: z.string().optional() })),
+      validateSearch: zodValidator(
+        // `view` rides along because `/team` declares it beside the same `agent`
+        // param this hook must not claim.
+        testSearchSchema.extend({ dir: z.string().optional(), view: z.string().optional() })
+      ),
       component: HookSlot,
     });
   const router = createRouter({
@@ -91,6 +95,7 @@ beforeEach(() => {
     explicitAgentPath: null,
     selectedCwd: null,
     rightPanelLayoutKey: null,
+    requestedRightPanelTab: null,
   });
   localStorage.clear();
 });
@@ -147,6 +152,25 @@ describe('the current link', () => {
     expect(entriesFor(AGENT)).toEqual([]);
   });
 
+  it('holds the panel open against the layout that hydrates after it', async () => {
+    // The whole point of a deep link, and the order works against it: the link
+    // is read on mount, the layouts hydrate after, and an agent nobody has
+    // opened hydrates CLOSED. The panel was opened and shut on the same frame.
+    localStorage.setItem(
+      'dorkos-right-panel-layouts',
+      JSON.stringify({ [AGENT]: { open: false, activeTab: 'files', accessedAt: 1 } })
+    );
+    const harness = renderHooks(`/?panel=profile&agentPath=${encodeURIComponent(AGENT)}`);
+    await harness.ready();
+    await waitFor(() => expect(useAppStore.getState().rightPanelOpen).toBe(true));
+
+    // What `useRightPanelLayoutPersistence` does once the agent resolves.
+    useAppStore.getState().loadRightPanelForAgent(AGENT);
+
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
+    expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+  });
+
   it('leaves every other panel alone', async () => {
     const harness = renderHooks('/?panel=files');
     await harness.ready();
@@ -194,6 +218,23 @@ describe('links minted by the Agent Hub', () => {
 
     await waitFor(() => expect(useAppStore.getState().explicitAgentPath).toBe(AGENT));
     expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+  });
+});
+
+describe('an ?agent= that is not ours', () => {
+  it('leaves the Team page’s topology selection alone', async () => {
+    // `/team?view=topology&agent=<id>` is the topology detail panel's own param
+    // (`router.tsx`, `TeamRoute`). Claiming every `?agent=` as the dead agent
+    // dialog rewrote that link into a profile one, and the detail panel could
+    // never open. The old redirect only escaped this by living inside the Agent
+    // Hub, which `/team` never mounted.
+    const harness = renderHooks('/?view=topology&agent=01M055DG303GW8R52AW7D73B61');
+    await harness.ready();
+    await waitFor(() => expect(harness.search().view).toBe('topology'));
+
+    expect(harness.search().agent).toBe('01M055DG303GW8R52AW7D73B61');
+    expect(harness.search().panel).toBeUndefined();
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
   });
 });
 

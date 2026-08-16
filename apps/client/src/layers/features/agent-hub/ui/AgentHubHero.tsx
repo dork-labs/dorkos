@@ -8,11 +8,12 @@ import {
   resolveAgentVisual,
   PresetPill,
   useNebulaAlpha,
+  findMatchingPreset,
+  DEFAULT_PRESET_COLORS,
 } from '@/layers/entities/agent';
 import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { useAgentHubContext } from '../model/agent-hub-context';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
-import { findMatchingPreset, DEFAULT_PRESET_COLORS } from '../model/personality-presets';
 import { AgentManagementMenu } from './AgentManagementMenu';
 
 /** Stagger orchestration for hero child elements. */

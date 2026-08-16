@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
+import { PersonalityPicker } from '@/layers/entities/agent';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { PersonalityPicker } from '@/layers/features/agent-hub';
 
 function DefaultPickerDemo() {
   const [traits, setTraits] = useState<Traits>({ ...DEFAULT_TRAITS });

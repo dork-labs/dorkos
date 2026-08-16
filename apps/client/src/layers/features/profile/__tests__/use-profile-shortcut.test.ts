@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook, cleanup } from '@testing-library/react';
 import { useAppStore } from '@/layers/shared/model';
-import { useAgentProfileShortcut } from '../model/use-agent-profile-shortcut';
+import { useProfileShortcut } from '../model/use-profile-shortcut';
 
 /** Press the shortcut the way a keyboard does. */
 function press() {
@@ -33,7 +33,7 @@ afterEach(cleanup);
 
 describe('the profile shortcut', () => {
   it('opens the panel on the Profile tab', () => {
-    renderHook(() => useAgentProfileShortcut());
+    renderHook(() => useProfileShortcut());
 
     press();
 
@@ -43,7 +43,7 @@ describe('the profile shortcut', () => {
 
   it('closes the panel when it is already showing the profile', () => {
     useAppStore.setState({ rightPanelOpen: true, activeRightPanelTab: 'profile' });
-    renderHook(() => useAgentProfileShortcut());
+    renderHook(() => useProfileShortcut());
 
     press();
 
@@ -52,7 +52,7 @@ describe('the profile shortcut', () => {
 
   it('switches to the profile rather than closing, from another tab', () => {
     useAppStore.setState({ rightPanelOpen: true, activeRightPanelTab: 'files' });
-    renderHook(() => useAgentProfileShortcut());
+    renderHook(() => useProfileShortcut());
 
     press();
 
@@ -61,7 +61,7 @@ describe('the profile shortcut', () => {
   });
 
   it('stops listening once unmounted', () => {
-    const { unmount } = renderHook(() => useAgentProfileShortcut());
+    const { unmount } = renderHook(() => useProfileShortcut());
     unmount();
 
     press();

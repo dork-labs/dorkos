@@ -59,6 +59,17 @@ function legacyTabPage(raw: unknown): ProfilePageId | undefined {
 }
 
 /**
+ * The only four values the dead agent dialog ever put in `?agent=`.
+ *
+ * The param is NOT ours in general: `/team?view=topology&agent=<id>` uses it for
+ * the topology's detail panel, and it is written and read there right now.
+ * Treating any `?agent=` as the old dialog rewrote that link into a profile one
+ * and the detail panel could never open. The old redirect had no such problem
+ * only because it lived inside the Agent Hub, which `/team` never mounted.
+ */
+const LEGACY_DIALOG_TABS = new Set(['identity', 'personality', 'channels', 'tools']);
+
+/**
  * Open the right panel on the profile when the URL asks for it.
  *
  * Applied once per distinct link rather than on every render of it: the panel
@@ -70,9 +81,8 @@ function legacyTabPage(raw: unknown): ProfilePageId | undefined {
  */
 export function useProfileDockDeepLink(): void {
   const search = useSafeSearch() as { panel?: string; profilePage?: string; agentPath?: string };
-  const openProfileDocked = useProfileStore((s) => s.openProfileDocked);
-  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
-  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
+  const openProfileDockedFromLink = useProfileStore((s) => s.openProfileDockedFromLink);
+  const requestRightPanel = useAppStore((s) => s.requestRightPanel);
   const dockedAgentPath = useDockedAgentPath();
 
   const wantsProfile = search.panel === PROFILE_PANEL_ID;
@@ -93,23 +103,21 @@ export function useProfileDockDeepLink(): void {
     const target = urlAgentPath ?? dockedAgentPath;
     if (target) {
       applied.current = linkKey;
-      openProfileDocked(target, page);
+      openProfileDockedFromLink(target, page);
       return;
     }
     // The link named no agent and nothing else has picked one. Show the tab
     // anyway — a panel is what was asked for — and seed the page if an agent
     // resolves on a later pass.
-    setActiveRightPanelTab(PROFILE_PANEL_ID);
-    setRightPanelOpen(true);
+    requestRightPanel(PROFILE_PANEL_ID);
   }, [
     wantsProfile,
     linkKey,
     urlAgentPath,
     dockedAgentPath,
     page,
-    openProfileDocked,
-    setActiveRightPanelTab,
-    setRightPanelOpen,
+    openProfileDockedFromLink,
+    requestRightPanel,
   ]);
 }
 
@@ -130,7 +138,10 @@ export function useLegacyProfileLinkRedirect(): void {
   const inPlaceNav = useInPlaceNavigate();
 
   const isLegacyPanel = search.panel === LEGACY_PANEL_ID;
-  const isLegacyDialog = !!search.agent || search.dialog === 'agent';
+  // Never on `!!search.agent`: see {@link LEGACY_DIALOG_TABS}. Either the param
+  // that only the dialog ever wrote, or an `?agent=` naming one of its tabs.
+  const isLegacyDialog =
+    search.dialog === 'agent' || (!!search.agent && LEGACY_DIALOG_TABS.has(search.agent));
   const needsRedirect = isLegacyPanel || isLegacyDialog;
   // The hub's tab param and the dialog's; only one of the two is ever set.
   const legacyTab = isLegacyPanel ? search.hubTab : search.agent;
@@ -142,8 +153,13 @@ export function useLegacyProfileLinkRedirect(): void {
     inPlaceNav({
       search: (prev) => {
         const next = { ...prev };
-        delete next.agent;
-        delete next.dialog;
+        // Only the dialog's own params, and only when the dialog is what
+        // brought us here — an `?agent=` this hook did not claim belongs to
+        // whichever surface wrote it.
+        if (isLegacyDialog) {
+          delete next.agent;
+          delete next.dialog;
+        }
         delete next.hubTab;
         next.panel = PROFILE_PANEL_ID;
         // Only when the old tab has a successor: a link to Config asked for a
@@ -154,5 +170,5 @@ export function useLegacyProfileLinkRedirect(): void {
       },
       replace: true,
     });
-  }, [needsRedirect, legacyTab, inPlaceNav]);
+  }, [needsRedirect, isLegacyDialog, legacyTab, inPlaceNav]);
 }

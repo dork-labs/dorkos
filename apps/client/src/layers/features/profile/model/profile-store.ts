@@ -89,6 +89,20 @@ interface ProfileStoreState {
    */
   openProfileDocked: (agentPath: string, page?: ProfilePageId) => void;
   /**
+   * The same, for an opener that is a LINK rather than a click.
+   *
+   * The difference is not what happens, it is what happens NEXT: a click lands
+   * after the panel's layouts have hydrated and has nothing to argue with, while
+   * a link is read on mount and is then overruled by the layout each agent was
+   * left in — which for an agent you have never opened is "closed". So this one
+   * marks the panel's open as requested, and the hydration honours it
+   * (`requestedRightPanelTab`).
+   *
+   * @param agentPath - The agent's directory.
+   * @param page - A page to open straight onto, when the link named one.
+   */
+  openProfileDockedFromLink: (agentPath: string, page?: ProfilePageId) => void;
+  /**
    * Replace what is pushed on top of one agent's docked profile.
    *
    * Takes the whole list rather than a push/pop verb: the stack's reducers live
@@ -144,6 +158,14 @@ export const useProfileStore = create<ProfileStoreState>()(
         app.setExplicitAgentPath(agentPath);
         app.setActiveRightPanelTab(PROFILE_PANEL_ID);
         app.setRightPanelOpen(true);
+      },
+
+      openProfileDockedFromLink: (agentPath, page) => {
+        useProfileStore.getState().openProfileDocked(agentPath, page);
+        // Last, deliberately: opening the panel above goes through the same
+        // explicit setters a person's click does, and those CLEAR a pending
+        // request — so the mark has to outlive them.
+        useAppStore.getState().requestRightPanel(PROFILE_PANEL_ID);
       },
 
       setDockedEntries: (agentPath, entries) =>

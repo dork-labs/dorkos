@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PERSONALITY_PRESETS, findMatchingPreset } from '../model/personality-presets';
+import { PERSONALITY_PRESETS, findMatchingPreset } from '../lib/personality-presets';
 
 describe('personality-presets', () => {
   it('contains exactly 8 presets', () => {

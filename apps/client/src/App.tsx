@@ -29,8 +29,8 @@ import {
   RightPanelContainer,
   RightPanelToggle,
   useRightPanelShortcut,
-  useAgentProfileShortcut,
 } from '@/layers/features/right-panel';
+import { useProfileShortcut } from '@/layers/features/profile';
 import { registerRightPanelTabs } from './app/init-extensions';
 
 interface AppProps {
@@ -84,7 +84,7 @@ export function App({ transformContent }: AppProps) {
   // The embed now mounts the right-panel Inspector, so its shortcut hooks earn
   // their keep: Cmd+. toggles the panel and Cmd+Shift+A opens Agent Profile.
   useRightPanelShortcut();
-  useAgentProfileShortcut();
+  useProfileShortcut();
 
   // Register the Inspector tabs into the extension registry. The embed has its
   // own React root (no web `main.tsx`), so it registers the same tab set the

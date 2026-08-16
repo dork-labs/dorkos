@@ -256,7 +256,14 @@ export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPa
         minSize={minPct}
         collapsible
         collapsedSize={0}
-        onCollapse={() => setRightPanelOpen(false)}
+        // Only once we are past the first paint. `PanelGroup` restores its own
+        // saved split on mount, and a restored `[100, 0]` fires this — which is
+        // the group remembering a width, not a person closing the panel. Before
+        // the guard, a link that asked for the panel had it reported shut on the
+        // frame it opened, and the expand effect above then saw nothing to do.
+        onCollapse={() => {
+          if (mounted) setRightPanelOpen(false);
+        }}
         onExpand={() => {
           if (!rightPanelOpen) setRightPanelOpen(true);
         }}

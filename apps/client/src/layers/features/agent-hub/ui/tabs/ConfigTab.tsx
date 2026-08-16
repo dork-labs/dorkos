@@ -11,12 +11,12 @@ import {
   SelectValue,
 } from '@/layers/shared/ui';
 import { useRuntimeCapabilities, getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { AgentExecutionRows } from '@/layers/entities/agent';
 import {
   PersonalityTab as AgentPersonalityTab,
   IntegrationsTab as AgentIntegrationsTab,
 } from '@/layers/features/agent-settings';
 import { useAgentHubContext } from '../../model/agent-hub-context';
-import { AgentExecutionRows } from './AgentExecutionRows';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@
  * and a sample response that demonstrates how an agent with those traits
  * would communicate.
  *
- * @module features/agent-hub/model/personality-presets
+ * @module entities/agent/lib/personality-presets
  */
 
 /** Color palette for the Cosmic Nebula radar visualization. */

@@ -152,28 +152,13 @@ export function beneathMemberId(stack: ProfileStackState): string | null {
 }
 
 /**
- * What the stack is showing, as one string — the frame's identity.
- *
- * Pages keep their bare id because that is what the row that pushed one is
- * tagged with (`data-profile-return`, restored on pop); a chained profile is
- * qualified so the two sets can never collide.
- *
- * @param stack - The stack to read.
- * @returns The page id, `profile:<member id>`, or `null` for the root.
- */
-export function stackFrameKey(stack: ProfileStackState): string | null {
-  const top = stack.entries.at(-1);
-  if (top === undefined) return null;
-  return top.kind === 'page' ? top.page : profileFrameKey(top.memberId);
-}
-
-/**
  * The frame key a chained profile is drawn under.
  *
- * Exported so the control that pushes one can tag itself with the same string
- * and take focus back when it is popped.
+ * Qualified with a prefix so it can never collide with a page id — the two
+ * share one namespace, because the control that pushes either tags itself with
+ * the key (`data-profile-return`) and takes focus back when it is popped.
  *
- * @param memberId - Whose profile is being pushed.
+ * @param memberId - Whose profile is being drawn.
  */
 export function profileFrameKey(memberId: string): string {
   return `profile:${memberId}`;

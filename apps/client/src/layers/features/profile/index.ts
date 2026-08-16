@@ -22,6 +22,7 @@ export { ProfileSheetContainer, type ProfileSheetContainerProps } from './ui/Pro
 // `openProfileDocked` instead of rendering it.
 export { ProfileDock } from './ui/ProfileDock';
 export { PROFILE_PANEL_ID, useProfileStore } from './model/profile-store';
+export { useProfileShortcut } from './model/use-profile-shortcut';
 export {
   useProfileDockDeepLink,
   useLegacyProfileLinkRedirect,

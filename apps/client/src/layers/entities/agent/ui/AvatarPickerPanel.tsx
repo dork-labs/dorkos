@@ -1,10 +1,9 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Wand2 } from 'lucide-react';
-import { hashToHslColor, hashToEmoji } from '@/layers/shared/lib';
+import { cn, hashToHslColor, hashToEmoji } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
-import { AvatarColorGrid, AvatarEmojiGrid } from '@/layers/entities/agent';
-import { useAgentHubContext } from '../model/agent-hub-context';
+import { AvatarColorGrid, AvatarEmojiGrid } from './AvatarPickerGrid';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 /** This panel's richer auto-swatch presentation — a solid ring and the Wand2 glyph, in place of `AvatarColorGrid`'s plain-container defaults (a dashed ring and an "A" glyph). */
@@ -71,17 +70,40 @@ function SparkleBurst() {
 // AvatarPickerPanel
 // ---------------------------------------------------------------------------
 
-interface AvatarPickerPanelProps {
-  onClose: () => void;
+export interface AvatarPickerPanelProps {
+  /** The agent whose face is being chosen. */
+  agent: AgentManifest;
+  /** Persist a manifest change. `null` on `color`/`icon` means "back to auto". */
+  onUpdate: (updates: Partial<AgentManifest>) => void;
+  /** Show a colour under the pointer without saving it. */
+  onPreviewColor: (color: string | null) => void;
+  /**
+   * The panel's own heading, when the surface around it has none. The profile's
+   * Appearance page draws its own title, so it passes nothing.
+   */
+  title?: string;
+  /**
+   * Dismiss the panel. Omitted where the surface around it owns the way out —
+   * the profile's pushed page has a back link, and a second X beside it would
+   * be two exits from one screen.
+   */
+  onClose?: () => void;
 }
 
 /**
- * Full-width inline panel for picking agent color and emoji icon.
- * Rendered in the tab content area when the avatar is clicked.
+ * Pick an agent's colour and emoji — the two halves of its face.
+ *
+ * Entity UI rather than a feature's: it is a manifest in, a patch out, with no
+ * idea which surface is drawing it. Two do — the Agent Hub's inline panel
+ * (legacy, removed with the hub) and the profile's Appearance page.
  */
-export function AvatarPickerPanel({ onClose }: AvatarPickerPanelProps) {
-  const { agent, onUpdate, onPreviewColor } = useAgentHubContext();
-
+export function AvatarPickerPanel({
+  agent,
+  onUpdate,
+  onPreviewColor,
+  title,
+  onClose,
+}: AvatarPickerPanelProps) {
   const autoColor = useMemo(() => hashToHslColor(agent.id), [agent.id]);
   const autoEmoji = useMemo(() => hashToEmoji(agent.id), [agent.id]);
   const activeEmoji = agent.icon ?? autoEmoji;
@@ -155,36 +177,48 @@ export function AvatarPickerPanel({ onClose }: AvatarPickerPanelProps) {
 
   return (
     <div className="flex flex-1 flex-col overflow-auto" data-testid="avatar-picker-panel">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-2">
-        <span className="text-xs font-semibold">Appearance</span>
-        <div className="flex items-center gap-1">
-          <AnimatePresence>
-            {hasAnyOverride && (
-              <motion.button
-                type="button"
-                onClick={handleResetDefaults}
-                className="text-muted-foreground hover:text-foreground text-[10px] transition-colors"
-                initial={{ opacity: 0, x: 8 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 8 }}
-                transition={{ duration: 0.2 }}
+      {/* The row exists for whatever it has to carry: a title where the surface
+          has none, a way out where the surface offers none, and the reset only
+          once there is something to reset. With none of the three there is no
+          row — the profile's page draws its own title and back link. */}
+      {(title || onClose || hasAnyOverride) && (
+        <div
+          className={cn(
+            'flex items-center justify-between px-4 py-2',
+            (title || onClose) && 'border-b'
+          )}
+        >
+          {title && <span className="text-xs font-semibold">{title}</span>}
+          <div className="ml-auto flex items-center gap-1">
+            <AnimatePresence>
+              {hasAnyOverride && (
+                <motion.button
+                  type="button"
+                  onClick={handleResetDefaults}
+                  className="text-muted-foreground hover:text-foreground text-[10px] transition-colors"
+                  initial={{ opacity: 0, x: 8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 8 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  Reset to defaults
+                </motion.button>
+              )}
+            </AnimatePresence>
+            {onClose && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6"
+                onClick={onClose}
+                aria-label="Close appearance picker"
               >
-                Reset to defaults
-              </motion.button>
+                <X className="size-3.5" />
+              </Button>
             )}
-          </AnimatePresence>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            onClick={onClose}
-            aria-label="Close appearance picker"
-          >
-            <X className="size-3.5" />
-          </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       <motion.div
         className="space-y-5 p-4"

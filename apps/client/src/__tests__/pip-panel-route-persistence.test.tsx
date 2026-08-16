@@ -215,8 +215,15 @@ vi.mock('@/layers/features/right-panel', () => ({
   RightPanelToggle: () => null,
   useRightPanelPersistence: () => {},
   useRightPanelShortcut: () => {},
-  useAgentProfileShortcut: () => {},
   RIGHT_PANEL_GROUP_ID: 'app-shell-right-panel',
+}));
+
+// The profile's own key and its two deep-link readers live with the profile, not
+// with the panel they open — stubbed here so the shell mounts without a router.
+vi.mock('@/layers/features/profile', () => ({
+  useProfileShortcut: () => {},
+  useProfileDockDeepLink: () => {},
+  useLegacyProfileLinkRedirect: () => {},
 }));
 
 vi.mock('@/layers/shared/model/use-favicon', () => ({

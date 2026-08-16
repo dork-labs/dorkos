@@ -161,9 +161,28 @@ function ExecutionRow({
   );
 }
 
+/** What {@link AgentExecutionRows} needs: the agent, and somewhere to put a change. */
+export interface AgentExecutionRowsProps {
+  /** The agent being configured. */
+  agent: AgentManifest;
+  /**
+   * Persist a manifest change. `null` on either key means "go back to
+   * inheriting", which is exactly what the wire's `null` means.
+   */
+  onUpdate: (updates: AgentManifestUpdate) => void;
+  /**
+   * Classes for the two-column grid the rows sit in.
+   *
+   * Pass `grid-cols-1` where the surface is narrow: at a popover's width the
+   * two provenance chips collide into each other rather than sitting beside
+   * their labels.
+   */
+  className?: string;
+}
+
 /**
- * The Model and Effort rows of an agent's Config tab — the two settings that
- * join the Runtime dropdown already there (spec `execution-defaults` §2).
+ * An agent's Model and Effort rows — the two settings that join the Runtime
+ * choice beside them (spec `execution-defaults` §2).
  *
  * Three rows rather than one summary row opening a shared popover: each setting
  * has its own provenance, and provenance is the thing worth seeing at a glance.
@@ -176,17 +195,9 @@ function ExecutionRow({
  * the runtime has none at all, and a plain sentence where the model does not
  * take one. None of the three is a hidden row (§3.4).
  *
- * @param agent - The agent being configured.
- * @param onUpdate - Persist a manifest change. `null` on either key means
- *   "go back to inheriting", which is exactly what the wire's `null` means.
+ * @param props - See {@link AgentExecutionRowsProps}.
  */
-export function AgentExecutionRows({
-  agent,
-  onUpdate,
-}: {
-  agent: AgentManifest;
-  onUpdate: (updates: AgentManifestUpdate) => void;
-}) {
+export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutionRowsProps) {
   const isMobile = useIsMobile();
   const { data: config } = useConfig();
   const { data: capabilityMap, isPending: capabilitiesPending } = useRuntimeCapabilities();
@@ -249,7 +260,7 @@ export function AgentExecutionRows({
   const runtimeLabel = getRuntimeDescriptor(runtime).label;
 
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className={cn('grid grid-cols-2 gap-3', className)}>
       <ExecutionRow
         label="Model"
         valueLabel={selectedModel?.displayName ?? effectiveModel ?? "Runtime's choice"}

@@ -57,6 +57,31 @@ export interface RightPanelSlice {
    */
   setActiveRightPanelTabView: (tabId: string | null) => void;
   /**
+   * The tab a LINK asked the panel to open on, and that no stored layout has
+   * been allowed to overrule yet — or null when nothing is pending.
+   *
+   * A deep link and a persisted layout are not the same kind of statement. The
+   * layout is a memory of how you last left this agent's panel; the link is an
+   * instruction you just gave. They arrive in the wrong order — the link is read
+   * on mount, the layouts hydrate after it — and a never-seen agent hydrates as
+   * CLOSED, so the link's panel was opened and shut again before it could be
+   * seen (spec `profile-unification` §1.6). This is what lets the instruction
+   * outrank the memory, and it survives until you act on the panel yourself.
+   */
+  requestedRightPanelTab: string | null;
+  /**
+   * Open the panel on a tab because a LINK said so, not because somebody
+   * clicked.
+   *
+   * Identical to setting the tab and opening the panel, plus the pending mark
+   * above. Only URL-driven openers use it: a click happens after hydration and
+   * has nothing to outrank, and latching one would make an agent switch ignore
+   * the layout that agent was left in (DOR-227).
+   *
+   * @param tabId - The contribution id the link named.
+   */
+  requestRightPanel: (tabId: string) => void;
+  /**
    * The stable identity of the agent whose layout is currently in scope, or null
    * on non-session routes / before an agent resolves. Set by
    * {@link loadRightPanelForAgent}; selects which surface write-throughs target.
@@ -67,7 +92,8 @@ export interface RightPanelSlice {
    *
    * Pass the agent's stable key (agent id if registered, else its cwd — resolved
    * by `useRightPanelLayoutPersistence`) to restore that agent's open/active-tab
-   * layout, defaulting to closed for a never-seen agent. Pass null on
+   * layout, defaulting to closed for a never-seen agent — unless a link is
+   * pending ({@link requestedRightPanelTab}), which outranks it. Pass null on
    * non-session routes to detach: subsequent writes fall back to the global
    * layout and the in-memory open/tab state is left untouched (no flash).
    *
@@ -92,6 +118,9 @@ export const createRightPanelSlice: StateCreator<
   rightPanelOpen: false,
   setRightPanelOpen: (open) =>
     set((s) => {
+      // Closing it yourself answers a pending link: you have seen the panel it
+      // asked for and decided otherwise.
+      const answered = open ? {} : { requestedRightPanelTab: null };
       // Preserve the stored active-tab preference across open/close: the
       // in-memory tab may have been changed by the container's view-only
       // auto-select (DOR-227), which must never overwrite the stored preference.
@@ -99,7 +128,7 @@ export const createRightPanelSlice: StateCreator<
       const stored = readLayoutForKey(s.rightPanelLayoutKey);
       const activeTab = stored?.activeTab ?? s.activeRightPanelTab;
       writeRightPanelLayout(s.rightPanelLayoutKey, { open, activeTab });
-      return { rightPanelOpen: open };
+      return { rightPanelOpen: open, ...answered };
     }),
   toggleRightPanel: () => {
     const current = get().rightPanelOpen;
@@ -110,9 +139,19 @@ export const createRightPanelSlice: StateCreator<
   setActiveRightPanelTab: (tabId) =>
     set((s) => {
       writeRightPanelLayout(s.rightPanelLayoutKey, { open: s.rightPanelOpen, activeTab: tabId });
-      return { activeRightPanelTab: tabId };
+      // Picking a tab yourself answers a pending link the same way closing the
+      // panel does — including the pick a URL-driven open makes on its way
+      // through, which is why `requestRightPanel` marks it AFTER this runs.
+      return { activeRightPanelTab: tabId, requestedRightPanelTab: null };
     }),
   setActiveRightPanelTabView: (tabId) => set({ activeRightPanelTab: tabId }),
+
+  requestedRightPanelTab: null,
+  requestRightPanel: (tabId) => {
+    get().setActiveRightPanelTab(tabId);
+    get().setRightPanelOpen(true);
+    set({ requestedRightPanelTab: tabId });
+  },
 
   rightPanelLayoutKey: null,
   loadRightPanelForAgent: (agentKey) => {
@@ -131,17 +170,25 @@ export const createRightPanelSlice: StateCreator<
       // least-recently-written — revisiting an agent keeps its layout alive.
       writeRightPanelLayout(agentKey, entry);
     }
+    // A link that asked for the panel outranks the layout you left behind: the
+    // link is an instruction, the layout is a memory, and a never-seen agent
+    // remembers "closed".
+    const requested = get().requestedRightPanelTab;
     set({
       rightPanelLayoutKey: agentKey,
-      rightPanelOpen: entry?.open ?? false,
-      activeRightPanelTab: entry?.activeTab ?? null,
+      rightPanelOpen: requested !== null || (entry?.open ?? false),
+      activeRightPanelTab: requested ?? entry?.activeTab ?? null,
     });
   },
 
   loadRightPanelState: () => {
     const entry = readRightPanelState();
-    if (entry) {
-      set({ rightPanelOpen: entry.open, activeRightPanelTab: entry.activeTab });
-    }
+    if (!entry) return;
+    // Same rule as the per-agent bind above, for the same reason.
+    const requested = get().requestedRightPanelTab;
+    set({
+      rightPanelOpen: requested !== null || entry.open,
+      activeRightPanelTab: requested ?? entry.activeTab,
+    });
   },
 });

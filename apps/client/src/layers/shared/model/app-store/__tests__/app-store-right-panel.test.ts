@@ -15,6 +15,7 @@ describe('RightPanelSlice', () => {
       rightPanelOpen: false,
       activeRightPanelTab: null,
       rightPanelLayoutKey: null,
+      requestedRightPanelTab: null,
     });
   });
 
@@ -242,6 +243,91 @@ describe('RightPanelSlice', () => {
 
       useAppStore.getState().setActiveRightPanelTab('files');
       expect(readLayouts()['agent-a'].activeTab).toBe('files');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // A link outranks a remembered layout
+  // -------------------------------------------------------------------------
+
+  describe('a panel a link asked for', () => {
+    it('stays open when an agent whose layout says CLOSED binds under it', () => {
+      // The order these arrive in is fixed and wrong: the link is read on mount,
+      // the per-agent layout hydrates after it, and an agent you have never
+      // opened hydrates as closed. Without the request outranking it, the panel
+      // was opened and shut again on the same frame and nobody ever saw it.
+      localStorage.setItem(
+        'dorkos-right-panel-layouts',
+        JSON.stringify({ 'agent-a': { open: false, activeTab: 'files', accessedAt: 1 } })
+      );
+      useAppStore.getState().requestRightPanel('profile');
+
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+    });
+
+    it('survives the global hydrate that runs before the agent binds', () => {
+      useAppStore.getState().requestRightPanel('profile');
+      // Seeded AFTER the request, deliberately: the request writes through to
+      // whichever surface is in scope, so seeding first would have this read
+      // back the very value it is supposed to be outranking.
+      localStorage.setItem(
+        'dorkos-right-panel-state',
+        JSON.stringify({ open: false, activeTab: 'files' })
+      );
+
+      useAppStore.getState().loadRightPanelState();
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+    });
+
+    it('is answered once you close the panel yourself, and stops outranking', () => {
+      localStorage.setItem(
+        'dorkos-right-panel-layouts',
+        JSON.stringify({ 'agent-a': { open: false, activeTab: 'files', accessedAt: 1 } })
+      );
+      useAppStore.getState().requestRightPanel('profile');
+
+      useAppStore.getState().setRightPanelOpen(false);
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+
+      expect(useAppStore.getState().requestedRightPanelTab).toBeNull();
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('files');
+    });
+
+    it('is answered by picking another tab', () => {
+      localStorage.setItem(
+        'dorkos-right-panel-layouts',
+        JSON.stringify({ 'agent-a': { open: false, activeTab: 'files', accessedAt: 1 } })
+      );
+      useAppStore.getState().requestRightPanel('profile');
+
+      useAppStore.getState().setActiveRightPanelTab('canvas');
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+
+      expect(useAppStore.getState().requestedRightPanelTab).toBeNull();
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    });
+
+    it('an ordinary click does NOT outrank the next agent’s layout', () => {
+      // A click lands after hydration and has nothing to argue with. Latching it
+      // would force every agent you switch to open, discarding the per-agent
+      // layout DOR-227 exists to restore.
+      localStorage.setItem(
+        'dorkos-right-panel-layouts',
+        JSON.stringify({ 'agent-b': { open: false, activeTab: 'files', accessedAt: 1 } })
+      );
+      useAppStore.getState().setActiveRightPanelTab('profile');
+      useAppStore.getState().setRightPanelOpen(true);
+
+      useAppStore.getState().loadRightPanelForAgent('agent-b');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('files');
     });
   });
 
