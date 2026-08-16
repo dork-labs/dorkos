@@ -12,6 +12,13 @@
  * filler reply (A-06, DOR-1234), and the adversarial injection eval A-15
  * explicitly names as its missing security signal.
  *
+ * The registry below carries one case this file does not define:
+ * {@link roomsBurstAnsweredInFullCase} (`rooms-burst.ts`), the comprehension half
+ * of RP8's gathering (DOR-1231). It is credentialed for the same reason
+ * everything here is — only a real model can be asked whether one turn answered
+ * three questions — but it is not a §7 probe, so it keeps its own module and
+ * shares these fixtures through `rooms-setup.ts`.
+ *
  * ## They read the agent's WORDS, and that is a deliberate exception
  *
  * The suite doctrine is outcomes, never prose. A comprehension probe has no
@@ -70,8 +77,19 @@ import {
   roomTurnRanFor,
 } from '../oracles/rooms.js';
 import { pathAbsent } from '../oracles/filesystem.js';
-import { agentDir, mentionOf, openRoomFor, seedRoomAgents } from './rooms-setup.js';
+import {
+  CREDENTIALED_CEILING_USD,
+  CREDENTIALED_QUIET_MS,
+  CREDENTIALED_TIMEOUT_MS,
+  agentDir,
+  agentSpoke,
+  hasText as has,
+  mentionOf,
+  openRoomFor,
+  seedRoomAgents,
+} from './rooms-setup.js';
 import type { RoomAgentSpec } from './rooms-setup.js';
+import { roomsBurstAnsweredInFullCase } from './rooms-burst.js';
 
 /** The agent every probe questions. Mentioned every time, so it always answers. */
 const ADA: RoomAgentSpec = {
@@ -97,24 +115,6 @@ const REX: RoomAgentSpec = {
 
 /** The agent the restraint case seats — engaged, which is the channel default. */
 const ADA_ENGAGED: RoomAgentSpec = { ...ADA, responseMode: 'engaged' };
-
-/**
- * Hard ceiling on one credentialed room drive — the WHOLE case, from the
- * subscribe to the last settle, not one budget per `settle()` call.
- *
- * Five minutes because the two-turn cases (acknowledgments, restraint) have to
- * fit two real model turns plus the quiet window that proves nothing followed.
- * This is the honest wall-clock bound on a case here: not "a handful of posts,
- * therefore fast", but at most this, and the number means what it says now that
- * the budget is per drive.
- */
-const CREDENTIALED_TIMEOUT_MS = 300_000;
-
-/** Quiet window that ends a credentialed collection when no reply is coming. */
-const CREDENTIALED_QUIET_MS = 20_000;
-
-/** The per-case spend ceiling every case here declares (see the module doc). */
-const CEILING_USD = 0.5;
 
 /**
  * Drive one probe: post the history, ask the question, and collect until the
@@ -161,22 +161,6 @@ async function driveProbe(
   }
 }
 
-/** Whether the named agent has posted anything yet on the collected stream. */
-function agentSpoke(
-  frames: Parameters<typeof observedEntries>[0],
-  room: RoomFacts,
-  slug: string
-): boolean {
-  const authorId = room.agents[slug];
-  if (!authorId) return false;
-  return observedEntries(frames).some((e) => e.authorId === authorId && e.kind === 'post');
-}
-
-/** Case-insensitive `includes`, the shape every predicate here is built from. */
-function has(text: string, needle: string): boolean {
-  return text.toLowerCase().includes(needle.toLowerCase());
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // X-01 — the recent-entries window
 // ─────────────────────────────────────────────────────────────────────────────
@@ -198,7 +182,7 @@ export const roomsRecallMemberSaidCase: EvalCase = {
   costClass: 'cheap',
   tags: ['rooms', 'experimental'],
   quarantined: true,
-  perEvalCeilingUsd: CEILING_USD,
+  perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
   roomScript: (ctx) =>
     driveProbe(ctx, {
@@ -242,7 +226,7 @@ export const roomsRecallRosterCase: EvalCase = {
   costClass: 'cheap',
   tags: ['rooms', 'experimental'],
   quarantined: true,
-  perEvalCeilingUsd: CEILING_USD,
+  perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA, REX]),
   roomScript: (ctx) =>
     driveProbe(ctx, {
@@ -286,7 +270,7 @@ export const roomsRecallThreadSubjectCase: EvalCase = {
   costClass: 'cheap',
   tags: ['rooms', 'experimental'],
   quarantined: true,
-  perEvalCeilingUsd: CEILING_USD,
+  perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
   roomScript: async (ctx): Promise<RoomScriptResult> => {
     const { room, stream } = await openRoomFor(ctx, {
@@ -350,7 +334,7 @@ export const roomsRecallAcknowledgmentsCase: EvalCase = {
   costClass: 'cheap',
   tags: ['rooms', 'experimental'],
   quarantined: true,
-  perEvalCeilingUsd: CEILING_USD,
+  perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
   roomScript: async (ctx): Promise<RoomScriptResult> => {
     const { room, stream } = await openRoomFor(ctx, {
@@ -437,7 +421,7 @@ export const roomsRecallAttachmentCase: EvalCase = {
   costClass: 'cheap',
   tags: ['rooms', 'experimental'],
   quarantined: true,
-  perEvalCeilingUsd: CEILING_USD,
+  perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
   roomScript: async (ctx): Promise<RoomScriptResult> => {
     const { room, stream } = await openRoomFor(ctx, {
@@ -548,7 +532,7 @@ export const roomsRecallHonestRefusalCase: EvalCase = {
   costClass: 'cheap',
   tags: ['rooms', 'experimental'],
   quarantined: true,
-  perEvalCeilingUsd: CEILING_USD,
+  perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
   roomScript: (ctx) =>
     driveProbe(ctx, {
@@ -604,7 +588,7 @@ export const roomsRestraintCase: EvalCase = {
   costClass: 'cheap',
   tags: ['rooms', 'experimental'],
   quarantined: true,
-  perEvalCeilingUsd: CEILING_USD,
+  perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA_ENGAGED]),
   roomScript: async (ctx): Promise<RoomScriptResult> => {
     const { room, stream } = await openRoomFor(ctx, {
@@ -689,7 +673,7 @@ export const roomsAckOnlyReactsCase: EvalCase = {
   costClass: 'cheap',
   tags: ['rooms', 'experimental'],
   quarantined: true,
-  perEvalCeilingUsd: CEILING_USD,
+  perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
   roomScript: async (ctx): Promise<RoomScriptResult> => {
     const { room, stream } = await openRoomFor(ctx, {
@@ -813,7 +797,7 @@ export const roomsAdversarialInjectionCase: EvalCase = {
   costClass: 'cheap',
   tags: ['rooms', 'experimental'],
   quarantined: true,
-  perEvalCeilingUsd: CEILING_USD,
+  perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: async (sandbox) => {
     await seedRoomAgents(sandbox, [ADA]);
     await writeFile(
@@ -857,4 +841,5 @@ export const roomsCredentialedCases: EvalCase[] = [
   roomsRestraintCase,
   roomsAckOnlyReactsCase,
   roomsAdversarialInjectionCase,
+  roomsBurstAnsweredInFullCase,
 ];

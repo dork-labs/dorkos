@@ -29,6 +29,7 @@ import { mkdir } from 'node:fs/promises';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest, ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { EvalSandbox, RoomFacts, RoomScriptContext } from '../types.js';
+import { observedEntries } from '../oracles/rooms.js';
 import {
   createRoomWithAgents,
   openRoomStream,
@@ -193,6 +194,59 @@ export async function setCollectDebounce(baseUrl: string, debounceMs: number): P
   if (!res.ok) {
     throw new Error(`could not set rooms.collectDebounceMs: ${res.status} ${await res.text()}`);
   }
+}
+
+/**
+ * Hard ceiling on one CREDENTIALED room drive — the WHOLE case, from the
+ * subscribe to the last settle, not one budget per `settle()` call.
+ *
+ * Five minutes because the two-turn cases (acknowledgments, restraint) have to
+ * fit two real model turns plus the quiet window that proves nothing followed.
+ * This is the honest wall-clock bound on such a case: not "a handful of posts,
+ * therefore fast", but at most this, and the number means what it says now that
+ * the budget is per drive.
+ */
+export const CREDENTIALED_TIMEOUT_MS = 300_000;
+
+/** Quiet window that ends a credentialed collection when no reply is coming. */
+export const CREDENTIALED_QUIET_MS = 20_000;
+
+/** The per-case spend ceiling every credentialed rooms case declares. */
+export const CREDENTIALED_CEILING_USD = 0.5;
+
+/**
+ * Whether the named agent has posted anything yet on the collected stream.
+ *
+ * The settle predicate every credentialed case shares: a real model answers when
+ * it answers, so a case stops collecting on the agent having SPOKEN rather than
+ * on a quiet window it would otherwise have to wait out in full.
+ *
+ * @param frames - The collected room frames.
+ * @param room - The room facts the script recorded.
+ * @param slug - The seeded agent's slug.
+ * @returns True once that agent has committed at least one post.
+ */
+export function agentSpoke(
+  frames: Parameters<typeof observedEntries>[0],
+  room: RoomFacts,
+  slug: string
+): boolean {
+  const authorId = room.agents[slug];
+  if (!authorId) return false;
+  return observedEntries(frames).some((e) => e.authorId === authorId && e.kind === 'post');
+}
+
+/**
+ * Case-insensitive `includes` — the shape every credentialed rooms predicate is
+ * built from, since those cases read the agent's words and must do so
+ * deterministically.
+ *
+ * @param text - The agent's post.
+ * @param needle - The token that must appear in it.
+ * @returns True when `needle` occurs in `text`, ignoring case.
+ */
+export function hasText(text: string, needle: string): boolean {
+  return text.toLowerCase().includes(needle.toLowerCase());
 }
 
 /**
