@@ -9,8 +9,11 @@
  * thing it must never do.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import { renderHook } from '@testing-library/react';
 import { useAppStore } from '@/layers/shared/model';
 import { useProfileStore } from '../model/profile-store';
+import { useProfileLeaveGuard } from '../model/profile-leave-guard';
+import { ProfileScope } from '../model/profile-scope';
 
 const AGENT = '/repo/warden';
 const OTHER = '/repo/scout';
@@ -50,6 +53,55 @@ describe('opening the docked profile', () => {
 
   it('lands on the root even when the last visit ended on a page', () => {
     useProfileStore.getState().openProfileDocked(AGENT, 'sessions');
+
+    useProfileStore.getState().openProfileDocked(AGENT);
+
+    expect(entriesFor(AGENT)).toEqual([]);
+  });
+});
+
+describe('opening over an editor nobody has saved', () => {
+  /** Mount a dirty editor in the docked panel, and hand back its unmount. */
+  function draftInTheDock() {
+    const { unmount } = renderHook(() => useProfileLeaveGuard(true), {
+      wrapper: ({ children }) => (
+        <ProfileScope home="docked" memberId="agent-warden">
+          {children}
+        </ProfileScope>
+      ),
+    });
+    return unmount;
+  }
+
+  it('leaves the page where it is rather than discarding a draft silently', () => {
+    // Every other way out of an editor stops to ask. This one cannot — it is a
+    // store action with no dialog to raise, reached from a click in another
+    // surface or from a link the URL changed underneath you — so it does the
+    // thing that needs no question and loses nothing.
+    useProfileStore.getState().setDockedEntries(AGENT, [{ kind: 'page', page: 'instructions' }]);
+    const unmount = draftInTheDock();
+
+    useProfileStore.getState().openProfileDocked(AGENT);
+
+    expect(entriesFor(AGENT)).toEqual([{ kind: 'page', page: 'instructions' }]);
+    unmount();
+  });
+
+  it('still goes where a caller explicitly asked to go', () => {
+    // Naming a page is a request to travel, not a reset on the way past — and
+    // the page you land on has its own guarded way back.
+    useProfileStore.getState().setDockedEntries(AGENT, [{ kind: 'page', page: 'instructions' }]);
+    const unmount = draftInTheDock();
+
+    useProfileStore.getState().openProfileDocked(AGENT, 'rooms');
+
+    expect(entriesFor(AGENT)).toEqual([{ kind: 'page', page: 'rooms' }]);
+    unmount();
+  });
+
+  it('resets to the root as usual once the draft is gone', () => {
+    useProfileStore.getState().setDockedEntries(AGENT, [{ kind: 'page', page: 'instructions' }]);
+    draftInTheDock()();
 
     useProfileStore.getState().openProfileDocked(AGENT);
 

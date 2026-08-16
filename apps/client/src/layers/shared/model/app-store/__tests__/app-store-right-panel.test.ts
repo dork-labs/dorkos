@@ -15,7 +15,8 @@ describe('RightPanelSlice', () => {
       rightPanelOpen: false,
       activeRightPanelTab: null,
       rightPanelLayoutKey: null,
-      requestedRightPanelTab: null,
+      requestedRightPanel: null,
+      explicitAgentPath: null,
     });
   });
 
@@ -260,16 +261,16 @@ describe('RightPanelSlice', () => {
         'dorkos-right-panel-layouts',
         JSON.stringify({ 'agent-a': { open: false, activeTab: 'files', accessedAt: 1 } })
       );
-      useAppStore.getState().requestRightPanel('profile');
+      useAppStore.getState().requestRightPanel('profile', '/repo/a');
 
-      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().loadRightPanelForAgent('agent-a', '/repo/a');
 
       expect(useAppStore.getState().rightPanelOpen).toBe(true);
       expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
     });
 
     it('survives the global hydrate that runs before the agent binds', () => {
-      useAppStore.getState().requestRightPanel('profile');
+      useAppStore.getState().requestRightPanel('profile', '/repo/a');
       // Seeded AFTER the request, deliberately: the request writes through to
       // whichever surface is in scope, so seeding first would have this read
       // back the very value it is supposed to be outranking.
@@ -289,12 +290,12 @@ describe('RightPanelSlice', () => {
         'dorkos-right-panel-layouts',
         JSON.stringify({ 'agent-a': { open: false, activeTab: 'files', accessedAt: 1 } })
       );
-      useAppStore.getState().requestRightPanel('profile');
+      useAppStore.getState().requestRightPanel('profile', '/repo/a');
 
       useAppStore.getState().setRightPanelOpen(false);
-      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().loadRightPanelForAgent('agent-a', '/repo/a');
 
-      expect(useAppStore.getState().requestedRightPanelTab).toBeNull();
+      expect(useAppStore.getState().requestedRightPanel).toBeNull();
       expect(useAppStore.getState().rightPanelOpen).toBe(false);
       expect(useAppStore.getState().activeRightPanelTab).toBe('files');
     });
@@ -304,13 +305,72 @@ describe('RightPanelSlice', () => {
         'dorkos-right-panel-layouts',
         JSON.stringify({ 'agent-a': { open: false, activeTab: 'files', accessedAt: 1 } })
       );
-      useAppStore.getState().requestRightPanel('profile');
+      useAppStore.getState().requestRightPanel('profile', '/repo/a');
 
       useAppStore.getState().setActiveRightPanelTab('canvas');
-      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().loadRightPanelForAgent('agent-a', '/repo/a');
 
-      expect(useAppStore.getState().requestedRightPanelTab).toBeNull();
+      expect(useAppStore.getState().requestedRightPanel).toBeNull();
       expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    });
+
+    it('does not reach the NEXT agent — its closed layout wins, and the mark is gone', () => {
+      // The leak this scoping exists for: a mark that only said "profile"
+      // outranked the layout of every agent bound after it, so switching to an
+      // agent whose panel you had left closed opened it anyway — somebody
+      // else's link undoing DOR-227's per-agent layout, one switch at a time.
+      localStorage.setItem(
+        'dorkos-right-panel-layouts',
+        JSON.stringify({
+          'agent-a': { open: false, activeTab: 'pulse', accessedAt: 1 },
+          'agent-b': { open: false, activeTab: 'pulse', accessedAt: 1 },
+        })
+      );
+      useAppStore.getState().requestRightPanel('profile', '/repo/a');
+
+      // The agent the link named binds first, and is answered.
+      useAppStore.getState().loadRightPanelForAgent('agent-a', '/repo/a');
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().requestedRightPanel).toBeNull();
+
+      // Then you switch, having touched nothing.
+      useAppStore.getState().loadRightPanelForAgent('agent-b', '/repo/b');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('pulse');
+    });
+
+    it('is spent by the switch even when the named agent never binds', () => {
+      // The link named an agent you then navigated away from before it
+      // resolved. The mark is not an instruction about wherever you ended up.
+      localStorage.setItem(
+        'dorkos-right-panel-layouts',
+        JSON.stringify({ 'agent-b': { open: false, activeTab: 'pulse', accessedAt: 1 } })
+      );
+      useAppStore.setState({ explicitAgentPath: '/repo/a' });
+      useAppStore.getState().requestRightPanel('profile', '/repo/a');
+
+      useAppStore.getState().loadRightPanelForAgent('agent-b', '/repo/b');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().requestedRightPanel).toBeNull();
+      // And the agent the LINK latched as an explicit pick goes with it, so the
+      // dock stops profiling an agent a URL chose and you never did.
+      expect(useAppStore.getState().explicitAgentPath).toBeNull();
+    });
+
+    it('leaves an explicit pick of your own alone when a link is overtaken', () => {
+      localStorage.setItem(
+        'dorkos-right-panel-layouts',
+        JSON.stringify({ 'agent-b': { open: false, activeTab: 'pulse', accessedAt: 1 } })
+      );
+      useAppStore.getState().requestRightPanel('profile', '/repo/a');
+      // You then opened a different agent's profile by hand.
+      useAppStore.setState({ explicitAgentPath: '/repo/picked-by-hand' });
+
+      useAppStore.getState().loadRightPanelForAgent('agent-b', '/repo/b');
+
+      expect(useAppStore.getState().explicitAgentPath).toBe('/repo/picked-by-hand');
     });
 
     it('an ordinary click does NOT outrank the next agent’s layout', () => {
@@ -324,7 +384,7 @@ describe('RightPanelSlice', () => {
       useAppStore.getState().setActiveRightPanelTab('profile');
       useAppStore.getState().setRightPanelOpen(true);
 
-      useAppStore.getState().loadRightPanelForAgent('agent-b');
+      useAppStore.getState().loadRightPanelForAgent('agent-b', '/repo/b');
 
       expect(useAppStore.getState().rightPanelOpen).toBe(false);
       expect(useAppStore.getState().activeRightPanelTab).toBe('files');

@@ -12,7 +12,7 @@
  */
 import { createContext, useContext, type ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup, waitFor } from '@testing-library/react';
+import { act, render, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import {
   createMemoryHistory,
@@ -26,6 +26,8 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import { mergeDialogSearch, useAppStore } from '@/layers/shared/model';
 import { useProfileStore } from '../model/profile-store';
+import { useProfileLeaveGuard } from '../model/profile-leave-guard';
+import { ProfileScope } from '../model/profile-scope';
 import {
   useLegacyProfileLinkRedirect,
   useProfileDockDeepLink,
@@ -46,7 +48,21 @@ function Hooks() {
   return null;
 }
 
-function renderHooks(url: string) {
+/** An editor on a docked page, holding text nobody has saved. */
+function DraftInTheDock() {
+  return (
+    <ProfileScope home="docked" memberId="agent-warden">
+      <Dirty />
+    </ProfileScope>
+  );
+}
+
+function Dirty() {
+  useProfileLeaveGuard(true);
+  return null;
+}
+
+function renderHooks(url: string, options: { draft?: boolean } = {}) {
   const rootRoute = createRootRoute({ component: () => <Outlet /> });
   const makeRoute = (path: string) =>
     createRoute({
@@ -65,7 +81,14 @@ function renderHooks(url: string) {
   });
 
   render(
-    <HookSlotContext.Provider value={<Hooks />}>
+    <HookSlotContext.Provider
+      value={
+        <>
+          <Hooks />
+          {options.draft && <DraftInTheDock />}
+        </>
+      }
+    >
       <RouterProvider router={router} />
     </HookSlotContext.Provider>
   );
@@ -80,6 +103,12 @@ function renderHooks(url: string) {
      * here and reading it would assert nothing at all.
      */
     historyLength: () => router.history.length,
+    /** Rewrite the search the way another surface would, in place. */
+    navigate: async (update: (prev: Record<string, unknown>) => Record<string, unknown>) => {
+      await act(async () => {
+        await router.navigate({ search: update as never });
+      });
+    },
   };
 }
 
@@ -95,7 +124,7 @@ beforeEach(() => {
     explicitAgentPath: null,
     selectedCwd: null,
     rightPanelLayoutKey: null,
-    requestedRightPanelTab: null,
+    requestedRightPanel: null,
   });
   localStorage.clear();
 });
@@ -164,11 +193,65 @@ describe('the current link', () => {
     await harness.ready();
     await waitFor(() => expect(useAppStore.getState().rightPanelOpen).toBe(true));
 
-    // What `useRightPanelLayoutPersistence` does once the agent resolves.
-    useAppStore.getState().loadRightPanelForAgent(AGENT);
+    // What `useRightPanelLayoutPersistence` does once the agent resolves — the
+    // directory travels with the key, which is how the mark knows it is for
+    // this agent and not the next one.
+    useAppStore.getState().loadRightPanelForAgent(AGENT, AGENT);
 
     expect(useAppStore.getState().rightPanelOpen).toBe(true);
     expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+  });
+
+  it('does not reset the dock when an unrelated navigation drops ?profilePage=', async () => {
+    // `?panel=` and `?profilePage=` share the search string with everything
+    // else, so opening somebody's profile SHEET from the sidebar rewrites
+    // `?profile=` and drops `profilePage` on its way past. Read as a new link,
+    // that reset the docked stack to its root — taking an unsaved SOUL.md with
+    // it, with no dialog and no way back.
+    const harness = renderHooks(
+      `/?panel=profile&profilePage=instructions&agentPath=${encodeURIComponent(AGENT)}`,
+      { draft: true }
+    );
+    await harness.ready();
+    await waitFor(() =>
+      expect(entriesFor(AGENT)).toEqual([{ kind: 'page', page: 'instructions' }])
+    );
+
+    // Somebody clicks "View profile" on another identity in the sidebar.
+    await harness.navigate((prev) => ({ ...prev, profilePage: undefined, profile: 'person-dorian' }));
+
+    await waitFor(() => expect(harness.search().profile).toBe('person-dorian'));
+    expect(harness.search().profilePage).toBeUndefined();
+    expect(entriesFor(AGENT)).toEqual([{ kind: 'page', page: 'instructions' }]);
+  });
+
+  it('still applies a genuinely new link — a different page', async () => {
+    const harness = renderHooks(
+      `/?panel=profile&profilePage=instructions&agentPath=${encodeURIComponent(AGENT)}`
+    );
+    await harness.ready();
+    await waitFor(() =>
+      expect(entriesFor(AGENT)).toEqual([{ kind: 'page', page: 'instructions' }])
+    );
+
+    await harness.navigate((prev) => ({ ...prev, profilePage: 'rooms' }));
+
+    await waitFor(() => expect(entriesFor(AGENT)).toEqual([{ kind: 'page', page: 'rooms' }]));
+  });
+
+  it('still applies a genuinely new link — a different agent, with no page', async () => {
+    const harness = renderHooks(
+      `/?panel=profile&profilePage=instructions&agentPath=${encodeURIComponent(AGENT)}`
+    );
+    await harness.ready();
+    await waitFor(() =>
+      expect(entriesFor(AGENT)).toEqual([{ kind: 'page', page: 'instructions' }])
+    );
+
+    await harness.navigate((prev) => ({ ...prev, agentPath: '/repo/scout', profilePage: undefined }));
+
+    await waitFor(() => expect(useAppStore.getState().explicitAgentPath).toBe('/repo/scout'));
+    expect(entriesFor('/repo/scout')).toEqual([]);
   });
 
   it('leaves every other panel alone', async () => {
@@ -235,6 +318,18 @@ describe('an ?agent= that is not ours', () => {
     expect(harness.search().agent).toBe('01M055DG303GW8R52AW7D73B61');
     expect(harness.search().panel).toBeUndefined();
     expect(useAppStore.getState().rightPanelOpen).toBe(false);
+  });
+
+  it('keeps a topology selection even when a dead ?dialog=agent rides beside it', async () => {
+    // Both params in one URL: `?dialog=agent` is unambiguously the dead
+    // dialog's, `?agent=<ULID>` is unambiguously the topology's. Deleting both
+    // because one of them was ours lost the selection.
+    const harness = renderHooks('/?view=topology&dialog=agent&agent=01M055DG303GW8R52AW7D73B61');
+    await harness.ready();
+    await waitFor(() => expect(harness.search().panel).toBe('profile'));
+
+    expect(harness.search().dialog).toBeUndefined();
+    expect(harness.search().agent).toBe('01M055DG303GW8R52AW7D73B61');
   });
 });
 

@@ -42,6 +42,25 @@ export function hasUnsavedProfileEdits(scope: ProfileScopeValue | null): boolean
 }
 
 /**
+ * Whether ANY editor in this home holds unsaved text.
+ *
+ * For the docked home the two questions are the same — it draws one panel at a
+ * time — but the store that resets its stack knows the agent's DIRECTORY and not
+ * the identity behind it, and resolving one to the other is an async read it
+ * cannot do inside an action. Asking by home is the honest form of the question
+ * it can actually ask.
+ *
+ * @param home - Which of the two homes.
+ */
+export function homeHasUnsavedProfileEdits(home: 'docked' | 'sheet'): boolean {
+  const prefix = `${home}:`;
+  for (const [key, count] of unsaved) {
+    if (count > 0 && key.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+/**
  * Declare that this editor would lose something if its profile were left now.
  *
  * Counted rather than set, so two editors on screen cannot clear each other's

@@ -23,6 +23,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { useAppStore } from '@/layers/shared/model';
+import { homeHasUnsavedProfileEdits } from './profile-leave-guard';
 import type { ProfilePageId, ProfileStackEntry } from './profile-stack';
 
 /**
@@ -96,7 +97,7 @@ interface ProfileStoreState {
    * a link is read on mount and is then overruled by the layout each agent was
    * left in — which for an agent you have never opened is "closed". So this one
    * marks the panel's open as requested, and the hydration honours it
-   * (`requestedRightPanelTab`).
+   * (`requestedRightPanel`), against the agent it named.
    *
    * @param agentPath - The agent's directory.
    * @param page - A page to open straight onto, when the link named one.
@@ -143,13 +144,24 @@ export const useProfileStore = create<ProfileStoreState>()(
       dockedEntries: {},
 
       openProfileDocked: (agentPath, page) => {
-        set((state) => ({
-          dockedEntries: touch(
-            state.dockedEntries,
-            agentPath,
-            page ? [{ kind: 'page', page }] : NOTHING_PUSHED
-          ),
-        }));
+        set((state) => {
+          // Opening a profile lands on its root — except over an editor holding
+          // text nobody has saved. Every other way out of one stops to ask
+          // (`profile-leave-guard`), and this path cannot: it is a store action
+          // with no dialog to raise, reached from a click in another surface or
+          // from a link the URL changed underneath you. So it does the one thing
+          // that needs no question and loses nothing — it leaves the page where
+          // it is. A caller that named a page still gets it: that is a request
+          // to go somewhere, not a reset on the way past.
+          if (page === undefined && homeHasUnsavedProfileEdits('docked')) return state;
+          return {
+            dockedEntries: touch(
+              state.dockedEntries,
+              agentPath,
+              page ? [{ kind: 'page', page }] : NOTHING_PUSHED
+            ),
+          };
+        });
         const app = useAppStore.getState();
         // Published to the app store because the tab's `visibleWhen` predicate
         // runs across the feature boundary and cannot read this store. See
@@ -165,7 +177,7 @@ export const useProfileStore = create<ProfileStoreState>()(
         // Last, deliberately: opening the panel above goes through the same
         // explicit setters a person's click does, and those CLEAR a pending
         // request — so the mark has to outlive them.
-        useAppStore.getState().requestRightPanel(PROFILE_PANEL_ID);
+        useAppStore.getState().requestRightPanel(PROFILE_PANEL_ID, agentPath);
       },
 
       setDockedEntries: (agentPath, entries) =>

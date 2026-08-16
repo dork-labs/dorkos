@@ -78,6 +78,13 @@ const LEGACY_DIALOG_TABS = new Set(['identity', 'personality', 'channels', 'tool
  * re-applied only when it changes — and once more if it named no agent and one
  * resolves later, which is the `/session?panel=profile` case where the working
  * directory arrives a beat after the route does.
+ *
+ * **A link that stops naming a page is not a request for the root.** `?panel=`
+ * and `?profilePage=` sit in the same search string as everything else, so an
+ * unrelated navigation — opening somebody's profile sheet from the sidebar,
+ * which rewrites `?profile=` — drops `profilePage` on its way past. Read as a
+ * new link, that reset the docked stack to its root and took an unsaved SOUL.md
+ * with it, silently. Only a page, or a different agent, is a new instruction.
  */
 export function useProfileDockDeepLink(): void {
   const search = useSafeSearch() as { panel?: string; profilePage?: string; agentPath?: string };
@@ -88,31 +95,40 @@ export function useProfileDockDeepLink(): void {
   const wantsProfile = search.panel === PROFILE_PANEL_ID;
   const urlAgentPath = search.agentPath ?? null;
   const page = asProfilePageId(search.profilePage) ?? undefined;
-  // What makes one link different from another. Re-applying the same link is
-  // what would fight the reader; applying a new one is the point.
-  const linkKey = `${urlAgentPath ?? ''}|${page ?? ''}`;
-  const applied = useRef<string | null>(null);
+  /**
+   * Every link this hook has acted on, as agent → the pages named for it (`''`
+   * for the root). A set rather than "the last one", so walking away from an
+   * agent and back does not re-apply a link the reader has since moved off.
+   */
+  const applied = useRef(new Map<string, Set<string>>());
 
   useEffect(() => {
     if (!wantsProfile) {
-      applied.current = null;
+      applied.current.clear();
       return;
     }
-    if (applied.current === linkKey) return;
 
     const target = urlAgentPath ?? dockedAgentPath;
     if (target) {
-      applied.current = linkKey;
+      const seen = applied.current.get(target);
+      if (seen !== undefined) {
+        // This link has already been acted on for this agent, and neither of
+        // the two things that make a new instruction has happened: it no longer
+        // names a page (see the doc above), or it names one we already applied.
+        if (page === undefined || seen.has(page)) return;
+      }
+      applied.current.set(target, (seen ?? new Set<string>()).add(page ?? ''));
       openProfileDockedFromLink(target, page);
       return;
     }
     // The link named no agent and nothing else has picked one. Show the tab
     // anyway — a panel is what was asked for — and seed the page if an agent
     // resolves on a later pass.
-    requestRightPanel(PROFILE_PANEL_ID);
+    // No agent to name it against, so the first bind spends it — which is the
+    // one this link was about.
+    requestRightPanel(PROFILE_PANEL_ID, null);
   }, [
     wantsProfile,
-    linkKey,
     urlAgentPath,
     dockedAgentPath,
     page,
@@ -153,12 +169,13 @@ export function useLegacyProfileLinkRedirect(): void {
     inPlaceNav({
       search: (prev) => {
         const next = { ...prev };
-        // Only the dialog's own params, and only when the dialog is what
-        // brought us here — an `?agent=` this hook did not claim belongs to
-        // whichever surface wrote it.
-        if (isLegacyDialog) {
+        // Only the params this hook actually claimed. `?dialog=agent` is always
+        // the dead dialog's; `?agent=` is only ours when it names one of that
+        // dialog's tabs — on `/team` the same param is a topology node id, and
+        // deleting it there loses the selection whatever else is in the URL.
+        if (search.dialog === 'agent') delete next.dialog;
+        if (typeof next.agent === 'string' && LEGACY_DIALOG_TABS.has(next.agent)) {
           delete next.agent;
-          delete next.dialog;
         }
         delete next.hubTab;
         next.panel = PROFILE_PANEL_ID;
@@ -170,5 +187,5 @@ export function useLegacyProfileLinkRedirect(): void {
       },
       replace: true,
     });
-  }, [needsRedirect, isLegacyDialog, legacyTab, inPlaceNav]);
+  }, [needsRedirect, search.dialog, legacyTab, inPlaceNav]);
 }

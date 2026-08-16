@@ -57,8 +57,8 @@ export interface RightPanelSlice {
    */
   setActiveRightPanelTabView: (tabId: string | null) => void;
   /**
-   * The tab a LINK asked the panel to open on, and that no stored layout has
-   * been allowed to overrule yet — or null when nothing is pending.
+   * The panel a LINK asked for, and that no stored layout has been allowed to
+   * overrule yet — or null when nothing is pending.
    *
    * A deep link and a persisted layout are not the same kind of statement. The
    * layout is a memory of how you last left this agent's panel; the link is an
@@ -66,9 +66,15 @@ export interface RightPanelSlice {
    * on mount, the layouts hydrate after it — and a never-seen agent hydrates as
    * CLOSED, so the link's panel was opened and shut again before it could be
    * seen (spec `profile-unification` §1.6). This is what lets the instruction
-   * outrank the memory, and it survives until you act on the panel yourself.
+   * outrank the memory.
+   *
+   * **It names the agent it was for.** A mark that only said "profile" outranked
+   * the layout of every agent bound after it, so switching to an agent whose
+   * panel you had left closed opened it anyway — DOR-227's per-agent layout,
+   * undone by somebody else's link. It is honoured for that agent and spent on
+   * the first bind either way, so it can never reach a second one.
    */
-  requestedRightPanelTab: string | null;
+  requestedRightPanel: { tabId: string; agentPath: string | null } | null;
   /**
    * Open the panel on a tab because a LINK said so, not because somebody
    * clicked.
@@ -79,8 +85,11 @@ export interface RightPanelSlice {
    * the layout that agent was left in (DOR-227).
    *
    * @param tabId - The contribution id the link named.
+   * @param agentPath - The directory the link named, or null when it named none
+   *   (an `?panel=` with no agent — then the mark is spent by whichever bind
+   *   comes first, which is the one the link was about).
    */
-  requestRightPanel: (tabId: string) => void;
+  requestRightPanel: (tabId: string, agentPath: string | null) => void;
   /**
    * The stable identity of the agent whose layout is currently in scope, or null
    * on non-session routes / before an agent resolves. Set by
@@ -93,13 +102,17 @@ export interface RightPanelSlice {
    * Pass the agent's stable key (agent id if registered, else its cwd — resolved
    * by `useRightPanelLayoutPersistence`) to restore that agent's open/active-tab
    * layout, defaulting to closed for a never-seen agent — unless a link is
-   * pending ({@link requestedRightPanelTab}), which outranks it. Pass null on
-   * non-session routes to detach: subsequent writes fall back to the global
-   * layout and the in-memory open/tab state is left untouched (no flash).
+   * pending FOR THAT AGENT ({@link requestedRightPanel}), which outranks it.
+   * Pass null on non-session routes to detach: subsequent writes fall back to
+   * the global layout and the in-memory open/tab state is left untouched (no
+   * flash).
    *
    * @param agentKey - Stable agent identity, or null to detach to global scope.
+   * @param agentPath - The directory that key was resolved from, which is what a
+   *   pending link named itself against. Omitted only by callers that have no
+   *   directory to give, in which case a pending link cannot match.
    */
-  loadRightPanelForAgent: (agentKey: string | null) => void;
+  loadRightPanelForAgent: (agentKey: string | null, agentPath?: string | null) => void;
   /** Load the persisted global right panel state from localStorage (initial mount). */
   loadRightPanelState: () => void;
 }
@@ -120,7 +133,7 @@ export const createRightPanelSlice: StateCreator<
     set((s) => {
       // Closing it yourself answers a pending link: you have seen the panel it
       // asked for and decided otherwise.
-      const answered = open ? {} : { requestedRightPanelTab: null };
+      const answered = open ? {} : { requestedRightPanel: null };
       // Preserve the stored active-tab preference across open/close: the
       // in-memory tab may have been changed by the container's view-only
       // auto-select (DOR-227), which must never overwrite the stored preference.
@@ -142,19 +155,19 @@ export const createRightPanelSlice: StateCreator<
       // Picking a tab yourself answers a pending link the same way closing the
       // panel does — including the pick a URL-driven open makes on its way
       // through, which is why `requestRightPanel` marks it AFTER this runs.
-      return { activeRightPanelTab: tabId, requestedRightPanelTab: null };
+      return { activeRightPanelTab: tabId, requestedRightPanel: null };
     }),
   setActiveRightPanelTabView: (tabId) => set({ activeRightPanelTab: tabId }),
 
-  requestedRightPanelTab: null,
-  requestRightPanel: (tabId) => {
+  requestedRightPanel: null,
+  requestRightPanel: (tabId, agentPath) => {
     get().setActiveRightPanelTab(tabId);
     get().setRightPanelOpen(true);
-    set({ requestedRightPanelTab: tabId });
+    set({ requestedRightPanel: { tabId, agentPath } });
   },
 
   rightPanelLayoutKey: null,
-  loadRightPanelForAgent: (agentKey) => {
+  loadRightPanelForAgent: (agentKey, agentPath) => {
     if (agentKey === null) {
       // Detach to global scope without re-hydrating — leaving a session must not
       // flash the panel or clobber the just-shown layout. Consequence (bounded,
@@ -170,25 +183,41 @@ export const createRightPanelSlice: StateCreator<
       // least-recently-written — revisiting an agent keeps its layout alive.
       writeRightPanelLayout(agentKey, entry);
     }
-    // A link that asked for the panel outranks the layout you left behind: the
-    // link is an instruction, the layout is a memory, and a never-seen agent
-    // remembers "closed".
-    const requested = get().requestedRightPanelTab;
-    set({
+    // A link that asked for THIS agent's panel outranks the layout you left
+    // behind: the link is an instruction, the layout is a memory, and a
+    // never-seen agent remembers "closed". A link for a DIFFERENT agent is not
+    // an instruction about this one, and this bind is the switch that ends it.
+    const requested = get().requestedRightPanel;
+    const forThisAgent =
+      requested !== null && (requested.agentPath === null || requested.agentPath === agentPath);
+    set((s) => ({
       rightPanelLayoutKey: agentKey,
-      rightPanelOpen: requested !== null || (entry?.open ?? false),
-      activeRightPanelTab: requested ?? entry?.activeTab ?? null,
-    });
+      rightPanelOpen: forThisAgent || (entry?.open ?? false),
+      activeRightPanelTab: forThisAgent ? requested.tabId : (entry?.activeTab ?? null),
+      // Spent on the first bind either way: honoured here, or overtaken by a
+      // switch. A mark that outlived one bind reached the next agent too.
+      requestedRightPanel: null,
+      // The link latched the agent it named as an explicit pick, which is what
+      // keeps the tab visible off `/session`. That latch is the link's, not
+      // yours — so it goes with the mark rather than making every later session
+      // profile an agent a URL chose and you never did.
+      ...(requested !== null && !forThisAgent && s.explicitAgentPath === requested.agentPath
+        ? { explicitAgentPath: null }
+        : {}),
+    }));
   },
 
   loadRightPanelState: () => {
     const entry = readRightPanelState();
     if (!entry) return;
-    // Same rule as the per-agent bind above, for the same reason.
-    const requested = get().requestedRightPanelTab;
+    // Same rule as the per-agent bind above, for the same reason — but this one
+    // runs once on mount and has no agent to match against, so it honours a
+    // pending mark WITHOUT spending it. The per-agent bind that follows on
+    // `/session` is the one that decides whether the link was about that agent.
+    const requested = get().requestedRightPanel;
     set({
       rightPanelOpen: requested !== null || entry.open,
-      activeRightPanelTab: requested ?? entry.activeTab,
+      activeRightPanelTab: requested?.tabId ?? entry.activeTab,
     });
   },
 });
