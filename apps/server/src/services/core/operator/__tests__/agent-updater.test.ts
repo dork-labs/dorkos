@@ -13,6 +13,7 @@ import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';
+import { readConventionFile, writeConventionFile } from '@dorkos/shared/convention-files-io';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { updateAgentManifest } from '../agent-updater.js';
 
@@ -90,5 +91,48 @@ describe('a manifest PATCH touches only what it names', () => {
     const updated = await updateAgentManifest({ agentPath, body: { model: null } });
 
     expect(updated.model).toBeUndefined();
+  });
+});
+
+describe('a convention file the server will not store is a refusal, not a 200', () => {
+  // The route answered 200 while `UpdateAgentConventionsSchema` had already
+  // failed and been swallowed (`conventionUpdates = {}`), so the profile said
+  // "Saved" over a SOUL.md that never reached the disk (DOR-1253). The budget is
+  // the WHOLE file — trait block included — which is exactly why a file that
+  // looks legal in a prose editor is not.
+  it('refuses an over-budget SOUL.md, and writes neither the file nor the fields beside it', async () => {
+    const overBudget = `<!-- TRAITS:START -->\n<!-- TRAITS:END -->\n${'x'.repeat(4001)}`;
+
+    await expect(
+      updateAgentManifest({
+        agentPath,
+        body: { soulContent: overBudget, displayName: 'Renamed' },
+      })
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+
+    expect(await readConventionFile(agentPath, 'SOUL.md')).toBeNull();
+    expect((await readManifest(agentPath))?.displayName).toBe('Warden');
+  });
+
+  it('says which file was too long, in words the editor can show', async () => {
+    await expect(
+      updateAgentManifest({ agentPath, body: { nopeContent: 'x'.repeat(2001) } })
+    ).rejects.toThrow(/NOPE\.md/);
+  });
+
+  it('leaves an existing file exactly as it was', async () => {
+    await writeConventionFile(agentPath, 'SOUL.md', 'Be careful.');
+
+    await expect(
+      updateAgentManifest({ agentPath, body: { soulContent: 'x'.repeat(4001) } })
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+
+    expect(await readConventionFile(agentPath, 'SOUL.md')).toBe('Be careful.');
+  });
+
+  it('still writes a file that fits', async () => {
+    await updateAgentManifest({ agentPath, body: { soulContent: 'Be careful.' } });
+
+    expect(await readConventionFile(agentPath, 'SOUL.md')).toBe('Be careful.');
   });
 });

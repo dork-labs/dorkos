@@ -14,7 +14,7 @@ import { Search } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import { groupSessionsByTime } from '@/layers/shared/lib';
-import { Input } from '@/layers/shared/ui';
+import { Input, Skeleton } from '@/layers/shared/ui';
 import { useSafeNavigate, useTransport } from '@/layers/shared/model';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { sessionKeys, useAgentSessions, useRenameSession } from '@/layers/entities/session';
@@ -37,7 +37,7 @@ function matches(session: Session, query: string): boolean {
  */
 export function SessionsPage({ member }: ProfilePageContentProps) {
   const projectPath = member.agent?.projectPath ?? null;
-  const { sessions, activeSessionId } = useAgentSessions(projectPath);
+  const { sessions, isLoading, isError, activeSessionId } = useAgentSessions(projectPath);
   const navigate = useSafeNavigate();
   const transport = useTransport();
   const queryClient = useQueryClient();
@@ -66,6 +66,20 @@ export function SessionsPage({ member }: ProfilePageContentProps) {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to fork session');
     }
+  }
+
+  // Three ways to have no rows, and only one of them is "there are none". The
+  // page used to answer all three with "No conversations yet", so an agent with
+  // a hundred conversations was announced as having never spoken while its list
+  // was still in flight (DOR-1253). Same shapes the Rooms page uses.
+  if (isLoading) return <Skeleton className="h-16 w-full" />;
+
+  if (isError) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        Couldn’t read {member.displayName}’s conversations.
+      </p>
+    );
   }
 
   if (sessions.length === 0) {

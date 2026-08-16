@@ -12,6 +12,7 @@
  * @module features/profile/model/use-profile-agent
  */
 import { useCallback } from 'react';
+import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import type {
@@ -46,6 +47,19 @@ export type ProfileAgentManifest = AgentManifest & {
  */
 export type ProfileAgentUpdate = AgentManifestUpdate & Partial<UpdateAgentConventions>;
 
+/** What a caller wants to know about how its save went. */
+export interface ProfileUpdateHandlers {
+  /** The server stored it. Only then — never on the way out. */
+  onSuccess?: () => void;
+  /**
+   * The server refused it, or never heard it.
+   *
+   * Supplying this replaces the default toast, for an editor that says so in
+   * its own words instead.
+   */
+  onError?: (error: Error) => void;
+}
+
 /** The agent behind a profile, and the one way to change it. */
 export interface ProfileAgent {
   /** The manifest, or `null` when this identity has none to read. */
@@ -54,8 +68,10 @@ export interface ProfileAgent {
   projectPath: string | null;
   /** True while the first read is in flight. */
   isPending: boolean;
+  /** True while a save is in flight. */
+  isSaving: boolean;
   /** Save a change. Invalidates the manifest AND the roster (§4). */
-  update: (updates: ProfileAgentUpdate) => void;
+  update: (updates: ProfileAgentUpdate, handlers?: ProfileUpdateHandlers) => void;
 }
 
 /**
@@ -75,7 +91,7 @@ export function useProfileAgent(member: TeamMember): ProfileAgent {
   const queryClient = useQueryClient();
 
   const update = useCallback(
-    (updates: ProfileAgentUpdate) => {
+    (updates: ProfileAgentUpdate, handlers?: ProfileUpdateHandlers) => {
       if (projectPath === null) return;
       updateAgent.mutate(
         // The convention keys ride the same PATCH body the manifest fields do
@@ -86,6 +102,16 @@ export function useProfileAgent(member: TeamMember): ProfileAgent {
         // is why typing into its SOUL.md editor saved nothing.
         { path: projectPath, updates: updates as AgentManifestUpdate },
         {
+          onSuccess: () => handlers?.onSuccess?.(),
+          // A refused edit says so. Every editor here used to fire and forget,
+          // so a 400 — an over-budget SOUL.md, a protected field on a system
+          // agent — left the page looking exactly like a save that worked
+          // (DOR-1253). The server's own sentence is the message: it names the
+          // file and the budget, which "Couldn't save" does not.
+          onError: (error: Error) => {
+            if (handlers?.onError) return handlers.onError(error);
+            toast.error(error.message);
+          },
           onSettled: () => {
             // The roster the portrait and the rows are drawn from…
             void queryClient.invalidateQueries({ queryKey: TEAM_ROSTER_KEY });
@@ -105,6 +131,7 @@ export function useProfileAgent(member: TeamMember): ProfileAgent {
     agent: (query.data as ProfileAgentManifest | null | undefined) ?? null,
     projectPath,
     isPending: projectPath !== null && query.isPending,
+    isSaving: updateAgent.isPending,
     update,
   };
 }

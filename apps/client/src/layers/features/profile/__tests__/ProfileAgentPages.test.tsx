@@ -11,13 +11,15 @@
  * saying the old name, a Delete that fires without the typed confirmation.
  */
 import { useState, type ReactNode } from 'react';
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { SOUL_MAX_CHARS, buildSoulContent } from '@dorkos/shared/convention-files';
+import { DEFAULT_TRAITS, renderTraits } from '@dorkos/shared/trait-renderer';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -118,6 +120,31 @@ async function renderProfile(
 /** Open the row with this id. */
 async function openRow(id: string) {
   await userEvent.click(document.querySelector(`[data-profile-row="${id}"]`)!);
+}
+
+// The pages are code-split (`registry.ts` uses `lazy`), so the first render of
+// one waits on a real dynamic import — which vitest transforms on demand, and
+// under a loaded machine that took longer than a `findBy`'s second. This file
+// then went red on the machine rather than on a bug. Importing the modules once
+// up front turns every later wait into an already-resolved promise.
+beforeAll(async () => {
+  await Promise.all([
+    import('../ui/pages/AboutPage'),
+    import('../ui/pages/AppearancePage'),
+    import('../ui/pages/ConventionPage'),
+    import('../ui/pages/SessionsPage'),
+  ]);
+});
+
+/** A promise this test decides the ending of — a request that has not answered. */
+function deferred<T>() {
+  let settle!: (value: T) => void;
+  let fail!: (error: unknown) => void;
+  const promise = new Promise<T>((resolve, reject) => {
+    settle = resolve;
+    fail = reject;
+  });
+  return { promise, settle, fail };
 }
 
 beforeEach(() => {
@@ -222,6 +249,31 @@ describe('the counts a row carries', () => {
     await waitFor(() => expect(row.textContent).toContain('1 scheduled'));
   });
 
+  it('says nothing at all while it is still counting', async () => {
+    // "0 conversations" about an agent with a hundred of them is worse than an
+    // empty row: the row exists to save you opening the page (DOR-1253).
+    const sessions = deferred<{ sessions: unknown[]; warnings: unknown[] }>();
+    const tasks = deferred<unknown[]>();
+    await renderProfile(MANAGED, {
+      transport: mockTransport({
+        listSessions: vi.fn().mockReturnValue(sessions.promise),
+        listTasks: vi.fn().mockReturnValue(tasks.promise),
+      }),
+    });
+
+    const row = () => document.querySelector('[data-profile-row="sessions"]')!;
+    await waitFor(() => expect(row()).not.toBeNull());
+    expect(row().textContent).not.toContain('conversation');
+    expect(document.querySelector('[data-profile-row="tasks"]')!.textContent).not.toContain(
+      'scheduled'
+    );
+
+    sessions.settle({ sessions: [], warnings: [] });
+    tasks.settle([]);
+
+    await waitFor(() => expect(row().textContent).toContain('0 conversations'));
+  });
+
   it('draws no Tasks row at all where the server has tasks switched off', async () => {
     // Not "0 scheduled", and not a locked row: an install with the tool off has
     // no such thing as a schedule, so there is nothing here to name.
@@ -276,6 +328,23 @@ describe('the popovers', () => {
 
     expect(await screen.findByText('How this agent talks')).toBeInTheDocument();
   });
+
+  it('writes the personality into SOUL.md, not only into the manifest', async () => {
+    // A turn reads the trait block out of SOUL.md; the manifest alone reaches
+    // the prompt only where that block already exists. Writing both is what the
+    // Agent Hub always did, and what makes the change audible (DOR-1253).
+    const { transport } = await renderProfile(MANAGED);
+    await openRow('personality');
+
+    await userEvent.click(await screen.findByRole('button', { name: /The Sage/ }));
+
+    const [, updates] = vi.mocked(transport.updateAgentByPath).mock.calls[0];
+    const patch = updates as { traits?: unknown; soulContent?: string };
+    expect(patch.traits).toBeDefined();
+    expect(patch.soulContent).toContain('TRAITS:END');
+    // And the prose already in the file is still under it.
+    expect(patch.soulContent).toContain('Be careful.');
+  });
 });
 
 describe('About, where an agent is named', () => {
@@ -322,6 +391,20 @@ describe('About, where an agent is named', () => {
     });
   });
 
+  it('will not save an agent with no name, and says so where you typed it', async () => {
+    const { transport } = await renderProfile(MANAGED, { start: 'about' });
+
+    const name = await screen.findByTestId('agent-name-field');
+    await userEvent.clear(name);
+    await userEvent.type(name, '{Enter}');
+
+    expect(transport.updateAgentByPath).not.toHaveBeenCalled();
+    // Not silently blank: the field goes back to what the agent is called, and
+    // the reason sits under it.
+    expect(name).toHaveValue('Warden');
+    expect(screen.getByText(/An agent needs a name/)).toBeInTheDocument();
+  });
+
   it('never becomes an editor on DorkBot', async () => {
     // Its About row is locked, so the only way here is a link — and the server
     // answers 403 SYSTEM_PROTECTED, which is what the lock exists to preempt.
@@ -360,6 +443,109 @@ describe('Instructions and Boundaries', () => {
     expect(await screen.findByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
+  it('says "Saved" only once the server has stored it', async () => {
+    // It used to say so next to a fire-and-forget mutation, so a 400 and a 200
+    // looked identical: toast, "Saved just now", nothing on disk (DOR-1253).
+    const save = deferred<AgentManifest>();
+    const transport = mockTransport({
+      updateAgentByPath: vi.fn().mockReturnValue(save.promise),
+    });
+    await renderProfile(MANAGED, { start: 'instructions', transport });
+
+    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    await userEvent.type(editor, ' More.');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(toasts.success).not.toHaveBeenCalled();
+
+    save.settle(WARDEN_MANIFEST);
+
+    await waitFor(() => expect(toasts.success).toHaveBeenCalledWith('Saved'));
+  });
+
+  it('says why a refused save failed, and keeps the text', async () => {
+    // The rejection is DEFERRED on purpose. `useUpdateAgent` writes the patch
+    // into the manifest cache optimistically and rolls it back on failure, and
+    // an immediate rejection batches both into one render — so the editor never
+    // sees the optimistic value and the bug hides. Left in flight for a render,
+    // the round trip is the real one, and it used to end with the operator's
+    // text replaced by the version the server had just refused to change.
+    const save = deferred<AgentManifest>();
+    const transport = mockTransport({
+      updateAgentByPath: vi.fn().mockReturnValue(save.promise),
+    });
+    await renderProfile(MANAGED, { start: 'instructions', transport });
+
+    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    await userEvent.type(editor, ' More.');
+    const button = screen.getByRole('button', { name: 'Save' });
+    await userEvent.click(button);
+    await waitFor(() => expect(transport.updateAgentByPath).toHaveBeenCalled());
+
+    save.fail(new Error('SOUL.md is too long — the whole file has to fit in 4,000.'));
+
+    await waitFor(() => expect(toasts.error).toHaveBeenCalledWith(expect.stringMatching(/SOUL/)));
+    expect(toasts.success).not.toHaveBeenCalled();
+    // The draft survives the rollback, and stays dirty — a refusal is a reason
+    // to try again, not to lose what you wrote.
+    expect(editor).toHaveValue('Be careful. More.');
+    await waitFor(() => expect(button).toBeEnabled());
+  });
+
+  it('refuses to save a file the whole of which is over budget', async () => {
+    // The editor bounds the prose; the server bounds the FILE. A legal-looking
+    // 3,900 characters of instructions was over once the trait block above it
+    // was counted, and the page offered a Save that could not work.
+    const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...WARDEN_MANIFEST.traits });
+    const overhead = buildSoulContent(traitBlock, 'x').length - 1;
+    const prose = 'x'.repeat(SOUL_MAX_CHARS - overhead - 2);
+    const transport = mockTransport({
+      getAgentByPath: vi.fn().mockResolvedValue({
+        ...WARDEN_MANIFEST,
+        soulContent: buildSoulContent(traitBlock, prose),
+      }),
+    });
+    await renderProfile(MANAGED, { start: 'instructions', transport });
+
+    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    await userEvent.type(editor, 'yyy');
+
+    const save = screen.getByRole('button', { name: 'Save' });
+    await waitFor(() => expect(save).toBeDisabled());
+    const status = document.querySelector('[data-slot="profile-convention-status"]')!;
+    expect(status.textContent).toContain('Too long by 1 character');
+    expect(status.textContent).toContain('personality block');
+    expect(transport.updateAgentByPath).not.toHaveBeenCalled();
+  });
+
+  it('asks before Back throws away what you wrote', async () => {
+    await renderProfile(MANAGED, { start: 'instructions' });
+
+    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    await userEvent.type(editor, ' More.');
+    await userEvent.click(screen.getByRole('button', { name: 'Back to profile' }));
+
+    expect(await screen.findByText('Discard your changes?')).toBeInTheDocument();
+    // Still on the page, with the text intact.
+    expect(screen.getByPlaceholderText('Write markdown content...')).toHaveValue(
+      'Be careful. More.'
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+
+    expect(await screen.findByRole('heading', { name: 'Warden' })).toBeInTheDocument();
+  });
+
+  it('does not ask when there is nothing unsaved', async () => {
+    await renderProfile(MANAGED, { start: 'instructions' });
+
+    await screen.findByPlaceholderText('Write markdown content...');
+    await userEvent.click(screen.getByRole('button', { name: 'Back to profile' }));
+
+    expect(screen.queryByText('Discard your changes?')).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'Warden' })).toBeInTheDocument();
+  });
+
   it('keeps the NOPE disclaimer wherever boundaries are edited', async () => {
     await renderProfile(MANAGED, { start: 'boundaries' });
 
@@ -367,6 +553,48 @@ describe('Instructions and Boundaries', () => {
     expect(screen.getByPlaceholderText('Write markdown content...')).toHaveValue(
       'Never force-push.'
     );
+  });
+});
+
+describe('the Sessions page', () => {
+  it('does not claim there are none while it is still asking', async () => {
+    const sessions = deferred<{ sessions: unknown[]; warnings: unknown[] }>();
+    await renderProfile(MANAGED, {
+      start: 'sessions',
+      transport: mockTransport({ listSessions: vi.fn().mockReturnValue(sessions.promise) }),
+    });
+
+    await screen.findByRole('heading', { name: 'Sessions' });
+    expect(screen.queryByText(/No conversations yet/)).toBeNull();
+    expect(document.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+
+    sessions.settle({ sessions: [], warnings: [] });
+
+    expect(await screen.findByText(/No conversations yet/)).toBeInTheDocument();
+  });
+
+  it('says it could not look, rather than that there is nothing', async () => {
+    await renderProfile(MANAGED, {
+      start: 'sessions',
+      transport: mockTransport({
+        listSessions: vi.fn().mockRejectedValue(new Error('offline')),
+      }),
+    });
+
+    expect(await screen.findByText(/Couldn’t read Warden’s conversations/)).toBeInTheDocument();
+    expect(screen.queryByText(/No conversations yet/)).toBeNull();
+  });
+});
+
+describe('what a profile asks the server for', () => {
+  it('asks nothing about packages or blocks on a person', async () => {
+    // Every read here is a question about an AGENT. On "You" they can only
+    // answer "not yours", and two of them were being asked anyway.
+    const { transport } = await renderProfile(SELF);
+
+    await screen.findByRole('heading', { name: SELF.displayName });
+    expect(transport.listInstalledPackages).not.toHaveBeenCalled();
+    expect(transport.listDeniedMeshAgents).not.toHaveBeenCalled();
   });
 });
 

@@ -14,14 +14,14 @@ import { IDENTITY_STATUSES, MOCK_IDENTITIES, type MockIdentity } from '../mock-s
 
 const AUTO_COLOR = 'hsl(255, 70%, 55%)';
 const AUTO_EMOJI = '🤖';
-/** Matches `AvatarPickerPopover`'s own burst duration (`showCheckmark`). */
+/** Matches `AvatarPickerPanel`'s own burst duration (`showCheckmark`). */
 const JUST_SELECTED_MS = 600;
 
 /**
  * Demo state for one `AvatarColorGrid` + `AvatarEmojiGrid` pair — enough to
- * drive the grids without the real `IdentityTab` / `AvatarPickerPopover`
+ * drive the grids without the real `IdentityTab` / `AvatarPickerPanel`
  * data context they normally sit inside. `justSelected` mirrors
- * `AvatarPickerPopover`'s own `showCheckmark`: a momentary key, not one
+ * `AvatarPickerPanel`'s own `showCheckmark`: a momentary key, not one
  * bound to the current selection, so the checkmark burst fires once and
  * clears rather than sitting lit forever on whatever is picked.
  */
@@ -227,7 +227,7 @@ export function AgentIdentityShowcases() {
 
       <PlaygroundSection
         title="AvatarPickerGrid"
-        description="The color-swatch and emoji grids shared by every avatar picker (IdentityTab, AvatarPickerPopover) — collapsed to one implementation in DOR-970. The two containers around it stay different: a plain settings-form popover vs. a celebratory panel with hover preview and a selection burst."
+        description="The color-swatch and emoji grids shared by every avatar picker (IdentityTab, AvatarPickerPanel) — collapsed to one implementation in DOR-970. The two containers around it stay different: a plain settings-form popover vs. a celebratory panel with hover preview and a selection burst."
       >
         <ShowcaseLabel>Plain container (the IdentityTab popover)</ShowcaseLabel>
         <ShowcaseDemo>
@@ -250,7 +250,7 @@ export function AgentIdentityShowcases() {
           </div>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Celebratory container (the AvatarPickerPopover panel)</ShowcaseLabel>
+        <ShowcaseLabel>Celebratory container (the AvatarPickerPanel)</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-wrap items-start gap-4">
             <div className="w-auto rounded-md border p-3">
