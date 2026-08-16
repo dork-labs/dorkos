@@ -91,6 +91,17 @@ export interface MemberListProps {
  * become the button's, because an explicit `aria-label` wins over content — but
  * it stays there for anything reading the roster off the element rather than
  * off the room.
+ *
+ * **No disc opens a profile, and that is a decision** (spec
+ * `profile-unification` W1.3). The pressable shape is ONE button with ONE
+ * action, so a per-member profile control could only be a button inside a
+ * button — invalid HTML that assistive technology announces unpredictably — and
+ * the action it would have to displace is the room header's most obvious one:
+ * open the members panel. The profile lives one press further in, on each row
+ * of that panel (`RoomMemberRow`), which is the same route Slack takes from a
+ * facepile. The read-only shape has no such conflict and no production caller
+ * either, so it stays a labelled list rather than growing an API nothing asks
+ * for.
  */
 export function MemberList({ members, onClick, label, facesByRef, className }: MemberListProps) {
   if (members.length === 0) return null;

@@ -39,6 +39,18 @@ vi.mock('../model/use-agent-picker-candidates', () => ({
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+// The sheet reads route state to decide where each member row's face leads
+// (`useProfileDeepLink`), and this file mounts it with no router. Where that
+// link goes has its own file — `RoomMemberRow.click-to-profile.test.tsx`, which
+// mounts a real router and asserts the id that travels.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useProfileDeepLink: () => ({ isOpen: false, memberId: null, open: vi.fn(), close: vi.fn() }),
+  };
+});
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------

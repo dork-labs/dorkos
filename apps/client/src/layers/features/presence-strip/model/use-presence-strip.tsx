@@ -5,6 +5,7 @@
  */
 import { useCallback, useMemo, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useProfileDeepLink } from '@/layers/shared/model';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { PresenceStrip } from '../ui/PresenceStrip';
 import type { PresenceFollowTarget } from '../lib/presence-rows';
@@ -51,6 +52,11 @@ export interface PresenceSlot {
  * changes what is on screen — following someone into a room and pressing Back
  * returns you to your own page.
  *
+ * **Watching and looking up are two different questions, and the strip answers
+ * both without confusing them.** Pressing a chip follows the work; the hover
+ * card the same chip opens carries "View profile", which lands on the same
+ * `?profile=<id>` address a Team card or a mention pill opens.
+ *
  * @param excludeRoomIds - Rooms whose presence is already being narrated
  *   elsewhere on the page. The home surface passes its own `#team` room here,
  *   because that room draws a presence line under its composer and the same
@@ -63,6 +69,9 @@ export interface PresenceSlot {
 export function usePresenceStrip(excludeRoomIds: readonly string[] = []): PresenceSlot {
   const rows = usePresenceRows(excludeRoomIds);
   const navigate = useNavigate();
+  // The same address every other face in the cockpit opens — `?profile=<id>`,
+  // pushed rather than replaced, so the phone's back gesture closes it.
+  const { open: viewProfile } = useProfileDeepLink();
 
   const follow = useCallback(
     (target: PresenceFollowTarget) => {
@@ -90,7 +99,10 @@ export function usePresenceStrip(excludeRoomIds: readonly string[] = []): Presen
   // whose element is referentially identical, so twenty session-status events
   // that change nobody's presence redraw no avatars, no hover cards and no
   // DOM at all — even though the store woke this hook twenty times.
-  const node = useMemo(() => <PresenceStrip rows={rows} onFollow={follow} />, [rows, follow]);
+  const node = useMemo(
+    () => <PresenceStrip rows={rows} onFollow={follow} onViewProfile={viewProfile} />,
+    [rows, follow, viewProfile]
+  );
 
   return { occupied: rows.length > 0, node };
 }

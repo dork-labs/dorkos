@@ -35,6 +35,15 @@ interface RoomEntryGutterProps {
   time: string;
   /** The whole date, revealed by a pointer resting on the time. */
   absoluteTime: string;
+  /**
+   * Open this author's profile, or `undefined` for one the roster cannot
+   * address — the room's own voice, or an agent the fleet could not name.
+   * Resolved by the row, which is the part that can reach both the roster and
+   * the fleet; the disc itself only draws what it is handed.
+   */
+  onViewProfile?: () => void;
+  /** True when this entry's author is the person reading — see the avatar's own doc. */
+  isSelf?: boolean;
   /** The identity column's own layout (`messageItem`'s `gutter` slot). */
   className: string;
   /** The continuation timestamp's own layout (`messageItem`'s `avatarTimestamp` slot). */
@@ -75,6 +84,10 @@ interface RoomEntryAuthorLineProps {
  * A group start renders the avatar. A continuation renders nothing until it is
  * hovered or focused, and then the clock reading appears in the same column —
  * the one fact the grouping takes away, given back on demand.
+ *
+ * **The avatar is the door to who said it.** Given a destination it opens that
+ * author's profile — the same address the mention pill in the body opens, so a
+ * room answers "who is this?" from the face as well as from the name.
  */
 export function RoomEntryGutter({
   author,
@@ -82,12 +95,16 @@ export function RoomEntryGutter({
   createdAt,
   time,
   absoluteTime,
+  onViewProfile,
+  isSelf,
   className,
   timestampClassName,
 }: RoomEntryGutterProps) {
   return (
     <div className={className}>
-      {showAuthorHeader && <MessageAuthorAvatar author={author} />}
+      {showAuthorHeader && (
+        <MessageAuthorAvatar author={author} onViewProfile={onViewProfile} isSelf={isSelf} />
+      )}
       {!showAuthorHeader && time.length > 0 && (
         <time
           dateTime={createdAt}

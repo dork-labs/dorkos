@@ -35,6 +35,7 @@ import {
   DEGRADED_ON_DEFAULT,
   DELEGATING,
   HEALTHY,
+  PLANNING,
   WAITING_ON_BACKGROUND_TASKS,
   RATE_LIMITED,
   SAMPLED_WIDTHS,
@@ -229,6 +230,33 @@ export function StatusLineShowcases() {
             ))}
           </div>
         </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Planning at the two narrow tiers — Plan holds the slot, not an empty permission chip
+          (DOR-1236)
+        </ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <div className="space-y-5">
+            {/* The `compact` and `identity` floors — the two tiers whose right-cluster
+                budget (3 slots) actually contests `permission` against `plan`. Drawn at
+                their real tier floors, not an arbitrary narrow width: this page's own
+                e2e guard (`status-line-fit.spec.ts`) asserts every row here sits at a
+                floor `resolveStatusBudget` defines, so a reproduction has to use one. */}
+            {TIER_WIDTHS.filter((width) => width === 440 || width === 340).map((width) => (
+              <BudgetedLine key={width} scenario={PLANNING} width={width} />
+            ))}
+          </div>
+        </ShowcaseDemo>
+        <p className="text-muted-foreground text-xs">
+          Before the fix, this exact reproduction — reconnecting, 92% context, planning — put the
+          permission item and the composer&apos;s Plan switch at the same severity (40). The
+          tie-break in <code>applyStatusBudget</code> is a stable sort over registry order, and the
+          registry lists <code>permission</code> before <code>plan</code>, so the contested slot at
+          these two narrow widths went to a permission chip with nothing to report while the Plan
+          chip — the one that IS news — landed under the <code>⋯</code>. The permission item now
+          omits its node entirely while Plan holds the session, so there is nothing left to contest
+          the slot with.
+        </p>
 
         <ShowcaseLabel>What every width affords</ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">

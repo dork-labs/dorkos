@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveClaudeCliPath } from '../services/runtimes/claude-code/sdk/sdk-utils.js';
 import { describeClaudeCodeAccounts } from '../services/runtimes/claude-code/claude-config-dir.js';
@@ -20,25 +20,18 @@ import {
   USER_CONFIG_DEFAULTS,
   USER_PROFILE_DEFAULTS,
 } from '@dorkos/shared/config-schema';
+import { deepMerge } from '../services/core/operator/config-patch.js';
 import {
-  applyConfigPatch,
-  deepMerge,
-  describeConfigWrite,
-} from '../services/core/operator/config-patch.js';
+  applyGuardedConfigWrite,
+  logConfigWrite,
+  type ConfigWriteAuthority,
+} from '../services/core/operator/config-write.js';
 import {
   describeOperatorOnlyRefusal,
-  findLoginRequiredPaths,
-  findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
   REQUIRES_LOGIN_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
-import {
-  AUTONOMY_ACK_REQUIRED_CODE,
-  AUTONOMY_DEFAULT_ACK_MESSAGE,
-  demoteAutonomyDefaultsOnAckClear,
-  findUnacknowledgedAutonomyDefaults,
-} from '../services/core/approvals/autonomy-consent.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
   readCallerAuthority,
@@ -313,52 +306,59 @@ router.get('/', async (_req, res) => {
   });
 });
 
-router.patch('/', (req, res) => {
-  try {
+/**
+ * The two bars this route puts in front of a guarded setting, expressed as the
+ * authority `applyGuardedConfigWrite` asks. The SEQUENCE lives there, shared
+ * with `dorkos config set` and the `config_patch` tool; what lives here is the
+ * evidence only an HTTP request carries.
+ *
+ * The bars are named for what they CHECK, never for the order they run in
+ * ("first", "bar 2"), because the order carries no meaning and ordinal names rot
+ * the moment somebody reorders them, which already happened once and inverted
+ * two comments.
+ *
+ * @param req - The incoming request, for the agent header and approval token.
+ * @param res - The response carrying `sessionGate`'s resolved user.
+ * @returns The authority for this caller.
+ */
+function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAuthority {
+  return {
     // ## THE LOGIN BAR — the standing-permission settings need login on at all
     //
-    // Three bars guard this route. They are named for what they CHECK, never for
-    // the order they run in ("first", "bar 2"), because the order carries no
-    // meaning here and ordinal names rot the moment somebody reorders them, which
-    // already happened once and inverted two comments.
-    //
-    // Checked ahead of the other two, so neither can change the answer. The
-    // reason it is not folded into the cookie bar is written out at
+    // The reason it is not folded into the cookie bar is written out at
     // REQUIRES_LOGIN_CONFIG_PATHS: that bar allows every caller while login is
-    // off, and for these two paths that would leave the switch pre-armable.
+    // off, and for these paths that would leave the switch pre-armable.
     //
     // These settings decide real behavior: the tier gate reads
     // `approvals.standingGrants` on every gated call. The write also persists and
-    // nothing sweeps it, so a switch set while login is off would still be set once
-    // login is on, reading as something the person chose.
-    const loginRequired = findLoginRequiredPaths(req.body);
-    if (loginRequired.length > 0) {
+    // nothing sweeps it, so a switch set while login is off would still be set
+    // once login is on, reading as something the person chose.
+    refuseLoginRequired(paths) {
       const refusal = requireStandingGrantsLogin();
-      if (refusal) {
-        return res.status(refusal.status).json({
-          error: REQUIRES_LOGIN_CONFIG_ERROR,
-          code: refusal.code,
-          paths: loginRequired,
-          message: refusal.error,
-        });
-      }
-    }
+      if (!refusal) return undefined;
+      return {
+        status: refusal.status,
+        code: refusal.code,
+        error: REQUIRES_LOGIN_CONFIG_ERROR,
+        message: refusal.error,
+        paths: [...paths],
+      };
+    },
 
     // The REST twin of the guard on `operator.config_patch` (DOR-467). PR #469
     // put the operator-only write policy on the capability surface, but this
-    // route reaches the SAME `applyConfigPatch` and had no policy check at all —
-    // and with login off `sessionGate` is a documented pass-through, so an agent
-    // with a shell could `curl` straight past the guard whose whole promise is
-    // that agents cannot change the settings protecting the instance.
+    // route reaches the SAME write and had no policy check at all — and with
+    // login off `sessionGate` is a documented pass-through, so an agent with a
+    // shell could `curl` straight past the guard whose whole promise is that
+    // agents cannot change the settings protecting the instance.
     //
-    // A patch touching one of those settings has to clear TWO bars, the cookie bar
-    // and the agent bar. They refuse different callers and neither one covers the
-    // other. Their order decides only WHICH refusal a caller that fails both
-    // hears, never what is allowed: the cookie bar goes first so the more specific
-    // answer wins, since "sign in first" is more use to a caller than "only a
-    // person can change those" when both are true.
-    const operatorOnly = findOperatorOnlyPaths(req.body);
-    if (operatorOnly.length > 0) {
+    // A patch touching one of those settings has to clear TWO bars, the cookie
+    // bar and the agent bar. They refuse different callers and neither one
+    // covers the other. Their order decides only WHICH refusal a caller that
+    // fails both hears, never what is allowed: the cookie bar goes first so the
+    // more specific answer wins, since "sign in first" is more use to a caller
+    // than "only a person can change those" when both are true.
+    refuseOperatorOnly(paths) {
       // ## THE COOKIE BAR — with login on, prove you are a person in the cockpit
       // (DOR-505)
       //
@@ -390,17 +390,18 @@ router.patch('/', (req, res) => {
       // `docs/guides/action-approvals.mdx`. Turning on Require login closes it. Do
       // not describe this route as "operator-only enforced" without that
       // qualifier.
-      const refusal = requireOperatorCookieUnderLogin(
+      const cookieRefusal = requireOperatorCookieUnderLogin(
         res,
         'the settings that protect this instance'
       );
-      if (refusal) {
-        return res.status(refusal.status).json({
+      if (cookieRefusal) {
+        return {
+          status: cookieRefusal.status,
+          code: cookieRefusal.code,
           error: OPERATOR_ONLY_CONFIG_ERROR,
-          code: refusal.code,
-          paths: operatorOnly,
-          message: refusal.error,
-        });
+          message: cookieRefusal.error,
+          paths: [...paths],
+        };
       }
 
       // ## THE AGENT BAR — anything that names itself an agent is refused, in
@@ -420,118 +421,55 @@ router.patch('/', (req, res) => {
       // PATH. `operator.config_patch` is tier `act`, so its refusal is not an
       // approval gate at all — the capability twin refuses these paths
       // unconditionally, with no approval that could ever unlock them
-      // (`operator-tool-handlers.ts`). For this one effect the trusted escape
+      // (`OPERATOR_TOOL_AUTHORITY`). For this one effect the trusted escape
       // grants something the two-step path cannot, which is exactly what the
       // cookie bar takes back in the posture where DorkOS has the evidence to.
       if (!trustedCaller(readCallerAuthority(req, res))) {
-        return res.status(403).json({
-          error: OPERATOR_ONLY_CONFIG_ERROR,
+        return {
+          status: 403,
           code: OPERATOR_ONLY_CONFIG_CODE,
-          paths: operatorOnly,
-          message: describeOperatorOnlyRefusal(operatorOnly),
+          error: OPERATOR_ONLY_CONFIG_ERROR,
+          message: describeOperatorOnlyRefusal(paths),
+          paths: [...paths],
+        };
+      }
+
+      return undefined;
+    },
+  };
+}
+
+router.patch('/', (req, res) => {
+  try {
+    const postureBefore = readStandingGrantPosture();
+    // The bars, the autonomy consent door, the write, and the audit line — the
+    // sequence `dorkos config set` and the `config_patch` tool also run, so the
+    // three doors cannot drift into meaning different things. What this route
+    // adds is who the caller is and what a refusal looks like over HTTP.
+    const result = applyGuardedConfigWrite({
+      patch: req.body,
+      authority: requestConfigWriteAuthority(req, res),
+      source: 'PATCH /api/config',
+    });
+
+    if (!result.ok) {
+      if (result.kind === 'invalid') {
+        return res.status(400).json({
+          error: result.error,
+          ...(result.details && { details: result.details }),
         });
       }
+      const { status, error, code, paths, message } = result.refusal;
+      return res.status(status).json({ error, code, paths, message });
     }
 
-    // ## THE AUTONOMY DOOR, at set-time (spec `trust-dial`, decision 6)
-    //
-    // Making Full autonomy the stop new sessions START at is a wider claim than
-    // putting one session there: it applies to sessions that do not exist yet, it
-    // is durable, and a session born from it opens already bypassed with no
-    // dialog to show. So the asking happens HERE, at the moment of choosing —
-    // and the record left here is what satisfies the session door
-    // (`PATCH /api/sessions/:id`) for every session this default births, which is
-    // the whole point of a standing default being allowed at all.
-    //
-    // Checked after the two policy bars above, because "you may not change this"
-    // outranks "confirm what this means" for a caller failing both, and before
-    // the write, because a refusal must change nothing. Same 428 as the session
-    // door, for the same reason: nothing about the request is malformed, and a
-    // precondition the caller can go and satisfy is exactly what 428 says.
-    //
-    // The cockpit satisfies it in ONE patch — the consent dialog writes
-    // `ui.autonomyAcknowledgedAt` and the new stop together — so there is no
-    // window where the stop landed without the consent.
-    //
-    // ### Reset takes the standing default with it
-    //
-    // The other half of the same policy: clearing the acknowledgement demotes
-    // every default-trust-stop leaf still holding `'autonomy'`, in THIS write.
-    // The record is that default's licence, so a Reset that left it standing
-    // would keep birthing bypassed sessions with no consent on file — and the
-    // cockpit's first mode change for one of them would 428 against a door the
-    // person believed they had just re-armed. See
-    // `demoteAutonomyDefaultsOnAckClear` for why it is a fragment merged here
-    // rather than a second write.
-    const demotion = demoteAutonomyDefaultsOnAckClear(req.body);
-    const patch = demotion
-      ? deepMerge(req.body as Record<string, unknown>, demotion)
-      : (req.body as Record<string, unknown>);
-
-    // Asked of the MERGED patch, not the raw body: the question is what is about
-    // to be written, and a Reset that demotes a stop in the same breath is not
-    // asking for autonomy at all.
-    const unacknowledged = findUnacknowledgedAutonomyDefaults(patch);
-    if (unacknowledged.length > 0) {
-      return res.status(428).json({
-        error: AUTONOMY_DEFAULT_ACK_MESSAGE,
-        code: AUTONOMY_ACK_REQUIRED_CODE,
-        paths: unacknowledged,
-        message: AUTONOMY_DEFAULT_ACK_MESSAGE,
-      });
-    }
-    if (demotion) {
-      logger.info('[Config] Full-autonomy acknowledgement cleared; standing defaults demoted');
-    }
-
-    // Read BEFORE the write, for the audit line below. `getAll()` re-reads the
-    // store, so this is a snapshot rather than a reference that moves under us.
-    const configBefore = configManager.getAll();
-    const postureBefore = readStandingGrantPosture();
-    const result = applyConfigPatch(patch);
-    if (!result.ok) {
-      return res.status(400).json({
-        error: result.error,
-        ...(result.details && { details: result.details }),
-      });
-    }
     // Turning login off, or the master switch off, ends every live standing
     // permission. Leaving them dormant would let them wake up later under a
-    // posture that can no longer justify them.
+    // posture that can no longer justify them. It stays at the route rather than
+    // inside the shared step because it acts on an in-process store of live
+    // permissions, which exists in the server and nowhere else.
     revokeStandingGrantsIfPostureNarrowed(postureBefore, readStandingGrantPosture());
 
-    // ## The audit line (DOR-1237)
-    //
-    // `info`, not `debug`, and the LEAVES rather than the top-level section.
-    // `runtimes.claudeCode.defaultTrustStop` — an operator-only setting — moved
-    // twice on a real install between sign-offs, and nothing on disk could say
-    // what wrote it: a production install logs at info, so the old `debug` line
-    // was never written, and where it was written it said only `runtimes`.
-    //
-    // Derived from the WRITE, not the request: what landed, never what was
-    // asked for. So a key Zod stripped is named by nobody, a patch that re-sent
-    // the stored value produces no line, and a leaf the server folded in itself
-    // — the Reset demotion above — is named alongside the rest. Paths only,
-    // never values, and every segment escaped; `describeConfigWrite` carries the
-    // reasoning for all three.
-    //
-    // **This route is not the whole story.** Config is also written by the CLI
-    // (`dorkos config set`) and by a handful of server-side callers, none of
-    // which pass through here and none of which log a line. Do not read a silent
-    // log as proof nothing changed — see "Who may write which setting" in
-    // `contributing/configuration.md`.
-    //
-    // Every PATCH that changes something gets a line, the cockpit's own UI
-    // writes included (a pin moved, a section collapsed). Deliberate rather than
-    // overlooked: those ride discrete gestures — the sidebar's reorder writes
-    // from `onDragEnd`, the welcome-back digest from a ref-guarded effect that
-    // fires once per mount — so the volume is one line per thing a person did.
-    // An effect that lost its guard is the shape that could flood this; the
-    // no-change branch below is what keeps such a regression cheap.
-    const touched = describeConfigWrite(configBefore, result.config);
-    if (touched) {
-      logger.info(`[Config] Patched: ${touched}`);
-    }
     for (const warning of result.warnings) {
       logger.warn(`[Config] ${warning}`);
     }
@@ -560,7 +498,11 @@ router.put('/agents/defaultAgent', (req, res) => {
     // route changes the default agent, not where agents live.
     const agents = configManager.get('agents') ?? USER_CONFIG_DEFAULTS.agents;
     configManager.set('agents', { ...agents, defaultAgent: value.trim() });
-    logger.debug(`[Config] Default agent set to "${value.trim()}"`);
+    // A purpose-built writer: it can only ever move `agents.defaultAgent`, so it
+    // takes the audit line rather than the policy the general settings door
+    // runs. The line used to be `debug` and named the VALUE — a production
+    // install logs at info, so it was never written at all (DOR-1237).
+    logConfigWrite('the default-agent route', 'agents', agents, configManager.get('agents'));
 
     return res.json({ success: true, defaultAgent: value.trim() });
   } catch (err) {

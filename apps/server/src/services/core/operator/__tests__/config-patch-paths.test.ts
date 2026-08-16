@@ -15,7 +15,7 @@
  *    schema declares, so a change that starts logging values fails here.
  * 2. **No forgery.** Three sections are `z.record`s, so their leaf segments are
  *    caller-chosen, and one of them is `agent-writable`. A key holding a newline
- *    and a counterfeit `[Config] Patched: …` line would otherwise write a
+ *    and a counterfeit `[Config] Patched by …` line would otherwise write a
  *    perfect fake of the record this feature exists to make trustworthy. The
  *    record sections are read off the schema rather than hand-listed, the way
  *    the secret test is built from `SENSITIVE_CONFIG_KEYS`, so a fourth one is
@@ -183,7 +183,7 @@ describe('a caller-chosen key cannot forge a log line', () => {
     // The exact payload reproduced against the real route during review: a key
     // that closes the current line and opens a counterfeit one naming the very
     // setting this feature exists to make auditable.
-    const forged = `proj\n[info] [Config] Patched: runtimes.claudeCode.defaultTrustStop`;
+    const forged = `proj\n[info] [Config] Patched by dorkos config set: runtimes.claudeCode.defaultTrustStop`;
 
     const line = describeConfigWrite(at(section, {}), at(section, { [forged]: 'x' }));
 

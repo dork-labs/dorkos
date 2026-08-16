@@ -12,7 +12,7 @@
 import type { LucideIcon } from 'lucide-react';
 
 /** One position in the capsule. Stable — tests and telemetry name these. */
-export type EntryActionSlot = 'react' | 'react-more' | 'reply' | 'copy' | 'mention';
+export type EntryActionSlot = 'react' | 'react-more' | 'reply' | 'copy' | 'mention' | 'profile';
 
 /**
  * Which action this is.
@@ -50,6 +50,14 @@ export interface EntryAction {
  * they had before reactions arrived, so the muscle memory built on the earlier
  * capsule survives.
  *
+ * **`profile` is last, and being last is load-bearing.** It was added after the
+ * other four, and every position before the end would have moved a command a
+ * reader's fingers already know — `room-entry-actions.spec.ts` walks this row
+ * with arrow keys and counts the presses to reach Reply. It is also the reason
+ * the author's face can stay out of the tab order: the face is a pointer and
+ * touch affordance, and this is the same destination reached the way every
+ * other per-message action is reached (DOR-1251).
+ *
  * One array, three renderings. The toolbar maps over it, the right-click menu
  * and the touch drawer render the commands from it in the same order, and a test
  * pins the sequence — which is what makes this the single source rather than a
@@ -61,4 +69,5 @@ export const ENTRY_ACTION_ORDER: readonly EntryActionSlot[] = [
   'reply',
   'copy',
   'mention',
+  'profile',
 ];

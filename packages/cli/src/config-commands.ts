@@ -1,6 +1,13 @@
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { execFileSync } from 'child_process';
+import {
+  ACKNOWLEDGE_AUTONOMY_COMMAND,
+  AUTONOMY_ACK_REQUIRED_CODE,
+  handleConfigAcknowledgeAutonomy,
+  writeOrExplain,
+} from './config-write.js';
+import type { CliConfigWriter } from './config-write.js';
 
 /**
  * Minimal interface for config operations needed by CLI commands.
@@ -106,23 +113,168 @@ export function handleConfigGet(store: ConfigStore, key: string): void {
     console.error(`Unknown config key: ${key}`);
     process.exit(1);
   }
-  console.log(value === null ? 'null' : String(value));
+  console.log(formatConfigValue(value));
 }
 
 /**
- * Set a single config value.
+ * Render a stored config value for a person reading a terminal.
+ *
+ * `String()` alone turns a list into `a,b` and an object into `[object Object]`,
+ * neither of which a person could paste back. JSON is what the file holds, so it
+ * is what a list or an object is shown as.
+ *
+ * @param value - A stored config value.
+ * @returns The value as one line of text.
+ */
+function formatConfigValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+/**
+ * Split a dot-path the way the config store itself does, so a key with a literal
+ * dot in it survives the trip.
+ *
+ * `dorkos config set` used to hand the whole path to `ConfigStore.setDot`, which
+ * is `dot-prop` underneath and treats a backslash as an escape \u2014 the only way to
+ * name a key with a dot in it under the three record-shaped sections
+ * (`providers`, `ui.shapes.agentDefaults`, `workbench.defaultViewers`). Now that
+ * the CLI builds a patch object instead, a naive `split('.')` would quietly turn
+ * one such key into two nested ones.
+ *
+ * @param key - A dot-path, possibly with `\.` escapes.
+ * @returns The segments, unescaped.
+ */
+function splitDotPath(key: string): string[] {
+  const segments: string[] = [];
+  let current = '';
+  for (let index = 0; index < key.length; index += 1) {
+    const char = key[index];
+    if (char === '\\' && index + 1 < key.length) {
+      current += key[index + 1];
+      index += 1;
+    } else if (char === '.') {
+      segments.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  segments.push(current);
+  return segments;
+}
+
+/**
+ * Turn `key = value` into the patch object the guarded write takes.
+ *
+ * @param key - A dot-path.
+ * @param value - The parsed value.
+ * @returns A nested object with `value` at `key`.
+ */
+function patchForPath(key: string, value: unknown): Record<string, unknown> {
+  const segments = splitDotPath(key);
+  const patch: Record<string, unknown> = {};
+  let node = patch;
+  for (const segment of segments.slice(0, -1)) {
+    const child: Record<string, unknown> = {};
+    node[segment] = child;
+    node = child;
+  }
+  node[segments[segments.length - 1]!] = value;
+  return patch;
+}
+
+/**
+ * Set a single config value \u2014 through the same door the cockpit uses.
+ *
+ * ## Why this is not a `setDot` any more (DOR-1247)
+ *
+ * It used to write the leaf straight into the file. That meant the one command
+ * anything with a shell can run was the one write with no write policy, no
+ * Full-autonomy consent door, no validation and no line in the log:
+ * `dorkos config set runtimes.claudeCode.defaultTrustStop autonomy` left an
+ * install starting every new session bypassed, with `ui.autonomyAcknowledgedAt`
+ * still `null` \u2014 a state the cockpit's door exists to make unreachable \u2014
+ * and nothing on disk saying it had happened.
+ *
+ * It now goes through {@link CliConfigWriter.guarded}, which brings three things
+ * with it besides the consent door. The whole config is validated before
+ * anything is written, so a value the schema refuses is reported instead of
+ * stored (`server.port notanumber` used to land in the file and make the server
+ * fall back to a default it never mentioned). A setting DorkOS does not have is
+ * said out loud rather than written into a corner of the file nothing reads. And
+ * the write leaves the same audit line every other settings write leaves.
  *
  * @param store - Config storage instance
  * @param key - Dot-separated config path
  * @param rawValue - Raw string value from CLI (will be parsed)
+ * @param writer - How to reach the server's guarded write.
  */
-export function handleConfigSet(store: ConfigStore, key: string, rawValue: string): void {
-  const value = parseConfigValue(rawValue);
-  const result = store.setDot(key, value);
-  if (result.warning) {
-    console.warn(`\u26a0  ${result.warning}`);
+export async function handleConfigSet(
+  store: ConfigStore,
+  key: string,
+  rawValue: string,
+  writer: CliConfigWriter
+): Promise<void> {
+  const segments = splitDotPath(key);
+
+  // A patch is a deep MERGE, and merging replaces a list wholesale rather than
+  // reaching into it \u2014 so there is no patch that means "element 3 of this list".
+  // Sent anyway, `{ '0': 'x' }` reaches Zod as an object where an array belongs
+  // and comes back as "expected array, received object", which reads like a bug
+  // in the value rather than a thing this command cannot do. Say so instead.
+  const listIndex = segments.findIndex((segment) => /^\d+$/.test(segment));
+  if (listIndex > 0) {
+    const listPath = segments.slice(0, listIndex).join('.');
+    console.error(`Cannot set one item of a list: ${key}`);
+    console.error(
+      `Set the whole ${listPath} list at once, or run \`dorkos config edit\` to change it in the file.`
+    );
+    process.exit(1);
   }
-  console.log(`Set ${key} = ${value === null ? 'null' : String(value)}`);
+
+  const value = parseConfigValue(rawValue);
+  const result = await writeOrExplain(writer, patchForPath(key, value), 'dorkos config set');
+
+  if (!result.ok) {
+    if (result.kind === 'invalid') {
+      console.error(`Cannot set ${key}: ${result.error}`);
+      for (const detail of result.details ?? []) console.error(`  - ${detail}`);
+    } else {
+      // The same sentence the cockpit shows for the same refusal \u2014 a refusal
+      // that reads differently in two places teaches people they are two rules.
+      console.error(result.refusal.message);
+      // The cockpit's next step is a dialog it can open itself. A terminal has
+      // none, so the sentence alone is a dead end: name the command that is the
+      // terminal's version of that dialog.
+      if (result.refusal.code === AUTONOMY_ACK_REQUIRED_CODE) {
+        console.error(
+          `Run \`${ACKNOWLEDGE_AUTONOMY_COMMAND}\` to read what it means and confirm, then try again.`
+        );
+      }
+    }
+    process.exit(1);
+  }
+
+  // Zod drops a key the schema does not declare, so a write that landed nothing
+  // is how "there is no such setting" arrives here. Saying `Set \u2026` for it would
+  // be a lie the person acts on.
+  const stored = store.getDot(key);
+  if (stored === undefined) {
+    console.error(`Unknown config key: ${key}`);
+    console.error('Run `dorkos config list` to see every setting.');
+    process.exit(1);
+  }
+
+  for (const warning of result.warnings) {
+    console.warn(`\u26a0  ${warning}`);
+  }
+  // What LANDED, read back, not what was asked for. They can differ \u2014 a schema
+  // default filling in, a value normalized on the way through \u2014 and the whole
+  // point of this command's other changes is that it stops claiming writes it
+  // did not make.
+  console.log(`Set ${key} = ${formatConfigValue(stored)}`);
 }
 
 /**
@@ -136,6 +288,18 @@ export function handleConfigList(store: ConfigStore): void {
 
 /**
  * Reset config to defaults (all or specific key).
+ *
+ * No write policy, no consent door and no audit line, unlike
+ * {@link handleConfigSet}, and the asymmetry is deliberate rather than a gap
+ * left over from DOR-1247. Reset can only move a setting TO the value a fresh
+ * install carries, and a fresh install's value is the protective one by rule
+ * (ADR 260727-181825) — a whole-config reset additionally keeps the protections
+ * a person moved (`safe-defaults/protected-state.ts`). So there is no reset that
+ * turns a gate off, licenses Full autonomy, or widens a bound, which is the
+ * entire set of things the guarded step is there to catch.
+ *
+ * `contributing/configuration.md` lists it among the writers that still leave no
+ * line, with this reasoning, so nobody reads the silence as an oversight.
  *
  * @param store - Config storage instance
  * @param key - Optional specific key to reset; omit to reset all
@@ -211,8 +375,14 @@ export function handleConfigValidate(store: ConfigStore): void {
  *
  * @param store - Config storage instance
  * @param args - Positional arguments after 'config' command
+ * @param writer - How to reach the server's config-write code. Required rather
+ *   than defaulted, so no path can reach a write without one being chosen for it.
  */
-export function handleConfigCommand(store: ConfigStore, args: string[]): void {
+export async function handleConfigCommand(
+  store: ConfigStore,
+  args: string[],
+  writer: CliConfigWriter
+): Promise<void> {
   const subcommand = args[0];
   switch (subcommand) {
     case undefined:
@@ -230,7 +400,7 @@ export function handleConfigCommand(store: ConfigStore, args: string[]): void {
         console.error('Usage: dorkos config set <key> <value>');
         process.exit(1);
       }
-      handleConfigSet(store, args[1], args[2]);
+      await handleConfigSet(store, args[1], args[2], writer);
       break;
     case 'list':
       handleConfigList(store);
@@ -247,9 +417,12 @@ export function handleConfigCommand(store: ConfigStore, args: string[]): void {
     case 'validate':
       handleConfigValidate(store);
       break;
+    case 'acknowledge-autonomy':
+      await handleConfigAcknowledgeAutonomy(store, writer);
+      break;
     default:
       console.error(`Unknown config subcommand: ${subcommand}`);
-      console.error('Available: get, set, list, reset, edit, path, validate');
+      console.error('Available: get, set, list, reset, edit, path, validate, acknowledge-autonomy');
       process.exit(1);
   }
 }

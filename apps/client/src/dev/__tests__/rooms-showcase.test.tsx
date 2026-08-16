@@ -27,6 +27,19 @@ import { RoomSheetDemo, type RoomSheetDemoProps } from '../showcases/rooms-showc
 import { ARCHIVED_ROOM, CHANNEL_ROOM, DM_ROOM, EMPTY_ROOM } from '../showcases/rooms-showcase-data';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+
+// The room sheet reads route state to decide where each member row's face leads
+// (`useProfileDeepLink`), and the playground mounts it with no router. Where
+// that link goes has its own file —
+// `features/room-management/__tests__/RoomMemberRow.click-to-profile.test.tsx`,
+// which mounts a real router and asserts the id that travels.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useProfileDeepLink: () => ({ isOpen: false, memberId: null, open: vi.fn(), close: vi.fn() }),
+  };
+});
 const { toast } = await import('sonner');
 
 beforeEach(() => {

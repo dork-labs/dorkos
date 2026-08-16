@@ -14,7 +14,7 @@
  * a reload reopens, and what a person shares.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -70,7 +70,7 @@ const WARDEN_REF = agentAuthorRef(WARDEN_PATH);
  */
 const ANA_AUTHOR_ID = 'author-ana';
 const WARDEN_AUTHOR_ID = 'author-warden';
-const WARDEN_MANIFEST_ID = '01JWARDENMANIFESTULID';
+const WARDEN_MEMBER_ID = '01JWARDENREGISTRYULID';
 
 const AUTHORS = new Map<string, RosterAuthor>([
   [
@@ -96,7 +96,7 @@ const FLEET_INFO: ReadonlyMap<string, RosterAgentInfo> = new Map([
   [
     WARDEN_REF,
     {
-      manifestId: WARDEN_MANIFEST_ID,
+      memberId: WARDEN_MEMBER_ID,
       visual: { color: '#6d5ae0', emoji: '🛡️' },
       runtime: 'Claude Code',
       model: 'opus',
@@ -180,6 +180,22 @@ function renderMention(text: string, spans: MentionSpan[], fleet: RoomAgentDirec
  * Awaited because the harness's router loads its initial location
  * asynchronously; nothing under the route renders until it settles.
  */
+/**
+ * The identity card the pill opens, once it is open.
+ *
+ * Scoped by slot rather than by the words in it: the message's own action
+ * capsule now carries a "View profile" command too (DOR-1251), so a global
+ * query for that name answers two different controls about two different
+ * people. This one is the card's.
+ */
+async function cardOf(): Promise<HTMLElement> {
+  return waitFor(() => {
+    const card = document.querySelector('[data-slot="identity-hover-card"]');
+    if (!card) throw new Error('no identity card open');
+    return card as HTMLElement;
+  });
+}
+
 async function pillOf(): Promise<HTMLElement> {
   return waitFor(() => {
     const content = document.querySelector('[data-slot="message-content"]');
@@ -200,14 +216,14 @@ describe('a mention pill opens the mentioned identity’s profile', () => {
     expect(harness.openProfileId()).toBe(ANA_AUTHOR_ID);
   });
 
-  it('carries an agent’s MANIFEST id, never the author id the room holds', async () => {
+  it('carries an agent’s ROSTER id, never the author id the room holds', async () => {
     const user = userEvent.setup();
     const text = 'can you look, @warden?';
     renderMention(text, [spanFor(text, '@warden', WARDEN_AUTHOR_ID)]);
 
     await user.click(await pillOf());
 
-    expect(harness.openProfileId()).toBe(WARDEN_MANIFEST_ID);
+    expect(harness.openProfileId()).toBe(WARDEN_MEMBER_ID);
     // Spelled out because this is the whole point: the id the pill already had
     // is the one that would have opened an empty drawer.
     expect(harness.openProfileId()).not.toBe(WARDEN_AUTHOR_ID);
@@ -258,9 +274,9 @@ describe('a mention pill opens the mentioned identity’s profile', () => {
     renderMention(text, [spanFor(text, '@warden', WARDEN_AUTHOR_ID)]);
 
     await user.hover(await pillOf());
-    await user.click(await screen.findByRole('button', { name: 'View profile' }));
+    await user.click(within(await cardOf()).getByRole('button', { name: 'View profile' }));
 
-    expect(harness.openProfileId()).toBe(WARDEN_MANIFEST_ID);
+    expect(harness.openProfileId()).toBe(WARDEN_MEMBER_ID);
   });
 
   it('leaves the footer marked “soon” where the pill itself has no profile to open', async () => {
@@ -270,7 +286,8 @@ describe('a mention pill opens the mentioned identity’s profile', () => {
 
     await user.hover(await pillOf());
 
-    expect(await screen.findByText('soon')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'View profile' })).not.toBeInTheDocument();
+    const card = within(await cardOf());
+    expect(card.getByText('soon')).toBeInTheDocument();
+    expect(card.queryByRole('button', { name: 'View profile' })).not.toBeInTheDocument();
   });
 });

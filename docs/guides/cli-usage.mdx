@@ -117,7 +117,14 @@ dorkos config reset [key]            # Reset all or a specific key to defaults
 dorkos config edit                   # Open config in $EDITOR (your terminal's default text editor)
 dorkos config path                   # Print config file location
 dorkos config validate               # Check config validity
+dorkos config acknowledge-autonomy   # Read what Full autonomy means, and confirm it
 ```
+
+`dorkos config set` follows the same rules as changing a setting in DorkOS itself. It checks the value before saving, so a value a setting cannot hold — or a setting that does not exist — is reported instead of written, and it shows you the value that was actually saved. Every change you make this way is written to your log at `~/.dork/logs/dorkos.log`, by name, so you can find out later what moved a setting. Only the setting's name is logged, never its value.
+
+Settings that need you to confirm what they mean ask here too. Starting every new session in Full autonomy is the one that does today: `dorkos config set runtimes.defaultTrustStop autonomy` is refused until you run `dorkos config acknowledge-autonomy`, which reads you what it means and asks you to confirm. That needs a real terminal — there is no flag to answer it for you.
+
+**Lists are set whole, not item by item.** `dorkos config set` writes one setting at a time, and a list counts as one setting: `dorkos config set ui.dismissedUpgradeVersions.0 1.2.3` is refused. To change what is in a list, run `dorkos config edit` and change it in the file.
 
 **`dorkos init`**: an interactive setup wizard for first-time configuration. Walks through your API key, default port, and working directory.
 

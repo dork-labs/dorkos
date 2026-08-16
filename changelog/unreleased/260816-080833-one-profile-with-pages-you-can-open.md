@@ -6,6 +6,9 @@ covers:
   - "refactor(client): retire the drawer's name from the profile's neighbours (DOR-1252)"
   - 'fix(client): a room reads the way its address is written, and a page needs a row (DOR-1252)'
   - 'fix(client): profile header names the owner, and the deep-link docs stop calling it a drawer (DOR-1252)'
+  - 'refactor(server,shared): the people-only test calls the shared reader instead of copying it (DOR-1250)'
+  - "feat(server,shared): a member's rooms carry the slug the cockpit prints (DOR-1250)"
+  - "feat(server,shared): roster carries live activity and the local agent's folder (DOR-1249)"
 ---
 
 ### Changed

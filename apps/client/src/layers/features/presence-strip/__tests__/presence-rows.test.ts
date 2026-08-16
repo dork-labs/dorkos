@@ -85,7 +85,15 @@ function claim(overrides: Partial<RoomPresenceClaim> = {}): RoomPresenceClaim {
 
 /** An empty world, so each test states only what it is about. */
 function input(overrides: Partial<PresenceRowsInput> = {}): PresenceRowsInput {
-  return { claims: [], rosters: {}, rooms: {}, sessions: [], agents: {}, ...overrides };
+  return {
+    claims: [],
+    rosters: {},
+    rooms: {},
+    sessions: [],
+    agents: {},
+    meshIdByPath: {},
+    ...overrides,
+  };
 }
 
 describe('buildPresenceRows — room claims', () => {
@@ -190,6 +198,69 @@ describe('buildPresenceRows — room claims', () => {
     expect(rows[0]!.face.emoji).toBe('🍊');
     expect(rows[0]!.runtime).toBe('claude-code');
   });
+
+  it('carries the REGISTRY id for a profile — not the author id, not the manifest id', () => {
+    // Three id spaces meet on this row and only one of them addresses a
+    // profile. The ROOM speaks in author ids; the agent's own manifest names
+    // itself on disk; the team roster is keyed by the mesh registry, which is
+    // what `GET /api/team` builds its rows from. The fixture deliberately makes
+    // all three different, because a fixture where the last two agreed let this
+    // read either and stay green — and on a real machine 3 of 44 diverged.
+    const rows = buildPresenceRows(
+      input({
+        claims: [claim()],
+        rosters: {
+          'room-1': roomWithRoster('room-1', [
+            author({ id: 'author-1', agentRef: agentAuthorRef(TANGERINES_PATH) }),
+          ]),
+        },
+        rooms: { 'room-1': roomSummary({ id: 'room-1' }) },
+        agents: { [TANGERINES_PATH]: manifest({ id: '01JSTALEONDISK' }) },
+        meshIdByPath: { [TANGERINES_PATH]: '01JREGISTRYWINS' },
+      })
+    );
+
+    expect(rows[0]!.profileMemberId).toBe('01JREGISTRYWINS');
+    expect(rows[0]!.profileMemberId).not.toBe('01JSTALEONDISK');
+    expect(rows[0]!.profileMemberId).not.toBe('author-1');
+  });
+
+  it('offers no profile for an agent the registry has no row for', () => {
+    // The row still draws — the roster named it and the manifest dressed it —
+    // but the id space a profile lives in answered nothing, so the card's
+    // footer stays inert rather than linking to a row that does not exist.
+    const rows = buildPresenceRows(
+      input({
+        claims: [claim()],
+        rosters: {
+          'room-1': roomWithRoster('room-1', [
+            author({ id: 'author-1', agentRef: agentAuthorRef(TANGERINES_PATH) }),
+          ]),
+        },
+        rooms: { 'room-1': roomSummary({ id: 'room-1' }) },
+        agents: { [TANGERINES_PATH]: manifest() },
+      })
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.profileMemberId).toBeNull();
+  });
+
+  it('offers no profile for an agent the fleet could not name', () => {
+    // The row still draws — the roster named it, so there is a face and a
+    // sentence — but there is no roster id behind it, and the card's footer
+    // stays the inert line rather than becoming a control that opens nothing.
+    const rows = buildPresenceRows(
+      input({
+        claims: [claim()],
+        rosters: { 'room-1': roomWithRoster('room-1', [author({ id: 'author-1' })]) },
+        rooms: { 'room-1': roomSummary({ id: 'room-1' }) },
+      })
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.profileMemberId).toBeNull();
+  });
 });
 
 describe('buildPresenceRows — running sessions', () => {
@@ -218,6 +289,22 @@ describe('buildPresenceRows — running sessions', () => {
     );
 
     expect(rows).toEqual([]);
+  });
+
+  it('opens the REGISTRY id for a session row too, never the manifest’s own', () => {
+    // The same rule as the room half, pinned separately because it is a
+    // separate branch: this one is keyed by the session's working directory
+    // rather than by a claim's agent.
+    const rows = buildPresenceRows(
+      input({
+        sessions: [{ sessionId: 'sess-1', cwd: DORKBOT_PATH }],
+        agents: { [DORKBOT_PATH]: manifest({ id: '01JSTALEONDISK', displayName: 'DorkBot' }) },
+        meshIdByPath: { [DORKBOT_PATH]: '01JREGISTRYWINS' },
+      })
+    );
+
+    expect(rows[0]!.profileMemberId).toBe('01JREGISTRYWINS');
+    expect(rows[0]!.profileMemberId).not.toBe('01JSTALEONDISK');
   });
 
   it('draws one row for an agent running two sessions at once', () => {

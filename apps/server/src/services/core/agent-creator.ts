@@ -30,6 +30,7 @@ import { projectAgentWorkspace } from '../harness/project-agent-workspace.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import { resolveAgentsDirectory } from '../../lib/agents-home.js';
 import { configManager } from './config-manager.js';
+import { logConfigWrite } from './operator/config-write.js';
 import { notifyAgentCreated } from './agent-created-hook.js';
 import { ScaffoldLedger } from '../../lib/scaffold-ledger.js';
 import { logger } from '../../lib/logger.js';
@@ -129,7 +130,7 @@ async function maybeSetDefaultAgent(agentName: string): Promise<void> {
     // Default agent doesn't exist on disk — adopt the newly created agent
     const agentsConfig = configManager.get('agents');
     configManager.set('agents', { ...agentsConfig, defaultAgent: agentName });
-    logger.debug(`[agents] Auto-set default agent to "${agentName}"`);
+    logConfigWrite('the agent creator', 'agents', agentsConfig, configManager.get('agents'));
   }
 }
 

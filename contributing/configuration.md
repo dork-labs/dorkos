@@ -1268,14 +1268,14 @@ dorkos init --yes
 
 Update config settings via the REST API. Accepts partial updates -- only the keys you include are changed.
 
-**A PATCH that changes something writes one `info` line naming the leaves that changed** — capped at eight with a count of the rest (`[Config] Patched: runtimes.claudeCode.defaultTrustStop`). Four properties are load-bearing, and `describeConfigWrite` in `services/core/operator/config-patch.ts` owns all four:
+**A write that changes something writes one `info` line naming the leaves that changed and the door it came through** — capped at eight with a count of the rest (`[Config] Patched by PATCH /api/config: runtimes.claudeCode.defaultTrustStop`). Four properties are load-bearing, and `describeConfigWrite` in `services/core/operator/config-patch.ts` owns all four:
 
 - **Derived from the write, not the request.** It diffs stored-before against stored-after, so a key Zod stripped is named by nobody, a patch that re-sends the stored value produces no line, and a leaf the server folded in itself — the Reset demotion below — is named alongside the rest.
 - **Paths only, never values.** Config holds `tunnel.authtoken`, `mcp.apiKey` and `cloud.instanceToken`, and logs get pasted into issues. Arrays are leaves, so their contents never reach the line either.
-- **Every segment escaped.** Three sections are `z.record`s (`ui.shapes.agentDefaults`, `workbench.defaultViewers`, `providers`), so their leaf segments are caller-chosen — and the first is `agent-writable`. A key holding a newline and a counterfeit `[Config] Patched: …` forged this very line during review, so segments outside `[A-Za-z0-9_-]` are clipped, JSON-quoted, and swept for what JSON leaves alone.
+- **Every segment escaped.** Three sections are `z.record`s (`ui.shapes.agentDefaults`, `workbench.defaultViewers`, `providers`), so their leaf segments are caller-chosen — and the first is `agent-writable`. A key holding a newline and a counterfeit `[Config] Patched by …` forged this very line during review, so segments outside `[A-Za-z0-9_-]` are clipped, JSON-quoted, and swept for what JSON leaves alone.
 - **Operator-only paths named first.** The cap is a readability bound, not a number sized to hold a section (`runtimes` is 22 leaves, `ui` is 32), so ordering is what stops it from truncating away the setting an investigation came for.
 
-`config-patch-paths.test.ts` pins all four, deriving its secret list from `SENSITIVE_CONFIG_KEYS` and its record sections from the schema, so a new one is covered the day it lands. This exists because an operator-only setting drifted twice with nothing on disk that could name the writer: the line used to be `debug` (never written by a production install, which logs at info) and named only the top-level section (DOR-1237). It does **not** cover every write — see [Writers that never reach this route](#writers-that-never-reach-this-route).
+`config-patch-paths.test.ts` pins all four, deriving its secret list from `SENSITIVE_CONFIG_KEYS` and its record sections from the schema, so a new one is covered the day it lands. This exists because an operator-only setting drifted twice with nothing on disk that could name the writer: the line used to be `debug` (never written by a production install, which logs at info) and named only the top-level section (DOR-1237). The `by <door>` half arrived with DOR-1247, when the same line started being written by three doors and "which one?" became the next question. It still does **not** cover every write — see [Who writes your config](#who-writes-your-config).
 
 **Request:**
 
@@ -1340,7 +1340,11 @@ The endpoint deep-merges the patch into the current config, validates the merged
 
 ### Who may write which setting
 
-Settings classified `operator-only` in `CONFIG_WRITE_POLICY` have to clear two bars on this route before anything is written. Everything else is a preference and goes through for any caller.
+Every general-purpose door — `PATCH /api/config`, `dorkos config set`, and the `config_patch` operator tool — runs the same step, `applyGuardedConfigWrite` in `services/core/operator/config-write.ts`. It is one sequence: the login bar, the operator bar, the Full-autonomy consent door, the write, the audit line. What differs per door is only WHO is asking, handed in as a `ConfigWriteAuthority` — a pair of callbacks that answer "may this caller write these login-gated paths" and "…these operator-only paths".
+
+Before DOR-1247 the sequence was copied into the route and half-copied into the tool, and the CLI ran none of it. That is exactly how `dorkos config set runtimes.claudeCode.defaultTrustStop autonomy` came to be a legal, silent, unacknowledged write.
+
+Settings classified `operator-only` in `CONFIG_WRITE_POLICY` have to clear two bars on the HTTP route before anything is written. Everything else is a preference and goes through for any caller.
 
 | Bar            | Implemented by                    | Refuses                                                                   | Posture      | Refusal code               |
 | -------------- | --------------------------------- | ------------------------------------------------------------------------- | ------------ | -------------------------- |
@@ -1351,23 +1355,65 @@ The bars are named for what they check, not for the order they run in, because t
 
 The cookie bar is the one DOR-505 added, and it exists because `trustedCaller` is cleared by omitting two headers, which anything with a shell can do. Under login-on that used to include a program holding one of the person's API keys: `sessionGate` accepts a key as the same identity a browser session proves (DOR-474), so it could write `auth.enabled` here while the capability surface refused it the same write.
 
-**The residual, stated so nobody reads the table as more than it is.** With login **off** there is no cookie for anyone, so the **cookie bar allows and the agent bar is the only one left**: a program on this machine that omits its agent header can write every `operator-only` setting through this route. DorkOS cannot close that, because in the default posture the cockpit presents nothing a program cannot also present, and refusing it would lock a person out of their own settings. Turning on Require login is what closes it. Do not describe this route as "operator-only enforced" without that qualifier.
+**The residual, stated so nobody reads the table as more than it is.** With login **off** there is no cookie for anyone, so the **cookie bar allows and the agent bar is the only one left**. That gap was re-examined and accepted rather than closed — see [The `curl` residual under login-off](#the-curl-residual-under-login-off-accepted-and-why) below for what was tried and why nothing weaker than Require login works.
+
+### Who writes your config
+
+Two kinds of writer, and the difference decides what each one owes you.
+
+**General-purpose doors** are handed a path and write whatever it names. All three run `applyGuardedConfigWrite`, so all three enforce the same policy, ask the same consent question, and write the same line.
+
+| Door                           | Authority                  | Refuses operator-only settings                                     | Audit line                                     |
+| ------------------------------ | -------------------------- | ------------------------------------------------------------------ | ---------------------------------------------- |
+| `PATCH /api/config`            | built from the request     | the cookie bar under login-on, then the agent bar in both postures | `[Config] Patched by PATCH /api/config: …`     |
+| `dorkos config set`            | `LOCAL_OPERATOR_AUTHORITY` | no — the caller is the person at their own terminal                | `[Config] Patched by dorkos config set: …`     |
+| `config_patch` (operator tool) | `OPERATOR_TOOL_AUTHORITY`  | always, with no approval that could unlock it                      | `[Config] Patched by the config_patch tool: …` |
+
+**Why the CLI clears both bars.** It runs under the person's own shell, on the data directory they own — the same trust the cockpit has in the default login-off posture, where the server admits it cannot tell the cockpit from any other local process. Refusing the terminal what the browser is allowed would add no guarantee; it would move the person to `dorkos config edit`, which hands them the raw file with no policy, no consent door and no log. The login bar is allowed for a sharper reason: applying it would refuse `dorkos config set approvals.standingGrants false`, the PROTECTIVE direction, on the surface `standing-grant-posture.ts` names as the one that has to work with no server running.
+
+**What the CLI does NOT clear** is the Full-autonomy consent door, because that is not an authority question — it asks whether the person has been told what Full autonomy means, and the answer is the same whoever is typing. `dorkos config set runtimes.claudeCode.defaultTrustStop autonomy` prints the cockpit's own sentence and writes nothing until `ui.autonomyAcknowledgedAt` exists. The terminal's way to satisfy it is `dorkos config acknowledge-autonomy`, which prints what is being agreed to and asks once (no by default, and it refuses outright with no TTY rather than offering a `--yes` that would sign the form for you). The refusal names that command, because a sentence with no next step is a dead end in a shell.
+
+**The consent residual, stated beside the `curl` one because it is the same shape.** `ui.autonomyAcknowledgedAt` is `operator-only`, and `LOCAL_OPERATOR_AUTHORITY` clears the operator bar — so `dorkos config set ui.autonomyAcknowledgedAt <date>` followed by `dorkos config set … defaultTrustStop autonomy` goes through with the consent text never on screen. Reproduced end to end. **That is the trust model, not a hole in it:** a person with a shell can sign their own form, exactly as they can through `dorkos config edit`, and the cockpit's own "Don't show this again" checkbox is the same act on another surface. A ritual can make the DEFAULT path show a person what they are agreeing to; it cannot stop somebody who already knows the field name. An **agent** is a different matter and is stopped by a different mechanism — `operator-only` refuses it on the capability surface and over HTTP, neither of which is this authority. The mitigation is the audit line: both writes are logged with the door that made them, so the sequence is visible afterwards even though nothing refuses it at the time.
+
+**Purpose-built writers** write one known setting as part of doing something else. They keep their own gate — often a stricter one; starting a tunnel needs login AND an owner account — and take `logConfigWrite(subsystem, section, before, after)`, which writes `[Config] Set by <subsystem>: <paths>` with the same paths-only, escaped, no-line-when-nothing-changed rules. Re-running the path policy there would either do nothing or refuse the writer its own job.
+
+| Writer                                        | Section      | Named in the log as                                                                            |
+| --------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------- |
+| `index.ts` first-run telemetry notice         | `telemetry`  | the first-run telemetry notice                                                                 |
+| `index.ts` profile router setter              | `profile`    | the profile route                                                                              |
+| `routes/config.ts` `PUT /agents/defaultAgent` | `agents`     | the default-agent route                                                                        |
+| `routes/tunnel.ts` start / stop               | `tunnel`     | the tunnel route                                                                               |
+| `services/core/agent-creator.ts`              | `agents`     | the agent creator                                                                              |
+| `services/core/auth/cloud-link.ts`            | `cloud`      | the account link / unlinking this instance                                                     |
+| `services/core/auth/seed-legacy-mcp-key.ts`   | `mcp`        | the MCP key migration                                                                          |
+| `services/shapes/shape-services.ts`           | `ui`         | applying a Shape / clearing the active Shape                                                   |
+| `services/extensions/extension-manager.ts`    | `extensions` | the extensions manager / approving an extension to run / withdrawing an extension run approval |
+| `services/harness/hook-approval.ts`           | `harness`    | approving a package hook                                                                       |
+
+The section is passed explicitly because a purpose-built writer only ever moves its own, and the diff is scoped to it. One bound follows: `ConfigManager.set` stamps `approvals.standingGrantsVoidBefore` when a write narrows the standing-permission posture, and a section-scoped diff cannot see that. Nothing on this list writes `auth` or `approvals`, so it does not bite today; a writer that needs to should use the guarded step, which diffs the whole config.
+
+#### What still writes without a line, and why that is a decision
+
+- **`dorkos config reset`, `dorkos config edit`, `dorkos init`, `dorkos auth`, `dorkos telemetry`, `dorkos cloud`.** Every one is a verb a person typed, naming the thing it changes; none can be pointed at an arbitrary path. `config reset` additionally cannot produce a permissive value — it moves settings TO the shipped defaults, which are the protective side by rule (ADR 260727-181825), and a whole-config reset keeps the protections a person moved (`safe-defaults/protected-state.ts`). `config edit` hands over the raw file, so nothing here can see it at all; `standing-grant-posture.ts` names it as the hand-edit case.
+
+  **These are not small settings, so do not round the list up in user-facing copy.** `dorkos telemetry enable` moves six `operator-only` leaves; `dorkos auth enable` moves `auth.enabled`; `dorkos cloud link` moves the account token and name. All silent. Any sentence promising that "your log names what changed a setting" has to say `dorkos config set`, not "the command line" — reproduced during review, and the changelog and `docs/guides/action-approvals.mdx` were both narrowed for it.
+
+- **A hand edit or a restored backup.** Config content DorkOS did not write. Same class as `config edit`.
+
+#### The `curl` residual under login-off: ACCEPTED, and why
+
+With login **off** there is no cookie for anyone, so the cookie bar allows and the agent bar is the only one left: a program on this machine that omits `X-DorkOS-Agent` can write every `operator-only` setting through `PATCH /api/config`.
+
+DOR-1247 looked at closing this and did not, deliberately. **The cockpit is itself a login-off PATCH caller**, and in that posture it presents nothing a local program cannot also present — no cookie, no distinguishing header, and `Origin`/CORS is a browser courtesy, not evidence about who is on the other end. Any bar strong enough to refuse the program would refuse the cockpit, which locks a person out of their own settings; any bar weak enough to admit the cockpit is one `curl -H` away. Inventing a marker would assert a distinction the server cannot make, which is worse than the honest gap because it reads like protection.
+
+So the answer stays the one DOR-505 gave: **turning on Require login is what closes it**, and it is documented for users under "Settings your agents cannot change" in `docs/guides/action-approvals.mdx`. Do not describe this route as "operator-only enforced" without that qualifier. This one _is_ logged, being the same route.
 
 Two consequences worth knowing when you touch this code:
 
 - **The enable-login flow is unaffected on purpose.** `OwnerSetupHost.tsx` writes `auth.enabled: true` while login is still off, so the cookie bar does not apply to it. A guard that read the POST-patch state instead of the current state would make login impossible to turn on.
-- **`approvals.*` has a login bar in front of both of these**, `REQUIRES_LOGIN_CONFIG_PATHS`, which refuses those writes outright while login is off. See [the `approvals` section](#settings-reference).
+- **`approvals.*` has a login bar in front of both bars** on the HTTP route, `REQUIRES_LOGIN_CONFIG_PATHS`, which refuses those writes outright while login is off. See [the `approvals` section](#settings-reference).
 
-#### Writers that never reach this route
-
-The table above describes `PATCH /api/config` and the `config_patch` operator tool. **It is not the whole set of things that write your config**, and reading it as such is how DOR-1237 lost three hours. Two gaps are worth naming, because a program on your machine can use either:
-
-- **`dorkos config set <key> <value>`.** `handleConfigSet` (`packages/cli/src/config-commands.ts`) calls `ConfigManager.setDot` directly: no `CONFIG_WRITE_POLICY` check, no cookie bar, no agent bar, no `428 AUTONOMY_ACK_REQUIRED`, and no audit line. During review it set `runtimes.claudeCode.defaultTrustStop` to `autonomy` on an install whose `ui.autonomyAcknowledgedAt` was `null` — a state the HTTP door exists to make unreachable. It is deliberate that the CLI works with no server and no login (`standing-grant-posture.ts` says so for `approvals.standingGrants`), but the consequence is that any agent with a shell has an unpoliced, unlogged write path. Routing `setDot` through the policy and the log is filed as follow-up work.
-- **`curl` under login-off.** The residual above: with no cookie for anyone, a caller that simply omits `X-DorkOS-Agent` clears both bars and can write every `operator-only` setting. This one _is_ logged, being the same route.
-
-Server-side callers that bypass `applyConfigPatch` also write without a line — `configManager.set`/`setDot` in `index.ts`, `routes/tunnel.ts`, `routes/config.ts`'s `agents/defaultAgent` handler, `agent-creator.ts`, `cloud-link.ts`, `seed-legacy-mcp-key.ts`, `shape-services.ts`, `extension-manager.ts` and `hook-approval.ts`.
-
-**So never read a silent log as proof a setting did not change.** The audit line answers "which `PATCH` moved this?", not "did anything move this?".
+**So still never read a silent log as proof a setting did not change** — but the silence is now much narrower: the three doors and the ten writers above all speak.
 
 ## Error Recovery
 
