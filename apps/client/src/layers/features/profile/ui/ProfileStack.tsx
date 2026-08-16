@@ -55,10 +55,12 @@ export function ProfileStack({ frameKey, children }: ProfileStackProps) {
     setReturnTo(popped ? seen : null);
   }
 
+  // Not cleared afterwards, deliberately: every frame change sets it (a push to
+  // `null`, a pop to the page it left), so it is already one-shot — and clearing
+  // it here would be a second render for nothing.
   useEffect(() => {
     if (returnTo === null) return;
     container.current?.querySelector<HTMLElement>(`[data-profile-return="${returnTo}"]`)?.focus();
-    setReturnTo(null);
   }, [returnTo]);
 
   return (
