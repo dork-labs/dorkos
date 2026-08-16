@@ -167,6 +167,29 @@ export const SESSIONS = {
    */
   TURN_STALL_TIMEOUT_MS: 10 * 60 * 1000,
   /**
+   * The same watchdog's window for a turn's FIRST event, which is shorter, and
+   * shorter for a reason the ten minutes above cannot cover (DOR-1229).
+   *
+   * `TURN_STALL_TIMEOUT_MS` is generous because a running agent's quiet is often
+   * honest work — a long tool call, a big read. That argument rests on evidence
+   * the turn is alive, and before the first event there is none: nothing has
+   * started, nothing has been spent, and there is no work to lose by giving up.
+   * A launch that never yields (a runtime binary that will not start, a subprocess
+   * wedged on its own boot, an MCP handshake that never completes) is a failure
+   * from its first second, and ten minutes of an agent shown as "working" with
+   * literally nothing having happened is not something to make anyone sit through.
+   *
+   * Two minutes because a real cold launch is nowhere near it: the measured
+   * claude-code launch on 2026-08-16 — fresh session, MCP servers connecting, 88
+   * commands and 9 subagents cached — produced its first event 4 seconds in. This
+   * leaves thirty times that headroom for a machine already running ten agents.
+   *
+   * A turn parked on a person cannot trip it, and not by luck: an approval,
+   * question or elicitation IS an event, so a turn that has one has already left
+   * this window behind.
+   */
+  TURN_FIRST_EVENT_TIMEOUT_MS: 2 * 60 * 1000,
+  /**
    * How long the stall watchdog waits for the runtime's interrupt to settle
    * before closing the turn anyway (DOR-782). `interruptQuery` reaches a
    * possibly-wedged subprocess, so the call that is meant to unstick a hung turn

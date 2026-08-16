@@ -76,6 +76,29 @@ const READ_ONLY_TOOLS = new Set([
  * the question.
  */
 export const DORKOS_AGENT_TOOLS = new Set([
+  // The `rooms` domain — an agent's own hand in a room it is a member of
+  // (`services/rooms/room-capabilities.ts`, DOR-1229). All four resolve
+  // membership before anything else and answer "not a member" exactly as "no
+  // such room", so membership is the authorization and a card adds none.
+  //
+  // Without them here, a room turn wedged: a room triggers a turn INTO THE DARK
+  // — nobody is holding that session's stream — under the runtime's strictest
+  // permission mode, so an agent reaching for the channel it was just addressed
+  // in raised a card no one was positioned to answer. Measured on 2026-08-16:
+  // `search_room_history` asked at 15s, the room said the agent was waiting at
+  // 75s, and the turn made no further progress until the interaction window
+  // auto-denied it ten minutes later. Eleven minutes to answer one question.
+  //
+  // That is also what the rooms domain already says it wants: "A card on every
+  // message an agent posts into its own room would be the over-tiering that
+  // teaches people to click through", with the two writes bounded by mechanisms
+  // instead — the cascade guard and the two-ceiling turn budget for a post, the
+  // hourly `ReactionBudget` for a reaction. This list was the one place that had
+  // not been told.
+  'mcp__dorkos__post_to_room',
+  'mcp__dorkos__react_to_room_entry',
+  'mcp__dorkos__read_room_history',
+  'mcp__dorkos__search_room_history',
   'mcp__dorkos__relay_send',
   'mcp__dorkos__relay_inbox',
   'mcp__dorkos__relay_list_endpoints',

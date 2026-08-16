@@ -172,6 +172,33 @@ describe('createCanUseTool — approval gate', () => {
     expect(session.pendingInteractions.has('subagent-tool-1')).toBe(true);
   });
 
+  // DOR-1229. A room triggers a turn INTO THE DARK — nobody holds that session's
+  // stream — and it runs under `default`, the strictest mode. So a card raised for
+  // the agent's own room verbs is a card nobody is positioned to answer: measured
+  // live on 2026-08-16, `search_room_history` asked at 15s and the turn made no
+  // further progress until the interaction window auto-denied it ten minutes
+  // later. Each of the four is asserted by name rather than by iterating the
+  // safe-list, so removing one from `DORKOS_AGENT_TOOLS` is red here rather than a
+  // test that shrinks quietly with the list it reads.
+  it.each([
+    ['mcp__dorkos__post_to_room', { roomId: 'room-1', text: 'on it' }],
+    ['mcp__dorkos__react_to_room_entry', { roomId: 'room-1', entryId: 'e-1', emoji: '🎉' }],
+    ['mcp__dorkos__read_room_history', { roomId: 'room-1' }],
+    ['mcp__dorkos__search_room_history', { roomId: 'room-1', query: 'deploy' }],
+  ])(
+    'lets a room turn use its own room verb %s without a card nobody can answer',
+    async (toolName, input) => {
+      const session = makeSession('default');
+      const canUseTool = createCanUseTool(session, noopLog);
+
+      const result = await canUseTool(toolName, input, makeContext(`rooms-${toolName}`));
+
+      expect(result).toEqual({ behavior: 'allow', updatedInput: input });
+      expect(session.eventQueue).toHaveLength(0);
+      expect(session.pendingInteractions.size).toBe(0);
+    }
+  );
+
   it('logs an approval request at info and routine verdicts at debug', async () => {
     // A turn parked on a card makes no further progress, so the line explaining
     // WHY has to survive the default production log level (DOR-782). The
