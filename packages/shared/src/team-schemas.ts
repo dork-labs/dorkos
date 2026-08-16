@@ -33,10 +33,60 @@ import { AgentHealthStatusSchema, AgentRuntimeSchema } from './mesh-schemas.js';
 extendZodWithOpenApi(z);
 
 /**
+ * What one agent is doing, as a profile says it out loud (spec
+ * `profile-unification` §3.1).
+ *
+ * **One object, always present, both members nullable** — so a renderer asks
+ * "is it working, else when was it last active, else it has never run" and never
+ * has to guess whether an absent field means idle or means unknown. The three
+ * states the status sentence renders are exactly the three this shape can hold:
+ * `working` set (working now), `working` null with `lastActiveAt` set (idle,
+ * last active then), both null (never run).
+ *
+ * Deliberately NOT derived from {@link TeamAgentFactsSchema.healthStatus}: that
+ * says "seen in the last hour", which is not the same claim and cannot answer
+ * "in which room, since when".
+ */
+export const TeamAgentActivitySchema = z
+  .object({
+    /**
+     * The room turn this agent is holding right now, or `null` when it is not
+     * mid-turn.
+     *
+     * Read from the live claim map (`services/rooms/room-claims.ts`), which is
+     * the only record that an agent is working — see the module doc of
+     * `services/identity/aggregate-team.ts`.
+     */
+    working: z
+      .object({
+        roomId: z.string().min(1),
+        /**
+         * The room's title, or `null` when it could not be resolved (the rooms
+         * read degraded). A status sentence drops the room label rather than the
+         * fact of working: "Working · 5 min".
+         */
+        roomName: z.string().nullable(),
+        /** When the claim was taken — ISO 8601. */
+        since: z.string(),
+      })
+      .nullable(),
+    /**
+     * The most recent moment this agent did anything, or `null` when it has
+     * never run. ISO 8601.
+     */
+    lastActiveAt: z.string().nullable(),
+  })
+  .openapi('TeamAgentActivity');
+
+/** What one agent is doing (see {@link TeamAgentActivitySchema}). */
+export type TeamAgentActivity = z.infer<typeof TeamAgentActivitySchema>;
+
+/**
  * What is true of an agent and of nothing else on the roster.
  *
- * Present only when `kind === 'agent'`. Everything here is read from the mesh
- * cache's health-enriched listing; nothing is stored by this endpoint.
+ * Present only when `kind === 'agent'`. Read from the mesh cache's
+ * health-enriched listing, the live room-claim map and the session fan-out;
+ * nothing is stored by this endpoint.
  */
 export const TeamAgentFactsSchema = z
   .object({
@@ -67,14 +117,21 @@ export const TeamAgentFactsSchema = z
      */
     namespace: z.string().optional(),
     /**
-     * Where the agent lives, when the caller is entitled to know.
+     * Where the agent lives — its project directory.
      *
-     * Stripped from the mesh's public listing by design (a room is a shared
-     * surface and `/Users/dorian/…` is not something to hand every reader of
-     * one), so — like `namespace` — nothing production serves today fills it.
-     * Optional so a future source entitled to it can, without a schema change.
+     * **Filled for every agent registered on this machine** (spec
+     * `profile-unification` §3.1): the profile opens sessions, skill-packs and
+     * tools by path, and the roster is the operator's own cockpit rather than a
+     * shared surface. The mesh's PUBLIC listing still strips it, which is why
+     * the roster reads the registry's paths beside that listing rather than
+     * expecting them in it — see `TeamRosterSources.listAgents`.
+     *
+     * Optional rather than required because a member whose truth is remote (a
+     * community backend, another machine) has no path here to give.
      */
     projectPath: z.string().optional(),
+    /** What this agent is doing right now, and when it last did anything. */
+    activity: TeamAgentActivitySchema,
     /** Whether this is `config.agents.defaultAgent`. */
     isDefault: z.boolean(),
     /** System agents (DorkBot) are auto-managed and belong to the install. */
@@ -104,6 +161,18 @@ export const TeamPersonFactsSchema = z
      * second person to leak it to.
      */
     email: z.string().optional(),
+    /**
+     * When this person was last here, or `null` when this install cannot say.
+     * ISO 8601.
+     *
+     * The viewer's own row carries the moment the roster was read — they are
+     * here, by construction. For everybody else it is `null` today: the only
+     * record of a bridged person's presence is the room log, and the query that
+     * would date it scans the largest table on this install on a request the
+     * profile repeats every 15 seconds. Required and nullable so the renderer
+     * has one branch ("last seen X" or the fallback line) rather than two.
+     */
+    lastSeenAt: z.string().nullable(),
   })
   .openapi('TeamPersonFacts');
 

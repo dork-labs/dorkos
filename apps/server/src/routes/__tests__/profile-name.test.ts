@@ -65,6 +65,9 @@ describe('PATCH /api/profile', () => {
       '/api/team',
       createTeamRouter({
         authors: registry,
+        activeClaims: () => [],
+        listRooms: () => [],
+        sessionActivity: () => Promise.resolve({}),
         ownerAccount: () =>
           hasAccount ? { id: OWNER_USER_ID, name: storedAccountName() ?? '' } : null,
         ownerEmail: () => (hasAccount ? 'dorian@dorkos.ai' : null),
