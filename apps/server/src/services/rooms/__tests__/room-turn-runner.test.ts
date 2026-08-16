@@ -112,6 +112,8 @@ interface TriggerCall {
    * — which is a thing worth being able to model, and {@link openTurn} is how.
    */
   onTurnStart?: (seq: number) => void;
+  /** What the room asked the dispatcher to do with a session already working. */
+  whenBusy?: string;
 }
 
 /** What the stubbed dispatch does with the projector it is handed. */
@@ -475,6 +477,36 @@ describe('createSessionRoomTurnRunner', () => {
     // Named, not merely empty: a `null` on its own is what an agent with
     // nothing to say returns, and the room stayed silent about both (DOR-621).
     expect(result.unanswered).toBe('busy');
+  });
+
+  it('asks to be refused only by a STRANGER, never by its own previous turn', async () => {
+    // The room already allows one turn per `(room, agent)` and holds a
+    // re-mention until that turn's claim releases (RP8), so the only turn it can
+    // ever race is somebody else's. Asking for a blanket refusal instead lost
+    // the beat between the previous turn ending and its slot being handed back,
+    // and the room apologised for a message it was about to answer (DOR-1230).
+    triggered.length = 0;
+    await createSessionRoomTurnRunner().run(request());
+    expect(triggered[0]?.whenBusy).toBe('refuse-foreign');
+  });
+
+  it('answers a message the dispatcher held behind its own previous turn', async () => {
+    // The queued-then-launched path, which the fix above makes reachable: the
+    // dispatcher accepted this trigger and started it only once the turn ahead
+    // handed its slot back, so the `turn_start` arrives macrotasks after
+    // `dispatchMessage` resolved. It is read exactly like a turn that began at
+    // once — an answer, not a refusal.
+    turnBehaviour = (opts) => {
+      setTimeout(() => {
+        openTurn(opts);
+        opts.projector.ingest({ type: 'text_delta', text: 'Paris.' });
+        opts.projector.ingest({ type: 'turn_end' });
+      }, 0);
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    const result = await createSessionRoomTurnRunner().run(request());
+    expect(result.text).toBe('Paris.');
+    expect(result.unanswered).toBeUndefined();
   });
 
   it('reports a turn that ended in an error, rather than an empty answer', async () => {

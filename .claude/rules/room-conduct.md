@@ -129,6 +129,19 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   (ADR 260726-170125): what is stored is what the agent has not read yet, one
   turn per agent per room is still enforced, and nothing orders two agents
   against each other.
+  **The claim is the only thing that may answer "is this agent busy HERE".**
+  The room claim is not the only lock a room turn meets — the session it runs on
+  has its own write-lock, and the dispatcher mirrors it in `inFlight`
+  (`message-dispatcher.ts`) — and a second lock answering the same question is a
+  second answer that can disagree. It did: the held batch is dispatched the
+  instant the claim releases, which is a beat BEFORE the finished turn hands its
+  in-flight slot back, so a blanket `whenBusy: 'refuse'` refused the room's own
+  tail and the room posted the very apology this bullet forbids, seconds ahead of
+  the answer (DOR-1230). The room asks with `whenBusy: 'refuse-foreign'` instead:
+  refuse a turn ANOTHER client opened, wait out one of its own. When you add a
+  lock in front of a room turn, decide which of the two questions it answers —
+  "is somebody else writing to this session" is the only one that is not already
+  answered here.
   **The guard is re-asked when a held batch finally runs**, and it has to be:
   the ancestry rule is a durable query that could not see the in-flight turn the
   batch was waiting for, and by then it can. That is what still terminates a

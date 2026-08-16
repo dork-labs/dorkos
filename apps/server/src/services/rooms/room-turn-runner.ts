@@ -271,11 +271,20 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         settings: seed,
         projector,
         runtime,
-        // Skip rather than wait, unlike a person's own message. The reasoning is
-        // the same one the skip notice below carries: a room turn queued behind
-        // somebody else's work would answer the room with whatever THAT turn
-        // left behind, long after the room moved on.
-        whenBusy: 'refuse',
+        // Skip SOMEBODY ELSE's work rather than wait behind it, unlike a
+        // person's own message: a room turn queued behind a stranger's would
+        // answer the room with whatever THAT turn left behind, long after the
+        // room moved on. That is what the skip notice below is for.
+        //
+        // **Its own previous turn is not somebody else** (DOR-1230). The room
+        // holds a re-mention until this agent's claim here releases and then
+        // dispatches it (RP8), so the turn ahead has already ENDED on the
+        // projector — but it hands its in-flight slot back a beat later, when it
+        // settles. Refusing that beat told the room the agent was busy, and the
+        // room posted "didn't pick this up, send it again" over a message it was
+        // about to answer. Waiting out its own tail is the whole difference
+        // between the two modes; see {@link WhenBusy}.
+        whenBusy: 'refuse-foreign',
         onTurnStart: (seq) => {
           ownTurn.startSeq = seq;
         },
@@ -290,7 +299,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
 
       if (!result.accepted) {
         // Somebody else is writing to this session — the operator, most likely,
-        // typing into the very agent the room just addressed. Skipping the turn
+        // typing into the very agent the room just addressed. It is the ONLY way
+        // to reach here now that the room waits out its own tail above, which is
+        // what makes the notice this returns honest. Skipping the turn
         // is right: queueing a second one behind theirs would answer a room
         // message with whatever context their turn leaves behind. Skipping it
         // SILENTLY was not — the room reports it and the dispatcher writes the

@@ -75,9 +75,10 @@
  * than accepted, whose sender is long gone and cannot retype it. A message that
  * did not start goes back in line instead.
  *
- * The one exception is a `whenBusy: 'refuse'` caller, whose row IS removed when
- * its launch fails: it has said the message has no value later, and leaving it
- * behind would put a prompt nobody typed into somebody's composer for good.
+ * The one exception is a refusing caller — `whenBusy: 'refuse'` or
+ * `'refuse-foreign'` — whose row IS removed when its launch fails: it has said
+ * the message has no value later, and leaving it behind would put a prompt
+ * nobody typed into somebody's composer for good.
  *
  * {@link SessionTurnQueue} (DOR-1088) is kept, underneath: it is the
  * intra-process ordering primitive inside `triggerTurn` and this does not
@@ -447,9 +448,12 @@ export interface DispatchMessageOpts {
    *   durable, every window can see it, and they can edit or remove it while it
    *   waits.
    * - `'refuse'` — answer `{ accepted: false }` and write nothing. For a trigger
-   *   a machine generated on somebody's behalf (a room turn, an MCP sign-in
-   *   resume), where the reason it was sent may not survive the wait and firing
+   *   a machine generated on somebody's behalf (an MCP sign-in resume, a UI
+   *   action), where the reason it was sent may not survive the wait and firing
    *   it late is worse than not firing it.
+   * - `'refuse-foreign'` — refuse a turn ANOTHER client opened, and wait behind
+   *   one of the caller's own. For a caller that already sequences its own turns
+   *   and only needs protecting from a stranger; see {@link WhenBusy}.
    */
   whenBusy?: WhenBusy;
 }
@@ -457,9 +461,24 @@ export interface DispatchMessageOpts {
 /**
  * What a caller wants done when the session is already working.
  *
+ * **`'refuse-foreign'` is the same promise as `'refuse'`, asked of the right
+ * question.** A refusing caller is saying "do not queue my trigger behind
+ * somebody else's work" — and a turn the CALLER ITSELF opened is not somebody
+ * else's work. Rooms are why the distinction exists: a room already allows one
+ * turn per `(room, agent)` and holds a re-mention until that turn's claim
+ * releases (RP8, `room-collect.ts`), so by the time the held message is
+ * dispatched the previous turn has ended on the projector — but the in-flight
+ * slot it took is cleared a beat later, when the turn settles. A blanket
+ * `'refuse'` lost that race and told the room its own agent was busy with
+ * something else, so the room wrote "didn't pick this up, send it again" over a
+ * message it was about to answer (DOR-1230).
+ *
+ * A foreign turn is still refused, which is the case the notice was written for:
+ * somebody typing into the very agent a room addressed.
+ *
  * @see DispatchMessageOpts.whenBusy
  */
-export type WhenBusy = 'queue' | 'refuse';
+export type WhenBusy = 'queue' | 'refuse' | 'refuse-foreign';
 
 /** What happened to a message the dispatcher accepted. */
 export interface MessageDispatchResult extends TriggerTurnResult {
@@ -517,6 +536,29 @@ interface DispatchPlan {
 }
 
 /**
+ * Whether the turn that is open right now is one this caller refuses to wait
+ * behind.
+ *
+ * The whole difference between the two refusing modes lives here, and it is a
+ * question about WHOSE turn is open rather than about whether one is. See
+ * {@link WhenBusy} for why a caller that sequences its own turns — a room —
+ * must not be told its own tail is a stranger.
+ *
+ * @param whenBusy - What the caller asked for.
+ * @param open - The turn holding the session's in-flight slot, if any.
+ * @param clientId - The caller's lock identity.
+ * @returns True when this message should be refused rather than accepted.
+ */
+function refusesOpenTurn(
+  whenBusy: WhenBusy,
+  open: InFlightTurn | undefined,
+  clientId: string
+): boolean {
+  if (open === undefined || whenBusy === 'queue') return false;
+  return whenBusy === 'refuse' || open.clientId !== clientId;
+}
+
+/**
  * Give up on a message whose launch started no turn, or put it back in line.
  *
  * Which of the two is the caller's `whenBusy`, and the difference is a promise
@@ -529,7 +571,7 @@ interface DispatchPlan {
  */
 function returnToQueue(plan: DispatchPlan): void {
   const store = getMessageQueueStore();
-  if (plan.whenBusy === 'refuse') {
+  if (plan.whenBusy !== 'queue') {
     if (store?.remove(plan.messageId)) emitQueueUpdate(plan.sessionKey);
     return;
   }
@@ -732,7 +774,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
 
   // Asked and answered before anything is written: a caller that refuses rather
   // than waits must not leave a row behind for a message it is about to disown.
-  if (whenBusy === 'refuse' && inFlight.has(sessionKey)) {
+  if (refusesOpenTurn(whenBusy, inFlight.get(sessionKey), clientId)) {
     return {
       accepted: false,
       queued: false,
@@ -810,14 +852,17 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     // decided what becomes of the message; a caller that asked to refuse still
     // wants the throw, and one that is queueing has an accepted message either
     // way and learns about the failure through `onError`.
-    if (whenBusy === 'refuse') throw err;
+    if (whenBusy !== 'queue') throw err;
     return waiting();
   }
   if (result.accepted) return { ...result, queued: false, outcome, queuePosition };
-  // The write-lock said no. For a refusing caller that is the answer; for
-  // everybody else the message kept its place in the queue and runs when the
-  // holder lets go.
-  if (whenBusy === 'refuse') {
+  // The write-lock said no. For a refusing caller that is the answer — and for
+  // `'refuse-foreign'` too, because the lock is the one place a caller's OWN
+  // turn never refuses it: a same-client trigger waits in `SessionTurnQueue`
+  // before it ever reaches the lock, so a refusal here is a stranger by
+  // construction. For everybody else the message kept its place in the queue and
+  // runs when the holder lets go.
+  if (whenBusy !== 'queue') {
     return { accepted: false, queued: false, outcome, queuePosition: 0 };
   }
   return waiting();
