@@ -111,8 +111,10 @@ describe('extractTopLevelDeclarations', () => {
 
   it('sees an async declaration and a generator', () => {
     // Neither form exists in config-manager.ts today, which is exactly why the
-    // pattern has to know them: the miss would be silent, and a migration
-    // reaching such a helper would be pinned with a hole in the middle.
+    // pattern has to know them: the cross-check compares this pattern against
+    // itself on two inputs, so a form the pattern cannot express is invisible to
+    // it, and a migration reaching such a helper would be pinned with a hole in
+    // the middle and nothing to say so.
     const source = [
       'export async function backfillAsync(store: unknown): Promise<void> {',
       '  await Promise.resolve(store);',
@@ -128,10 +130,12 @@ describe('extractTopLevelDeclarations', () => {
   });
 
   it('raises rather than losing declarations to a quote-bearing regex literal', () => {
-    // The scanner's one silent failure mode: the apostrophe in `/it's/` reads as
-    // a string opening, so everything to the next quote is blanked — taking
-    // whole declarations out of the guard's view with nothing thrown and every
-    // pin still green. The count cross-check is what makes that loud.
+    // The scanner's blind spot: the apostrophe in `/it's/` reads as a string
+    // opening, so everything to the next quote is blanked — taking whole
+    // declarations out of the guard's view. Without the cross-check the
+    // extractor still fails here, but on a downstream symptom ("no closing line
+    // of its own") that blames a well-formed declaration; the cross-check runs
+    // first and names the scanner. The message is asserted, not just the throw.
     const source = [
       'export function stripApostrophes(text: string): string {',
       "  return text.replace(/it's/g, 'its');",
@@ -141,6 +145,28 @@ describe('extractTopLevelDeclarations', () => {
     ].join('\n');
 
     expect(() => extractTopLevelDeclarations(source)).toThrow(/top-level functions after masking/);
+  });
+
+  it('raises when the regex swallows a top-level BINDING and no function', () => {
+    // The half the first cross-check missed. Here the regex-bearing function is
+    // the last one in the file, so the FUNCTION counts agree and that check
+    // passes — only the binding after it disappears.
+    //
+    // The assertion names bindings on purpose, and that is the whole test: with
+    // the binding family removed from the cross-check this goes red, but it goes
+    // red having thrown "function stripApostrophe has no closing line of its
+    // own" — a real error, about the wrong declaration. Matching the message
+    // rather than merely `toThrow()` is what separates "the guard names the
+    // scanner" from "something, somewhere, blew up".
+    const source = [
+      'const BEFORE_THE_REGEX = 1;',
+      'export function stripApostrophe(text: string): string {',
+      "  return text.replace(/it's/g, 'its');",
+      '}',
+      'const AFTER_THE_REGEX = [2];',
+    ].join('\n');
+
+    expect(() => extractTopLevelDeclarations(source)).toThrow(/top-level bindings/);
   });
 
   it('raises rather than truncating when a declaration never closes', () => {
