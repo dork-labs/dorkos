@@ -14,9 +14,9 @@ export interface SkillPacksListProps {
 /**
  * What this agent knows how to do, and where each pack was installed from.
  *
- * Entity UI: a path in, a list out. Two surfaces draw it — the profile's Skills
- * page and the profile's Skills page — and
- * neither owns the shape of a row.
+ * Entity UI: a path in, a list out. The profile's Skills page draws it today,
+ * and no surface owns the shape of a row — that is what keeps a second one
+ * from drifting.
  */
 export function SkillPacksList({ projectPath }: SkillPacksListProps) {
   const { data: packages, isLoading, error } = useInstalledPackages(projectPath);
