@@ -12,7 +12,6 @@
  * @module features/profile/model/use-profile-agent
  */
 import { useCallback } from 'react';
-import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import type {
@@ -47,18 +46,8 @@ export type ProfileAgentManifest = AgentManifest & {
  */
 export type ProfileAgentUpdate = AgentManifestUpdate & Partial<UpdateAgentConventions>;
 
-/** What a caller wants to know about how its save went. */
-export interface ProfileUpdateHandlers {
-  /** The server stored it. Only then — never on the way out. */
-  onSuccess?: () => void;
-  /**
-   * The server refused it, or never heard it.
-   *
-   * Supplying this replaces the default toast, for an editor that says so in
-   * its own words instead.
-   */
-  onError?: (error: Error) => void;
-}
+/** What every profile edit is called when it fails, unless the page renames it. */
+const DEFAULT_ERROR_LABEL = 'Couldn’t save that change';
 
 /** The agent behind a profile, and the one way to change it. */
 export interface ProfileAgent {
@@ -70,8 +59,16 @@ export interface ProfileAgent {
   isPending: boolean;
   /** True while a save is in flight. */
   isSaving: boolean;
-  /** Save a change. Invalidates the manifest AND the roster (§4). */
-  update: (updates: ProfileAgentUpdate, handlers?: ProfileUpdateHandlers) => void;
+  /**
+   * Save a change. Invalidates the manifest AND the roster (§4).
+   *
+   * `onSaved` runs only once the server has stored it. **There is no failure
+   * callback**: a refusal is announced by the app-wide mutation handler, which
+   * runs even when this component has unmounted or a second save superseded
+   * this one — the case a call-site handler silently skips
+   * (`shared/lib/query-client`).
+   */
+  update: (updates: ProfileAgentUpdate, onSaved?: () => void) => void;
 }
 
 /**
@@ -83,15 +80,27 @@ export interface ProfileAgent {
  * that would 400.
  *
  * @param member - The roster row the profile is drawn from.
+ * @param options - Per-page options.
+ * @param options.errorLabel - What THIS page's save is called in a failure
+ *   toast, composed with the server's own sentence. Pages that edit one named
+ *   thing say so ("Couldn't save your instructions"); the rest inherit
+ *   {@link DEFAULT_ERROR_LABEL}.
  */
-export function useProfileAgent(member: TeamMember): ProfileAgent {
+export function useProfileAgent(
+  member: TeamMember,
+  options?: { errorLabel?: string }
+): ProfileAgent {
   const projectPath = member.agent?.projectPath ?? null;
   const query = useCurrentAgent(projectPath);
-  const updateAgent = useUpdateAgent();
+  // The label is the profile's whole failure story: no editor here toasts for
+  // itself, because a toast fired from a `mutate` callback is skipped exactly
+  // when it matters most — the panel closed, or the operator hit Save twice —
+  // and it double-reported with the app-wide handler when it did fire.
+  const updateAgent = useUpdateAgent({ errorLabel: options?.errorLabel ?? DEFAULT_ERROR_LABEL });
   const queryClient = useQueryClient();
 
   const update = useCallback(
-    (updates: ProfileAgentUpdate, handlers?: ProfileUpdateHandlers) => {
+    (updates: ProfileAgentUpdate, onSaved?: () => void) => {
       if (projectPath === null) return;
       updateAgent.mutate(
         // The convention keys ride the same PATCH body the manifest fields do
@@ -102,16 +111,11 @@ export function useProfileAgent(member: TeamMember): ProfileAgent {
         // is why typing into its SOUL.md editor saved nothing.
         { path: projectPath, updates: updates as AgentManifestUpdate },
         {
-          onSuccess: () => handlers?.onSuccess?.(),
-          // A refused edit says so. Every editor here used to fire and forget,
-          // so a 400 — an over-budget SOUL.md, a protected field on a system
-          // agent — left the page looking exactly like a save that worked
-          // (DOR-1253). The server's own sentence is the message: it names the
-          // file and the budget, which "Couldn't save" does not.
-          onError: (error: Error) => {
-            if (handlers?.onError) return handlers.onError(error);
-            toast.error(error.message);
-          },
+          // Only on a stored save — the editors hang "Saved" on this, and a
+          // 400 used to look exactly like a save that worked (DOR-1253).
+          // Deliberately a `mutate` callback rather than `meta`: what it does is
+          // set state on THIS component, which a closed panel no longer wants.
+          onSuccess: () => onSaved?.(),
           onSettled: () => {
             // The roster the portrait and the rows are drawn from…
             void queryClient.invalidateQueries({ queryKey: TEAM_ROSTER_KEY });

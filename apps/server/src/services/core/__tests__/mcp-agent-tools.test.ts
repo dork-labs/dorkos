@@ -10,7 +10,11 @@ vi.mock('@dorkos/shared/manifest', async (importOriginal) => ({
   writeManifest: (...args: unknown[]) => mockWriteManifest(...args),
 }));
 
-vi.mock('@dorkos/shared/convention-files', () => ({
+// Spread over the original, the way the `trait-renderer` mock below does: the
+// module also carries the character budgets `UpdateAgentConventionsSchema` is
+// built from, and a mock that drops them leaves the schema with no maximum.
+vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/convention-files')>()),
   defaultSoulTemplate: vi.fn(() => '# SOUL'),
   defaultNopeTemplate: vi.fn(() => '# NOPE'),
   buildSoulContent: vi.fn(() => '# SOUL'),

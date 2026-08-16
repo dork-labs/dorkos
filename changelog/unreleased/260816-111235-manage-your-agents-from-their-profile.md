@@ -5,6 +5,7 @@ covers:
   - 'fix(client,server): a profile edit changes what it names, and nothing else (DOR-1253)'
   - 'feat(client): the profile playground draws its pushed pages against a real manifest (DOR-1253)'
   - 'fix(client,server): a profile only says "Saved" when the server stored it (DOR-1253)'
+  - 'fix(client,server): one toast for a refused profile save, and one source for the file budgets (DOR-1253)'
 ---
 
 ### Added

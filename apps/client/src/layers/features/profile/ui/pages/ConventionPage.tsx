@@ -33,6 +33,8 @@ const NOPE_DISCLAIMER =
 interface ConventionFile {
   /** The card's heading. */
   title: string;
+  /** What a failed save is called, before the server's own sentence. */
+  errorLabel: string;
   /** Which injection toggle it owns. */
   key: 'soul' | 'nope';
   /** The character budget the server enforces. */
@@ -65,6 +67,7 @@ function soulProse(agent: ProfileAgentManifest, draft: string): string {
 const FILES: Record<'instructions' | 'boundaries', ConventionFile> = {
   instructions: {
     title: 'Custom Instructions (SOUL.md)',
+    errorLabel: 'Couldn’t save your instructions',
     key: 'soul',
     maxChars: SOUL_MAX_CHARS,
     read: (agent) => extractCustomProse(agent.soulContent ?? ''),
@@ -75,6 +78,7 @@ const FILES: Record<'instructions' | 'boundaries', ConventionFile> = {
   },
   boundaries: {
     title: 'Safety Boundaries (NOPE.md)',
+    errorLabel: 'Couldn’t save your boundaries',
     key: 'nope',
     maxChars: NOPE_MAX_CHARS,
     disclaimer: NOPE_DISCLAIMER,
@@ -109,7 +113,9 @@ function status(over: number, overhead: number, dirty: boolean, savedAt: number 
 
 /** One convention file, full height, with a Save you have to mean. */
 function ConventionPage({ member, file }: ProfilePageContentProps & { file: ConventionFile }) {
-  const { agent, isPending, isSaving, update } = useProfileAgent(member);
+  const { agent, isPending, isSaving, update } = useProfileAgent(member, {
+    errorLabel: file.errorLabel,
+  });
   const stored = agent ? file.read(agent) : '';
 
   const [draft, setDraft] = useState(stored);
@@ -167,18 +173,15 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
   function save() {
     if (!agent || over > 0) return;
     const attempted = draft;
-    update(file.write(agent, attempted), {
-      // Only on a stored save. This used to run unconditionally, next to a
-      // fire-and-forget mutation, so "Saved just now" appeared over a file the
-      // server had thrown away.
-      onSuccess: () => {
-        setSavedText(attempted);
-        setSavedAt(Date.now());
-        toast.success('Saved');
-      },
-      // The draft stays exactly as typed and stays dirty — a refusal is a
-      // reason to try again, not a reason to lose the text.
-      onError: (error) => toast.error(error.message),
+    // Only on a stored save. This used to run unconditionally, next to a
+    // fire-and-forget mutation, so "Saved just now" appeared over a file the
+    // server had thrown away. A refusal needs nothing here: the app-wide
+    // handler names it ("Couldn't save your instructions — SOUL.md is too
+    // long…"), and the draft stays exactly as typed, and stays dirty.
+    update(file.write(agent, attempted), () => {
+      setSavedText(attempted);
+      setSavedAt(Date.now());
+      toast.success('Saved');
     });
   }
 

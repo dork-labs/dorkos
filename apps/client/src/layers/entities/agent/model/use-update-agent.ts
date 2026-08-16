@@ -32,12 +32,21 @@ function applyUpdateLikeServer(
 /**
  * Mutation hook to update an agent's fields with optimistic updates.
  * Reverts to previous data on error.
+ *
+ * @param options - Per-surface options.
+ * @param options.errorLabel - Names this surface's action in the user's terms,
+ *   for the app-wide failure toast to compose with the server's own sentence —
+ *   "Couldn't save your instructions — SOUL.md is too long…" (the convention in
+ *   `shared/lib/query-client`, which prefers this over a toast at the call
+ *   site: the cache handler always runs, a `mutate` callback does not).
+ *   Without it the failure still reports, in the generic line.
  */
-export function useUpdateAgent() {
+export function useUpdateAgent(options?: { errorLabel?: string }) {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
   return useMutation({
+    ...(options?.errorLabel ? { meta: { errorLabel: options.errorLabel } } : {}),
     mutationFn: (opts: { path: string; updates: AgentManifestUpdate }) =>
       transport.updateAgentByPath(opts.path, opts.updates),
     onMutate: async ({ path, updates }) => {
