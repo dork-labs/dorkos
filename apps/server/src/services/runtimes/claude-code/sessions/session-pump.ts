@@ -37,6 +37,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionWarmth } from '@dorkos/shared/agent-runtime';
 import { createHeldUserPrompt, createIdlePrompt, type HeldUserPrompt } from '../sdk/sdk-utils.js';
+import { createTurnLiveness, type TurnLiveness } from '../messaging/turn-liveness.js';
 import { logger } from '../../../../lib/logger.js';
 import {
   DRAIN_GRACE_MS,
@@ -105,6 +106,16 @@ export class SessionPump {
   private initReady: Deferred | undefined;
   private initTimer: ReturnType<typeof setTimeout> | undefined;
   private cachedCapabilities: readonly string[] = [];
+  /**
+   * What this process's background subagents are doing, per the SDK's
+   * `background_tasks_changed` level signal (DOR-1238).
+   *
+   * The pump's reason for caring is {@link reap}: closing stdin under a live
+   * subagent EOFs the CLI's control stream, which cancels every hook-matched
+   * tool the agent runs afterwards. Replaced on every launch, because the level
+   * signal is per-process and is not replayed at startup.
+   */
+  private liveness: TurnLiveness = createTurnLiveness();
   private disposed = false;
   /**
    * A `result` closed this turn's window before {@link dispatch} reached
@@ -431,7 +442,7 @@ export class SessionPump {
    * pump; a pump reaped directly is left in `reaped`, which is terminal.
    *
    * @returns True when the process was closed, false when the pump declined
-   *   (not warm, or parked on a person)
+   *   (not warm, parked on a person, or still running background subagents)
    */
   async reap(): Promise<boolean> {
     if (this.currentState === 'cold' || this.currentState === 'reaped') return false;
@@ -450,6 +461,19 @@ export class SessionPump {
     if (this.opts.hasPendingInteraction?.()) {
       logger.warn('[SessionPump] declined to reap a session parked on a person', {
         sessionId: this.sessionId,
+      });
+      return false;
+    }
+    // A turn ends at its `result`, but a background subagent the turn launched
+    // outlives it. Reaping now closes stdin under that subagent, and the CLI
+    // answers an EOF'd control stream by cancelling every hook-matched tool it
+    // then tries to run — the agent's work is thrown away and it is told the
+    // person refused (DOR-1238). The registry asks again a window later.
+    const liveAgents = this.liveness.liveAgentCount();
+    if (liveAgents > 0) {
+      logger.warn('[SessionPump] declined to reap a session running background agents', {
+        sessionId: this.sessionId,
+        liveAgents,
       });
       return false;
     }
@@ -532,6 +556,9 @@ export class SessionPump {
     const resuming = this.currentState === 'resuming';
     this.setState('warming');
     this.cachedCapabilities = [];
+    // A fresh process has no background work, and the level signal is not
+    // replayed at startup — so the old set must not carry over (DOR-1238).
+    this.liveness = createTurnLiveness();
     const held =
       firstMessage === undefined
         ? createIdlePrompt()
@@ -587,6 +614,12 @@ export class SessionPump {
       for await (const message of live) {
         if (isInit(message)) this.noteInit(message.capabilities ?? []);
         try {
+          // Before the demux, so a reap racing this message decides on the
+          // newest membership rather than the one before it (DOR-1238). Inside
+          // the guard with the demux, because ANY throw from this loop body
+          // leaves the `for await` and is reported as the process dying — a
+          // malformed frame must not be able to fake a crash.
+          this.liveness.observe(message);
           this.opts.onMessage?.(message);
         } catch (err) {
           logger.warn('[SessionPump] a message observer threw; the process is unaffected', {

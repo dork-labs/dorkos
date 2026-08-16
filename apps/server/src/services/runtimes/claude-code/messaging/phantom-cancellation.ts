@@ -8,9 +8,21 @@
  * constantly and agents abandon finished work (observed 2026-08-09, eight
  * phantoms in one session, zero real denies).
  *
- * What TRIGGERS that abort is NOT settled. Two confident explanations have
- * already been written here and both were wrong, so they are recorded as
- * refuted rather than replaced with a third guess:
+ * What TRIGGERS that abort is NOT settled — with ONE exception, which is
+ * settled and was DorkOS's own doing (DOR-1238). Once DorkOS ends the CLI's
+ * stdin, the SDK control stream is closed, and every tool matched by the
+ * SDK-side PreToolUse hook (`Edit|Write|MultiEdit|NotebookEdit`, see
+ * `launch-resolver.ts`) is cancelled at entry — the CLI debug log says so
+ * verbatim: `PreToolUse SDK callback hook cancelled (control stream closed)`.
+ * Every corrective push after that EOF is dropped too ("Dropping write to ended
+ * stdin stream"), which is why all nine phantoms in the 2026-08-16 session
+ * logged `steered:false`. Holding stdin open while the turn is still alive is
+ * the fix (`turn-liveness.ts`), and it removes that trigger rather than
+ * detecting it.
+ *
+ * The other triggers remain open. Two confident explanations have already been
+ * written here and both were wrong, so they are recorded as refuted rather than
+ * replaced with a third guess:
  *
  * - It is not a pending PERMISSION ASK. Session `32d40230` ran under
  *   `bypassPermissions`, where `canUseTool` is skipped entirely and nothing is

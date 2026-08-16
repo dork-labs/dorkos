@@ -206,3 +206,30 @@ export function initMessage(capabilities?: string[]): SDKMessage {
     session_id: 'sess-1',
   } as SDKMessage;
 }
+
+/**
+ * The SDK's background-task level signal: the FULL set of live tasks after a
+ * membership change (REPLACE semantics).
+ *
+ * The real wire shape, captured 2026-08-16 against SDK 0.3.224 — each entry
+ * carries its own `task_type`, which is how a background SUBAGENT is told from
+ * a background shell. See
+ * `messaging/__tests__/fixtures/background-tasks-sdk-0.3.224.jsonl`.
+ *
+ * @param tasks - Every task that is live after the change
+ */
+export function backgroundTasksMessage(
+  tasks: Array<{ id: string; type: 'local_agent' | 'local_bash' }>
+): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'background_tasks_changed',
+    tasks: tasks.map(({ id, type }) => ({
+      task_id: id,
+      task_type: type,
+      description: `task ${id}`,
+    })),
+    uuid: `level-${tasks.map((task) => task.id).join('-')}`,
+    session_id: 'sess-1',
+  } as unknown as SDKMessage;
+}

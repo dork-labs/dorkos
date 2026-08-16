@@ -20,7 +20,8 @@ import {
   PHANTOM_CORRECTIONS_MAX_PER_TURN,
 } from './phantom-cancellation.js';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
-import { createTurnSegments, DEFERRED_CLOSE_TIMEOUT_MS } from './turn-segments.js';
+import { createTurnLiveness } from './turn-liveness.js';
+import { createDeferredClose, settleStdinAtDeadline, settleStdinAtResult } from './stdin-hold.js';
 import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
@@ -185,8 +186,8 @@ export async function* executeSdkQuery(
   // Corrective notes steered into this turn after phantom cancellations
   // (DOR-1087) — capped so the correction can never feed itself. There is no
   // separate post-`result` gate: the held prompt being OPEN is the whole
-  // condition, because a turn with background tasks outstanding continues past
-  // its first `result` (see `turn-segments.ts`) and a note pushed then lands in
+  // condition, because a turn with background work outstanding continues past
+  // its first `result` (see `turn-liveness.ts`) and a note pushed then lands in
   // the segment that is still running. Once the stream is closed for good,
   // `push()` refuses on its own (DOR-1149).
   // Separate budgets, because they compete for different reasons (DOR-1150).
@@ -196,19 +197,13 @@ export async function* executeSdkQuery(
   // victim, ever got a correction.
   let mainThreadCorrections = 0;
   let subagentCorrections = 0;
-  const segments = createTurnSegments();
-  /**
-   * Deadline promise for a held-back stdin close, armed at the deferring
-   * `result` and cleared the moment the close actually happens.
-   */
-  let deferredCloseDeadline: Promise<'expired'> | undefined;
-  let deferredCloseTimer: NodeJS.Timeout | undefined;
-  /** Drop an armed deadline — the close it guarded is happening now. */
-  const releaseDeferredClose = (): void => {
-    if (deferredCloseTimer) clearTimeout(deferredCloseTimer);
-    deferredCloseTimer = undefined;
-    deferredCloseDeadline = undefined;
-  };
+  // What says whether this turn is still alive at a `result`: a background
+  // subagent still running, or a settled notification still owed its delivery.
+  // One tracker per PROCESS, which on this path is one per turn (DOR-1238).
+  const liveness = createTurnLiveness();
+  // The bound on the ONE hold nothing else bounds — an owed delivery that never
+  // arrives. A hold for a live agent is deliberately never given one.
+  const deferredClose = createDeferredClose();
   const streamStart = Date.now();
   const toolState = createToolState();
 
@@ -235,24 +230,27 @@ export async function* executeSdkQuery(
         pendingSdkPromise = sdkIterator.next().then((result) => ({ sdk: true as const, result }));
       }
 
-      // A deferred close must not be able to wedge the turn: while it is held,
-      // the CLI waits on stdin and we wait on the CLI, so neither the deferral
-      // cap nor the `finally` is ever reached. The deadline is armed ONCE per
-      // deferral (see `DEFERRED_CLOSE_TIMEOUT_MS`) rather than re-armed each
-      // iteration, so a chatty stream cannot push it back for ever (DOR-1149).
+      // An owed-delivery hold must not be able to wedge the turn: while stdin is
+      // held the CLI waits on us and we wait on the CLI, so the `finally` is
+      // never reached. The deadline is armed ONCE per hold (see `stdin-hold.ts`)
+      // rather than re-armed each iteration, so a chatty stream cannot push it
+      // back for ever. It is armed only when nothing is live, released the
+      // moment a segment starts, and re-checks liveness before it closes
+      // anything — so it can no longer fire inside a running segment or under a
+      // helper launched since it was armed (DOR-1238).
       const winner = await Promise.race(
-        deferredCloseDeadline
-          ? [queuePromise, pendingSdkPromise, deferredCloseDeadline]
+        deferredClose.deadline
+          ? [queuePromise, pendingSdkPromise, deferredClose.deadline]
           : [queuePromise, pendingSdkPromise]
       );
 
       if (winner === 'expired') {
-        logger.warn('[sendMessage] deferred close expired; releasing input stream', {
-          session: sessionId,
-          owedNotifications: segments.owedCount(),
+        settleStdinAtDeadline({
+          sessionId,
+          liveness,
+          deferredClose,
+          close: () => heldPrompt.close(),
         });
-        releaseDeferredClose();
-        heldPrompt.close();
         continue;
       }
 
@@ -274,8 +272,13 @@ export async function* executeSdkQuery(
 
       // Background-task lifecycle drives BOTH decisions below: whether a
       // `result` ends the turn or only a segment of it, and therefore whether a
-      // corrective note still has a live channel (DOR-1149).
-      segments.observe(result.value);
+      // corrective note still has a live channel (DOR-1149, DOR-1238).
+      const { segmentRunning } = liveness.observe(result.value);
+      // A second `system/init`, or the model speaking, proves a segment is
+      // running and that a `result` will close it. Any deadline armed at the
+      // previous `result` goes now — expiring it inside a running segment is
+      // what cancels that segment's tool calls (DOR-1238).
+      if (segmentRunning) deferredClose.release();
 
       // Phantom cancellation (DOR-1087): the CLI cancelled pending tool calls
       // because a task-notification was queued, writing a sentinel that reads
@@ -321,9 +324,9 @@ export async function* executeSdkQuery(
       }
 
       // The `result` message marks the end of a SEGMENT — which is the end of
-      // the turn only when no background task still owes a notification
-      // (DOR-1149). The subprocess is alive either way (the prompt stream is
-      // held open), so fetch the authoritative context-usage breakdown AND the
+      // the turn only when nothing is still running and nothing is still owed a
+      // delivery (DOR-1238). The subprocess is alive either way (the prompt
+      // stream is held open), so fetch the authoritative context-usage AND the
       // current subscription utilization now — before this message maps to
       // `done`, so the resulting `context_usage` event precedes `done` and the
       // terminal `session_status` carries `usage` (DOR-99).
@@ -354,22 +357,16 @@ export async function* executeSdkQuery(
         // never flicker back to cost-only between turns.
         if (subscriptionUsage) session.lastSubscriptionUsage = subscriptionUsage;
         // Release stdin so the process drains its trailing messages and exits —
-        // unless the CLI still owes us a queued-notification segment, in which
-        // case closing here would strand the steering channel for the rest of
-        // the turn (DOR-1149). The `finally` closes unconditionally, so a
-        // deferral can never leak the subprocess.
-        if (segments.holdOpenAtResult()) {
-          // Arm the deadline for THIS deferral. Any earlier one has already been
-          // released, so there is never more than one live timer.
-          deferredCloseDeadline = new Promise<'expired'>((resolve) => {
-            deferredCloseTimer = setTimeout(() => resolve('expired'), DEFERRED_CLOSE_TIMEOUT_MS);
-            // Never let this timer alone hold the process open.
-            deferredCloseTimer.unref?.();
-          });
-        } else {
-          releaseDeferredClose();
-          heldPrompt.close();
-        }
+        // unless the turn is still alive, in which case the EOF would cancel
+        // every hook-matched tool the CLI runs from here on and drop every
+        // corrective push (DOR-1238; see `stdin-hold.ts`). The `finally` closes
+        // unconditionally, so a hold can never leak the subprocess.
+        settleStdinAtResult({
+          sessionId,
+          liveness,
+          deferredClose,
+          close: () => heldPrompt.close(),
+        });
       }
 
       // A mid-session `commands_changed` push carries the full, authoritative
@@ -535,7 +532,7 @@ export async function* executeSdkQuery(
     // exit before the result message (error, interrupt, empty stream). Idempotent.
     // Clearing the deadline here also covers the path where the race THREW —
     // otherwise a rejected SDK promise would leave a live timer behind.
-    releaseDeferredClose();
+    deferredClose.release();
     heldPrompt.close();
     // Preserve the query reference for post-stream control methods (e.g.
     // reloadPlugins) — but only when this frame still OWNS the active query

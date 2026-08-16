@@ -5,10 +5,11 @@
  * ## What this is, next to `executeSdkQuery`'s loop
  *
  * On the resume-per-message path the SDK stream IS the turn, so one loop owns
- * both mapping and process lifecycle: it closes stdin at the `result`, defers
- * that close while background tasks are outstanding, fetches the closing
- * accounting, and retries a failed resume by recursing. None of that belongs to
- * a turn on a persistent process, and every one of them has a new owner:
+ * both mapping and process lifecycle: it closes stdin at the `result`, holds
+ * that close open while the turn is still alive (`turn-liveness.ts`), fetches
+ * the closing accounting, and retries a failed resume by recursing. None of that
+ * belongs to a turn on a persistent process, and every one of them has a new
+ * owner:
  *
  * | Concern                        | Who owns it on the pump path                      |
  * | ------------------------------ | ------------------------------------------------- |
@@ -39,6 +40,11 @@
  * layer holds no input stream — the pump owns it, and writing into an open turn
  * is `deliverIntoTurn`, which is P4's verb (spec §2.1). The operator is told
  * either way; only the model's correction waits.
+ *
+ * The pump path does not have the turn path's cause of phantoms, though: it
+ * never closes stdin at a `result` at all, and `SessionPump.reap()` declines
+ * while a background subagent is live (DOR-1238), so an EOF cannot land under
+ * one.
  *
  * @module services/runtimes/claude-code/sessions/pump-turn-stream
  */
