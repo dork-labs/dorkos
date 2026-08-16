@@ -1776,6 +1776,24 @@ export function runtimeConformance(
                 open.status.lifecycle,
                 'the dispositionTurn driver did not leave a turn open to deliver into'
               ).toBe('streaming');
+              // Capture the OPEN turn's IDENTITY — its `turn_start`'s seq. "No new
+              // turn_start" is the whole property C1 names, and this seq is the one
+              // fact that pins it: a steer that JOINS this turn leaves the same
+              // turn_start in place, while a steer implemented as
+              // close-this-turn-then-open-another mints a new turn_start with a new
+              // seq. Read before the steer so the after-reading has a concrete
+              // identity to be equal to.
+              const openTurn = open.inProgressTurn;
+              expect(
+                openTurn,
+                'the dispositionTurn driver must leave one open turn to steer into'
+              ).not.toBeNull();
+              const openTurnStarts = openTurn!.filter((event) => event.type === 'turn_start');
+              expect(
+                openTurnStarts,
+                'an open turn window carries exactly one turn_start'
+              ).toHaveLength(1);
+              const turnIdentity = openTurnStarts[0]!.seq;
 
               // Called on `runtime`, never a detached reference: an adapter's
               // deliverIntoTurn may read `this` (claude-code reaches its
@@ -1796,18 +1814,31 @@ export function runtimeConformance(
                   'a runtime that declares steer must deliver a steer into an open turn — declaring ' +
                     'a capability it cannot honor is the exact lie C1 exists to catch'
                 ).toBe(true);
-                // The steer JOINED the turn — it did not close this one and open
-                // another. The same turn is still streaming, which is the observable
-                // face of "no new turn_start".
+                // The property, checked DIRECTLY rather than by proxy: the window
+                // still carries exactly ONE turn_start, and it is the SAME one — same
+                // seq — the steer joined. Lifecycle alone cannot tell "joined the
+                // turn" from "closed it and opened a new one", because a reopened turn
+                // is streaming and non-null too; the seq can, and does.
                 const after = await runtime.getSessionSnapshot(sessionOpts(runtime), sessionId);
                 expect(
                   after.status.lifecycle,
                   'a steer must join the open turn, not replace it with a new one'
                 ).toBe('streaming');
+                const afterTurn = after.inProgressTurn;
                 expect(
-                  after.inProgressTurn,
+                  afterTurn,
                   'the steered turn must still be the one open turn'
                 ).not.toBeNull();
+                const afterTurnStarts = afterTurn!.filter((event) => event.type === 'turn_start');
+                expect(
+                  afterTurnStarts,
+                  'a steer must open no new turn — the window still carries exactly one turn_start'
+                ).toHaveLength(1);
+                expect(
+                  afterTurnStarts[0]!.seq,
+                  'the steered turn must be the SAME turn the steer joined — a new turn_start seq ' +
+                    'here is exactly the second turn C1 forbids'
+                ).toBe(turnIdentity);
               }
 
               if (declaresStage(runtime)) {
