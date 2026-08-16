@@ -1502,19 +1502,24 @@ export function migrateStatusBarToPins(store: {
  * Seeds `true`, matching the schema default — chat formats as you type, and the
  * Settings → Advanced switch turns it off.
  *
- * ## Why this body was EDITED rather than superseded by a second key
+ * ## This body was EDITED after merging, and that was a mistake
  *
  * It originally seeded `false`, because that was the shipped default. The owner
- * flipped the default on 2026-08-12, and `0.59.0` had not been tagged
- * (`v0.58.0` was still the newest `v*` tag) — so this key has run on no
- * released install. The only machines that ever executed the `false` version
- * are development trees, where the schema default and this body now agree
- * again. Stacking a second migration to undo an unreleased one would leave two
- * keys arguing about one leaf for the life of the file.
+ * flipped the default on 2026-08-12 and this body was rewritten in place, on the
+ * reasoning that `0.59.0` had not been tagged yet, so it had run for nobody and
+ * only development trees could have executed the `false` version.
  *
- * **That argument expires the moment `v0.59.0` is tagged.** After that, this
- * key has shipped, editing it changes nothing for anybody who already ran it,
- * and a genuine change of default needs a NEW key above the newest tag.
+ * That reasoning was wrong (DOR-1222). A tag is not what runs a migration —
+ * `projectVersion` is, and it is `SERVER_VERSION`: the version compiled into a
+ * built CLI bundle or the desktop app, bumped in the repository before the tag
+ * exists. The operator's own config was stamped `0.59.0` that same day, so his
+ * machine ran whichever version of this body was on disk at that moment and will
+ * never run this key again. Nothing here can reach him now.
+ *
+ * The rule the next change follows: a merged body is append-only, and a change
+ * of default opens a NEW key above the newest tag, written so it can tell a
+ * value this body seeded from one a person chose.
+ * `__tests__/merged-migration-hashes.ts` fails the build if this body moves.
  *
  * Additive + idempotent: an existing `ui.composer` object is left exactly as it
  * stands, so re-running (corrupt-recovery, a hand-edited migration version)
@@ -1789,12 +1794,22 @@ export function backfillRoomsDefaults(store: {
  * What it must never do is override a person, and the `=== undefined` fill is
  * exactly that guarantee, in both directions: somebody who turned offers ON
  * keeps them, and somebody who turned offers OFF keeps that too — an explicit
- * `false` is a value, not an absence, so this never writes over it. Amending
- * this key rather than appending a new one is what makes the guarantee reachable
- * at all: `'0.59.0'` is still unreleased (the newest tag is `v0.58.0`), so no
- * install has run it, and none can have a seeded `false` to be re-seeded from. A
- * follow-up key could not tell a seeded `false` from a chosen one and would take
- * the choice away from whoever had made it.
+ * `false` is a value, not an absence, so this never writes over it.
+ *
+ * The flip itself was made by EDITING this body inside `'0.59.0'` rather than
+ * appending a key, on the reasoning that the key was still untagged and so had
+ * run for nobody. That reasoning was wrong (DOR-1222): `projectVersion` comes
+ * from `SERVER_VERSION`, which a built CLI or the desktop app carries before any
+ * tag exists, and the operator's own config was stamped `0.59.0` on the day of
+ * the flip. Anyone in that position kept the seeded `false` this body no longer
+ * writes, and nothing here reaches them.
+ *
+ * The half of the argument that was sound stands, and is why the fix is not a
+ * later key that re-seeds `true`: such a key could not tell a seeded `false`
+ * from a chosen one, and would take the choice away from whoever had made it. A
+ * correcting migration has to distinguish the two states — which is exactly the
+ * bar the append-only rule sets, and the reason a change of mind is harder to
+ * write than an edit and should be.
  *
  * Nothing depends on this having run: every leaf carries a Zod default, so an
  * install that skips the migration (a dev tree resolves `SERVER_VERSION` to
@@ -2348,7 +2363,7 @@ export function backfillClaudeCodePersistentSession(store: {
  * at or below a version that already shipped is skipped for everybody already on
  * it — no error, no warning, the backfill simply never happens (DOR-339).
  *
- * Two things follow, and both have been got wrong here before:
+ * Three things follow, and all three have been got wrong here before:
  *
  * - **Never append to a key that has shipped.** The key being present is not the
  *   point; the BODY is what runs. Appending to an already-tagged composite key
@@ -2356,20 +2371,50 @@ export function backfillClaudeCodePersistentSession(store: {
  * - **Never edit a shipped migration body.** Everyone who upgraded past it ran
  *   the old body, and no re-run is coming. Write a new, idempotent entry that
  *   corrects the state instead.
+ * - **A body is frozen from the moment it MERGES, not from the moment it is
+ *   tagged.** This one reads like a technicality and is not (DOR-1222). See
+ *   below.
  *
- * Both rules are enforced: `__tests__/migration-safety.ts` compares every key's
- * source text against the newest release tag, and `config-manager.test.ts` runs
- * that comparison over the real repository on every CI run.
+ * ## "It is not released yet" is not a licence to edit
  *
- * ## The comparison is byte-identity, so a shipped body's COMMENTS are frozen too
+ * The table used to carry the opposite rule: a key above the newest tag had run
+ * for nobody, so its body could be amended freely. That was false, and it was
+ * false on the machine of the person who wrote it. `projectVersion` is
+ * `SERVER_VERSION` (`lib/version.ts`), which is the version compiled into a
+ * built CLI bundle or the desktop app — and that version is bumped in the
+ * repository BEFORE the tag exists. Only a raw dev tree is exempt, because
+ * `apps/server/package.json` reads `0.0.0`. So anybody who builds and runs
+ * during the merge-to-release window is stamped with the new version, has run
+ * whatever the body said that day, and will never run the key again.
  *
- * Deliberate. A rule that skipped comments would need a parser deciding which
- * lines are code, and "an appended line the parser mis-read as a comment" is the
- * same class of hole this guard exists to close. The consequence is that a stale
- * sentence inside a shipped body cannot be corrected in place: `'0.57.0'` still
- * carries one, pointing at the composition convention this docblock replaced.
- * Correct that kind of thing HERE, or in the comment directly above the key
- * (both sit outside every key's slice), not inside the body.
+ * `'0.59.0'` is the worked example. It was amended in place twice while
+ * "unreleased" — `welcomeBack.offersEnabled` OFF to ON, then the composer prefs
+ * seed — and the operator's own config had been stamped `0.59.0` on 2026-08-12
+ * before either landed. Both amendments skipped him in silence. A change of mind
+ * about a merged body opens a NEW key above the newest tag, written so it can
+ * tell a value this body seeded from one a person chose.
+ *
+ * ## Both rules are enforced, and they are enforced differently
+ *
+ * - `__tests__/migration-safety.ts` compares each key's TABLE SLICE, byte for
+ *   byte, against the newest release tag. Byte-identity is deliberate there: a
+ *   rule that skipped comments would need a parser deciding which lines are
+ *   code, and "an appended line the parser mis-read as a comment" is the same
+ *   class of hole it exists to close. The consequence is that a stale sentence
+ *   inside a shipped body cannot be corrected in place — `'0.57.0'` still
+ *   carries one, pointing at the composition convention this docblock replaced.
+ *   Correct that kind of thing HERE, or in the comment directly above a key
+ *   (both sit outside every key's slice), not inside the body.
+ * - `__tests__/migration-append-only.ts` pins a hash per merged key against
+ *   `__tests__/merged-migration-hashes.ts`. It covers the whole CLOSURE — the
+ *   table slice plus every top-level function AND constant in this file the key
+ *   reaches — so it sees an edit to a helper the table merely calls, and to a
+ *   list like `RETIRED_SIDEBAR_KEYS` that decides what a helper does. The
+ *   slice-only rule sees neither. It normalizes comments and formatting away, so it is the rule
+ *   that stays quiet when prose is corrected. It needs no tag, which is what
+ *   lets it hold inside the window where no tag exists yet.
+ *
+ * `config-manager.test.ts` runs both over the real repository on every CI run.
  */
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
@@ -2611,12 +2656,20 @@ export const CONFIG_MIGRATIONS = {
     // leaves each runtime starting new sessions exactly where it does today.
     backfillDefaultTrustStops(store);
   },
-  // v0.58.0 is tagged and `package.json` reads 0.58.0, so the next key that can
-  // still run for everybody is 0.59.0 — strictly above the newest `v*` tag, and
-  // not the current version (`conf` runs a key only in
-  // `(storedVersion, projectVersion]`). Enforced by
-  // `__tests__/migration-safety.ts`. Two changes landed in the same release
-  // window and share this key; both are additive + idempotent.
+  // Opened above v0.58.0, the newest tag at the time, and now shipped in
+  // v0.59.0. Several changes landed in the same release window and share it; all
+  // are additive + idempotent.
+  //
+  // READ THE BODY BELOW AS A RECORD, NOT AS A PATTERN. It was amended in place
+  // twice after merging — `welcomeBack.offersEnabled` OFF to ON, then the
+  // composer prefs seed — each time on the reasoning that an untagged key has run
+  // for nobody. That reasoning was false, and the sentences below still stating
+  // it are wrong: the operator's own config was stamped `0.59.0` on 2026-08-12,
+  // by whatever this key said that day, so every later amendment skipped him
+  // (DOR-1222). They cannot be corrected where they stand, because a shipped
+  // body is byte-frozen; the correction is here and in the docblock above the
+  // table. A merged body is append-only, and `merged-migration-hashes.ts` now
+  // holds every key to that.
   '0.59.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
@@ -2680,6 +2733,15 @@ export const CONFIG_MIGRATIONS = {
   // 0.60.0 — strictly above the newest `v*` tag (`conf` runs a key only in
   // `(storedVersion, projectVersion]`). Enforced by
   // `__tests__/migration-safety.ts`.
+  //
+  // Merged and therefore closed. It has run for nobody yet — VERSION still
+  // reads 0.59.0, and `conf` runs a key only in
+  // `(storedVersion, projectVersion]` — but it goes live the moment the release
+  // bump lands, which happens before any tag exists and with no gate in
+  // between. So it is frozen from merge, not from the bump: there is no point
+  // after merging at which somebody checks whether this body is still the one
+  // that should ship. Anything further opens `'0.61.0'`, and
+  // `merged-migration-hashes.ts` fails the build if this one changes.
   '0.60.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;

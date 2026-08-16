@@ -51,6 +51,8 @@ import {
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
+import { checkAppendOnly, migrationClosure } from './migration-append-only.js';
+import { MERGED_MIGRATION_HASHES } from './merged-migration-hashes.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -2480,6 +2482,68 @@ describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
     });
 
     expect(result.ok, result.problems.join('\n')).toBe(true);
+  });
+});
+
+describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () => {
+  // The guard above measures against the newest `v*` TAG, which leaves the
+  // merge-to-release window open: for a key above the newest tag it says "new
+  // work" and permits any rewrite. That window is not empty. `conf` runs a key
+  // in `(storedVersion, projectVersion]`, and `projectVersion` is whatever
+  // `SERVER_VERSION` resolves to — the version baked into a built CLI bundle or
+  // the desktop app, which is bumped in the repository BEFORE the tag exists.
+  // The operator's own config was stamped `0.59.0` on 2026-08-12 while `0.59.0`
+  // was "unreleased", so both later amendments to that key skipped him without a
+  // word. The dogfood machine is always somebody.
+  //
+  // So this half pins CONTENT per merged key, against `merged-migration-hashes.ts`
+  // rather than against git. That is what makes it answerable offline, in a
+  // shallow clone, and — the point — inside the window where no tag exists yet to
+  // compare with. The rule and its failure matrix are in
+  // `migration-append-only.ts` / `migration-append-only.test.ts`.
+  const readConfigManager = (): string =>
+    fs.readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../config-manager.ts'),
+      'utf-8'
+    );
+
+  it('reaches into the helper a bare table entry names, not just its name', () => {
+    // Guard the guard, and the thing this rule exists to cover that the tag rule
+    // does not: `'0.60.0': backfillRoomsDefaults` is one identifier in the table,
+    // so a pin that hashed the table slice alone would freeze a NAME while the
+    // body it points at stayed editable. That is the shape of DOR-1121.
+    const closure = migrationClosure('0.60.0', readConfigManager());
+    expect(closure).toContain('maxAutomaticTurnsPerRoomPerHour');
+    // And it stops at what the key actually reaches: `offersEnabled` lives in
+    // `backfillWelcomeBackDefaults`, which only `'0.59.0'` calls.
+    expect(closure).not.toContain('offersEnabled');
+  });
+
+  it('every merged migration still hashes to what it was pinned at', () => {
+    const result = checkAppendOnly(readConfigManager(), MERGED_MIGRATION_HASHES);
+    expect(result.ok, result.problems.join('\n\n')).toBe(true);
+  });
+
+  it('lists its keys in ascending semver order, after the legacy sentinel', () => {
+    // Neither guard sees a REORDER: hashes are per key and the tag comparison is
+    // per key too, so swapping two blocks leaves every check green while
+    // changing what actually happens — `conf` runs migrations in the table's
+    // INSERTION order, not in version order, and several bodies here depend on
+    // running after another (`backfillWorkbenchTerminalGraceTtl` after
+    // `backfillWorkbenchDefaults`, the trust-stop backfills after the two
+    // `runtimes` ones). Ascending order is what makes insertion order and
+    // version order the same thing, so it is asserted rather than hashed — a
+    // hash of the key list would go red without saying why.
+    //
+    // `'1.0.0'` is exempt and pinned to the front. It is the legacy sentinel
+    // that seeds `version: 1`, and it is above every version this app has ever
+    // carried, so `key <= projectVersion` excludes it and it runs for nobody
+    // while DorkOS is 0.x. Its position cannot matter until the app reaches
+    // 1.0.0, at which point running first is what a seed body wants anyway.
+    const keys = Object.keys(CONFIG_MIGRATIONS);
+    expect(keys[0]).toBe('1.0.0');
+    const rest = keys.slice(1);
+    expect(rest).toEqual([...rest].sort((a, b) => semver.compare(a, b)));
   });
 });
 
