@@ -568,6 +568,13 @@ describe('PermissionModeItem', () => {
   });
 
   describe('while Plan holds the session', () => {
+    // The production caller (`status-item-nodes.tsx`) never mounts this item at
+    // all while Plan is active — it omits the node so the promotion/budget seam
+    // gives the freed slot to the composer's dedicated Plan switch instead of
+    // wasting it on a chip with nothing to report (DOR-1236, spec `trust-dial`
+    // decision 1). What is left to pin here is this component's OWN contract for
+    // whoever else might render it directly: it shows the runtime's own word for
+    // the mode it is given, plain, with the dial frozen underneath.
     it('freezes the stops and says what planning means', () => {
       mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
       render(

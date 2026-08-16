@@ -455,6 +455,61 @@ export const WAITING_ON_BACKGROUND_TASKS: StatusScenario = {
 };
 
 /**
+ * Plan holds the session, reconnecting and nearly out of context on top of it —
+ * the exact reproduction that found DOR-1236. `permission` and `plan` used to
+ * tie at the same severity, and `applyStatusBudget`'s tie-break (stable sort,
+ * registry order) gave a narrow bar's contested slot to an empty permission
+ * chip instead of the one chip that is news. Run this scenario at the
+ * `compact` and `identity` floors (the two narrow tiers, ~440px and ~340px) to
+ * see only the Plan chip in the line — never a redundant permission chip
+ * beside it.
+ */
+export const PLANNING: StatusScenario = {
+  label: 'Planning — reconnecting, and nearly out of context',
+  ctx: {
+    cwd: CWD,
+    git: gitPromotionState(CLEAN_GIT.branch, CLEAN_GIT.clean, CLEAN_GIT.detached),
+    contextPercent: 92,
+    connectionState: 'reconnecting',
+    permissionMode: 'plan',
+    permissionDescriptor: PLAN_MODE,
+    plan: { active: true },
+    runtime: { isDefault: true, canSelect: false },
+    usage: USAGE_OK,
+    subagentsInFlight: 0,
+  },
+  input: {
+    sessionId: 'showcase-planning',
+    agent: { name: AGENT.name, color: AGENT.color, emoji: AGENT.emoji, path: AGENT.path },
+    status: { ...HEALTHY_STATUS, permissionMode: 'plan', contextPercent: 92 },
+    onUpdateSession: () => {},
+    onChangeMode: () => {},
+    makeDefault: null,
+    onPermissionPickerOpenChange: () => {},
+    modelSupportsAutoMode: true,
+    plan: { descriptor: PLAN_MODE, active: true, onToggle: () => {} },
+    gitStatus: CLEAN_GIT,
+    workspace: null,
+    runtimeChip: DEFAULT_RUNTIME_CHIP,
+    contextPercent: 92,
+    contextUsage: null,
+    compact: null,
+    usage: USAGE_OK,
+    supportsCostTracking: true,
+    runningSubagents: [],
+    liveSubagentCount: 0,
+    waitingOnSubagents: false,
+    connectionState: 'reconnecting',
+  },
+  diagnostics: {
+    ...HEALTHY_DIAGNOSTICS,
+    permissionMode: 'plan',
+    contextPercent: 92,
+    connectionState: 'reconnecting',
+  },
+};
+
+/**
  * One bar width per density tier, widest first: each tier at its floor from
  * `status-budget` (640 / 440 / 340), plus 320 for `avatar`, which has no floor.
  *
