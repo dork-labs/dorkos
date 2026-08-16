@@ -32,9 +32,10 @@ import {
   RoomTitle,
   hasUnread,
   roomDisplayTitle,
+  useAddRoomMember,
   useArchiveRoom,
-  useLeaveRoom,
   useMarkRoomReadNow,
+  useRemoveRoomMember,
   useRenameRoom,
   useRoomWorking,
   useUnarchiveRoom,
@@ -122,15 +123,27 @@ export function RoomRow({
   const renameRoom = useRenameRoom();
   const archiveRoom = useArchiveRoom();
   const unarchiveRoom = useUnarchiveRoom();
-  const leaveRoom = useLeaveRoom();
+  const leaveRoom = useRemoveRoomMember({ errorLabel: "Couldn't leave" });
+  const rejoinRoom = useAddRoomMember();
   /**
-   * Your own author id, as the team roster's `isSelf` row names it.
+   * **The install OWNER's author id — not necessarily "you".**
    *
-   * A room's own read carries `viewerAuthorId` (`RoomWithRoster`), but the
-   * sidebar only ever reads the LIST shape, which does not — so this is the
-   * one place that answer is available without opening the room first. The
-   * roster is mounted app-wide (the account menu keeps it warm), so this is a
-   * shared cache hit rather than a fetch of its own.
+   * `GET /api/team`'s `isSelf` names the account that owns this install
+   * (`aggregate-team.ts`'s `isOwnerRecord` match), resolved the same way for
+   * every caller of the route; it does not read who is asking. This product
+   * ships with one operator per install, so the person driving the browser
+   * IS the owner and the two coincide. On a future install with a second
+   * person logged in, this would still resolve to the OWNER's id — a second
+   * person's Leave would try to remove the owner's membership rather than
+   * their own, and get refused with a sentence about a room shape rather
+   * than about who they are. Known residual; not fixed here.
+   *
+   * A room's own read carries `viewerAuthorId` (`RoomWithRoster`), which IS
+   * caller-scoped — but the sidebar only ever reads the LIST shape, which
+   * does not carry it. The team roster is the only source of this answer
+   * without opening the room first, and it is mounted app-wide (the account
+   * menu keeps it warm), so this is a shared cache hit rather than a fetch of
+   * its own.
    */
   const selfAuthorId = useTeamRoster().data?.members.find((member) => member.isSelf)?.id ?? null;
 
@@ -224,17 +237,37 @@ export function RoomRow({
   };
 
   /**
+   * Rejoin a room you left — `AddRoomMemberRequestSchema` and
+   * `RoomService.addMember` take an existing author's id for any kind, agent
+   * or person, so this is the same wire call "Add agents" makes, aimed at
+   * yourself instead of an agent. No `responseMode`: the field decides when
+   * an AGENT answers unprompted, and the server seeds a person's own inert
+   * default.
+   */
+  const rejoinChannel = () => {
+    if (selfAuthorId === null) return;
+    rejoinRoom.mutate(
+      { roomId: room.id, authorId: selfAuthorId },
+      { onSuccess: () => toast.success(`You rejoined ${title}`) }
+    );
+  };
+
+  /**
    * Leave, and get out of the room's way if it is the one on screen.
    *
-   * No per-call `onError` here either, and for the archive confirm's own
-   * reason: `meta.errorLabel` on {@link useLeaveRoom} ("Couldn't leave")
-   * reaches the mutation cache's own handler, which composes it with the
-   * server's own sentence — the ONLY place "two agents share this room, take
-   * one out first" is ever explained, so nothing here restates it.
+   * No per-call `onError` here, and for the archive confirm's own reason:
+   * `errorLabel` on {@link useRemoveRoomMember} ("Couldn't leave") reaches
+   * the mutation cache's own handler, which composes it with the server's
+   * own sentence — the ONLY place "two agents share this room, take one out
+   * first" (or "#team is your home channel") is ever explained, so nothing
+   * here restates it.
    *
-   * No Undo, unlike archive: there is no way to re-add a PERSON to a room's
-   * roster anywhere in the product, so offering one would be a button that
-   * does nothing. Getting back in takes a fresh invite.
+   * **Undo IS possible, unlike this hook's first cut assumed** — the server
+   * never restricted `addMember` to agents, only the client's own input type
+   * did (DOR-1233 follow-up) — so the offer mirrors Archive's exactly:
+   * {@link rejoinChannel}, passed no per-call callbacks the same way
+   * `unarchiveRoom.mutate` above is not, because the shared mutation toast is
+   * what reports a failed undo.
    */
   const confirmLeave = () => {
     setLeaveOpen(false);
@@ -247,7 +280,9 @@ export function RoomRow({
       { roomId: room.id, authorId: selfAuthorId },
       {
         onSuccess: () => {
-          toast.success(`You left ${title}`);
+          toast.success(`You left ${title}`, {
+            action: { label: 'Undo', onClick: rejoinChannel },
+          });
           // Only when this room is the one on screen: leaving from a row
           // that is not open changes nothing about where the reader is.
           if (isActive) void navigate({ to: '/channels', search: {} });
@@ -273,6 +308,21 @@ export function RoomRow({
       ? null
       : (meshAgents.find((a) => agentAuthorRef(a.projectPath) === soleAgentRef)?.projectPath ??
         null);
+
+  /**
+   * `room.wellKnown` on the wire — `'team'` for #team, `null`/absent for
+   * every room a person or an agent opened (team-room-home spec D3.1). The
+   * server refuses removing the owner from one of these outright.
+   */
+  const isSystemRoom = room.wellKnown != null;
+  /**
+   * Whether the viewer is currently on this room's roster. `unreadCount` is
+   * `null` for exactly one reason — a read cursor is a property of
+   * membership, and a non-member has none (`RoomService.listRooms`) — so this
+   * is the same fact the sidebar's own unread badge already reads this way,
+   * not a new signal invented for Leave.
+   */
+  const isMember = room.unreadCount !== null;
 
   // ── Where this room sits in the sidebar's organization (rooms-in-groups,
   // DOR-581) ──
@@ -301,6 +351,8 @@ export function RoomRow({
     hasUnread: unread,
     soleAgentPath,
     canLeave: selfAuthorId !== null,
+    isSystemRoom,
+    isMember,
     isMuted,
     currentGroupId,
     groups: moveTargetGroups,
@@ -316,6 +368,7 @@ export function RoomRow({
     onRename: startRename,
     onEditTopic: () => setDetailsFocus('topic'),
     onLeave: () => setLeaveOpen(true),
+    onRejoin: rejoinChannel,
     onArchive: () => setArchiveOpen(true),
   };
 
@@ -327,7 +380,9 @@ export function RoomRow({
         titleText={title}
         isActive={isActive}
         emphasized={unread}
-        muted={isMuted}
+        // Dimmed for either reason: the reader silenced it on purpose, or
+        // they left it and it is no longer theirs to post in.
+        muted={isMuted || !isMember}
         onSelect={onSelect}
         buttonRef={rowRef}
         menuNodes={buildRoomRowMenuNodes(menuModel)}
@@ -361,6 +416,18 @@ export function RoomRow({
         }
         trailing={
           <>
+            {!isMember && (
+              <span
+                className="text-muted-foreground bg-muted shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                // A hint, not a repeat of the mute icon's shape: the room is
+                // still visible (the owner sees every room whether or not
+                // they are on its roster), only unpostable — a fact the
+                // dimmed row alone does not say.
+                aria-label="You left this channel"
+              >
+                Left
+              </span>
+            )}
             {isMuted && (
               <BellOff className="text-sidebar-foreground/50 size-3" aria-label="Muted" />
             )}
@@ -427,8 +494,8 @@ export function RoomRow({
           <AlertDialogHeader>
             <AlertDialogTitle>Leave {title}?</AlertDialogTitle>
             <AlertDialogDescription>
-              You can still read what&rsquo;s here, but you won&rsquo;t be able to post again unless
-              someone adds you back.
+              You can still read what&rsquo;s here, but you won&rsquo;t be able to post again. You
+              can rejoin from this menu any time.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

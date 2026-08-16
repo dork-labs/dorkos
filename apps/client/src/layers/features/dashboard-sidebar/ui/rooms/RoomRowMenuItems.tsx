@@ -6,6 +6,7 @@ import {
   FolderInput,
   FolderMinus,
   FolderPlus,
+  LogIn,
   LogOut,
   Pencil,
   Text,
@@ -47,6 +48,7 @@ export type RoomMenuActionId =
   | 'rename'
   | 'topic'
   | 'leave'
+  | 'rejoin'
   | 'archive';
 
 /**
@@ -131,12 +133,41 @@ export interface RoomRowMenuModel {
   soleAgentPath: string | null;
   /**
    * Whether this viewer's own author id is known yet — what naming yourself
-   * as the member to remove takes. `false` only while the team roster is
-   * still loading, which is a beat on a cold sidebar; the item is withheld
-   * rather than offered and refused, the same way `soleAgentPath` withholds
-   * "Agent profile" instead of showing it disabled.
+   * as the member to remove takes.
+   *
+   * **Not just a loading beat.** It reads `false` while the team roster is
+   * still on the wire, which resolves in a moment on a warm cache — but it
+   * also reads `false`, and stays `false`, whenever the roster's account read
+   * has degraded: `aggregateTeamRoster` still answers 200 with the rest of the
+   * roster and a `warnings[]` entry, but every row's `isSelf` comes back false
+   * because there is no account to match against (`aggregate-team.ts`). That
+   * install never sees "Leave" until the account source recovers, and nothing
+   * on this menu says why — the item is withheld rather than offered and
+   * refused, the same way `soleAgentPath` withholds "Agent profile" instead of
+   * showing it disabled, and the same silent-omission shape every other
+   * data-gated item on this menu already uses.
    */
   canLeave: boolean;
+  /**
+   * Whether this room is one DorkOS itself depends on — `room.wellKnown` on
+   * the wire, `'team'` for the one every install gets at boot (team-room-home
+   * spec D3.1). The server refuses removing the owner from one of these
+   * outright (`SYSTEM_ROOM`, DOR-1233 follow-up): #team ships with only one
+   * agent seated, so the three-way rule never catches a direct Leave, and
+   * nothing restores the membership afterwards. The item is withheld here
+   * rather than offered and refused, matching `canLeave`'s own shape.
+   */
+  isSystemRoom: boolean;
+  /**
+   * Whether the viewer currently sits on this room's roster. `false` reads
+   * as "you left" — the server's own tell, carried without a field of its
+   * own: a non-member's `unreadCount` is `null` (a read cursor is a property
+   * of membership), which is exactly the fact the sidebar badge already
+   * reads this same way. Decides which of Leave / Rejoin the slot below
+   * shows, not whether the slot exists at all — that gate is the three
+   * conditions above.
+   */
+  isMember: boolean;
   /** Clear the unread badge without opening the room. */
   onMarkRead: () => void;
   /** Toggle this room's own mute state. */
@@ -162,6 +193,11 @@ export interface RoomRowMenuModel {
    * archive instead.
    */
   onLeave: () => void;
+  /**
+   * Rejoin a room you left. No confirm — joining is not destructive, the same
+   * reason "Add agents" below asks for nothing but who.
+   */
+  onRejoin: () => void;
   /** Ask to archive, which confirms first. */
   onArchive: () => void;
 }
@@ -352,18 +388,45 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
 
   nodes.push({ kind: 'separator', id: 'sep-destructive' });
 
-  // Withheld rather than shown disabled: see `RoomRowMenuModel.canLeave`.
-  if (model.canLeave) {
-    nodes.push({
-      kind: 'action',
-      id: 'leave',
-      label: `Leave ${noun}`,
-      icon: LogOut,
-      // A confirmation alert, not an editor — same reasoning as Archive below.
-      opensInput: false,
-      destructive: true,
-      run: model.onLeave,
-    });
+  // Three independent reasons to withhold the whole slot rather than show it
+  // disabled, all documented on the model: the viewer's own id is not known
+  // yet (`canLeave`), this is #team or another room DorkOS depends on
+  // (`isSystemRoom`), or it is a 1:1 DM — leaving one strands the agent with
+  // no human in it and re-opening a DM with the same member set reopens the
+  // SAME room (`createRoom`'s idempotency), so there is no "back" to offer.
+  // The last of those is `soleAgentPath !== null`, the exact fact
+  // "Agent profile" below is gated on — a 1:1 is the one DM shape that names
+  // an unambiguous single agent, and it is also the one shape this refuses.
+  //
+  // ONE slot, not two, once the gate above passes: `isMember` decides which
+  // verb it shows. Leaving offers Rejoin in its place rather than nothing,
+  // and a room you already left never shows a Leave you would only get
+  // refused for having no membership to take yourself off of.
+  if (model.canLeave && !model.isSystemRoom && model.soleAgentPath === null) {
+    if (model.isMember) {
+      nodes.push({
+        kind: 'action',
+        id: 'leave',
+        label: `Leave ${noun}`,
+        icon: LogOut,
+        // A confirmation alert, not an editor — same reasoning as Archive below.
+        opensInput: false,
+        destructive: true,
+        run: model.onLeave,
+      });
+    } else {
+      nodes.push({
+        kind: 'action',
+        id: 'rejoin',
+        label: `Rejoin ${noun}`,
+        icon: LogIn,
+        opensInput: false,
+        // Getting back in is not destructive — the opposite of the verb it
+        // replaces, styled to match.
+        destructive: false,
+        run: model.onRejoin,
+      });
+    }
   }
 
   nodes.push({

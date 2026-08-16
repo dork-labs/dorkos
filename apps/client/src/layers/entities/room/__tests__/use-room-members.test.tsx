@@ -23,7 +23,11 @@ import {
 import { TransportProvider } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
 import { roomKeys } from '../api/query-keys';
-import { useLeaveRoom, useSetMemberResponseMode } from '../model/use-room-members';
+import {
+  useAddRoomMember,
+  useRemoveRoomMember,
+  useSetMemberResponseMode,
+} from '../model/use-room-members';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
@@ -199,13 +203,38 @@ describe('useSetMemberResponseMode', () => {
   });
 });
 
-describe('useLeaveRoom', () => {
-  it('calls the same wire route as removing a member, naming the caller as the target', async () => {
+describe('useRemoveRoomMember', () => {
+  it('takes the default label when the caller names none — for removing an agent', async () => {
+    const client = seededClient();
+    const transport = createMockTransport({
+      removeRoomMember: vi
+        .fn()
+        .mockRejectedValue(new Error('Only you can change who is in a room')),
+    });
+    const { result } = renderHook(() => useRemoveRoomMember(), {
+      wrapper: wrapperFor(transport, client),
+    });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'ana' });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(mockToast.error).toHaveBeenCalledWith(
+      "Couldn't remove that agent — Only you can change who is in a room",
+      expect.anything()
+    );
+  });
+
+  it('leaves a room — same wire route as removing a member, naming the caller as the target', async () => {
+    // "Leaving" is not a second mutation: `DELETE /:id/members/:authorId`
+    // neither knows nor cares whether the target is an agent or the caller's
+    // own id. Only the `errorLabel` a caller passes differs (DOR-1233).
     const client = seededClient();
     const transport = createMockTransport({
       removeRoomMember: vi.fn().mockResolvedValue(undefined),
     });
-    const { result } = renderHook(() => useLeaveRoom(), { wrapper: wrapperFor(transport, client) });
+    const { result } = renderHook(() => useRemoveRoomMember({ errorLabel: "Couldn't leave" }), {
+      wrapper: wrapperFor(transport, client),
+    });
 
     result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
 
@@ -218,7 +247,9 @@ describe('useLeaveRoom', () => {
     const transport = createMockTransport({
       removeRoomMember: vi.fn().mockResolvedValue(undefined),
     });
-    const { result } = renderHook(() => useLeaveRoom(), { wrapper: wrapperFor(transport, client) });
+    const { result } = renderHook(() => useRemoveRoomMember({ errorLabel: "Couldn't leave" }), {
+      wrapper: wrapperFor(transport, client),
+    });
 
     result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
 
@@ -231,8 +262,9 @@ describe('useLeaveRoom', () => {
 
   it('shows the server’s own reason a leave was refused, not a generic failure', async () => {
     // Through the REAL mutation cache (`createQueryClientConfig`), which is
-    // what actually composes `meta.errorLabel` with the server's sentence —
-    // proof this reads the wire message, not an assumption that it would.
+    // what actually composes the caller's `errorLabel` with the server's
+    // sentence — proof this reads the wire message, not an assumption that
+    // it would.
     const client = seededClient();
     const transport = createMockTransport({
       removeRoomMember: vi
@@ -241,7 +273,9 @@ describe('useLeaveRoom', () => {
           new Error('Two agents share this room — take one of them out before you leave it')
         ),
     });
-    const { result } = renderHook(() => useLeaveRoom(), { wrapper: wrapperFor(transport, client) });
+    const { result } = renderHook(() => useRemoveRoomMember({ errorLabel: "Couldn't leave" }), {
+      wrapper: wrapperFor(transport, client),
+    });
 
     result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
 
@@ -250,5 +284,60 @@ describe('useLeaveRoom', () => {
       "Couldn't leave — Two agents share this room — take one of them out before you leave it",
       expect.anything()
     );
+  });
+
+  it('shows #team’s own refusal too — leaving a system room, not just a two-agent one', async () => {
+    const client = seededClient();
+    const transport = createMockTransport({
+      removeRoomMember: vi
+        .fn()
+        .mockRejectedValue(new Error("You can't leave #team — it's your home channel")),
+    });
+    const { result } = renderHook(() => useRemoveRoomMember({ errorLabel: "Couldn't leave" }), {
+      wrapper: wrapperFor(transport, client),
+    });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(mockToast.error).toHaveBeenCalledWith(
+      "Couldn't leave — You can't leave #team — it's your home channel",
+      expect.anything()
+    );
+  });
+});
+
+describe('useAddRoomMember', () => {
+  it('rejoins a person by their own author id — the wire call Undo and Rejoin both make', async () => {
+    // `AddRoomMemberRequestSchema` and `RoomService.addMember` never
+    // restricted this to agents; only this hook's input type used to
+    // (DOR-1233 follow-up).
+    const client = seededClient();
+    const transport = createMockTransport({
+      addRoomMember: vi.fn().mockResolvedValue(member('me', 'silent')),
+    });
+    const { result } = renderHook(() => useAddRoomMember(), {
+      wrapper: wrapperFor(transport, client),
+    });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(transport.addRoomMember).toHaveBeenCalledWith(ROOM_ID, { authorId: 'me' });
+  });
+
+  it('still adds an agent by its directory, unaffected by the authorId path existing', async () => {
+    const client = seededClient();
+    const transport = createMockTransport({
+      addRoomMember: vi.fn().mockResolvedValue(member('ana', 'engaged')),
+    });
+    const { result } = renderHook(() => useAddRoomMember(), {
+      wrapper: wrapperFor(transport, client),
+    });
+
+    result.current.mutate({ roomId: ROOM_ID, agentPath: '/repo/ana' });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(transport.addRoomMember).toHaveBeenCalledWith(ROOM_ID, { agentPath: '/repo/ana' });
   });
 });

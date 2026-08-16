@@ -82,7 +82,14 @@ const room: RoomWithRoster = {
   createdAt: '2026-07-30T09:00:00.000Z',
   viewerAuthorId: 'reader',
   reactionFrequents: ['👍', '❤️', '🎉'],
-  members: [member('ana', 'Ana'), member('bo', 'Bo')],
+  // The reader themselves, on the roster — `RoomComposer` now reads
+  // membership before offering a live composer at all (DOR-1233), and this
+  // panel's thread composer is the same component.
+  members: [
+    { ...member('reader', 'You'), author: { id: 'reader', kind: 'human', displayName: 'You' } },
+    member('ana', 'Ana'),
+    member('bo', 'Bo'),
+  ],
 } as unknown as RoomWithRoster;
 
 function renderPanel(overrides: Partial<Parameters<typeof RoomThreadPanel>[0]> = {}) {

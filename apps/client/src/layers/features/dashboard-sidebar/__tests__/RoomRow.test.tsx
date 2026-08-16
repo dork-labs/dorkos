@@ -9,14 +9,18 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { SidebarItemRef, SidebarPrefs } from '@dorkos/shared/config-schema';
 import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { agentAuthorRef, type AuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
+import { toast as mockToast } from 'sonner';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { useRoomWorkingStore } from '@/layers/entities/room';
 import { RoomRow } from '../ui/rooms/RoomRow';
 import type { SidebarItemVisual } from '../model/sidebar-item';
 
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+
 const mockNavigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
 }));
 
@@ -498,12 +502,25 @@ describe('RoomRow archive', () => {
 
 describe('RoomRow leave', () => {
   it('withholds Leave until this viewer’s own author id is known', async () => {
-    // The default mock transport answers the team roster with nobody on it, the
-    // same gap a cold sidebar has for a beat before the roster read lands.
+    // Not just a cold-sidebar beat: the default mock transport answers the
+    // team roster with nobody on it, which is also what a degraded roster
+    // read looks like — this stays true until the account source recovers,
+    // on either path.
     renderRow(channel());
     const menu = openDropdown();
     await within(menu).findByText('Archive channel');
     expect(itemLabels(menu)).not.toContain('Leave channel');
+  });
+
+  it('withholds Leave from #team — the server refuses it outright, so the menu never offers it', async () => {
+    const transport = createMockTransport({
+      getTeamRoster: vi.fn().mockResolvedValue(selfTeamRoster()),
+    });
+    renderRow(channel({ wellKnown: 'team' }), { transport });
+    const menu = openDropdown();
+    await within(menu).findByText('Archive channel');
+    expect(itemLabels(menu)).not.toContain('Leave channel');
+    expect(itemLabels(menu)).not.toContain('Rejoin channel');
   });
 
   it('leaves nothing until the confirmation is accepted', async () => {
@@ -514,7 +531,11 @@ describe('RoomRow leave', () => {
     const menu = openDropdown();
     fireEvent.click(await within(menu).findByText('Leave channel'));
 
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('Leave #general?');
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Leave #general?');
+    // The confirm copy no longer claims "someone" adds you back — on this
+    // single-operator install there is nobody else who could.
+    expect(dialog).toHaveTextContent('You can rejoin from this menu');
     expect(transport.removeRoomMember).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
@@ -558,6 +579,72 @@ describe('RoomRow leave', () => {
 
     await waitFor(() => expect(transport.removeRoomMember).toHaveBeenCalled());
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('offers Undo on the leave toast, which rejoins by the same author id', async () => {
+    // Undo IS possible: the server never restricted `addMember` to agents,
+    // only this hook's own input type used to (DOR-1233 follow-up) — so this
+    // mirrors Archive's undo exactly rather than being absent.
+    const transport = createMockTransport({
+      getTeamRoster: vi.fn().mockResolvedValue(selfTeamRoster()),
+      removeRoomMember: vi.fn().mockResolvedValue(undefined),
+      addRoomMember: vi.fn().mockResolvedValue({
+        roomId: 'room-1',
+        authorId: 'me',
+        responseMode: 'always',
+        joinedAt: '2026-07-26T10:00:00.000Z',
+        joinedSeq: 0,
+        lastReadSeq: 0,
+        author: { id: 'me', kind: 'human', displayName: 'You' },
+      }),
+    });
+    renderRow(channel(), { transport });
+    const menu = openDropdown();
+    fireEvent.click(await within(menu).findByText('Leave channel'));
+    fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
+
+    await waitFor(() => expect(mockToast.success).toHaveBeenCalled());
+    const [, options] = vi.mocked(mockToast.success).mock.calls[0]!;
+    const action = options?.action as { onClick: () => void } | undefined;
+    action?.onClick();
+
+    await waitFor(() =>
+      expect(transport.addRoomMember).toHaveBeenCalledWith('room-1', { authorId: 'me' })
+    );
+  });
+
+  it('marks a left room with a dimmed row and a hint, and offers Rejoin in its place', async () => {
+    // `unreadCount: null` is the server's own tell for "not a member" — the
+    // same fact the unread badge already reads this way, not a signal
+    // invented for this feature.
+    const transport = createMockTransport({
+      getTeamRoster: vi.fn().mockResolvedValue(selfTeamRoster()),
+      addRoomMember: vi.fn().mockResolvedValue({
+        roomId: 'room-1',
+        authorId: 'me',
+        responseMode: 'always',
+        joinedAt: '2026-07-26T10:00:00.000Z',
+        joinedSeq: 0,
+        lastReadSeq: 0,
+        author: { id: 'me', kind: 'human', displayName: 'You' },
+      }),
+    });
+    renderRow(channel({ unreadCount: null }), { transport });
+
+    const hint = screen.getByLabelText('You left this channel');
+    expect(hint).toBeInTheDocument();
+    // The dimming rides the row's outer wrapper — the same element the drag
+    // layer binds to (mirrors `AgentListItem.test.tsx`'s "muted rendering").
+    const dimmed = hint.closest('li')!.firstElementChild!;
+    expect(dimmed.className).toContain('opacity-60');
+
+    const menu = openDropdown();
+    expect(itemLabels(menu)).not.toContain('Leave channel');
+    fireEvent.click(await within(menu).findByText('Rejoin channel'));
+
+    await waitFor(() =>
+      expect(transport.addRoomMember).toHaveBeenCalledWith('room-1', { authorId: 'me' })
+    );
   });
 });
 

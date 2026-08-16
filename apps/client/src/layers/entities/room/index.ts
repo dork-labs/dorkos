@@ -78,13 +78,12 @@ export type {
 export {
   useAddRoomMember,
   useRemoveRoomMember,
-  useLeaveRoom,
   useSetMemberResponseMode,
 } from './model/use-room-members';
 export type {
   AddRoomMemberInput,
   RemoveRoomMemberInput,
-  LeaveRoomInput,
+  RemoveRoomMemberOptions,
   SetResponseModeInput,
 } from './model/use-room-members';
 export {

@@ -14,6 +14,8 @@ function model(overrides: Partial<RoomRowMenuModel> = {}): RoomRowMenuModel {
     groups: [],
     soleAgentPath: null,
     canLeave: true,
+    isSystemRoom: false,
+    isMember: true,
     onMarkRead: vi.fn(),
     onToggleMute: vi.fn(),
     onMoveToGroup: vi.fn(),
@@ -24,6 +26,7 @@ function model(overrides: Partial<RoomRowMenuModel> = {}): RoomRowMenuModel {
     onRename: vi.fn(),
     onEditTopic: vi.fn(),
     onLeave: vi.fn(),
+    onRejoin: vi.fn(),
     onArchive: vi.fn(),
     ...overrides,
   };
@@ -85,6 +88,7 @@ describe('buildRoomRowMenuNodes', () => {
   });
 
   it('offers Agent profile on a one-to-one, where exactly one agent is named', () => {
+    // No 'leave' here: a 1:1's own gate withholds it — see the DM test below.
     expect(ids({ kind: 'dm', soleAgentPath: '/repo/ana' })).toEqual([
       'mute',
       'move-to-group',
@@ -95,15 +99,64 @@ describe('buildRoomRowMenuNodes', () => {
       'sep-settings',
       'rename',
       'sep-destructive',
-      'leave',
       'archive',
     ]);
   });
 
-  it('withholds Leave while this viewer’s own author id is not known yet', () => {
-    // The gap is a beat on a cold sidebar (the team roster still loading),
-    // never a standing state — see `RoomRowMenuModel.canLeave`.
+  it('withholds Leave while this viewer’s own author id is not known', () => {
+    // Not just a cold-sidebar beat: this also reads false, and stays false,
+    // on an install whose team-roster account read is degraded — see
+    // `RoomRowMenuModel.canLeave`.
     expect(ids({ canLeave: false })).not.toContain('leave');
+  });
+
+  it('withholds Leave from a room DorkOS itself depends on — #team has no menu route out', () => {
+    // The three-way rule alone would not catch this: #team ships with only
+    // one agent seated, never two. The server refuses it outright
+    // (`SYSTEM_ROOM`); the menu never offers the refusal in the first place.
+    expect(ids({ isSystemRoom: true })).not.toContain('leave');
+    expect(ids({ isSystemRoom: true })).not.toContain('rejoin');
+  });
+
+  it('offers Rejoin instead of Leave once the viewer is off the roster', () => {
+    expect(ids({ isMember: false })).not.toContain('leave');
+    expect(ids({ isMember: false })).toContain('rejoin');
+  });
+
+  it('names the room in the rejoin label too, and marks it non-destructive', () => {
+    const channel = buildRoomRowMenuNodes(model({ isMember: false })).find(
+      (n) => n.id === 'rejoin'
+    );
+    const dm = buildRoomRowMenuNodes(model({ isMember: false, kind: 'dm' })).find(
+      (n) => n.id === 'rejoin'
+    );
+    expect(channel).toMatchObject({
+      label: 'Rejoin channel',
+      destructive: false,
+      opensInput: false,
+    });
+    expect(dm).toMatchObject({
+      label: 'Rejoin conversation',
+      destructive: false,
+      opensInput: false,
+    });
+  });
+
+  it('runs the rejoin callback the caller supplied', () => {
+    const onRejoin = vi.fn();
+    const rejoin = buildRoomRowMenuNodes(model({ isMember: false, onRejoin })).find(
+      (n) => n.id === 'rejoin'
+    );
+    if (rejoin?.kind !== 'action') throw new Error('expected an action node');
+    rejoin.run();
+    expect(onRejoin).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers neither Leave nor Rejoin on a 1:1 DM — leaving one strands the agent alone', () => {
+    expect(ids({ kind: 'dm', soleAgentPath: '/repo/ana' })).not.toContain('leave');
+    expect(ids({ kind: 'dm', soleAgentPath: '/repo/ana', isMember: false })).not.toContain(
+      'rejoin'
+    );
   });
 
   it('names the room in the leave label, same as archive, so it reads out of context', () => {
@@ -160,10 +213,20 @@ describe('buildRoomRowMenuNodes', () => {
   });
 
   it('marks Leave and Archive destructive, and nothing else', () => {
-    const destructive = buildRoomRowMenuNodes(model({ hasUnread: true, soleAgentPath: '/repo/x' }))
+    // A channel here, not a DM: `soleAgentPath` only ever resolves on a DM
+    // (`RoomRow`), so a channel is what exercises Leave sitting beside
+    // Archive rather than being withheld by the 1:1 gate.
+    const destructive = buildRoomRowMenuNodes(model({ hasUnread: true }))
       .filter((node) => node.kind === 'action' && node.destructive)
       .map((node) => node.id);
     expect(destructive).toEqual(['leave', 'archive']);
+  });
+
+  it('marks Rejoin non-destructive even though it sits where Leave would', () => {
+    const destructive = buildRoomRowMenuNodes(model({ isMember: false }))
+      .filter((node) => node.kind === 'action' && node.destructive)
+      .map((node) => node.id);
+    expect(destructive).toEqual(['archive']);
   });
 
   it('hands Agent profile the agent path rather than making the caller find it', () => {

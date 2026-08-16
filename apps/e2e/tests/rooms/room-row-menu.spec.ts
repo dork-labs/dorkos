@@ -60,6 +60,44 @@ test.describe('Rooms — leaving from the sidebar row menu @smoke', () => {
         timeout: SERVER_ROUND_TRIP_MS,
       })
       .toEqual(['agent']);
+
+    // Re-opening the room you just left: the owner still sees every room on
+    // the install whether or not they are on its roster, so this is NOT the
+    // empty state — it is the room, with no composer lying about what a send
+    // would do. `MEMBER_NOT_FOUND` was the real answer a live-looking field
+    // used to hide until this shipped.
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(page.getByRole('combobox', { name: `Message #${slug}…` })).toHaveCount(0);
+    await expect(
+      page.getByText('You left this channel. You can read it, but not add to it.')
+    ).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+
+    // The sidebar row says so too, dimmed with its own hint — found once
+    // more through Today, now pinned to this re-opened room.
+    const leftHint = dashboardSidebar.zone('today').getByLabel('You left this channel');
+    await expect(leftHint).toBeVisible();
+
+    // And the way back is right there in the composer's own place. Waited in
+    // two steps rather than one: the toast is the mutation's own round trip
+    // landing, and the composer reappearing is a SECOND one — the roster
+    // query invalidation it triggers — so each gets its own budget instead of
+    // one bucket that has to cover both.
+    await page.getByRole('button', { name: 'Rejoin' }).click();
+    await expect(page.getByText(`You rejoined #${slug}`)).toBeVisible({
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(page.getByRole('combobox', { name: `Message #${slug}…` })).toBeVisible({
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(leftHint).toHaveCount(0);
+    await expect
+      .poll(
+        async () => (await roomsApi.getRoom(room.id)).members.map((m) => m.author.kind).sort(),
+        {
+          timeout: SERVER_ROUND_TRIP_MS,
+        }
+      )
+      .toEqual(['agent', 'human']);
   });
 
   test('refuses to leave a two-agent room, and says why in its own words', async ({

@@ -1687,13 +1687,21 @@ export class RoomService {
    * to break it is to leave afterwards. Taking an AGENT out is never refused, so
    * the room is never wedged — one agent out, and the person may go.
    *
+   * **Nor out of a SYSTEM room at all** — {@link RoomService.requireSystemRoomKeepsOwner},
+   * checked first because it is the narrower, unconditional refusal: the
+   * three-way rule above would happily let the owner leave #team, which ships
+   * seated with exactly one agent (DorkBot's fallback seat), and nothing
+   * restores the membership afterwards (`ensureSystemChannel` returns an
+   * existing row untouched).
+   *
    * @param roomId - The room.
    * @param viewerAuthorId - The caller; must be the install's owner.
    * @param authorId - The member being removed.
    */
   removeMember(roomId: string, viewerAuthorId: string, authorId: string): void {
-    this.requireVisibleRoom(roomId, viewerAuthorId);
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     this.requireOperator(viewerAuthorId, 'who is in a room');
+    this.requireSystemRoomKeepsOwner(room, authorId);
     if (this.isOwnerAuthor(authorId)) {
       this.requireOwnerWitnessesAgents(
         this.roster
@@ -3052,6 +3060,38 @@ export class RoomService {
     throw new RoomError(
       'SYSTEM_ROOM',
       `Only you can rename or archive ${room.slug ? `#${room.slug}` : room.title}`
+    );
+  }
+
+  /**
+   * Refuse taking the owner off a SYSTEM room's roster (DOR-1233 follow-up to
+   * team-room-home spec D3.1).
+   *
+   * **The three-way rule alone does not cover this.** It refuses removing the
+   * owner only once a room holds two or more agents, and #team ships seated
+   * with exactly one — DorkBot's fallback seat (`ensure-team-room.ts`) — so
+   * leaving #team through the ordinary Leave button was reachable with no gate
+   * on it at all. And unlike an ordinary room, nothing puts the membership
+   * back afterwards: `ensureSystemChannel` is idempotent on the ROOM, not on
+   * its roster — once #team exists, a restart returns that same row untouched.
+   * #team is the install's home tab (team-room-home spec D3.2); a home with
+   * nobody home is not a state this product can recover from without editing
+   * the database by hand.
+   *
+   * A field check on `wellKnown`, the same shape as
+   * {@link RoomService.requireSystemRoomWritable} and for the same reason: it
+   * cannot reach a DM or a caller-created channel, neither of which ever
+   * carries the flag, so an ordinary room's Leave is untouched.
+   *
+   * @param room - The room being removed from.
+   * @param authorId - The member being removed.
+   */
+  private requireSystemRoomKeepsOwner(room: Room, authorId: string): void {
+    if (!room.wellKnown) return;
+    if (!this.isOwnerAuthor(authorId)) return;
+    throw new RoomError(
+      'SYSTEM_ROOM',
+      `You can't leave ${room.slug ? `#${room.slug}` : room.title} — it's your home channel`
     );
   }
 
