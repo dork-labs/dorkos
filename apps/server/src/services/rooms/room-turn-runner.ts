@@ -271,19 +271,27 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         settings: seed,
         projector,
         runtime,
-        // Skip SOMEBODY ELSE's work rather than wait behind it, unlike a
-        // person's own message: a room turn queued behind a stranger's would
-        // answer the room with whatever THAT turn left behind, long after the
-        // room moved on. That is what the skip notice below is for.
+        // **Refuse a stranger AT ACCEPTANCE**, unlike a person's own message: a
+        // room turn accepted behind somebody else's would answer the room with
+        // whatever THAT turn left behind, long after the room moved on. That is
+        // what the skip notice below is for.
         //
-        // **Its own previous turn is not somebody else** (DOR-1230). The room
-        // holds a re-mention until this agent's claim here releases and then
-        // dispatches it (RP8), so the turn ahead has already ENDED on the
-        // projector — but it hands its in-flight slot back a beat later, when it
-        // settles. Refusing that beat told the room the agent was busy, and the
-        // room posted "didn't pick this up, send it again" over a message it was
-        // about to answer. Waiting out its own tail is the whole difference
-        // between the two modes; see {@link WhenBusy}.
+        // **Its own previous turn is not a stranger** (DOR-1230). The room holds
+        // a re-mention until this agent's claim here releases and then dispatches
+        // it (RP8), so the turn ahead has already ENDED on the projector — but it
+        // hands its in-flight slot back a beat later, when it settles. Refusing
+        // that beat told the room the agent was busy, and the room posted "didn't
+        // pick this up, send it again" over a message it was about to answer.
+        // Waiting out its own tail is the whole difference between the two modes;
+        // see {@link WhenBusy}.
+        //
+        // The refusal is therefore about the moment of ACCEPTANCE and nothing
+        // after it. A trigger that was accepted — one waiting out its own tail —
+        // and is then beaten to the session by a stranger goes back in line
+        // rather than evaporating, and can run once that stranger's turn ends
+        // (`DispatchPlan.answered`). That is deliberate: by then the room is
+        // holding an `accepted: true` that cannot be taken back, and a late
+        // answer beats a message that waits for a turn nothing will ever start.
         whenBusy: 'refuse-foreign',
         onTurnStart: (seq) => {
           ownTurn.startSeq = seq;

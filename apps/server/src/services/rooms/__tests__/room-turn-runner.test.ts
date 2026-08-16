@@ -490,12 +490,15 @@ describe('createSessionRoomTurnRunner', () => {
     expect(triggered[0]?.whenBusy).toBe('refuse-foreign');
   });
 
-  it('answers a message the dispatcher held behind its own previous turn', async () => {
-    // The queued-then-launched path, which the fix above makes reachable: the
-    // dispatcher accepted this trigger and started it only once the turn ahead
-    // handed its slot back, so the `turn_start` arrives macrotasks after
-    // `dispatchMessage` resolved. It is read exactly like a turn that began at
-    // once — an answer, not a refusal.
+  it('reads a turn whose start arrives after the dispatch has already resolved', async () => {
+    // The shape a queued launch has: `dispatchMessage` answers at acceptance, and
+    // the `turn_start` follows macrotasks later when the session frees up. The
+    // collector anchors on the turn's identity rather than on the dispatch
+    // returning, so this is read exactly like a turn that opened at once.
+    //
+    // **It does not exercise `whenBusy`** — this file stubs the dispatcher, so
+    // which busy mode the room asks for is pinned by the case above and by
+    // `message-dispatcher.test.ts`. What is pinned here is only the timing.
     turnBehaviour = (opts) => {
       setTimeout(() => {
         openTurn(opts);

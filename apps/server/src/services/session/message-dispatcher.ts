@@ -517,9 +517,25 @@ interface DispatchPlan {
   /**
    * What a launch that started no turn means for this message: go back in line
    * (`'queue'`, the default everywhere except the callers that opt out) or be
-   * dropped with its row (`'refuse'`).
+   * dropped with its row (either refusing mode) — unless
+   * {@link DispatchPlan.answered}, which outranks it.
    */
   whenBusy: WhenBusy;
+  /**
+   * Somebody has already been told this message was accepted.
+   *
+   * True wherever that is so: a `'refuse-foreign'` plan that waited out the
+   * caller's own turn, and every row {@link adoptQueuedMessages} recovered,
+   * whose original caller was answered by a process that is now gone.
+   *
+   * It only CHANGES anything for a refusing plan, and there it outranks
+   * `whenBusy`. Dropping the message is the promise `'refuse'` makes about
+   * words nobody has been promised anything about; once an `accepted: true` is
+   * out there it cannot be taken back, so the message goes back in line like
+   * anybody else's rather than evaporating (the DOR-480 rule, in the module doc
+   * above).
+   */
+  answered: boolean;
   /** What the caller passes straight through to the turn. */
   turn: Pick<
     DispatchMessageOpts,
@@ -566,12 +582,20 @@ function refusesOpenTurn(
  * a launch the write-lock refused, while a machine-generated trigger that asked
  * not to wait must not be left sitting in their composer.
  *
+ * **{@link DispatchPlan.answered} outranks `whenBusy`**, because by then the
+ * refusal the caller asked for is no longer available: it is holding an
+ * `accepted: true` and there is no channel to take that back. Dropping the
+ * message would leave it waiting for a turn nothing will ever start — for a room
+ * that is a claim held to its ceiling and a "something went wrong" an hour
+ * later, over a message the model never saw. It goes back in line instead, which
+ * is what the acceptance promised.
+ *
  * A message already gone from the queue — removed from another window between
  * the launch and its refusal — is left gone.
  */
 function returnToQueue(plan: DispatchPlan): void {
   const store = getMessageQueueStore();
-  if (plan.whenBusy !== 'queue') {
+  if (plan.whenBusy !== 'queue' && !plan.answered) {
     if (store?.remove(plan.messageId)) emitQueueUpdate(plan.sessionKey);
     return;
   }
@@ -823,6 +847,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     budgetMs,
     startedWaitingAt: Date.now(),
     whenBusy,
+    answered: false,
     turn: opts,
   };
 
@@ -840,6 +865,10 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   // an idle composer (DOR-1088), and refusing the second window instead is what
   // task 2.4 retires.
   if (inFlight.has(sessionKey)) {
+    // Told it was accepted, so it can no longer be quietly dropped — including
+    // for the refusing caller that reaches here, which is a `'refuse-foreign'`
+    // waiting out its own turn. See {@link DispatchPlan.answered}.
+    plan.answered = true;
     parkDispatch(plan, unwatchedSettle(plan));
     return waiting();
   }
@@ -937,6 +966,10 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       // A recovered row is somebody's words with nobody left to retype them, so
       // it queues rather than being dropped if its first launch is refused.
       whenBusy: 'queue',
+      // Its sender was told this was accepted by a process that no longer
+      // exists, which is the strongest form of the reason the `'queue'` above
+      // gives: there is nobody left to retype it.
+      answered: true,
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
         ...(row.context !== null ? { context: row.context } : {}),

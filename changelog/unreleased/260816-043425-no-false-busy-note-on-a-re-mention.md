@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a room no longer says an agent was busy with its own turn (DOR-1230)'
+  - 'fix(server): a trigger that was told it was accepted keeps its place in the queue (DOR-1230)'
 ---
 
 ### Fixed
