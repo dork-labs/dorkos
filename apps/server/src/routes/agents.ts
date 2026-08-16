@@ -260,8 +260,12 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       }
       if (err instanceof AgentUpdateError) {
         switch (err.code) {
+          // `err.message` rather than a fixed string: a refused convention file
+          // knows WHICH file and WHY, and that sentence is what the editor puts
+          // on screen. A schema failure with nothing better to say still carries
+          // "Validation failed", which is what the older tests pin.
           case 'VALIDATION':
-            return res.status(400).json({ error: 'Validation failed', details: err.details });
+            return res.status(400).json({ error: err.message, details: err.details });
           case 'NOT_FOUND':
             return res.status(404).json({ error: err.message });
           case 'IMMUTABLE_NAME':

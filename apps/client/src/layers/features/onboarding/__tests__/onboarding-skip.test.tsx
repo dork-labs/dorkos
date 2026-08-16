@@ -61,6 +61,7 @@ const mockSaveTraits = vi.fn().mockResolvedValue({});
 /** DorkBot's workspace, and the system-agent manifest the registry returns for it. */
 const DORKBOT_PATH = '/home/kai/.dork/agents/dorkbot';
 vi.mock('@/layers/entities/agent', () => ({
+  PersonalityPicker: () => <div data-testid="personality-picker" />,
   useUpdateAgent: () => ({ mutateAsync: mockSaveTraits }),
   useResolvedAgents: () => ({
     data: { [DORKBOT_PATH]: { id: '01JQZ8XKF3M0000000000DBOT', name: 'dorkbot', isSystem: true } },
@@ -116,10 +117,6 @@ vi.mock('@/layers/features/chat', () => ({
 
 vi.mock('@/layers/features/composer', () => ({
   Composer: { Input: () => <div data-testid="composer" /> },
-}));
-
-vi.mock('@/layers/features/agent-hub', () => ({
-  PersonalityPicker: () => <div data-testid="personality-picker" />,
 }));
 
 // The two screens ahead of the conversation are not under test here; stubbing

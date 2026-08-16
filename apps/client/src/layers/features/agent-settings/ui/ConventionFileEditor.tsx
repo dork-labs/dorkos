@@ -21,6 +21,13 @@ interface ConventionFileEditorProps {
   onBlur?: () => void;
   /** Called when the enable toggle changes */
   onToggle: (enabled: boolean) => void;
+  /**
+   * Let the editor take the height it is given instead of a fixed eight rows.
+   *
+   * For a surface where the file IS the page — the profile's Instructions and
+   * Boundaries pages — rather than one card among several in a settings tab.
+   */
+  fill?: boolean;
 }
 
 /**
@@ -38,6 +45,7 @@ export function ConventionFileEditor({
   onChange,
   onBlur,
   onToggle,
+  fill = false,
 }: ConventionFileEditorProps) {
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -47,8 +55,8 @@ export function ConventionFileEditor({
   );
 
   return (
-    <FieldCard className={cn(!enabled && 'opacity-60')}>
-      <FieldCardContent>
+    <FieldCard className={cn(!enabled && 'opacity-60', fill && 'flex min-h-0 flex-1 flex-col')}>
+      <FieldCardContent className={cn(fill && 'flex min-h-0 flex-1 flex-col')}>
         {/* Header with toggle */}
         <Field orientation="horizontal" className="items-center justify-between">
           <FieldLabel className="text-sm font-medium">{title}</FieldLabel>
@@ -59,14 +67,17 @@ export function ConventionFileEditor({
         {disclaimer && <p className="text-muted-foreground text-xs italic">{disclaimer}</p>}
 
         {/* Textarea */}
-        <div className="space-y-2">
+        <div className={cn('space-y-2', fill && 'flex min-h-0 flex-1 flex-col')}>
           <textarea
             value={content}
             onChange={handleChange}
             onBlur={onBlur}
-            rows={8}
+            rows={fill ? undefined : 8}
             maxLength={maxChars}
-            className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className={cn(
+              'border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+              fill && 'min-h-40 flex-1'
+            )}
             placeholder={enabled ? 'Write markdown content...' : 'Toggle on to enable injection'}
           />
           <p className="text-muted-foreground text-right text-xs">

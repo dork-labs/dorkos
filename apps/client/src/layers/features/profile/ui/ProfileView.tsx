@@ -19,6 +19,7 @@ import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities
 import { deriveRelationship } from '../lib/profile-relationship';
 import { messageTarget } from '../lib/profile-message';
 import { rowsFor, type ProfileRowsContext } from '../lib/profile-rows';
+import { useManagedAgentFacts } from '../model/use-managed-agent-facts';
 import {
   currentPage,
   type ProfileStackEntry,
@@ -81,12 +82,18 @@ export function ProfileView({
   // say where somebody is before you open it — and so the page it pushes is a
   // cache hit rather than a second wait.
   const rooms = useMemberRooms(member.id);
+  // The counts the work and toolkit rows carry. Only asked for on the two
+  // relationships that draw those rows — a teammate's agent shows none of this
+  // and must not be asked about it.
+  const ownsWork = relationship === 'managed' || relationship === 'system';
+  const facts = useManagedAgentFacts(member, ownsWork);
 
   const ctx: ProfileRowsContext = {
     relationship,
     manages: roster.filter((row) => row.kind === 'agent' && row.ownerId === member.id),
     description: manifest.data?.description ?? null,
     rooms: rooms.data ? { count: rooms.data.rooms.length, rooms: rooms.data.rooms } : null,
+    facts,
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw
@@ -111,11 +118,18 @@ export function ProfileView({
   // drew the operator's own Name editor seeded with that person's name, and
   // its Save renamed the operator. A link naming a page this identity has no
   // row for lands on the root, the same self-healing a stale `?profile=` gets.
+  // Appearance is the one page no row pushes: its control is the face itself
+  // (§1.4), and it is offered on exactly the identities the face is a button
+  // on. Gated on the same condition rather than waved through, because it is an
+  // editor and `?profilePage=appearance` is an address anyone can type.
+  const canEditAppearance = relationship === 'managed';
   const reachable =
     page !== null &&
-    rowsFor(member, ctx).some((group) =>
-      group.rows.some((row) => row.kind === 'nav' && row.page === page)
-    );
+    (page === 'appearance'
+      ? canEditAppearance
+      : rowsFor(member, ctx).some((group) =>
+          group.rows.some((row) => row.kind === 'nav' && row.page === page)
+        ));
   // What is actually on screen, which is what the frame is keyed on — a page
   // the gate turned away is the root, and must animate and remount like one.
   const shown = reachable ? page : null;
@@ -151,7 +165,14 @@ export function ProfileView({
                 owner ? () => onPush({ kind: 'profile', memberId: owner.id }) : undefined
               }
               onMessage={canMessage ? message : undefined}
-              actionsMenu={<ProfileActionsMenu member={member} />}
+              // Only an agent you manage: DorkBot's face is part of DorkOS
+              // (its Personality row says so), and nobody else's identity is
+              // yours to restyle. A face that opened nothing would be the dead
+              // affordance this design exists to remove.
+              onFaceActivate={
+                canEditAppearance ? () => onPush({ kind: 'page', page: 'appearance' }) : undefined
+              }
+              actionsMenu={<ProfileActionsMenu member={member} relationship={relationship} />}
             />
             <ProfileRows member={member} ctx={ctx} onPush={onPush} />
           </div>

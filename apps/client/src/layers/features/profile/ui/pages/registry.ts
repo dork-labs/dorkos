@@ -2,12 +2,11 @@
  * Which pages this build can push, and what each is called (spec
  * `profile-unification` §1.5).
  *
- * **The registry is the seam between waves.** The row model (`lib/profile-rows`)
- * is complete from W2.1 — it is the contract with §1.4 — but a row is only
- * drawn when its page exists here, so the managed-agent rows W2.2 owns
- * (sessions, tasks, skills, tools, connections, instructions, boundaries,
- * appearance) are absent rather than dead until W2.2 registers them. Adding a
- * page is one entry; no row table changes.
+ * **The registry is the seam.** The row model (`lib/profile-rows`) is the
+ * contract with §1.4 and names every page the design has, but a row is only
+ * drawn when its page exists here — so a page that has not been built yet is
+ * absent rather than dead, and building one is a single entry with no change to
+ * the row table.
  *
  * @module features/profile/ui/pages/registry
  */
@@ -48,6 +47,42 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
   photo: {
     title: 'Photo',
     component: lazy(() => import('./PhotoPage').then((m) => ({ default: m.PhotoPage }))),
+  },
+  appearance: {
+    title: 'Appearance',
+    component: lazy(() => import('./AppearancePage').then((m) => ({ default: m.AppearancePage }))),
+  },
+  sessions: {
+    title: 'Sessions',
+    component: lazy(() => import('./SessionsPage').then((m) => ({ default: m.SessionsPage }))),
+  },
+  tasks: {
+    title: 'Tasks',
+    component: lazy(() => import('./TasksPage').then((m) => ({ default: m.TasksPage }))),
+  },
+  skills: {
+    title: 'Skills',
+    component: lazy(() => import('./SkillsPage').then((m) => ({ default: m.SkillsPage }))),
+  },
+  tools: {
+    title: 'Tools & MCP',
+    component: lazy(() => import('./ToolsPage').then((m) => ({ default: m.ToolsPage }))),
+  },
+  connections: {
+    title: 'Connections',
+    component: lazy(() =>
+      import('./ConnectionsPage').then((m) => ({ default: m.ConnectionsPage }))
+    ),
+  },
+  instructions: {
+    title: 'Instructions',
+    component: lazy(() =>
+      import('./ConventionPage').then((m) => ({ default: m.InstructionsPage }))
+    ),
+  },
+  boundaries: {
+    title: 'Boundaries',
+    component: lazy(() => import('./ConventionPage').then((m) => ({ default: m.BoundariesPage }))),
   },
 };
 

@@ -31,7 +31,11 @@ const mockBuildSoulContent = vi.fn();
 const mockDefaultSoulTemplate = vi.fn();
 const mockDefaultNopeTemplate = vi.fn();
 
-vi.mock('@dorkos/shared/convention-files', () => ({
+// Spread over the original, the way the `trait-renderer` mock below does: the
+// module also carries the character budgets `UpdateAgentConventionsSchema` is
+// built from, and a mock that drops them leaves the schema with no maximum.
+vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/convention-files')>()),
   buildSoulContent: (...args: unknown[]) => mockBuildSoulContent(...args),
   defaultSoulTemplate: (...args: unknown[]) => mockDefaultSoulTemplate(...args),
   defaultNopeTemplate: (...args: unknown[]) => mockDefaultNopeTemplate(...args),

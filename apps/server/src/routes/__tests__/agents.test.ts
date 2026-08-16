@@ -28,7 +28,12 @@ vi.mock('@dorkos/shared/manifest', () => ({
 const mockReadConventionFile = vi.fn().mockResolvedValue(null);
 const mockWriteConventionFile = vi.fn().mockResolvedValue(undefined);
 
-vi.mock('@dorkos/shared/convention-files', () => ({
+// Spread over the original rather than replaced: the module also carries the
+// character budgets, and `UpdateAgentConventionsSchema` is built from them —
+// a hand-written copy here is a second source of truth for the rule this file
+// tests the enforcement of.
+vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/convention-files')>()),
   readConventionFile: (...args: unknown[]) => mockReadConventionFile(...args),
   writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
   buildSoulContent: vi.fn(
@@ -415,6 +420,23 @@ describe('Agents Routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
+    });
+
+    it('refuses an over-budget SOUL.md with a 400 and writes nothing', async () => {
+      // It used to answer 200: the convention parse failed, was swallowed, and
+      // the manifest half of the patch was applied anyway — so the profile said
+      // "Saved" over a file that never reached the disk (DOR-1253).
+      mockReadManifest.mockResolvedValue(mockManifest);
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ soulContent: 'x'.repeat(4001), displayName: 'Renamed' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('SOUL.md');
+      expect(mockWriteConventionFile).not.toHaveBeenCalled();
+      expect(mockWriteManifest).not.toHaveBeenCalled();
     });
 
     it('returns 403 when modifying protected fields on a system agent', async () => {

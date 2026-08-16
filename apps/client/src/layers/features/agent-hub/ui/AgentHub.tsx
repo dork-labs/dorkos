@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
+import { AvatarPickerPanel, useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
 import { useAppStore, useSafePathname } from '@/layers/shared/model';
 import { Skeleton } from '@/layers/shared/ui';
 import { AgentHubProvider } from '../model/agent-hub-context';
@@ -9,7 +9,6 @@ import { useAgentHubDeepLink, useAgentDialogRedirect } from '../model/use-agent-
 import { AgentHubHero } from './AgentHubHero';
 import { AgentHubTabBar } from './AgentHubTabBar';
 import { AgentHubTabContent } from './AgentHubTabContent';
-import { AvatarPickerPanel } from './AvatarPickerPopover';
 import { PersonalityPickerPanel } from './PersonalityPickerPopover';
 import { NoAgentSelected } from './NoAgentSelected';
 import { AgentNotFound } from './AgentNotFound';
@@ -175,7 +174,13 @@ export function AgentHub() {
             </AnimatePresence>
           </>
         ) : heroPanel === 'avatar' ? (
-          <AvatarPickerPanel onClose={closePanel} />
+          <AvatarPickerPanel
+            agent={contextValue.agent}
+            onUpdate={contextValue.onUpdate}
+            onPreviewColor={contextValue.onPreviewColor}
+            title="Appearance"
+            onClose={closePanel}
+          />
         ) : (
           <PersonalityPickerPanel onClose={closePanel} />
         )}

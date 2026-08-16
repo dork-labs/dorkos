@@ -82,7 +82,7 @@ describe('AvatarColorGrid', () => {
       expect(queryByText('A')).toBeInTheDocument();
     });
 
-    it('renders tooltips and a hover glow when celebratory (AvatarPickerPopover)', () => {
+    it('renders tooltips and a hover glow when celebratory (AvatarPickerPanel)', () => {
       const { container } = renderWithTooltips(
         <AvatarColorGrid
           value={null}

@@ -34,7 +34,7 @@ export const EMOJI_SET = [
 /**
  * The fixed palette an agent's avatar color picker offers alongside its
  * auto-derived default. Shared by every color-swatch picker — was
- * byte-identical duplicated at `IdentityTab.tsx` and `AvatarPickerPopover.tsx`
+ * byte-identical duplicated at `IdentityTab.tsx` and `AvatarPickerPanel.tsx`
  * before this collapsed it to one definition (DOR-970).
  */
 export const COLOR_PRESETS: { hex: string; name: string }[] = [

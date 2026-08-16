@@ -5,6 +5,10 @@
  * @module entities/agent
  */
 
+// Query-key factory — the one place an agent cache key is built, so a writer
+// can refresh every entry about an agent without guessing at their shapes.
+export { agentKeys } from './api/queries';
+
 // Model — hooks and stores
 export { useCurrentAgent } from './model/use-current-agent';
 export { useSyncCurrentAgentId } from './model/use-sync-current-agent-id';
@@ -47,6 +51,17 @@ export { AgentIdentity, agentIdentityVariants } from './ui/AgentIdentity';
 export type { AgentIdentityProps } from './ui/AgentIdentity';
 export { AgentOptionRow } from './ui/AgentOptionRow';
 export { AvatarColorGrid, AvatarEmojiGrid } from './ui/AvatarPickerGrid';
+export { AvatarPickerPanel } from './ui/AvatarPickerPanel';
+export { AgentExecutionRows } from './ui/AgentExecutionRows';
+// The personality picker and the presets behind it. `PersonalityRadar` stays
+// slice-private: it is the picker's own drawing, not a thing a surface composes.
+export { PersonalityPicker } from './ui/PersonalityPicker';
+export type { PersonalityPickerLayout } from './ui/PersonalityPicker';
+export {
+  PERSONALITY_PRESETS,
+  DEFAULT_PRESET_COLORS,
+  findMatchingPreset,
+} from './lib/personality-presets';
 export { PresetPill } from './ui/PresetPill';
 export type { PresetPillProps, PresetPillColors } from './ui/PresetPill';
 export { TraitSliders } from './ui/TraitSliders';

@@ -4,12 +4,21 @@
  *
  * @module features/profile/ui/ProfileRow
  */
-import { useId } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Check, ChevronDown, ChevronRight, Copy, Lock } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
-import { IdentityAvatar, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import {
+  IdentityAvatar,
+  ResponsivePopover,
+  ResponsivePopoverContent,
+  ResponsivePopoverTitle,
+  ResponsivePopoverTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/layers/shared/ui';
 import { teamMemberFace } from '@/layers/entities/team';
 import type { ProfileRowModel } from '../lib/profile-rows';
 
@@ -66,8 +75,14 @@ export interface ProfileRowProps {
   row: ProfileRowModel;
   /** Push this row's page. Only ever called for a `nav` row. */
   onNavigate?: (row: ProfileRowModel) => void;
-  /** Open this row's popover. Only ever called for a `pick` row. */
-  onPick?: (row: ProfileRowModel) => void;
+  /**
+   * The control behind a `pick` row, drawn inside a popover this row triggers.
+   *
+   * Rendered as a child of `ResponsivePopoverContent`, which mounts nothing
+   * until the row is tapped — so a profile with two `pick` rows pays for
+   * neither until one is opened. Omitted, and the row is not a control.
+   */
+  pickContent?: (close: () => void) => ReactNode;
 }
 
 /**
@@ -82,9 +97,10 @@ export interface ProfileRowProps {
  * The value truncates and the label never does — the label is what you are
  * scanning for, and a path or a room list is what has to give way.
  */
-export function ProfileRow({ row, onNavigate, onPick }: ProfileRowProps) {
+export function ProfileRow({ row, onNavigate, pickContent }: ProfileRowProps) {
   const [copied, copy] = useCopyFeedback();
   const reasonId = useId();
+  const [pickOpen, setPickOpen] = useState(false);
   const isStatic = row.kind === 'text';
 
   const body = (
@@ -120,7 +136,10 @@ export function ProfileRow({ row, onNavigate, onPick }: ProfileRowProps) {
 
   function activate() {
     if (row.kind === 'nav') return onNavigate?.(row);
-    if (row.kind === 'pick') return onPick?.(row);
+    // A `pick` row opens its popover through the trigger wrapping this button,
+    // not from here — Radix needs the open state to come from the element it
+    // will position against.
+    if (row.kind === 'pick') return;
     if (row.kind === 'copy' && row.copyValue) {
       copy(row.copyValue);
       toast.success('Copied');
@@ -160,6 +179,21 @@ export function ProfileRow({ row, onNavigate, onPick }: ProfileRowProps) {
       )}
     </button>
   );
+
+  if (row.kind === 'pick' && pickContent) {
+    return (
+      // `modal`: this is a task, not a glance — Tab stays inside the picker and
+      // Escape is the way out (`ResponsivePopover`'s own note). On a phone the
+      // same component is the bottom drawer the app uses everywhere.
+      <ResponsivePopover open={pickOpen} onOpenChange={setPickOpen} modal>
+        <ResponsivePopoverTrigger asChild>{button}</ResponsivePopoverTrigger>
+        <ResponsivePopoverContent align="end" className="w-80">
+          <ResponsivePopoverTitle>{row.label}</ResponsivePopoverTitle>
+          {pickContent(() => setPickOpen(false))}
+        </ResponsivePopoverContent>
+      </ResponsivePopover>
+    );
+  }
 
   if (row.kind !== 'locked' || !row.lockedReason) return button;
 

@@ -8,7 +8,7 @@
  *
  * @module features/profile/ui/ProfileSheet
  */
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import {
   ResponsiveSheet,
   ResponsiveSheetContent,
@@ -16,6 +16,8 @@ import {
   ResponsiveSheetTitle,
 } from '@/layers/shared/ui';
 import { teamMemberFace } from '@/layers/entities/team';
+import { hasUnsavedProfileEdits } from '../model/profile-leave-guard';
+import { DiscardChangesDialog } from './DiscardChangesDialog';
 import { ProfileView, type ProfileViewProps } from './ProfileView';
 
 export interface ProfileSheetProps extends Omit<ProfileViewProps, 'home'> {
@@ -31,9 +33,18 @@ export interface ProfileSheetProps extends Omit<ProfileViewProps, 'home'> {
  */
 export function ProfileSheet({ open, onOpenChange, ...view }: ProfileSheetProps) {
   const face = teamMemberFace(view.member);
+  const [confirming, setConfirming] = useState(false);
+
+  // Escape, the overlay and the X are all this one call, and all three used to
+  // throw away an unsaved SOUL.md without a word. The ‹ Profile button asks the
+  // same question from `ProfilePage`, so wherever you leave from, you are asked.
+  function change(next: boolean) {
+    if (!next && hasUnsavedProfileEdits()) return setConfirming(true);
+    onOpenChange(next);
+  }
 
   return (
-    <ResponsiveSheet open={open} onOpenChange={onOpenChange}>
+    <ResponsiveSheet open={open} onOpenChange={change}>
       <ResponsiveSheetContent
         data-slot="profile-sheet"
         style={{ '--identity-color': face.color } as CSSProperties}
@@ -57,6 +68,15 @@ export function ProfileSheet({ open, onOpenChange, ...view }: ProfileSheetProps)
           Profile details for {view.member.displayName}
         </ResponsiveSheetDescription>
         <ProfileView {...view} home="sheet" />
+
+        <DiscardChangesDialog
+          open={confirming}
+          onKeep={() => setConfirming(false)}
+          onDiscard={() => {
+            setConfirming(false);
+            onOpenChange(false);
+          }}
+        />
       </ResponsiveSheetContent>
     </ResponsiveSheet>
   );

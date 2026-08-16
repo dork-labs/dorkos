@@ -4,11 +4,13 @@
  *
  * @module features/profile/ui/ProfileRows
  */
+import { Suspense } from 'react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
+import { Skeleton } from '@/layers/shared/ui';
 import { rowsFor, type ProfileRowModel, type ProfileRowsContext } from '../lib/profile-rows';
 import type { ProfileStackEntry } from '../model/profile-stack';
 import { isProfilePageAvailable } from './pages/registry';
-import { isProfilePickAvailable } from './popovers/registry';
+import { isProfilePickAvailable, profilePick } from './popovers/registry';
 import { ProfileRow } from './ProfileRow';
 
 export interface ProfileRowsProps {
@@ -76,13 +78,25 @@ export function ProfileRows({ member, ctx, onPush }: ProfileRowsProps) {
     >
       {groups.map((group) => (
         <div key={group.id} className="divide-border/60 flex flex-col divide-y">
-          {group.rows.map((row) => (
-            <ProfileRow
-              key={row.id}
-              row={row}
-              onNavigate={(nav) => nav.page && onPush({ kind: 'page', page: nav.page })}
-            />
-          ))}
+          {group.rows.map((row) => {
+            const pick = row.kind === 'pick' && row.pick ? profilePick(row.pick) : null;
+            return (
+              <ProfileRow
+                key={row.id}
+                row={row}
+                onNavigate={(nav) => nav.page && onPush({ kind: 'page', page: nav.page })}
+                pickContent={
+                  pick
+                    ? (close) => (
+                        <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+                          <pick.component member={member} onClose={close} />
+                        </Suspense>
+                      )
+                    : undefined
+                }
+              />
+            );
+          })}
         </div>
       ))}
     </div>

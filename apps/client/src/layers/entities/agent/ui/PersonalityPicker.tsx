@@ -3,13 +3,14 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Settings } from 'lucide-react';
 import { generateVoiceSample } from '@dorkos/shared/dorkbot-templates';
 import { cn, playSliderTick } from '@/layers/shared/lib';
-import { TraitSliders, PresetPill } from '@/layers/entities/agent';
+import { TraitSliders } from './TraitSliders';
+import { PresetPill } from './PresetPill';
 import { PersonalityRadar } from './PersonalityRadar';
 import {
   PERSONALITY_PRESETS,
   DEFAULT_PRESET_COLORS,
   findMatchingPreset,
-} from '../model/personality-presets';
+} from '../lib/personality-presets';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 
 /**

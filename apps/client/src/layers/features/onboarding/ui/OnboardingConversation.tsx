@@ -27,9 +27,8 @@ import {
   type MessageAuthorAgent,
 } from '@/layers/features/chat';
 import { Composer } from '@/layers/features/composer';
-import { PersonalityPicker } from '@/layers/features/agent-hub';
 import { useDefaultAgentSession } from '@/layers/entities/config';
-import { useUpdateAgent, useResolvedAgents } from '@/layers/entities/agent';
+import { PersonalityPicker, useUpdateAgent, useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useRuntimeRequirements, selectRuntimeReadiness } from '@/layers/entities/runtime';
 import { chooseDefaultRuntime } from '../model/use-onboarding-runtime-default';

@@ -20,6 +20,7 @@ import {
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 import { writeConventionFile } from '@dorkos/shared/convention-files-io';
+import { SOUL_MAX_CHARS, NOPE_MAX_CHARS } from '@dorkos/shared/convention-files';
 
 /**
  * Identity fields that cannot be changed on a system agent (`isSystem: true`).
@@ -63,6 +64,33 @@ export class AgentUpdateError extends Error {
     super(message);
     this.name = 'AgentUpdateError';
   }
+}
+
+/**
+ * Why a convention file was refused, in words an editor can put on screen.
+ *
+ * The one refusal a person actually hits is a file over its budget, and the
+ * number that matters is the budget — the editor bounds the prose it shows,
+ * while the limit is on the whole file, personality block included. Anything
+ * else falls back to the generic message, with the Zod issues on `details`.
+ *
+ * @param error - The failed `UpdateAgentConventionsSchema` parse.
+ */
+function conventionRefusal(error: z.ZodError): string {
+  const issue = error.issues.find(
+    (candidate) =>
+      candidate.code === 'too_big' &&
+      (candidate.path[0] === 'soulContent' || candidate.path[0] === 'nopeContent')
+  );
+  if (!issue) return 'Validation failed';
+
+  const isSoul = issue.path[0] === 'soulContent';
+  const file = isSoul ? 'SOUL.md' : 'NOPE.md';
+  const max = isSoul ? SOUL_MAX_CHARS : NOPE_MAX_CHARS;
+  // A colon rather than a dash: this sentence is composed with the caller's own
+  // ("Couldn't save your instructions — …"), and two dashes in one line read as
+  // an aside inside an aside.
+  return `${file} is too long: the whole file has to fit in ${max.toLocaleString('en-US')} characters.`;
 }
 
 /** Minimal MeshCore surface needed for the post-write DB sync (ADR-0043). */
@@ -128,8 +156,21 @@ export async function updateAgentManifest(opts: {
   }
 
   // Write convention files if provided alongside manifest fields.
+  //
+  // A failed parse is a REFUSAL, not a silent skip. This used to fall back to
+  // `{}` and carry on: the manifest half of the patch was applied, the route
+  // answered 200, and the editor said "Saved" over a SOUL.md the server had
+  // thrown away (DOR-1253). Thrown before any write, so an over-budget file
+  // leaves nothing half-applied behind it.
   const conventionsResult = UpdateAgentConventionsSchema.safeParse(body);
-  const conventionUpdates = conventionsResult.success ? conventionsResult.data : {};
+  if (!conventionsResult.success) {
+    throw new AgentUpdateError(
+      'VALIDATION',
+      conventionRefusal(conventionsResult.error),
+      z.flattenError(conventionsResult.error)
+    );
+  }
+  const conventionUpdates = conventionsResult.data;
 
   if (conventionUpdates.soulContent !== undefined) {
     await writeConventionFile(agentPath, 'SOUL.md', conventionUpdates.soulContent);
@@ -139,8 +180,22 @@ export async function updateAgentManifest(opts: {
   }
 
   // traits and conventions go into agent.json via the manifest update.
-  // Null values signal "clear this field" (undefined can't travel over JSON).
-  const merged: Record<string, unknown> = { ...existing, ...parsed.data };
+  //
+  // **Only the keys the caller actually SENT.** `UpdateAgentRequestSchema` is
+  // `AgentManifestSchema.pick(...).partial()`, and several of the picked fields
+  // carry a Zod `.default()` — so parsing `{"model":"sonnet"}` hands back a
+  // `description` and a `capabilities` the caller never mentioned, and spreading
+  // the whole parse result over the manifest wrote those defaults on top of real
+  // values. A PATCH that set a model erased the agent's description and every
+  // capability with it (DOR-1253): silent data loss on the most ordinary edit
+  // there is. The patch is intersected with the raw body's own keys, which is
+  // the only thing that says what the caller meant.
+  //
+  // `null` still means "clear this field" — `undefined` cannot travel over JSON,
+  // so the wire needs a value for the absence and `null` is it.
+  const sent = new Set(Object.keys(rawBody));
+  const patch = Object.fromEntries(Object.entries(parsed.data).filter(([key]) => sent.has(key)));
+  const merged: Record<string, unknown> = { ...existing, ...patch };
   for (const key of Object.keys(merged)) {
     if (merged[key] === null) delete merged[key];
   }

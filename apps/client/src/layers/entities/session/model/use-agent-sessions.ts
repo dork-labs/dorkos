@@ -53,6 +53,11 @@ export function useAgentSessions(projectPath: string | null) {
   return {
     sessions: agentSessions,
     isLoading: sessionsQuery.isLoading,
+    // An empty list has three causes and they are not the same sentence: still
+    // asking, asked and got nothing, and could not ask. A caller that draws
+    // "no conversations yet" over the first or the third is telling the
+    // operator something false (DOR-1253).
+    isError: sessionsQuery.isError,
     activeSessionId,
     setActiveSession,
   };

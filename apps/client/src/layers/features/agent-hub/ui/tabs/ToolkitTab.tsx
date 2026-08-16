@@ -4,9 +4,8 @@ import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { useNavigate } from '@tanstack/react-router';
 import { ToolsTab as AgentToolsTab } from '@/layers/features/agent-settings';
-import { useInstalledPackages } from '@/layers/entities/marketplace';
+import { useInstalledPackages, SkillPacksList } from '@/layers/entities/marketplace';
 import { useAgentHubContext } from '../../model/agent-hub-context';
-import { ScopeBadge } from '../ScopeBadge';
 
 // ---------------------------------------------------------------------------
 // AccordionSection — copied from ConfigTab (same pattern, same file boundary)
@@ -50,46 +49,6 @@ function AccordionSection({
       </button>
       {isOpen && <div className="px-4 pb-4">{children}</div>}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// SkillPacksList — renders the installed packages for this agent
-// ---------------------------------------------------------------------------
-
-function SkillPacksList({ projectPath }: { projectPath: string }) {
-  const { data: packages, isLoading, error } = useInstalledPackages(projectPath);
-
-  if (isLoading) {
-    return <p className="text-muted-foreground py-2 text-xs">Loading skills…</p>;
-  }
-
-  if (error) {
-    return <p className="text-destructive py-2 text-xs">Failed to load skills.</p>;
-  }
-
-  const skillPacks = packages?.filter((p) => p.type === 'skill-pack') ?? [];
-
-  if (skillPacks.length === 0) {
-    return (
-      <p className="text-muted-foreground py-2 text-xs">
-        No skills installed. Browse the marketplace to add skills to this agent.
-      </p>
-    );
-  }
-
-  return (
-    <ul className="space-y-1.5 py-1">
-      {skillPacks.map((pkg) => (
-        <li key={pkg.name} className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate font-mono text-xs">{pkg.name}</span>
-          {pkg.version && (
-            <span className="text-muted-foreground shrink-0 text-[10px]">v{pkg.version}</span>
-          )}
-          <ScopeBadge scope={pkg.scope} />
-        </li>
-      ))}
-    </ul>
   );
 }
 
