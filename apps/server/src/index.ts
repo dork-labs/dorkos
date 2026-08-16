@@ -38,6 +38,7 @@ import {
   configManager,
   ConfigBootError,
 } from './services/core/config-manager.js';
+import { logConfigWrite } from './services/core/operator/config-write.js';
 import {
   credentialProvider,
   credentialStore,
@@ -647,6 +648,12 @@ async function start() {
       ...current,
       lastPromptedVersion: tier1Boot.lastPromptedVersionToWrite,
     });
+    logConfigWrite(
+      'the first-run telemetry notice',
+      'telemetry',
+      current,
+      configManager.get('telemetry')
+    );
   }
 
   // Register the anonymous feature-usage reporter (DOR-315, ADR 260713-143958
@@ -2285,7 +2292,9 @@ async function start() {
       setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
       setAccountName: (userId, name) => setUserName(userId, name),
       setProfileDisplayName: (displayName) => {
+        const before = configManager.get('profile');
         configManager.setDot('profile.displayName', displayName);
+        logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
       },
     })
   );

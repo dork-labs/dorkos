@@ -8,6 +8,7 @@ import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import type { TunnelStatus } from '@dorkos/shared/types';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { configManager } from '../services/core/config-manager.js';
+import { logConfigWrite } from '../services/core/operator/config-write.js';
 import {
   canExpose,
   AUTH_REQUIRED_FOR_EXPOSURE,
@@ -96,6 +97,7 @@ router.post('/start', async (_req, res) => {
 
     // Persist enabled state
     configManager.set('tunnel', { ...tunnelConfig, enabled: true });
+    logConfigWrite('the tunnel route', 'tunnel', tunnelConfig, configManager.get('tunnel'));
 
     return res.json({ url: tunnelManager.status.url });
   } catch (err) {
@@ -111,6 +113,7 @@ router.post('/stop', async (_req, res) => {
     // Persist disabled state
     const tunnelConfig = configManager.get('tunnel');
     configManager.set('tunnel', { ...tunnelConfig, enabled: false });
+    logConfigWrite('the tunnel route', 'tunnel', tunnelConfig, configManager.get('tunnel'));
 
     return res.json({ ok: true });
   } catch (err) {

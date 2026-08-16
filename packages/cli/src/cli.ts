@@ -636,7 +636,19 @@ async function openConfigStore() {
   const { initConfigManager, ConfigBootError } =
     await import('../server/services/core/config-manager.js');
   try {
-    return initConfigManager(DORK_HOME);
+    const manager = initConfigManager(DORK_HOME);
+    // Point the server's logger at this data directory before any command can
+    // change a setting. `dorkos config set` records what it changed in the same
+    // `~/.dork/logs/dorkos.log` the server writes to, and a line that only
+    // reached the terminal would answer nobody's question tomorrow — which was
+    // the whole complaint behind DOR-1237. The level is the operator's own
+    // `logging.level`, so the CLI and the server agree about what gets written.
+    const { initLogger } = await import('../server/lib/logger.js');
+    initLogger({
+      logDir: path.join(DORK_HOME, 'logs'),
+      level: LOG_LEVEL_MAP[(manager.getDot('logging.level') as string | null) ?? 'info'] ?? 3,
+    });
+    return manager;
   } catch (err) {
     if (!(err instanceof ConfigBootError)) throw err;
     // The server is bundled in at build time, so its module has no types here
@@ -650,7 +662,7 @@ async function openConfigStore() {
 if (subcommand === 'config') {
   const cfgMgr = await openConfigStore();
   const { handleConfigCommand } = await import('./config-commands.js');
-  handleConfigCommand(cfgMgr, positionals.slice(1));
+  await handleConfigCommand(cfgMgr, positionals.slice(1));
   process.exit(0);
 }
 

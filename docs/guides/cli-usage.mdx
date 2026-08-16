@@ -119,6 +119,8 @@ dorkos config path                   # Print config file location
 dorkos config validate               # Check config validity
 ```
 
+`dorkos config set` follows the same rules as changing a setting in DorkOS itself. It checks the value before saving, so a value a setting cannot hold — or a setting that does not exist — is reported instead of written. Settings that need you to confirm what they mean, like starting every new session in Full autonomy, ask here too. And every change you make this way is written to your log at `~/.dork/logs/dorkos.log`, by name, so you can always find out what moved a setting. Only the setting's name is logged, never its value.
+
 **`dorkos init`**: an interactive setup wizard for first-time configuration. Walks through your API key, default port, and working directory.
 
 ```bash

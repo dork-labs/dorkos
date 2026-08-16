@@ -1,6 +1,9 @@
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { execFileSync } from 'child_process';
+// Types only — erased before the bundle, and resolved for tsc by the
+// declaration mirror in `packages/cli/server/`.
+import type { GuardedConfigWriteResult } from '../server/services/core/operator/config-write.js';
 
 /**
  * Minimal interface for config operations needed by CLI commands.
@@ -23,6 +26,52 @@ export interface ConfigStore {
   validate(): { valid: boolean; errors?: string[]; warnings?: string[] };
   readonly path: string;
 }
+
+/**
+ * How `dorkos config` reaches the server's config-write code.
+ *
+ * A seam, not indirection for its own sake: the two functions below live in the
+ * server bundle, which the CLI reaches through a specifier that only resolves
+ * once esbuild has rewritten it (`packages/cli/server/**.d.ts` explains the
+ * arrangement). A test running from source cannot resolve it at all, so the
+ * dependency is passed in and {@link serverConfigWriter} is the production
+ * default.
+ */
+export interface CliConfigWriter {
+  /**
+   * Write through the same guarded step `PATCH /api/config` uses: the write
+   * policy, the Full-autonomy consent door, and the audit line.
+   *
+   * @param patch - The partial config to merge.
+   */
+  guarded(patch: Record<string, unknown>): Promise<GuardedConfigWriteResult>;
+}
+
+/**
+ * The production writer: the server's own guarded step, under the operator's own
+ * identity.
+ *
+ * `LOCAL_OPERATOR_AUTHORITY` carries the reasoning for that identity — briefly,
+ * a person at their own terminal is the same trust the cockpit has in the
+ * default posture, and the consent door still applies to them.
+ *
+ * Both specifiers are written out in full rather than shared through a constant.
+ * A dynamic import whose specifier is a VARIABLE is invisible to every mechanism
+ * that keeps this working — esbuild cannot rewrite it, tsc cannot resolve it,
+ * and `__tests__/server-shims.test.ts` cannot see it — so it would survive the
+ * build and only fail at a user's install.
+ */
+const serverConfigWriter: CliConfigWriter = {
+  async guarded(patch) {
+    const { applyGuardedConfigWrite, LOCAL_OPERATOR_AUTHORITY } =
+      await import('../server/services/core/operator/config-write.js');
+    return applyGuardedConfigWrite({
+      patch,
+      authority: LOCAL_OPERATOR_AUTHORITY,
+      source: 'dorkos config set',
+    });
+  },
+};
 
 /**
  * Parse a CLI string value into the appropriate JavaScript type.
@@ -110,17 +159,116 @@ export function handleConfigGet(store: ConfigStore, key: string): void {
 }
 
 /**
- * Set a single config value.
+ * Split a dot-path the way the config store itself does, so a key with a literal
+ * dot in it survives the trip.
+ *
+ * `dorkos config set` used to hand the whole path to `ConfigStore.setDot`, which
+ * is `dot-prop` underneath and treats a backslash as an escape \u2014 the only way to
+ * name a key with a dot in it under the three record-shaped sections
+ * (`providers`, `ui.shapes.agentDefaults`, `workbench.defaultViewers`). Now that
+ * the CLI builds a patch object instead, a naive `split('.')` would quietly turn
+ * one such key into two nested ones.
+ *
+ * @param key - A dot-path, possibly with `\.` escapes.
+ * @returns The segments, unescaped.
+ */
+function splitDotPath(key: string): string[] {
+  const segments: string[] = [];
+  let current = '';
+  for (let index = 0; index < key.length; index += 1) {
+    const char = key[index];
+    if (char === '\\' && index + 1 < key.length) {
+      current += key[index + 1];
+      index += 1;
+    } else if (char === '.') {
+      segments.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  segments.push(current);
+  return segments;
+}
+
+/**
+ * Turn `key = value` into the patch object the guarded write takes.
+ *
+ * @param key - A dot-path.
+ * @param value - The parsed value.
+ * @returns A nested object with `value` at `key`.
+ */
+function patchForPath(key: string, value: unknown): Record<string, unknown> {
+  const segments = splitDotPath(key);
+  const patch: Record<string, unknown> = {};
+  let node = patch;
+  for (const segment of segments.slice(0, -1)) {
+    const child: Record<string, unknown> = {};
+    node[segment] = child;
+    node = child;
+  }
+  node[segments[segments.length - 1]!] = value;
+  return patch;
+}
+
+/**
+ * Set a single config value \u2014 through the same door the cockpit uses.
+ *
+ * ## Why this is not a `setDot` any more (DOR-1247)
+ *
+ * It used to write the leaf straight into the file. That meant the one command
+ * anything with a shell can run was the one write with no write policy, no
+ * Full-autonomy consent door, no validation and no line in the log:
+ * `dorkos config set runtimes.claudeCode.defaultTrustStop autonomy` left an
+ * install starting every new session bypassed, with `ui.autonomyAcknowledgedAt`
+ * still `null` \u2014 a state the cockpit's door exists to make unreachable \u2014
+ * and nothing on disk saying it had happened.
+ *
+ * It now goes through {@link CliConfigWriter.guarded}, which brings three things
+ * with it besides the consent door. The whole config is validated before
+ * anything is written, so a value the schema refuses is reported instead of
+ * stored (`server.port notanumber` used to land in the file and make the server
+ * fall back to a default it never mentioned). A setting DorkOS does not have is
+ * said out loud rather than written into a corner of the file nothing reads. And
+ * the write leaves the same audit line every other settings write leaves.
  *
  * @param store - Config storage instance
  * @param key - Dot-separated config path
  * @param rawValue - Raw string value from CLI (will be parsed)
+ * @param writer - How to reach the server's guarded write; injected for tests.
  */
-export function handleConfigSet(store: ConfigStore, key: string, rawValue: string): void {
+export async function handleConfigSet(
+  store: ConfigStore,
+  key: string,
+  rawValue: string,
+  writer: CliConfigWriter = serverConfigWriter
+): Promise<void> {
   const value = parseConfigValue(rawValue);
-  const result = store.setDot(key, value);
-  if (result.warning) {
-    console.warn(`\u26a0  ${result.warning}`);
+  const result = await writer.guarded(patchForPath(key, value));
+
+  if (!result.ok) {
+    if (result.kind === 'invalid') {
+      console.error(`Cannot set ${key}: ${result.error}`);
+      for (const detail of result.details ?? []) console.error(`  - ${detail}`);
+    } else {
+      // The same sentence the cockpit shows for the same refusal \u2014 a refusal
+      // that reads differently in two places teaches people they are two rules.
+      console.error(result.refusal.message);
+    }
+    process.exit(1);
+  }
+
+  // Zod drops a key the schema does not declare, so a write that landed nothing
+  // is how "there is no such setting" arrives here. Saying `Set \u2026` for it would
+  // be a lie the person acts on.
+  if (store.getDot(key) === undefined) {
+    console.error(`Unknown config key: ${key}`);
+    console.error('Run `dorkos config list` to see every setting.');
+    process.exit(1);
+  }
+
+  for (const warning of result.warnings) {
+    console.warn(`\u26a0  ${warning}`);
   }
   console.log(`Set ${key} = ${value === null ? 'null' : String(value)}`);
 }
@@ -136,6 +284,18 @@ export function handleConfigList(store: ConfigStore): void {
 
 /**
  * Reset config to defaults (all or specific key).
+ *
+ * No write policy, no consent door and no audit line, unlike
+ * {@link handleConfigSet}, and the asymmetry is deliberate rather than a gap
+ * left over from DOR-1247. Reset can only move a setting TO the value a fresh
+ * install carries, and a fresh install's value is the protective one by rule
+ * (ADR 260727-181825) — a whole-config reset additionally keeps the protections
+ * a person moved (`safe-defaults/protected-state.ts`). So there is no reset that
+ * turns a gate off, licenses Full autonomy, or widens a bound, which is the
+ * entire set of things the guarded step is there to catch.
+ *
+ * `contributing/configuration.md` lists it among the writers that still leave no
+ * line, with this reasoning, so nobody reads the silence as an oversight.
  *
  * @param store - Config storage instance
  * @param key - Optional specific key to reset; omit to reset all
@@ -211,8 +371,13 @@ export function handleConfigValidate(store: ConfigStore): void {
  *
  * @param store - Config storage instance
  * @param args - Positional arguments after 'config' command
+ * @param writer - How to reach the server's config-write code; injected for tests.
  */
-export function handleConfigCommand(store: ConfigStore, args: string[]): void {
+export async function handleConfigCommand(
+  store: ConfigStore,
+  args: string[],
+  writer: CliConfigWriter = serverConfigWriter
+): Promise<void> {
   const subcommand = args[0];
   switch (subcommand) {
     case undefined:
@@ -230,7 +395,7 @@ export function handleConfigCommand(store: ConfigStore, args: string[]): void {
         console.error('Usage: dorkos config set <key> <value>');
         process.exit(1);
       }
-      handleConfigSet(store, args[1], args[2]);
+      await handleConfigSet(store, args[1], args[2], writer);
       break;
     case 'list':
       handleConfigList(store);

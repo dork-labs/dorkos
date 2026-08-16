@@ -1,8 +1,14 @@
 /**
  * Shared user-config deep-merge patch — the single implementation of the
- * `PATCH /api/config` write semantics, used by the HTTP route and the
- * `config_patch` MCP tool so both validate through the same Zod path and both
- * persist through the same {@link configManager} calls.
+ * `PATCH /api/config` write SEMANTICS: merge, validate whole, persist per
+ * section.
+ *
+ * It answers "is this a valid config, and what did storing it change", and
+ * nothing about who may ask. That half lives one layer up in `config-write.ts`,
+ * which is the only production caller: every door — the HTTP route, the
+ * `config_patch` tool, `dorkos config set` — reaches this through the guarded
+ * step, so the policy and the consent door cannot be skipped by picking a
+ * different entry point.
  *
  * @module services/core/operator/config-patch
  */
@@ -248,7 +254,7 @@ function isOperatorOnlyPath(path: string): boolean {
  * and `providers` — so their leaf segments are CALLER-CHOSEN, and the first is
  * `agent-writable`, meaning the route's agent bar never applies to it. An agent
  * could therefore write a key containing a newline and a counterfeit
- * `[Config] Patched: …` line, forging the exact record this feature exists to
+ * `[Config] Patched by …` line, forging the exact record this feature exists to
  * make trustworthy (reproduced against the real route during review). So every
  * segment goes through {@link renderSegment}, and the forgery arrives as one
  * quoted, escaped, clipped segment on one line.
@@ -283,7 +289,25 @@ export function describeConfigWrite(before: unknown, after: unknown): string {
 
 /** Outcome of {@link applyConfigPatch}: a validated write or a typed rejection. */
 export type ConfigPatchResult =
-  | { ok: true; config: UserConfig; warnings: string[] }
+  | {
+      /** The write landed. */
+      ok: true;
+      /**
+       * The stored config as it was BEFORE the merge, for
+       * {@link describeConfigWrite}.
+       *
+       * Returned rather than re-read by the caller because this function already
+       * holds it: it reads the current config to merge onto, and the snapshot it
+       * merged from is by definition the state the write replaced. A caller that
+       * asked the store again would be paying for a second read AND trusting that
+       * nothing moved in between.
+       */
+      before: UserConfig;
+      /** The stored config after it. */
+      config: UserConfig;
+      /** Non-blocking notes — today, sensitive keys written in the clear. */
+      warnings: string[];
+    }
   | { ok: false; error: string; details?: string[] };
 
 /**
@@ -351,5 +375,5 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
     void applyClaudeAccountChange();
   }
 
-  return { ok: true, config: configManager.getAll(), warnings };
+  return { ok: true, before: current, config: configManager.getAll(), warnings };
 }
