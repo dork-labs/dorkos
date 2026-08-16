@@ -1,0 +1,626 @@
+<style>
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  .shots {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+    margin: 1rem 0 2rem;
+  }
+  .shot {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .shot .cap {
+    padding: 0.6rem 0.9rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .shot .cap b {
+    color: var(--text-primary);
+  }
+  .crop {
+    position: relative;
+    height: 420px;
+    overflow: hidden;
+    background: #111;
+  }
+  .crop img {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 175%;
+    width: auto;
+  }
+  .notes {
+    padding: 0.75rem 0.9rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+  }
+  .notes li {
+    margin-bottom: 0.2rem;
+  }
+  .tag {
+    display: inline-block;
+    font-size: 0.65rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    margin-left: 0.3rem;
+  }
+  .tag.bug {
+    background: rgba(255, 59, 48, 0.15);
+    color: var(--error);
+  }
+  table.cmp {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    margin: 0.5rem 0 2rem;
+  }
+  table.cmp th,
+  table.cmp td {
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.cmp th {
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  table.cmp td:first-child {
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .weird {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0.75rem;
+    margin: 0.5rem 0 2rem;
+  }
+  .weird .w {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem 0.9rem;
+    font-size: 0.82rem;
+  }
+  .weird .w b {
+    display: block;
+    margin-bottom: 0.15rem;
+  }
+  .weird .w span {
+    color: var(--text-secondary);
+  }
+  .others {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin: 0.5rem 0 2rem;
+  }
+  .others .o {
+    flex: 1 1 200px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.7rem 0.85rem;
+    font-size: 0.78rem;
+  }
+  .others .o b {
+    display: block;
+    font-size: 0.85rem;
+    margin-bottom: 0.15rem;
+  }
+  .others .o span {
+    color: var(--text-secondary);
+  }
+  /* mini mockups for the options */
+  .mini {
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+    margin-top: 0.6rem;
+  }
+  .app {
+    width: 210px;
+    height: 120px;
+    background: #17171a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .app .side {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 38px;
+    background: #1f1f23;
+    border-right: 1px solid #2c2c31;
+  }
+  .app .main {
+    position: absolute;
+    left: 38px;
+    top: 0;
+    bottom: 0;
+    right: 0;
+  }
+  .app .panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 82px;
+    background: #202024;
+    border-left: 1px solid #2c2c31;
+  }
+  .app .sheet {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 96px;
+    background: #242428;
+    border-left: 1px solid #3a3a40;
+    box-shadow: -8px 0 20px rgba(0, 0, 0, 0.5);
+  }
+  .app .page {
+    position: absolute;
+    left: 38px;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    background: #1b1b1f;
+  }
+  .hdr {
+    margin: 8px 8px 4px;
+    height: 10px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #3ec1d3, #2a2a30 70%);
+    opacity: 0.9;
+  }
+  .row {
+    margin: 4px 8px;
+    height: 6px;
+    border-radius: 2px;
+    background: #3a3a40;
+  }
+  .row.short {
+    width: 40%;
+  }
+  .tabs {
+    margin: 6px 8px 2px;
+    display: flex;
+    gap: 3px;
+  }
+  .tabs i {
+    display: block;
+    height: 5px;
+    flex: 1;
+    border-radius: 2px;
+    background: #3a3a40;
+  }
+  .tabs i.on {
+    background: #3ec1d3;
+  }
+  .lbl {
+    position: absolute;
+    bottom: 4px;
+    right: 6px;
+    font-size: 0.55rem;
+    color: #8a8a92;
+  }
+  .arrow {
+    align-self: center;
+    color: var(--text-tertiary);
+    font-size: 1.1rem;
+  }
+  .verdict {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+  }
+  .verdict b {
+    color: var(--text-primary);
+  }
+  .rec {
+    border-color: var(--accent) !important;
+  }
+  .rec .letter {
+    background: var(--accent) !important;
+    color: #fff !important;
+  }
+</style>
+
+<div class="wrap">
+  <h2>Profiles: what we have today</h2>
+  <p class="subtitle">
+    Two things are both called “profile”. They share almost nothing. Neither links to the other.
+  </p>
+
+  <div class="shots">
+    <div class="shot">
+      <div class="cap">
+        <span><b>1 · Profile drawer</b> — <code>?profile=&lt;id&gt;</code></span
+        ><span>from Team cards, sidebar face, mention pills, hover card, account menu</span>
+      </div>
+      <div class="crop">
+        <img src="/files/drawer-agent.png" alt="Profile drawer for an agent" />
+      </div>
+      <ul class="notes">
+        <li>Face · name · @handle · 3 chips · “Joined”. That is all.</li>
+        <li>No description, no model, no directory, no owner face, no “what is it doing”.</li>
+        <li>
+          <b>No actions for an agent.</b> “Open a session” exists in code but never draws (project
+          path is stripped server-side).<span class="tag bug">bug</span>
+        </li>
+        <li>
+          “No recent activity” = mesh hasn’t heard from it in 60 min. Not the real live signal.
+        </li>
+        <li>
+          Same component for people. Your own row: “On this machine” + <b>Edit profile</b>. Nothing
+          else.
+        </li>
+      </ul>
+    </div>
+    <div class="shot">
+      <div class="cap">
+        <span><b>2 · “Agent Profile” tab</b> — right panel on /session</span
+        ><span>⌘⇧A · sidebar “Agent hub” · Team “Manage” · palette</span>
+      </div>
+      <div class="crop">
+        <img src="/files/session-panel-profile.png" alt="Agent Profile tab in the right panel" />
+      </div>
+      <ul class="notes">
+        <li>
+          Really the <b>Agent Hub</b>: hero + tabs <b>Sessions · Config · Toolkit</b> + ⋮ (default /
+          block / unregister / delete).
+        </li>
+        <li>
+          Says <b>“Offline”</b> for every agent, always — health never arrives on this
+          endpoint.<span class="tag bug">bug</span>
+        </li>
+        <li>
+          No @handle, no owner, no description in the hero. “✨ Custom” pill is a personality
+          <i>picker</i> that reads like a status.
+        </li>
+        <li>Sessions tab opens with two schedule presets before any conversation.</li>
+        <li>
+          Inner tab isn’t remembered; <code>hubTab=toolkit</code> deep-link silently fails.<span
+            class="tag bug"
+            >bug</span
+          >
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Same agent, two answers</h3>
+  <table class="cmp">
+    <tr>
+      <th></th>
+      <th>Profile drawer</th>
+      <th>“Agent Profile” tab (Hub)</th>
+    </tr>
+    <tr>
+      <td>What it is</td>
+      <td>An identity card. “Who is this?”</td>
+      <td>A workbench. “Set this agent up.”</td>
+    </tr>
+    <tr>
+      <td>Who it’s for</td>
+      <td>Any identity: you, people, agents, DorkBot, Telegram folks</td>
+      <td>Agents only</td>
+    </tr>
+    <tr>
+      <td>Where</td>
+      <td>Overlay sheet, any route, in the URL</td>
+      <td>Docked panel on /session; hidden elsewhere unless forced</td>
+    </tr>
+    <tr>
+      <td>Keyed by</td>
+      <td>roster member id (manifest ULID)</td>
+      <td>agent folder path</td>
+    </tr>
+    <tr>
+      <td>Liveness</td>
+      <td>“No recent activity” (60-min mesh window)</td>
+      <td>“Offline” (always — dead field)</td>
+    </tr>
+    <tr>
+      <td>Actions</td>
+      <td>Edit profile (self only)</td>
+      <td>
+        rename · face · personality · model · effort · tools · MCP · skills · connections · default
+        · block · unregister · delete
+      </td>
+    </tr>
+    <tr>
+      <td>Link to the other</td>
+      <td>none</td>
+      <td>none</td>
+    </tr>
+    <tr>
+      <td>Verbs users learn</td>
+      <td>“Open profile” / “View profile”</td>
+      <td>“Manage” / “Agent hub” / “Agent Profile”</td>
+    </tr>
+  </table>
+
+  <h3>What’s weird or confusing</h3>
+  <div class="weird">
+    <div class="w">
+      <b>Two “profiles”, zero overlap</b
+      ><span
+        >Click a face → identity card. Open the panel → settings. Both say “profile”. Users must
+        guess which one they got.</span
+      >
+    </div>
+    <div class="w">
+      <b>Contradicting status words</b
+      ><span
+        >Drawer: “No recent activity”. Hub: “Offline”. Neither is the true “working now” signal that
+        rooms already have.</span
+      >
+    </div>
+    <div class="w">
+      <b>Dead-end drawer</b
+      ><span
+        >You look someone up and can’t do anything: no Message, no Manage, no copy-handle, no “go to
+        its sessions”.</span
+      >
+    </div>
+    <div class="w">
+      <b>Empty body</b
+      ><span
+        >Agent = one fact (“Joined”). Person = no body at all. Your own = no handle shown, no photo
+        nudge.</span
+      >
+    </div>
+    <div class="w">
+      <b>Manage vs Open profile</b
+      ><span
+        >Team table says “Manage” (→ Hub). Team card click → drawer. Sidebar row has both “View
+        profile” and “Agent hub”.</span
+      >
+    </div>
+    <div class="w">
+      <b>Hero mislabels</b
+      ><span
+        >Personality pill looks like a status. Rename/face/personality offered on DorkBot, then the
+        server says 403.</span
+      >
+    </div>
+  </div>
+
+  <h3>How others do it (in one line each)</h3>
+  <div class="others">
+    <div class="o">
+      <b>Slack</b
+      ><span
+        >One profile panel from everywhere. Big face, name, title, local time, <b>Message</b> button
+        up top, then details. Bots: “About this app” + admin link. Full-screen on mobile.</span
+      >
+    </div>
+    <div class="o">
+      <b>Discord</b
+      ><span
+        >Popout on click (peek), full profile modal on “View Full Profile”. Bot profiles show what
+        the bot can do.</span
+      >
+    </div>
+    <div class="o">
+      <b>Linear</b
+      ><span
+        >Profile is a page; edit in Settings. Agent accounts show owner + what they’re working
+        on.</span
+      >
+    </div>
+    <div class="o">
+      <b>GitHub</b
+      ><span
+        >Hover card → full page. Page = identity + activity + what they own. Sharable URL.</span
+      >
+    </div>
+    <div class="o">
+      <b>Buzz</b
+      ><span
+        >Agent is attached to a human owner (vouch). Owner shown on the agent, agents shown on the
+        owner.</span
+      >
+    </div>
+  </div>
+
+  <h3>The fork: how many “profile” things should exist?</h3>
+  <p class="subtitle" style="margin-bottom: 0.75rem">Pick one. This decides everything after it.</p>
+
+  <div class="options">
+    <div class="option" data-choice="A" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>Align &amp; link — keep both, make them agree</h3>
+        <p>
+          Same header in both (face, name, @handle, owner, one true status). Drawer gets
+          <b>Message</b> + <b>Manage →</b> (opens Hub). Hub gets @handle + owner. Rename the tab to
+          “Manage”. Fix the bugs.
+        </p>
+        <div class="mini">
+          <div class="app">
+            <div class="side"></div>
+            <div class="main"></div>
+            <div class="sheet">
+              <div class="hdr"></div>
+              <div class="row"></div>
+              <div class="row short"></div>
+              <div class="row"></div>
+            </div>
+            <div class="lbl">drawer: card</div>
+          </div>
+          <div class="arrow">+</div>
+          <div class="app">
+            <div class="side"></div>
+            <div class="main"></div>
+            <div class="panel">
+              <div class="hdr"></div>
+              <div class="tabs"><i class="on"></i><i></i><i></i></div>
+              <div class="row"></div>
+              <div class="row"></div>
+            </div>
+            <div class="lbl">panel: manage</div>
+          </div>
+        </div>
+        <div class="pros-cons">
+          <div class="pros">
+            <h4>Pros</h4>
+            <ul>
+              <li>Cheapest, lowest risk</li>
+              <li>Keeps both mental models where they are</li>
+            </ul>
+          </div>
+          <div class="cons">
+            <h4>Cons</h4>
+            <ul>
+              <li>Still two things called profile</li>
+              <li>Two components to keep in sync forever</li>
+              <li>Doesn’t 10x anything</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="option rec" data-choice="B" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>One profile, two homes (recommended)</h3>
+        <p>
+          There is <b>one Profile</b>. It has a header + tabs. On <code>/session</code> it is
+          <b>docked</b> in the right panel. Everywhere else it <b>slides over</b> as a sheet (still
+          <code>?profile=&lt;id&gt;</code>). Tabs adapt to <i>who you are looking at</i>:
+          <b>Overview</b> for everyone; <b>Sessions · Config · Toolkit</b> only for agents you
+          manage. The Hub stops being a separate thing — it becomes the Config/Toolkit tabs of the
+          profile.
+        </p>
+        <div class="mini">
+          <div class="app">
+            <div class="side"></div>
+            <div class="main"></div>
+            <div class="sheet">
+              <div class="hdr"></div>
+              <div class="tabs"><i class="on"></i><i></i><i></i><i></i></div>
+              <div class="row"></div>
+              <div class="row short"></div>
+            </div>
+            <div class="lbl">/team → sheet</div>
+          </div>
+          <div class="arrow">⇄</div>
+          <div class="app">
+            <div class="side"></div>
+            <div class="main"></div>
+            <div class="panel">
+              <div class="hdr"></div>
+              <div class="tabs"><i class="on"></i><i></i><i></i><i></i></div>
+              <div class="row"></div>
+              <div class="row short"></div>
+            </div>
+            <div class="lbl">/session → docked</div>
+          </div>
+        </div>
+        <div class="pros-cons">
+          <div class="pros">
+            <h4>Pros</h4>
+            <ul>
+              <li>One word, one component, one mental model (Slack’s model exactly)</li>
+              <li>Every entry point lands in the same place; “Manage” = the Config tab</li>
+              <li>Docked ⇄ sheet is a delight moment (same header morphs)</li>
+              <li>People, DorkBot, bridged folks fit the same shell</li>
+            </ul>
+          </div>
+          <div class="cons">
+            <h4>Cons</h4>
+            <ul>
+              <li>Biggest refactor: fold Hub into Profile</li>
+              <li>Overview must be great or the sheet feels heavy</li>
+              <li>Two keys (member id vs path) need one resolver</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="option" data-choice="C" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>Profile page — <code>/team/@handle</code></h3>
+        <p>
+          A real page per identity (GitHub/Linear style): identity + activity + stats + config. The
+          drawer shrinks to a peek with “Open full profile”. The Hub keeps living on
+          <code>/session</code> for quick tweaks.
+        </p>
+        <div class="mini">
+          <div class="app">
+            <div class="side"></div>
+            <div class="main"></div>
+            <div class="sheet" style="width: 70px">
+              <div class="hdr"></div>
+              <div class="row"></div>
+              <div class="row short"></div>
+            </div>
+            <div class="lbl">peek</div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="app">
+            <div class="side"></div>
+            <div class="page">
+              <div class="hdr" style="height: 14px"></div>
+              <div class="tabs"><i class="on"></i><i></i><i></i><i></i></div>
+              <div class="row"></div>
+              <div class="row"></div>
+              <div class="row short"></div>
+            </div>
+            <div class="lbl">/team/@wing</div>
+          </div>
+        </div>
+        <div class="pros-cons">
+          <div class="pros">
+            <h4>Pros</h4>
+            <ul>
+              <li>Room for rich stuff later (activity graph, cost, rooms)</li>
+              <li>Clean shareable URLs</li>
+            </ul>
+          </div>
+          <div class="cons">
+            <h4>Cons</h4>
+            <ul>
+              <li>Now <b>three</b> depths + the Hub = four surfaces</li>
+              <li>Leaves the session context to look at the agent you’re talking to</li>
+              <li>Most work; least “control panel” feel</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="verdict">
+    <b>My pick: B.</b> It is what Slack does and what the identity spec already wanted (“one
+    component, every identity kind”). C can come later as an “expand” of B if we ever need a page. A
+    is a patch.
+  </p>
+</div>
