@@ -13,6 +13,7 @@ function model(overrides: Partial<RoomRowMenuModel> = {}): RoomRowMenuModel {
     currentGroupId: null,
     groups: [],
     soleAgentPath: null,
+    canLeave: true,
     onMarkRead: vi.fn(),
     onToggleMute: vi.fn(),
     onMoveToGroup: vi.fn(),
@@ -22,6 +23,7 @@ function model(overrides: Partial<RoomRowMenuModel> = {}): RoomRowMenuModel {
     onOpenAgentProfile: vi.fn(),
     onRename: vi.fn(),
     onEditTopic: vi.fn(),
+    onLeave: vi.fn(),
     onArchive: vi.fn(),
     ...overrides,
   };
@@ -43,7 +45,8 @@ describe('buildRoomRowMenuNodes', () => {
       'sep-settings',
       'rename',
       'topic',
-      'sep-archive',
+      'sep-destructive',
+      'leave',
       'archive',
     ]);
   });
@@ -60,7 +63,8 @@ describe('buildRoomRowMenuNodes', () => {
       'sep-settings',
       'rename',
       'topic',
-      'sep-archive',
+      'sep-destructive',
+      'leave',
       'archive',
     ]);
   });
@@ -74,7 +78,8 @@ describe('buildRoomRowMenuNodes', () => {
       'members',
       'sep-settings',
       'rename',
-      'sep-archive',
+      'sep-destructive',
+      'leave',
       'archive',
     ]);
   });
@@ -89,9 +94,31 @@ describe('buildRoomRowMenuNodes', () => {
       'agent-profile',
       'sep-settings',
       'rename',
-      'sep-archive',
+      'sep-destructive',
+      'leave',
       'archive',
     ]);
+  });
+
+  it('withholds Leave while this viewer’s own author id is not known yet', () => {
+    // The gap is a beat on a cold sidebar (the team roster still loading),
+    // never a standing state — see `RoomRowMenuModel.canLeave`.
+    expect(ids({ canLeave: false })).not.toContain('leave');
+  });
+
+  it('names the room in the leave label, same as archive, so it reads out of context', () => {
+    const channel = buildRoomRowMenuNodes(model()).find((n) => n.id === 'leave');
+    const dm = buildRoomRowMenuNodes(model({ kind: 'dm' })).find((n) => n.id === 'leave');
+    expect(channel).toMatchObject({ label: 'Leave channel', destructive: true, opensInput: false });
+    expect(dm).toMatchObject({ label: 'Leave conversation', destructive: true, opensInput: false });
+  });
+
+  it('runs the leave callback the caller supplied', () => {
+    const onLeave = vi.fn();
+    const leave = buildRoomRowMenuNodes(model({ onLeave })).find((n) => n.id === 'leave');
+    if (leave?.kind !== 'action') throw new Error('expected an action node');
+    leave.run();
+    expect(onLeave).toHaveBeenCalledTimes(1);
   });
 
   it('withholds Agent profile from a group conversation, which names no single agent', () => {
@@ -109,8 +136,9 @@ describe('buildRoomRowMenuNodes', () => {
     const opening = buildRoomRowMenuNodes(model({ hasUnread: true, soleAgentPath: '/repo/ana' }))
       .filter((node) => node.kind === 'action' && node.opensInput)
       .map((node) => node.id);
-    // Archive is absent on purpose: a confirmation alert asks whether you meant
-    // it, it does not ask for input, so it earns no ellipsis.
+    // Leave and Archive are both absent on purpose: a confirmation alert asks
+    // whether you meant it, it does not ask for input, so neither earns an
+    // ellipsis.
     expect(opening).toEqual(['add', 'members', 'rename', 'topic']);
   });
 
@@ -126,15 +154,16 @@ describe('buildRoomRowMenuNodes', () => {
       'Members',
       'Rename',
       'Edit topic',
+      'Leave channel',
       'Archive channel',
     ]);
   });
 
-  it('marks only Archive destructive', () => {
+  it('marks Leave and Archive destructive, and nothing else', () => {
     const destructive = buildRoomRowMenuNodes(model({ hasUnread: true, soleAgentPath: '/repo/x' }))
       .filter((node) => node.kind === 'action' && node.destructive)
       .map((node) => node.id);
-    expect(destructive).toEqual(['archive']);
+    expect(destructive).toEqual(['leave', 'archive']);
   });
 
   it('hands Agent profile the agent path rather than making the caller find it', () => {

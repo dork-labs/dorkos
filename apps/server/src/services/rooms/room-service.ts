@@ -3140,10 +3140,10 @@ export class RoomService {
    * running, keeps triggering, and is never retro-refused; nothing sweeps the
    * table. What is closed is every way to REACH that shape from here.
    *
-   * **Removing an agent is never refused**, so a room is never wedged: the way
-   * out of a room the owner does not want to be on the roster of is to take an
-   * agent out of it, or to archive it (spec §12.4 — there is no delete, and no
-   * Leave).
+   * **Removing an agent is never refused**, so a room is never wedged: when
+   * this refuses the owner's own removal (a direct Leave — DOR-1233), the way
+   * through is to take an agent out first and leave afterwards, or to archive
+   * the room instead. There is still no delete (spec §12.4).
    *
    * @param roster - The roster as it will be AFTER the change.
    * @param what - What the caller was doing, for the refusal's own words.

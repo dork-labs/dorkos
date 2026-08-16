@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { BellOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
@@ -13,6 +14,7 @@ import {
   unmuteItem,
 } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
+import { useTeamRoster } from '@/layers/entities/team';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +33,7 @@ import {
   hasUnread,
   roomDisplayTitle,
   useArchiveRoom,
+  useLeaveRoom,
   useMarkRoomReadNow,
   useRenameRoom,
   useRoomWorking,
@@ -108,15 +111,28 @@ export function RoomRow({
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(room.title);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const [detailsFocus, setDetailsFocus] = useState<RoomDetailsFocus | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLButtonElement>(null);
   const committedRef = useRef(false);
+  const navigate = useNavigate();
 
   const markRead = useMarkRoomReadNow();
   const renameRoom = useRenameRoom();
   const archiveRoom = useArchiveRoom();
   const unarchiveRoom = useUnarchiveRoom();
+  const leaveRoom = useLeaveRoom();
+  /**
+   * Your own author id, as the team roster's `isSelf` row names it.
+   *
+   * A room's own read carries `viewerAuthorId` (`RoomWithRoster`), but the
+   * sidebar only ever reads the LIST shape, which does not — so this is the
+   * one place that answer is available without opening the room first. The
+   * roster is mounted app-wide (the account menu keeps it warm), so this is a
+   * shared cache hit rather than a fetch of its own.
+   */
+  const selfAuthorId = useTeamRoster().data?.members.find((member) => member.isSelf)?.id ?? null;
 
   // "Rename…" and "Edit topic…" both mount an editor that blur-commits, and the
   // launching menu closes in a SECOND commit whose focus restore would blur it
@@ -207,6 +223,39 @@ export function RoomRow({
     });
   };
 
+  /**
+   * Leave, and get out of the room's way if it is the one on screen.
+   *
+   * No per-call `onError` here either, and for the archive confirm's own
+   * reason: `meta.errorLabel` on {@link useLeaveRoom} ("Couldn't leave")
+   * reaches the mutation cache's own handler, which composes it with the
+   * server's own sentence — the ONLY place "two agents share this room, take
+   * one out first" is ever explained, so nothing here restates it.
+   *
+   * No Undo, unlike archive: there is no way to re-add a PERSON to a room's
+   * roster anywhere in the product, so offering one would be a button that
+   * does nothing. Getting back in takes a fresh invite.
+   */
+  const confirmLeave = () => {
+    setLeaveOpen(false);
+    // `canLeave` gates the menu item on this being non-null; a race between
+    // opening the confirm and the roster read landing is the only way it
+    // could still be null here, and closing quietly is the right answer to a
+    // click on a control that vanished under it.
+    if (selfAuthorId === null) return;
+    leaveRoom.mutate(
+      { roomId: room.id, authorId: selfAuthorId },
+      {
+        onSuccess: () => {
+          toast.success(`You left ${title}`);
+          // Only when this room is the one on screen: leaving from a row
+          // that is not open changes nothing about where the reader is.
+          if (isActive) void navigate({ to: '/channels', search: {} });
+        },
+      }
+    );
+  };
+
   const handleMarkRead = () => markRead.mutate(room.id);
 
   // Only a one-to-one names an unambiguous agent. `participants` is carried for
@@ -251,6 +300,7 @@ export function RoomRow({
     kind: room.kind,
     hasUnread: unread,
     soleAgentPath,
+    canLeave: selfAuthorId !== null,
     isMuted,
     currentGroupId,
     groups: moveTargetGroups,
@@ -265,6 +315,7 @@ export function RoomRow({
     onOpenAgentProfile,
     onRename: startRename,
     onEditTopic: () => setDetailsFocus('topic'),
+    onLeave: () => setLeaveOpen(true),
     onArchive: () => setArchiveOpen(true),
   };
 
@@ -367,6 +418,22 @@ export function RoomRow({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmArchive}>Archive</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={leaveOpen} onOpenChange={setLeaveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Leave {title}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You can still read what&rsquo;s here, but you won&rsquo;t be able to post again unless
+              someone adds you back.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmLeave}>Leave</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

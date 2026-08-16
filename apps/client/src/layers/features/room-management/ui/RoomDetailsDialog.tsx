@@ -57,9 +57,12 @@ interface RoomDetailsDialogProps {
  * menu, over a room you are already looking at.
  *
  * **Only agents are managed here.** The room's human member is the person
- * reading — there is no verb for them (spec §15.2), and removing yourself from
- * a room you created would make it invisible with no route back, which is the
- * same reason there is no "Leave".
+ * reading, so there is still no per-row verb for them in this roster — a
+ * "Remove yourself" button beside your own name would ask you to confirm
+ * something a menu already does. "Leave" DOES exist now (DOR-1233): it lives
+ * in the sidebar row's own menu, one level up from this sheet, which is where
+ * the person already goes to archive a room — the two destructive room-level
+ * acts share a door rather than this one growing a second.
  */
 export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetailsDialogProps) {
   const view = useRoomDetailsView(room.id, open);

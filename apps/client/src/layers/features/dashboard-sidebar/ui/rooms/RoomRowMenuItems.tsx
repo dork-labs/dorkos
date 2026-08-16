@@ -6,6 +6,7 @@ import {
   FolderInput,
   FolderMinus,
   FolderPlus,
+  LogOut,
   Pencil,
   Text,
   PanelRight,
@@ -45,6 +46,7 @@ export type RoomMenuActionId =
   | 'agent-profile'
   | 'rename'
   | 'topic'
+  | 'leave'
   | 'archive';
 
 /**
@@ -127,6 +129,14 @@ export interface RoomRowMenuModel {
    * Only a 1:1 names an unambiguous agent, so only a 1:1 offers its profile.
    */
   soleAgentPath: string | null;
+  /**
+   * Whether this viewer's own author id is known yet — what naming yourself
+   * as the member to remove takes. `false` only while the team roster is
+   * still loading, which is a beat on a cold sidebar; the item is withheld
+   * rather than offered and refused, the same way `soleAgentPath` withholds
+   * "Agent profile" instead of showing it disabled.
+   */
+  canLeave: boolean;
   /** Clear the unread badge without opening the room. */
   onMarkRead: () => void;
   /** Toggle this room's own mute state. */
@@ -145,6 +155,13 @@ export interface RoomRowMenuModel {
   onRename: () => void;
   /** Open the topic editor. */
   onEditTopic: () => void;
+  /**
+   * Ask to leave, which confirms first. The server refuses this while two
+   * agents still share the room and nobody is left to witness them
+   * (`OWNER_MUST_BE_PRESENT`, the three-way rule) — take one out first, or
+   * archive instead.
+   */
+  onLeave: () => void;
   /** Ask to archive, which confirms first. */
   onArchive: () => void;
 }
@@ -205,13 +222,21 @@ function buildMoveToGroupItems(model: RoomRowMenuModel): RoomRowMenuNode[] {
  * item definitions can be asserted directly and shared by every renderer.
  *
  * The order mirrors the agent row's: state first, then the things that open
- * something, then the destructive one on its own at the bottom.
+ * something, then the two destructive ones together at the bottom — **Leave**,
+ * then **Archive**.
  *
- * Two omissions are deliberate rather than pending. There is no **Leave**:
- * with a single human author, leaving a room you created makes it invisible
- * with no route back, and Archive is the honest verb for that intent. And there
- * is no **Pin**: rooms sort by recent activity and there are few of them, so pin
- * earns its place when the list is long enough to lose something in.
+ * **Leave and Archive are not the same verb wearing two names.** Leaving takes
+ * you off the roster and nothing else: the room keeps running for whoever and
+ * whatever is still on it, and the server refuses it outright
+ * (`OWNER_MUST_BE_PRESENT`) while it would strand two agents alone together —
+ * take one out first, or archive instead. Archiving is the room-wide "put this
+ * away": nothing on it is triggered any more, for anybody, and it is what an
+ * owner who created a room and wants it gone reaches for — reversible, unlike
+ * a delete this product has never offered (spec `rooms` §12.4).
+ *
+ * There is no **Pin**, and that omission is still deliberate: rooms sort by
+ * recent activity and there are few of them, so pin earns its place when the
+ * list is long enough to lose something in.
  *
  * **Mute is one concept, not a room-only copy of one.** It writes the room's
  * reference into the same `ui.sidebar.muted` list an agent writes its path into,
@@ -325,22 +350,35 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
     });
   }
 
-  nodes.push(
-    { kind: 'separator', id: 'sep-archive' },
-    {
+  nodes.push({ kind: 'separator', id: 'sep-destructive' });
+
+  // Withheld rather than shown disabled: see `RoomRowMenuModel.canLeave`.
+  if (model.canLeave) {
+    nodes.push({
       kind: 'action',
-      id: 'archive',
-      // Named like "Delete group" is: the verb plus the noun it acts on, so the
-      // item still reads correctly out of context.
-      label: isChannel ? 'Archive channel' : 'Archive conversation',
-      icon: Archive,
-      // A confirmation alert does not earn an ellipsis — the command IS complete
-      // when chosen; the alert only asks whether you meant it.
+      id: 'leave',
+      label: `Leave ${noun}`,
+      icon: LogOut,
+      // A confirmation alert, not an editor — same reasoning as Archive below.
       opensInput: false,
       destructive: true,
-      run: model.onArchive,
-    }
-  );
+      run: model.onLeave,
+    });
+  }
+
+  nodes.push({
+    kind: 'action',
+    id: 'archive',
+    // Named like "Delete group" is: the verb plus the noun it acts on, so the
+    // item still reads correctly out of context.
+    label: isChannel ? 'Archive channel' : 'Archive conversation',
+    icon: Archive,
+    // A confirmation alert does not earn an ellipsis — the command IS complete
+    // when chosen; the alert only asks whether you meant it.
+    opensInput: false,
+    destructive: true,
+    run: model.onArchive,
+  });
 
   return nodes;
 }

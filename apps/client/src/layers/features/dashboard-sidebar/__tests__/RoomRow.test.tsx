@@ -15,6 +15,11 @@ import { useRoomWorkingStore } from '@/layers/entities/room';
 import { RoomRow } from '../ui/rooms/RoomRow';
 import type { SidebarItemVisual } from '../model/sidebar-item';
 
+const mockNavigate = vi.fn();
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -116,6 +121,26 @@ function roomWithRoster() {
 /** Mesh answers with the paths RoomRow maps a 1:1's `agentRef` back onto. */
 const MESH_AGENTS = { agents: [{ projectPath: '/repo/ana' }, { projectPath: '/repo/bo' }] };
 
+/**
+ * A team roster whose one row is the viewer themselves — what `RoomRow` reads
+ * to learn its own author id before it can offer "Leave".
+ */
+function selfTeamRoster() {
+  return {
+    members: [
+      {
+        id: 'me',
+        kind: 'human' as const,
+        displayName: 'You',
+        handle: null,
+        isSelf: true,
+        ownerId: null,
+        origin: 'local' as const,
+      },
+    ],
+  };
+}
+
 function renderRow(
   room: RoomSummary,
   opts: {
@@ -125,6 +150,8 @@ function renderRow(
     visual?: SidebarItemVisual;
     /** Asked for the inline group-create editor, carrying this room's reference. */
     onRequestNewGroup?: (ref: SidebarItemRef) => void;
+    /** Whether this room is the one open on screen. Defaults to closed. */
+    isActive?: boolean;
   } = {}
 ) {
   // Mesh is always answered: the row maps a 1:1's `agentRef` back to a path
@@ -146,7 +173,7 @@ function renderRow(
     <RoomRow
       room={room}
       visual={opts.visual ?? { kind: 'sigil' }}
-      isActive={false}
+      isActive={opts.isActive ?? false}
       onSelect={vi.fn()}
       onOpenAgentProfile={opts.onOpenAgentProfile ?? vi.fn()}
       onRequestNewGroup={opts.onRequestNewGroup ?? vi.fn()}
@@ -466,6 +493,71 @@ describe('RoomRow archive', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(transport.updateRoom).not.toHaveBeenCalled();
+  });
+});
+
+describe('RoomRow leave', () => {
+  it('withholds Leave until this viewer’s own author id is known', async () => {
+    // The default mock transport answers the team roster with nobody on it, the
+    // same gap a cold sidebar has for a beat before the roster read lands.
+    renderRow(channel());
+    const menu = openDropdown();
+    await within(menu).findByText('Archive channel');
+    expect(itemLabels(menu)).not.toContain('Leave channel');
+  });
+
+  it('leaves nothing until the confirmation is accepted', async () => {
+    const transport = createMockTransport({
+      getTeamRoster: vi.fn().mockResolvedValue(selfTeamRoster()),
+    });
+    renderRow(channel(), { transport });
+    const menu = openDropdown();
+    fireEvent.click(await within(menu).findByText('Leave channel'));
+
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Leave #general?');
+    expect(transport.removeRoomMember).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
+    await waitFor(() => expect(transport.removeRoomMember).toHaveBeenCalledWith('room-1', 'me'));
+  });
+
+  it('leaves the room alone when the confirmation is refused', async () => {
+    const transport = createMockTransport({
+      getTeamRoster: vi.fn().mockResolvedValue(selfTeamRoster()),
+    });
+    renderRow(channel(), { transport });
+    const menu = openDropdown();
+    fireEvent.click(await within(menu).findByText('Leave channel'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(transport.removeRoomMember).not.toHaveBeenCalled();
+  });
+
+  it('navigates off the room once left, when it is the one open on screen', async () => {
+    const transport = createMockTransport({
+      getTeamRoster: vi.fn().mockResolvedValue(selfTeamRoster()),
+    });
+    renderRow(channel(), { transport, isActive: true });
+    const menu = openDropdown();
+    fireEvent.click(await within(menu).findByText('Leave channel'));
+    fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/channels', search: {} }));
+  });
+
+  it('stays put when the room being left is not the one open', async () => {
+    // Leaving from a row in the background changes the roster, not where the
+    // reader is — there is nothing on screen to navigate away from.
+    const transport = createMockTransport({
+      getTeamRoster: vi.fn().mockResolvedValue(selfTeamRoster()),
+    });
+    renderRow(channel(), { transport, isActive: false });
+    const menu = openDropdown();
+    fireEvent.click(await within(menu).findByText('Leave channel'));
+    fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
+
+    await waitFor(() => expect(transport.removeRoomMember).toHaveBeenCalled());
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
 

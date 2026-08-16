@@ -140,6 +140,45 @@ export function useRemoveRoomMember(): UseMutationResult<void, Error, RemoveRoom
   });
 }
 
+/** Which room to leave, naming yourself as the member coming off it. */
+export interface LeaveRoomInput {
+  /** The room being left. */
+  roomId: string;
+  /**
+   * Your own author id. Leaving is not a verb the server has a name for —
+   * `DELETE /:id/members/:authorId` with your own id as the target IS leaving
+   * — so the caller has to already know who "you" are on this install (the
+   * team roster's `isSelf` row answers that).
+   */
+  authorId: string;
+}
+
+/**
+ * Leave a room you belong to.
+ *
+ * The wire call is {@link useRemoveRoomMember}'s, verbatim, with your own id
+ * as the target — but it is its own mutation rather than a second caller of
+ * that hook. `meta.errorLabel` is fixed per mutation instance, and "Couldn't
+ * remove that agent" is not a sentence about yourself.
+ *
+ * **Refused while two agents still share the room and nobody would be left to
+ * witness them** — `OWNER_MUST_BE_PRESENT`, the three-way rule
+ * (ADR 260814-025326). Take one of them out first, or archive the room
+ * instead; the server's own sentence explains which, and the shared mutation
+ * toast is what shows it (`meta.errorLabel` composed with `error.message`).
+ */
+export function useLeaveRoom(): UseMutationResult<void, Error, LeaveRoomInput> {
+  const transport = useTransport();
+  const invalidate = useRosterInvalidation();
+
+  return useMutation({
+    mutationFn: ({ roomId, authorId }: LeaveRoomInput) =>
+      transport.removeRoomMember(roomId, authorId),
+    onSuccess: (_void, { roomId }) => invalidate(roomId),
+    meta: { errorLabel: "Couldn't leave" },
+  });
+}
+
 /** Which member's response mode to change, and to what. */
 export interface SetResponseModeInput {
   /** The room the override applies to. */

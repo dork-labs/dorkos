@@ -12,6 +12,7 @@ import type { ReactNode } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { toast as mockToast } from 'sonner';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import {
@@ -22,7 +23,7 @@ import {
 import { TransportProvider } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
 import { roomKeys } from '../api/query-keys';
-import { useSetMemberResponseMode } from '../model/use-room-members';
+import { useLeaveRoom, useSetMemberResponseMode } from '../model/use-room-members';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
@@ -72,6 +73,10 @@ function seededClient(): QueryClient {
   const client = new QueryClient(createQueryClientConfig());
   client.setQueryData(roomKeys.detail(ROOM_ID), ROSTER);
   client.setQueryData(roomKeys.entries(ROOM_ID), []);
+  // Seeded too, purely so `getQueryState(roomKeys.lists())` has a query to
+  // report on below — `invalidateQueries` marks nothing observable on a key
+  // that was never asked for.
+  client.setQueryData(roomKeys.lists(), []);
   return client;
 }
 
@@ -91,6 +96,7 @@ function cachedMode(client: QueryClient, authorId: string): string | undefined {
 }
 
 afterEach(cleanup);
+afterEach(() => vi.clearAllMocks());
 
 describe('useSetMemberResponseMode', () => {
   it('moves the member to the new mode before the server has answered', async () => {
@@ -190,5 +196,59 @@ describe('useSetMemberResponseMode', () => {
       expect(client.getQueryState(roomKeys.detail(ROOM_ID))?.isInvalidated).toBe(true)
     );
     expect(client.getQueryState(roomKeys.entries(ROOM_ID))?.isInvalidated).toBe(false);
+  });
+});
+
+describe('useLeaveRoom', () => {
+  it('calls the same wire route as removing a member, naming the caller as the target', async () => {
+    const client = seededClient();
+    const transport = createMockTransport({
+      removeRoomMember: vi.fn().mockResolvedValue(undefined),
+    });
+    const { result } = renderHook(() => useLeaveRoom(), { wrapper: wrapperFor(transport, client) });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(transport.removeRoomMember).toHaveBeenCalledWith(ROOM_ID, 'me');
+  });
+
+  it('refreshes the room list and the room detail on success, never the history', async () => {
+    const client = seededClient();
+    const transport = createMockTransport({
+      removeRoomMember: vi.fn().mockResolvedValue(undefined),
+    });
+    const { result } = renderHook(() => useLeaveRoom(), { wrapper: wrapperFor(transport, client) });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
+
+    await waitFor(() =>
+      expect(client.getQueryState(roomKeys.detail(ROOM_ID))?.isInvalidated).toBe(true)
+    );
+    expect(client.getQueryState(roomKeys.lists())?.isInvalidated).toBe(true);
+    expect(client.getQueryState(roomKeys.entries(ROOM_ID))?.isInvalidated).toBe(false);
+  });
+
+  it('shows the server’s own reason a leave was refused, not a generic failure', async () => {
+    // Through the REAL mutation cache (`createQueryClientConfig`), which is
+    // what actually composes `meta.errorLabel` with the server's sentence —
+    // proof this reads the wire message, not an assumption that it would.
+    const client = seededClient();
+    const transport = createMockTransport({
+      removeRoomMember: vi
+        .fn()
+        .mockRejectedValue(
+          new Error('Two agents share this room — take one of them out before you leave it')
+        ),
+    });
+    const { result } = renderHook(() => useLeaveRoom(), { wrapper: wrapperFor(transport, client) });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(mockToast.error).toHaveBeenCalledWith(
+      "Couldn't leave — Two agents share this room — take one of them out before you leave it",
+      expect.anything()
+    );
   });
 });
