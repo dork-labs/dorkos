@@ -23,7 +23,12 @@ import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
-import type { RoomTurnRequest, RoomTurnResult, RoomTurnWaiting } from '../room-trigger.js';
+import type {
+  LateRoomReply,
+  RoomTurnRequest,
+  RoomTurnResult,
+  RoomTurnWaiting,
+} from '../room-trigger.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -71,10 +76,17 @@ interface GatedRunner extends ScriptedTurnRunner {
  *   runtime does when the interrupt loses its race with a model that had all but
  *   finished (DOR-1232, measured 2026-08-15) — `interrupt` is delivered, and the
  *   stream closes a moment later carrying the complete answer.
+ * @param opts.answersLate - Whether every turn outruns the room's WAIT: `run`
+ *   returns at once with `{ text: null, late }`, the way the real runner reports
+ *   the deadline passing, and the answer arrives on the `late` promise whenever
+ *   the test lands it. It is the only way to reach `deliverLate`, which is a
+ *   whole delivery path with its own claim release — and the one a Stop pressed
+ *   during the late window has to reach.
  */
 function gatedRunner({
   interruptEndsTurn = true,
   interruptedTurnStillAnswers = false,
+  answersLate = false,
 } = {}): GatedRunner {
   const turns: ScriptedTurnRunner['turns'] = [];
   const interrupted: ScriptedTurnRunner['interrupted'] = [];
@@ -116,21 +128,39 @@ function gatedRunner({
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
-      return new Promise<RoomTurnResult>((resolve) => {
+      const sessionId = request.sessionId ?? 'session-1';
+      // What a stopped turn hands back. Nothing, for a runtime that dropped what
+      // it was saying — but `interruptedTurnStillAnswers` models the one that
+      // measurably does not: the interrupt is delivered and the stream still
+      // closes with the whole answer in it. The room has to throw that away
+      // either way (DOR-1232), which is what makes the second shape worth having
+      // a fake for.
+      const stoppedText = interruptedTurnStillAnswers ? 'on it' : null;
+      /** Park this turn's two endings where the test's levers can reach them. */
+      const park = (finish: () => void, stop: () => void): void => {
         const queued = held.get(request.authorId) ?? [];
-        const sessionId = request.sessionId ?? 'session-1';
-        queued.push({
-          request,
-          finish: () => resolve({ sessionId, text: 'on it' }),
-          // What a stopped turn hands back. Nothing, for a runtime that dropped
-          // what it was saying — but `interruptedTurnStillAnswers` models the
-          // one that measurably does not: the interrupt is delivered and the
-          // stream still closes with the whole answer in it. The room has to
-          // throw that away either way (DOR-1232), which is what makes the
-          // second shape worth having a fake for.
-          stop: () => resolve({ sessionId, text: interruptedTurnStillAnswers ? 'on it' : null }),
-        });
+        queued.push({ request, finish, stop });
         held.set(request.authorId, queued);
+      };
+      if (answersLate) {
+        // The room stopped WAITING and the turn did not stop: `run` resolves now
+        // with no text, and the answer lands on `late` when the test says so.
+        return Promise.resolve({
+          sessionId,
+          text: null,
+          late: new Promise<LateRoomReply>((resolve) => {
+            park(
+              () => resolve({ text: 'on it', waitedMs: 1 }),
+              () => resolve({ text: stoppedText, waitedMs: 1 })
+            );
+          }),
+        });
+      }
+      return new Promise<RoomTurnResult>((resolve) => {
+        park(
+          () => resolve({ sessionId, text: 'on it' }),
+          () => resolve({ sessionId, text: stoppedText })
+        );
       });
     },
     holdsFor(authorId) {
@@ -171,8 +201,17 @@ describe('a room says when a turn has stopped', () => {
     return log(roomId).filter((entry) => entry.kind === 'notice');
   }
 
+  /** Just what the AGENTS said — what a halt has to leave empty. */
+  function agentPosts(roomId = room.id): RoomEntry[] {
+    return log(roomId).filter((entry) => entry.kind === 'post' && entry.authorId !== human);
+  }
+
   beforeEach(() => {
-    runner = gatedRunner();
+    // **The answering runtime is this file's default, because it is the one the
+    // product has.** A fake that hands back nothing when interrupted models a
+    // runtime that obeys, and every halt assertion written against it passes
+    // whether or not the room does its own half of the job (DOR-1232).
+    runner = gatedRunner({ interruptedTurnStillAnswers: true });
     ({ service, authors, human } = createRoomHarness({ agents, runner }));
     room = service.createRoom(
       { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
@@ -345,6 +384,11 @@ describe('a room says when a turn has stopped', () => {
         '/agents/ana',
         '/agents/bo',
       ]);
+      // **Two agents stopped, two answers thrown away, one line.** The runner
+      // here is the answering one, so both interrupted turns came back with
+      // their text — the count of notices alone would pass with both of those
+      // posted underneath it.
+      expect(agentPosts()).toHaveLength(0);
       // One line for the whole room, not one per agent.
       const halted = notices().filter((entry) => entry.body.notice === 'halted');
       expect(halted).toHaveLength(1);
@@ -535,6 +579,95 @@ describe('a room says when a turn has stopped', () => {
       expect(room.answers()).toHaveLength(0);
       expect(room.entries().filter((entry) => entry.body.notice === 'halted')).toHaveLength(1);
       expect(room.wired.service.listRooms(room.wired.human, {})[0].working).toBe(0);
+    });
+
+    it('throws away an answer the room was already waiting LATE for', async () => {
+      // **The other delivery path, and it had no halt coverage at all.** A turn
+      // that outruns `rooms.replyWaitMinutes` stops being delivered by the frame
+      // that started it: the room keeps the claim, flips it to `working_late`,
+      // and hands the answer to `deliverLate` whenever it lands — which for the
+      // shipped ceiling can be an hour later. Stop pressed anywhere in that hour
+      // has to reach it, and the mark is the only thing that can, because
+      // `runOne` returned long ago.
+      const late = gatedRunner({ answersLate: true, interruptEndsTurn: false });
+      const room = await roomMidTurn(late);
+
+      // The room is showing this agent as working LATE — the state the late
+      // delivery path is defined by, and the one the halt has to survive.
+      expect(room.wired.service.listRooms(room.wired.human, {})[0].working).toBe(1);
+      expect(await room.wired.service.haltRoom(room.roomId, room.wired.human)).toBe(1);
+      // Long afterwards, the runtime finally comes back with the whole answer.
+      late.release(room.agent);
+      await room.wired.service.triggersIdle();
+
+      expect(room.answers()).toHaveLength(0);
+      expect(room.entries().filter((entry) => entry.kind === 'notice')).toHaveLength(1);
+      expect(room.entries().filter((entry) => entry.body.notice === 'halted')).toHaveLength(1);
+      expect(room.wired.service.listRooms(room.wired.human, {})[0].working).toBe(0);
+    });
+
+    it('does not let a stopped turn release the claim of the turn that replaced it', async () => {
+      // **A claim key is `(room, agent)`; a turn is a DISPATCH — and a halt is
+      // the one thing that pulls them apart.** Stop drops the claim, the person
+      // types again, the next turn claims the same key, and then the stopped
+      // turn's runtime finally returns and its `finally` releases whatever it
+      // finds there. Unguarded, that is somebody else's live turn: the room
+      // shows nobody working while an agent is mid-answer, the one-turn-per-
+      // `(room, agent)` ceiling is gone, and the message after that starts a
+      // SECOND concurrent turn in the same working tree — the contention DOR-500
+      // measured. Reproduced on `main` before this guard existed.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const room = await roomMidTurn(stubborn);
+      await room.wired.service.haltRoom(room.roomId, room.wired.human);
+
+      // The follow-up, which claims the same key while the stopped turn is still
+      // out there. Waited for by TURN COUNT rather than by "somebody is mid-turn"
+      // — the stopped turn is still being held, so the latter is already true and
+      // would wait for nothing.
+      room.wired.service.post(room.roomId, {
+        authorId: room.wired.human,
+        text: '@ana never mind — just the summary, please',
+      });
+      await settleUntil(() => stubborn.turns.length === 2, 'the follow-up to become a turn');
+      expect(stubborn.holdsFor(room.agent)).toBe(2);
+
+      // NOW the stopped turn comes back. `release` lands the OLDEST held turn,
+      // which is the halted one.
+      stubborn.release(room.agent);
+      await settleUntil(
+        () => stubborn.holdsFor(room.agent) === 1,
+        'the stopped turn to finish and leave the live one holding'
+      );
+
+      // The live turn still holds its claim, and the room still says so.
+      expect(room.wired.service.listRooms(room.wired.human, {})[0].working).toBe(1);
+      // And it is still the only turn. A third message is HELD behind it (RP8
+      // parks a message for an agent working here) rather than starting a second
+      // one beside it — which is the ceiling itself, observable: with the claim
+      // stolen, this message would find the agent idle and run concurrently.
+      room.wired.service.post(room.roomId, {
+        authorId: room.wired.human,
+        text: '@ana one more thing',
+      });
+      await settleUntil(
+        () => room.entries().some((entry) => entry.body.text === '@ana one more thing'),
+        'the third message to land'
+      );
+      expect(stubborn.turns).toHaveLength(2);
+      expect(stubborn.holdsFor(room.agent)).toBe(1);
+
+      // The live turn's own terminal releases normally — it answers, and the
+      // parked message becomes its own turn rather than being lost.
+      stubborn.release(room.agent);
+      await settleUntil(
+        () => stubborn.turns.length === 3,
+        'the parked message to run once the claim was free'
+      );
+      expect(room.answers()).toHaveLength(1);
+      stubborn.release(room.agent);
+      await room.wired.service.triggersIdle();
+      expect(room.wired.service.listRooms(room.wired.human, {})[0].working).toBe(0);
+      expect(room.answers()).toHaveLength(2);
     });
 
     it('leaves the room able to answer the very next message', async () => {

@@ -152,13 +152,29 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   halt marks every dispatch it drops (`RoomTriggerDispatcher.haltedTurns`,
   synchronously, before its first `await`), and every delivery path — the
   in-frame one, the late one, the aside — throws that turn's answer away when it
-  lands. It throws the NOTICES away too: the `halted` line is the whole story,
-  and a `turn_failed` under it is the room apologising for obeying. The mark is
-  keyed by dispatch and not by `(room, agent)`, because the claim is already
-  gone by then and the next turn for that pair is a different dispatch that Stop
-  said nothing about. What is NOT discarded is the spend — a turn that ran a
-  model has spent, and `tryReserve` still has no counterpart — nor the turn's
-  own session transcript, where a person can still read what it was saying.
+  lands. It throws the NOTICES away too — both the writes and the RE-ARM:
+  the `halted` line is the whole story, a `turn_failed` under it is the room
+  apologising for obeying, and `notices.recovered` must not fire either, because
+  that means "this agent answered, so whatever was blocking it is over" and a
+  turn nobody let finish is evidence of nothing. The mark is keyed by dispatch
+  and not by `(room, agent)`, because the claim is already gone by then and the
+  next turn for that pair is a different dispatch that Stop said nothing about.
+  What is NOT discarded is the spend — a turn that ran a model has spent, and
+  `tryReserve` still has no counterpart — nor the turn's own session transcript,
+  where a person can still read what it was saying.
+  **A turn releases its OWN claim, never whatever holds the key.** The claim map
+  is keyed `(room, agent)` and a turn is a dispatch, and a halt is the one thing
+  that pulls the two apart: Stop drops the claim, the next message claims the
+  same key, and the stopped turn's runtime comes back minutes later still
+  believing the claim is its to release. So both turn terminals go through
+  `releaseOwnClaim`, which releases only while the holder's `dispatchId` is
+  still theirs; only `halt` itself releases by key, because it is stopping
+  whoever holds it rather than finishing a turn. Unguarded, a halt plus one
+  follow-up left the room showing nobody working while an agent was mid-answer,
+  dropped the one-transcript-per-`(room, agent)` ceiling, and let the next
+  message start a second concurrent turn in the same working tree — the
+  contention DOR-500 measured — while the dispatch log closed out the live turn
+  under the dead turn's outcome.
 - **A refusal is visible, and so is a turn that has stopped.** A dropped trigger
   that writes no room entry is indistinguishable from a broken agent, and the
   person who notices is not the person who configured it. If you add a path that
