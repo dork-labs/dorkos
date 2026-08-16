@@ -91,6 +91,7 @@ export {
   directMessageTitle,
   authorColor,
   hasUnread,
+  isRoomMember,
   platformLabel,
 } from './lib/room-display';
 export { roomIdentityMark, identityMarkFaces, rosterAgentFaces } from './lib/identity-mark';

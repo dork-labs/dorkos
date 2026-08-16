@@ -13,6 +13,7 @@ function model(overrides: Partial<RoomRowMenuModel> = {}): RoomRowMenuModel {
     currentGroupId: null,
     groups: [],
     soleAgentPath: null,
+    isOneToOne: false,
     canLeave: true,
     isSystemRoom: false,
     isMember: true,
@@ -89,7 +90,7 @@ describe('buildRoomRowMenuNodes', () => {
 
   it('offers Agent profile on a one-to-one, where exactly one agent is named', () => {
     // No 'leave' here: a 1:1's own gate withholds it — see the DM test below.
-    expect(ids({ kind: 'dm', soleAgentPath: '/repo/ana' })).toEqual([
+    expect(ids({ kind: 'dm', soleAgentPath: '/repo/ana', isOneToOne: true })).toEqual([
       'mute',
       'move-to-group',
       'sep-organize',
@@ -153,10 +154,31 @@ describe('buildRoomRowMenuNodes', () => {
   });
 
   it('offers neither Leave nor Rejoin on a 1:1 DM — leaving one strands the agent alone', () => {
-    expect(ids({ kind: 'dm', soleAgentPath: '/repo/ana' })).not.toContain('leave');
-    expect(ids({ kind: 'dm', soleAgentPath: '/repo/ana', isMember: false })).not.toContain(
-      'rejoin'
+    expect(ids({ kind: 'dm', isOneToOne: true, soleAgentPath: '/repo/ana' })).not.toContain(
+      'leave'
     );
+    expect(
+      ids({ kind: 'dm', isOneToOne: true, soleAgentPath: '/repo/ana', isMember: false })
+    ).not.toContain('rejoin');
+  });
+
+  it('still withholds Leave on a 1:1 whose sole agent has left the mesh', () => {
+    // `soleAgentPath` reads `null` for THREE different reasons: not a 1:1,
+    // the fleet has not answered yet, or the one agent departed — and only
+    // the first of those means "not a 1:1." The gate has to read
+    // `isOneToOne` instead, or a DM whose agent left the mesh would offer
+    // Leave — the exact shape leaving strands (one agent, no human), and the
+    // one a probe on this fixture caught before the fix.
+    expect(ids({ kind: 'dm', isOneToOne: true, soleAgentPath: null })).not.toContain('leave');
+  });
+
+  it('offers Leave on a group DM — the 1:1 gate is about names-one-agent, not "is a DM"', () => {
+    // `isOneToOne: false` (the default) with `kind: 'dm'` is a group DM: two
+    // or more agents, which the three-way rule already refuses to let the
+    // owner leave once it holds two agents — but the MENU gate is about
+    // whether there is a "back" to offer, not about the three-way rule, so
+    // it must not withhold Leave from every DM indiscriminately.
+    expect(ids({ kind: 'dm' })).toContain('leave');
   });
 
   it('names the room in the leave label, same as archive, so it reads out of context', () => {

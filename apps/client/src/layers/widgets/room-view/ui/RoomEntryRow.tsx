@@ -77,6 +77,15 @@ interface RoomEntryRowProps {
    * control that says it cannot be used (design record §4).
    */
   streamStalled?: boolean;
+  /**
+   * Whether the viewer is on this room's roster right now. Reactions go with
+   * the composer for this reason too (DOR-1233): the owner sees every room
+   * on the install whether or not they are a member of it, and a reaction on
+   * one they left refuses the identical `MEMBER_NOT_FOUND` a post does.
+   * Defaults `true` so a caller that has not resolved membership yet — none
+   * does today — still gets a live row rather than a silently dead one.
+   */
+  isMember?: boolean;
   /** Where this entry sits in its author group. */
   grouping: MessageGrouping;
   /**
@@ -153,6 +162,7 @@ export function RoomEntryRow({
   authorNames,
   reactionFrequents,
   streamStalled,
+  isMember = true,
   grouping,
   orphanedReply,
   feedPosition,
@@ -198,6 +208,7 @@ export function RoomEntryRow({
     viewerAuthorId,
     reactionFrequents,
     streamStalled,
+    isMember,
   });
   const handleKeyDown = useEntryRowKeys({
     barRef,
@@ -335,9 +346,16 @@ export function RoomEntryRow({
             names={authorNames}
             frequents={reactionFrequents}
             onToggle={toggle}
-            disabled={streamStalled}
+            disabled={streamStalled === true || !isMember}
             onExit={() => rowRef.current?.focus()}
           />
+          {/* "Reply in thread" stays offered even here: it only opens the
+              thread panel, and that panel's own composer is the SAME
+              `RoomComposer` the room's own composer is — it already refuses
+              to post once `isMember` is false (DOR-1233), so a room you left
+              cannot be replied into through this door either. "Copy text"
+              reads the message, not the room, so membership is not its
+              business at all. */}
           <RoomEntryActions
             actions={actions}
             reactions={quickRow}

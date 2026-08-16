@@ -308,6 +308,16 @@ export function RoomRow({
       ? null
       : (meshAgents.find((a) => agentAuthorRef(a.projectPath) === soleAgentRef)?.projectPath ??
         null);
+  /**
+   * Whether this room IS a 1:1 — `soleAgentRef !== undefined`, decided
+   * straight from `room.participants` above and never from mesh resolution.
+   * Deliberately a DIFFERENT question than `soleAgentPath`'s: that answer is
+   * also `null` while the fleet has not loaded yet and once the agent has
+   * left the mesh, and the Leave/Rejoin gate below must not read either of
+   * those as "not a 1:1" — a DM whose one agent left the mesh is still
+   * exactly the room shape leaving strands.
+   */
+  const isOneToOne = soleAgentRef !== undefined;
 
   /**
    * `room.wellKnown` on the wire — `'team'` for #team, `null`/absent for
@@ -350,6 +360,7 @@ export function RoomRow({
     kind: room.kind,
     hasUnread: unread,
     soleAgentPath,
+    isOneToOne,
     canLeave: selfAuthorId !== null,
     isSystemRoom,
     isMember,

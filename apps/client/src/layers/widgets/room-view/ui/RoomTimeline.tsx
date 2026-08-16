@@ -4,7 +4,7 @@ import { buildTimelineRows, unreadPlacement } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
 import { Button, Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
-import { usePendingPosts } from '@/layers/entities/room';
+import { isRoomMember, usePendingPosts } from '@/layers/entities/room';
 import { DayDivider, UnreadDivider } from '@/layers/features/chat';
 import { authorsById, entryRowId, groupByThread, toMessageAuthor } from '../lib/room-timeline';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
@@ -147,6 +147,10 @@ export function RoomTimeline({
   onOpenThread,
 }: RoomTimelineProps) {
   const authors = useMemo(() => authorsById(members), [members]);
+  // Reactions go with the composer (DOR-1233): a room the operator sees but
+  // is not a member of refuses a reaction the same `MEMBER_NOT_FOUND` way it
+  // refuses a post, so the pills on every row here have to know it too.
+  const isMember = isRoomMember(members, viewerAuthorId);
   // The fleet, read once for the whole feed: `info` is what a mention pill's
   // hover card reads, `faces` is what each message's disc wears. Both come from
   // the same pass, so an agent cannot be one face in the gutter and another in
@@ -252,6 +256,7 @@ export function RoomTimeline({
                 authorNames={authorNames}
                 reactionFrequents={reactionFrequents}
                 streamStalled={streamStalled}
+                isMember={isMember}
                 grouping={row.grouping}
                 orphanedReply={orphaned.has(entry.id)}
                 // Where the row sits, counted over the room's own flow — a

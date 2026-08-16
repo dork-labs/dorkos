@@ -13,6 +13,7 @@ import { toast as mockToast } from 'sonner';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { useRoomWorkingStore } from '@/layers/entities/room';
+import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 import { RoomRow } from '../ui/rooms/RoomRow';
 import type { SidebarItemVisual } from '../model/sidebar-item';
 
@@ -156,6 +157,17 @@ function renderRow(
     onRequestNewGroup?: (ref: SidebarItemRef) => void;
     /** Whether this room is the one open on screen. Defaults to closed. */
     isActive?: boolean;
+    /**
+     * Pre-seed the team roster cache with {@link selfTeamRoster} before the
+     * first render, so `canLeave` is `true` from the very first paint instead
+     * of racing the roster's own fetch. A test asserting what a room's OWN
+     * shape withholds (a 1:1, #team) needs this — otherwise "no Leave" is
+     * true for the wrong reason (the roster has not answered yet) and stays
+     * true even if the room-shape gate is deleted, which a
+     * `findByText('Archive channel')` wait does not catch: that label is on
+     * screen from the first tick, roster or no roster.
+     */
+    selfKnownFromStart?: boolean;
   } = {}
 ) {
   // Mesh is always answered: the row maps a 1:1's `agentRef` back to a path
@@ -166,6 +178,9 @@ function renderRow(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
+  if (opts.selfKnownFromStart === true) {
+    queryClient.setQueryData([...TEAM_ROSTER_KEY], selfTeamRoster());
+  }
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
@@ -512,13 +527,33 @@ describe('RoomRow leave', () => {
     expect(itemLabels(menu)).not.toContain('Leave channel');
   });
 
-  it('withholds Leave from #team — the server refuses it outright, so the menu never offers it', async () => {
-    const transport = createMockTransport({
-      getTeamRoster: vi.fn().mockResolvedValue(selfTeamRoster()),
-    });
-    renderRow(channel({ wellKnown: 'team' }), { transport });
+  it('withholds Leave from #team — the server refuses it outright, so the menu never offers it', () => {
+    // `selfKnownFromStart` matters here specifically: `findByText('Archive
+    // channel')` alone proves nothing, because that label is on screen from
+    // the first tick whether or not the roster has answered — this test
+    // used to pass with `isSystemRoom` inverted, because "no Leave" was true
+    // for the LOADING reason (`canLeave: false`) rather than the room-shape
+    // one. Pre-seeding the roster removes that race: `canLeave` is `true`
+    // from the first render, so what is left withholding Leave can only be
+    // `isSystemRoom`.
+    renderRow(channel({ wellKnown: 'team' }), { selfKnownFromStart: true });
     const menu = openDropdown();
-    await within(menu).findByText('Archive channel');
+    expect(itemLabels(menu)).not.toContain('Leave channel');
+    expect(itemLabels(menu)).not.toContain('Rejoin channel');
+  });
+
+  it('withholds Leave on a 1:1 whose agent the fleet no longer knows — still a 1:1', async () => {
+    // `oneToOne('/repo/departed')` is the same fixture the "Agent profile"
+    // test next door uses: the DM names exactly one agent, but its
+    // `agentRef` matches nothing in `MESH_AGENTS`, so `soleAgentPath`
+    // resolves to `null` — the same `null` a channel or an unresolved DM
+    // reads. Leaving must not read that as "not a 1:1": the room is still
+    // one agent and no human, exactly what leaving would strand.
+    renderRow(oneToOne('/repo/departed'), { selfKnownFromStart: true });
+    const menu = openDropdown('Ana actions');
+    // Waits for the same signal the fleet-resolution test does, so this is
+    // an absence asserted after mesh resolution lands, not before it.
+    await within(menu).findByText('Members…');
     expect(itemLabels(menu)).not.toContain('Leave channel');
     expect(itemLabels(menu)).not.toContain('Rejoin channel');
   });

@@ -113,7 +113,8 @@ function file(overrides: Partial<RoomAttachment> = {}): RoomAttachment {
 function rowElement(
   target: RoomEntry,
   streamStalled?: boolean,
-  grouping: MessageGrouping = { position: 'only' }
+  grouping: MessageGrouping = { position: 'only' },
+  isMember?: boolean
 ) {
   return (
     <RoomEntryRow
@@ -133,19 +134,25 @@ function rowElement(
       reactionFrequents={FREQUENTS}
       streamStalled={streamStalled}
       grouping={grouping}
+      isMember={isMember}
     />
   );
 }
 
 function renderRow(
   target: RoomEntry = entry(),
-  options: { transport?: Transport; streamStalled?: boolean; grouping?: MessageGrouping } = {}
+  options: {
+    transport?: Transport;
+    streamStalled?: boolean;
+    grouping?: MessageGrouping;
+    isMember?: boolean;
+  } = {}
 ) {
   const transport = options.transport ?? createMockTransport();
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(rowElement(target, options.streamStalled, options.grouping), {
+  return render(rowElement(target, options.streamStalled, options.grouping, options.isMember), {
     wrapper: ({ children }) => (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>
@@ -697,6 +704,27 @@ describe('RoomEntryRow — the pills under a message', () => {
     expect(screen.getByTestId('entry-reaction')).toBeDisabled();
     expect(screen.getByTestId('entry-reactions-add')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'React with thumbsup' })).toBeDisabled();
+  });
+
+  it('stops offering reactions in a room you left — same refusal a post gets', () => {
+    // DOR-1233: the owner sees every room on the install whether or not they
+    // are on its roster, and a reaction on one they left refuses the
+    // identical `MEMBER_NOT_FOUND` a post does — same reasoning as the
+    // stream-stalled case above, different cause.
+    renderRow(entry({ reactions: [pill('👍', ['ana'])] }), { isMember: false });
+
+    expect(screen.getByTestId('entry-reaction')).toBeDisabled();
+    expect(screen.getByTestId('entry-reactions-add')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'React with thumbsup' })).toBeDisabled();
+  });
+
+  it('offers reactions normally once membership is not in question', () => {
+    // The default (`isMember` omitted) has to keep meaning "yes" — no caller
+    // resolves membership before this row exists today, so an `undefined`
+    // read as "unknown, so disable" would silently mute reactions everywhere.
+    renderRow(entry({ reactions: [pill('👍', ['ana'])] }));
+
+    expect(screen.getByTestId('entry-reaction')).not.toBeDisabled();
   });
 });
 

@@ -16,6 +16,7 @@ import {
 } from '@/layers/features/mentions';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import {
+  isRoomMember,
   newPendingId,
   roomDisplayTitle,
   threadDraftKey,
@@ -142,7 +143,7 @@ export function RoomComposer({
    * this screen (`viewerAuthorId` is resolved per request, unlike the team
    * roster's `isSelf`), so there is nothing to fetch for it.
    */
-  const isMember = room.members.some((member) => member.author.id === room.viewerAuthorId);
+  const isMember = isRoomMember(room.members, room.viewerAuthorId);
   /**
    * Whether a send is currently waiting for its files to reach the server.
    *

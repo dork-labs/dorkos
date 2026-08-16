@@ -132,6 +132,20 @@ export interface RoomRowMenuModel {
    */
   soleAgentPath: string | null;
   /**
+   * Whether this room IS a 1:1 — decided from the DM's own participants, and
+   * deliberately NOT from `soleAgentPath === null`. That check conflates
+   * three different facts into one `null`: not a 1:1, the fleet has not
+   * resolved a path yet, or the one agent left the mesh entirely — and the
+   * last two are loading/degraded states, not "not a 1:1." A DM whose sole
+   * agent left the mesh is still exactly the room shape Leave has to refuse:
+   * one agent, no human, and re-opening a DM with that same member set mints
+   * a SECOND room rather than reopening this one — `findDmByMemberSet`
+   * (`room-store.ts`) needs an EXACT set match, and `{owner, agent}` matches
+   * nothing once the owner has left, so `createRoom` mints fresh
+   * (`room-service.ts`).
+   */
+  isOneToOne: boolean;
+  /**
    * Whether this viewer's own author id is known yet — what naming yourself
    * as the member to remove takes.
    *
@@ -392,17 +406,20 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
   // disabled, all documented on the model: the viewer's own id is not known
   // yet (`canLeave`), this is #team or another room DorkOS depends on
   // (`isSystemRoom`), or it is a 1:1 DM — leaving one strands the agent with
-  // no human in it and re-opening a DM with the same member set reopens the
-  // SAME room (`createRoom`'s idempotency), so there is no "back" to offer.
-  // The last of those is `soleAgentPath !== null`, the exact fact
-  // "Agent profile" below is gated on — a 1:1 is the one DM shape that names
-  // an unambiguous single agent, and it is also the one shape this refuses.
+  // no human in it, and re-opening a DM with the same member set mints a
+  // SECOND room rather than reopening this one (`findDmByMemberSet` needs an
+  // exact match, and `{owner, agent}` no longer matches anything once the
+  // owner has left), so there is no honest "back" to offer. The last of
+  // those is `isOneToOne`, decided from the room's own participants —
+  // deliberately NOT `soleAgentPath === null`, which is also true while the
+  // fleet is still loading or once the agent has left the mesh, neither of
+  // which makes this any less the room shape Leave has to refuse.
   //
   // ONE slot, not two, once the gate above passes: `isMember` decides which
   // verb it shows. Leaving offers Rejoin in its place rather than nothing,
   // and a room you already left never shows a Leave you would only get
   // refused for having no membership to take yourself off of.
-  if (model.canLeave && !model.isSystemRoom && model.soleAgentPath === null) {
+  if (model.canLeave && !model.isSystemRoom && !model.isOneToOne) {
     if (model.isMember) {
       nodes.push({
         kind: 'action',
