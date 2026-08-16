@@ -120,7 +120,12 @@ export async function sessionUiActionHandler(req: Request, res: Response): Promi
     const holder = result.refusedBy;
     logger.warn('[POST /ui-action] session busy', {
       sessionId,
-      lockedBy: holder?.clientId ?? 'unknown',
+      heldBy: holder?.clientId ?? 'unknown',
+      // Usually the clicker's own tab: a person clicking a button in a reply
+      // while the agent is working on the NEXT turn is the ordinary shape of
+      // this refusal, not a cross-window conflict. Worth saying, so the line
+      // does not read as a session locked against itself by mistake.
+      ownTurn: holder?.clientId === clientId,
     });
     res.status(409).json({
       error: 'Session locked',

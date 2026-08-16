@@ -80,6 +80,11 @@
  * the message has no value later, and leaving it behind would put a prompt
  * nobody typed into somebody's composer for good.
  *
+ * The same promise, made earlier, is why such a caller accepted while a FINISHED
+ * turn is still closing its stream (DOR-1239) gets no row in the first place: it
+ * waits in {@link pending} alone and is dropped rather than deferred if it cannot
+ * run. See {@link DispatchPlan.transient}.
+ *
  * {@link SessionTurnQueue} (DOR-1088) is kept, underneath: it is the
  * intra-process ordering primitive inside `triggerTurn` and this does not
  * replace it. What changed is that no HTTP request waits on it.
@@ -582,7 +587,9 @@ export interface DispatchMessageOpts {
    *   behalf (an MCP sign-in resume, a UI action), where the reason it was sent
    *   may not survive the wait and firing it late is worse than not firing it.
    *   Once the turn has ENDED there is nothing to fire late into, so the message
-   *   is accepted and runs as the stream finishes closing.
+   *   is accepted and runs as the stream finishes closing — with no queue row
+   *   behind it, and dropped rather than deferred if that stream outlasts the
+   *   wait bound ({@link DispatchPlan.transient}).
    * - `'refuse-foreign'` — refuse a turn ANOTHER client opened, and wait behind
    *   one of the caller's own. For a caller that already sequences its own turns
    *   and only needs protecting from a stranger; see {@link WhenBusy}.
@@ -624,9 +631,10 @@ export interface MessageDispatchResult extends TriggerTurnResult {
   outcome: MessageDeliveryOutcome;
   /**
    * Where the message sat in its session's queue at acceptance, 1-based.
-   * `1` means it was the head — nothing was ahead of it. `0` means it was never
-   * queued at all: either a refusal, or a steer/stage that landed natively
-   * through the degradation ladder without becoming a queue row.
+   * `1` means it was the head — nothing was ahead of it. `0` means it is on no
+   * queue at all: a refusal, a steer/stage that landed natively through the
+   * degradation ladder, or a {@link DispatchPlan.transient} wait — which is
+   * accepted (`queued: true`) but deliberately rowless.
    */
   queuePosition: number;
   /**
@@ -693,6 +701,41 @@ interface DispatchPlan {
    * above).
    */
   answered: boolean;
+  /**
+   * This message waits with NO durable row, and is dropped rather than deferred
+   * the moment it cannot run — fast, or never.
+   *
+   * True for exactly one shape: a blanket-`'refuse'` caller accepted while the
+   * session's slot is still held by a turn that has ALREADY ENDED (the drain
+   * window, DOR-1239). It is waiting out a stream that is closing, not queueing
+   * behind work.
+   *
+   * **`'refuse-foreign'` is deliberately NOT this**, though it can wait in the
+   * same window. What the two carry is different: a `'refuse'` trigger is
+   * machine-generated (a widget click, a sign-in nudge) and belongs to nobody,
+   * while a `'refuse-foreign'` message is a person's words in a room, which
+   * DOR-1230 accepts precisely so the room answers them. Those keep their row and
+   * their place in line, exactly as that fix decided.
+   *
+   * Both halves follow from what such a caller was promised, and neither is
+   * optional:
+   *
+   * - **No row.** A refusing caller's message must never sit in somebody's
+   *   composer (module doc above). A widget action's content is the raw
+   *   `<ui_action>` block, and the queue panel draws a row's content verbatim and
+   *   lets a person edit it — an edit {@link launchDispatch} would then send to
+   *   the model, because it sends the ROW's words. So the wait happens in
+   *   {@link pending} alone, exactly as {@link dispatchCommandIntent} waits.
+   * - **Dropped, never deferred.** The budget bound must not FORCE this one
+   *   through: a budget-exhausted launch deliberately skips the in-flight slot,
+   *   which for a stream that is still open means a second `sendMessage` racing
+   *   the first on one session. And {@link returnToQueue} must not re-park it,
+   *   which would hand it a fresh full budget and start the cycle again.
+   *
+   * It sorts behind anything with a row ({@link orderedWaiting}), which is
+   * anything a person typed — the right way round, since those words came first.
+   */
+  transient: boolean;
   /** What the caller passes straight through to the turn. */
   turn: Pick<
     DispatchMessageOpts,
@@ -728,6 +771,14 @@ interface DispatchPlan {
  * agent is producing". It re-opens on its own if the agent wakes itself up
  * (DOR-1100), so a session that starts producing again refuses again without
  * this needing to know that happened.
+ *
+ * **What accepting here does NOT promise is adjacency.** The message runs when
+ * the slot clears, and one turn at a time still holds — but a self-woken window
+ * (DOR-1100) can open and close inside that same stream, so the accepted message
+ * can land after a window the person never asked for, rather than immediately
+ * after the turn it was clicked in. That is measured behavior, not a hypothesis.
+ * It is still the better answer than a hard refusal: the alternative was 409 over
+ * a session nothing was using, and every ordering guarantee is unchanged.
  *
  * @param open - The turn holding the session's in-flight slot.
  * @param sessionKey - The id that turn's dispatcher state is filed under.
@@ -799,12 +850,42 @@ function refusesOpenTurn(opts: {
  */
 function returnToQueue(plan: DispatchPlan): void {
   const store = getMessageQueueStore();
+  // Fast, or never. A transient plan has no row to go back to and no later
+  // moment worth running at, and re-parking it would hand it a fresh full budget
+  // — the requeue cycle, with a trigger nobody can see waiting in it.
+  if (plan.transient) {
+    dropTransient(plan, 'the launch could not start it');
+    return;
+  }
   if (plan.whenBusy !== 'queue' && !plan.answered) {
     if (store?.remove(plan.messageId)) emitQueueUpdate(plan.sessionKey);
     return;
   }
   if (store && !store.get(plan.messageId)) return;
   parkDispatch(plan, unwatchedSettle(plan), { waitingOnLock: true });
+}
+
+/**
+ * Give up on a {@link DispatchPlan.transient} message, and say so.
+ *
+ * The whole disposal: there is no row to remove and nobody holding a request
+ * open, so the log line is the only trace it leaves. It is a `warn` because a
+ * trigger somebody's click generated did not reach the model, even though the
+ * caller was told it was accepted — rare (it needs a stream that stays open past
+ * the wait bound, or a stranger taking the session in the same beat), and
+ * invisible without this.
+ *
+ * @param plan - The transient plan being dropped
+ * @param why - What stopped it, for the log line
+ */
+function dropTransient(plan: DispatchPlan, why: string): void {
+  pending.delete(plan.messageId);
+  logger.warn('[MessageDispatcher] a refusing caller’s trigger was dropped rather than run late', {
+    sessionId: plan.sessionKey,
+    messageId: plan.messageId,
+    clientId: plan.clientId,
+    why,
+  });
 }
 
 /**
@@ -976,7 +1057,19 @@ function parkDispatch(
     // Bounded for the same reason DOR-1088 bounds its chain: the write-lock has
     // a TTL and a queue does not, so a turn that went dark would otherwise hand
     // the session to a stranger while its own client's message waited forever.
-    timer: setTimeout(() => entry.launch({ budgetExhausted: true }), plan.budgetMs),
+    //
+    // The bound ends two different ways, because the two kinds of waiting made
+    // two different promises. A queued message is somebody's words: it launches
+    // anyway, meeting the write-lock as a stranger would. A transient one is a
+    // refusing caller's trigger: forcing it through would put a second
+    // `sendMessage` on a session whose stream is still open, so it is dropped.
+    timer: setTimeout(() => {
+      if (plan.transient) {
+        dropTransient(plan, 'the stream it was waiting on had not closed within the wait budget');
+        return;
+      }
+      entry.launch({ budgetExhausted: true });
+    }, plan.budgetMs),
   };
   entry.timer.unref?.();
   pending.set(plan.messageId, entry);
@@ -1048,19 +1141,32 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
   });
 
-  const record = getMessageQueueStore()?.enqueue({
-    sessionId: queueKey,
-    content,
-    clientId,
-    disposition: requested,
-    context: opts.context ?? null,
-  });
+  // A blanket-`'refuse'` caller that got past the gate with the slot still held
+  // got past it for exactly one reason — the turn holding it has ENDED — so it is
+  // waiting out a stream that is closing rather than queueing behind work. It
+  // waits with no row at all. See {@link DispatchPlan.transient}.
+  const transient =
+    whenBusy === 'refuse' && open !== undefined && !isStillProducing(open, sessionKey, projector);
+
+  const record = transient
+    ? undefined
+    : getMessageQueueStore()?.enqueue({
+        sessionId: queueKey,
+        content,
+        clientId,
+        disposition: requested,
+        context: opts.context ?? null,
+      });
   const messageId = record?.id ?? crypto.randomUUID();
-  const queuePosition = record
-    ? (getMessageQueueStore()
+  // Its place in the queue at acceptance: the row's, or the head when no store is
+  // wired — and 0 for a message that is deliberately on no queue at all.
+  let queuePosition = transient ? 0 : 1;
+  if (record) {
+    queuePosition =
+      (getMessageQueueStore()
         ?.list(queueKey)
-        .findIndex((row) => row.id === messageId) ?? 0) + 1
-    : 1;
+        .findIndex((row) => row.id === messageId) ?? 0) + 1;
+  }
   const outcome: MessageDeliveryOutcome = {
     messageId,
     requested,
@@ -1084,6 +1190,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     startedWaitingAt: Date.now(),
     whenBusy,
     answered: false,
+    transient,
     turn: opts,
   };
 
@@ -1215,6 +1322,9 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       // exists, which is the strongest form of the reason the `'queue'` above
       // gives: there is nobody left to retype it.
       answered: true,
+      // A recovered row is a row by definition, and somebody's words: it waits
+      // as long as the queue waits.
+      transient: false,
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
         ...(row.context !== null ? { context: row.context } : {}),

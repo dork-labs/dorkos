@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a widget click right after the agent finishes is not a busy session (DOR-1239)'
+  - 'fix(server): a widget click accepted after a turn ends waits without a queue row (DOR-1239)'
 ---
 
 ### Fixed

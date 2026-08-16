@@ -366,9 +366,16 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     const clicked = await send('a widget click', { whenBusy: 'refuse' });
 
     expect(clicked.accepted).toBe(true);
-    // It runs the moment the stale slot clears, not minutes later: nothing else
-    // can start a turn in between, so what it meets is the session its own turn
-    // left behind.
+    // And it waits in nobody's composer. A refusing caller's trigger must never
+    // become a queue row: this one's content is a machine-generated block, and a
+    // row is editable, removable, and what the launch would send.
+    expect(clicked.queuePosition).toBe(0);
+    expect(listQueuedMessages(session)).toEqual([]);
+    expect(store.list(session)).toEqual([]);
+
+    // It runs when the slot clears. Ordering holds — one turn at a time — but
+    // ADJACENCY to the clicked turn is not promised: a self-woken window
+    // (DOR-1100) can open and close inside the same stream first.
     drain.open();
     await settle();
     expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
@@ -378,6 +385,72 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
       expect.anything()
     );
     expect(listQueuedMessages(session)).toEqual([]);
+  });
+
+  it('drops a refusing caller’s trigger rather than forcing it into a stream still open', async () => {
+    // Fast, or never. The wait bound normally FORCE-launches what it is holding,
+    // deliberately skipping the in-flight slot — which here would put a second
+    // `sendMessage` on a session whose first stream has not closed. And a
+    // re-park would hand it a fresh full budget and start the cycle again. So an
+    // expired transient plan is dropped, and says so.
+    const drain = gate();
+    runtime.withScenarios([drainingTurn(drain.wait), quickTurn()]);
+
+    await send('render a widget');
+    await vi.waitFor(() => expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull());
+
+    const clicked = await send('a widget click', { whenBusy: 'refuse', queueWaitMs: 20 });
+    expect(clicked.accepted).toBe(true);
+
+    // Past the bound, with the stream still open.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    // And gone: the slot clearing finds nothing waiting behind it.
+    drain.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(store.list(session)).toEqual([]);
+  });
+
+  it('drops a refusing caller’s waiting trigger when the lock refuses it, rather than saving it for a later turn', async () => {
+    // The mirror of the refuse-foreign case above, and deliberately the opposite
+    // answer. A room's message is a person's words, so it goes back in line; a
+    // machine-generated trigger has no later moment worth running at. Put back,
+    // it would sit in the pending set with nothing to show for it — no row, so
+    // nobody can see it or take it back — until some LATER turn's boundary
+    // pumped it into work it has nothing to do with.
+    //
+    // Driven with no queue store, which is every embedded host: with one wired
+    // the store's own rear-view drops the message anyway, so this is the
+    // configuration where the rule itself is what decides.
+    setMessageQueueStore(undefined);
+    const drain = gate();
+    runtime.withScenarios([drainingTurn(drain.wait), quickTurn(), quickTurn()]);
+
+    await send('render a widget');
+    await vi.waitFor(() => expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull());
+
+    const clicked = await send('a widget click', { whenBusy: 'refuse' });
+    expect(clicked.accepted).toBe(true);
+
+    // A stranger takes the session in the beat between acceptance and launch.
+    runtime.acquireLock.mockReturnValue(false);
+    drain.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    // The session frees up and somebody types. The click must not ride in on
+    // that turn's boundary.
+    runtime.acquireLock.mockReturnValue(true);
+    await send('a later message');
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+    expect(runtime.sendMessage.mock.calls.map((call) => call[1])).toEqual([
+      'render a widget',
+      'a later message',
+    ]);
   });
 
   it('names the turn a refusal was refused for, so a 409 cannot invent a holder', async () => {
