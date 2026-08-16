@@ -332,8 +332,10 @@ describe('the rows', () => {
   it('does not draw a row whose page this build has not got', async () => {
     await renderProfile(MANAGED);
     // Sessions, Tasks, Skills, Tools, Connections, Instructions, Boundaries all
-    // arrive with W2.2's pages. About and Folder are here now.
-    expect(rowLabels()).toEqual(['about', 'runs-on', 'personality', 'folder']);
+    // arrive with W2.2's pages. Personality is a `pick` whose popover is also
+    // W2.2's, and it carries no value to fall back to — a label with empty
+    // space beside it is not a fact, so it waits too.
+    expect(rowLabels()).toEqual(['about', 'runs-on', 'folder']);
   });
 
   it('draws a pick with no popover behind it yet as the plain fact it carries', async () => {
@@ -349,6 +351,24 @@ describe('the rows', () => {
     await userEvent.click(document.querySelector('[data-profile-row="folder"]')!);
 
     expect(toasts.success).toHaveBeenCalledWith('Copied');
+  });
+
+  it('draws the identity’s own colour as the rule above them', async () => {
+    // The panel's "whose this is" moment, and it does not move to say so
+    // (identity-micro-interactions §3D4). On the body rather than under the
+    // header, so it exists exactly when there is something to separate.
+    await renderProfile(SELF);
+    const rows = document.querySelector('[data-slot="profile-rows"]') as HTMLElement;
+    expect(rows.style.borderTopColor).toContain('var(--identity-color) 55%');
+  });
+
+  it('draws no body at all when this build has no row to put in it', async () => {
+    // Somebody bridged in over Telegram has only a Rooms row, whose page W1.2
+    // brings. An empty framed region running the height of the panel is what
+    // the old drawer got wrong.
+    await renderProfile(BRIDGED);
+    expect(screen.getByRole('heading', { name: 'Miguel Ferreira-Santos' })).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="profile-rows"]')).toBeNull();
   });
 
   it('pushes the page a nav row names', async () => {

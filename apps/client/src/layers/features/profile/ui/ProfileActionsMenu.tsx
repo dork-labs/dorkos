@@ -31,11 +31,9 @@ export interface ProfileActionsMenuProps {
  *
  * With one item and nothing to put in it, the kebab is a button that opens a
  * menu saying nothing — so an identity with no handle and no other action
- * simply has no kebab (§1.2).
- *
- * @param member - The identity the menu would act on.
+ * simply has no kebab (§1.2). W2.2's managed-agent actions widen this.
  */
-export function hasProfileActions(member: TeamMember): boolean {
+function hasProfileActions(member: TeamMember): boolean {
   return member.handle !== null;
 }
 

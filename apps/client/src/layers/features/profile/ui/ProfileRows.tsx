@@ -31,29 +31,55 @@ export interface ProfileRowsProps {
  * someone else's agent. Nothing is ever drawn dead.
  */
 export function ProfileRows({ member, ctx, onPush }: ProfileRowsProps) {
-  const groups = rowsFor(member, ctx)
-    .map((group) => ({
-      ...group,
-      rows: group.rows.filter(
-        (row) => row.kind !== 'nav' || (row.page !== undefined && isProfilePageAvailable(row.page))
-      ),
-    }))
-    .filter((group) => group.rows.length > 0);
-
   function draw(row: ProfileRowModel): ProfileRowModel {
     if (row.kind !== 'pick') return row;
     if (row.pick !== undefined && isProfilePickAvailable(row.pick)) return row;
     return { ...row, kind: 'text' };
   }
 
+  /**
+   * Is this row worth a line of the panel?
+   *
+   * A `nav` row needs its page to exist — the pages W2.2 owns are absent
+   * rather than dead. And a plain fact with no value is not a fact: a label
+   * with empty space beside it says nothing, which is the busyness this design
+   * was built to remove.
+   */
+  function isDrawable(row: ProfileRowModel): boolean {
+    if (row.kind === 'nav') return row.page !== undefined && isProfilePageAvailable(row.page);
+    if (row.kind === 'text') return row.value !== null;
+    return true;
+  }
+
+  const groups = rowsFor(member, ctx)
+    .map((group) => ({ ...group, rows: group.rows.map(draw).filter(isDrawable) }))
+    .filter((group) => group.rows.length > 0);
+
+  // A body with nothing in it is not a body. A person bridged in over Telegram
+  // has no row this build can draw yet, and an empty framed region running the
+  // height of the panel is what the old drawer got wrong.
+  if (groups.length === 0) return null;
+
   return (
-    <div data-slot="profile-rows" className="flex flex-col gap-2.5 px-2 pb-4">
+    <div
+      data-slot="profile-rows"
+      // The identity accent, drawn as a static 2px rule in this identity's own
+      // colour (identity-micro-interactions §3D4). It lives on the body rather
+      // than under the header so it exists exactly when there is something to
+      // separate. Inline because `index.css` sets `border-color` on `*` in an
+      // unlayered rule that outranks Tailwind's whole utilities layer — no
+      // `border-<colour>` class paints a border in this app.
+      style={{
+        borderTopColor: 'color-mix(in oklch, var(--identity-color) 55%, transparent)',
+      }}
+      className="flex flex-col gap-2.5 border-t-2 px-2 pt-2 pb-4"
+    >
       {groups.map((group) => (
         <div key={group.id} className="divide-border/60 flex flex-col divide-y">
           {group.rows.map((row) => (
             <ProfileRow
               key={row.id}
-              row={draw(row)}
+              row={row}
               onNavigate={(nav) => nav.page && onPush({ kind: 'page', page: nav.page })}
             />
           ))}

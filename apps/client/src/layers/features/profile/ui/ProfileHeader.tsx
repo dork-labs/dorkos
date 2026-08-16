@@ -68,7 +68,10 @@ export function ProfileHeader({
   }
 
   return (
-    <div data-slot="profile-header" className="relative flex flex-col items-center px-4 pt-5 pb-4">
+    // `pt-8` clears the chrome row the sheet puts in this corner (its close X,
+    // and the kebab beside it) so the face is never crowded by controls that
+    // are not about the identity.
+    <div data-slot="profile-header" className="relative flex flex-col items-center px-4 pt-8 pb-4">
       {/* The identity's own colour, as a wash behind the face rather than as a
           ring on it. Static: this is the panel's "whose this is" moment, and the
           calm version of that does not move to say so (§3D4). */}
@@ -81,7 +84,16 @@ export function ProfileHeader({
         }}
       />
 
-      {actionsMenu && <div className="absolute top-2 right-2 z-10">{actionsMenu}</div>}
+      {/* The sheet home puts its own close X in this corner (`SheetContent`
+          pins one at top-4 right-4), so the kebab steps aside for it there and
+          takes the corner everywhere else. Keyed off the home the profile root
+          publishes rather than a prop, so the header still knows nothing about
+          which panel it is in. */}
+      {actionsMenu && (
+        <div className="absolute top-2 right-2 z-10 group-data-[home=sheet]/profile:right-11">
+          {actionsMenu}
+        </div>
+      )}
 
       {onFaceActivate ? (
         <button

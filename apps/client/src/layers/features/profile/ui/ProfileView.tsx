@@ -111,7 +111,9 @@ export function ProfileView({
       // The panel wears this identity's colour, so the wash behind the face and
       // the rule above the property list can both be drawn in it.
       style={{ '--identity-color': face.color } as CSSProperties}
-      className="flex min-h-0 flex-1 flex-col"
+      // The group is NAMED: a bare `group` matches any `.group` ancestor, and
+      // this one is read from inside the header for the kebab's corner.
+      className="group/profile flex min-h-0 flex-1 flex-col"
     >
       <ProfileStack frameKey={page}>
         {definition && PageContent ? (

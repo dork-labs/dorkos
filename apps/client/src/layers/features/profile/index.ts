@@ -25,20 +25,16 @@ export { AccountMenu, type AccountMenuProps } from './ui/AccountMenu';
 export { AccountMenuContainer } from './ui/AccountMenuContainer';
 export { ProfilePanel, type ProfilePanelProps } from './ui/ProfilePanel';
 export { ProfilePanelContainer } from './ui/ProfilePanelContainer';
-// The stack's shape, for the homes that hold it: the sheet keeps it in the URL,
-// and the docked panel (W2.3) keeps it in a store.
+// The stack's shape, for callers that build one: the playground, and the two
+// homes. Its reducers stay inside the feature (`model/profile-stack`) — the
+// sheet drives them from the URL, and the docked panel (W2.3) will drive them
+// from a store that lives in here too.
 export {
-  asProfilePageId,
-  currentPage,
-  popEntry,
   profileStack,
-  pushEntry,
-  stackMemberId,
   type ProfilePageId,
   type ProfileStackEntry,
   type ProfileStackState,
 } from './model/profile-stack';
-export { shouldDock, type ProfileHomeContext } from './model/profile-home';
 // Exported for the playground, which shows the three handle refusals side by
 // side. Rendering them through the real mapping is what stops the showcase
 // drifting into a set of sentences the product no longer says.
