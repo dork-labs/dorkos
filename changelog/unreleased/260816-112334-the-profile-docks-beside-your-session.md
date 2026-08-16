@@ -6,6 +6,7 @@ covers:
   - 'fix(client): a pending profile link is spent by the agent it named (DOR-1254)'
   - 'fix(client): a link for an agent whose session you are not in still opens (DOR-1254)'
   - 'fix(client): a profile link stops applying once you move to another agent (DOR-1254)'
+  - 'fix(client): a same-session ?profile= link docks through the link opener, so a late layout cannot shut it (DOR-1254)'
 ---
 
 ### Changed
