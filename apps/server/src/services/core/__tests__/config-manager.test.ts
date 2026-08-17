@@ -4210,3 +4210,122 @@ describe('ConfigManager.onChange (the live-apply primitive)', () => {
     expect(seen).toEqual([['runtimes']]);
   });
 });
+
+describe('config.json holds the EFFECTIVE config, not what was set (DOR-1267)', () => {
+  // What these pin, and why they are worth pinning.
+  //
+  // Deleting `rooms.collectDebounceMs` and `rooms.collectMaxEntries` by hand and
+  // watching them come back at 500/20 looks like DorkOS re-persisting defaults
+  // behind somebody's back. It is not a DorkOS write path at all: `conf` compiles
+  // Ajv with `useDefaults: true` (`conf@15`, `#setupValidator`), and Ajv MUTATES
+  // the object it validates, inserting the `default` of every absent property.
+  // `Conf.set` then reads the store through that validating getter, sets one key,
+  // and assigns the whole thing back — so a write of ANY leaf persists the fill
+  // for every other one.
+  //
+  // The fill is load-bearing rather than incidental, which is the part a reader
+  // has to know before touching it: `z.toJSONSchema(UserConfigSchema)` marks every
+  // defaulted leaf `required`, and the fill is what satisfies that. The last test
+  // is the proof — turning `useDefaults` off does not stop the materialising, it
+  // condemns a config file that is missing one leaf and replaces it with defaults.
+  //
+  // So absence is not a state this design maintains, and making it one means
+  // moving default-filling out of Ajv and into a DorkOS read boundary. That is a
+  // decision about the config substrate, not a fix, and these tests describe what
+  // is true today so that changing it has to be deliberate.
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * A materialised config file with two `rooms` leaves deleted by hand — what the
+   * 2026-08-15 rooms self-test left behind.
+   */
+  function seedWithoutCollectLeaves(): { dir: string; configPath: string } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-effective-config-'));
+    dirs.push(dir);
+    const configPath = path.join(dir, 'config.json');
+    new ConfigManager(dir);
+    const stored = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      rooms: Record<string, unknown>;
+    };
+    delete stored.rooms.collectDebounceMs;
+    delete stored.rooms.collectMaxEntries;
+    fs.writeFileSync(configPath, JSON.stringify(stored, undefined, '\t'));
+    return { dir, configPath };
+  }
+
+  function roomsOnDisk(configPath: string): Record<string, unknown> {
+    const stored = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      rooms: Record<string, unknown>;
+    };
+    return stored.rooms;
+  }
+
+  it('leaves a deleted leaf deleted across a boot', () => {
+    // Opening the store is NOT what put them back. `#runMigrations` merges only
+    // the TOP-LEVEL `defaults`, and `rooms` is already there, so its
+    // `assert.deepEqual` matches and the `_write` beneath it is skipped. No
+    // migration runs at this version either, so nothing rewrites the file.
+    const { dir, configPath } = seedWithoutCollectLeaves();
+    new ConfigManager(dir);
+    expect(roomsOnDisk(configPath)).not.toHaveProperty('collectDebounceMs');
+    expect(roomsOnDisk(configPath)).not.toHaveProperty('collectMaxEntries');
+  });
+
+  it('still reads the deleted leaves back at their defaults', () => {
+    const { dir } = seedWithoutCollectLeaves();
+    const rooms = new ConfigManager(dir).get('rooms');
+    expect(rooms.collectDebounceMs).toBe(500);
+    expect(rooms.collectMaxEntries).toBe(20);
+  });
+
+  it('puts them back on disk when an unrelated leaf is written', () => {
+    const { dir, configPath } = seedWithoutCollectLeaves();
+    const manager = new ConfigManager(dir);
+
+    manager.setDot('ui.theme', 'light');
+
+    expect(roomsOnDisk(configPath).collectDebounceMs).toBe(500);
+    expect(roomsOnDisk(configPath).collectMaxEntries).toBe(20);
+  });
+
+  it('does the same through PATCH /api/config', () => {
+    const { dir, configPath } = seedWithoutCollectLeaves();
+    initConfigManager(dir);
+
+    const result = applyConfigPatch({ ui: { theme: 'light' } });
+
+    expect(result.ok).toBe(true);
+    expect(roomsOnDisk(configPath).collectDebounceMs).toBe(500);
+    expect(roomsOnDisk(configPath).collectMaxEntries).toBe(20);
+  });
+
+  it('cannot simply stop filling — the generated schema requires every leaf', () => {
+    // The one-line "fix" (`ajvOptions: { useDefaults: false }`), against the same
+    // file the tests above use. It does not leave the leaves absent; it makes the
+    // file fail validation, which `classifyConfigLoadFailure` reads as corruption
+    // — backup, delete, start again from defaults. Measured, not reasoned.
+    //
+    // Structurally analogous to the production construction rather than a copy of
+    // it: the shipped schema and cast, but no `migrations`/`projectVersion`, so
+    // `#initializeStore` takes its non-migration branch and the throw comes from
+    // the store getter rather than from the `_validate` that follows the
+    // migration chain. Same validator, same verdict, one call site over.
+    const { dir } = seedWithoutCollectLeaves();
+    expect(
+      () =>
+        new Conf({
+          configName: 'config',
+          cwd: dir,
+          // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+          schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+          ajvOptions: { useDefaults: false },
+          defaults: USER_CONFIG_DEFAULTS,
+          clearInvalidConfig: false,
+        })
+    ).toThrow(/Config schema violation.*required property 'collectDebounceMs'/);
+  });
+});
