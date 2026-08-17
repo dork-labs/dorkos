@@ -8,10 +8,16 @@ import {
 
 interface DispositionMenuProps {
   /**
-   * Send the message into the running task now (steer). Present ONLY when the
-   * agent can take a message mid-task — the caret and its Steer row are absent,
-   * never greyed, when it cannot. A hidden choice is honest; a dead one makes
+   * Send the message into the running task now (steer). Present ONLY when a cut-in
+   * could really happen for THIS chat — the caret and its Steer row are absent,
+   * never greyed, when it could not. A hidden choice is honest; a dead one makes
    * the person wonder what they did wrong.
+   *
+   * "Could really happen" is two questions, and the host answers both: can this
+   * runtime steer at all, and can this particular session be cut into. They come
+   * apart — Claude Code can steer, but only a chat holding its agent process open
+   * between messages has a turn to join — and asking only the first is what
+   * offered a cut-in that silently became an ordinary follow-up (DOR-1268).
    */
   onSteer?: () => void;
   /**
@@ -26,12 +32,13 @@ interface DispositionMenuProps {
  * Queue button.
  *
  * Queue is the primary action and stands on its own; Steer and Add context are
- * the alternates, one tap away behind this caret. Each row appears only when the
- * agent supports it, so a runtime that can only queue shows no caret at all and
- * the composer collapses back to a single Queue button. That is the whole of the
- * "hidden, not disabled" rule for these two verbs: the presence of the callback
- * IS the capability, exactly as the rest of the composer treats attach and
- * mentions.
+ * the alternates, one tap away behind this caret. Each row appears only when its
+ * verb could actually happen here, so a chat that can only queue shows no caret
+ * at all and the composer collapses back to a single Queue button. That is the
+ * whole of the "hidden, not disabled" rule for these two verbs: the presence of
+ * the callback IS the answer, exactly as the rest of the composer treats attach
+ * and mentions. This component never asks WHY a verb is unavailable — the host
+ * has already weighed the runtime's capability and the session's own state.
  *
  * Renders nothing when neither alternate is available, so a host may pass it
  * unconditionally.

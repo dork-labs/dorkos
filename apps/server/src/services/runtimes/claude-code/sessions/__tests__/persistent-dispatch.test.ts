@@ -216,6 +216,63 @@ describe('the opt-in decides which path a message takes', () => {
   });
 });
 
+describe('steerability is answered per session (DOR-1268)', () => {
+  it('says NO on the resume path, which is how a default install ships', async () => {
+    const sessionId = nextSession();
+
+    // The reported bug in one line: the adapter declares `supportsSteer`, and a
+    // session that starts a fresh process per message has nothing to push into.
+    // Answered before any message, because the composer asks before the turn it
+    // would steer is open.
+    expect(runtime.canSteerSession(sessionId)).toBe(false);
+
+    await turn(sessionId);
+    expect(runtime.canSteerSession(sessionId)).toBe(false);
+  });
+
+  it('reports no-open-turn for a steer while a resume-path turn is in flight', async () => {
+    const sessionId = nextSession();
+    // A turn that has launched and not finished — precisely the moment the
+    // composer offered a cut-in.
+    cli.deferNextInit = true;
+    const running = turn(sessionId, 'do the thing');
+    await vi.waitFor(() => expect(cli.processes).toHaveLength(1));
+
+    // The mechanism that would cut in is not under this session, so the receipt
+    // is the SAME one an idle session gives. That collision is why the
+    // dispatcher stopped reading this receipt as `session-idle`.
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'course-correct', {
+      mode: 'steer',
+      messageId: 'steer-resume',
+    });
+    expect(receipt).toEqual({ delivered: false, reason: 'no-open-turn' });
+    expect(runtime.canSteerSession(sessionId)).toBe(false);
+
+    cli.processes[0]!.reportReady();
+    await running;
+  });
+
+  it('says YES once the opt-in is on, and keeps saying it while the process is held', async () => {
+    optIn.persistentSession = true;
+    const sessionId = nextSession();
+
+    // True BEFORE the first message: the next turn will run on a held process,
+    // so a turn opened here would be joinable.
+    expect(runtime.canSteerSession(sessionId)).toBe(true);
+    await turn(sessionId);
+    expect(runtime.canSteerSession(sessionId)).toBe(true);
+
+    // The operator changes their mind. A session already holding its process
+    // keeps it — and keeps being steerable — until that process goes away.
+    optIn.persistentSession = false;
+    expect(runtime.canSteerSession(sessionId)).toBe(true);
+
+    // Given back: the next message re-reads the flag and finds it off.
+    await runtime.reapSession(sessionId);
+    expect(runtime.canSteerSession(sessionId)).toBe(false);
+  });
+});
+
 describe('warmth is answered honestly', () => {
   beforeEach(() => {
     optIn.persistentSession = true;

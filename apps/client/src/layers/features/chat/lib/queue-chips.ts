@@ -55,6 +55,10 @@ const DOWNGRADE_NOTICE: Record<
   // "It ran immediately" is not a loss, and nobody needs telling about it.
   'session-idle': null,
   unsupported: "Queued. This agent can't take a message mid-task.",
+  // Deliberately not "queued as your next message": it lands BEHIND whatever is
+  // already waiting, and naming a position the chip cannot know would be a
+  // second small lie in the sentence written to stop the first one.
+  'not-steerable': "Couldn't cut in. It's waiting in line.",
   'no-open-turn': 'Queued. The task had already finished.',
   'pending-interaction': 'Queued. The agent needs your answer first.',
 };
@@ -65,11 +69,15 @@ const DOWNGRADE_NOTICE: Record<
  *
  * Now that steer and stage have real mechanisms (P4), a downgrade is a live
  * event: a steer or a stage the runtime could not honour is queued instead, and
- * the chip owns up to it once — `unsupported`, `no-open-turn`, and
- * `pending-interaction` each get one plain line. `session-idle` is the one this
- * deliberately stays quiet about, because "it ran immediately" is not a loss
- * anybody needs told. Returns `null` for a clean delivery and for that quiet
- * case alike.
+ * the chip owns up to it once — `unsupported`, `not-steerable`, `no-open-turn`,
+ * and `pending-interaction` each get one plain line. `session-idle` is the one
+ * this deliberately stays quiet about, because "it ran immediately" is not a
+ * loss anybody needs told. Returns `null` for a clean delivery and for that
+ * quiet case alike.
+ *
+ * `not-steerable` is the reason `session-idle` used to swallow (DOR-1268): a
+ * turn was running and could not be joined, so the message really did go to the
+ * back of the line and staying quiet about it was a lie.
  *
  * @param outcome - The delivery receipt for a waiting message, if one was kept.
  */

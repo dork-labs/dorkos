@@ -732,9 +732,13 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         until: (frames) => frames.some((f) => f.event === 'snapshot'),
       });
       const snapshot = cold.frames.find((f) => f.event === 'snapshot')!.data as SessionSnapshot;
+      // Ids are minted from the event's own `seq`, so they are asserted by SHAPE
+      // rather than by value: any bookkeeping the dispatcher puts on the stream
+      // ahead of the turn (the steerability announcement) shifts the numbers
+      // without changing a thing about the history.
       expect(snapshot.messages).toEqual([
-        { id: 'user-1', role: 'user', content: 'Hello' },
-        { id: 'assistant-1', role: 'assistant', content: 'Echo: Hello' },
+        { id: expect.stringMatching(/^user-\d+$/), role: 'user', content: 'Hello' },
+        { id: expect.stringMatching(/^assistant-\d+$/), role: 'assistant', content: 'Echo: Hello' },
       ]);
       expect(snapshot.inProgressTurn).toBeNull();
       expect(snapshot.status.lifecycle).toBe('idle');
