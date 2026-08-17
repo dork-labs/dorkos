@@ -1197,7 +1197,9 @@ describe('ClaudeCodeRuntime', () => {
       store.findSession('uuid-evict')!.sdkSessionId = 'canonical-evict';
       rekeyProjector('uuid-evict', 'canonical-evict');
       expect(peekProjector('canonical-evict')).toBe(projector);
-      expect(peekProjector('uuid-evict')).toBeUndefined();
+      // The UUID redirects onto the same instance — one projector, two names
+      // (DOR-1262) — so eviction below must not leave half of it behind.
+      expect(peekProjector('uuid-evict')).toBe(projector);
 
       vi.useFakeTimers();
       vi.advanceTimersByTime(31 * 60 * 1000);
@@ -1208,6 +1210,9 @@ describe('ClaudeCodeRuntime', () => {
       // followed the canonical alias, not just the store key.
       expect(projector.getStatus().lifecycle).toBe('interrupted');
       expect(peekProjector('canonical-evict')).toBeUndefined();
+      // Both names are gone with it: a redirect must never outlive the projector
+      // it points at, or the next lookup under the UUID would resurrect a ghost.
+      expect(peekProjector('uuid-evict')).toBeUndefined();
     });
   });
 

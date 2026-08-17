@@ -56,6 +56,7 @@ import { runInDispatch } from '../../lib/dispatch-context.js';
 import {
   getOrCreateProjector,
   disposeProjector,
+  rekeyProjector,
 } from '../../services/session/session-state-projector.js';
 import type { RawSessionEvent } from '../../services/session/session-state-projector.js';
 import type { DebugDeps } from '../debug.js';
@@ -195,8 +196,29 @@ describe('GET /api/debug/projectors and /sessions/:id', () => {
     const entry = res.body.projectors.find(
       (p: { sessionId: string }) => p.sessionId === SESSION_ID
     );
-    expect(entry).toMatchObject({ seq: 1, subscribers: 0, waiters: 0 });
+    expect(entry).toMatchObject({ seq: 1, subscribers: 0, waiters: 0, retiredIds: [] });
     expect(entry.eventLogSize).toBeGreaterThan(0);
+  });
+
+  it('names the ids a renamed session no longer answers to', async () => {
+    // An incident report, a log line or a client URL may carry an id the session
+    // has since retired. Without these on the surface it would appear on NO
+    // projector, and "which projector owns this id?" — the 2026-07-31 question
+    // this endpoint exists for — would have no answer for exactly the ids most
+    // likely to be quoted (DOR-1262).
+    const canonical = `${SESSION_ID}-canonical`;
+    getOrCreateProjector(SESSION_ID).ingest({ type: 'turn_start' });
+    rekeyProjector(SESSION_ID, canonical);
+
+    const res = await get(buildApp(), '/api/debug/projectors');
+    const entry = res.body.projectors.find((p: { sessionId: string }) => p.sessionId === canonical);
+    expect(entry.retiredIds).toEqual([SESSION_ID]);
+    // The retired id is not a projector of its own — one session, one entry.
+    expect(
+      res.body.projectors.filter((p: { sessionId: string }) => p.sessionId === SESSION_ID)
+    ).toEqual([]);
+
+    disposeProjector(canonical);
   });
 
   it('describes one session without any of its content', async () => {
