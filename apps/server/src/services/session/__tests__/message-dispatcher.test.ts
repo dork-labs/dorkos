@@ -1502,6 +1502,40 @@ describe('deliverStage — a stage is a write, and folds into the next when unsu
     );
   });
 
+  it('emits that receipt for a session that has GAINED its canonical id (DOR-1262 review)', async () => {
+    // The receipt is ingested into the projector, which after the mid-first-turn
+    // rename is registered under the CANONICAL id — while the dispatcher's own
+    // state deliberately stays filed under the id the session was born with.
+    // Resolved through the filing id, the lookup missed for every renamed
+    // session and the early return read as "nobody is listening": a person
+    // staged a message and the one proof it landed never went out.
+    runtime.isLocked.mockReturnValue(false);
+    const canonical = `${session}-canonical`;
+    extraProjectors.push(canonical);
+    getOrCreateProjector(session).ingest({ type: 'turn_start' });
+    rekeyProjector(session, canonical);
+
+    const result = await deliverStage({
+      sessionId: session,
+      clientId: TAB,
+      content: 'read the deploy notes first',
+      messageId: 'stage-rekeyed',
+      runtime,
+    });
+
+    expect(result).toEqual({ authorized: true, delivered: true });
+    // Read by the id the projector is REALLY keyed by, so this asserts the
+    // receipt arrived rather than that some lookup happened to resolve.
+    const receipts = getOrCreateProjector(canonical)
+      .replayFrom(0)
+      .filter((e) => e.type === 'context_staged');
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]).toMatchObject({
+      content: 'read the deploy notes first',
+      messageId: 'stage-rekeyed',
+    });
+  });
+
   it('refuses a DIFFERENT client, and never reaches the runtime', async () => {
     // TAB owns the live turn; window-b could not send now, so it may not stage —
     // the SAME authorization a steer and a send pass.

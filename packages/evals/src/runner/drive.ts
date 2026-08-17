@@ -368,14 +368,19 @@ function openStream(opts: OpenStreamOptions): LiveStream {
  *
  * REMAP RE-SUBSCRIBE (DOR-397): the 202 body's `sessionId` is the CANONICAL id
  * (ADR-0264). When it differs from the id `opts` subscribed under — claude-code
- * re-minting its internal session id on a resume — the pre-remap stream can
- * miss frames the remap moves onto the new id. Rather than keep collecting on a
- * connection that may now be watching the wrong id, close it and open a FRESH
- * subscription on the canonical id: a cold connect's `snapshot` reflects
- * everything the same underlying projector has ingested so far (the rekey
- * moves the projector instance, not its content, ADR-0267), so nothing is
- * lost — only the collector's own connection changes. The remaining timeout
- * budget carries over so a remap cannot silently double a turn's time budget.
+ * naming a new session, or re-minting its internal id on a resume — this closes
+ * the stream and opens a FRESH subscription on the canonical id, so everything
+ * the harness reports afterwards is keyed by the name the session actually has.
+ * A cold connect's `snapshot` carries everything the projector has ingested so
+ * far, so the swap costs no frames, and the remaining timeout budget carries
+ * over so a remap cannot silently double a turn's time budget.
+ *
+ * It is NOT a correctness crutch, and must not be read as one: the retired id
+ * resolves to the same live projector on the server (ADR-0267 as amended by
+ * DOR-1262), so a collector that simply stayed put would see the same frames.
+ * Before that fix it could not — a second trigger under the retired id split the
+ * session in two and ended the canonical stream, which is what made this eval
+ * fail live on 2026-08-16 despite the re-subscribe.
  *
  * @param opts - The stream options (baseUrl, sessionId, timeouts, abort guard) —
  *   also the id to subscribe under first, BEFORE the trigger POST.

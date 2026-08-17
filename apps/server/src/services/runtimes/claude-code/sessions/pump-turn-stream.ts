@@ -33,25 +33,37 @@
  * precisely what the process is waiting on, so the next message would never
  * come. The race is the same one `executeSdkQuery` runs, for the same reason.
  *
- * ## Phantom cancellations are reported, not steered
+ * ## Phantom cancellations are counted and reported, never steered
  *
- * The detector runs (DOR-1087): a cancellation the CLI wrote because a task
- * notification landed at the wrong moment still earns the operator's notice.
- * The corrective note pushed back INTO the live turn does not, because this
- * layer holds no input stream — the pump owns it, and writing into an open turn
- * is `deliverIntoTurn`, which is P4's verb (spec §2.1). The operator is told
- * either way; only the model's correction waits.
+ * The detector runs on this path exactly as it does on the turn path (DOR-1087),
+ * and every hit is counted through `observability/phantom-cancellations.ts`
+ * (DOR-1288) so the rate is a number anybody can read rather than one somebody
+ * remembers. The operator gets a status line either way.
  *
- * The pump path does not have the turn path's cause of phantoms, though: it
- * never closes stdin at a `result` at all, and `SessionPump.reap()` declines
- * while a background subagent is live (DOR-1238), so an EOF cannot land under
- * one.
+ * The corrective note the turn path steers back into the model is deliberately
+ * NOT sent here, and that is now a decision rather than a gap: P4 shipped
+ * `SessionPump.steer`, so a note COULD be written into the live turn. Two
+ * reasons it is not.
+ *
+ * - A steer is itself a mid-turn write into the CLI's queue — the very
+ *   mechanism suspected of provoking phantoms. Answering a phantom by doing
+ *   more of the suspected cause is how a correction feeds itself, which is what
+ *   `PHANTOM_CORRECTIONS_MAX_PER_TURN` exists to bound on the other path.
+ * - The persistent path is not believed to produce phantoms at all: it never
+ *   closes stdin at a `result`, and `SessionPump.reap()` declines while a
+ *   background subagent is live (DOR-1238), so an EOF cannot land under one.
+ *   Spec task 5.1 measures whether that holds. A correction here would soften
+ *   the symptom of the thing being measured; the counter is the point.
+ *
+ * If 5.1 reports a non-zero `pump` count, the remedy is the trigger, not a
+ * note — and the count is what would say so.
  *
  * @module services/runtimes/claude-code/sessions/pump-turn-stream
  */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
+import { recordPhantomCancellation } from '../../../observability/phantom-cancellations.js';
 import { createToolState, type AgentSession } from '../agent-types.js';
 import {
   emptyStreamError,
@@ -128,20 +140,14 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
         lastMainAssistantUuid = message.uuid;
       }
 
-      // DOR-1087: the CLI cancelled pending tool calls because a task
-      // notification was queued, writing a sentinel that reads as a user
-      // refusal. The operator is told; the model's correction is P4's
-      // `deliverIntoTurn` (see the module doc).
+      // DOR-1087: the CLI cancelled pending tool calls, writing a sentinel that
+      // reads as a user refusal. Counted and logged (DOR-1288), and the operator
+      // is told; the model is NOT corrected here — see the module doc.
       const phantoms = detectPhantomCancellations(message, session);
       let phantomNotice: string | undefined;
       if (phantoms.length > 0) {
         const mainThread = phantoms.some((p) => p.mainThread);
-        logger.warn('[pump-turn-stream] phantom tool-call cancellation detected', {
-          session: sessionId,
-          toolUseIds: phantoms.map((p) => p.toolUseId),
-          mainThread,
-          steered: false,
-        });
+        recordPhantomCancellation({ sessionId, path: 'pump', phantoms, steered: false });
         const plural =
           phantoms.length > 1 ? `${phantoms.length} pending tool calls` : 'a pending tool call';
         const where = mainThread ? '' : ' inside one of its helpers';

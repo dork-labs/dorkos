@@ -550,7 +550,13 @@ function emitTurnInput(sessionKey: string, content: string, messageId: string): 
  * @param messageId - The server-minted correlation id for the staged message
  */
 function emitContextStaged(sessionId: string, content: string, messageId: string): void {
-  const projector = peekProjector(primaryOf(sessionId));
+  // `queueKeyOf`, exactly as {@link emitQueueUpdate} resolves it — NOT
+  // `primaryOf`. The filing id is the id the session was BORN with, which after
+  // the canonical-id rename is not what the projector registry is keyed by, so
+  // this receipt reached nobody for every renamed session: the lookup missed and
+  // the early return read as "no listeners" (DOR-1262 review). `queueKeyOf` is
+  // the one resolver that answers "the id the projector is registered under".
+  const projector = peekProjector(queueKeyOf(sessionId));
   if (!projector) return;
   const event: RawContextStaged = { type: 'context_staged', content, messageId };
   projector.ingest(event);

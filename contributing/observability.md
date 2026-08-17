@@ -11,7 +11,7 @@ Pair this guide with:
 
 ## 1. The one-paragraph version
 
-A message's life crosses six mechanisms with six id vocabularies. One `dispatchId` now joins them, and the file reporter stamps it onto every log line written inside the dispatch, so `jq -c 'select(.dispatchId=="dsp_…")'` reconstructs one exchange in order. Every path that declines to do something writes exactly one line saying why and whether anybody saw it. Five pieces of state that only ever lived in process memory are readable at `GET /api/debug/*` and from `dorkos debug`. Tracing stays off by default and nothing here turns it on.
+A message's life crosses six mechanisms with six id vocabularies. One `dispatchId` now joins them, and the file reporter stamps it onto every log line written inside the dispatch, so `jq -c 'select(.dispatchId=="dsp_…")'` reconstructs one exchange in order. Every path that declines to do something writes exactly one line saying why and whether anybody saw it. The pieces of state that only ever lived in process memory are readable at `GET /api/debug/*` and from `dorkos debug`. Tracing stays off by default and nothing here turns it on.
 
 ## 2. What the system writes
 
@@ -110,15 +110,16 @@ The `'[tag] message'` string prefix is the convention — roughly 90 tags across
 
 **New tags are lowercase-kebab and name the mechanism or domain.** Existing PascalCase tags (`[Extensions]`, `[Marketplace]`, `[HarnessSync]`) are legacy and are not being renamed; a rename would break every filter anyone has saved. The tag registry for the dispatch path — the part this guide governs — is:
 
-| Tag                | Owning directory                    | Notes                                                        |
-| ------------------ | ----------------------------------- | ------------------------------------------------------------ |
-| `[rooms]`          | `services/rooms/`                   | Claims, notices, refusals, presence                          |
-| `[stall-guard]`    | `services/session/stall-guard.ts`   | The inactivity watchdog. Names the mechanism, not the domain |
-| `[relay]`          | `services/relay/`                   | Inbound routing and its refusals                             |
-| `[claude-code]`    | `services/runtimes/claude-code/`    | Runtime-specific, including expired prompts                  |
-| `[canUseTool]`     | `messaging/interactive-handlers.ts` | SDK-mirroring exception, kept for grep parity                |
-| `[POST /messages]` | `routes/sessions.ts`                | The interactive turn ingress                                 |
-| `[DorkOS]`         | `index.ts`                          | Process lifecycle: boot, routes mounted, shutdown            |
+| Tag                      | Owning directory                         | Notes                                                                                            |
+| ------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `[rooms]`                | `services/rooms/`                        | Claims, notices, refusals, presence                                                              |
+| `[stall-guard]`          | `services/session/stall-guard.ts`        | The inactivity watchdog. Names the mechanism, not the domain                                     |
+| `[relay]`                | `services/relay/`                        | Inbound routing and its refusals                                                                 |
+| `[claude-code]`          | `services/runtimes/claude-code/`         | Runtime-specific, including expired prompts                                                      |
+| `[canUseTool]`           | `messaging/interactive-handlers.ts`      | SDK-mirroring exception, kept for grep parity                                                    |
+| `[phantom-cancellation]` | `observability/phantom-cancellations.ts` | The DOR-1087 tripwire. Written by BOTH claude-code senders, so it is one tag, not one per sender |
+| `[POST /messages]`       | `routes/sessions.ts`                     | The interactive turn ingress                                                                     |
+| `[DorkOS]`               | `index.ts`                               | Process lifecycle: boot, routes mounted, shutdown                                                |
 
 Add a row here in the same PR that introduces a tag. To see every tag currently in use:
 
@@ -203,12 +204,17 @@ It earns that by obeying the **same content discipline as the span allowlist**: 
 | -------------------------------------- | ---------------------------------------------------------------- |
 | `GET /api/debug/dispatches`            | Live room claims + the recent-dispatch ring (`?limit=`)          |
 | `GET /api/debug/refusals`              | The refusal ring (`?limit=`)                                     |
+| `GET /api/debug/phantom-cancellations` | The phantom-cancellation tripwire: counts by path, recent rows   |
 | `GET /api/debug/projectors`            | Every live projector: seq, subscribers, waiters, buffer sizes    |
 | `GET /api/debug/sessions/:id`          | One session: lifecycle, lock, pending interactions, durable rows |
 | `GET /api/debug/rooms/:id/bindings`    | Whether each of a room's agent sessions has a transcript on disk |
 | `GET /api/debug/relay/traces/:traceId` | Every hop of one dispatch across the bus                         |
 
-Buffers are 256 entries each, process-lifetime, **never written to disk**. The NDJSON log is the durable record; a persisted ring would be a second, worse log with its own retention problems.
+Buffers are 256 entries each (the phantom ring is 64), process-lifetime, **never written to disk**. The NDJSON log is the durable record; a persisted ring would be a second, worse log with its own retention problems.
+
+#### The phantom-cancellation tripwire
+
+`services/observability/phantom-cancellations.ts` counts one specific bug rather than answering an incident question: the Claude Code CLI writing its interrupt sentinel as a `tool_result` when no operator decision is behind it, so the model reads a refusal nobody made (DOR-1087; eight in one session on 2026-08-09, zero real denies). Detection lives in `runtimes/claude-code/messaging/phantom-cancellation.ts`; this module only counts, and both senders record through it — so `byPath.turn` is the resume-per-message path and `byPath.pump` is the persistent one. That split is the measurement in spec `persistent-session-runtime` task 5.1, which tests the claim that persistence removes the class. Every hit also writes one `[phantom-cancellation]` warning carrying the running totals, so a log outlives the process the counter died with.
 
 ### From a terminal
 
@@ -216,6 +222,7 @@ Buffers are 256 entries each, process-lifetime, **never written to disk**. The N
 dorkos debug dispatches                 # who is working, and what ran recently
 dorkos debug refusals --limit 20        # what was declined, and whether anyone saw it
 dorkos debug projectors                 # live streams and their subscribers
+dorkos debug phantoms                   # work the runtime cut short by mistake (DOR-1087)
 dorkos debug session <session-id>
 dorkos debug room <room-id>
 dorkos debug trace dsp_01J…
