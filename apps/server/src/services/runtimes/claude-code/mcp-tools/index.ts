@@ -6,6 +6,7 @@
  */
 import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import type { McpToolDeps } from './types.js';
+import { DORKOS_MCP_SERVER_NAME } from './tool-names.js';
 import { getCoreTools } from './core-tools.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
@@ -241,7 +242,11 @@ export function createDorkOsToolServer(
   // stub, a hermetic test — capabilities keep the token/poll flow untouched.
   const hold = session && deps.approvals ? { session, approvals: deps.approvals } : undefined;
   const server = createSdkMcpServer({
-    name: 'dorkos',
+    // Not a label: Claude Code qualifies every tool on this server as
+    // `mcp__<name>__<tool>`, so this string is half of what the model must type
+    // to call anything here. `tool-names.ts` owns it and the prompt blocks render
+    // from the same constant (DOR-1292).
+    name: DORKOS_MCP_SERVER_NAME,
     version: '1.0.0',
     tools: [
       ...handRegisteredInSessionTools(deps, {

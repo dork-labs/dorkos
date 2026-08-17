@@ -446,8 +446,8 @@ export const roomsDomain: CapabilityDomain = {
         'It matches whole words and their variants — searching for "deploys" finds "deploy" and ' +
         '"deployed" — and finds nothing for part of a word. ' +
         'You can only find messages from after you joined the room. ' +
-        'Something said in the last few minutes may not be findable yet; use read_room_history ' +
-        'for the recent end of a conversation.',
+        'Something said in the last few minutes may not be findable yet; read the room back ' +
+        'instead for the recent end of a conversation.',
       tier: 'observe',
       input: z.object({
         ...historyScope,

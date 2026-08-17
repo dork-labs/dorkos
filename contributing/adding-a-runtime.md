@@ -296,6 +296,25 @@ The backend-specific extras follow from your decision-matrix row: Codex adds `th
 
 Work from `codex/codex-runtime.ts` (simpler: no process lifecycle) or `opencode/opencode-runtime.ts` (sidecar). Reuse the shared session services rather than reinventing them: `SessionLockManager`, `getOrCreateProjector`/`peekProjector`, `reconstructHistoryFromEvents`. Constructor dependencies come in through an options object built at the composition root (see `CodexRuntimeOptions`), which keeps the adapter testable.
 
+### 3b. Teach tools by the name your runtime actually exposes
+
+Any prose you write that tells an agent to call a tool must spell that tool the way **your** runtime hands it to the model. This is a rule and not a style note, because breaking it fails silently on strong models and hard on cheap ones: a model that scans its tool list papers over a wrong name, while Haiku copies the prose, calls the string it read, and gets `No such tool available` (DOR-1292 — two credentialed evals lost whole turns to it).
+
+The names differ per runtime because DorkOS's tools arrive by two different routes:
+
+| Runtime          | How it reaches DorkOS tools                               | What the model must type                                     |
+| ---------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
+| claude-code      | in-session SDK MCP server (`createDorkOsToolServer`)      | `mcp__dorkos__<verb>` — Claude Code qualifies every MCP tool |
+| codex / opencode | external `/mcp`, wired by the person's own harness config | `<verb>` under whatever prefix their config gave the server  |
+
+So:
+
+- **Runtime-specific blocks** (`claude-code/messaging/context-builder.ts` and the equivalent in your adapter) name tools in full. Render the prefix from one constant — claude-code's is `IN_SESSION_TOOL_PREFIX` in `mcp-tools/tool-names.ts`, which is also what the server is created with — never by typing it out per line.
+- **Runtime-neutral blocks** (`runtimes/shared/*.ts`) and **capability descriptions** (`services/**/*-capabilities.ts`) may not spell any prefix. They are read by all three runtimes, so name the verb and defer: "the capability-listing tool, under the full name your own harness exposes it under". `claude-code/messaging/__tests__/context-tool-names.test.ts` fails if a concrete prefix appears anywhere under `runtimes/shared/`.
+- **If your harness defers tools behind a search step**, say so and give the exact query. Claude Code's tool search is on by default and an SDK-type MCP server has no `alwaysLoad` opt-out, so `<dorkos_tools>` tells the model to run `ToolSearch(query="select:mcp__dorkos__…")` with the full name first. A search for the short name returns nothing, which is how both evals dead-ended.
+
+Pin it the same way claude-code does: build your live tool server in a test, list its tools, and diff every name your prose writes against that list in both directions. A test that restates the names cannot catch the drift it exists for.
+
 ### 4. Wire the conformance suite
 
 Every adapter must clear the shared behavioral gate before its UI activates. Add `__tests__/conformance.test.ts`:
@@ -496,6 +515,7 @@ Lessons paid for during the Codex/OpenCode implementation:
 - **Sidecar lifecycle (if applicable).** A restarted sidecar mints new credentials, so an SDK's internal SSE retry reconnects with stale auth forever; disable it and own reconnection yourself (`global-event-hub.ts` is the pattern - on drop, fail in-flight turns with a typed error, re-obtain a fresh client through the manager's backoff, resubscribe). Bind loopback-only, inject a conservative permission ruleset (`OPENCODE_SIDECAR_CONFIG`), and wire `shutdownServices()` teardown so no orphan survives DorkOS.
 - **Registering after `sessionListBroadcaster.start()`.** Sessions exist but never stream into the session list. Register earlier (step 7).
 - **Flat-config ESLint replace semantics.** Adding your per-adapter block without restating the other SDK bans silently un-bans them in your directory (step 5).
+- **Prose that names a tool the model cannot call.** A system-prompt block written with the tool's registered name instead of the name your runtime exposes reads perfectly and fails at run time; strong models silently correct for it, cheap ones do not. See [Teach tools by the name your runtime actually exposes](#3b-teach-tools-by-the-name-your-runtime-actually-exposes).
 - **A `displayName` or `label` nobody told you was bounded.** A hand-written model catalog and the client `RuntimeDescriptor.label` must both fit `STATUS_VALUE_MAX_CHARS` (13), enforced by tests that live outside your adapter directory. Overshoot and you either fail a test you have never heard of or ship a silently truncated status-line label. See [Labels are budgeted](#labels-are-budgeted-status_value_max_chars).
 
 ## Anti-Patterns

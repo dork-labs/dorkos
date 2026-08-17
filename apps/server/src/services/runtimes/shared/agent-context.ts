@@ -42,8 +42,19 @@ import { SERVER_VERSION } from '../../../lib/version.js';
  * answer "what can I do here?" on any runtime.
  *
  * The `dorkos capabilities` pointer leads because it is the one actuation path
- * every runtime has. `list_capabilities` is named second, as the in-session
- * equivalent for a runtime that was given MCP tools.
+ * every runtime has. The in-session capability-listing tool is named second, as
+ * the equivalent for a runtime that was given MCP tools.
+ *
+ * **It is described, not named** (DOR-1292). This block renders on claude-code,
+ * codex and opencode alike, and the three do not agree on what the tool is
+ * called: claude-code's in-session server qualifies every tool with its own
+ * `mcp__<server>__` prefix, while codex and opencode reach the same tool through
+ * whatever the person named DorkOS's `/mcp` server in their own harness config.
+ * Writing any one of those strings here would hand the other two a name that
+ * fails with "No such tool available" — the exact defect DOR-1292 fixed on the
+ * claude-code side, and the reason the fix stops at the runtime boundary. Nothing
+ * under `runtimes/shared/` may spell a concrete prefix, and
+ * `claude-code/messaging/__tests__/context-tool-names.test.ts` enforces that.
  *
  * The Tasks/Relay/Mesh caveat is not padding. This block is injected on EVERY
  * turn of EVERY runtime, ahead of any skill that may or may not be loaded, so it
@@ -67,11 +78,12 @@ DorkOS is the operating system for autonomous AI agents.
 Subsystems: Console (chat), Tasks (scheduling), Relay (messaging), Mesh (discovery).
 Run \`dorkos capabilities\` to list the capabilities you can invoke by id, then
 \`dorkos call <capability-id> [--input '<json>']\` to run one. If you have DorkOS MCP
-tools in this session, \`list_capabilities\` returns the same catalog.
+tools in this session, the capability-listing tool returns the same catalog — call it
+by the full name your own harness exposes it under, which is not the bare name.
 Tasks, Relay, and Mesh are NOT in that catalog and \`dorkos call\` cannot reach them:
-they are MCP tools (\`tasks_*\`, \`relay_*\`, \`mesh_*\`) when your session has them, and
-otherwise only \`dorkos task list|create|trigger|runs\` and \`dorkos agent list|show\`
-exist. Relay and Mesh have no CLI path at all.
+they are MCP tools when your session has them, and otherwise only
+\`dorkos task list|create|trigger|runs\` and \`dorkos agent list|show\` exist.
+Relay and Mesh have no CLI path at all.
 Documentation: ${env.DORKOS_DOCS_BASE_URL}/llms.txt
 Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
 </dorkos_context>`;
