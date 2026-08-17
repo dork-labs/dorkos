@@ -468,7 +468,8 @@
               "expired",
               "denied",
               "cancelled",
-              "errored"
+              "errored",
+              "unresolved"
             ]
           },
           "approvalOutcome": {
@@ -612,7 +613,8 @@
               "expired",
               "denied",
               "cancelled",
-              "errored"
+              "errored",
+              "unresolved"
             ]
           },
           "timeoutMs": {

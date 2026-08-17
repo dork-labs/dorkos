@@ -565,20 +565,28 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
           // the moment the paired result is read — which is where the terminal
           // status is actually decided (DOR-1293).
           //
-          // A call whose result never arrives keeps it, and that is deliberate
-          // rather than overlooked. The honest reading is "unresolved", but the
-          // only status saying so is `pending`, and `use-chat-session`'s pending
-          // scan treats a pending interaction anywhere in the transcript as the
-          // session waiting on you — so a question orphaned by a crashed turn
+          // A call whose result never arrives KEEPS it, and that is deliberate.
+          // The honest status would be `pending`, but `use-chat-session`'s scan
+          // treats a pending interaction anywhere in the transcript as the
+          // session waiting on you — so a question orphaned by a turn that died
           // would leave a closed session permanently claiming it needs an
-          // answer. The live half of that shape already has an owner
-          // (DOR-1269 drops history's empty copy while the turn is open).
+          // answer. `questionOutcome` is a different field, which that scan
+          // never reads, so the orphan says "unresolved" there instead (below)
+          // and the lie is closed without inventing a live prompt.
           const tc: HistoryToolCall = {
             toolCallId: block.id,
             toolName: block.name,
             input: block.input ? JSON.stringify(block.input) : undefined,
             status: 'complete',
           };
+          if (block.name === SDK_TOOL_NAMES.ASK_USER_QUESTION) {
+            // Every question starts UNRESOLVED and stays that way unless
+            // something says otherwise: `applyToolResult` overwrites it when the
+            // paired result arrives, and recorded answers below settle it early.
+            // A question that reaches a reader still wearing `unresolved` is one
+            // whose transcript records no ending at all.
+            tc.questionOutcome = 'unresolved';
+          }
           if (block.name === SDK_TOOL_NAMES.ASK_USER_QUESTION && block.input) {
             if (Array.isArray(block.input.questions)) {
               tc.questions = block.input.questions as QuestionItem[];
@@ -591,9 +599,14 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
               tc.answers = tc.questions
                 ? mapSdkAnswersToIndices(rawAnswers, tc.questions)
                 : rawAnswers;
-              // Recorded answers ARE the ending: DorkOS writes them back into
-              // the tool's input only after somebody submitted them, so this
-              // question is answered whatever its result record says later.
+              // DorkOS writes answers back into the tool's input only after
+              // somebody submitted them, so this question is answered NOW — the
+              // paired result, when it comes, agrees. (It does not always come:
+              // a turn can die between the submission and the result, and this
+              // is what keeps that case from reading as unresolved.) A failing
+              // result still wins, because `applyToolResult` runs later and a
+              // recorded submission that the tool then rejected did not answer
+              // anything.
               tc.questionOutcome = 'answered';
             }
           }
@@ -612,7 +625,10 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
             toolName: block.name,
             input: block.input ? JSON.stringify(block.input) : undefined,
             status: 'complete',
-            ...(tc.questions
+            // Keyed off the tool NAME, matching `resolveToolCall`: a question
+            // whose `questions` failed to parse is still a question, and a part
+            // that said otherwise would take the approval arm downstream.
+            ...(block.name === SDK_TOOL_NAMES.ASK_USER_QUESTION
               ? {
                   interactiveType: 'question' as const,
                   questions: tc.questions,

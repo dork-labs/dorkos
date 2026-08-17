@@ -223,4 +223,102 @@ describe('selectRenderedMessages — a prompt parked across a hard refresh (DOR-
       expect.objectContaining({ interactionId: id, status: 'submitted' }),
     ]);
   });
+
+  it('does not eat an EARLIER question that shares the live one’s id (DOR-1293)', () => {
+    // The collision this dedup was always narrow about, now reachable through a
+    // second door. Tool-call ids repeat across turns on shipped runtimes —
+    // test-mode replays literal ids, codex opens each thread at `'0'` — and a
+    // log-backed question record is `{questions, questionOutcome}` with NO
+    // `result` and no `answers`, because nothing in the event fold ever assigns
+    // them. So a settled question from an earlier turn matched the
+    // "empty finished duplicate" shape exactly, and the record this fix creates
+    // was deleted by the fix that came before it.
+    const id = 'question-expired-1';
+    const settledEarlier = {
+      id: 'a1',
+      role: 'assistant' as const,
+      content: '',
+      toolCalls: [
+        {
+          toolCallId: id,
+          toolName: 'AskUserQuestion',
+          status: 'complete' as const,
+          questions: QUESTIONS,
+          questionOutcome: 'expired' as const,
+        },
+      ],
+    };
+    useSessionStreamStore.getState().applySnapshot(SID, {
+      ...snapshot(
+        gatedToolTurn(id, 'AskUserQuestion', {
+          seq: 3,
+          type: 'question_prompt',
+          id,
+          startedAt: 1000,
+          remainingMs: 600_000,
+          questions: QUESTIONS,
+        }),
+        [{ type: 'question', id, startedAt: 1000, remainingMs: 540_000, questions: QUESTIONS }]
+      ),
+      messages: [{ id: 'u1', role: 'user', content: 'go ahead' }, settledEarlier],
+    });
+
+    const stream = useSessionStreamStore.getState().getSession(SID);
+    const outcomes = selectRenderedMessages(stream, [])
+      .flatMap((m) => m.parts)
+      .filter((p) => p.type === 'tool_call' && p.toolCallId === id)
+      .map((p) => (p.type === 'tool_call' ? p.questionOutcome : undefined));
+
+    // Two cards: the settled one from history, and the live one being asked.
+    expect(outcomes).toEqual(['expired', undefined]);
+    // And the live one is still answerable — the dedup that protects it must
+    // keep working, which is the DOR-1269 half of the same predicate.
+    expect(answerable(SID)).toEqual([id]);
+  });
+
+  it('a parked question carries no ending but `unresolved`, so its copy is still deduped', () => {
+    // The other side of the same predicate. History's copy of a question being
+    // asked RIGHT NOW is exactly the record that must still be dropped, and
+    // after DOR-1293 it is no longer field-less: the parser stamps every
+    // question `unresolved` until something resolves it. That value therefore
+    // has to be excluded BY NAME from "carries something real", or the
+    // duplicate card comes straight back.
+    const id = 'toolu_parked_1';
+    const historyCopy = {
+      id: 'a1',
+      role: 'assistant' as const,
+      content: '',
+      toolCalls: [
+        {
+          toolCallId: id,
+          toolName: 'AskUserQuestion',
+          status: 'complete' as const,
+          questions: QUESTIONS,
+          questionOutcome: 'unresolved' as const,
+        },
+      ],
+    };
+    useSessionStreamStore.getState().applySnapshot(SID, {
+      ...snapshot(
+        gatedToolTurn(id, 'AskUserQuestion', {
+          seq: 3,
+          type: 'question_prompt',
+          id,
+          startedAt: 1000,
+          remainingMs: 600_000,
+          questions: QUESTIONS,
+        }),
+        [{ type: 'question', id, startedAt: 1000, remainingMs: 540_000, questions: QUESTIONS }]
+      ),
+      messages: [{ id: 'u1', role: 'user', content: 'go ahead' }, historyCopy],
+    });
+
+    const stream = useSessionStreamStore.getState().getSession(SID);
+    const cards = selectRenderedMessages(stream, [])
+      .flatMap((m) => m.parts)
+      .filter((p) => p.type === 'tool_call' && p.toolCallId === id);
+
+    expect(cards).toHaveLength(1);
+    expect(answerable(SID)).toEqual([id]);
+  });
 });

@@ -4,13 +4,14 @@ import { ChevronRight } from 'lucide-react';
 import type { MessagePart } from '@dorkos/shared/types';
 import type { ChatMessage, HookState } from '../../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
-import { TIMING, getToolLabel } from '@/layers/shared/lib';
+import { TIMING } from '@/layers/shared/lib';
 import { groupApprovalReceipts } from '../../lib/group-approval-receipts';
+import { isSettledQuestion, questionEnding } from '../../lib/question-state';
 import { StreamingText } from './StreamingText';
 import { ToolCallCard } from '../tools/ToolCallCard';
 import { ToolApproval } from '../tools/ToolApproval';
 import type { ToolApprovalHandle } from '../tools/ToolApproval';
-import { ApprovalReceipt } from '../tools/ApprovalReceipt';
+import { ApprovalReceiptGroup } from '../tools/ApprovalReceiptGroup';
 import { QuestionPrompt } from '../tools/QuestionPrompt';
 import type { QuestionPromptHandle } from '../tools/QuestionPrompt';
 import { ElicitationPrompt } from '../tools/ElicitationPrompt';
@@ -232,21 +233,6 @@ export function CollapsibleRun({ children }: { children: React.ReactNode[] }) {
 }
 
 /**
- * Whether a question is over AND was actually answered — the only state the
- * empty-answers fallback may stand in for.
- *
- * `questionOutcome` is authoritative wherever it exists (history for every
- * runtime, and the live fold from `interaction_resolved`). Where it does not —
- * a transcript written before DOR-1293, or a path nothing has taught to set it
- * — the old "not pending means settled" rule is kept, because the alternative
- * is to stop collapsing answered questions on clients that did not submit them.
- */
-function isSettledQuestion(part: Extract<MessagePart, { type: 'tool_call' }>): boolean {
-  if (part.questionOutcome !== undefined) return part.questionOutcome === 'answered';
-  return part.status !== 'pending';
-}
-
-/**
  * Renders assistant message content by mapping over message parts.
  * Handles text parts (via StreamingText), tool call parts (via AutoHideToolCall),
  * approval parts (via ToolApproval), and question parts (via QuestionPrompt).
@@ -458,33 +444,22 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         .map((index) => parts[index])
         .filter((member) => member.type === 'tool_call');
       return (
-        <div key={`approval-receipt-${toolPart.toolCallId}`} className="flex flex-col">
-          <ApprovalReceipt
-            outcome={receipt.outcome}
-            items={members.map((member) => ({
-              toolCallId: member.toolCallId,
-              label:
-                member.approvalDisplayName || getToolLabel(member.toolName, member.input ?? ''),
-            }))}
-            resolvedAt={toolPart.approvalResolvedAt}
-            startedAt={toolPart.approvalStartedAt}
-            reasonGiven={receipt.reasonGiven}
-          />
-          {/* A denied or expired tool never ran — there is no result worth a
-              card, and the receipt already says what happened. An allowed one
-              did run, so it keeps everything an ungated tool would show,
-              inline MCP App included. */}
-          {receipt.outcome === 'allowed' &&
-            members.map((member) => (
-              <ToolCallWithApp
-                key={member.toolCallId}
-                part={member}
-                sessionId={sessionId}
-                autoHide={autoHideToolCalls}
-                expandToolCalls={expandToolCalls}
-              />
-            ))}
-        </div>
+        <ApprovalReceiptGroup
+          key={`approval-receipt-${toolPart.toolCallId}`}
+          group={receipt}
+          members={members}
+          lead={toolPart}
+        >
+          {members.map((member) => (
+            <ToolCallWithApp
+              key={member.toolCallId}
+              part={member}
+              sessionId={sessionId}
+              autoHide={autoHideToolCalls}
+              expandToolCalls={expandToolCalls}
+            />
+          ))}
+        </ApprovalReceiptGroup>
       );
     }
     if (toolPart.interactiveType === 'question' && toolPart.questions) {
@@ -514,7 +489,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           // (DOR-1293). `questionOutcome` is the one field that can tell the two
           // apart; where nothing set it, the old rule stands.
           answers={toolPart.answers ?? (isSettledQuestion(toolPart) ? {} : undefined)}
-          outcome={toolPart.questionOutcome}
+          outcome={questionEnding(toolPart)}
           result={toolPart.result}
           isActive={isActive}
           focusedOptionIndex={isActive ? focusedOptionIndex : -1}

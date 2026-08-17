@@ -5,6 +5,7 @@ import { interactionGate } from '../interaction-gate.js';
 import { TestModeRuntime } from '../test-mode-runtime.js';
 import {
   driveDurableTurn,
+  driveExpiredQuestionTurn,
   drivePresenceTurn,
   driveDispositionTurn,
   driveTerminalOnce,
@@ -51,6 +52,18 @@ runtimeConformance(() => new TestModeRuntime(), {
   // DOR-189: a completed turn must survive a restart via the durable store.
   durableHistory: (runtime, sessionId, content) =>
     driveDurableTurn(runtime, sessionId, content, '/projects/conformance'),
+  // DOR-1293: a question NOBODY answers. The `question-expires` scenario parks
+  // on a step barrier standing in for the ten-minute clock, then fires the same
+  // `interaction_cancelled`/`timeout` the real handler does — so what the suite
+  // reads back is the production fold, not a hand-written outcome. Polling
+  // rather than firing blind: `interactionGate.step` answers false until the
+  // scenario has actually parked, and a dropped step hangs the turn forever.
+  expiredQuestionHistory: (runtime, sessionId, content) => {
+    scenarioStore.setForSession(sessionId, 'question-expires');
+    return driveExpiredQuestionTurn(runtime, sessionId, content, '/projects/conformance', () =>
+      vi.waitFor(() => expect(interactionGate.step(sessionId)).toBe(true))
+    );
+  },
   // Presence is only assertable against a turn that really runs: drive one
   // through the same projector the trigger path feeds.
   presenceTurn: (runtime, sessionId, content, probes) =>

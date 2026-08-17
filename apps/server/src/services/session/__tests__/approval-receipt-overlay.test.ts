@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
-import type { HistoryMessage } from '@dorkos/shared/types';
+import type { HistoryMessage, QuestionOutcome } from '@dorkos/shared/types';
 import {
   collectApprovalReceipts,
   applyApprovalReceipts,
@@ -20,10 +20,10 @@ import {
 // SDK JSONL) can never report one. This overlay is what puts the answers back
 // on reopening — and what must stay silent when there are none.
 
-/** One resolved approval, as the projector records it. */
+/** One resolved interaction, as the projector records it. */
 function resolved(
   id: string,
-  resolution: 'approved' | 'denied' | 'expired' | 'cancelled',
+  resolution: 'approved' | 'denied' | 'expired' | 'cancelled' | 'answered',
   extra: Partial<Extract<SessionEvent, { type: 'interaction_resolved' }>> = {}
 ): SessionEvent {
   return {
@@ -57,6 +57,46 @@ function assistantWithTool(toolCallId: string): HistoryMessage {
     parts: [
       { type: 'text', text: 'Running it.' },
       { type: 'tool_call', toolCallId, toolName: 'Bash', status: 'complete', input: '{}' },
+    ],
+  };
+}
+
+/**
+ * An assistant message carrying one `AskUserQuestion`, in both shapes, as the
+ * claude-code parser hands it over — including the ending the parser inferred
+ * from the tool result, which the overlay may need to correct.
+ */
+function assistantWithQuestion(
+  toolCallId: string,
+  parsed: QuestionOutcome = 'unresolved'
+): HistoryMessage {
+  const questions = [
+    { header: 'Runner', question: 'Which runner?', multiSelect: false, options: [] },
+  ];
+  return {
+    id: 'assistant-1',
+    role: 'assistant',
+    content: 'One decision first.',
+    toolCalls: [
+      {
+        toolCallId,
+        toolName: 'AskUserQuestion',
+        status: 'complete',
+        questions,
+        questionOutcome: parsed,
+      },
+    ],
+    parts: [
+      { type: 'text', text: 'One decision first.' },
+      {
+        type: 'tool_call',
+        toolCallId,
+        toolName: 'AskUserQuestion',
+        status: 'complete',
+        interactiveType: 'question',
+        questions,
+        questionOutcome: parsed,
+      },
     ],
   };
 }
@@ -125,6 +165,41 @@ describe('applyApprovalReceipts', () => {
       interactiveType: 'approval',
       approvalOutcome: 'denied',
     });
+  });
+
+  it('writes a QUESTION ending onto both shapes, and marks no approval', () => {
+    // Without this branch the question falls through to the approval arm and is
+    // stamped `interactiveType: 'approval'` with `approvalOutcome: undefined` —
+    // which does not merely mislabel it. `AssistantMessageContent` routes on
+    // `interactiveType`, so the question card stops rendering entirely and the
+    // thing the person was asked disappears from the reopened transcript.
+    const [message] = applyApprovalReceipts(
+      [assistantWithQuestion('tc-q')],
+      collectApprovalReceipts([resolved('tc-q', 'expired', { kind: 'question' })])
+    );
+
+    expect(message.toolCalls?.[0]).toMatchObject({ questionOutcome: 'expired' });
+    expect(message.toolCalls?.[0]).not.toHaveProperty('approvalOutcome');
+    expect(message.parts?.[1]).toMatchObject({
+      type: 'tool_call',
+      interactiveType: 'question',
+      questionOutcome: 'expired',
+    });
+    expect(message.parts?.[1]).not.toMatchObject({ interactiveType: 'approval' });
+    // The question itself survives — it is what the ending is ABOUT.
+    expect(message.parts?.[1]).toMatchObject({ questions: [{ header: 'Runner' }] });
+  });
+
+  it('replaces the parser’s inferred ending with the one DorkOS recorded', () => {
+    // claude-code's parser reads an ending out of the model-facing prose in the
+    // tool result. Where DorkOS actually holds the answer, that guess must lose.
+    const guessed = assistantWithQuestion('tc-q', 'errored');
+    const [message] = applyApprovalReceipts(
+      [guessed],
+      collectApprovalReceipts([resolved('tc-q', 'answered', { kind: 'question' })])
+    );
+
+    expect(message.parts?.[1]).toMatchObject({ questionOutcome: 'answered' });
   });
 
   it('returns untouched messages by reference', () => {

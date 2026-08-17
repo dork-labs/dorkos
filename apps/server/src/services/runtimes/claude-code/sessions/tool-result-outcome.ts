@@ -16,14 +16,20 @@
  * run that times out says "Command timed out after 2m 0s". Both were observed
  * while this module was written.
  *
- * `is_error === true` is the guard that makes the rest safe, and it is not
- * incidental. Across ~14,000 real tool results in the operator's own
- * transcripts, 2.7% carried the flag — and every false match above was in the
- * other 97.3%. So the flag is consulted FIRST and the sentences only afterwards,
- * on text that is already known to be a failure. The patterns are anchored to
- * the whole (trimmed) result or its opening sentence for the same reason;
- * "timed out after" free-floating in the middle of a Bash failure is a command
- * timeout, not an approval one.
+ * `is_error === true` is the guard that makes the rest safe. Sweeping every
+ * JSONL transcript on the author's machine, every false match of every sentence
+ * below sat OUTSIDE the `is_error` set — they were file contents being read
+ * back, grep output, and command timeouts. So the flag is consulted FIRST and
+ * the sentences only afterwards, on text already known to be a failure. The
+ * patterns are anchored to the whole (trimmed) result or its opening sentence
+ * for the same reason; "timed out after" free-floating in the middle of a Bash
+ * failure is a command timeout, not an approval one.
+ *
+ * **An unrecognised failure degrades to `errored`, never to a decision.** That
+ * asymmetry is deliberate: `errored` says "this did not work", which is true of
+ * every failure, while `denied` and `expired` claim a person (or a timer) acted.
+ * Widening a pattern costs nothing if it is wrong in the direction of `errored`
+ * and puts words in someone's mouth if it is wrong the other way.
  *
  * ## Whose words these are
  *
@@ -115,6 +121,20 @@ const CLI_REFUSAL_PREFIXES = [
   "The user doesn't want to take this action right now.",
 ];
 
+/**
+ * A refusal by a permission RULE rather than by a person answering a card —
+ * `Permission to use Bash with command <cmd> has been denied.`
+ *
+ * The most common refusal shape in the corpus, and the one this classifier
+ * originally missed: it outnumbered both {@link CLI_REFUSAL_PREFIXES} sentences
+ * together, and every occurrence carried `is_error: true`. It reads as `denied`
+ * because the tool was refused and did not run, which is the claim the
+ * transcript makes. Who did the refusing — a `deny` rule the operator wrote
+ * earlier, rather than a click just now — is not something the result text
+ * distinguishes, and the receipt does not pretend to.
+ */
+const RULE_REFUSAL_PATTERN = /^Permission to use .+ has been denied\.?$/s;
+
 /** Withdrawal shapes, including the CLI's own interrupt marker. */
 const WITHDRAWN_PREFIXES = ['[Request interrupted by user'];
 
@@ -139,6 +159,7 @@ export function classifyToolResult(
   if (WITHDRAWN_PREFIXES.some((prefix) => text.startsWith(prefix))) return 'cancelled';
   if (CLI_REFUSAL_PREFIXES.some((prefix) => text.startsWith(prefix))) return 'denied';
   if (text.startsWith(toolDenial())) return 'denied';
+  if (RULE_REFUSAL_PATTERN.test(text)) return 'denied';
 
   return 'errored';
 }
@@ -189,7 +210,17 @@ export interface ToolResultApplication {
   startedAt?: number;
 }
 
-/** Write one classified result onto one shape of the tool call. */
+/**
+ * Write one classified result onto one shape of the tool call.
+ *
+ * Whether this is a QUESTION is decided by the tool's NAME, never by whether
+ * its `questions` array parsed. Routing on the array meant an `AskUserQuestion`
+ * whose input was malformed — or truncated, or written by a future SDK — fell
+ * through to the approval arm and rendered "Expired — denied" over a question
+ * nobody was ever asked to approve, which is precisely the confusion
+ * `approvalOutcomeOf`'s contract exists to prevent. A question with no readable
+ * options is still a question; it simply has no answers to show.
+ */
 function resolveToolCall(
   target: ResolvableToolCall,
   outcome: ToolResultOutcome,
@@ -199,8 +230,7 @@ function resolveToolCall(
   target.result = resultText;
   target.status = outcome === 'complete' ? 'complete' : 'error';
 
-  const questions = target.questions as QuestionItem[] | undefined;
-  if (target.toolName === SDK_TOOL_NAMES.ASK_USER_QUESTION && questions) {
+  if (target.toolName === SDK_TOOL_NAMES.ASK_USER_QUESTION) {
     if (outcome !== 'complete') {
       target.questionOutcome = QUESTION_OUTCOME_BY_RESULT[outcome];
       return;
@@ -208,7 +238,8 @@ function resolveToolCall(
     // Answers are read ONLY out of a result that succeeded. A failed one has
     // none to give, and parsing it anyway is how the empty `{}` that renders as
     // "Question answered" was minted (DOR-1293).
-    if (!target.answers) {
+    const questions = target.questions as QuestionItem[] | undefined;
+    if (!target.answers && questions) {
       target.answers = sdkAnswers
         ? mapSdkAnswersToIndices(sdkAnswers, questions)
         : parseQuestionAnswers(resultText, questions);

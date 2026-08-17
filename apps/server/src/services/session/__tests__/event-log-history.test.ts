@@ -467,6 +467,92 @@ describe('reconstructHistoryFromEvents — answered approvals', () => {
     });
   });
 
+  it('never mints a SECOND row when the ask and the tool call use different ids', () => {
+    // Fails CLOSED, like `applyReceipts`. A runtime whose interaction ids live
+    // in their own space (the shape OpenCode's `Permission.id` already takes)
+    // would otherwise produce two `AskUserQuestion` rows for one ask — one with
+    // the questions and no result, one with the result and no questions.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'tool_call',
+          toolCallId: 'tool-abc',
+          toolName: 'AskUserQuestion',
+          status: 'pending',
+        },
+        {
+          seq: 3,
+          type: 'question_prompt',
+          id: 'ask-xyz',
+          questions: [{ question: 'Which?', header: 'Q', multiSelect: false, options: [] }],
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls).toHaveLength(1);
+    expect(messages[1].toolCalls?.[0].toolCallId).toBe('tool-abc');
+    // Nothing was annotated, and nothing was invented — the honest failure.
+    expect(messages[1].toolCalls?.[0].questions).toBeUndefined();
+  });
+
+  it('never mints a row from an id-less ask', () => {
+    // `session-event-normalizer` coerces a missing interaction id with `?? ''`,
+    // so an id-less `question_prompt` is representable and would have keyed a
+    // row on the empty string.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'question_prompt',
+          id: '',
+          questions: [{ question: 'Which?', header: 'Q', multiSelect: false, options: [] }],
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        { seq: 3, type: 'turn_end' }
+      )
+    );
+
+    // A turn with no text and no tool calls emits no assistant message at all.
+    expect(messages.flatMap((m) => m.toolCalls ?? [])).toEqual([]);
+  });
+
+  it('says a question never resolved rather than letting it read as answered', () => {
+    // The turn ended with the ask still open — interrupted, or trimmed out of
+    // the log between the ask and the answer. Unmarked, it reaches the renderer
+    // as "settled, no answers", which is what an ANSWERED question looks like
+    // on a client that did not submit it (DOR-1293).
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'tool_call',
+          toolCallId: 'tc-q',
+          toolName: 'AskUserQuestion',
+          status: 'pending',
+        },
+        {
+          seq: 3,
+          type: 'question_prompt',
+          id: 'tc-q',
+          questions: [{ question: 'Which?', header: 'Q', multiSelect: false, options: [] }],
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0].questionOutcome).toBe('unresolved');
+  });
+
   it('carries the runtime’s terminal status, not an optimistic complete', () => {
     // A tool that failed came back from history wearing a check, because every
     // entry was created `complete` and the result event's own status was

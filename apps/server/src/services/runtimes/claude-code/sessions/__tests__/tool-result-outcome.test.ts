@@ -79,6 +79,24 @@ describe('classifyToolResult', () => {
     );
   });
 
+  it('reads a permission RULE refusal as a denial', () => {
+    // The most common refusal shape in the corpus, and the one the first cut of
+    // this classifier missed entirely — it outnumbered both CLI refusal
+    // sentences together and landed in `errored`, so the tool read as "failed"
+    // rather than "refused".
+    expect(
+      classifyToolResult('Permission to use Bash with command ls -la .env has been denied.', true)
+    ).toBe('denied');
+    // Multi-line commands are ordinary; the pattern must not stop at the first
+    // newline and fall through to `errored`.
+    expect(
+      classifyToolResult(
+        'Permission to use Bash with command foo \\\n  && bar has been denied.',
+        true
+      )
+    ).toBe('denied');
+  });
+
   it('calls an unrecognised failure errored rather than guessing', () => {
     expect(classifyToolResult('Exit code 1\nTraceback (most recent call last):', true)).toBe(
       'errored'
@@ -170,6 +188,41 @@ describe('parseTranscript terminal shapes (DOR-1293)', () => {
     expect(errored.result).toContain('Exit code 1');
     expect(errored.approvalOutcome).toBeUndefined();
     expect(errored.interactiveType).toBeUndefined();
+  });
+
+  it('a tool refused by a permission RULE reads as refused, not as broken', () => {
+    const denied = part('tool-rule-denied');
+    expect(denied.status).toBe('error');
+    expect(denied.interactiveType).toBe('approval');
+    expect(denied.approvalOutcome).toBe('denied');
+    // The command that was blocked is the whole content of the refusal, and the
+    // receipt suppresses the tool card — so losing this text loses the only
+    // record of WHAT was refused.
+    expect(denied.result).toContain('ls -la .env');
+  });
+
+  it('a question whose input did not parse is still a QUESTION', () => {
+    // Routing on the `questions` array rather than the tool name sent this down
+    // the approval arm, where it rendered "Expired — denied after 10:00" over a
+    // question nobody was ever asked to approve.
+    const malformed = part('tool-malformed');
+    expect(malformed.interactiveType).toBe('question');
+    expect(malformed.questionOutcome).toBe('expired');
+    expect(malformed.approvalOutcome).toBeUndefined();
+    // No options survived the malformed input, and none are invented.
+    expect(malformed.questions).toBeUndefined();
+  });
+
+  it('a question the transcript never answers says it does not know', () => {
+    // A turn that died between the ask and any result. `status` stays
+    // `complete` on purpose — `pending` would make `use-chat-session`'s scan
+    // claim a closed session is waiting on you — so the honesty lives on the
+    // field that scan never reads.
+    const orphan = part('tool-orphan');
+    expect(orphan.questionOutcome).toBe('unresolved');
+    expect(orphan.answers).toBeUndefined();
+    expect(orphan.result).toBeUndefined();
+    expect(call('tool-orphan').questionOutcome).toBe('unresolved');
   });
 
   it('a successful Read of a file QUOTING those sentences stays complete', () => {

@@ -957,24 +957,35 @@ function liveToolCallIds(segments: ChatMessage[]): Set<string> {
  * shape the parked-prompt duplicate takes, and nothing else.
  *
  * A tool call that really ran and was really recorded always carries something
- * it produced: a `result`, the `answers` a question was given, or the
- * `approvalOutcome` a permission ask settled with. The DOR-1269 duplicate
- * carries none of the three, because nothing has happened to it yet — the model
- * has merely emitted the `tool_use` block and the transcript parser stamped it
- * `complete`.
+ * it produced: a `result`, the `answers` a question was given, the
+ * `approvalOutcome` a permission ask settled with, or a `questionOutcome`
+ * saying how the question ended. The DOR-1269 duplicate carries none of them,
+ * because nothing has happened to it yet — the model has merely emitted the
+ * `tool_use` block and the transcript parser stamped it `complete`.
+ *
+ * `questionOutcome: 'unresolved'` is the one value that does NOT count as
+ * something produced, and it has to be excluded by name. It is the parked
+ * prompt's own marker — "the transcript records no ending" is precisely the
+ * duplicate's condition (DOR-1293) — so treating its presence as evidence of a
+ * real record would put the duplicate card back, which is the whole of DOR-1269.
+ * Every other value is a real ending and protects the record it sits on.
  *
  * This is what keeps {@link withoutEmptyDuplicateToolCalls} from eating a real
  * earlier call, which matters because tool-call ids are NOT unique across a
  * session: codex uses the raw SDK item id and starts a fresh thread per turn
  * (so turn 2 opens at `'0'` again), and the test-mode scenarios re-run with the
- * same literal ids on every turn.
+ * same literal ids on every turn. A log-backed question record is the sharpest
+ * case: it is `{questions, questionOutcome}` with no `result` and no `answers`
+ * (nothing in the event fold ever assigns them), so before `questionOutcome`
+ * was counted here, an id collision deleted the very record this fix creates.
  */
 function isEmptyFinishedToolCall(part: MessagePart): boolean {
   return (
     part.type === 'tool_call' &&
     part.result === undefined &&
     part.answers === undefined &&
-    part.approvalOutcome === undefined
+    part.approvalOutcome === undefined &&
+    (part.questionOutcome === undefined || part.questionOutcome === 'unresolved')
   );
 }
 

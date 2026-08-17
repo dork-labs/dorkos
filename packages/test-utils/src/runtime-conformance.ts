@@ -105,6 +105,28 @@ export interface RuntimeConformanceOpts {
     content: string
   ) => Promise<HistoryMessage[]>;
   /**
+   * Drives ONE turn that ASKS a question nobody answers, lets the ask expire,
+   * closes the turn, and returns the history a reopened session would be
+   * served.
+   *
+   * Provided only by runtimes that declare `supportsQuestionPrompt` AND can
+   * reach the unanswered ending deterministically. Omit it and the case SKIPs
+   * by name rather than passing on an absence the suite manufactured — the same
+   * rule the presence and disposition drivers follow, and for the same reason:
+   * a runtime's `sendMessage` moves no projector, so an assertion read off it
+   * alone would report the same thing for every runtime and prove nothing.
+   *
+   * The ending must be reached the way production reaches it — the runtime's
+   * real timeout/cancel path through the normalizer and projector — never by
+   * writing a `questionOutcome` into history by hand, which would assert only
+   * that the driver can type.
+   */
+  expiredQuestionHistory?: (
+    runtime: AgentRuntime,
+    sessionId: string,
+    content: string
+  ) => Promise<HistoryMessage[]>;
+  /**
    * Drives ONE real turn through the trigger path's projector — the
    * `getOrCreateProjector` → `feedProjector` seam `POST /messages` uses —
    * calling `midTurn` while the turn is OPEN and `afterTurn` once it has
@@ -832,6 +854,7 @@ export function runtimeConformance(
     makeFailingRuntime,
     makeCompactingRuntime,
     durableHistory,
+    expiredQuestionHistory,
     presenceTurn,
     warmSession,
     dispositionTurn,
@@ -1525,6 +1548,46 @@ export function runtimeConformance(
         for (const message of history) {
           expect(typeof message.id).toBe('string');
           expect(typeof message.role).toBe('string');
+        }
+      });
+
+      it('a question NOBODY answered says so in history, and claims no answer (DOR-1293)', async ({
+        skip,
+      }) => {
+        const runtime = makeRuntime();
+        if (!runtime.getCapabilities().supportsQuestionPrompt) {
+          skip('runtime declares no question prompt');
+          return;
+        }
+        if (!expiredQuestionHistory) {
+          skip('no expiredQuestionHistory driver wired — see the option’s TSDoc');
+          return;
+        }
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+        const history = await expiredQuestionHistory(runtime, sessionId, messageContent);
+        const asked = history
+          .flatMap((m) => m.toolCalls ?? [])
+          .filter((tc) => tc.questions !== undefined);
+
+        expect(
+          asked.length,
+          'a question the person was asked must survive into history — otherwise there is nowhere to say how it ended'
+        ).toBeGreaterThan(0);
+        for (const question of asked) {
+          // The whole of DOR-1293: "no answers" is what an unanswered question
+          // and an answered one somebody ELSE submitted look equally like, so
+          // history has to state the difference rather than leave the renderer
+          // to guess — which it did, in favour of a green "Question answered".
+          expect(question.questionOutcome).toBe('expired');
+          expect(question.answers).toBeUndefined();
+          // And never as a PERMISSION receipt. All three interaction kinds share
+          // a cancellation path, so a timed-out question resolves `expired`
+          // exactly as a timed-out approval does — reading the kind back out of
+          // the outcome is what printed "Expired — denied" over questions
+          // nobody was ever asked to approve.
+          expect(question.approvalOutcome).toBeUndefined();
         }
       });
     });

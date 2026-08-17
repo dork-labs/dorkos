@@ -42,7 +42,6 @@ import {
   type SessionEvent,
 } from '@dorkos/shared/session-stream';
 import type { ErrorPart, HistoryMessage, HistoryToolCall, MessagePart } from '@dorkos/shared/types';
-import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
 
 /** The `error` session-event member, the per-turn error accumulator entry. */
 type ErrorSessionEvent = Extract<SessionEvent, { type: 'error' }>;
@@ -97,6 +96,25 @@ function applyReceipts(turn: TurnAccumulator): void {
   for (const [toolCallId, receipt] of turn.receipts) {
     const tool = turn.tools.get(toolCallId);
     if (tool) Object.assign(tool, receipt);
+  }
+}
+
+/**
+ * Say so when a question in this turn never resolved.
+ *
+ * A turn can end with a question still open — it was interrupted, the runtime
+ * died, the log was trimmed between the ask and the answer. Left unmarked, that
+ * question reaches the renderer as "settled, with no answers", which is the
+ * exact shape an ANSWERED question takes on a client that did not submit it,
+ * and it drew a green "Question answered" over it (DOR-1293). `unresolved` is
+ * how history says it does not know, and it is applied after the receipts so a
+ * real ending always wins.
+ */
+function markUnresolvedQuestions(turn: TurnAccumulator): void {
+  for (const tool of turn.tools.values()) {
+    if (tool.questions !== undefined && tool.questionOutcome === undefined) {
+      tool.questionOutcome = 'unresolved';
+    }
   }
 }
 
@@ -224,13 +242,21 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
       case 'question_prompt': {
         // The QUESTION itself, kept. Without it a reopened transcript holds a
         // bare `AskUserQuestion` tool call — the thing a person was asked
-        // vanishes, and with it any place to say how it ended (DOR-1293). The
-        // ask carries no tool name of its own, so an entry created here is
-        // named for the SDK tool that always raises it; a `tool_call` under the
-        // same id (which claude-code emits, and test-mode mirrors) has usually
-        // named it already, and `toolEntry` keeps the first name it was given.
+        // vanishes, and with it any place to say how it ended (DOR-1293).
+        //
+        // FAILS CLOSED, exactly as `applyReceipts` does, and for the same
+        // reason: this annotates a tool call the turn already holds and never
+        // mints one. A runtime whose interaction ids live in their own id space
+        // (the shape OpenCode's `Permission.id` already takes) would otherwise
+        // produce a SECOND `AskUserQuestion` row beside the real tool call —
+        // one with the questions and no result, one with the result and no
+        // questions — and an id-less `question_prompt`, which the normalizer's
+        // `?? ''` makes representable, would mint a row keyed on the empty
+        // string. Annotating nothing is the honest failure; inventing a row is
+        // not.
         if (!turn) break;
-        toolEntry(turn, event.id, SDK_TOOL_NAMES.ASK_USER_QUESTION).questions = event.questions;
+        const asked = turn.tools.get(event.id);
+        if (asked) asked.questions = event.questions;
         break;
       }
       case 'tool_progress': {
@@ -329,6 +355,7 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
       case 'turn_end': {
         if (!turn) break;
         applyReceipts(turn);
+        markUnresolvedQuestions(turn);
         // An errors-only turn still emits an assistant message: the failure IS
         // the turn's output, and dropping it would make a failed turn vanish
         // from a log-backed runtime's history.

@@ -2024,11 +2024,17 @@ export type ToolApprovalOutcome = z.infer<typeof ToolApprovalOutcomeSchema>;
  *
  * A question is not an approval and must never borrow its words: "Expired —
  * denied" over a question nobody was asked to approve is the same class of lie
- * as a green "Question answered" over one nobody answered (DOR-1293). Four of
- * the five members are the `interaction_resolved` resolutions a question can
- * settle with, spelled identically so the live fold and the reopened transcript
- * agree; `errored` is the fifth, and exists because a runtime's own transcript
- * can report a failure DorkOS never saw (the raw CLI, a pruned event log).
+ * as a green "Question answered" over one nobody answered (DOR-1293). Four
+ * members are the `interaction_resolved` resolutions a question can settle
+ * with, spelled identically so the live fold and the reopened transcript agree.
+ * Two are not resolutions at all:
+ *
+ * - `errored` — the ask itself failed. A runtime's own transcript can report
+ *   this when DorkOS never saw the interaction (the raw CLI, a pruned log).
+ * - `unresolved` — the transcript records the ask and NO ending, which is what
+ *   a turn that died mid-question leaves behind. It is not a terminal state and
+ *   nothing derives a receipt from it; it exists so "we do not know" is
+ *   sayable, because the alternative was to keep saying "answered".
  */
 export const QuestionOutcomeSchema = z.enum([
   'answered',
@@ -2036,6 +2042,7 @@ export const QuestionOutcomeSchema = z.enum([
   'denied',
   'cancelled',
   'errored',
+  'unresolved',
 ]);
 
 /** How an `AskUserQuestion` ended. */

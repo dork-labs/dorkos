@@ -7,16 +7,16 @@
  * tomorrow came back with every receipt gone: the one record a person most
  * wants when reviewing what an agent did was the one thing that did not last.
  *
- * Questions ride the same overlay for a related but distinct reason. Their
- * ending IS in the JSONL — as model-facing prose in the tool result, which the
- * transcript parser classifies (`sessions/tool-result-outcome.ts`) — so unlike
- * approvals they are never lost. What DorkOS holds is the same fact stated
- * exactly rather than inferred from a sentence, so it is applied on top.
- *
  * This module closes that. The answers ARE durable — the projector records
  * every `interaction_resolved` in its `'record'` persistence mode
  * (`session-state-projector`) — so history assembled from a foreign transcript
  * can be annotated from them, matching by tool-call id.
+ *
+ * Questions ride the same overlay for a related but distinct reason. Their
+ * ending IS in the JSONL — as model-facing prose in the tool result, which the
+ * transcript parser classifies (`sessions/tool-result-outcome.ts`) — so unlike
+ * approvals they are never lost. What DorkOS holds is the same fact stated
+ * exactly rather than read out of a sentence, so it is applied on top and wins.
  *
  * ## Where this belongs, and where it does not
  *

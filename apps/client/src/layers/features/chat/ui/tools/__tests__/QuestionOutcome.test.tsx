@@ -95,6 +95,33 @@ describe('a question that ended in history (DOR-1293)', () => {
     );
   });
 
+  it('a question the transcript never resolved says exactly that', () => {
+    // The orphan: a turn that died between the ask and any result. It is not
+    // "expired" (no timer ran out) and certainly not "answered" — the only true
+    // thing to say is that no answer was recorded.
+    renderQuestionPart({ questionOutcome: 'unresolved' });
+
+    const row = screen.getByTestId('question-prompt-unanswered');
+    expect(row).toHaveAttribute('data-outcome', 'unresolved');
+    expect(row).toHaveTextContent('No answer was recorded');
+    expect(screen.queryByTestId('question-prompt-submitted')).toBeNull();
+  });
+
+  it('an unanswered question keeps the transcript’s own words', () => {
+    // Whatever the model was told rides under the label. The label is the
+    // summary; the result is the evidence, and a reader chasing what an agent
+    // actually saw should never have to take the summary's word for it.
+    renderQuestionPart({
+      status: 'error',
+      questionOutcome: 'expired',
+      result: 'User did not respond within 10 minutes',
+    });
+
+    expect(screen.getByTestId('question-prompt-unanswered')).toHaveTextContent(
+      'User did not respond within 10 minutes'
+    );
+  });
+
   it('a failed question shows what the transcript actually recorded', () => {
     renderQuestionPart({
       status: 'error',
@@ -126,10 +153,10 @@ describe('a question that ended in history (DOR-1293)', () => {
   });
 
   it('a question with no recorded outcome falls back to the old rule', () => {
-    // A transcript written before this field existed, or a path nothing has
-    // taught to set it. Settled-means-answered is wrong in the expired case and
-    // right in every other, which is why the field had to be added rather than
-    // the rule inverted.
+    // The LIVE path, which is the only place the field is absent: a question
+    // resolved mid-turn has no `interaction_resolved` ending folded onto it yet.
+    // History always carries one — claude-code re-derives it on every read, and
+    // the log-backed fold stamps `unresolved` on anything it never resolved.
     renderQuestionPart({});
 
     expect(screen.getByTestId('question-prompt-submitted')).toHaveTextContent('Question answered');
@@ -137,6 +164,21 @@ describe('a question that ended in history (DOR-1293)', () => {
 
   it('a pending question still renders the form to answer', () => {
     renderQuestionPart({ status: 'pending' });
+
+    expect(
+      screen.getByRole('radiogroup', {
+        name: 'Which sorting algorithm do you prefer for general-purpose use?',
+      })
+    ).toBeDefined();
+    expect(screen.queryByTestId('question-prompt-unanswered')).toBeNull();
+  });
+
+  it('a RECOVERED pending question is answerable, whatever history said', () => {
+    // The DOR-1269 recovery deliberately re-pends a question from the
+    // snapshot's `pendingInteractions`, and history's copy of that same
+    // question carries `unresolved` (nothing has resolved it — that is the
+    // point). A terminal row drawn over it would be a card nobody can answer.
+    renderQuestionPart({ status: 'pending', questionOutcome: 'unresolved' });
 
     expect(
       screen.getByRole('radiogroup', {
