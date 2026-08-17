@@ -365,19 +365,19 @@ The `AgentRuntime` interface defines all operations that an agent backend must s
 
 Each runtime declares static capability flags via `getCapabilities()`:
 
-| Field                       | Description                                                                                                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`                      | Runtime type identifier (`claude-code`, `codex`, `opencode`, `test-mode`)                                                                                                 |
-| `supportsToolApproval`      | Whether tool approval UI should be shown                                                                                                                                  |
-| `supportsCostTracking`      | Whether dollar-cost tracking is available (gates the cost strip)                                                                                                          |
-| `supportsResume`            | Whether sessions can be resumed                                                                                                                                           |
-| `supportsMcp`               | Whether DorkOS can inject its MCP tool server                                                                                                                             |
-| `supportsManagedMcpServers` | Whether DorkOS can inject an agent's own managed MCP servers — the Agent Hub Toolkit tab's "Add server" affordance — distinct from `supportsMcp`'s in-process tool server |
-| `supportsQuestionPrompt`    | Whether the AskUserQuestion interactive flow is supported                                                                                                                 |
-| `supportsPlugins`           | Whether marketplace plugins / plugin commands apply                                                                                                                       |
-| `permissionModes`           | Structured mode declaration: `{ supported, default, values[] }` — the picker renders exactly this set                                                                     |
-| `nativeContext`             | Context kinds the runtime injects natively (ADR-0273)                                                                                                                     |
-| `features`                  | Open extension map for runtime-specific flags (ADR-0256)                                                                                                                  |
+| Field                       | Description                                                                                                                                                                              |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                      | Runtime type identifier (`claude-code`, `codex`, `opencode`, `test-mode`)                                                                                                                |
+| `supportsToolApproval`      | Whether tool approval UI should be shown                                                                                                                                                 |
+| `supportsCostTracking`      | Whether dollar-cost tracking is available (gates the cost strip)                                                                                                                         |
+| `supportsResume`            | Whether sessions can be resumed                                                                                                                                                          |
+| `supportsMcp`               | Whether DorkOS can inject its MCP tool server                                                                                                                                            |
+| `supportsManagedMcpServers` | Whether DorkOS can inject an agent's own managed MCP servers — the "Add server" affordance on an agent profile's Tools & MCP page — distinct from `supportsMcp`'s in-process tool server |
+| `supportsQuestionPrompt`    | Whether the AskUserQuestion interactive flow is supported                                                                                                                                |
+| `supportsPlugins`           | Whether marketplace plugins / plugin commands apply                                                                                                                                      |
+| `permissionModes`           | Structured mode declaration: `{ supported, default, values[] }` — the picker renders exactly this set                                                                                    |
+| `nativeContext`             | Context kinds the runtime injects natively (ADR-0273)                                                                                                                                    |
+| `features`                  | Open extension map for runtime-specific flags (ADR-0256)                                                                                                                                 |
 
 Capability-gated UI renders only what the active runtime declares — e.g. the cost strip is absent on Codex (`supportsCostTracking: false`, token usage only), and the permission picker shows Codex's sandbox levels rather than Claude's modes.
 

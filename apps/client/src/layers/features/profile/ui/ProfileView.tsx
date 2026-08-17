@@ -187,9 +187,10 @@ export function ProfileView({
                 }
                 onMessage={canMessage ? message : undefined}
                 // Only an agent you manage: DorkBot's face is part of DorkOS
-                // (its Personality row says so), and nobody else's identity is
-                // yours to restyle. A face that opened nothing would be the dead
-                // affordance this design exists to remove.
+                // (its About row says so), and nobody else's identity is yours
+                // to restyle. Its VOICE is a different question and is yours —
+                // the Personality row opens. A face that opened nothing would be
+                // the dead affordance this design exists to remove.
                 onFaceActivate={
                   canEditAppearance ? () => onPush({ kind: 'page', page: 'appearance' }) : undefined
                 }

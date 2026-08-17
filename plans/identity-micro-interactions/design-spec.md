@@ -4,6 +4,12 @@
 **Scope:** every surface that draws an identity — `IdentityAvatar` and the 14 components that compose it
 **Ground truth read:** `designing-frontend` skill, `contributing/design-system.md` (incl. the Identity section from DOR-967), `.claude/rules/components.md`, `meta/brand-foundation.md`, and every component listed in Part 1 at full length
 
+> **Note added 2026-08-16 (spec `profile-unification`, DOR-1255):** the surface this
+> document calls the Agent Hub no longer exists. Its component names below —
+> `AgentHubTabBar`, "the hub hero" — are the record of what was surveyed when this
+> was written, and are left as written. The one profile that replaced it lives in
+> `features/profile/`; the motion rules in Part 3 still bind it.
+
 ---
 
 ## 0. The one-paragraph thesis

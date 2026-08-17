@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowLeftRight, PanelRight, Plus } from 'lucide-react';
+import { ArrowLeftRight, Plus, UserRound } from 'lucide-react';
 import {
   ResponsiveContextMenu,
   ResponsiveContextMenuTrigger,
@@ -11,8 +11,8 @@ import {
 interface AgentChipContextMenuProps {
   children: ReactNode;
   onSwitchAgent: () => void;
-  /** Open the Agent Hub — this agent's workbench in the right panel. */
-  onOpenHub: () => void;
+  /** View this agent's profile — the same act the chip's own click performs. */
+  onViewProfile: () => void;
   onNewSession: () => void;
 }
 
@@ -21,15 +21,15 @@ interface AgentChipContextMenuProps {
  *
  * Desktop: right-click. Mobile: long-press opens drawer.
  *
- * The Hub entry is named for what it opens rather than "Agent profile", which
- * is what it used to say: the chip's own click now opens the profile drawer
- * (DOR-957), and two controls one press apart cannot both be "profile" and mean
- * different panels. Same destination as before — only the word changed.
+ * "View profile" is here as well as on the chip's own click because a
+ * right-click menu that omits what the control already does reads as a menu of
+ * OTHER things, and a person who reached for the menu has to guess. One verb,
+ * one destination — the same one every other face in the cockpit opens.
  */
 export function AgentChipContextMenu({
   children,
   onSwitchAgent,
-  onOpenHub,
+  onViewProfile,
   onNewSession,
 }: AgentChipContextMenuProps) {
   return (
@@ -47,9 +47,9 @@ export function AgentChipContextMenu({
           Switch agent
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
-        <ResponsiveContextMenuItem onClick={onOpenHub}>
-          <PanelRight className="mr-2 size-4" />
-          Agent hub
+        <ResponsiveContextMenuItem onClick={onViewProfile}>
+          <UserRound className="mr-2 size-4" />
+          View profile
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
         <ResponsiveContextMenuItem onClick={onNewSession}>

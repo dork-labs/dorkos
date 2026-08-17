@@ -4,6 +4,10 @@ import {
   type McpToolDeps,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
 import type { SenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
+import { NotifyBudget } from '../../relay/notify-budget.js';
+import { AdapterBindingSchema } from '@dorkos/shared/relay-schemas';
+import { resolveSenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
+import { createCanUseTool } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
 
 /** Server-injected identity for a registered agent (replaces the removed agentId arg). */
 const NOTIFY: SenderIdentity = { subject: 'relay.agent.ns.agent-1', agentId: 'agent-1' };
@@ -106,6 +110,12 @@ function makeMockNotifyDm(overrides: Partial<McpToolDeps['notifyDm']> = {}) {
 
 function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
   return {
+    // An allowance of its own per deps object (DOR-1265). Every test here sends
+    // as `agent-1`, so one shared budget would make each test depend on how many
+    // notes the tests above it sent — and, past the tenth, fail for a reason that
+    // has nothing to do with what it asserts. The ceiling's own behaviour is the
+    // subject of its own describe block, below.
+    notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
     relayCore: {
@@ -119,10 +129,25 @@ function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
   };
 }
 
+/**
+ * Build the handler under test.
+ *
+ * The hourly allowance rides on `deps` and is therefore shared by every handler
+ * built from the same deps — which is the production property (one budget per
+ * install, handed to every session) and the one a test has to be able to drive
+ * both ways.
+ *
+ * @param deps - The tool dependencies under test.
+ * @param identity - Who is calling; the registered agent unless a test says otherwise.
+ */
+function makeHandler(deps: McpToolDeps, identity: SenderIdentity = NOTIFY) {
+  return createRelayNotifyUserHandler(deps, identity);
+}
+
 describe('relay_notify_user', () => {
   it('sends to most recently active chat when channel omitted', async () => {
     const deps = makeMockDeps();
-    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const handler = makeHandler(deps);
     const result = await handler({ message: 'Hello user' });
 
     expect(result.isError).toBeUndefined();
@@ -166,7 +191,7 @@ describe('relay_notify_user', () => {
         }),
       }) as unknown as McpToolDeps['bindingRouter'],
     });
-    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const handler = makeHandler(deps);
     const result = await handler({
       message: 'Slack message',
       channel: 'slack-main',
@@ -216,7 +241,7 @@ describe('relay_notify_user', () => {
         ]),
       }) as unknown as McpToolDeps['adapterManager'],
     });
-    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const handler = makeHandler(deps);
     // Use type name "telegram" which doesn't directly match adapter IDs
     const result = await handler({
       message: 'Telegram via type',
@@ -232,7 +257,7 @@ describe('relay_notify_user', () => {
 
   it('returns NOT_AN_AGENT when the session is not a registered agent', async () => {
     const deps = makeMockDeps();
-    const handler = createRelayNotifyUserHandler(deps, ANON);
+    const handler = makeHandler(deps, ANON);
     const result = await handler({ message: 'Hello' });
 
     expect(result.isError).toBe(true);
@@ -249,7 +274,7 @@ describe('relay_notify_user', () => {
         listAdapters: vi.fn().mockReturnValue([]),
       }) as unknown as McpToolDeps['adapterManager'],
     });
-    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const handler = makeHandler(deps);
     const result = await handler({
       message: 'Hello',
       channel: 'nonexistent',
@@ -267,7 +292,7 @@ describe('relay_notify_user', () => {
         getSessionsByBinding: vi.fn().mockReturnValue([]),
       }) as unknown as McpToolDeps['bindingRouter'],
     });
-    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const handler = makeHandler(deps);
     const result = await handler({ message: 'Hello' });
 
     expect(result.isError).toBe(true);
@@ -282,7 +307,7 @@ describe('relay_notify_user', () => {
         publish: vi.fn().mockRejectedValue(new Error('Network error')),
       } as unknown as McpToolDeps['relayCore'],
     });
-    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const handler = makeHandler(deps);
     const result = await handler({ message: 'Hello' });
 
     expect(result.isError).toBe(true);
@@ -293,7 +318,7 @@ describe('relay_notify_user', () => {
 
   it('returns RELAY_DISABLED when relayCore is undefined', async () => {
     const deps = makeMockDeps({ relayCore: undefined });
-    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const handler = makeHandler(deps);
     const result = await handler({ message: 'Hello' });
 
     expect(result.isError).toBe(true);
@@ -306,7 +331,7 @@ describe('relay_notify_user', () => {
       bindingRouter: undefined,
       bindingStore: undefined,
     });
-    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const handler = makeHandler(deps);
     const result = await handler({ message: 'Hello' });
 
     expect(result.isError).toBe(true);
@@ -320,7 +345,7 @@ describe('relay_notify_user', () => {
         publish: vi.fn().mockResolvedValue({ messageId: 'msg-42', deliveredTo: 1 }),
       } as unknown as McpToolDeps['relayCore'],
     });
-    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const handler = makeHandler(deps);
     const result = await handler({ message: 'Done!' });
 
     expect(result.isError).toBeUndefined();
@@ -352,7 +377,7 @@ describe('relay_notify_user', () => {
     it('posts into the agent-and-operator DM when nothing external is bound', async () => {
       const notifyDm = makeMockNotifyDm();
       const deps = noIntegrationDeps(notifyDm);
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Deploy finished.' });
 
       expect(result.isError).toBeUndefined();
@@ -386,7 +411,7 @@ describe('relay_notify_user', () => {
         }) as unknown as McpToolDeps['bindingRouter'],
         notifyDm,
       });
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Nobody has messaged the bot yet.' });
 
       expect(result.isError).toBeUndefined();
@@ -396,7 +421,7 @@ describe('relay_notify_user', () => {
     it('leaves the external path untouched when an integration can carry it', async () => {
       const notifyDm = makeMockNotifyDm();
       const deps = makeMockDeps({ notifyDm });
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Hello user' });
 
       const data = JSON.parse(result.content[0].text);
@@ -420,7 +445,7 @@ describe('relay_notify_user', () => {
         }) as unknown as McpToolDeps['adapterManager'],
         notifyDm,
       });
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Slack or nothing', channel: 'slack' });
 
       expect(result.isError).toBe(true);
@@ -436,7 +461,7 @@ describe('relay_notify_user', () => {
         }) as unknown as McpToolDeps['bindingStore'],
         notifyDm,
       });
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Surprise!' });
 
       expect(result.isError).toBe(true);
@@ -452,7 +477,7 @@ describe('relay_notify_user', () => {
         },
       });
       const deps = noIntegrationDeps(notifyDm);
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Nowhere to go.' });
 
       expect(result.isError).toBe(true);
@@ -470,11 +495,333 @@ describe('relay_notify_user', () => {
         }) as unknown as McpToolDeps['bindingStore'],
         notifyDm: undefined,
       });
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Nowhere to go.' });
 
       expect(result.isError).toBe(true);
       expect(JSON.parse(result.content[0].text).code).toBe('NO_BINDING');
+    });
+  });
+
+  // DOR-1265. This verb stopped asking a person's permission, because the card it
+  // raised in a room turn was a card nobody was watching — so the hourly count is
+  // now the only thing between a looping agent and somebody's evening. It is a
+  // MECHANISM rather than a line in a prompt, per `.claude/rules/room-conduct.md`.
+  describe('the hourly note ceiling (DOR-1265)', () => {
+    /** The sentence an agent gets back, and the one it can act on. */
+    const SPENT = 'You have sent as many notes as you can for now — say it here instead, or wait.';
+
+    /** A second registered agent, for the isolation case. */
+    const OTHER: SenderIdentity = { subject: 'relay.agent.ns.agent-2', agentId: 'agent-2' };
+
+    /** A budget on a clock the test moves, so an hour costs no wall time. */
+    function budgetOnAClock(limit: number) {
+      let clock = 1_000_000;
+      return {
+        budget: new NotifyBudget({ limit: () => limit, now: () => clock }),
+        advance: (ms: number) => {
+          clock += ms;
+        },
+      };
+    }
+
+    it('sends up to the ceiling and then says so in words the agent can act on', async () => {
+      const { budget } = budgetOnAClock(2);
+      const deps = makeMockDeps({ notifyBudget: budget });
+      const handler = makeHandler(deps);
+
+      expect(JSON.parse((await handler({ message: 'one' })).content[0].text).sent).toBe(true);
+      expect(JSON.parse((await handler({ message: 'two' })).content[0].text).sent).toBe(true);
+
+      const refused = await handler({ message: 'three' });
+      expect(refused.isError).toBe(true);
+      const data = JSON.parse(refused.content[0].text);
+      expect(data.sent).toBe(false);
+      expect(data.code).toBe('NOTIFY_RATE_LIMITED');
+      expect(data.error).toBe(SPENT);
+      // The refused note reached nobody: two publishes, not three.
+      expect(deps.relayCore!.publish).toHaveBeenCalledTimes(2);
+    });
+
+    it('caps the DorkOS DM the same way it caps a connected chat app', async () => {
+      // The fallback surface is the one a stock install actually uses, so a cap
+      // that only counted the integration path would bound almost nobody.
+      const notifyDm = makeMockNotifyDm();
+      const { budget } = budgetOnAClock(1);
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi.fn().mockReturnValue([]),
+        }) as unknown as McpToolDeps['bindingStore'],
+        notifyDm,
+        notifyBudget: budget,
+      });
+      const handler = makeHandler(deps);
+
+      expect(JSON.parse((await handler({ message: 'one' })).content[0].text).surface).toBe(
+        'dorkos-dm'
+      );
+      const refused = await handler({ message: 'two' });
+      expect(JSON.parse(refused.content[0].text).code).toBe('NOTIFY_RATE_LIMITED');
+      expect(notifyDm.rooms.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives the allowance back as the hour rolls off', async () => {
+      const { budget, advance } = budgetOnAClock(1);
+      const deps = makeMockDeps({ notifyBudget: budget });
+      const handler = makeHandler(deps);
+
+      await handler({ message: 'one' });
+      expect(JSON.parse((await handler({ message: 'two' })).content[0].text).code).toBe(
+        'NOTIFY_RATE_LIMITED'
+      );
+
+      advance(60 * 60_000 + 1_000);
+      expect(JSON.parse((await handler({ message: 'later' })).content[0].text).sent).toBe(true);
+    });
+
+    it('spends one agent’s allowance and never another’s', async () => {
+      // Both agents have a chat of their own to notify through, so the only thing
+      // that can stop the second one is the first one's spending.
+      const { budget } = budgetOnAClock(1);
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi
+            .fn()
+            .mockReturnValue([makeBinding(), makeBinding({ id: 'b-2', agentId: 'agent-2' })]),
+        }) as unknown as McpToolDeps['bindingStore'],
+        notifyBudget: budget,
+      });
+      const ana = makeHandler(deps, NOTIFY);
+      const bo = makeHandler(deps, OTHER);
+
+      await ana({ message: 'mine' });
+      expect(JSON.parse((await ana({ message: 'again' })).content[0].text).code).toBe(
+        'NOTIFY_RATE_LIMITED'
+      );
+      expect(JSON.parse((await bo({ message: 'mine too' })).content[0].text).sent).toBe(true);
+    });
+
+    it('charges nothing for a call that was going to be refused anyway', async () => {
+      // Somebody turned "Agent can start conversations" off. The agent should not
+      // also lose a note off its hour for a message that never left the machine.
+      const { budget } = budgetOnAClock(1);
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: false })]),
+        }) as unknown as McpToolDeps['bindingStore'],
+        notifyBudget: budget,
+      });
+      const handler = makeHandler(deps);
+
+      expect(JSON.parse((await handler({ message: 'blocked' })).content[0].text).code).toBe(
+        'INITIATE_NOT_ALLOWED'
+      );
+      // No card was raised for it either: the auto-allow does not mean the tool
+      // does whatever it is asked, it means the ANSWER comes from the binding the
+      // operator configured rather than from a prompt nobody sees.
+      // The whole allowance is still there for a message that can actually go.
+      expect(budget.tryReserve('agent-1')).toBe(true);
+    });
+
+    it('charges nothing for a note the DM could not deliver', async () => {
+      // The stock-install failure: the mesh cannot place the sending agent, so
+      // `deliverNotifyDm` refuses and nobody is written to. Charging for those
+      // would spend the whole hour on notes that reached no one and then report
+      // it back as "you have been too chatty" — the honest diagnosis replaced by
+      // a wrong one.
+      const notifyDm = makeMockNotifyDm({
+        mesh: {
+          getProjectPath: vi.fn().mockReturnValue(undefined),
+          get: vi.fn().mockReturnValue(undefined),
+        },
+      });
+      const { budget } = budgetOnAClock(3);
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi.fn().mockReturnValue([]),
+        }) as unknown as McpToolDeps['bindingStore'],
+        notifyDm,
+        notifyBudget: budget,
+      });
+      const handler = makeHandler(deps);
+
+      for (const message of ['one', 'two', 'three']) {
+        const result = await handler({ message });
+        // The old non-delivery, unchanged — never the rate-limit sentence.
+        expect(JSON.parse(result.content[0].text).code).toBe('NO_BINDING');
+      }
+
+      // Nothing landed, so nothing was spent: the full allowance is intact for
+      // the moment the mesh can place this agent again.
+      expect([1, 2, 3].map(() => budget.tryReserve('agent-1'))).toEqual([true, true, true]);
+    });
+
+    it('is one allowance per install, not one per session', async () => {
+      // The mutation this kills: constructing a budget alongside the handlers.
+      // The `dorkos` tool server is rebuilt per session, so a per-handler budget
+      // is a ceiling an agent resets by opening a new session — and every test
+      // above would still pass. Two handlers off one deps object is exactly what
+      // two sessions on one install get (`index.ts` builds `mcpToolDeps` once and
+      // hands the same object to every `createDorkOsToolServer`).
+      const { budget } = budgetOnAClock(1);
+      const deps = makeMockDeps({ notifyBudget: budget });
+
+      const firstSession = makeHandler(deps);
+      const secondSession = makeHandler(deps);
+
+      expect(JSON.parse((await firstSession({ message: 'one' })).content[0].text).sent).toBe(true);
+      expect(JSON.parse((await secondSession({ message: 'two' })).content[0].text).code).toBe(
+        'NOTIFY_RATE_LIMITED'
+      );
+    });
+  });
+
+  // DOR-1265, and the correction to how the auto-allow was first written up. It
+  // is NOT true that a note can only reach the operator: it goes wherever the
+  // operator already pointed it, and a claimed chat may hold other people. What
+  // the auto-allow removed is the per-call card an operator watching a DIRECT
+  // session could have denied — the same trade DOR-1229 made for the room verbs.
+  // What it did not remove is the setup consent: `canInitiate` defaults false, so
+  // nothing reaches any external chat until a person switches it on for that
+  // binding.
+  describe('where a note can actually land (DOR-1265)', () => {
+    it('reaches a GROUP chat, because claiming one and switching initiating on is how a person asks for that', async () => {
+      // Groups are claimable (`bridgeChatTypeForBinding` maps group/supergroup to
+      // `channelType: 'group'`), and nothing downstream of the claim treats a
+      // group binding differently — `resolveNotifyTarget` never reads
+      // `channelType`. So the note lands in a room with other people in it. That
+      // is the operator's own prior decision, made twice: once to claim the chat
+      // for this agent, once to allow it to start conversations there.
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi
+            .fn()
+            .mockReturnValue([makeBinding({ channelType: 'group', canInitiate: true })]),
+        }) as unknown as McpToolDeps['bindingStore'],
+      });
+      const handler = makeHandler(deps);
+      const result = await handler({ message: 'The deploy finished.' });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0].text).sent).toBe(true);
+      expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+        'relay.human.telegram.tg-main.chat-42',
+        'The deploy finished.',
+        { from: 'relay.agent.ns.agent-1' }
+      );
+    });
+
+    it('reaches nothing external until a person switches initiating on for that chat', async () => {
+      // Read off the SCHEMA, not off this file's fixture — the fixture defaults
+      // `canInitiate: true` for the convenience of the routing tests, and a claim
+      // about what a fresh binding permits has to be asserted where fresh
+      // bindings are actually made. A chat somebody just claimed carries no
+      // permission to be spoken to first.
+      const fresh = AdapterBindingSchema.parse({
+        id: '00000000-0000-4000-8000-000000000000',
+        adapterId: 'tg-main',
+        agentId: 'agent-1',
+        chatId: 'chat-42',
+        channelType: 'group',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+      expect(fresh.canInitiate).toBe(false);
+
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi.fn().mockReturnValue([fresh]),
+        }) as unknown as McpToolDeps['bindingStore'],
+      });
+      const handler = makeHandler(deps);
+      const result = await handler({ message: 'Should never arrive' });
+
+      expect(JSON.parse(result.content[0].text).code).toBe('INITIATE_NOT_ALLOWED');
+      expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+    });
+  });
+
+  // DOR-1265. The gate that lets this call through and the tool that runs it ask
+  // DIFFERENT questions of DIFFERENT stores, and the gap between them is a real
+  // (harmless, but real) behaviour worth pinning rather than assuming away.
+  //
+  // - The gate (`createCanUseTool` → `createInSessionContextResolver` →
+  //   `AgentIdentityService.describeAgent`) reads an unrevoked row in
+  //   `agent_identity_tokens`, keyed on the session's cwd.
+  // - The tool (`resolveSenderIdentity` → `meshCore.getSubjectByPath`) reads the
+  //   MESH registry, keyed on the same cwd. It has to: the relay `from` is an
+  //   authorization principal that ACL rules match on, and only the mesh knows
+  //   the agent's canonical subject.
+  //
+  // Two stores, one key. Where they disagree the gate is the permissive one, so
+  // the failure is a turn that proceeds and gets a structured NOT_AN_AGENT back
+  // rather than anything reaching a person. Unifying them is not a small change
+  // (it would mean giving the gate a mesh dependency, or the tool a subject it
+  // cannot use), so the divergence is documented and pinned instead.
+  describe('the gate and the tool resolve identity from different stores (DOR-1265)', () => {
+    it('lets the call through on a token identity and then answers NOT_AN_AGENT when the mesh cannot place it', async () => {
+      const session = {
+        permissionMode: 'default' as const,
+        pendingInteractions: new Map(),
+        eventQueue: [],
+        eventQueueNotify: vi.fn(),
+        cwd: '/agents/ana',
+      };
+      // The gate's half: a live token for this directory, so no card is raised.
+      const canUseTool = createCanUseTool(
+        session,
+        { debug: () => {}, info: () => {} },
+        undefined,
+        () => Promise.resolve({ identity: { agentPath: '/agents/ana' } })
+      );
+      const verdict = await canUseTool(
+        'mcp__dorkos__relay_notify_user',
+        { message: 'the deploy finished' },
+        { signal: new AbortController().signal, toolUseID: 'notify-1' }
+      );
+      expect(verdict).toEqual({
+        behavior: 'allow',
+        updatedInput: { message: 'the deploy finished' },
+      });
+      expect(session.eventQueue).toHaveLength(0);
+
+      // The tool's half, resolved for real rather than hand-written: the mesh
+      // does not place this directory, so there is no `agentId` to send as.
+      const deps = makeMockDeps({
+        meshCore: {
+          getSubjectByPath: vi.fn().mockReturnValue(undefined),
+        } as unknown as McpToolDeps['meshCore'],
+      });
+      const identity = resolveSenderIdentity(deps, session.cwd);
+      expect(identity.agentId).toBeUndefined();
+
+      const result = await createRelayNotifyUserHandler(
+        deps,
+        identity
+      )({
+        message: 'the deploy finished',
+      });
+      expect(JSON.parse(result.content[0].text).code).toBe('NOT_AN_AGENT');
+      expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+    });
+
+    it('agrees with the gate when the mesh does place the directory, which is the room-turn case', async () => {
+      // A room turn hands the addressed agent's own directory to the session
+      // (`room-turn-runner.ts`), and that agent is in the mesh by construction —
+      // it was dispatched to because it is registered. So the two lookups agree
+      // wherever this fix was meant to work.
+      const deps = makeMockDeps({
+        meshCore: {
+          getSubjectByPath: vi
+            .fn()
+            .mockReturnValue({ subject: 'relay.agent.ns.agent-1', agentId: 'agent-1' }),
+        } as unknown as McpToolDeps['meshCore'],
+      });
+      const identity = resolveSenderIdentity(deps, '/agents/ana');
+      expect(identity.agentId).toBe('agent-1');
+
+      const result = await createRelayNotifyUserHandler(deps, identity)({ message: 'done' });
+      expect(JSON.parse(result.content[0].text).sent).toBe(true);
     });
   });
 
@@ -485,7 +832,7 @@ describe('relay_notify_user', () => {
           getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: false })]),
         }) as unknown as McpToolDeps['bindingStore'],
       });
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Surprise!' });
 
       expect(result.isError).toBe(true);
@@ -505,7 +852,7 @@ describe('relay_notify_user', () => {
           getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: true, enabled: false })]),
         }) as unknown as McpToolDeps['bindingStore'],
       });
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Should never arrive' });
 
       expect(result.isError).toBe(true);
@@ -521,7 +868,7 @@ describe('relay_notify_user', () => {
           getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: true })]),
         }) as unknown as McpToolDeps['bindingStore'],
       });
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Heads up!' });
 
       expect(result.isError).toBeUndefined();
@@ -570,7 +917,7 @@ describe('relay_notify_user', () => {
             ]),
         }) as unknown as McpToolDeps['bridgeStore'],
       });
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Bridged heads up!' });
 
       expect(result.isError).toBeUndefined();
@@ -609,7 +956,7 @@ describe('relay_notify_user', () => {
           listLiveBridges: vi.fn().mockReturnValue([{ bindingId: 'b-1', chatId: 'chat-42' }]),
         }) as unknown as McpToolDeps['bridgeStore'],
       });
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Should never arrive' });
 
       expect(result.isError).toBe(true);
@@ -644,7 +991,7 @@ describe('relay_notify_user', () => {
             ]),
         }) as unknown as McpToolDeps['bridgeStore'],
       });
-      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const handler = makeHandler(deps);
       const result = await handler({ message: 'Topic-qualified chat' });
 
       expect(result.isError).toBeUndefined();

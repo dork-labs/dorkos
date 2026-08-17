@@ -69,8 +69,8 @@ const EDGE_TYPES: EdgeTypes = {
 interface TopologyGraphProps {
   /** Called with the agent ID and project path when a node is clicked. */
   onSelectAgent?: (agentId: string, projectPath: string) => void;
-  /** Called when the Settings action is triggered from the NodeToolbar. */
-  onOpenSettings?: (agentId: string, projectPath: string) => void;
+  /** Called when the View profile action is triggered from the NodeToolbar. */
+  onViewProfile?: (agentId: string, projectPath: string) => void;
   /** Called to switch to the Discovery tab from the empty state. */
   onGoToDiscovery?: () => void;
   /** Called when the Chat action is triggered from the NodeToolbar. */
@@ -93,7 +93,7 @@ export function TopologyGraph(props: TopologyGraphProps) {
 
 function TopologyGraphInner({
   onSelectAgent,
-  onOpenSettings,
+  onViewProfile,
   onGoToDiscovery,
   onOpenChat,
   onOpenAdapterCatalog,
@@ -122,8 +122,8 @@ function TopologyGraphInner({
 
   // Stable refs for callback props prevent useMemo re-creation on each render,
   // which would trigger ELK layout unnecessarily and risk infinite re-render loops.
-  const onOpenSettingsRef = useRef(onOpenSettings);
-  onOpenSettingsRef.current = onOpenSettings;
+  const onViewProfileRef = useRef(onViewProfile);
+  onViewProfileRef.current = onViewProfile;
   const onSelectAgentRef = useRef(onSelectAgent);
   onSelectAgentRef.current = onSelectAgent;
   const onOpenChatRef = useRef(onOpenChat);
@@ -157,7 +157,7 @@ function TopologyGraphInner({
       // (which would recompute nodes/edges on every layout pass).
       (edgeId) => handleDeleteBindingRef.current(edgeId),
       {
-        onOpenSettings: (id, path) => onOpenSettingsRef.current?.(id, path),
+        onViewProfile: (id, path) => onViewProfileRef.current?.(id, path),
         onSelectAgent: (id, path) => onSelectAgentRef.current?.(id, path),
         onOpenChat: (path) => onOpenChatRef.current?.(path),
         onGhostClick: () => onOpenAdapterCatalogRef.current?.(),

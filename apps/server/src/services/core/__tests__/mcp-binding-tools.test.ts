@@ -7,6 +7,7 @@ import {
   type McpToolDeps,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
 import { createBindingListSessionsHandler } from '../../runtimes/claude-code/mcp-tools/binding-tools.js';
+import { NotifyBudget } from '../../relay/notify-budget.js';
 
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(),
@@ -77,6 +78,7 @@ function makeMockDeps(
   bindingStore?: ReturnType<typeof makeMockBindingStore> | undefined
 ): McpToolDeps {
   return {
+    notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
     bindingStore: bindingStore as unknown as McpToolDeps['bindingStore'],
@@ -259,6 +261,7 @@ describe('Binding MCP Tools', () => {
       } = {}
     ): McpToolDeps {
       return {
+        notifyBudget: new NotifyBudget(),
         transcriptReader: {} as McpToolDeps['transcriptReader'],
         defaultCwd: '/test',
         bindingStore: opts.bindingStore as unknown as McpToolDeps['bindingStore'],

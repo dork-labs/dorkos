@@ -273,7 +273,7 @@ for line in sys.stdin:
 
 ### 5.1 Plan the Fix
 
-Track the trace → fix → verify steps with TodoWrite when the fix spans multiple layers.
+Track the trace → fix → verify steps with TaskCreate/TaskUpdate when the fix spans multiple layers.
 
 ### 5.2 Verify the Fix
 

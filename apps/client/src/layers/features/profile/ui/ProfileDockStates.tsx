@@ -1,7 +1,7 @@
 /**
  * The three things the docked profile shows when it has no profile to show.
  *
- * Carried over from the Agent Hub unchanged in wording: they were already the
+ * Carried over from the retired panel unchanged in wording: they were already the
  * honest answers to "no agent picked", "still looking" and "picked, but there is
  * nothing there".
  *

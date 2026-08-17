@@ -8,6 +8,7 @@ import { ChevronRight, Hash, MessagesSquare } from 'lucide-react';
 import type { MemberRoom } from '@dorkos/shared/team-schemas';
 import { useSafeNavigate } from '@/layers/shared/model';
 import { Skeleton } from '@/layers/shared/ui';
+import { roomName } from '@/layers/entities/room';
 import { useMemberRooms } from '@/layers/entities/team';
 import type { ProfilePageContentProps } from './types';
 
@@ -57,7 +58,13 @@ export function RoomsPage({ member }: ProfilePageContentProps) {
         const body = (
           <>
             <RoomGlyph kind={room.kind} />
-            <span className="min-w-0 truncate text-sm">{room.name}</span>
+            {/* The glyph beside it already draws the `#`, so the name goes in
+                bare — `roomName`, not `roomDisplayTitle`, or a channel reads
+                as `# #general`. For a channel that is its slug, which is the
+                name people type. */}
+            <span className="min-w-0 truncate text-sm">
+              {roomName({ kind: room.kind, slug: room.slug, title: room.name })}
+            </span>
             <span className="text-muted-foreground ml-auto shrink-0 text-xs">
               {memberWords(room.memberCount)}
             </span>

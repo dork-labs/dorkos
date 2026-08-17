@@ -37,7 +37,7 @@ export function HeadingNode({ node }: { node: NodeOf<'heading'> }) {
  * confirm through the shared link-safety modal, same as chat links.
  */
 export function TextNode({ node }: { node: NodeOf<'text'> }) {
-  return <MarkdownContent content={node.text} className="text-sm" linkSafety />;
+  return <MarkdownContent content={node.text} className="text-sm" />;
 }
 
 /** `badge` node — a toned pill that pops in on mount. */

@@ -18,7 +18,7 @@
  * @module features/agents-list/lib/agent-columns
  */
 import type { ColumnDef } from '@tanstack/react-table';
-import { MessageSquare, Settings, Star } from 'lucide-react';
+import { MessageSquare, Star, UserRound } from 'lucide-react';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
 import type { AttentionState } from '@/layers/entities/session';
 import { Badge, Button } from '@/layers/shared/ui';
@@ -147,8 +147,8 @@ function ActivityCell({ row }: { row: AgentTableRow }) {
 export interface AgentColumnCallbacks {
   /** Navigate to a session for the given project path. */
   onNavigate: (projectPath: string) => void;
-  /** Open the AgentHub panel for management. */
-  onManage: (projectPath: string) => void;
+  /** View an agent's profile — where everything about it is read and changed. */
+  onViewProfile: (projectPath: string) => void;
   /** Start a new session for an agent. */
   onStartSession: (projectPath: string) => void;
 }
@@ -250,11 +250,11 @@ export function createAgentColumns(
               className="size-8 p-0"
               onClick={(e) => {
                 e.stopPropagation();
-                callbacks.onManage(agent.projectPath ?? '');
+                callbacks.onViewProfile(agent.projectPath ?? '');
               }}
-              aria-label={`Manage ${getAgentDisplayName(agent)}`}
+              aria-label={`Open ${getAgentDisplayName(agent)}’s profile`}
             >
-              <Settings className="size-4" />
+              <UserRound className="size-4" />
             </Button>
           </div>
         );

@@ -174,7 +174,7 @@ function SidebarModelRowBody({
         visual={chrome.roomVisualOf(room)}
         isActive={isActive}
         onSelect={() => chrome.openTarget(target)}
-        onOpenAgentProfile={chrome.openHub}
+        viewAgentProfile={chrome.viewProfileFor}
         onRequestNewGroup={chrome.requestNewGroup}
         {...(drag ? { sortable: drag } : {})}
       />
@@ -208,7 +208,6 @@ function AgentRowFromModel({
       isActive={isActive}
       isMuted={row.muted}
       onSelect={() => chrome.openTarget(row.target)}
-      onOpenProfile={() => chrome.openHub(path)}
       onViewProfile={chrome.viewProfileFor(path)}
       onRequestNewGroup={chrome.requestNewGroup}
       onSessionClick={(sessionId) =>

@@ -174,7 +174,7 @@ Fetch message history for a session.
 
 ### GET /api/sessions/:id/tasks
 
-Fetch the current task list (TodoWrite state) for a session.
+Fetch the current task list (task state, built from `TaskCreate`/`TaskUpdate` tool calls) for a session.
 
 **Query params:**
 

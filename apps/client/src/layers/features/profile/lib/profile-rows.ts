@@ -11,6 +11,7 @@
  */
 import type { MemberRoom, TeamMember } from '@dorkos/shared/team-schemas';
 import { shortenHomePath } from '@/layers/shared/lib';
+import { roomDisplayTitle } from '@/layers/entities/room';
 import { formatRuntimeIdentity } from '@/layers/entities/runtime';
 import type { ProfilePageId } from '../model/profile-stack';
 import type { ProfileRelationship } from './profile-relationship';
@@ -61,7 +62,7 @@ export interface ProfileRoomsSummary {
   /** How many rooms. */
   count: number;
   /** The rooms themselves, in the order the endpoint returned them. */
-  rooms: Array<Pick<MemberRoom, 'name' | 'kind'>>;
+  rooms: Array<Pick<MemberRoom, 'name' | 'slug' | 'kind'>>;
 }
 
 /** How much of an agent's own work the rows can name (`useManagedAgentFacts`). */
@@ -106,24 +107,35 @@ export interface ProfileRowsContext {
   facts?: ProfileAgentFacts;
 }
 
-/** Why DorkBot's identity rows do not open. */
-const SYSTEM_LOCK_REASON = 'DorkBot’s name, face and personality are part of DorkOS.';
+/**
+ * Why DorkBot's identity rows do not open.
+ *
+ * **Personality is deliberately NOT in this list.** Onboarding asks you to pick
+ * DorkBot's voice on the first run and writes it, and the server's
+ * `SYSTEM_PROTECTED_FIELDS` (`name`, `displayName`, `description`, `namespace`,
+ * `isSystem`) never covered `traits` — so locking it here was the profile being
+ * stricter than the product, and it broke a promise onboarding had already made.
+ * What is genuinely fixed is who DorkBot IS: its name, its face and what it says
+ * it does.
+ */
+const SYSTEM_LOCK_REASON = 'DorkBot’s name, face and description are part of DorkOS.';
 
 /** Why your email is not editable here. */
 const EMAIL_LOCK_REASON =
   'Your email comes from the account you signed in with. Change it in Settings › Security.';
 
 /**
- * One room, written the way its address is written.
+ * One room, written the way the rest of the cockpit writes it.
  *
- * Only a channel wears a `#`, and only when its stored name is not already
- * carrying one — a room literally named `#team` rendered as `##team` on this
- * install. A DM has no address of that shape at all, so it wears its name
- * plain, exactly as the Rooms page draws it.
+ * `roomDisplayTitle` is the shared answer — a channel reads as its `#slug`,
+ * which is the name people type and the one the server keeps unique, and
+ * everything else reads as its title. This row used to prefix a `#` onto the
+ * stored TITLE itself, which is a different string: a channel titled "Team
+ * Standup" with slug `standup` read as `#Team Standup` here and `#standup`
+ * everywhere else.
  */
-function roomLabel(room: Pick<MemberRoom, 'name' | 'kind'>): string {
-  if (room.kind === 'dm') return room.name;
-  return room.name.startsWith('#') ? room.name : `#${room.name}`;
+function roomLabel(room: Pick<MemberRoom, 'name' | 'slug' | 'kind'>): string {
+  return roomDisplayTitle({ kind: room.kind, slug: room.slug, title: room.name });
 }
 
 /** A room list as one value: the first two names, then how many more. */
@@ -411,11 +423,14 @@ function systemAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRo
           pick: 'runs-on',
         },
         {
+          // The same control an agent you manage gets, and the same write:
+          // `personalityUpdate` puts the traits in the manifest AND regenerates
+          // SOUL.md's trait block, so DorkBot's next turn actually hears it.
           id: 'personality',
-          kind: 'locked',
+          kind: 'pick',
           label: 'Personality',
           value: ctx.facts?.personality ?? null,
-          lockedReason: SYSTEM_LOCK_REASON,
+          pick: 'personality',
         },
       ],
     },

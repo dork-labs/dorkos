@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { McpToolDeps } from '../types.js';
 import { createGetExtensionApiHandler, createTestExtensionHandler } from '../extension-tools.js';
 import type { ExtensionManager } from '../../../../extensions/extension-manager.js';
+import { NotifyBudget } from '../../../../relay/notify-budget.js';
 
 // --- Helpers ---
 
@@ -45,6 +46,7 @@ function createMockManager(overrides: Partial<ExtensionManager> = {}): Extension
 
 function createDeps(extensionManager?: ExtensionManager): McpToolDeps {
   return {
+    notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
     extensionManager,

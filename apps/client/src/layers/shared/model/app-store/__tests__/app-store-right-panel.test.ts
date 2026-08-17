@@ -457,8 +457,8 @@ describe('RightPanelSlice', () => {
   // -------------------------------------------------------------------------
 
   describe('a tab that was renamed under an existing user', () => {
-    it('restores the Agent Hub’s stored layout as the Profile tab, per agent', () => {
-      // What is in the browser of anybody who used the Agent Hub before it
+    it('restores the old agent panel’s stored layout as the Profile tab, per agent', () => {
+      // What is in the browser of anybody who used the old agent panel before it
       // became the Profile. Without the translation the id names no
       // contribution, the container falls back to whichever tab is first, and a
       // preference somebody set is silently thrown away.

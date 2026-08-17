@@ -103,6 +103,7 @@ import {
 } from './services/relay/initiate-consent.js';
 import { makeChatNoticeTargetResolver } from './services/relay/binding-subsystem.js';
 import { TraceStore } from './services/relay/trace-store.js';
+import { NotifyBudget } from './services/relay/notify-budget.js';
 import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
@@ -1787,6 +1788,13 @@ async function start() {
       // The approval primitive the in-session hold (DOR-939) waits on, so a fresh
       // destructive capability call holds inline and resumes on the operator's yes.
       approvals: approvalService,
+      // What bounds `relay_notify_user` now that an identified agent is no longer
+      // asked for a card it could not get answered (DOR-1265). Constructed HERE,
+      // once, because the tool server below is rebuilt per session and a budget
+      // with that lifetime would be a ceiling an agent resets by opening a new
+      // session — the same reason `ReactionBudget` is built in the rooms
+      // composition root rather than beside a request.
+      notifyBudget: new NotifyBudget(),
       ...(taskStore && { taskStore }),
       ...(relayCore && { relayCore }),
       ...(adapterManager && { adapterManager }),

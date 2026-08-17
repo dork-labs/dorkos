@@ -1,7 +1,7 @@
 /**
  * One store whose sessions could not be listed, said quietly.
  *
- * Shared by the two rosters — the Agent Hub's `SessionsView` and the Obsidian
+ * Shared by the two rosters — the profile's `SessionsView` and the Obsidian
  * embed's `EmbedSessionList` — because a degraded runtime is a fact about the
  * aggregation (ADR-0310), not about the surface reading it.
  *

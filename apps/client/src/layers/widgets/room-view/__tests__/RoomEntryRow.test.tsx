@@ -473,16 +473,42 @@ describe('RoomEntryRow — the action surface', () => {
     expect(screen.getByRole('button', { name: 'React with thumbsup' })).not.toHaveFocus();
   });
 
-  it('renders links as safety-gated buttons, so no native link menu is at stake', () => {
-    // Pins the premise behind having NO carve-out for a right-click on a link:
-    // `MarkdownContent` never emits an `<a href>`, so the browser's own menu has
-    // no "Copy link address" to offer and our menu is taking nothing away. If
-    // this ever fails, the carve-out has to be reconsidered.
+  it('renders links as real anchors, so the browser already offers a link menu', () => {
+    // Pins the premise behind having NO carve-out for a right-click on a link
+    // (DOR-1272): `MarkdownContent` renders a genuine `<a href>`
+    // (`MarkdownLink`), not a button, so the browser's own menu already has
+    // "Copy Link Address" to offer and our menu isn't taking anything away.
+    // If this ever fails, the carve-out has to be reconsidered.
     renderRow(entry({ body: { text: 'see [the run](https://example.com/run)' } }));
     const row = screen.getByTestId('room-entry');
 
-    expect(within(row).queryByRole('link')).not.toBeInTheDocument();
-    expect(within(row).getByRole('button', { name: 'the run' })).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'the run' })).not.toBeInTheDocument();
+    const link = within(row).getByRole('link', { name: 'the run' });
+    expect(link).toHaveAttribute('href', 'https://example.com/run');
+  });
+
+  it('a right-click on a link does not open the row menu — the browser gets the event instead', () => {
+    // The other half of the premise above (DOR-1272 blocker 1). A right-click
+    // ANYWHERE ELSE on this row DOES open the DorkOS action menu: `RoomEntryRow`
+    // wraps every row in `EntryActionMenu` → `ResponsiveContextMenuTrigger` →
+    // Radix's `ContextMenuTrigger`, which `preventDefault()`s `contextmenu`
+    // unconditionally to do that (`@radix-ui/react-context-menu`). A link has
+    // to defeat that on purpose — `MarkdownLink`'s own
+    // `onContextMenu={(e) => e.stopPropagation()}` — or the row's menu (no
+    // copy-link item) wins over the browser's every time, which is exactly
+    // what this test caught before that handler existed. The identical
+    // `contextmenu` DOM event fires for the keyboard path too (Shift+F10 / the
+    // ContextMenu key on a focused link), so this also stands for a keyboard
+    // user reaching the browser's link menu instead of the row's.
+    renderRow(entry({ body: { text: 'see [the run](https://example.com/run)' } }));
+    const row = screen.getByTestId('room-entry');
+    const link = within(row).getByRole('link', { name: 'the run' });
+
+    // fireEvent.contextMenu returns false when a handler called preventDefault.
+    const notPrevented = fireEvent.contextMenu(link);
+
+    expect(notPrevented).toBe(true);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
   it('opens the thread panel when the reply button is pressed', () => {

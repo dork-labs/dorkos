@@ -93,12 +93,12 @@ describe('RightPanelHeader', () => {
 
   it('renders one tab per contribution when there are 2+', () => {
     renderHeader([
-      makeContribution('agent', { title: 'Agent Profile' }),
+      makeContribution('agent', { title: 'Profile' }),
       makeContribution('canvas', { title: 'Canvas' }),
     ]);
 
     expect(screen.getByRole('tablist', { name: 'Right panel tabs' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Profile' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Canvas' })).toBeInTheDocument();
   });
 
@@ -107,13 +107,13 @@ describe('RightPanelHeader', () => {
     // this rendered a bare `undefined` component and crashed the whole panel the
     // moment such a tab joined a second visible contribution.
     renderHeader([
-      makeContribution('agent', { title: 'Agent Profile' }),
+      makeContribution('agent', { title: 'Profile' }),
       makeContribution('ext', { title: 'My Extension', icon: undefined }),
     ]);
 
     // Both tabs render — the iconless one falls back to the puzzle-piece instead
     // of throwing.
-    expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Profile' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'My Extension' })).toBeInTheDocument();
   });
 
@@ -124,14 +124,14 @@ describe('RightPanelHeader', () => {
     // crash the panel; `isRenderableIcon` rejects it — a string is neither a
     // function nor a React element type.
     renderHeader([
-      makeContribution('agent', { title: 'Agent Profile' }),
+      makeContribution('agent', { title: 'Profile' }),
       makeContribution('ext', {
         title: 'My Extension',
         icon: 'not-a-component' as unknown as RightPanelContribution['icon'],
       }),
     ]);
 
-    expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Profile' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'My Extension' })).toBeInTheDocument();
   });
 
@@ -145,7 +145,7 @@ describe('RightPanelHeader', () => {
     ));
     renderHeader([
       makeContribution('agent', {
-        title: 'Agent Profile',
+        title: 'Profile',
         icon: RefIcon as unknown as RightPanelContribution['icon'],
       }),
       makeContribution('files', { title: 'Files' }),
@@ -155,7 +155,7 @@ describe('RightPanelHeader', () => {
   });
 
   it('renders no tab strip with a single contribution', () => {
-    renderHeader([makeContribution('agent', { title: 'Agent Profile' })]);
+    renderHeader([makeContribution('agent', { title: 'Profile' })]);
 
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   });
@@ -197,7 +197,7 @@ describe('RightPanelHeader', () => {
   });
 
   it('always renders the close button', () => {
-    renderHeader([makeContribution('agent', { title: 'Agent Profile' })]);
+    renderHeader([makeContribution('agent', { title: 'Profile' })]);
 
     expect(screen.getByRole('button', { name: 'Close panel' })).toBeInTheDocument();
   });

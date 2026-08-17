@@ -28,6 +28,24 @@ Both points funnel continuity through `migrateSessionContinuity` (`session-strea
 
 We rejected the server-side alias-both-ids approach because it leaves two ids valid indefinitely and forces every id-keyed path to remember to alias — a permanent foot-gun. The one-time registry rekey is the only server-side id move, and it is explicitly a move, not an alias.
 
+## Amendment — 2026-08-16 (DOR-1262): the rekey leaves a bounded redirect behind
+
+Status stays **accepted**; this narrows one consequence of the move, it does not reopen the decision.
+
+The move alone was not enough. The 202 for a brand-new session carries the **request UUID** whenever the runtime assigns its canonical id after the response has already gone out (measured at ~2s on Claude Code), so a caller can legitimately hold only the retired id. Every other layer already accepted that id — the runtime resolves it, the routes accept it, the write lock follows it — and the projector registry was the one place that did not: a lookup under the retired id **minted a fresh empty projector**. The runtime's next re-announce of the canonical id then hit `rekeyProjector`'s collision branch, which terminated the real projector and ended its live `/events` subscribers. The `widget-round-trip` eval failed on exactly that (2026-08-16): a widget click posted under the id the client was given split the session in two and killed the canonical stream.
+
+So `rekeyProjector` now records a **retired → canonical redirect**, consulted by every id-keyed lookup in the registry (`getOrCreateProjector`, `peekProjector`, `disposeProjector`, and `rekeyProjector` itself). A retired id can never mint a projector again.
+
+This is **not** the indefinite dual-id aliasing rejected above:
+
+- it is in-memory and one-directional (retired → canonical, never the reverse);
+- it is born from the same one-time move, not from a second source of truth;
+- it chains flat, so a session renamed twice resolves in one hop;
+- it is cleared when the canonical projector is disposed, so a retired id never outlives its session — the map holds a live session's rename history (one entry per rename, and the SDK renames on every resume), and all of it is freed with the session;
+- and there is still exactly ONE projector per session — the alias is on the key, not on the state.
+
+The foot-gun the original rejection was about — every id-keyed path having to remember to alias — is avoided precisely because the redirect lives at the registry, so no call site has to know. The cockpit is unaffected: it still follows the canonical-id re-announce and rewrites its URL. The collision branch survives as a defensive fallback and is documented as such.
+
 ## Consequences
 
 ### Positive

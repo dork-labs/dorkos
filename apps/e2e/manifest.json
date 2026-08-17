@@ -423,7 +423,7 @@
     "pulse-panel": {
       "specFile": "tests/pulse/pulse-panel.spec.ts",
       "feature": "pulse",
-      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Agent Profile), not Pulse, the attention badge is honest — hidden when nothing needs the operator",
+      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Profile), not Pulse, the attention badge is honest — hidden when nothing needs the operator",
       "lastRun": "2026-08-12T11:54:32.659Z",
       "lastStatus": "passed",
       "runCount": 7,
@@ -884,18 +884,21 @@
       "failCount": 1,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "profile-pushin": {
+      "specFile": "tests/profile/profile-pushin.spec.ts",
+      "feature": "profile",
+      "description": "the panel opens on the Profile, and a row takes the whole of it, coming back lands on the row it left from, with the root underneath",
+      "lastRun": "2026-08-16T23:28:15.011Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-04T10-13-42",
-      "timestamp": "2026-08-04T10:13:42.204Z",
-      "total": 9,
-      "passed": 9,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 55884
-    },
     {
       "id": "2026-08-04T10-42-18",
       "timestamp": "2026-08-04T10:42:18.727Z",
@@ -1786,6 +1789,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 72908
+    },
+    {
+      "id": "2026-08-16T23-28-15",
+      "timestamp": "2026-08-16T23:28:15.011Z",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 37847
     }
   ]
 }

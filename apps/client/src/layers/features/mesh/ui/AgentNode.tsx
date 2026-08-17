@@ -1,7 +1,7 @@
 import { memo, useCallback } from 'react';
 import { Handle, Position, NodeToolbar, type NodeProps } from '@xyflow/react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Zap, Clock, Settings, Heart, Copy, MessageCircle } from 'lucide-react';
+import { Zap, Clock, UserRound, Heart, Copy, MessageCircle } from 'lucide-react';
 import { usePrefersReducedMotion } from '../lib/use-reduced-motion';
 import { useLodBand } from '../lib/use-lod-band';
 import { toast } from 'sonner';
@@ -33,7 +33,8 @@ export interface AgentNodeData extends Record<string, unknown> {
   emoji: string;
   /** Absolute filesystem path for the agent's project directory. */
   projectPath?: string;
-  onOpenSettings?: (agentId: string) => void;
+  /** View this agent's profile — the toolbar's door to everything about it. */
+  onViewProfile?: (agentId: string) => void;
   /** Select the agent — opens its health/detail panel (wired to onSelectAgent). */
   onSelectAgent?: (agentId: string) => void;
   onOpenChat?: (agentId: string, projectPath: string) => void;
@@ -271,8 +272,12 @@ function AgentNodeComponent({ data, selected, id }: NodeProps) {
   const toolbar = (
     <NodeToolbar position={Position.Top} isVisible={selected}>
       <div className="bg-card flex items-center gap-0.5 rounded-lg border px-1 py-0.5 shadow-md">
-        {d.onOpenSettings && (
-          <ToolbarButton icon={Settings} label="Settings" onClick={() => d.onOpenSettings?.(id)} />
+        {d.onViewProfile && (
+          <ToolbarButton
+            icon={UserRound}
+            label="View profile"
+            onClick={() => d.onViewProfile?.(id)}
+          />
         )}
         {d.onSelectAgent && (
           <ToolbarButton icon={Heart} label="Health" onClick={() => d.onSelectAgent?.(id)} />

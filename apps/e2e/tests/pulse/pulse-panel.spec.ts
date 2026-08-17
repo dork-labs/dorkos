@@ -25,7 +25,7 @@ test.describe('Pulse — right inspector panel @smoke', () => {
     await expect(rightPanel.header.getByRole('tablist')).toHaveCount(0);
   });
 
-  test('opens on a session to the contextual default (Agent Profile), not Pulse', async ({
+  test('opens on a session to the contextual default (Profile), not Pulse', async ({
     rightPanel,
   }) => {
     // Fresh context, straight to /session: the container's auto-select prefers the

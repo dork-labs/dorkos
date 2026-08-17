@@ -6218,7 +6218,7 @@
           },
           "imageUrl": {
             "type": "string",
-            "description": "Render cache: the author's photo, when they have one. The fourth field beside `displayName`, `emoji` and `color`, on exactly their lifecycle — refreshed on resolve, never a key. Additive: an author with a photo AND an emoji keeps both, and the renderer picks. Source-agnostic: the value is whatever URL the avatar store returned, so it may be server-relative today and absolute tomorrow."
+            "description": "Render cache: the author's photo, when they have one. The fourth field beside `displayName`, `emoji` and `color`, on exactly their lifecycle — refreshed by a resolve whose caller knows it, never a key. Additive: an author with a photo AND an emoji keeps both, and the renderer picks. Source-agnostic: the value is whatever URL the avatar store returned, so it may be server-relative today and absolute tomorrow."
           },
           "agentRef": {
             "type": "string",

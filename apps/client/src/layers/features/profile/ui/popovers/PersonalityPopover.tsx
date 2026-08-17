@@ -20,7 +20,7 @@ import type { ProfilePickContentProps } from './types';
  * the whole screen rather than one row of a profile.
  *
  * The traits go to the manifest **and** to SOUL.md, through the same update the
- * Agent Hub always sent (`personalityUpdate`). Writing the manifest alone is
+ * panel this replaced always sent (`personalityUpdate`). Writing the manifest alone is
  * what a turn does not necessarily read: the trait block is regenerated in
  * place only where markers already exist, so an agent whose SOUL.md was
  * hand-written or absent kept its old voice while this panel showed the new one.

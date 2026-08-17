@@ -346,7 +346,7 @@ describe('the popovers', () => {
   it('writes the personality into SOUL.md, not only into the manifest', async () => {
     // A turn reads the trait block out of SOUL.md; the manifest alone reaches
     // the prompt only where that block already exists. Writing both is what the
-    // Agent Hub always did, and what makes the change audible (DOR-1253).
+    // panel this replaced always did, and what makes the change audible (DOR-1253).
     const { transport } = await renderProfile(MANAGED);
     await openRow('personality');
 
@@ -576,6 +576,112 @@ describe('Instructions and Boundaries', () => {
     expect(screen.getByPlaceholderText('Write markdown content...')).toHaveValue(
       'Never force-push.'
     );
+  });
+
+  // ── The preview: what the agent will actually read (DOR-1255) ──
+
+  /** Open the disclosure and hand back the assembled prompt. */
+  async function openPreview(): Promise<string> {
+    await userEvent.click(await screen.findByRole('button', { name: /Preview what Warden/ }));
+    const pre = await screen.findByTestId('injected-prompt');
+    return pre.textContent ?? '';
+  }
+
+  it('shows both files assembled, not just the one being edited', async () => {
+    // The agent reads them together and neither editor can show the other half,
+    // so the preview is on BOTH pages and carries BOTH files.
+    await renderProfile(MANAGED, { start: 'instructions' });
+
+    const prompt = await openPreview();
+
+    expect(prompt).toContain('<agent_identity>');
+    // The SLUG, which is the only name the server writes into the block
+    // (`agent-context.ts`: `Name: ${manifest.name}`). The fixture's display name
+    // is "Warden" and its slug is "warden", so this line is the one that can
+    // tell the two apart — the disclosure's own label says "Warden" and the
+    // identity block must not.
+    expect(prompt).toContain('Name: warden');
+    expect(prompt).not.toContain('Name: Warden');
+    expect(prompt).toContain('Description: Watches the build.');
+    expect(prompt).toContain('Capabilities: review');
+    expect(prompt).toContain('<agent_persona>');
+    expect(prompt).toContain('Be careful.');
+    expect(prompt).toContain('<agent_safety_boundaries>');
+    expect(prompt).toContain('Never force-push.');
+  });
+
+  it('is closed until you ask for it — the file you are writing is the subject', async () => {
+    await renderProfile(MANAGED, { start: 'instructions' });
+
+    await screen.findByRole('button', { name: /Preview what Warden/ });
+    expect(screen.queryByTestId('injected-prompt')).toBeNull();
+  });
+
+  it('follows the DRAFT, not the file on disk', async () => {
+    // A preview that only moved once you saved would answer the question after
+    // you no longer had it.
+    await renderProfile(MANAGED, { start: 'instructions' });
+
+    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    await userEvent.clear(editor);
+    await userEvent.type(editor, 'Say what broke first.');
+
+    const prompt = await openPreview();
+
+    expect(prompt).toContain('Say what broke first.');
+    expect(prompt).not.toContain('Be careful.');
+    // Nothing was saved to get there.
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+  });
+
+  it('follows the draft on the Boundaries page too', async () => {
+    await renderProfile(MANAGED, { start: 'boundaries' });
+
+    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    await userEvent.clear(editor);
+    await userEvent.type(editor, 'Never touch main.');
+
+    const prompt = await openPreview();
+
+    expect(prompt).toContain('<agent_safety_boundaries>\nNever touch main.');
+    // And the OTHER file is still the stored one — a draft on one page does not
+    // invent one on the other.
+    expect(prompt).toContain('Be careful.');
+  });
+
+  it('regenerates the trait block from the personality currently picked', async () => {
+    // The server does this on every turn (`agent-context.ts` `buildAgentBlock`),
+    // so a preview showing the stale block on disk would be showing something
+    // the agent never sees. The fixture's SOUL.md carries a literal `traits`
+    // placeholder between the markers; the rendered block does not.
+    //
+    // **From the BOUNDARIES page, deliberately.** On Instructions the SOUL text
+    // reaching the preview has already been through `soulFile` (that is what
+    // saving would write), so the regeneration inside the preview is dead code
+    // there and a test run from that page cannot see it fail. Here SOUL arrives
+    // straight off the manifest, stale block and all — which is the case that
+    // needed the code in the first place.
+    await renderProfile(MANAGED, { start: 'boundaries' });
+
+    const prompt = await openPreview();
+
+    expect(prompt).toContain('TRAITS:START');
+    expect(prompt).not.toContain('\ntraits\n');
+  });
+
+  it('leaves out a file that is switched off — an off file is not injected', async () => {
+    const transport = mockTransport({
+      getAgentByPath: vi.fn().mockResolvedValue({
+        ...WARDEN_MANIFEST,
+        conventions: { soul: true, nope: false, dorkosKnowledge: true },
+      }),
+    });
+    await renderProfile(MANAGED, { start: 'instructions', transport });
+
+    const prompt = await openPreview();
+
+    expect(prompt).toContain('<agent_persona>');
+    expect(prompt).not.toContain('<agent_safety_boundaries>');
   });
 });
 

@@ -240,7 +240,7 @@ export interface RightPanelStateEntry {
  * preference instead, and is idempotent, so it can stay for as long as the old
  * id might still be sitting in somebody's browser.
  *
- * `agent-hub` became `profile` when the Agent Hub and the profile drawer became
+ * `agent-hub` became `profile` when the old agent panel and the profile drawer became
  * one surface (spec `profile-unification`).
  */
 const RENAMED_RIGHT_PANEL_TABS: Record<string, string> = { 'agent-hub': 'profile' };

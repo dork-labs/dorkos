@@ -379,8 +379,9 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
 
     // The turn finished; the rekeyed projector lives under the canonical id now.
     await vi.waitFor(() => expect(peekProjector(CANONICAL_ID)?.getStatus().lifecycle).toBe('idle'));
-    // And the OLD UUID no longer resolves to a live projector (it was moved).
-    expect(peekProjector(SESSION_ID)).toBeUndefined();
+    // The OLD UUID was MOVED, not copied: it resolves to that same one projector
+    // rather than a second, empty one of its own (DOR-1262).
+    expect(peekProjector(SESSION_ID)).toBe(peekProjector(CANONICAL_ID));
 
     // A cold /events connect under the CANONICAL id surfaces the turn — its
     // cursor is non-zero, so the snapshot reflects the real (rekeyed) state.
@@ -427,9 +428,11 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       queuePosition: 1,
     });
 
-    // The per-event retry still moved the projector to the canonical id.
+    // The per-event retry still moved the projector to the canonical id: the
+    // instance ANSWERS to that id now, and the request UUID redirects onto it
+    // rather than minting a second, empty projector (DOR-1262).
     await vi.waitFor(() => expect(peekProjector(CANONICAL_ID)?.getStatus().lifecycle).toBe('idle'));
-    expect(peekProjector(SESSION_ID)).toBeUndefined();
+    expect(peekProjector(SESSION_ID)?.sessionId).toBe(CANONICAL_ID);
   });
 
   it('rekeys when the adapter seeds an IDENTITY mapping before the real id (F2 regression)', async () => {
@@ -461,7 +464,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
 
     // The per-event retry must NOT have disarmed on the identity resolution.
     await vi.waitFor(() => expect(peekProjector(CANONICAL_ID)?.getStatus().lifecycle).toBe('idle'));
-    expect(peekProjector(SESSION_ID)).toBeUndefined();
+    expect(peekProjector(SESSION_ID)?.sessionId).toBe(CANONICAL_ID);
   });
 
   it('stall watchdog: a hung turn is interrupted, closed with turn_stalled, and the lock freed', async () => {

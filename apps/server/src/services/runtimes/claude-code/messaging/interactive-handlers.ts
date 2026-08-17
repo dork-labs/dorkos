@@ -83,13 +83,15 @@ const READ_ONLY_TOOLS = new Set([
  * the question.
  */
 export const DORKOS_AGENT_TOOLS = new Set([
-  // The `rooms` domain. Auto-allowed only for a session that HAS an agent
-  // identity — see {@link IDENTITY_SCOPED_TOOLS}, which is where the whole
-  // argument for these four lives.
+  // The `rooms` domain, plus the one relay verb that reaches a PERSON. Every one
+  // of these is auto-allowed only for a session that HAS an agent identity — see
+  // {@link IDENTITY_SCOPED_TOOLS}, which is where the whole argument for them
+  // lives.
   'mcp__dorkos__post_to_room',
   'mcp__dorkos__react_to_room_entry',
   'mcp__dorkos__read_room_history',
   'mcp__dorkos__search_room_history',
+  'mcp__dorkos__relay_notify_user',
   'mcp__dorkos__relay_send',
   'mcp__dorkos__relay_inbox',
   'mcp__dorkos__relay_list_endpoints',
@@ -110,9 +112,25 @@ export const DORKOS_AGENT_TOOLS = new Set([
 
 /**
  * The members of {@link DORKOS_AGENT_TOOLS} whose auto-allow holds only while
- * the SESSION HAS AN AGENT IDENTITY (DOR-1229).
+ * the SESSION HAS AN AGENT IDENTITY (DOR-1229, extended by DOR-1265).
  *
- * ## Why these four need the qualifier
+ * What they have in common is the reason they may skip a card at all: **an
+ * identified agent's reach here is bounded to a scope the OWNER already set up**
+ * — the rooms she seated it in, and the chats her bindings already let it speak
+ * first in. The identity is what makes that sentence true, which is why losing
+ * it takes the auto-allow with it. It is a bound on the SCOPE, not a promise
+ * about the audience: see the notify section below for how wide the operator can
+ * (and by default does) set that scope.
+ *
+ * What the auto-allow gives up is stated once, here, because it is the same
+ * thing for all five: **the per-call card an operator watching a DIRECT session
+ * could have denied.** Not the setup consent, which is untouched — a room the
+ * agent is not a member of, and a binding nobody switched initiating on for, are
+ * both still refused underneath. (Note what that does NOT say: an unclaimed CHAT
+ * is not necessarily refused, because a wildcard binding's scope covers the whole
+ * adapter. The consent that holds is the one on the binding, not one per chat.)
+ *
+ * ## Why the four rooms verbs need the qualifier
  *
  * The rooms verbs authorize on MEMBERSHIP: each resolves the caller's roster row
  * before doing anything, and the two reads answer "not a member" with the same
@@ -131,14 +149,74 @@ export const DORKOS_AGENT_TOOLS = new Set([
  * the qualifier these four would have been a no-prompt path to the operator's
  * whole room history from any ordinary coding session.
  *
- * Identity on that surface comes from ONE place: the session's working
- * directory, resolved by {@link createInSessionContextResolver} — the same
- * function, with the same argument, that `mcp-tools/index.ts` builds the
- * capability resolver from, so this gate and the caller the tool actually runs
- * as can never disagree. A room turn is handed the addressed agent's own
- * directory (`room-turn-runner.ts`), so it resolves an identity and these four
- * are frictionless exactly where they were meant to be. An ordinary cockpit
- * session in a plain project directory resolves none, and keeps today's card.
+ * ## Why `relay_notify_user` is here too (DOR-1265)
+ *
+ * It is not a rooms verb and it authorizes on nothing like membership — it is
+ * here because a note can only land inside a SCOPE THE OPERATOR SET. Two earlier
+ * drafts of this comment got the scope wrong in the narrow direction, so it is
+ * spelled out:
+ *
+ * - **Their own DorkOS DM** — the 1:1 they share with this agent, used when no
+ *   external chat can carry the note (`relay/notify-dm.ts`, DOR-1209).
+ * - **Whatever their bindings already permit this agent to START a conversation
+ *   in.** Two operator acts gate that: a binding has to exist, and its "Agent
+ *   can start conversations" switch has to be on (`canInitiate`, per binding,
+ *   default FALSE). What the scope then COVERS is the operator's choice too, and
+ *   it is often wider than one chat: a binding may name a group, a chat with
+ *   somebody else, or — with the chat filter left empty, which is the cockpit's
+ *   default for a new binding ("Any chat (wildcard)") — **every chat that has
+ *   messaged that adapter, including ones nobody claimed**. That is stated
+ *   exactly this way in `relay/initiate-consent.ts`: sender scoping does not
+ *   narrow a wildcard binding, "because that is the scope the person chose when
+ *   they left the chat filter empty".
+ *
+ * So: a note is NOT necessarily private to the operator, and not necessarily to
+ * somebody they hand-picked. It is always inside a scope they configured and
+ * switched on. The tool's `channel` argument selects among those bindings; it
+ * cannot create one, widen one, or get past `canInitiate`
+ * (`resolveNotifyTarget` → `bindingAllowsInitiate`, answered `INITIATE_NOT_ALLOWED`).
+ *
+ * So what a card here was actually asking was "may this agent use the channel
+ * you already gave it, this once" — a fair question in a session somebody is
+ * watching, and an unanswerable one in a room turn. Measured live on 2026-08-16:
+ * asked in a channel to send a proactive note, the agent's room turn parked on
+ * `awaiting_approval` and no message was ever sent, twice on two days.
+ *
+ * What bounds the frequency instead is a mechanism, per
+ * `.claude/rules/room-conduct.md`: `NotifyBudget` (`relay/notify-budget.ts`),
+ * ten notes per agent per hour, with a refusal that tells the agent to say it in
+ * the conversation it is already in.
+ *
+ * Without an identity the tool refuses itself — the handler answers
+ * `NOT_AN_AGENT` — so the qualifier costs a call nothing today. It is still
+ * stated rather than assumed: the gate must not be the layer that decides a call
+ * is harmless because some other layer happens to refuse it. (And the two do not
+ * resolve identity through the same store — see below.)
+ *
+ * ## Where identity comes from
+ *
+ * One KEY — the session's working directory — resolved here by
+ * {@link createInSessionContextResolver}, the same function, with the same
+ * argument, that `mcp-tools/index.ts` builds the capability resolver from. For
+ * the rooms verbs that is also the same STORE, so this gate and the caller those
+ * four run as cannot disagree.
+ *
+ * **`relay_notify_user` is the exception, and not one to paper over.** The gate's
+ * answer comes from an unrevoked `agent_identity_tokens` row
+ * (`AgentIdentityService.describeAgent`); the tool's sender comes from the MESH
+ * registry (`resolveSenderIdentity` → `meshCore.getSubjectByPath`), which it has
+ * to, because the relay `from` is an authorization principal that ACL rules match
+ * on and only the mesh knows an agent's canonical subject. Two stores, one key.
+ * Where they disagree the GATE is the permissive one, so the outcome is a turn
+ * that proceeds and gets a structured `NOT_AN_AGENT` back — no card, no note, and
+ * a different failure from the one this fix was about. Both directions are pinned
+ * in `core/__tests__/mcp-relay-notify-tools.test.ts`.
+ *
+ * A room turn is handed the addressed agent's own directory
+ * (`room-turn-runner.ts`), and an agent a room dispatched to is in the mesh by
+ * construction, so the two agree wherever this was meant to work: the verbs are
+ * frictionless there. An ordinary cockpit session in a plain project directory
+ * resolves neither, and keeps today's card.
  *
  * ## Why they are auto-allowed at all, once identity holds
  *
@@ -153,13 +231,15 @@ export const DORKOS_AGENT_TOOLS = new Set([
  * an agent posts into its own room would be the over-tiering that teaches
  * people to click through", with the writes bounded by mechanisms instead — the
  * cascade guard and the two-ceiling turn budget for a post, the hourly
- * `ReactionBudget` for a reaction. This list was the one place not told.
+ * `ReactionBudget` for a reaction, the hourly `NotifyBudget` for a note. This
+ * list was the one place not told.
  */
 export const IDENTITY_SCOPED_TOOLS = new Set([
   'mcp__dorkos__post_to_room',
   'mcp__dorkos__react_to_room_entry',
   'mcp__dorkos__read_room_history',
   'mcp__dorkos__search_room_history',
+  'mcp__dorkos__relay_notify_user',
 ]);
 
 /** The multiplexer on {@link DORKOS_AGENT_TOOLS}: one name, 22 different effects. */
@@ -394,12 +474,12 @@ export interface InteractiveSession {
   sdkSessionId?: string;
   /**
    * The session's working directory — the ONLY thing the in-session surface
-   * resolves an agent identity from, and therefore what decides who the rooms
-   * verbs act as ({@link IDENTITY_SCOPED_TOOLS}).
+   * resolves an agent identity from, and therefore what decides who the
+   * owner-facing verbs act as ({@link IDENTITY_SCOPED_TOOLS}).
    *
    * Optional for the same reason `sdkSessionId` is: a real `AgentSession`
    * always carries it, a test fake need not. Absent means no identity, which is
-   * the conservative answer — those four ask rather than skip the card.
+   * the conservative answer — those verbs ask rather than skip the card.
    */
   cwd?: string;
 }
@@ -744,14 +824,18 @@ export interface ToolApprovalContext {
 }
 
 /**
- * Whether this session resolves to an agent identity, for the rooms gate.
+ * Whether this session resolves to an agent identity, for the owner-facing gate
+ * ({@link IDENTITY_SCOPED_TOOLS}).
  *
- * **Fails CLOSED, and that is the whole point of not inlining it.** The
- * resolver reads the agent index off disk; a throw there must mean "ask", never
- * "skip the card", because the fallback caller on the other side of these four
- * verbs is the person who owns the install. `createInSessionContextResolver`
- * already swallows its own errors, so this catch is the belt to that braces —
- * a future resolver that throws cannot silently widen the auto-allow.
+ * **Fails CLOSED, and that is the whole point of not inlining it.** The resolver
+ * reads the agent index off disk, and a throw there must mean "ask", never "skip
+ * the card". What is on the other side differs per verb — for the four rooms
+ * verbs an unresolved caller becomes the person who OWNS the install, who sees
+ * every room on the machine; for `relay_notify_user` it is a message to a person
+ * sent by a session nobody can name — and neither is something to wave through
+ * because a disk read failed. `createInSessionContextResolver` already swallows
+ * its own errors, so this catch is the belt to that braces: a future resolver
+ * that throws cannot silently widen the auto-allow.
  *
  * @param resolveIdentity - The memoized session-identity resolver.
  * @param log - Where a failed lookup is reported.
@@ -775,14 +859,14 @@ async function hasAgentIdentity(
  *
  * Routes `AskUserQuestion` to the question handler, auto-allows calls to the two
  * safe-listed tool sets ({@link READ_ONLY_TOOLS}, {@link DORKOS_AGENT_TOOLS})
- * that {@link isAutoAllowedCall} also clears — and, for the rooms subset, that
- * this session has an agent identity ({@link IDENTITY_SCOPED_TOOLS}) — and hands
- * every remaining call to {@link resolveModeDecision}, which either allows it or
- * raises an approval card.
+ * that {@link isAutoAllowedCall} also clears — and, for the owner-facing subset,
+ * that this session has an agent identity ({@link IDENTITY_SCOPED_TOOLS}) — and
+ * hands every remaining call to {@link resolveModeDecision}, which either allows
+ * it or raises an approval card.
  *
  * Nothing reaches a person's machine on a fall-through: a tool that matches no
  * safe list and no permissive mode asks. `Bash` under `acceptEdits` asks, and so
- * does a rooms verb from a session that names nobody.
+ * does a rooms verb, or a proactive note, from a session that names nobody.
  *
  * @param session - The interactive session state (with its permission mode).
  * @param log - Where the gate reports its verdicts; see {@link ToolGateLogger}.
@@ -825,9 +909,10 @@ export function createCanUseTool(
     if (
       (READ_ONLY_TOOLS.has(toolName) || DORKOS_AGENT_TOOLS.has(toolName)) &&
       isAutoAllowedCall(toolName, input) &&
-      // The rooms verbs skip the card only for a session that resolves an agent
-      // identity, because without one they run as the OWNER — who sees every
-      // room on the install and posts as a person (see IDENTITY_SCOPED_TOOLS).
+      // The owner-facing verbs skip the card only for a session that resolves an
+      // agent identity: without one the rooms verbs run as the OWNER — who sees
+      // every room on the install and posts as a person — and a proactive note
+      // has no sender to be from (see IDENTITY_SCOPED_TOOLS).
       // The resolver memoizes, so this costs one indexed read per query however
       // many times the agent reaches for a room.
       (!IDENTITY_SCOPED_TOOLS.has(toolName) || (await hasAgentIdentity(resolveIdentity, log)))
