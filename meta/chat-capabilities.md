@@ -64,7 +64,7 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 | I-04 | Elicitation prompt (MCP)                                                                       | session  | U, E                        |
 | I-05 | Pending prompts survive switch-away-and-back and hard refresh (snapshot `pendingInteractions`) | session  | U, E (hard refresh only), S |
 | I-06 | Approval answered outside DorkOS (e.g. OpenCode CLI) shows the real outcome                    | session  | U                           |
-| I-07 | Approval timeout (~10-min auto-deny) is visible and honest                                     | session  | U                           |
+| I-07 | Approval/question timeout (~10-min auto-deny) is visible and honest                            | session  | U, E (question half only)   |
 
 ## 4. Session lifecycle & context
 
@@ -72,7 +72,7 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
 | L-01 | New session; model and permission mode selectable per session                                                                                     | session  | E, S                                                          |
 | L-02 | Rename a session (incl. via palette)                                                                                                              | session  | U, E                                                          |
-| L-03 | Resume an old session; full history renders identically to live (reload-from-history parity)                                                      | session  | S                                                             |
+| L-03 | Resume an old session; full history renders identically to live (reload-from-history parity)                                                      | session  | S, E (an unanswered question, DOR-1293)                       |
 | L-04 | **Compaction**: `/compact` and auto-compaction produce a visible boundary; history before it still renders; the turn after it has correct context | session  | U, E (context-after-compaction unverified — test-mode echoes) |
 | L-05 | Session fork / branch — a full-transcript copy only: `⇧↵` in the session switcher, no dialog, no "branch from message N"                          | session  | U, E (fork POST stubbed)                                      |
 | L-06 | Session lock (`X-Client-Id`): two writers don't corrupt a session                                                                                 | session  | U                                                             |
@@ -154,7 +154,7 @@ shipping two cases that assert nothing.
 - **Concurrency**: two sessions streaming at once while switching (covered by `/chat:session-switch-test`); an agent active in a **room and a direct session at the same time**; two humans posting in one thread simultaneously.
 - **Interruption**: refresh mid-stream; network drop mid-stream; server restart mid-turn; stop pressed during tool execution; queued message pending when the turn errors.
 - **Compaction**: compaction firing **while** a message is queued; compaction mid-multi-turn task; compaction in a room-bound session. (Transcript rendering across the boundary is now covered — DOR-1215.)
-- **Prompts**: approval pending during a session switch, a refresh, a compaction, and a second incoming prompt; question prompt answered from a second window; approval answered outside DorkOS.
+- **Prompts**: approval pending during a session switch, a refresh, a compaction, and a second incoming prompt; question prompt answered from a second window; approval answered outside DorkOS. **A prompt nobody answers is now covered on the reload path** (I-07/L-03, DOR-1293): a question that expires, is dismissed, or fails reads honestly instead of leaving a green "Question answered", and a tool refused or expired in the bare CLI reads as a refusal rather than as a tool that ran. Still open here: an APPROVAL that expires is proven only by parser unit tests (the browser leg drives the question half), and MCP elicitation carries no outcome at all — an elicitation is not a `tool_use` block, so no runtime transcript records how one ended.
 - **Scale**: 500+ message session reload; very long single message; rapid-fire sends; many rooms with unread counts.
 - **Identity**: URL session id ≠ SDK session id (the JSONL mapping trap); duplicate session titles in the sidebar; placeholder ids in `room_sessions`.
 - **Mobile**: every capability above on a phone viewport (composer, thread panel via room-sheet-phone, approval cards).

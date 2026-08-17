@@ -32,6 +32,12 @@ export function mapHistoryMessage(m: HistoryMessage): ChatMessage {
                 interactiveType: 'question' as const,
                 questions: tc.questions,
                 answers: tc.answers,
+                // How it ENDED. Without it the renderer has only "not pending,
+                // no answers" to go on, which is equally true of a question
+                // that expired, one that was withdrawn, one that failed, and
+                // one somebody else answered — and it read all four as
+                // answered (DOR-1293).
+                questionOutcome: tc.questionOutcome,
               }
             : {}),
           // A recorded answer is what turns a tool call back into a receipt on

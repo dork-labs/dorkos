@@ -1,11 +1,17 @@
 /**
- * Put the permission decisions back into a runtime's own history.
+ * Put the interaction decisions back into a runtime's own history.
  *
  * A permission prompt is asked and answered entirely inside DorkOS. The
  * runtime's transcript — SDK JSONL for claude-code — records only that a tool
  * ran or did not; it has no idea a person was ever asked. So a session reopened
  * tomorrow came back with every receipt gone: the one record a person most
  * wants when reviewing what an agent did was the one thing that did not last.
+ *
+ * Questions ride the same overlay for a related but distinct reason. Their
+ * ending IS in the JSONL — as model-facing prose in the tool result, which the
+ * transcript parser classifies (`sessions/tool-result-outcome.ts`) — so unlike
+ * approvals they are never lost. What DorkOS holds is the same fact stated
+ * exactly rather than inferred from a sentence, so it is applied on top.
  *
  * This module closes that. The answers ARE durable — the projector records
  * every `interaction_resolved` in its `'record'` persistence mode
@@ -33,15 +39,30 @@
  *
  * @module services/session/approval-receipt-overlay
  */
-import { approvalOutcomeOf, type SessionEvent } from '@dorkos/shared/session-stream';
-import type { HistoryMessage, MessagePart, ToolApprovalOutcome } from '@dorkos/shared/types';
+import {
+  approvalOutcomeOf,
+  questionOutcomeOf,
+  type SessionEvent,
+} from '@dorkos/shared/session-stream';
+import type {
+  HistoryMessage,
+  MessagePart,
+  QuestionOutcome,
+  ToolApprovalOutcome,
+} from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
 import { getSessionEventStore, peekProjector } from './session-state-projector.js';
 
-/** What a person's answer to one permission prompt leaves behind. */
+/** What a person's answer to one interaction leaves behind. */
 export interface ApprovalReceipt {
-  /** How it was answered. */
-  outcome: ToolApprovalOutcome;
+  /** How a permission prompt was answered, when this was one. */
+  outcome?: ToolApprovalOutcome;
+  /**
+   * How a question ended, when this was one. Mutually exclusive with `outcome`
+   * — `approvalOutcomeOf` and `questionOutcomeOf` each insist the server said
+   * which kind it had, and no interaction is both.
+   */
+  questionOutcome?: QuestionOutcome;
   /** Epoch ms the answer landed, when the resolver said. */
   resolvedAt?: number;
   /** Epoch ms the prompt was raised, when the resolver said. */
@@ -54,7 +75,13 @@ export interface ApprovalReceipt {
 }
 
 /**
- * Index a session's answered approvals by the tool call each one gated.
+ * Index a session's resolved interactions by the tool call each one belongs to.
+ *
+ * Both kinds that leave a mark are collected. An approval's is the receipt line
+ * it earned; a question's is the difference between "you picked Quicksort" and
+ * "nobody answered in time" (DOR-1293) — and for claude-code the question half
+ * is the AUTHORITATIVE version of something the transcript parser can only
+ * infer from the model-facing prose in the tool result.
  *
  * Last answer wins: an id can only resolve twice across a restart-and-replay,
  * and the later row is the one that happened.
@@ -66,9 +93,11 @@ export function collectApprovalReceipts(events: SessionEvent[]): Map<string, App
   for (const event of events) {
     if (event.type !== 'interaction_resolved') continue;
     const outcome = approvalOutcomeOf(event);
-    if (outcome === undefined) continue;
+    const questionOutcome = questionOutcomeOf(event);
+    if (outcome === undefined && questionOutcome === undefined) continue;
     receipts.set(event.id, {
-      outcome,
+      ...(outcome !== undefined ? { outcome } : {}),
+      ...(questionOutcome !== undefined ? { questionOutcome } : {}),
       resolvedAt: event.at,
       startedAt: event.startedAt,
       reasonGiven: event.reasonGiven,
@@ -77,22 +106,32 @@ export function collectApprovalReceipts(events: SessionEvent[]): Map<string, App
   return receipts;
 }
 
-/** Annotate one tool-call part with the answer to the prompt that gated it. */
-function annotatePart(part: MessagePart, receipts: Map<string, ApprovalReceipt>): MessagePart {
-  if (part.type !== 'tool_call') return part;
-  const receipt = receipts.get(part.toolCallId);
-  if (receipt === undefined) return part;
+/** The fields one receipt writes onto the tool call it belongs to. */
+function receiptFields(
+  receipt: ApprovalReceipt
+): Partial<Extract<MessagePart, { type: 'tool_call' }>> {
+  if (receipt.questionOutcome !== undefined) {
+    return { questionOutcome: receipt.questionOutcome };
+  }
   return {
-    ...part,
     // `interactiveType` is what marks the part as a permission prompt at all;
     // the receipt renderer keys off it, so carrying the outcome without it
-    // would restore the data and none of the display.
+    // would restore the data and none of the display. A question needs no such
+    // mark — its own `questions` array already carries it.
     interactiveType: 'approval',
     approvalOutcome: receipt.outcome,
     approvalResolvedAt: receipt.resolvedAt,
     approvalStartedAt: receipt.startedAt,
     approvalReasonGiven: receipt.reasonGiven,
   };
+}
+
+/** Annotate one tool-call part with the answer to the interaction it carried. */
+function annotatePart(part: MessagePart, receipts: Map<string, ApprovalReceipt>): MessagePart {
+  if (part.type !== 'tool_call') return part;
+  const receipt = receipts.get(part.toolCallId);
+  if (receipt === undefined) return part;
+  return { ...part, ...receiptFields(receipt) };
 }
 
 /** Whether any of a message's tool calls, in either shape, has an answer waiting. */
@@ -133,15 +172,17 @@ export function applyApprovalReceipts(
         ? {
             toolCalls: message.toolCalls.map((tc) => {
               const receipt = receipts.get(tc.toolCallId);
-              return receipt === undefined
-                ? tc
-                : {
-                    ...tc,
-                    approvalOutcome: receipt.outcome,
-                    approvalResolvedAt: receipt.resolvedAt,
-                    approvalStartedAt: receipt.startedAt,
-                    approvalReasonGiven: receipt.reasonGiven,
-                  };
+              if (receipt === undefined) return tc;
+              if (receipt.questionOutcome !== undefined) {
+                return { ...tc, questionOutcome: receipt.questionOutcome };
+              }
+              return {
+                ...tc,
+                approvalOutcome: receipt.outcome,
+                approvalResolvedAt: receipt.resolvedAt,
+                approvalStartedAt: receipt.startedAt,
+                approvalReasonGiven: receipt.reasonGiven,
+              };
             }),
           }
         : {}),

@@ -1,7 +1,8 @@
 import { Fragment } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Clock, MinusCircle, X } from 'lucide-react';
 import { CompactResultRow } from '../primitives';
-import type { QuestionItem } from '@dorkos/shared/types';
+import type { QuestionItem, QuestionOutcome } from '@dorkos/shared/types';
+import { cn } from '@/layers/shared/lib';
 
 interface QuestionAnswerSummaryProps {
   questions: QuestionItem[];
@@ -45,6 +46,54 @@ function getDisplayValue(
     return (sel as string[]).map((v) => (v === '__other__' ? otherText[idx] : v)).join(', ');
   }
   return sel === '__other__' ? otherText[idx] : (sel as string);
+}
+
+/** How each unanswered ending reads, and what it looks like. */
+const UNANSWERED: Record<
+  Exclude<QuestionOutcome, 'answered'>,
+  { label: string; Icon: typeof Clock; iconClass: string }
+> = {
+  expired: { label: 'Nobody answered in time', Icon: Clock, iconClass: 'text-muted-foreground' },
+  denied: { label: 'Question dismissed', Icon: MinusCircle, iconClass: 'text-muted-foreground' },
+  cancelled: {
+    label: 'Question withdrawn',
+    Icon: MinusCircle,
+    iconClass: 'text-muted-foreground',
+  },
+  errored: { label: "The question didn't go through", Icon: X, iconClass: 'text-status-error' },
+};
+
+/**
+ * The row a question gets when it ended with no answer.
+ *
+ * Every one of these used to render as a green "Question answered" — the
+ * renderer had only "no answers" to go on, which is what an unanswered question
+ * and an answered one somebody else submitted look equally like (DOR-1293). The
+ * result text rides along for the `errored` case alone, because that is the
+ * only ending whose reason the reader cannot guess from the label.
+ */
+export function QuestionUnansweredRow({
+  outcome,
+  result,
+}: {
+  /** How it ended. Never `answered` — that has its own summary. */
+  outcome: Exclude<QuestionOutcome, 'answered'>;
+  /** What the transcript recorded, shown only for a failure. */
+  result?: string;
+}) {
+  const { label, Icon, iconClass } = UNANSWERED[outcome];
+  return (
+    <CompactResultRow
+      data-testid="question-prompt-unanswered"
+      data-outcome={outcome}
+      icon={<Icon className={cn('size-(--size-icon-sm) shrink-0', iconClass)} />}
+      label={<span className="truncate">{label}</span>}
+    >
+      {outcome === 'errored' && result && (
+        <p className="text-muted-foreground mt-1 pl-6 text-xs break-words">{result}</p>
+      )}
+    </CompactResultRow>
+  );
 }
 
 /**

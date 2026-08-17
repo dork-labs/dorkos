@@ -232,6 +232,21 @@ export function CollapsibleRun({ children }: { children: React.ReactNode[] }) {
 }
 
 /**
+ * Whether a question is over AND was actually answered — the only state the
+ * empty-answers fallback may stand in for.
+ *
+ * `questionOutcome` is authoritative wherever it exists (history for every
+ * runtime, and the live fold from `interaction_resolved`). Where it does not —
+ * a transcript written before DOR-1293, or a path nothing has taught to set it
+ * — the old "not pending means settled" rule is kept, because the alternative
+ * is to stop collapsing answered questions on clients that did not submit them.
+ */
+function isSettledQuestion(part: Extract<MessagePart, { type: 'tool_call' }>): boolean {
+  if (part.questionOutcome !== undefined) return part.questionOutcome === 'answered';
+  return part.status !== 'pending';
+}
+
+/**
  * Renders assistant message content by mapping over message parts.
  * Handles text parts (via StreamingText), tool call parts (via AutoHideToolCall),
  * approval parts (via ToolApproval), and question parts (via QuestionPrompt).
@@ -491,7 +506,16 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           sessionId={sessionId}
           toolCallId={toolPart.toolCallId}
           questions={toolPart.questions}
-          answers={toolPart.answers ?? (toolPart.status !== 'pending' ? {} : undefined)}
+          // The empty-record fallback is what collapses the card for a client
+          // that did not submit the answer itself — it has no answers to show,
+          // but the question is over. It must NOT survive a question that ended
+          // WITHOUT one: an empty record reads as "answered, details unknown",
+          // and that is how a question nobody answered came back green
+          // (DOR-1293). `questionOutcome` is the one field that can tell the two
+          // apart; where nothing set it, the old rule stands.
+          answers={toolPart.answers ?? (isSettledQuestion(toolPart) ? {} : undefined)}
+          outcome={toolPart.questionOutcome}
+          result={toolPart.result}
           isActive={isActive}
           focusedOptionIndex={isActive ? focusedOptionIndex : -1}
           onDecided={

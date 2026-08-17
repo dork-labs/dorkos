@@ -3,10 +3,10 @@ import {
   stripRelayContext,
   stripSystemTags,
   parseTranscript,
-  applyToolResult,
   buildCommandMessage,
   extractLocalCommandOutput,
 } from '../runtimes/claude-code/sessions/transcript-parser.js';
+import { applyToolResult } from '../runtimes/claude-code/sessions/tool-result-outcome.js';
 import type { HistoryToolCall, ToolCallPart } from '@dorkos/shared/types';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { wrapKickoff } from '@dorkos/shared/kickoff';
@@ -354,7 +354,7 @@ describe('parseTranscript AskUserQuestion answer normalization', () => {
 describe('applyToolResult', () => {
   it('sets result on HistoryToolCall', () => {
     const tc: HistoryToolCall = { toolCallId: 'id-1', toolName: 'BashTool', status: 'complete' };
-    applyToolResult(tc, undefined, 'output text', undefined);
+    applyToolResult({ tc, resultText: 'output text' });
     expect(tc.result).toBe('output text');
   });
 
@@ -365,7 +365,7 @@ describe('applyToolResult', () => {
       toolName: 'BashTool',
       status: 'complete',
     };
-    applyToolResult(undefined, tcPart, 'part output', undefined);
+    applyToolResult({ tcPart, resultText: 'part output' });
     expect(tcPart.result).toBe('part output');
   });
 
@@ -376,8 +376,7 @@ describe('applyToolResult', () => {
       status: 'complete',
       questions: [{ question: 'Proceed?', type: 'text' }],
     };
-    const sdkAnswers = { 'Proceed?': 'yes' };
-    applyToolResult(tc, undefined, '', sdkAnswers);
+    applyToolResult({ tc, resultText: '', sdkAnswers: { 'Proceed?': 'yes' } });
     expect(tc.answers).toEqual({ '0': 'yes' });
   });
 
@@ -389,12 +388,12 @@ describe('applyToolResult', () => {
       questions: [{ question: 'Proceed?', type: 'text' }],
       answers: { '0': 'already-set' },
     };
-    applyToolResult(tc, undefined, '', { 'Proceed?': 'new-value' });
+    applyToolResult({ tc, resultText: '', sdkAnswers: { 'Proceed?': 'new-value' } });
     expect(tc.answers).toEqual({ '0': 'already-set' });
   });
 
   it('handles undefined tc and tcPart gracefully', () => {
-    expect(() => applyToolResult(undefined, undefined, 'result', undefined)).not.toThrow();
+    expect(() => applyToolResult({ resultText: 'result' })).not.toThrow();
   });
 });
 

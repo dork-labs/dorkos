@@ -25,6 +25,7 @@ import type {
 } from '@dorkos/shared/types';
 import {
   approvalOutcomeOf,
+  questionOutcomeOf,
   type InteractionResolvedEvent,
   type SessionEvent,
 } from '@dorkos/shared/session-stream';
@@ -394,6 +395,13 @@ function foldInteractionResolved(parts: MessagePart[], event: InteractionResolve
       // server's backfill and fall back to whatever the part already holds.
       toolCall.approvalStartedAt = event.startedAt ?? toolCall.approvalStartedAt;
     }
+    // A question's ending, by the same rule and for the same reason: the
+    // resolution alone cannot say which kind it retired, and until this was
+    // recorded a question that expired or was withdrawn kept every visible
+    // property of one that had been answered — no answers, no longer pending —
+    // so the renderer drew "Question answered" over it (DOR-1293).
+    const questionOutcome = questionOutcomeOf(event);
+    if (questionOutcome) toolCall.questionOutcome = questionOutcome;
   }
   const elicitation = findElicitationPart(parts, event.id);
   if (elicitation && elicitation.status === 'pending') {

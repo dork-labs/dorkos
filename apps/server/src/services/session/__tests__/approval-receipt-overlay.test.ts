@@ -77,13 +77,22 @@ describe('collectApprovalReceipts', () => {
     });
   });
 
-  it('ignores a withdrawn ask and a resolved question', () => {
-    const receipts = collectApprovalReceipts([
-      resolved('tc-1', 'cancelled'),
-      resolved('tc-2', 'expired', { kind: 'question' }),
-    ]);
+  it('ignores a withdrawn APPROVAL — nobody answered it', () => {
+    const receipts = collectApprovalReceipts([resolved('tc-1', 'cancelled')]);
 
     expect(receipts.size).toBe(0);
+  });
+
+  it('indexes a resolved QUESTION under its own outcome, not an approval one', () => {
+    // A question earns a record for a different reason than an approval does
+    // (DOR-1293): the question is already drawn in the transcript, so an ending
+    // nobody records leaves it reading as answered. It must NOT arrive wearing
+    // `approvalOutcome`, which is what draws "Expired — denied" over a question
+    // nobody was asked to approve.
+    const receipts = collectApprovalReceipts([resolved('tc-2', 'expired', { kind: 'question' })]);
+
+    expect(receipts.get('tc-2')).toMatchObject({ questionOutcome: 'expired' });
+    expect(receipts.get('tc-2')?.outcome).toBeUndefined();
   });
 
   it('keeps the LAST answer when an id resolves twice', () => {

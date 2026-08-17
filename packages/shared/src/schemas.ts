@@ -2018,6 +2018,29 @@ export const ToolApprovalOutcomeSchema = z.enum(['allowed', 'denied', 'expired']
 /** How a tool-approval request was answered. */
 export type ToolApprovalOutcome = z.infer<typeof ToolApprovalOutcomeSchema>;
 
+/**
+ * How an `AskUserQuestion` ENDED — the question's counterpart to
+ * {@link ToolApprovalOutcomeSchema}.
+ *
+ * A question is not an approval and must never borrow its words: "Expired —
+ * denied" over a question nobody was asked to approve is the same class of lie
+ * as a green "Question answered" over one nobody answered (DOR-1293). Four of
+ * the five members are the `interaction_resolved` resolutions a question can
+ * settle with, spelled identically so the live fold and the reopened transcript
+ * agree; `errored` is the fifth, and exists because a runtime's own transcript
+ * can report a failure DorkOS never saw (the raw CLI, a pruned event log).
+ */
+export const QuestionOutcomeSchema = z.enum([
+  'answered',
+  'expired',
+  'denied',
+  'cancelled',
+  'errored',
+]);
+
+/** How an `AskUserQuestion` ended. */
+export type QuestionOutcome = z.infer<typeof QuestionOutcomeSchema>;
+
 export const ToolCallPartSchema = z
   .object({
     type: z.literal('tool_call'),
@@ -2030,6 +2053,17 @@ export const ToolCallPartSchema = z
     interactiveType: z.enum(['approval', 'question']).optional(),
     questions: z.array(QuestionItemSchema).optional(),
     answers: z.record(z.string(), z.string()).optional(),
+    /**
+     * How the question ENDED, when something can say. Absent while it is still
+     * pending, and absent from every tool call that is not a question.
+     *
+     * `answers` alone cannot carry this. An observing client never had the
+     * answers to begin with, and a question that expired, was dismissed, or
+     * failed has none to have — so "no answers" describes four different
+     * endings, and the renderer that treated them as one drew a green
+     * "Question answered" over a question nobody answered (DOR-1293).
+     */
+    questionOutcome: QuestionOutcomeSchema.optional(),
     timeoutMs: z.number().optional().describe('Approval timeout duration in milliseconds'),
     /** Server timestamp (ms since epoch) when the approval timer started. Used for drift-free countdown. */
     approvalStartedAt: z.number().optional(),
@@ -2354,9 +2388,19 @@ export const HistoryToolCallSchema = z
     input: z.string().optional(),
     result: z.string().optional(),
     progressOutput: z.string().optional(),
-    status: z.literal('complete'),
+    /**
+     * How the call ended. Was the literal `'complete'` until DOR-1293, on the
+     * theory that history only ever holds finished calls — but "finished" and
+     * "succeeded" are not the same thing, and stamping every recorded call
+     * `complete` is what put a green check on tools that were denied, timed
+     * out, or failed. Runtimes that already knew better had to launder the
+     * truth through `result` alone (see OpenCode's `session-mapper`).
+     */
+    status: ToolCallStatusSchema,
     questions: z.array(QuestionItemSchema).optional(),
     answers: z.record(z.string(), z.string()).optional(),
+    /** How the question ended — see {@link ToolCallPartSchema}'s own field. */
+    questionOutcome: QuestionOutcomeSchema.optional(),
     /**
      * How a permission prompt that gated this tool was ANSWERED — the durable
      * half of the transcript receipt.

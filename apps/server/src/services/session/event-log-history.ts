@@ -13,6 +13,9 @@
  *     merged by toolCallId, `tool_progress` appended) emits one assistant
  *     message per turn, only once the turn closes with `turn_end` — the open
  *     turn's events are delivered separately as `inProgressTurn`.
+ *   - `question_prompt` attaches its questions to the tool call that raised it,
+ *     and the `interaction_resolved` that retires it attaches how it ended, so
+ *     a reopened transcript still shows what was asked and what became of it.
  *   - `compact_boundary` emits a `messageType: 'compaction'` message at its own
  *     seq — the same shape the Claude adapter builds from JSONL, so one row
  *     renders both. It is the only fold that does not require an open turn.
@@ -33,16 +36,25 @@
  *
  * @module services/session/event-log-history
  */
-import { approvalOutcomeOf, type SessionEvent } from '@dorkos/shared/session-stream';
+import {
+  approvalOutcomeOf,
+  questionOutcomeOf,
+  type SessionEvent,
+} from '@dorkos/shared/session-stream';
 import type { ErrorPart, HistoryMessage, HistoryToolCall, MessagePart } from '@dorkos/shared/types';
+import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
 
 /** The `error` session-event member, the per-turn error accumulator entry. */
 type ErrorSessionEvent = Extract<SessionEvent, { type: 'error' }>;
 
-/** The answered-approval fields a tool call carries into history. */
+/** The resolved-interaction fields a tool call carries into history. */
 type ApprovalReceipt = Pick<
   HistoryToolCall,
-  'approvalOutcome' | 'approvalResolvedAt' | 'approvalStartedAt' | 'approvalReasonGiven'
+  | 'approvalOutcome'
+  | 'approvalResolvedAt'
+  | 'approvalStartedAt'
+  | 'approvalReasonGiven'
+  | 'questionOutcome'
 >;
 
 /** Accumulator for one turn while folding the event stream. */
@@ -127,6 +139,17 @@ function buildFailedTurnParts(turn: TurnAccumulator): MessagePart[] {
       ...(tool.input !== undefined ? { input: tool.input } : {}),
       ...(tool.result !== undefined ? { result: tool.result } : {}),
       ...(tool.progressOutput !== undefined ? { progressOutput: tool.progressOutput } : {}),
+      // Same reason as the approval receipt below: a part list is what the
+      // client renders from when present, so a question that lived only on
+      // `toolCalls` would lose both its options and its ending on a failed turn.
+      ...(tool.questions !== undefined
+        ? {
+            interactiveType: 'question' as const,
+            questions: tool.questions,
+            answers: tool.answers,
+            questionOutcome: tool.questionOutcome,
+          }
+        : {}),
       // A part list is what the client renders from when present, so a receipt
       // that lived only on `toolCalls` would vanish on a failed turn.
       // `interactiveType` is what marks the part as a permission prompt at all.
@@ -192,6 +215,22 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
         const entry = toolEntry(turn, event.toolCallId, event.toolName);
         if (event.input !== undefined) entry.input = event.input;
         if (event.result !== undefined) entry.result = event.result;
+        // The terminal status the runtime reported, rather than the optimistic
+        // `complete` the entry was created with. A denied or failed tool that
+        // came back from history wearing a check is half of DOR-1293.
+        entry.status = event.status;
+        break;
+      }
+      case 'question_prompt': {
+        // The QUESTION itself, kept. Without it a reopened transcript holds a
+        // bare `AskUserQuestion` tool call — the thing a person was asked
+        // vanishes, and with it any place to say how it ended (DOR-1293). The
+        // ask carries no tool name of its own, so an entry created here is
+        // named for the SDK tool that always raises it; a `tool_call` under the
+        // same id (which claude-code emits, and test-mode mirrors) has usually
+        // named it already, and `toolEntry` keeps the first name it was given.
+        if (!turn) break;
+        toolEntry(turn, event.id, SDK_TOOL_NAMES.ASK_USER_QUESTION).questions = event.questions;
         break;
       }
       case 'tool_progress': {
@@ -268,6 +307,15 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
         // approval, actually answered) — shared with the client's live fold so
         // the reopened line matches the one the person saw.
         if (!turn) break;
+        // A question's ending rides the same fold (DOR-1293): for a log-backed
+        // runtime this stream is the ONLY transcript, so an expired or
+        // dismissed question that was not recorded here came back from a reload
+        // looking answered.
+        const questionOutcome = questionOutcomeOf(event);
+        if (questionOutcome !== undefined) {
+          turn.receipts.set(event.id, { questionOutcome });
+          break;
+        }
         const outcome = approvalOutcomeOf(event);
         if (outcome === undefined) break;
         turn.receipts.set(event.id, {

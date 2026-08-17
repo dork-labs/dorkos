@@ -386,7 +386,7 @@ describe('reconstructHistoryFromEvents — answered approvals', () => {
     expect(messages[1].toolCalls?.[0]).not.toHaveProperty('approvalOutcome');
   });
 
-  it('records nothing for a resolved QUESTION riding the same tool call id', () => {
+  it('records a resolved QUESTION as a question, never as an approval', () => {
     // AskUserQuestion is an ordinary tool_use block, so a timed-out question
     // resolves `expired` on a real tool call. Reading the kind out of the
     // outcome would print a permission receipt over a question.
@@ -413,6 +413,81 @@ describe('reconstructHistoryFromEvents — answered approvals', () => {
     );
 
     expect(messages[1].toolCalls?.[0]).not.toHaveProperty('approvalOutcome');
+    // …but it DOES earn its own record. For a log-backed runtime this stream is
+    // the only transcript, so an expiry not folded here comes back from a
+    // reload as a question with no answers — which is what the renderer read as
+    // "Question answered" (DOR-1293).
+    expect(messages[1].toolCalls?.[0].questionOutcome).toBe('expired');
+  });
+
+  it('keeps the QUESTION itself, so its ending has something to be about', () => {
+    const questions = [
+      {
+        question: 'Which test runner should I set up?',
+        header: 'Test runner',
+        multiSelect: false,
+        options: [{ label: 'Vitest' }, { label: 'Jest' }],
+      },
+    ];
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'tool_call',
+          toolCallId: 'tc-q',
+          toolName: 'AskUserQuestion',
+          status: 'pending',
+        },
+        {
+          seq: 3,
+          type: 'question_prompt',
+          id: 'tc-q',
+          questions,
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        {
+          seq: 4,
+          type: 'interaction_resolved',
+          id: 'tc-q',
+          kind: 'question',
+          resolution: 'expired',
+          at: 1_700_000_600_000,
+        },
+        { seq: 5, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0]).toMatchObject({
+      toolCallId: 'tc-q',
+      toolName: 'AskUserQuestion',
+      questions,
+      questionOutcome: 'expired',
+    });
+  });
+
+  it('carries the runtime’s terminal status, not an optimistic complete', () => {
+    // A tool that failed came back from history wearing a check, because every
+    // entry was created `complete` and the result event's own status was
+    // dropped on the floor (DOR-1293).
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'run it' },
+        { seq: 2, type: 'tool_call', toolCallId: 'tc-1', toolName: 'Bash', status: 'running' },
+        {
+          seq: 3,
+          type: 'tool_result',
+          toolCallId: 'tc-1',
+          toolName: 'Bash',
+          status: 'error',
+          result: 'Exit code 1',
+        },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0].status).toBe('error');
   });
 
   it('lands the answer even when the resolution is folded before the tool call', () => {

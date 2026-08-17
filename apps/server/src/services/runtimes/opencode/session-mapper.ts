@@ -188,9 +188,11 @@ function mapToolPart(part: ToolPart): { part: ToolCallPart; call?: HistoryToolCa
     result,
     status: TOOL_STATUS_MAP[state.status],
   };
-  // HistoryToolCall.status is the literal 'complete' (schema constraint), so
-  // only finished tools are recorded there — errored calls carry their error
-  // text as the result; in-flight tools surface through `parts` alone.
+  // Only FINISHED tools are recorded there — an in-flight one surfaces through
+  // `parts` alone. An errored one now says so, rather than being recorded
+  // `complete` with its error text as the result: history's status widened past
+  // the literal `'complete'` in DOR-1293, precisely because "finished" and
+  // "succeeded" are not the same claim.
   const call: HistoryToolCall | undefined =
     state.status === 'completed' || state.status === 'error'
       ? {
@@ -198,7 +200,7 @@ function mapToolPart(part: ToolPart): { part: ToolCallPart; call?: HistoryToolCa
           toolName: part.tool,
           input: toolCallPart.input,
           result,
-          status: 'complete',
+          status: toolCallPart.status,
         }
       : undefined;
   return { part: toolCallPart, call };

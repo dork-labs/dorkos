@@ -443,7 +443,10 @@
           "status": {
             "type": "string",
             "enum": [
-              "complete"
+              "pending",
+              "running",
+              "complete",
+              "error"
             ]
           },
           "questions": {
@@ -457,6 +460,16 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "questionOutcome": {
+            "type": "string",
+            "enum": [
+              "answered",
+              "expired",
+              "denied",
+              "cancelled",
+              "errored"
+            ]
           },
           "approvalOutcome": {
             "type": "string",
@@ -591,6 +604,16 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "questionOutcome": {
+            "type": "string",
+            "enum": [
+              "answered",
+              "expired",
+              "denied",
+              "cancelled",
+              "errored"
+            ]
           },
           "timeoutMs": {
             "type": "number",

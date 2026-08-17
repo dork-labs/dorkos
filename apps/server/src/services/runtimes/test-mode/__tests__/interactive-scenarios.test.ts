@@ -18,6 +18,7 @@ import {
   disposeProjector,
   getOrCreateProjector,
 } from '../../../session/session-state-projector.js';
+import { reconstructHistoryFromEvents } from '../../../session/event-log-history.js';
 import { triggerTurn } from '../../../session/trigger-turn.js';
 import { interactionGate } from '../interaction-gate.js';
 import { scenarioStore } from '../scenario-store.js';
@@ -267,6 +268,40 @@ describe('question-prompt (I-03) — the answer is delivered, not merely dismiss
     // product that dropped the answer and resumed would still clear the card.
     expect(streamedText(projector)).toContain('ANSWER-RECEIVED: Vitest');
     expect(runtime.submitAnswers(SESSION, 'question-1', { 'Test runner': 'Jest' })).toBe(false);
+  });
+});
+
+describe('question-expires (I-07) — the ask nobody answers', () => {
+  it('closes the turn with an expiry, and history says so instead of "answered"', async () => {
+    scenarioStore.setForSession(SESSION, 'question-expires');
+    const runtime = new TestModeRuntime();
+    const { projector } = startTurn(runtime, 'set up tests');
+    await waitForPending(projector);
+
+    // Still answerable while it is parked — the expiry has to be the thing that
+    // ends it, not the scenario having already moved on.
+    expect(streamedText(projector)).not.toContain('MOVED-ON');
+
+    await releaseStep(SESSION);
+    await waitForSettled(projector);
+
+    // The answer window really closed: a late submission finds nothing.
+    expect(runtime.submitAnswers(SESSION, 'question-expired-1', { 'Test runner': 'Vitest' })).toBe(
+      false
+    );
+
+    // And what a reload is served. This is the DOR-1293 claim end to end for a
+    // log-backed runtime: the reconstructed history holds the question, holds
+    // no answers, and SAYS why — before the fix it held the first two alone,
+    // which the renderer read as "Question answered".
+    const history = reconstructHistoryFromEvents(replay(projector));
+    const asked = history
+      .flatMap((m) => m.toolCalls ?? [])
+      .find((tc) => tc.toolCallId === 'question-expired-1');
+    expect(asked?.questions?.[0].question).toBe('Which test runner should I set up?');
+    expect(asked?.answers).toBeUndefined();
+    expect(asked?.questionOutcome).toBe('expired');
+    expect(asked?.approvalOutcome).toBeUndefined();
   });
 });
 
