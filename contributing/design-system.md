@@ -236,6 +236,7 @@ Animation should feel like physics, not decoration. Things should move because t
 - **Assistant messages:** No background, content speaks for itself
 - **Avatars:** 28px circles. User = primary color with User icon. Claude = subtle warm gray with Bot icon.
 - **Labels:** "You" and "Claude" in `text-xs`, `text-secondary`, `font-medium`
+- **Links in an answer are real anchors** (`MarkdownLink`, DOR-1272): hover shows the destination, right-click offers the browser's own link menu ("Copy Link Address" included — even inside a room row's own right-click menu). A plain left click always confirms first through the shared link-safety modal; cmd/middle-click bypasses that confirmation and opens a tab, but only for an absolute `http(s)` link — anything else (`tel:`, a relative path, …) still confirms.
 
 ### Code Blocks
 

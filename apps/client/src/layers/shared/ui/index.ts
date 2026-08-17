@@ -280,6 +280,7 @@ export { FeatureDisabledState } from './FeatureDisabledState';
 export { LinkSafetyModal } from './link-safety-modal';
 export { MarkdownContent } from './markdown-content';
 export { MarkdownErrorBoundary } from './markdown-error-boundary';
+export { MarkdownLink } from './markdown-link';
 export { MentionPill, mentionPillVariants } from './mention-pill';
 export type { MentionPillProps } from './mention-pill';
 export {
