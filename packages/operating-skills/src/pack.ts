@@ -95,6 +95,18 @@ export interface OperatingSkill {
  *   refusing it, so an agent copying that example would send a patch, be told it
  *   succeeded, and change nothing — the worst kind of wrong example. It now names
  *   `ui.theme`, which is the least likely field in the whole schema to move.
+ * - 10: every skill now says how a DorkOS tool is actually named where the agent
+ *   runs (DOR-1292). Versions 1 to 9 named tools bare — `mesh_list`,
+ *   `marketplace_get` — but Claude Code exposes DorkOS's in-session tools as
+ *   `mcp__dorkos__<name>` (and defers them, so a lookup by the bare name finds
+ *   nothing), while codex and opencode reach the same tools through the external
+ *   `/mcp` server under whatever prefix that harness gave it. A model that followed
+ *   the prose literally got "no such tool" and gave up. The skills are projected
+ *   into every harness, so they cannot spell any one prefix: each now carries one
+ *   shared note (`TOOL_NAME_NOTE`) — the names below are the ENDINGS of the real
+ *   tool names; find the tool whose name ends in it under your harness's prefix.
+ *   `operating-dorkos` lost three restatements to stay under its line cap; the
+ *   content they restated is still stated once.
  *
  *   Be precise about who a bump reaches, because it is narrower than the History
  *   above makes it sound. Until DOR-671 it was DorkBot and nobody else:
