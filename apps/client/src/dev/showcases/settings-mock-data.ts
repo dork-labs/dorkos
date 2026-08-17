@@ -74,6 +74,29 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   // say a restart is pending.
   tasks: { enabled: true, enabledInConfig: true, lockedByEnv: false },
   relay: { enabled: true, enabledInConfig: true, lockedByEnv: false },
+  // The two experiments as they ship: both off, both switchable. The A2A one
+  // carries no cost note and the warm-agents one does, so the playground shows
+  // both row shapes. Locked-by-env is the third shape and gets its own showcase
+  // rather than being baked in here, because it is the rarer state.
+  experiments: [
+    {
+      key: 'runtimes.claudeCode.persistentSession',
+      title: 'Keep agents warm between messages',
+      description:
+        'Your agent stays running between messages, so replies from the second message on start about 4× faster. Applies to chats started after you turn it on.',
+      costNote: 'Keeps up to about 1 GB of memory per warm agent, and at most 12 stay warm.',
+      enabled: false,
+      lockedByEnv: false,
+    },
+    {
+      key: 'a2a.enabled',
+      title: 'Let outside agents reach yours',
+      description:
+        'Agents built by other people, on other systems, can send work to the agents here.',
+      enabled: false,
+      lockedByEnv: false,
+    },
+  ],
   scheduler: {
     maxConcurrentRuns: 3,
     timezone: null,
@@ -119,6 +142,31 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
       windowSecs: 60,
     },
   },
+};
+
+/**
+ * Server config where an environment variable has taken the A2A experiment over.
+ *
+ * The switch has to show the VARIABLE's position and refuse to pretend it
+ * decides — a locked row showing the inert setting would put "off" over a machine
+ * where the surface is mounted.
+ */
+export const MOCK_SERVER_CONFIG_EXPERIMENT_LOCKED: ServerConfig = {
+  ...MOCK_SERVER_CONFIG,
+  experiments: (MOCK_SERVER_CONFIG.experiments ?? []).map((experiment) =>
+    experiment.lockedByEnv || !experiment.key.startsWith('a2a')
+      ? experiment
+      : { ...experiment, enabled: true, lockedByEnv: true }
+  ),
+};
+
+/**
+ * Server config with the registry emptied — the state every flag graduating
+ * leaves behind, and the one the tab must handle without looking broken.
+ */
+export const MOCK_SERVER_CONFIG_NO_EXPERIMENTS: ServerConfig = {
+  ...MOCK_SERVER_CONFIG,
+  experiments: [],
 };
 
 /**

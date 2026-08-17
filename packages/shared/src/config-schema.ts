@@ -968,6 +968,26 @@ export const UserConfigSchema = z.object({
       dataDir: z.string().nullable().default(null),
     })
     .default(() => ({ enabled: true, dataDir: null })),
+  /**
+   * Letting agents on other systems talk to the agents on this one.
+   *
+   * A2A is a shared language for agents built by different people. Turn this on
+   * and DorkOS publishes a card describing your agents and opens an address
+   * outside apps can send work to; leave it off and nothing outside DorkOS can
+   * reach them this way. Off is how it ships, and it needs Agent messaging on to
+   * do anything at all.
+   *
+   * `DORKOS_A2A_ENABLED` in the environment overrules this setting in both
+   * directions, the same way `DORKOS_RELAY_ENABLED` overrules
+   * {@link UserConfigSchema} `relay.enabled` — a headless deployment keeps
+   * deciding from its environment. Read once at boot, so a change waits for the
+   * next start.
+   */
+  a2a: z
+    .object({
+      enabled: z.boolean().default(false),
+    })
+    .default(() => ({ enabled: false })),
   scheduler: z
     .object({
       enabled: z.boolean().default(true),

@@ -48,6 +48,10 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
     // list a reviewer reads. Moving any of these to `agent-writable` is a
     // security decision and has to break a test.
     expect([...OPERATOR_ONLY_CONFIG_PATHS].sort()).toEqual([
+      // Mounting the external A2A surface is a reach decision, not a preference:
+      // it publishes a card describing every agent here and opens an address
+      // outside clients post work to (DOR-1304).
+      'a2a.enabled',
       'agents.defaultDirectory',
       'approvals.standingGrants',
       'approvals.standingGrantsVoidBefore',

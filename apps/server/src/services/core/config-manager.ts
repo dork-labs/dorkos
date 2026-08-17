@@ -2365,6 +2365,38 @@ export function backfillClaudeCodePersistentSession(store: {
 }
 
 /**
+ * Migration body: seed the `a2a` section at `{ enabled: false }` (DOR-1304).
+ *
+ * `a2a.enabled` moves the A2A gateway's gate off `DORKOS_A2A_ENABLED` alone and
+ * onto a setting the Experiments section in Settings can switch, with the
+ * environment variable still winning when it is present. Seeded `false`, which is
+ * byte-for-byte the behavior before the field existed: nothing outside DorkOS
+ * could reach these agents over A2A unless the variable said so, and nothing can
+ * now either.
+ *
+ * Unlike the nested backfills above, this is a TOP-LEVEL section, and conf's
+ * defaults-merge does reach those — so the body is an anchor, not the only thing
+ * standing between an upgrade and a missing key. It earns its place for the
+ * reason {@link backfillClaudeCodePersistentSession} does: a gate that ships
+ * closed should say so somewhere a reviewer looks, rather than only in a schema
+ * default.
+ *
+ * Additive + idempotent: written only when the section is absent, so re-running
+ * never closes a gate somebody opened.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedA2aDisabled(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const current = store.get('a2a');
+  if (current != null && typeof current === 'object') return;
+  store.set('a2a', { enabled: false });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -2767,6 +2799,19 @@ export const CONFIG_MIGRATIONS = {
     // every message on its own. Additive + idempotent; the body fills only
     // absent keys.
     backfillRoomsDefaults(store);
+  },
+  // v0.61.0 is tagged, so 0.62.0 is the next key that can still run for
+  // everybody — strictly above the newest `v*` tag. Frozen from merge, not from
+  // the release bump, for the reason `'0.60.0'` above states; anything further
+  // opens `'0.63.0'`.
+  '0.62.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `a2a.enabled` — whether agents on other systems may reach the agents here
+    // (DOR-1304). Seeds the gate CLOSED, matching the behavior before the field
+    // existed.
+    seedA2aDisabled(store);
   },
 } as const;
 

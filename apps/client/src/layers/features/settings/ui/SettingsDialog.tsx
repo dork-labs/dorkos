@@ -10,6 +10,7 @@ import {
   Lock,
   Link2,
   UserRound,
+  FlaskConical,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
@@ -23,6 +24,7 @@ import { SecurityTab } from './SecurityTab';
 import { CloudAccountTab } from './CloudAccountTab';
 import { PrivacyTab } from './PrivacyTab';
 import { AdvancedTab } from './AdvancedTab';
+import { ExperimentsTab } from './ExperimentsTab';
 import { RemoteAccessAction } from './RemoteAccessAction';
 import { TunnelDialog } from './TunnelDialog';
 
@@ -77,6 +79,18 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     group: 'Access & privacy',
   },
   { id: 'server', label: 'Server', icon: Server, component: ServerTab, group: 'System' },
+  {
+    // Between Server and Advanced on purpose: it is a place to try things, not a
+    // danger zone, and burying it under Advanced is how the last flag stayed
+    // invisible (DOR-1304). The tab renders whatever the server registers, so an
+    // empty registry shows an empty-state line rather than a missing tab —
+    // an experiments section that disappears would look like a regression.
+    id: 'experiments',
+    label: 'Experiments',
+    icon: FlaskConical,
+    component: ExperimentsTab,
+    group: 'System',
+  },
   { id: 'advanced', label: 'Advanced', icon: Cog, component: AdvancedTab, group: 'System' },
 ];
 

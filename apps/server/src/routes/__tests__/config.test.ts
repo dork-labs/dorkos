@@ -118,12 +118,18 @@ const server = target.server;
  */
 const AMBIENT_TASKS_ENABLED = process.env.DORKOS_TASKS_ENABLED;
 const AMBIENT_RELAY_ENABLED = process.env.DORKOS_RELAY_ENABLED;
+// `DORKOS_A2A_ENABLED` joins them for the same reason (DOR-1304): the
+// `experiments` block reports the A2A entry as `lockedByEnv` on presence, so a
+// developer whose shell exports it would otherwise red every unlocked assertion.
+const AMBIENT_A2A_ENABLED = process.env.DORKOS_A2A_ENABLED;
 delete process.env.DORKOS_TASKS_ENABLED;
 delete process.env.DORKOS_RELAY_ENABLED;
+delete process.env.DORKOS_A2A_ENABLED;
 
 afterAll(() => {
   if (AMBIENT_TASKS_ENABLED !== undefined) process.env.DORKOS_TASKS_ENABLED = AMBIENT_TASKS_ENABLED;
   if (AMBIENT_RELAY_ENABLED !== undefined) process.env.DORKOS_RELAY_ENABLED = AMBIENT_RELAY_ENABLED;
+  if (AMBIENT_A2A_ENABLED !== undefined) process.env.DORKOS_A2A_ENABLED = AMBIENT_A2A_ENABLED;
 });
 
 /** Mount the request-shaping middleware every config-route app needs. */
@@ -1114,6 +1120,107 @@ describe('GET /api/config', () => {
 
       expect(res.body.relay.lockedByEnv).toBe(true);
       expect(res.body.tasks.lockedByEnv).toBe(false);
+    });
+  });
+
+  // The block that exists because curation is not free (DOR-1304). A flag
+  // shipped OFF and absent from this DTO is a flag nobody can reach without
+  // hand-editing `~/.dork/config.json`, which is exactly what happened to
+  // `runtimes.claudeCode.persistentSession`.
+  describe('experiments', () => {
+    const ORIGINAL_A2A = process.env.DORKOS_A2A_ENABLED;
+
+    afterEach(() => {
+      if (ORIGINAL_A2A === undefined) delete process.env.DORKOS_A2A_ENABLED;
+      else process.env.DORKOS_A2A_ENABLED = ORIGINAL_A2A;
+    });
+
+    it('lists every registered experiment, resolved, in registry order', async () => {
+      const { EXPERIMENTS } = await import('../../services/core/config/experiments-registry.js');
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      // Compared against the registry rather than a hardcoded pair, because the
+      // registry is DESIGNED to shrink to nothing as flags graduate — a literal
+      // list here would red the day an experiment is correctly deleted. What
+      // this pins is the invariant that survives: order preserved, nothing
+      // dropped, every entry carrying its prose.
+      expect(res.body.experiments.map((e: { key: string }) => e.key)).toEqual(
+        EXPERIMENTS.map((e) => e.path)
+      );
+      for (const entry of res.body.experiments) {
+        expect(entry.title).toBeTruthy();
+        expect(entry.description).toBeTruthy();
+        expect(typeof entry.enabled).toBe('boolean');
+        expect(typeof entry.lockedByEnv).toBe('boolean');
+      }
+    });
+
+    it('reports both shipped experiments off and switchable on a fresh install', async () => {
+      const res = await request(server).get('/api/config').expect(200);
+
+      const byKey = Object.fromEntries(
+        res.body.experiments.map((e: { key: string }) => [e.key, e])
+      );
+      expect(byKey['runtimes.claudeCode.persistentSession']).toMatchObject({
+        enabled: false,
+        lockedByEnv: false,
+      });
+      expect(byKey['a2a.enabled']).toMatchObject({ enabled: false, lockedByEnv: false });
+      // The memory cost rides along, because the switch has to be able to state
+      // it before somebody flips it.
+      expect(byKey['runtimes.claudeCode.persistentSession'].costNote).toContain('1 GB');
+    });
+
+    it('reports the setting a person turned on', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('a2a', { enabled: true });
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      const a2a = res.body.experiments.find((e: { key: string }) => e.key === 'a2a.enabled');
+      expect(a2a).toMatchObject({ enabled: true, lockedByEnv: false });
+    });
+
+    it('locks the A2A entry when DORKOS_A2A_ENABLED is set, and reports the VARIABLE', async () => {
+      // `false` while the SETTING says on: the switch must show what is really
+      // happening on this machine, not an inert preference. Getting this
+      // backwards would put "on" over an install where nothing is mounted.
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('a2a', { enabled: true });
+      process.env.DORKOS_A2A_ENABLED = 'false';
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      const a2a = res.body.experiments.find((e: { key: string }) => e.key === 'a2a.enabled');
+      // The VARIABLE rides along by name: the client interpolates it into the
+      // locked-row sentence, so the one person who can unset it knows what to
+      // unset. Absent, the disabled switch is a dead end.
+      expect(a2a).toMatchObject({
+        enabled: false,
+        lockedByEnv: true,
+        envOverride: 'DORKOS_A2A_ENABLED',
+      });
+      // The other entry has no variable at all, so it stays switchable — the two
+      // are resolved independently, and no variable name is invented for it.
+      const warm = res.body.experiments.find(
+        (e: { key: string }) => e.key === 'runtimes.claudeCode.persistentSession'
+      );
+      expect(warm.lockedByEnv).toBe(false);
+      expect(warm).not.toHaveProperty('envOverride');
+    });
+
+    it('locks it ON when the variable says true, whatever the setting says', async () => {
+      process.env.DORKOS_A2A_ENABLED = 'true';
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      const a2a = res.body.experiments.find((e: { key: string }) => e.key === 'a2a.enabled');
+      expect(a2a).toMatchObject({
+        enabled: true,
+        lockedByEnv: true,
+        envOverride: 'DORKOS_A2A_ENABLED',
+      });
     });
   });
 

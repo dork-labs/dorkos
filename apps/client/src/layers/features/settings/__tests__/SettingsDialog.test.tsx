@@ -41,10 +41,15 @@ vi.mock('../ui/ServerRestartOverlay', () => ({
 // exercise tab navigation via clicks rather than URL signals. URL-driven
 // behavior is covered by `use-dialog-deep-link.test.tsx` and
 // `DialogHost.test.tsx`.
+// The tab is a mutable box rather than a fixed `null` so one test can exercise
+// the URL path: `?settings=experiments` has to land on the Experiments panel,
+// and the only thing that can go wrong there is the tab id in `SETTINGS_TABS`
+// drifting from the id links are minted with (DOR-1304).
+const deepLink = vi.hoisted(() => ({ tab: null as string | null }));
 vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
   useSettingsDeepLink: () => ({
     isOpen: false,
-    activeTab: null,
+    activeTab: deepLink.tab,
     section: null,
     open: vi.fn(),
     close: vi.fn(),
@@ -81,6 +86,7 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+  deepLink.tab = null;
   cleanup();
 });
 
@@ -93,6 +99,16 @@ const mockConfig = {
   claudeCliPath: '/usr/local/bin/claude',
   boundary: '/home/user',
   dorkHome: '/home/user/.dork',
+  experiments: [
+    {
+      key: 'runtimes.claudeCode.persistentSession',
+      title: 'Keep agents warm between messages',
+      description: 'Your agent stays running between messages.',
+      costNote: 'Keeps up to about 1 GB of memory per warm agent.',
+      enabled: false,
+      lockedByEnv: false,
+    },
+  ],
   tunnel: {
     enabled: true,
     connected: true,
@@ -212,9 +228,33 @@ describe('SettingsDialog', () => {
     expect(screen.getByRole('tab', { name: /security/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /privacy & data/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /advanced/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /experiments/i })).toBeDefined();
     // The two deleted tabs are gone.
     expect(screen.queryByRole('tab', { name: /integrations/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /^agents$/i })).toBeNull();
+  });
+
+  // The staging area for flags that ship OFF (DOR-1304). Reachable by click and
+  // by link, because a flag nobody can reach is a flag that never graduates.
+  it('shows the Experiments panel when its tab is clicked', async () => {
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    navigateTo(/experiments/i);
+    expect(
+      await screen.findByRole('switch', { name: /keep agents warm between messages/i })
+    ).toBeDefined();
+    expect(screen.getByText(/Each one graduates or goes away\./)).toBeDefined();
+  });
+
+  it('opens straight onto Experiments from ?settings=experiments', async () => {
+    deepLink.tab = 'experiments';
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    // The panel, not just a selected tab: an id that did not match any tab would
+    // fall back to `defaultTab` (Appearance) and still show a selected sidebar
+    // item somewhere.
+    expect(
+      await screen.findByRole('switch', { name: /keep agents warm between messages/i })
+    ).toBeDefined();
+    expect(screen.queryByText('Font family')).toBeNull();
   });
 
   // Verifies the grouped-nav section headers render in the sidebar. Scoped to the

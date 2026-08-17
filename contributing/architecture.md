@@ -821,7 +821,7 @@ apps/
       marketplace.ts        -- Marketplace HTTP routes (/api/marketplace/*): sources, packages,
                                 install/uninstall/update, cache, installed listing
       mcp.ts                -- MCP server endpoint (/mcp, Streamable HTTP transport)
-      a2a.ts                -- A2A protocol endpoints (feature-flag gated: DORKOS_A2A_ENABLED)
+      a2a.ts                -- A2A protocol endpoints (gated: a2a.enabled, env override DORKOS_A2A_ENABLED)
       models.ts             -- GET /api/models (dynamic via runtimeRegistry.getDefault())
       capabilities.ts       -- GET /api/capabilities (all runtime capability flags)
       discovery.ts          -- POST /api/discovery/scan (SSE agent discovery)
@@ -1030,7 +1030,7 @@ The GitHub Actions workflow (`.github/workflows/cli-smoke-test.yml`) runs smoke 
 
 ## A2A Gateway
 
-The A2A gateway (`packages/a2a-gateway/src/`) exposes DorkOS agents to external A2A-compatible clients using Google's Agent-to-Agent protocol. It is feature-flag gated behind `DORKOS_A2A_ENABLED` (default `false`) and requires `DORKOS_RELAY_ENABLED=true`.
+The A2A gateway (`packages/a2a-gateway/src/`) exposes DorkOS agents to external A2A-compatible clients using Google's Agent-to-Agent protocol. It is gated on the `a2a.enabled` setting (default `false`, switchable from Settings -> Experiments), with `DORKOS_A2A_ENABLED` overruling that setting in both directions when present, and requires Relay.
 
 ### Key Modules
 

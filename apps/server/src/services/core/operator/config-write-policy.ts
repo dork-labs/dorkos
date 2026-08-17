@@ -254,6 +254,15 @@ export const CONFIG_WRITE_POLICY = {
   // A directory DorkOS writes message history into, resolved without a boundary check.
   'relay.dataDir': 'operator-only',
 
+  // Whether the external A2A surface mounts: an agent card describing the agents
+  // here, plus a JSON-RPC address outside clients post work to. That is squarely
+  // "who can reach this instance", which is why it sits with `tunnel.enabled` and
+  // `mcp.enabled` rather than with `relay.enabled` beside it — Relay is internal,
+  // this one is the door. Boot-read, so flipping it changes nothing until the
+  // next start; classified now for the reason `mesh.scanRoots` was, so it cannot
+  // become load-bearing while agent-writable.
+  'a2a.enabled': 'operator-only',
+
   'scheduler.enabled': 'agent-writable',
   'scheduler.maxConcurrentRuns': 'agent-writable',
   'scheduler.timezone': 'agent-writable',
@@ -586,6 +595,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'tunnel.authtoken',
       'tunnel.auth',
       'mcp.enabled',
+      'a2a.enabled',
       'mcp.apiKey',
       'mcp.rateLimit.enabled',
       'mcp.rateLimit.maxPerWindow',

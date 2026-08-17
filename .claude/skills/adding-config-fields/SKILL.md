@@ -252,7 +252,36 @@ Test both cases:
 - Stale config missing the field → migration runs, field is populated.
 - Fresh config → defaults handle it, no migration needed.
 
-### 9. Wire a CLI flag if applicable
+### 9. If it ships OFF, register it as an experiment
+
+A field whose default is `false` because the feature is not finished being proved is a **staged opt-in**, and it needs one more entry: `EXPERIMENTS` in `apps/server/src/services/core/config/experiments-registry.ts`.
+
+Skipping this makes the flag unreachable. `GET /api/config` is a hand-curated DTO, so a flag nobody adds to that curation can only be set by hand-editing `~/.dork/config.json` — nobody turns it on, nothing is learned, and it can never graduate. That is what happened to `runtimes.claudeCode.persistentSession` (DOR-1304).
+
+```typescript
+{
+  path: 'a2a.enabled',
+  title: 'Let outside agents reach yours',
+  description: 'Agents on other systems can send work to the agents here. …',
+  costNote: 'Early alpha, and it opens a door.',
+  // Only when an env var overrules the setting. Its presence is what makes the
+  // row report `lockedByEnv` and render disabled, showing reality.
+  envOverride: 'DORKOS_A2A_ENABLED',
+  graduationIssue: 'DOR-1304',
+}
+```
+
+The prose is read by a person who does not code — follow `writing-for-humans`: benefit first, cost second, no mechanism.
+
+```bash
+pnpm vitest run apps/server/src/services/core/config/__tests__/experiments-registry.test.ts
+```
+
+That guard fails unless the path is a real boolean leaf of `UserConfigSchema` that defaults to `false` and carries a non-empty `graduationIssue`.
+
+**The registry is meant to shrink.** DorkOS ships features on by default (ADR-0054); a flag exists only while its feature is unproven, then graduates and is DELETED (ADR-0062, ADR-0171, ADR-0266 are three that did). So **graduating a flag means deleting its registry entry in the same change that flips the default**. An empty registry is the success state, not a bug. Full write-up: `contributing/configuration.md` → "Experimental fields".
+
+### 10. Wire a CLI flag if applicable
 
 If the new field needs to be controllable from the `dorkos` CLI, edit `packages/cli/src/cli.ts`. Follow the precedence rule documented in `contributing/configuration.md`: **CLI flag > env var > config > default**.
 

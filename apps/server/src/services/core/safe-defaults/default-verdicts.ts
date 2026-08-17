@@ -211,6 +211,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
 export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Public exposure starts off, with no hostname, token, or edge passcode.
   'tunnel.enabled': false,
+  // The external A2A surface starts unmounted, so no agent outside DorkOS can
+  // reach the ones inside it until a person opens that door (DOR-1304).
+  'a2a.enabled': false,
   'tunnel.domain': null,
   'tunnel.authtoken': null,
   'tunnel.auth': null,
