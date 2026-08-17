@@ -1,28 +1,45 @@
 /**
- * The server-side hold for staged context on a runtime that cannot append to its
- * own transcript (spec `persistent-session-runtime` §2.5, task 4.2).
+ * The server-side hold for staged context that cannot reach a runtime's own
+ * record right now (spec `persistent-session-runtime` §2.5, task 4.2).
  *
  * ## Why a hold exists at all
  *
  * `stage` means "attach this for the agent, without provoking a turn". A runtime
- * that declares `supportsContextStaging` does it natively — the message goes to
- * its own transcript and merges into the next querying message. A runtime that
- * does NOT (codex, opencode, test-mode) has no such seam, so the text has
- * nowhere to live until a turn runs. Rather than refuse the person's staging,
- * the server HOLDS the text and folds it into the NEXT dispatched message as a
+ * that can do that natively appends to its own transcript, and the text merges
+ * into the next querying message. When it cannot, the text has nowhere to live
+ * until a turn runs — so rather than refuse the person's staging, the server
+ * HOLDS it here and folds it into the NEXT dispatched message as a
  * `staged_context` {@link AdditionalContextEntry} — the neutral bag, rendered
  * out of band, so the person's own `content` for that next turn stays pristine
  * (ADR-0273). The `queue_note` mechanism is the precedent: a small per-turn note
  * the person's action produced, carried in the bag rather than concatenated.
  *
+ * **Two different absences route here, and the second is the common one.** The
+ * runtime may have no such seam at all — codex and opencode declare
+ * `supportsContextStaging: false` — or it may have one that this SESSION is not
+ * holding open. Claude-code is the second case and it is the default: its native
+ * stage appends to a process held between turns, and
+ * `runtimes.claudeCode.persistentSession` ships OFF, so `canStageSession`
+ * answers `false` and the words fold (`degradedBecause: 'not-stageable'`,
+ * DOR-1307). This store is therefore not a minority path serving two adapters —
+ * on a default install it is where every Add context goes.
+ *
  * ## What this is NOT
  *
  * It is not the durable message queue — a staged note opens no turn and is not a
- * queued message. It is not persisted: like `queue_note`, it is per-turn and
- * in-memory. A server restart between a stage and the dispatch it would ride
- * loses the held note, which is acceptable for a fallback that only serves
- * runtimes without native staging; the native path (claude-code) persists in its
- * own transcript and never touches this store.
+ * queued message. And it is **not persisted**: like `queue_note`, it is per-turn
+ * and in-memory.
+ *
+ * That last one is a real trade-off rather than a detail, and DOR-1307 made it
+ * bigger. A server restart between a stage and the dispatch it would ride loses
+ * the held note — while `emitContextStaged` has ALREADY put the
+ * "Added context for the next reply" receipt on the DURABLE session stream, so
+ * the person is left with a permanent record of words the next turn will not
+ * carry. Before DOR-1307 a default claude-code install never touched this store
+ * (its stage went to SDK JSONL, which survives a restart), so the exposure
+ * belonged to codex and opencode alone; now it is the ordinary path. Named as a
+ * known negative in ADR `260816-143752`; making the hold durable is its own
+ * piece of work, deliberately not smuggled into the routing fix.
  *
  * Keyed by the canonical session id ({@link primaryOf}) so a note staged under a
  * request uuid is still found when the next turn dispatches under the renamed

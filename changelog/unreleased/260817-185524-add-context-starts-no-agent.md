@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Adding context to a chat no longer quietly starts a second agent. "Add context" was booting a fresh Claude Code process even with the "keep the agent running between messages" setting turned off, and every message after it in that chat stayed on the running agent. Now your words are held and handed to the agent with your next reply, the chat says "Added context for the next reply", and nothing starts up on its own (DOR-1307)
+- Adding context to a chat no longer quietly starts a second agent. "Add context" was starting one even with the "Keep agents warm between messages" experiment turned off, and every message after that in the chat stayed on it. Now the chat says "Added context for the next reply" and your words go to the agent when you next write to it. They are kept in memory until then, so restarting DorkOS in between loses them (DOR-1307)
