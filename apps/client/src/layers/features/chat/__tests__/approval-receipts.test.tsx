@@ -420,8 +420,15 @@ describe('approval receipts across the turn-end reconcile', () => {
 
     const receipt = screen.getByTestId('approval-receipt');
     expect(receipt.getAttribute('data-outcome')).toBe('denied');
+    // No CARD: a red failure card claims the tool ran and broke, and it never
+    // ran. That is what this test has always been about.
     expect(screen.queryByTestId('tool-call-card')).toBeNull();
-    expect(screen.queryByText(/User denied tool execution/)).toBeNull();
+    // The sentence the model was handed still READS, quietly, under the
+    // receipt. Suppressing it with the card threw away the only record of WHY a
+    // refusal happened wherever that reason lived in the text — the person's own
+    // words after "the user said:", or the command a permission rule blocked
+    // (DOR-1293). A receipt may summarise the transcript; it may not delete it.
+    expect(screen.getByText(/User denied tool execution/)).toBeDefined();
   });
 
   it('a receipt carried onto history survives the NEXT reload too', () => {
@@ -553,7 +560,10 @@ describe('approval receipts on a cold open', () => {
 
     const receipt = screen.getByTestId('approval-receipt');
     expect(receipt.getAttribute('data-outcome')).toBe('denied');
-    expect(screen.queryByText(/User denied tool execution/)).toBeNull();
+    expect(screen.queryByTestId('tool-call-card')).toBeNull();
+    // Kept readable rather than suppressed with the card — see the reconcile
+    // suite's twin for why (DOR-1293).
+    expect(screen.getByText(/User denied tool execution/)).toBeDefined();
   });
 
   it('says how long an expired request waited, a day later', () => {

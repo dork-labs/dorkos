@@ -386,7 +386,7 @@ describe('reconstructHistoryFromEvents — answered approvals', () => {
     expect(messages[1].toolCalls?.[0]).not.toHaveProperty('approvalOutcome');
   });
 
-  it('records nothing for a resolved QUESTION riding the same tool call id', () => {
+  it('records a resolved QUESTION as a question, never as an approval', () => {
     // AskUserQuestion is an ordinary tool_use block, so a timed-out question
     // resolves `expired` on a real tool call. Reading the kind out of the
     // outcome would print a permission receipt over a question.
@@ -413,6 +413,248 @@ describe('reconstructHistoryFromEvents — answered approvals', () => {
     );
 
     expect(messages[1].toolCalls?.[0]).not.toHaveProperty('approvalOutcome');
+    // …but it DOES earn its own record. For a log-backed runtime this stream is
+    // the only transcript, so an expiry not folded here comes back from a
+    // reload as a question with no answers — which is what the renderer read as
+    // "Question answered" (DOR-1293).
+    expect(messages[1].toolCalls?.[0].questionOutcome).toBe('expired');
+  });
+
+  it('keeps the QUESTION itself, so its ending has something to be about', () => {
+    const questions = [
+      {
+        question: 'Which test runner should I set up?',
+        header: 'Test runner',
+        multiSelect: false,
+        options: [{ label: 'Vitest' }, { label: 'Jest' }],
+      },
+    ];
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'tool_call',
+          toolCallId: 'tc-q',
+          toolName: 'AskUserQuestion',
+          status: 'pending',
+        },
+        {
+          seq: 3,
+          type: 'question_prompt',
+          id: 'tc-q',
+          questions,
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        {
+          seq: 4,
+          type: 'interaction_resolved',
+          id: 'tc-q',
+          kind: 'question',
+          resolution: 'expired',
+          at: 1_700_000_600_000,
+        },
+        { seq: 5, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0]).toMatchObject({
+      toolCallId: 'tc-q',
+      toolName: 'AskUserQuestion',
+      questions,
+      questionOutcome: 'expired',
+    });
+  });
+
+  it('never mints a SECOND row when the ask and the tool call use different ids', () => {
+    // Fails CLOSED, like `applyReceipts`. A runtime whose interaction ids live
+    // in their own space (the shape OpenCode's `Permission.id` already takes)
+    // would otherwise produce two `AskUserQuestion` rows for one ask — one with
+    // the questions and no result, one with the result and no questions.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'tool_call',
+          toolCallId: 'tool-abc',
+          toolName: 'AskUserQuestion',
+          status: 'pending',
+        },
+        {
+          seq: 3,
+          type: 'question_prompt',
+          id: 'ask-xyz',
+          questions: [{ question: 'Which?', header: 'Q', multiSelect: false, options: [] }],
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls).toHaveLength(1);
+    expect(messages[1].toolCalls?.[0].toolCallId).toBe('tool-abc');
+    // The options are lost with the unmatched ask…
+    expect(messages[1].toolCalls?.[0].questions).toBeUndefined();
+    // …but the row that RAISED it still says it went unanswered, marked by
+    // tool name. A bare `AskUserQuestion` card would hide that entirely.
+    expect(messages[1].toolCalls?.[0].questionOutcome).toBe('unresolved');
+  });
+
+  it('lands a resolution that arrives AFTER its turn closed', () => {
+    // The projector holds interactions across `turn_end` by design, so "late"
+    // is a state it models. Dropped, this read as "Question answered" before
+    // DOR-1293 (right by accident) and "No answer was recorded" after it —
+    // a question somebody DID answer claiming nobody had.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'tool_call',
+          toolCallId: 'tc-q',
+          toolName: 'AskUserQuestion',
+          status: 'pending',
+        },
+        {
+          seq: 3,
+          type: 'question_prompt',
+          id: 'tc-q',
+          questions: [{ question: 'Which?', header: 'Q', multiSelect: false, options: [] }],
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        { seq: 4, type: 'turn_end' },
+        {
+          seq: 5,
+          type: 'interaction_resolved',
+          id: 'tc-q',
+          kind: 'question',
+          resolution: 'answered',
+          at: 1_700_000_005_000,
+        }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0].questionOutcome).toBe('answered');
+  });
+
+  it('lands a late resolution on a FAILED turn’s rebuilt parts too', () => {
+    // A failed turn's `parts` are fresh objects, not the accumulator's rows, so
+    // a fix that only mutated `toolCalls` would leave the half the client
+    // actually renders still claiming nobody answered.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'tool_call',
+          toolCallId: 'tc-q',
+          toolName: 'AskUserQuestion',
+          status: 'pending',
+        },
+        {
+          seq: 3,
+          type: 'question_prompt',
+          id: 'tc-q',
+          questions: [{ question: 'Which?', header: 'Q', multiSelect: false, options: [] }],
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        { seq: 4, type: 'error', message: 'turn failed' },
+        { seq: 5, type: 'turn_end', terminalReason: 'error' },
+        {
+          seq: 6,
+          type: 'interaction_resolved',
+          id: 'tc-q',
+          kind: 'question',
+          resolution: 'answered',
+          at: 1_700_000_005_000,
+        }
+      )
+    );
+
+    expect(messages[1].parts).toContainEqual(
+      expect.objectContaining({ type: 'tool_call', questionOutcome: 'answered' })
+    );
+  });
+
+  it('never mints a row from an id-less ask', () => {
+    // `session-event-normalizer` coerces a missing interaction id with `?? ''`,
+    // so an id-less `question_prompt` is representable and would have keyed a
+    // row on the empty string.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'question_prompt',
+          id: '',
+          questions: [{ question: 'Which?', header: 'Q', multiSelect: false, options: [] }],
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        { seq: 3, type: 'turn_end' }
+      )
+    );
+
+    // A turn with no text and no tool calls emits no assistant message at all.
+    expect(messages.flatMap((m) => m.toolCalls ?? [])).toEqual([]);
+  });
+
+  it('says a question never resolved rather than letting it read as answered', () => {
+    // The turn ended with the ask still open — interrupted, or trimmed out of
+    // the log between the ask and the answer. Unmarked, it reaches the renderer
+    // as "settled, no answers", which is what an ANSWERED question looks like
+    // on a client that did not submit it (DOR-1293).
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'tool_call',
+          toolCallId: 'tc-q',
+          toolName: 'AskUserQuestion',
+          status: 'pending',
+        },
+        {
+          seq: 3,
+          type: 'question_prompt',
+          id: 'tc-q',
+          questions: [{ question: 'Which?', header: 'Q', multiSelect: false, options: [] }],
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0].questionOutcome).toBe('unresolved');
+  });
+
+  it('carries the runtime’s terminal status, not an optimistic complete', () => {
+    // A tool that failed came back from history wearing a check, because every
+    // entry was created `complete` and the result event's own status was
+    // dropped on the floor (DOR-1293).
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'run it' },
+        { seq: 2, type: 'tool_call', toolCallId: 'tc-1', toolName: 'Bash', status: 'running' },
+        {
+          seq: 3,
+          type: 'tool_result',
+          toolCallId: 'tc-1',
+          toolName: 'Bash',
+          status: 'error',
+          result: 'Exit code 1',
+        },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0].status).toBe('error');
   });
 
   it('lands the answer even when the resolution is folded before the tool call', () => {

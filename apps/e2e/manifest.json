@@ -799,19 +799,21 @@
     "interactive-prompts": {
       "specFile": "tests/chat/interactive-prompts.ts",
       "feature": "chat",
-      "description": "Tool approval card + Approve/Deny outcomes (I-01), batch approval bar (I-02), AskUserQuestion delivery (I-03), MCP elicitation (I-04), and a parked question/approval surviving a hard refresh and still being answerable (I-05, DOR-1269) — driven against the test-mode runtime's interactive scenarios.",
-      "lastRun": "2026-08-15T15:13:46.184Z",
+      "description": "Tool approval card + Approve/Deny outcomes (I-01), batch approval bar (I-02), AskUserQuestion delivery (I-03), MCP elicitation (I-04), a parked question/approval surviving a hard refresh and still being answerable (I-05, DOR-1269), and a question nobody answered reading honestly after the turn closes and the page reloads (I-07, DOR-1293) — driven against the test-mode runtime's interactive scenarios.",
+      "lastRun": "2026-08-17T04:12:00.000Z",
       "lastStatus": "passed",
-      "runCount": 1,
-      "passCount": 1,
+      "runCount": 3,
+      "passCount": 3,
       "failCount": 0,
       "relatedCode": [
         "apps/server/src/services/runtimes/test-mode/interactive-scenarios.ts",
         "apps/server/src/services/runtimes/test-mode/interaction-gate.ts",
+        "apps/server/src/services/session/event-log-history.ts",
         "apps/client/src/layers/features/chat/ui/tools/ToolApproval.tsx",
         "apps/client/src/layers/features/chat/ui/tools/ApprovalReceipt.tsx",
         "apps/client/src/layers/features/chat/ui/tools/BatchApprovalBar.tsx",
         "apps/client/src/layers/features/chat/ui/tools/QuestionPrompt.tsx",
+        "apps/client/src/layers/features/chat/ui/tools/QuestionAnswerSummary.tsx",
         "apps/client/src/layers/features/chat/ui/tools/ElicitationPrompt.tsx",
         "apps/client/src/layers/features/chat/model/stream/project-session-turn.ts"
       ],
@@ -824,7 +826,10 @@
         "Assert the DURABLE approval-receipt (data-outcome allowed/denied), not the transient tool-approval-decided or question-prompt-submitted rows: those are replaced when the turn ends and the message is rebuilt from history.",
         "Every assertion names a branch the scenario only reaches on that answer (APPROVED-BRANCH / DENIED-BRANCH / ANSWER-RECEIVED: <choice> / ELICITATION-ACCEPTED: <value>), so 'the card went away' can never pass for 'the answer was delivered'.",
         "Stability: --repeat-each=3 --workers=1, 36/36. WITHOUT --workers=1 repeats land on parallel workers and race the shared /api/test/reset — that alone fails long-standing untouched tests 10/18.",
-        "The I-05 reload tests only discriminate because the question and approval scenarios close the tool's content block BEFORE the answer (a resultless tool_result marked complete), which is what claude-code does. Drop those two emissions and both reload tests go green against the DOR-1269 bug they exist to catch."
+        "The I-05 reload tests only discriminate because the question and approval scenarios close the tool's content block BEFORE the answer (a resultless tool_result marked complete), which is what claude-code does. Drop those two emissions and both reload tests go green against the DOR-1269 bug they exist to catch.",
+        "I-07 reloads AFTER turn_end, and that is what separates it from I-05: past the turn the page is served from reconstructed history (event-log-history.ts) rather than a replayed live turn, so it covers the half where the green 'Question answered' actually lived. Verified red by dropping the questionOutcome fold in event-log-history — the honest row never renders.",
+        "Stability after I-07 (2026-08-17): --repeat-each=3 --workers=1 on I-07 alone, 3/3; the whole -g 'I-0' suite (11 tests, I-01 through I-07) once at --workers=1, 11/11. Not re-run at --repeat-each=3 across the whole suite, so the 36/36 figure above still refers to the pre-I-07 set.",
+        "'Nobody answers' is unreachable by clicking, so the question-expires scenario emits interaction_cancelled/timeout on a step barrier: the exact event the ten-minute handler fires, through the same normalizer (→ interaction_resolved/expired) and the same projector kind backfill. No clock to wait out."
       ]
     },
     "live-turn-visibility": {

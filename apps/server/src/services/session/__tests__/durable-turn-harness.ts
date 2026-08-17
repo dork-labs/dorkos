@@ -15,6 +15,9 @@
  *   `sendMessage` generator moves no projector by itself (it is a pure event
  *   producer), so a presence case driven off `sendMessage` alone reads `idle`
  *   for every runtime at every moment and asserts nothing.
+ * - {@link driveExpiredQuestionTurn} (`expiredQuestionHistory`) parks a turn on
+ *   a question nobody answers and lets it expire, so the suite can assert what
+ *   a reopened session is told about it (DOR-1293).
  *
  * Not a test file (no `.test.ts` suffix) — a test-support module only.
  *
@@ -64,6 +67,50 @@ export async function driveDurableTurn(
       userMessage: content,
     });
     // Restart analog: the live projector is gone; history must read durably.
+    disposeProjector(sessionId);
+    return readLogBackedHistory(sessionId);
+  } finally {
+    setSessionEventStore(undefined);
+  }
+}
+
+/**
+ * Drive ONE turn that asks a question nobody answers, let the ask expire, and
+ * return the history a reopened session would be served — the
+ * `expiredQuestionHistory` conformance driver (DOR-1293).
+ *
+ * `releaseAsk` is how the caller stands in for the ten-minute clock: it must
+ * POLL until the turn has genuinely parked on its question and then release it.
+ * Everything downstream is the production path — the runtime's own cancellation
+ * → the normalizer's `interaction_resolved` → the projector's `kind` backfill →
+ * the history fold. Nothing here writes an outcome by hand.
+ *
+ * It runs CONCURRENTLY with the feed rather than through `probeWhileOpen`,
+ * which would deadlock: that helper probes between yielded events, and a turn
+ * parked on an unanswered question yields nothing until something releases it.
+ *
+ * @param runtime - The runtime under test (its real `sendMessage`).
+ * @param sessionId - A unique session id for this turn.
+ * @param content - The user message to send.
+ * @param cwd - The working directory for the turn.
+ * @param releaseAsk - Polls for the parked ask, then releases it.
+ */
+export async function driveExpiredQuestionTurn(
+  runtime: AgentRuntime,
+  sessionId: string,
+  content: string,
+  cwd: string,
+  releaseAsk: () => Promise<void>
+): Promise<HistoryMessage[]> {
+  const store = new SessionEventStore(createTestDb());
+  setSessionEventStore(store);
+  try {
+    const projector = getOrCreateProjector(sessionId, cwd, { persist: 'history' });
+    const feeding = feedProjector(projector, runtime.sendMessage(sessionId, content, { cwd }), {
+      userMessage: content,
+    });
+    await releaseAsk();
+    await feeding;
     disposeProjector(sessionId);
     return readLogBackedHistory(sessionId);
   } finally {

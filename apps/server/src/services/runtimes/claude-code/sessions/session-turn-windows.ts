@@ -24,15 +24,16 @@
  * A window therefore carries a SET of ids — every message of the batch that
  * opened it — and the correlated `result` closes all of them at once.
  *
- * ## Three kinds of `result`, and why the third is not positional
+ * ## Four kinds of `result`, and why only one of them opens a window of its own
  *
- * | The `result` carries                       | What it means                          | What happens                                                     |
- * | ------------------------------------------ | -------------------------------------- | ---------------------------------------------------------------- |
- * | a `user_message_uuid` the open window holds | it answers this dispatch               | the window closes — one `turn_end`                                |
- * | a `user_message_uuid` nobody dispatched     | the CLI answered something we never sent | a synthetic `origin: 'runtime'` window; the open window is UNTOUCHED |
- * | no `user_message_uuid` at all               | the SDK does not carry one here        | it terminates whatever window is open, else a runtime window      |
+ * | The `result` carries                        | What it means                              | What happens                                                        |
+ * | ------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------- |
+ * | a `user_message_uuid` the open window holds | it answers this dispatch                   | the window closes — one `turn_end`                                   |
+ * | no `user_message_uuid` at all               | the SDK does not carry one here            | it terminates whatever window is open, else a runtime window         |
+ * | a `user_message_uuid` an EARLIER window sent | the CLI carried that message into this turn | the OPEN window closes on it (DOR-1294)                             |
+ * | a `user_message_uuid` this session never sent | the CLI answered something nobody sent    | a synthetic `origin: 'runtime'` window; the open window is UNTOUCHED |
  *
- * The third row is reality winning over the spec's phrasing, and it is
+ * The second row is reality winning over the spec's phrasing, and it is
  * load-bearing: `SDKResultError` — every `error_during_execution`,
  * `error_max_turns`, `error_max_budget_usd` result — has NO `user_message_uuid`
  * field at all (`sdk.d.ts`, `SDKResultSuccess` declares it, `SDKResultError`
@@ -41,6 +42,36 @@
  * exists to prevent. It is not positional guessing either: an unnamed result
  * closes the ONE open window whole, ids and all, which is the same answer
  * coalescing gives — no ordinal is ever counted.
+ *
+ * ## A message id outlives the window that sent it (DOR-1294)
+ *
+ * The third row is the one a live measurement bought. The CLI decides for itself
+ * WHEN a message it accepted becomes part of a turn, and a steer pushed at the
+ * tail of a turn can miss it: the turn ends on its own `result`, the steered
+ * message stays in the CLI's queue, and the CLI answers it in the NEXT turn it
+ * runs — coalesced with whatever DorkOS dispatched by then, under ONE `result`
+ * naming the steer. Correlating only against the OPEN window's ids read that as
+ * "a message this session never sent", gave it a runtime window, and left the
+ * dispatched window with no `result` that could ever close it. Every later
+ * dispatch then found a window open and the session was dead until restart —
+ * one arm-B run in three, in the P5.1 measurement
+ * (`research/20260817_persistent-session-flag-measurement.md` §6).
+ *
+ * So the ids this session has SENT and not yet seen answered outlive their
+ * window ({@link SessionTurnWindows.awaitingResult}, bounded by
+ * {@link MAX_AWAITING_IDS}). A `result` naming one of them is the CLI ending the
+ * turn it was running, and the open window is this layer's claim on that turn —
+ * so it closes it. The distinction against the fourth row is real and worth
+ * keeping: an id nobody ever sent is a continuation the CLI started by itself,
+ * which genuinely is a turn of its own.
+ *
+ * ## And a window may not outlive its turn, whatever the ids say
+ *
+ * Correlation is a best effort against another process's bookkeeping, so the
+ * ingress has a backstop that does not depend on it: a dispatch that finds a
+ * window still open ABANDONS it — one synthetic error `result`, one `turn_end`,
+ * the pump's turn ended — and proceeds, rather than refusing forever. See
+ * {@link SessionTurnWindows.dispatch}.
  *
  * ## Out-of-window messages are attributed, never dropped
  *
@@ -71,7 +102,6 @@ import { validateDispatchBoundary } from '../dispatch-boundary.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
 import {
-  IllegalPumpTransitionError,
   PumpRefusedError,
   type PumpControlQuery,
   type PumpCrash,
@@ -95,6 +125,18 @@ const WINDOW_USAGE_TIMEOUT_MS = 8_000;
  * buffer without limit.
  */
 const MAX_UNATTRIBUTED_MESSAGES = 500;
+
+/**
+ * How many sent-but-unanswered correlation ids are remembered before the oldest
+ * are forgotten.
+ *
+ * Generous, and cheap: an id is a short string, and the set only grows when the
+ * CLI answers a batch with one `result` (every OTHER id of that batch stays,
+ * unanswerable and harmless). The cap exists so a session that runs for hours
+ * cannot grow this set without limit; forgetting the oldest costs nothing but
+ * the DOR-1294 correlation for a message sent hundreds of turns ago.
+ */
+const MAX_AWAITING_IDS = 200;
 
 /** The per-window accounting fetched from the still-live process at its close. */
 export interface WindowUsage {
@@ -273,6 +315,26 @@ function crashResult(crash: PumpCrash): SDKMessage {
 }
 
 /**
+ * The `result` a turn never produced, for a window that has to be closed anyway.
+ *
+ * Same shape and same reasoning as {@link crashResult}: a non-success subtype
+ * maps to a typed `error` event and `feedProjector`'s error latch settles the
+ * window as `turn_end{terminalReason:'error'}`. The wording is the operator's,
+ * not the SDK's, because nothing in the SDK ever said this — DorkOS is the one
+ * declaring the turn over (DOR-1294).
+ */
+function strandedResult(sessionId: string): SDKMessage {
+  return {
+    type: 'result',
+    subtype: 'error_during_execution',
+    is_error: true,
+    errors: ['The agent never finished this turn, so DorkOS ended it to accept the next message.'],
+    uuid: `stranded-${sessionId}`,
+    session_id: sessionId,
+  } as unknown as SDKMessage;
+}
+
+/**
  * Cuts one pump's continuous output into turn windows, correlated by
  * `messageId`.
  *
@@ -291,6 +353,17 @@ export class SessionTurnWindows {
   private readonly closingWindows = new Set<Promise<void>>();
   /** Messages that arrived with no window open, waiting for the next one. */
   private readonly held: SDKMessage[] = [];
+  /**
+   * Every correlation id this session has pushed at the process and not yet
+   * seen a `result` name — insertion-ordered, bounded by
+   * {@link MAX_AWAITING_IDS}.
+   *
+   * This is what makes an id outlive the window that sent it, which is the
+   * DOR-1294 fix: see the module doc. Emptied on a crash, for the same reason
+   * the held buffer is — the process that owed those answers is gone, and the
+   * next one owes nothing under an old id.
+   */
+  private readonly awaitingResult = new Set<string>();
 
   /**
    * Build a windower over one pump.
@@ -330,17 +403,44 @@ export class SessionTurnWindows {
   steerOpenWindow(messageId: string): boolean {
     if (this.current === undefined) return false;
     this.current.ids.push(messageId);
+    // And remembered beyond this window, because the CLI may not answer a steer
+    // inside the turn it joined — the DOR-1294 case, and the one this ledger was
+    // built for. Remembered on the TAG rather than on a successful push, exactly
+    // as the window's own `ids` are: the caller tags before it pushes (see
+    // `PersistentDispatch.steer`), and an id nothing was sent under is inert —
+    // no `result` can ever name it.
+    this.rememberSent([messageId]);
     return true;
+  }
+
+  /**
+   * Remember a STAGED message's id, which belongs to no window at all (spec
+   * `persistent-session-runtime` §2.5, task 4.2).
+   *
+   * A staged message rides `shouldQuery: false`: the SDK appends it to the
+   * transcript, runs no turn for it, and merges it into the next user message
+   * that does query. So no window opens for it and no `result` is expected — but
+   * the merged turn's single `result` may still name IT rather than the
+   * dispatched message it merged into, and a `result` naming an id this layer
+   * has never heard of is the shape that stranded a window in DOR-1294. Telling
+   * the ledger about it costs one string and closes that door; an id no
+   * `result` ever names is inert.
+   *
+   * @param messageId - The server-minted id the staged message was stamped with
+   */
+  noteStagedMessage(messageId: string): void {
+    this.rememberSent([messageId]);
   }
 
   /**
    * Open a window for one dequeued batch and dispatch it.
    *
-   * **This is the single ingress for a pump-driven turn**, which is what makes
-   * the pump's honor-system dispatch mutex enforceable: a caller cannot open a
-   * second window while one is open, and a dispatch that arrives while the
-   * previous window is still settling its accounting waits for it rather than
-   * racing it.
+   * **This is the single ingress for a pump-driven turn**, which is what keeps
+   * one session's turns to one at a time: a dispatch that arrives while the
+   * previous window is still settling its accounting WAITS for it rather than
+   * racing it, and a window that is somehow still open when the wait ends is
+   * settled before this one opens (never two at once — see the abandonment
+   * paragraph below).
    *
    * **The directory boundary is asked here, per dispatch, before anything is
    * sent** (task 3.9). On the resume-per-message path the same question is
@@ -381,6 +481,19 @@ export class SessionTurnWindows {
    * one directory while the turn runs in another, which is a check that only
    * looks like one.
    *
+   * **A window that is still open when a dispatch arrives is ABANDONED, not a
+   * refusal** (DOR-1294). It used to be an `IllegalPumpTransitionError`, on the
+   * reading that a second dispatch mid-window is a caller bug — but the failure
+   * that actually happened was the other one: a window whose `result` went
+   * somewhere else stayed open forever, and every later dispatch threw, so the
+   * session was dead until the server restarted. A caller reaching here holds
+   * the per-session dispatch mutex and the turn's write-lock for the whole
+   * stream, so a window still open under it is stranded rather than concurrent;
+   * and even in the case where it is not, ending an older turn beats never
+   * running another one. So it is closed the way a crash closes one — a
+   * synthetic error `result`, one `turn_end`, the pump's turn ended so the
+   * dispatch below is not refused a layer down — and said out loud.
+   *
    * @param batch - The messages dequeued together, to run as one turn
    * @param cwd - The working directory this turn would run in, resolved by the
    *   caller for THIS dispatch rather than remembered from the launch, and
@@ -388,7 +501,6 @@ export class SessionTurnWindows {
    * @returns The window this dispatch opened
    * @throws BoundaryError When `cwd` is not a directory the operator allowed
    * @throws PumpRefusedError When the batch is empty, or the pump refuses it
-   * @throws IllegalPumpTransitionError When a window is already open
    */
   async dispatch(batch: readonly PumpDispatch[], cwd: string): Promise<TurnWindow> {
     if (batch.length === 0) {
@@ -423,9 +535,9 @@ export class SessionTurnWindows {
     while (this.closingWindows.size > 0) {
       await Promise.all([...this.closingWindows]);
     }
-    if (this.current !== undefined) {
-      throw new IllegalPumpTransitionError('running', 'running');
-    }
+    // The backstop, and the reason this is not a throw any more: see the doc
+    // above and the module doc (DOR-1294).
+    if (this.current !== undefined) this.abandonStranded(this.current);
     const record = createRecord(
       batch.map((message) => message.messageId),
       'user'
@@ -442,6 +554,17 @@ export class SessionTurnWindows {
       record.channel.end();
       throw err;
     }
+    // Only now that the batch really was sent: a refused dispatch put nothing on
+    // the process's input stream, so no `result` will ever name these ids and
+    // remembering them would be a lie the ledger cannot detect later.
+    //
+    // And only if this window is still the open one. A fast turn's `result` can
+    // land during the await above — the DOR-1187 path, where the pump reaches
+    // WARM mid-launch and the whole turn is answered before `dispatch` returns —
+    // and it closed this window already. Remembering the ids then would file
+    // them as UNANSWERED when the process has already spoken for them, arming
+    // the `sentEarlier` branch to close some future window on a spent id.
+    if (this.current === record) this.rememberSent(record.ids);
     this.opts.onWindowOpen?.(record.window);
     return record.window;
   }
@@ -497,6 +620,10 @@ export class SessionTurnWindows {
    */
   onCrash(crash: PumpCrash): void {
     this.discardHeld();
+    // The process that owed these answers is gone, and a relaunched one owes
+    // nothing under an id it never read. Keeping them would let a fresh
+    // process's stray `result` close a window on a dead process's id.
+    this.awaitingResult.clear();
     const record = this.current;
     if (record === undefined) return;
     this.current = undefined;
@@ -509,13 +636,31 @@ export class SessionTurnWindows {
   private onResult(result: SDKMessage): void {
     const answered = readAnsweredId(result);
     const record = this.current;
+    // Answered once, whichever window it closes: an id the process has now
+    // spoken for cannot correlate anything later.
+    const sentEarlier = answered !== undefined && this.awaitingResult.delete(answered);
     if (record !== undefined && (answered === undefined || record.ids.includes(answered))) {
       this.current = undefined;
       this.finish(record, result);
       return;
     }
+    if (record !== undefined && sentEarlier) {
+      // A message this session really did send, in a window that has already
+      // closed — so the CLI held it back and answered it inside the turn it is
+      // running NOW, which is the turn this open window claims (DOR-1294).
+      // Closing on it is what keeps the window from waiting for a `result` the
+      // CLI has already spent.
+      logger.warn('[SessionTurnWindows] a result answered a message an earlier window sent', {
+        sessionId: this.opts.sessionId,
+        answered,
+        open: record.ids,
+      });
+      this.current = undefined;
+      this.finish(record, result);
+      return;
+    }
     if (record !== undefined) {
-      logger.debug('[SessionTurnWindows] a result answered a message this session never sent', {
+      logger.warn('[SessionTurnWindows] a result answered a message this session never sent', {
         sessionId: this.opts.sessionId,
         answered,
         open: record.ids,
@@ -603,6 +748,46 @@ export class SessionTurnWindows {
       ...(context !== undefined ? { context } : {}),
       ...(subscription !== undefined ? { subscription } : {}),
     });
+  }
+
+  /**
+   * Close a window whose `result` is never coming, so the session can run
+   * another turn (DOR-1294).
+   *
+   * Deliberately shaped like {@link onCrash}'s close rather than a normal one:
+   * no accounting is fetched (the window is already over as far as the process
+   * is concerned, and a control round trip would only delay the dispatch that
+   * is waiting on this), the stream ends immediately behind the synthetic
+   * `result`, and the pump's turn is ended — without which the dispatch this
+   * unblocks would be refused one layer down and the session would stay exactly
+   * as wedged.
+   */
+  private abandonStranded(record: WindowRecord): void {
+    logger.error('[SessionTurnWindows] a turn window outlived its turn; closing it', {
+      sessionId: this.opts.sessionId,
+      ids: record.ids,
+    });
+    this.current = undefined;
+    // And the ids go with it, exactly as {@link onCrash} drops the ledger:
+    // DorkOS has DECLARED this turn over, so a `result` naming one of these
+    // arriving later is no longer evidence about anything — least of all about
+    // the window this abandonment is making room for, which it would otherwise
+    // close through the `sentEarlier` branch.
+    for (const id of record.ids) this.awaitingResult.delete(id);
+    record.channel.push(strandedResult(this.opts.sessionId));
+    record.channel.end();
+    this.opts.pump.endTurn();
+    this.opts.onWindowClose?.(record.window);
+  }
+
+  /** Remember ids that were really sent, dropping the oldest past the cap. */
+  private rememberSent(ids: readonly string[]): void {
+    for (const id of ids) {
+      this.awaitingResult.add(id);
+      if (this.awaitingResult.size <= MAX_AWAITING_IDS) continue;
+      const oldest = this.awaitingResult.values().next();
+      if (!oldest.done) this.awaitingResult.delete(oldest.value);
+    }
   }
 
   /** Hold a message that belongs to no window yet, bounded. */

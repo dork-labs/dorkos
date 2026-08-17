@@ -47,6 +47,7 @@ import {
   QueuedMessageSchema,
   MessageDeliveryOutcomeSchema,
   type ToolApprovalOutcome,
+  type QuestionOutcome,
 } from './schemas.js';
 
 extendZodWithOpenApi(z);
@@ -734,6 +735,13 @@ export type InteractionResolvedEvent = Extract<SessionEvent, { type: 'interactio
 export type { ToolApprovalOutcome };
 
 /**
+ * How a question ENDED, as the transcript records it forever. Re-exported from
+ * `QuestionOutcomeSchema` for the same reason its approval twin is: the wire
+ * schema owns the words.
+ */
+export type { QuestionOutcome };
+
+/**
  * The receipt an answered approval leaves behind, keyed by resolution.
  * `cancelled` and `answered` are absent on purpose: an SDK abort withdrew the
  * ask before anyone answered it, and `answered` belongs to questions, which
@@ -770,6 +778,40 @@ export function approvalOutcomeOf(
 ): ToolApprovalOutcome | undefined {
   if (event.kind !== 'approval' || event.resolution === undefined) return undefined;
   return APPROVAL_OUTCOME_BY_RESOLUTION[event.resolution];
+}
+
+/**
+ * How a question ends, keyed by resolution. `approved` is absent because
+ * nothing approves a question — the word belongs to permission prompts, and a
+ * question carrying it would be a projector bug rather than a state to render.
+ */
+const QUESTION_OUTCOME_BY_RESOLUTION: Partial<
+  Record<NonNullable<InteractionResolvedEvent['resolution']>, QuestionOutcome>
+> = { answered: 'answered', denied: 'denied', expired: 'expired', cancelled: 'cancelled' };
+
+/**
+ * What a resolved QUESTION leaves on the transcript, or `undefined` when the
+ * event says nothing about a question.
+ *
+ * The question-shaped twin of {@link approvalOutcomeOf}, and it exists for the
+ * same reason: one definition read by the client's live fold, the log-backed
+ * history reconstruction, and the overlay onto runtime-owned history, so a
+ * question that expired reads the same while you watch it and a week later.
+ *
+ * It differs from its twin in keeping `cancelled`. A withdrawn APPROVAL earns
+ * no receipt — the ask was retracted, nobody answered, and the tool it gated
+ * says the rest. A withdrawn QUESTION has to say something anyway: the question
+ * itself is already drawn in the transcript, so leaving it unmarked is what
+ * lets it keep reading as answered.
+ *
+ * @param event - The resolving `interaction_resolved` event.
+ * @returns The outcome to record, or `undefined` when this was not a question.
+ */
+export function questionOutcomeOf(
+  event: Pick<InteractionResolvedEvent, 'resolution' | 'kind'>
+): QuestionOutcome | undefined {
+  if (event.kind !== 'question' || event.resolution === undefined) return undefined;
+  return QUESTION_OUTCOME_BY_RESOLUTION[event.resolution];
 }
 
 // === Session Snapshot ===

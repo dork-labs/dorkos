@@ -1,7 +1,7 @@
 /**
  * The prompts a turn STOPS on, answered through the real UI (DOR-1214).
  *
- * Backs five rows of `meta/chat-capabilities.md` that had only unit or
+ * Backs six rows of `meta/chat-capabilities.md` that had only unit or
  * live-self-test coverage:
  *
  * - **I-01** — the tool-approval card renders; Approve runs the tool and the
@@ -12,6 +12,8 @@
  * - **I-04** — an MCP elicitation prompt.
  * - **I-05** — a parked prompt survives a hard refresh and is still answerable
  *   (DOR-1269, which is what the row's missing `E` was hiding).
+ * - **I-07** — a question nobody answers is honest about it after the turn
+ *   closes and the page is reloaded (DOR-1293).
  *
  * **What makes these tests able to fail.** Each scenario the test-mode runtime
  * runs genuinely PARKS on the answer and then streams a branch-naming sentence
@@ -117,6 +119,31 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
     // timeout that names a card instead of naming the cause.
     expect(bound.ok(), `could not bind scenario ${scenario}`).toBe(true);
     return { chatPage, sessionId };
+  }
+
+  /**
+   * Release ONE step barrier, waiting for the scenario to reach it first.
+   *
+   * `POST /api/test/step` answers `released: false` when nothing is parked yet,
+   * so firing blind drops the step and leaves the turn waiting on a barrier
+   * nobody will release again — which surfaces thirty seconds later as a
+   * locator timeout naming the wrong thing. Polling returns the instant the
+   * scenario is ready and survives a slow runner.
+   *
+   * @param request - The API context.
+   * @param sessionId - The session whose scenario should advance.
+   */
+  async function releaseStep(request: APIRequestContext, sessionId: string): Promise<void> {
+    await expect
+      .poll(
+        async () => {
+          const res = await request.post(`${apiUrl}/api/test/step`, { data: { sessionId } });
+          if (!res.ok()) return false;
+          return ((await res.json()) as { released: boolean }).released;
+        },
+        { timeout: SERVER_ROUND_TRIP_MS }
+      )
+      .toBe(true);
   }
 
   /** The transcript as the reader sees it — never the screen-reader announcer. */
@@ -379,6 +406,50 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
       // A recovery that restores an unanswerable-but-still-showing card would
       // satisfy every assertion above this line.
       await expect(card).toHaveCount(0, { timeout: SERVER_ROUND_TRIP_MS });
+    });
+  });
+
+  test.describe('a question nobody answered, reopened later (I-07)', () => {
+    test('a reload after the turn closes says nobody answered, not "answered"', async ({
+      page,
+      request,
+    }) => {
+      const { chatPage, sessionId } = await openScenario(page, request, 'question-expires');
+      await chatPage.sendAndLand('set up the tests');
+
+      const question = 'Which test runner should I set up?';
+      await expect(page.getByRole('radiogroup', { name: question })).toBeVisible({
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+
+      // Nobody answers. The step barrier stands in for the ten-minute timer,
+      // and everything downstream of it is the production path: the same
+      // `interaction_cancelled`/`timeout` the real handler fires, through the
+      // same normalizer and projector.
+      await releaseStep(request, sessionId);
+      await expect(transcript(page)).toContainText('MOVED-ON', {
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+
+      // The reload is the whole point. Past `turn_end` the page is served from
+      // RECONSTRUCTED HISTORY rather than a replayed live turn — which is
+      // exactly where an unanswered question used to come back wearing a green
+      // "Question answered" (DOR-1293).
+      await page.reload();
+      await chatPage.basePage.waitForAppReady();
+
+      const row = page.getByTestId('question-prompt-unanswered');
+      await expect(row).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+      await expect(row).toHaveAttribute('data-outcome', 'expired');
+      await expect(row).toContainText('Nobody answered in time');
+
+      // And the lie is gone rather than merely reworded: the answered summary
+      // carries its own test id, and no receipt claims an answer exists.
+      await expect(page.getByTestId('question-prompt-submitted')).toHaveCount(0);
+      await expect(transcript(page)).not.toContainText('Question answered');
+      // Nor is it drawn as a PERMISSION receipt — "Expired — denied" over a
+      // question nobody was asked to approve is the other half of the same bug.
+      await expect(page.getByTestId('approval-receipt')).toHaveCount(0);
     });
   });
 

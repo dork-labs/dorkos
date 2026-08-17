@@ -1,7 +1,8 @@
 import { Fragment } from 'react';
-import { Check } from 'lucide-react';
-import { CompactResultRow } from '../primitives';
-import type { QuestionItem } from '@dorkos/shared/types';
+import { Check, Clock, HelpCircle, MinusCircle, X } from 'lucide-react';
+import { CompactResultRow, TruncatedOutput } from '../primitives';
+import type { QuestionItem, QuestionOutcome } from '@dorkos/shared/types';
+import { cn } from '@/layers/shared/lib';
 
 interface QuestionAnswerSummaryProps {
   questions: QuestionItem[];
@@ -45,6 +46,68 @@ function getDisplayValue(
     return (sel as string[]).map((v) => (v === '__other__' ? otherText[idx] : v)).join(', ');
   }
   return sel === '__other__' ? otherText[idx] : (sel as string);
+}
+
+/** How each unanswered ending reads, and what it looks like. */
+const UNANSWERED: Record<
+  Exclude<QuestionOutcome, 'answered'>,
+  { label: string; Icon: typeof Clock; iconClass: string }
+> = {
+  expired: { label: 'Nobody answered in time', Icon: Clock, iconClass: 'text-muted-foreground' },
+  denied: { label: 'Question dismissed', Icon: MinusCircle, iconClass: 'text-muted-foreground' },
+  cancelled: {
+    label: 'Question withdrawn',
+    Icon: MinusCircle,
+    iconClass: 'text-muted-foreground',
+  },
+  errored: { label: "The question didn't go through", Icon: X, iconClass: 'text-status-error' },
+  // The turn ended without recording an ending at all — interrupted, crashed,
+  // or trimmed out of the log. Says only what is known, which is nothing.
+  unresolved: {
+    label: 'No answer was recorded',
+    Icon: HelpCircle,
+    iconClass: 'text-muted-foreground',
+  },
+};
+
+/**
+ * The row a question gets when it ended with no answer.
+ *
+ * Every one of these used to render as a green "Question answered" — the
+ * renderer had only "no answers" to go on, which is what an unanswered question
+ * and an answered one somebody else submitted look equally like (DOR-1293).
+ *
+ * The transcript's own words ride along whenever there are any, under the label
+ * rather than instead of it: the label is the honest summary and the result is
+ * the evidence for it, and a reader chasing down what an agent actually saw
+ * should never have to take the summary's word for it.
+ */
+export function QuestionUnansweredRow({
+  outcome,
+  result,
+}: {
+  /** How it ended. Never `answered` — that has its own summary. */
+  outcome: Exclude<QuestionOutcome, 'answered'>;
+  /** What the transcript recorded, when it recorded anything. */
+  result?: string;
+}) {
+  const { label, Icon, iconClass } = UNANSWERED[outcome];
+  return (
+    <CompactResultRow
+      data-testid="question-prompt-unanswered"
+      data-outcome={outcome}
+      icon={<Icon className={cn('size-(--size-icon-sm) shrink-0', iconClass)} />}
+      label={<span className="truncate">{label}</span>}
+    >
+      {result && (
+        <TruncatedOutput
+          data-testid="question-prompt-result"
+          content={result}
+          className="text-muted-foreground mt-1 pl-6"
+        />
+      )}
+    </CompactResultRow>
+  );
 }
 
 /**
