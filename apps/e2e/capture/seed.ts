@@ -165,7 +165,7 @@ async function declineTelemetry(): Promise<void> {
  *
  * That card asks people who onboarded before the profile step existed, and it
  * sits in the sidebar's card slot — roughly half the panel's height. It is the
- * reason `mobile-sessions` had nowhere left to draw the sheet's session rows,
+ * reason `mobile-sessions` had nowhere left to draw its session rows,
  * and it hides the Library roster on every desktop still.
  *
  * The same reasoning as {@link declineTelemetry}: seed a real, settled answer

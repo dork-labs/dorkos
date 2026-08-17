@@ -13,6 +13,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.60.0] - 2026-08-16
+
+### Added
+
+- Try "Engaged" as a response mode for new direct messages with an agent (DOR-773)
+- Ask an agent to open a room with another agent — you're always included, replies go one-for-one, and agents hand off with @name (DOR-1208)
+- Get a DorkOS direct message when an agent finishes and you have no Slack or Telegram connected (DOR-1209)
+- Set how long a channel waits before answering, and how many messages one answer covers (DOR-1201)
+- Agents react with an emoji instead of writing "seen" — and now default to reacting instead of typing "Ack" (DOR-1202, DOR-1234)
+- Agents can read or search a room's history without pausing on a permission prompt they own (DOR-1202, DOR-1229)
+- An agent can post an update straight into a channel or thread mid-task — that post is its answer (DOR-1202)
+- Claude Code agents get react, look-back, and post automatically; Codex and OpenCode need your own MCP setup (DOR-1202)
+- Your conversations are backed up automatically — daily, and before any storage change (DOR-1224)
+- Export any channel or DM to a file: `dorkos room export #backend` (DOR-1225)
+- Steer a working agent, add context, or queue your message — pick from the composer, and a steer shows up right inside the agent's reply as it works (DOR-1198, DOR-1195)
+- See only the send choices your agent's runtime actually supports (DOR-1198)
+- Leave a channel or group from its menu; rejoin anytime, or undo right after leaving (DOR-1233)
+- DorkOS logs which setting changed and where from — never the value — across the app, CLI, and agents (DOR-1237, DOR-1247)
+- Confirm Full Autonomy from the terminal too: `dorkos config acknowledge-autonomy` (DOR-1247)
+- Open a profile from a message's face, a member list, or the "working now" strip (DOR-1251)
+- Jump to "View profile" from a message's hover, right-click, or long-press menu (DOR-1251)
+- An agent's profile opens onto its conversations, tasks, rooms, skills, tools, and connections (DOR-1253)
+- Each profile row shows what's behind it — and loads its real count instead of showing zero first (DOR-1253)
+- Change an agent's runtime, model, thinking effort, or personality right from its profile (DOR-1253)
+- Pick an agent's colour, emoji, and personality together on its Appearance page (DOR-1253)
+- Manage an agent — default, block, unregister, or delete — from its profile's ⋮ menu (DOR-1253)
+
+### Changed
+
+- An agent you call into a thread reads that thread, plus a short glance at recent channel messages (DOR-1207)
+- Several people talking at once now get one considered reply, not several rushed ones (DOR-1201)
+- A message sent while an agent works is folded into its next answer instead of getting missed (DOR-1201)
+- Stop in a room really is the end of it — the reply is cancelled, not just hidden (DOR-1201, DOR-1232)
+- Your agents' hourly reply limits now survive a restart (DOR-1205)
+- If your database won't open, DorkOS stops and tells you — it never rebuilds over your data (DOR-1224)
+- A profile is now a picture up top and rows you tap to open full pages (DOR-1252)
+- An agent's profile shows who manages it; a person's profile lists the agents they run (DOR-1252)
+- Edit your name, handle, and photo from your own profile too (DOR-1252)
+- A profile explains what's happening in plain words — "Working in #team," "Last active 3h ago" (DOR-1252)
+- Message only appears as an option when there's somewhere for it to go (DOR-1252)
+- A profile lists every room that person or agent is in; tap one to go there (DOR-1252)
+- The right panel's "Agent Profile" tab is now simply Profile — the same profile as the Team page, docked beside your session; ⌘⇧A still opens it, and old Agent Hub links land there (DOR-1254)
+- A profile opened from inside another one links back to where you came from, and profile links open even from a different agent's session (DOR-1254)
+- `dorkos config set` tells you the value it actually saved, or exactly why it couldn't (DOR-1247)
+- Pressing Stop with messages waiting puts them back in your composer, after asking first (DOR-1199)
+- The queued-messages header now matches the rest of chat's style (DOR-1246)
+
+### Fixed
+
+- DorkOS tells you when an agent can't be readied to reply in a room, instead of staying silent (DOR-1206)
+- Rooms keep track of an agent's real conversation across a restart, even mid-reply (DOR-1205)
+- Rooms that lost track of their agent's conversation are repaired automatically at startup (DOR-1205)
+- A long conversation shortening now shows a marker in the chat, live and in history (DOR-1215)
+- A settings file from a newer DorkOS build no longer looks "damaged" to an older one (DOR-1221)
+- Rescued settings backups now keep every version, with a timestamp, not just the last one (DOR-1221)
+- A failed settings upgrade stops and tells you — it no longer wipes your settings (DOR-1221)
+- A helper finishing mid-task no longer cancels your agent's file writes (DOR-1238)
+- A successful "shorten this conversation" no longer shows as a crash (DOR-1235)
+- A failed conversation-shortening now gives one clear reason, not two confusing messages (DOR-1235)
+- A turn that never starts now ends after two minutes with a clear reason (DOR-1229)
+- A setting a newer build wrote no longer wipes your whole config — DorkOS skips just that one (DOR-1227)
+- DorkOS names any skipped settings at startup, in `dorkos doctor`, and in `config validate` (DOR-1227)
+- The "make this my default" offer now leaves the screen when you switch conversations (DOR-1237)
+- While an agent plans, the status bar shows one Plan control, not two confusing ones (DOR-1236)
+- Clicking a button in a reply works right after the agent finishes, no "locked" error (DOR-1239)
+- A message meant for one agent no longer lingers as a draft in another agent's composer (DOR-1242)
+- Restarting DorkOS no longer fires off an old channel message days after the fact (DOR-1242)
+- When a channel truly can't get an answer, it says so right away, not an hour later (DOR-1242)
+- Changing a setting from the CLI now asks for consent, the same as the app does (DOR-1247)
+- `dorkos config set` checks your value before saving and tells you if it's invalid (DOR-1247)
+- Reading settings works even when DorkOS can't write to its own folder (DOR-1247)
+- Saving a setting to a folder DorkOS can't write to now gives one plain-language error (DOR-1247)
+- Writing an agent's instructions or boundaries now actually saves them (DOR-1253)
+- Changing one thing about an agent — like its model — no longer erases its description (DOR-1253)
+- Renaming an agent updates its name everywhere at once (DOR-1253)
+- "Saved" now only shows once your change is stored; a refused save keeps your edits in place (DOR-1253)
+- The instructions editor counts your whole file, so you see the limit before you hit it (DOR-1253)
+- Leaving an unsaved instructions or boundaries edit now asks before discarding it (DOR-1253)
+- Changing an agent's personality from its profile now reaches the agent, not just the setting (DOR-1253)
+- Clearing an agent's name now restores its old name instead of leaving it blank (DOR-1253)
+
 ## [0.59.0] - 2026-08-12
 
 ### Added
@@ -2003,52 +2084,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Same-day releases now list in the right order on the blog (0.45.1 above 0.45.0).
 - Opening a Markdown document in the canvas no longer hides the left sidebar or breaks the app layout.
 
-## [0.50.0] - 2026-07-17
-
-> Organize your agents into sidebar groups that follow you across devices, see at a glance which sessions are running low on context room, and rest easier: the DorkOS tools that can change your machine are now token-protected.
-
-### Added
-
-- Universal command intents (foundation): DorkOS now has one shared registry for the three everyday slash actions — compact the conversation, start a fresh session, and show context usage and cost — plus each agent's words for them (`/compress`, `/summarize`, `/new`, `/usage`, `/status`, and more). This groundwork lets the same command work on whichever runtime your session uses.
-- Organize your agents into named groups in the sidebar (DOR-329). Make a group for a project, a client, or however you think about your work. Create, rename, delete, and drag agents in and out. Every drag has a menu and keyboard path too, so you are never stuck. Each group can sort by hand, by name, or by most recent activity.
-- See your latest work at a glance with a new "Recent" section (DOR-329). It shows your most recent sessions across all your agents. One click takes you back to what you were just doing.
-- Pin an agent and it now stays in its group as well (DOR-329). A pinned agent shows up in both places, so pinning no longer pulls it out of the group you put it in.
-- Your sidebar setup now saves to your DorkOS server instead of one browser (DOR-329). Your groups, pins, and sort choices follow you across every browser and the desktop app.
-- When a session's context is nearly full, a quiet chip now offers one-click compaction before things slow down (DOR-112)
-- Relay metrics now include real delivery-latency percentiles (p50/p95/p99) instead of a placeholder (DOR-166)
-- New desktop app guide: install DorkOS as a native Mac app (Windows early alpha included) (DOR-284)
-- See at a glance how full each agent's context is, right in the session list. Every session row now shows a small gauge, and the sessions view sums up how many are near full or just auto-compacted — so you can jump into the right agent before it runs out of room. Claude Code sessions show a reading even when they're closed; other runtimes show it once you open the session. (DOR-113)
-- Read any doc as clean markdown, or pull the whole docs set into your agent in one fetch. Every docs page is now fetchable as markdown (add `.mdx` to any docs URL), a new `/llms-full.txt` gives your agent the whole hand-written corpus in one request, and a quiet action row above each page lets you copy the markdown or open the page in Claude. "Open in Claude" opens claude.ai in your browser — it's not a Claude Code link. (DOR-165)
-- Marketplace installs now remember where each package came from — the source repo, the version you asked for, and the exact commit that was installed. This lays the groundwork for safe reinstalls and contributing changes back. (DOR-147)
-
-### Changed
-
-- External MCP and A2A clients now need your local token when login is off. Health checks and listing tools still work without one, and there is no grace period: paste the token into any client you already set up to keep using the tools that change things. Click "Reveal token" in Settings → Tools → External MCP Server to copy it, or read it from the `mcp-local-token` file in your DorkOS data folder. (DOR-278)
-- We no longer auto-pin your default agent (DOR-329). A small set of agents shows as one clean list, and pinning stays something you choose.
-- The Windows desktop app now has a standard Windows-style menu (File, Edit, View, Window, Help) instead of a Mac-shaped one (DOR-310)
-- Upgraded the docs site's engine (Fumadocs 16.10 and its OpenAPI renderer v11), keeping the docs and API reference on current, supported tooling. (DOR-165)
-- Removed a leftover "rate limited" status banner from the chat UI that could never actually appear. (DOR-201)
-- Simplified the server's error handling to use Express 5's built-in support for async errors. No behavior change — the same errors are caught the same way, with less wrapper code. (DOR-161)
-
-### Removed
-
-- Removed the per-agent message and hourly-call limits from agent settings — they were shown as editable controls but never actually limited anything. Runaway protection still comes from the per-message budget, which is enforced. (DOR-265)
-
-### Fixed
-
-- Fixed crashed package installs leaving behind backup folders that could show up as duplicate agents. (DOR-175)
-- Chat no longer loses its scroll position when you switch away from its tab and back, and it stays pinned to the newest message more reliably while a reply streams in (DOR-163)
-- Fixed new development worktrees starting with stale package builds, which caused false type errors until you rebuilt by hand. (DOR-117)
-- Pushes that only delete branches no longer run the full pre-push test gate. (DOR-116)
-
-### Security
-
-- The DorkOS tools that change things on your machine — creating agents, sending messages, installing packages — and agent-to-agent calls now need a token when login is off. Before, any program on your computer could call them with no token at all. This closes that open door, the same way Jupyter protects its local server. One honest limit: while login is off, a program running on your computer can still ask DorkOS for the token, the same way the app does. Turning on login is what closes that last door. (DOR-278)
-- The activation page now shows the device code on the confirm screen, so you can check it matches what your DorkOS instance is displaying before you approve — even when the code arrives pre-filled from a link. (DOR-200)
-
 ---
 
-Older releases (v0.1.0 – v0.49.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.49.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.49.0.md).
+Older releases (v0.1.0 – v0.50.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.50.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.50.0.md).
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.59.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.60.0...HEAD
+[0.60.0]: https://github.com/dork-labs/dorkos/compare/v0.59.0...v0.60.0
 [0.59.0]: https://github.com/dork-labs/dorkos/compare/v0.58.0...v0.59.0
