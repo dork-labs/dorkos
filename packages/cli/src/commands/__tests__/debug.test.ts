@@ -99,6 +99,8 @@ describe('runDebug', () => {
       [['dispatches', '--limit', '5'], '/api/debug/dispatches?limit=5'],
       [['refusals', '--limit', '5'], '/api/debug/refusals?limit=5'],
       [['projectors'], '/api/debug/projectors'],
+      [['phantoms'], '/api/debug/phantom-cancellations'],
+      [['phantoms', '--limit', '5'], '/api/debug/phantom-cancellations?limit=5'],
       [['session', 's-1'], '/api/debug/sessions/s-1'],
       [['room', 'r-1'], '/api/debug/rooms/r-1/bindings'],
       [['trace', 'dsp_X'], '/api/debug/relay/traces/dsp_X'],

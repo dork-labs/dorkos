@@ -278,11 +278,11 @@ async function runTurn(session: AgentSession, entries: StreamEntry[]): Promise<T
     events.push(event);
   }
   await drained;
+  // Both senders write this one line through the tripwire recorder (DOR-1288),
+  // so the tag is matched by prefix rather than by the whole sentence.
   const steered = vi
     .mocked(logger.warn)
-    .mock.calls.filter(
-      (call) => call[0] === '[sendMessage] phantom tool-call cancellation detected'
-    )
+    .mock.calls.filter((call) => String(call[0]).startsWith('[phantom-cancellation]'))
     .map((call) => (call[1] as { steered: boolean }).steered);
   return { events, promptMessages, probes, steered, stdinClosed };
 }

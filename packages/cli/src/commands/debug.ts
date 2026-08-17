@@ -1,9 +1,9 @@
 /**
  * CLI handler for `dorkos debug`.
  *
- * The five in-memory truths, from a terminal. `GET /api/debug/*` already answers
- * them over HTTP; this is the shape a person reaches for at 2am, and the one an
- * agent on a runtime without in-session MCP tools can reach at all.
+ * The in-memory truths, from a terminal. `GET /api/debug/*` already answers them
+ * over HTTP; this is the shape a person reaches for at 2am, and the one an agent
+ * on a runtime without in-session MCP tools can reach at all.
  *
  * Human table by default, raw JSON on `--json` (and nothing else on stdout, so
  * it pipes into `jq`). Returns an exit code rather than calling `process.exit`,
@@ -29,23 +29,25 @@ Subjects:
   dispatches           Agents working right now, plus what ran recently
   refusals             Recent times DorkOS declined to do something, and why
   projectors           Sessions with a live event stream, and who is watching
+  phantoms             Times an agent's own work was cut short by mistake, not by you
   session <id>         One session: its state, its lock, what it is waiting on
   room <id>            One room's agent sessions, and whether each has a transcript
   trace <trace-id>     Every hop of one dispatch across a chat integration
 
 Options:
-      --limit <n>      How many recent rows to show (dispatches, refusals)
+      --limit <n>      How many recent rows to show (dispatches, refusals, phantoms)
       --json           Print the raw JSON instead of a table
 
 Examples:
   dorkos debug dispatches
   dorkos debug refusals --limit 20
   dorkos debug session 0199a1b2-c3d4-4e5f-8a9b-0c1d2e3f4a5b
-  dorkos debug refusals --json | jq 'group_by(.reason)'`;
+  dorkos debug refusals --json | jq 'group_by(.reason)'
+  dorkos debug phantoms --json | jq '.byPath'`;
 
 /** Parsed arguments for `dorkos debug`. */
 export interface DebugArgs {
-  subject: 'dispatches' | 'refusals' | 'projectors' | 'session' | 'room' | 'trace';
+  subject: 'dispatches' | 'refusals' | 'projectors' | 'phantoms' | 'session' | 'room' | 'trace';
   /** The id a subject needs, when it needs one. */
   id?: string;
   limit?: number;
@@ -63,7 +65,7 @@ const SUBJECTS_WITH_ID = new Set(['session', 'room', 'trace']);
  */
 export function parseDebugArgs(rawArgs: string[]): DebugArgs {
   const usage =
-    'Usage: dorkos debug <dispatches|refusals|projectors|session <id>|room <id>|trace <id>> [--limit <n>] [--json]';
+    'Usage: dorkos debug <dispatches|refusals|projectors|phantoms|session <id>|room <id>|trace <id>> [--limit <n>] [--json]';
   const positionals: string[] = [];
   let json = false;
   let limit: number | undefined;
@@ -102,7 +104,9 @@ export function parseDebugArgs(rawArgs: string[]): DebugArgs {
 
 /** Whether a positional names a subject this command knows. */
 function isSubject(value: string): value is DebugArgs['subject'] {
-  return ['dispatches', 'refusals', 'projectors', 'session', 'room', 'trace'].includes(value);
+  return ['dispatches', 'refusals', 'projectors', 'phantoms', 'session', 'room', 'trace'].includes(
+    value
+  );
 }
 
 /** The path each subject reads. */
@@ -115,6 +119,8 @@ function pathFor(args: DebugArgs): string {
       return `/api/debug/refusals${query}`;
     case 'projectors':
       return '/api/debug/projectors';
+    case 'phantoms':
+      return `/api/debug/phantom-cancellations${query}`;
     case 'session':
       return `/api/debug/sessions/${encodeURIComponent(args.id as string)}`;
     case 'room':

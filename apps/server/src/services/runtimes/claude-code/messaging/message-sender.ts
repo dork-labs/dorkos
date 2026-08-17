@@ -39,6 +39,7 @@ import type { MessageSenderOpts } from './message-sender-shared.js';
 // dork-home's siblings are not, is that module's header.
 import { boundaryViolationEvent, validateDispatchBoundary } from '../dispatch-boundary.js';
 import { logger } from '../../../../lib/logger.js';
+import { recordPhantomCancellation } from '../../../observability/phantom-cancellations.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 
 // The vocabulary and the two small helpers both dispatch paths use. Re-exported
@@ -310,12 +311,10 @@ export async function* executeSdkQuery(
           if (mainThread) mainThreadCorrections++;
           else subagentCorrections++;
         }
-        logger.warn('[sendMessage] phantom tool-call cancellation detected', {
-          session: sessionId,
-          toolUseIds: phantoms.map((p) => p.toolUseId),
-          mainThread,
-          steered,
-        });
+        // Counts it and writes the line, both (DOR-1288). The tripwire has to
+        // be readable as a RATE for the persistent-session measurement, and the
+        // resume path is its flag-off leg.
+        recordPhantomCancellation({ sessionId, path: 'turn', phantoms, steered });
         const plural =
           phantoms.length > 1 ? `${phantoms.length} pending tool calls` : 'a pending tool call';
         const where = mainThread ? '' : ' inside one of its helpers';
