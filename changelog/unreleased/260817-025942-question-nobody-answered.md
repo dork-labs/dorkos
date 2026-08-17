@@ -2,6 +2,7 @@
 covers:
   - 'fix(server,client): a question nobody answered no longer reads "answered" after a reload (DOR-1293)'
   - "fix(server,client): read a refusal's own words, and say when a question was never resolved (DOR-1293)"
+  - 'fix(client,server): a refusal keeps its line breaks, and a late answer still counts (DOR-1293)'
 ---
 
 ### Fixed
@@ -10,10 +11,13 @@ covers:
   you missed the question and the agent gave up waiting, the record of it said the opposite of what
   happened. Now the transcript says what actually became of it — nobody answered in time, you
   dismissed it, it failed, or no answer was ever recorded — and shows the agent's own words when
-  there are any (DOR-1293)
+  there are any. An answer that lands right as the turn ends still counts as an answer (DOR-1293)
 - A tool you turned down, or left waiting until it timed out, no longer comes back looking like it
   ran. Reopening the chat shows that it was refused, and shows the reason the agent was given —
   including refusals that never went through DorkOS, like a tool you turned down in the `claude`
   command line or one your permission rules blocked (DOR-1293)
 - A tool that simply failed now reads as failed in an old chat, instead of getting a checkmark
   (DOR-1293)
+- The text under one of these rows keeps its line breaks, so a blocked command reads the way it was
+  written instead of running together on one line. A very long one is cut short with a button to
+  show the rest (DOR-1293)
