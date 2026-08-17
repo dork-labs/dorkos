@@ -339,6 +339,14 @@ When a user upgrades DorkOS, their `config.json` was written by the previous ver
 
 Migrations run once per user, per version boundary, the first time a new DorkOS version instantiates `ConfigManager`. They are the only safe way to evolve stored data across releases.
 
+### `config.json` holds the effective config
+
+Every write through `ConfigManager` writes the whole file back, with every unset field filled in at its default. This is not a DorkOS decision. `conf` compiles Ajv with `useDefaults: true`, and Ajv inserts a missing property's `default` into the object it is validating. `Conf.set` reads the store through that validating getter and assigns the result straight back, so writing one leaf persists the defaults of every other one. There is a single seam, `ConfigManager.write()` in `apps/server/src/services/core/config-manager.ts`, and every writer goes through it: `set`, `setDot`, `reset`, `PATCH /api/config`, `dorkos config set`, the boot repair. Opening the store does **not** do this. `conf` merges only the top-level `defaults`, so a section already on disk keeps the shape it had.
+
+**So absence is not a state this design keeps.** Deleting a key from `config.json` by hand appears to work, and holds only until the next config write puts it back at its default. The one durable restore is to restore the file: copy a snapshot back over it. A key that reappears at its schema default after a write is this behaviour, not a bug (DOR-1267).
+
+Two costs follow, and both are named elsewhere on this page. A change to a shipped default never reaches anyone whose file already has the old value written in, which is the "Default value change" case above. And a later migration cannot tell a value DorkOS seeded from one a person chose, which is what makes a change of mind expensive under the append-only rule below. Turning the fill off is not a knob: `z.toJSONSchema(UserConfigSchema)` marks every defaulted leaf `required`, and the fill is what satisfies that, so with `ajvOptions: { useDefaults: false }` a file missing one leaf fails validation, which the recovery path reads as corruption and replaces with defaults. That case is pinned by a test in `apps/server/src/services/core/__tests__/config-manager.test.ts`. Making absence durable means moving default-filling out of Ajv and into a DorkOS read boundary, which is an ADR, not an edit.
+
 ### How `conf` handles migrations
 
 `conf` tracks migration state **inside the config file itself**, in an internal key at `__internal__.migrations.version`. The flow is:
