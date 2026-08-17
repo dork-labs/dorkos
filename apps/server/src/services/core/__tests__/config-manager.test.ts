@@ -4266,8 +4266,9 @@ describe('config.json holds the EFFECTIVE config, not what was set (DOR-1267)', 
 
   it('leaves a deleted leaf deleted across a boot', () => {
     // Opening the store is NOT what put them back. `#runMigrations` merges only
-    // the TOP-LEVEL `defaults`, and `rooms` is already there, so the file is
-    // written back exactly as it was found.
+    // the TOP-LEVEL `defaults`, and `rooms` is already there, so its
+    // `assert.deepEqual` matches and the `_write` beneath it is skipped. No
+    // migration runs at this version either, so nothing rewrites the file.
     const { dir, configPath } = seedWithoutCollectLeaves();
     new ConfigManager(dir);
     expect(roomsOnDisk(configPath)).not.toHaveProperty('collectDebounceMs');
@@ -4307,6 +4308,12 @@ describe('config.json holds the EFFECTIVE config, not what was set (DOR-1267)', 
     // file the tests above use. It does not leave the leaves absent; it makes the
     // file fail validation, which `classifyConfigLoadFailure` reads as corruption
     // — backup, delete, start again from defaults. Measured, not reasoned.
+    //
+    // Structurally analogous to the production construction rather than a copy of
+    // it: the shipped schema and cast, but no `migrations`/`projectVersion`, so
+    // `#initializeStore` takes its non-migration branch and the throw comes from
+    // the store getter rather than from the `_validate` that follows the
+    // migration chain. Same validator, same verdict, one call site over.
     const { dir } = seedWithoutCollectLeaves();
     expect(
       () =>
