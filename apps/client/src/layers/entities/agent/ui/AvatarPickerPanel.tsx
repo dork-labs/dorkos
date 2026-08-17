@@ -94,8 +94,9 @@ export interface AvatarPickerPanelProps {
  * Pick an agent's colour and emoji — the two halves of its face.
  *
  * Entity UI rather than a feature's: it is a manifest in, a patch out, with no
- * idea which surface is drawing it. Two do — the Agent Hub's inline panel
- * (legacy, removed with the hub) and the profile's Appearance page.
+ * idea which surface is drawing it. Today that is the profile's Appearance
+ * page; keeping the picker here is what lets a second surface draw it without
+ * a second implementation.
  */
 export function AvatarPickerPanel({
   agent,

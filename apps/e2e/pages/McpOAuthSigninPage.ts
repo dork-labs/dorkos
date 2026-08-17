@@ -13,7 +13,7 @@ const RIGHT_PANEL_PCT = 45;
  *
  * Reached by deep-linking the docked profile straight onto that page
  * (`?panel=profile&profilePage=tools`), the way a person would follow a link —
- * with no in-app opener priming any store first. It used to be the Agent Hub's
+ * with no in-app opener priming any store first. It used to be the old agent panel's
  * Toolkit tab behind a "Tools & MCP" accordion; the hub is gone and the
  * accordion with it, so the page IS the surface now (spec `profile-unification`).
  */

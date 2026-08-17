@@ -7,12 +7,12 @@
  * - {@link useProfileDockDeepLink} reads `?panel=profile&profilePage=…&agentPath=…`
  *   and opens the right panel on it.
  * - {@link useLegacyProfileLinkRedirect} rewrites the two older shapes — the
- *   Agent Hub's `?panel=agent-hub&hubTab=…` and the long-dead agent dialog's
+ *   retired agent panel's `?panel=agent-hub&hubTab=…` and the long-dead agent dialog's
  *   `?agent=…` / `?dialog=agent` — into that one, in place, so the link a person
  *   bookmarked still lands somewhere and the URL they end up on is the one this
  *   build speaks.
  *
- * Mounted at the ROOT, not inside the panel. Both used to live inside the hub
+ * Mounted at the ROOT, not inside the panel. Both used to live inside the old
  * component, which meant a deep link only worked when the tab it was asking for
  * was already showing — the link could not open what it was addressed to.
  *
@@ -28,7 +28,7 @@ import { useDockedAgentPath } from './use-docked-agent';
 const LEGACY_PANEL_ID = 'agent-hub';
 
 /**
- * The hub's inner tabs, and the older agent dialog's, mapped onto the pages that
+ * The old panel's inner tabs, and the older agent dialog's, mapped onto the pages that
  * replaced them.
  *
  * A tab with no successor page resolves to the profile's ROOT rather than to a
@@ -65,7 +65,7 @@ function legacyTabPage(raw: unknown): ProfilePageId | undefined {
  * the topology's detail panel, and it is written and read there right now.
  * Treating any `?agent=` as the old dialog rewrote that link into a profile one
  * and the detail panel could never open. The old redirect had no such problem
- * only because it lived inside the Agent Hub, which `/team` never mounted.
+ * only because it lived inside the retired agent panel, which `/team` never mounted.
  */
 const LEGACY_DIALOG_TABS = new Set(['identity', 'personality', 'channels', 'tools']);
 
@@ -159,7 +159,7 @@ export function useLegacyProfileLinkRedirect(): void {
   const isLegacyDialog =
     search.dialog === 'agent' || (!!search.agent && LEGACY_DIALOG_TABS.has(search.agent));
   const needsRedirect = isLegacyPanel || isLegacyDialog;
-  // The hub's tab param and the dialog's; only one of the two is ever set.
+  // The old panel's tab param and the dialog's; only one of the two is ever set.
   const legacyTab = isLegacyPanel ? search.hubTab : search.agent;
 
   useEffect(() => {

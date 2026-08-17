@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/index.js';
+import { NotifyBudget } from '../../relay/notify-budget.js';
 import {
   handlePing,
   handleGetServerInfo,
@@ -94,6 +95,7 @@ interface MockServer {
 /** Create a mock McpToolDeps with a stubbed transcript reader */
 function makeMockDeps(overrides: { listSessions?: ReturnType<typeof vi.fn> } = {}): McpToolDeps {
   return {
+    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: overrides.listSessions ?? vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],

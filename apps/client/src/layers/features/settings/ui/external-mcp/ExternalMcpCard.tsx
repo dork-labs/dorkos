@@ -52,7 +52,7 @@ interface ExternalMcpCardProps {
  * Provides a collapsible control surface for the inbound MCP endpoint: enable/disable
  * toggle, per-user API key guidance, rate limiting, per-client setup instructions, a
  * duplicate-tool collision warning, and a cross-link to the outbound direction (giving
- * an agent tools from other MCP servers, in that agent's own Toolkit tab — plan D7).
+ * an agent tools from other MCP servers, on that agent's own Tools & MCP page — plan D7).
  *
  * MCP clients authenticate with a personal API key (Better Auth `apiKey` plugin),
  * created and revoked in Settings → Security → API keys, or via the `MCP_API_KEY`
@@ -181,7 +181,7 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
  * Cross-link to the outbound MCP direction (plan D7): this card gives OTHER apps
  * tools FROM DorkOS; giving one of DorkOS's own agents tools FROM another MCP
  * server is the opposite direction, managed per agent in that agent's Toolkit
- * tab (Agent Hub → Toolkit), not here. Closes this dialog before navigating so
+ * page (the profile's Tools & MCP), not here. Closes this dialog before navigating so
  * the Team page renders clean.
  */
 function OutboundToolsCrossLink() {
@@ -191,7 +191,7 @@ function OutboundToolsCrossLink() {
   return (
     <p className="text-muted-foreground text-xs leading-relaxed">
       Want to give one of your agents tools from another MCP server instead? That is the other
-      direction — open the agent and check its Toolkit tab.{' '}
+      direction — open the agent’s profile and go to Tools & MCP.{' '}
       <Button
         variant="link"
         size="sm"

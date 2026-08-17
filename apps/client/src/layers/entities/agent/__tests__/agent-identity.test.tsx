@@ -82,7 +82,7 @@ describe('AgentAvatar', () => {
   it('never draws a health ring, whatever the mesh thinks', () => {
     // The ring was a second green 2px from the dot, on every list row in the
     // cockpit. Health is a diagnostic, not an identity, and the two surfaces
-    // that genuinely need it (the Agent Hub hero, the mesh topology) now say
+    // that genuinely need it (the profile header, the mesh topology) now say
     // it in their own words.
     const { container } = render(
       // @ts-expect-error — `healthStatus` is no longer part of AgentAvatarProps.

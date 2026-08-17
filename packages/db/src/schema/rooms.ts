@@ -25,8 +25,10 @@ import {
  * `'system'`. Resolution is mint-on-first-use: look up `(kind, natural_key)`,
  * insert when absent, return `id`.
  *
- * `display_name` is a render cache, refreshed on every resolve. It is never
- * the key, and nothing may look an author up by it.
+ * `display_name` is a render cache, refreshed by a resolve whose caller KNOWS a
+ * name (DOR-1264): a blank one, or an agent's slug at a directory whose manifest
+ * says the display name is something else, leaves the stored label standing. It
+ * is never the key, and nothing may look an author up by it.
  *
  * `minted_for_manifest_id` **partially supersedes** that ADR's "the ULID is
  * never written into an author column" clause (ADR 260801-003051), and the
@@ -56,7 +58,10 @@ export const authors = sqliteTable(
      */
     naturalKey: text('natural_key').notNull(),
 
-    /** Human-readable name, cached for rendering and refreshed on resolve. */
+    /**
+     * Human-readable name, cached for rendering and refreshed by a resolve whose
+     * caller knows one (see the table doc above, and `AuthorRegistry`).
+     */
     displayName: text('display_name').notNull(),
 
     /**
@@ -81,14 +86,17 @@ export const authors = sqliteTable(
 
     /**
      * Render cache: the author's emoji avatar (`agents.icon` for an agent), or
-     * null when it has none. Same lifecycle as `display_name` — refreshed on
-     * resolve, never the key, and never looked up by.
+     * null when it has none. Never the key, and never looked up by. Refreshed
+     * only by a resolve that carries one — an omitted value leaves the stored
+     * emoji alone, which is the same SHAPE of guard `display_name` now has and
+     * not the same test: absence is what a caller omits here, where a name is
+     * weighed against the manifest.
      */
     emoji: text('emoji'),
 
     /**
      * Render cache: the author's identity colour (`agents.color`), or null.
-     * Same lifecycle as `display_name`.
+     * Same lifecycle as `emoji` above.
      */
     color: text('color'),
 
@@ -96,8 +104,9 @@ export const authors = sqliteTable(
      * Render cache: the URL of the author's photo, or null when they have none.
      *
      * The fourth render-cache field beside `display_name`, `emoji` and `color`,
-     * and on exactly their lifecycle — refreshed on resolve, never a key, never
-     * looked up by. A photo is an addition to that triplet, not a replacement:
+     * and on exactly `emoji`'s lifecycle — refreshed only by a resolve that
+     * carries one, never a key, never looked up by. A photo is an addition to
+     * that triplet, not a replacement:
      * an author with a photo AND an emoji keeps both, and the renderer decides
      * which one a given disc shows.
      *

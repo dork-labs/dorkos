@@ -34,7 +34,7 @@ const entriesFor = (path: string) => useProfileStore.getState().dockedEntries[pa
 
 describe('opening the docked profile', () => {
   it('does all four things "open" means, not three of them', () => {
-    // `openHub` used to name the agent and stop there; every caller then
+    // The old store action named the agent and stopped there; every caller then
     // repeated the other two lines, and the one that forgot read as a dead
     // click. There is one call now, and it opens the panel.
     useProfileStore.getState().openProfileDocked(AGENT);

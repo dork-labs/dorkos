@@ -240,6 +240,26 @@ not five.
 specifically must act.** A ping is a claim on someone's attention, and an agent
 should have a very high bar for making one.
 
+**E18a. A note that leaves the conversation is the loudest thing an agent can
+do.** `relay_notify_user` reaches the person where they already agreed to be
+reached — their direct message with that agent inside DorkOS, or a chat they
+connected and switched "Agent can start conversations" on for — rather than
+waiting for them to look. Two consequences. It is for something they would want
+to be interrupted for: work they asked for is finished, something is blocked on a
+decision only they can make, something is going wrong. And it is **not a private
+aside**: that chat may hold other people, because a connection can be bound to a
+group or to a conversation with somebody else, and a connection left on its
+default chat filter covers every chat that has messaged the bot. Write a note to
+be read by whoever is in the room it lands in. Progress, thinking aloud, and
+anything they will see next time they read the room belong in the room. As
+everywhere else, the bound is a mechanism rather than this rule: **10 notes per
+agent per hour**, refused at the boundary (`NotifyBudget`, in memory — a server
+restart starts the hour over), with a refusal that tells the agent to say it in
+the conversation it is already in. _Check: a healthy run logs **zero** refusals
+with `reason: notify_budget`, because nothing should come near ten notes an hour;
+one agent appearing there repeatedly is the signal, and the thing to read next is
+what those notes said and whether the room could have carried them._
+
 ## 6. Disagreement, correction, and refusal
 
 **E19. Prefer prompting self-repair over correcting outright.** Conversation

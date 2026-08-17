@@ -558,26 +558,26 @@ describe('AgentsList', () => {
     expect(screen.getByRole('button', { name: 'Chat with Alpha' })).toBeInTheDocument();
   });
 
-  it('renders Manage action button with correct aria-label for each agent', () => {
+  it('renders the View profile action button with correct aria-label for each agent', () => {
     render(<AgentsList agents={[makeAgent({ id: '1', name: 'Alpha' })]} isLoading={false} />, {
       wrapper: createWrapper(),
     });
 
-    expect(screen.getByRole('button', { name: 'Manage Alpha' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Alpha’s profile' })).toBeInTheDocument();
   });
 
-  it('renders Chat and Manage buttons for every agent row', () => {
+  it('renders Chat and View profile buttons for every agent row', () => {
     render(<AgentsList agents={multiNsAgents} isLoading={false} />, {
       wrapper: createWrapper(),
     });
 
     // Each of the 3 agents should have both action buttons
     expect(screen.getByRole('button', { name: 'Chat with Agent A' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Manage Agent A' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Agent A’s profile' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Chat with Agent B' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Manage Agent B' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Agent B’s profile' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Chat with Agent C' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Manage Agent C' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Agent C’s profile' })).toBeInTheDocument();
   });
 
   // The Team page's chips, group toggle and search box all narrow this table

@@ -908,6 +908,23 @@ describe('buildPeerAgentsBlock', () => {
     expect(result).toContain('</peer_agents>');
   });
 
+  it('introduces a colleague by the name a person reads, not its slug', async () => {
+    // This block is an introduction, and `mesh_inspect(agentId)` below it is how
+    // a peer is actually reached — so the addressing slug buys nothing here and
+    // misnames every agent that has a real name (DOR-1264).
+    const mockMesh = makeMockMesh(() => [
+      { id: 'a1', name: 'docs-writer', displayName: 'Docs Writer', projectPath: '/projects/docs' },
+      { id: 'a2', name: 'test-bot', projectPath: '/projects/test' },
+    ]);
+    const result = await _buildPeerAgentsBlock(mockMesh);
+
+    expect(result).toContain('Docs Writer (/projects/docs)');
+    expect(result).not.toContain('docs-writer');
+    // An agent whose manifest declares no display name is still called by its
+    // slug, which is the only name it has.
+    expect(result).toContain('test-bot (/projects/test)');
+  });
+
   it('limits to 10 agents', async () => {
     const agents = Array.from({ length: 15 }, (_, i) => ({
       id: `a${i}`,

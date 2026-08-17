@@ -70,7 +70,7 @@ export interface CoreSlice {
    * right-panel visibility predicates read it to keep the Profile tab hidden
    * off `/session` until the user actually selects an agent, rather than
    * surfacing the ambient startup agent nobody chose. Published here (mirrored
-   * from the agent-hub feature store) so cross-feature, synchronous readers can
+   * from a feature store) so cross-feature, synchronous readers can
    * see it without importing that feature — the same role {@link currentAgentId}
    * plays for the extension host. Transient: never persisted.
    *

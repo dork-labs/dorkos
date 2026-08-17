@@ -97,10 +97,13 @@ IMPORTANT — Outbound messaging rules:
   that channel's "agent may start conversations" permission — if that permission is off it
   returns INITIATE_NOT_ALLOWED instead of sending. With no external channel connected it
   posts into your direct message with them inside DorkOS, so a stock install is never
-  silent; the reply's "surface" says which one it used. Naming a channel
-  (channel="{adapter type or ID}") means that channel or nothing. Do NOT try to reach a
-  human by publishing a raw relay.human.* subject with relay_send: that path enforces the
-  same permission and will be denied.
+  silent; the reply's "surface" says which one it used. The bound chat may be a GROUP or a
+  conversation with someone other than your operator, so write the message to be read by
+  whoever is in that chat, never as a private aside. You get a limited number of these per
+  hour — anything you could say in the conversation you are already in belongs there
+  instead. Naming a channel (channel="{adapter type or ID}") means that channel or nothing.
+  Do NOT try to reach a human by publishing a raw relay.human.* subject with relay_send:
+  that path enforces the same permission and will be denied.
 - relay_send/relay_send_and_wait/relay_send_async are for reaching other AGENTS
   (relay.agent.*), not for initiating messages to humans on external channels.
 
@@ -155,6 +158,8 @@ and how your automatic replies are routed, NOT a send target for you:
 The {adapterId} is the adapter's ID from relay_list_adapters() (e.g., "telegram-lifeos").
 Whether you may start a conversation on a channel is a per-binding permission ("agent may
 start conversations"); relay_notify_user enforces it and reports INITIATE_NOT_ALLOWED when off.
+A binding may cover a group chat, or a chat with someone other than your operator, so treat
+anything you send this way as read by everyone in that chat.
 
 Adapter management:
 - relay_list_adapters() — see all adapters and their status (connected, disconnected, error)
@@ -477,7 +482,11 @@ async function buildPeerAgentsBlock(
   try {
     const agents = meshCore.listWithPaths().slice(0, 10);
     if (agents.length === 0) return '';
-    const lines = agents.map((a) => `- ${a.name} (${a.projectPath})`).join('\n');
+    // The name a person reads, not the addressing slug — this block introduces
+    // colleagues, and `mesh_inspect(agentId)` below is how one is reached, so
+    // the slug buys nothing here and misnames every agent that has a real name
+    // (DOR-1264).
+    const lines = agents.map((a) => `- ${a.displayName ?? a.name} (${a.projectPath})`).join('\n');
     return `<peer_agents>\nRegistered agents on this machine (use mesh_list() for live data):\n${lines}\n\nTo contact a peer: mesh_inspect(agentId) for relay endpoint, then relay_send() to that subject.\n</peer_agents>`;
   } catch {
     return '';

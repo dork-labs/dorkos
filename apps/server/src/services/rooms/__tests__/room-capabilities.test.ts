@@ -62,6 +62,17 @@ const ANA_IDENTITY: AgentIdentity = {
   createdAt: new Date().toISOString(),
 };
 
+/**
+ * Ana, as a token minted BEFORE DOR-1264 — carrying her slug where her display
+ * name belongs.
+ *
+ * This is not a hypothetical: tokens are never rewritten, `revoke` has no
+ * production caller, and one lives up to thirty days. So every install that
+ * upgrades has live tokens in exactly this shape, and they keep arriving at
+ * these tools until they expire.
+ */
+const ANA_SLUG_IDENTITY: AgentIdentity = { ...ANA_IDENTITY, displayName: 'ana' };
+
 describe('the rooms capability domain', () => {
   let harness: RoomHarness;
   let service: RoomService;
@@ -264,6 +275,24 @@ describe('the rooms capability domain', () => {
       const entry = harness.store.getEntryById(channel.id, result.entryId);
       expect(entry?.authorId).toBe(ana);
       expect(entry?.body.text).toBe('migration is running');
+    });
+
+    it('does not rename the agent when its token carries the slug (DOR-1264)', async () => {
+      // The seam the bug was OBSERVED at, end to end: a tool call resolves the
+      // caller through `AuthorRegistry.resolveAgent`, which writes the token's
+      // label onto the author row every room message is rendered from. Before
+      // the guard, this one call turned `Ana` into `ana` in every message she
+      // had ever written and in the member list — and did it again on her next
+      // call, so it could not be fixed by hand either.
+      const result = (await registry.invoke(
+        'rooms.post',
+        { roomId: channel.id, text: 'still Ana' },
+        { identity: ANA_SLUG_IDENTITY, retryChannel: 'mcp-argument' }
+      )) as { entryId: string };
+
+      const entry = harness.store.getEntryById(channel.id, result.entryId);
+      expect(entry?.authorId).toBe(ana);
+      expect(authors.getById(entry!.authorId)?.displayName).toBe('Ana');
     });
 
     it('comes back as a typed refusal, not a stack trace, in a direct message', async () => {

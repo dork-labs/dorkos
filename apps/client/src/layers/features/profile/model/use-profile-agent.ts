@@ -106,7 +106,7 @@ export function useProfileAgent(
         // The convention keys ride the same PATCH body the manifest fields do
         // and are validated by their own schema server-side, but
         // `AgentManifestUpdate` describes only the manifest half. One cast
-        // here, at the single seam, rather than at every editor: the Agent Hub
+        // here, at the single seam, rather than at every editor: the retired panel
         // took the other road and dropped them at the callback instead, which
         // is why typing into its SOUL.md editor saved nothing.
         { path: projectPath, updates: updates as AgentManifestUpdate },

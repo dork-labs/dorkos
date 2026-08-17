@@ -35,6 +35,7 @@ import type { Task } from '@dorkos/shared/schemas';
 import type { DeliveryMetrics } from '@dorkos/shared/relay-schemas';
 import { createExternalMcpServer } from '../mcp-server.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import { NotifyBudget } from '../../relay/notify-budget.js';
 
 const NOW = new Date().toISOString();
 
@@ -128,6 +129,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
     await writeFile(path.join(agentDir, '.dork', 'agent.json'), JSON.stringify(MANIFEST), 'utf-8');
 
     const deps: McpToolDeps = {
+      notifyBudget: new NotifyBudget(),
       transcriptReader: {
         listSessions: async () => [],
       } as unknown as McpToolDeps['transcriptReader'],
@@ -219,6 +221,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
     // outputSchema (count as a string). If this ever passes as a non-error,
     // the runtime validation these tests depend on has been silently lost.
     const badDeps: McpToolDeps = {
+      notifyBudget: new NotifyBudget(),
       transcriptReader: {
         listSessions: async () => [],
       } as unknown as McpToolDeps['transcriptReader'],

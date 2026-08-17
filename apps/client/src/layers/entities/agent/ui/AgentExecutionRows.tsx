@@ -20,7 +20,7 @@ import {
 } from '@/layers/entities/runtime';
 import { useModels } from '@/layers/entities/session';
 
-/** The field-label style every cell in the Config tab's metadata grid uses. */
+/** The field-label style every cell in the Runs on picker's metadata grid uses. */
 const LABEL_CLASS = 'text-muted-foreground text-[10px] font-medium tracking-wider uppercase';
 
 /** One option in a row's picker. */

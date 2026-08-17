@@ -42,7 +42,7 @@ describe('initializeExtensions — right-panel contributions', () => {
   it('registers the Profile contribution, under that name', () => {
     const profile = getRightPanelContribution('profile');
     expect(profile).toBeDefined();
-    // The tab reads "Profile", not "Agent Profile" and not "Agent Hub": one
+    // The tab reads "Profile" and nothing longer: one
     // surface, one word (spec `profile-unification` D9). Pinned because the
     // strip's label is the whole of what a person sees of this registration.
     expect(profile?.title).toBe('Profile');
@@ -114,7 +114,7 @@ describe('initializeExtensions — right-panel contributions', () => {
     expect(files?.visibleWhen?.({ pathname: '/session', transport: directTransport })).toBe(true);
   });
 
-  it('orders the Files tab (priority 15) between Agent Profile (10) and Canvas (20)', () => {
+  it('orders the Files tab (priority 15) between Profile (10) and Canvas (20)', () => {
     expect(getRightPanelContribution('files')?.priority).toBe(15);
   });
 
@@ -155,7 +155,7 @@ describe('initializeExtensions — right-panel contributions', () => {
 
 describe('initializeExtensions — command palette gating (Obsidian embed)', () => {
   // Built-ins that need AppShell chrome the embed never renders: a mounted
-  // dialog (Create Agent / Import), the right panel (Agent Profile, Canvas), or
+  // dialog (Create Agent / Import), the right panel (Profile, Canvas), or
   // the router (Dashboard, Agents — navigate() throws with no RouterProvider).
   const EMBED_DEAD_ENDS = [
     'createAgent',

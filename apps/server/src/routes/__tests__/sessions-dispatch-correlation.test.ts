@@ -177,7 +177,9 @@ describe('the dispatch id survives the detached turn', () => {
     // that proof: it resolves on the first event, which is before the remap
     // here, so it legitimately carries the request id.
     expect(peekProjector(CANONICAL_ID)).toBeDefined();
-    expect(peekProjector(SESSION_ID)).toBeUndefined();
+    // The projector ANSWERS to the canonical id; the request id redirects onto
+    // that same instance rather than keeping one of its own (DOR-1262).
+    expect(peekProjector(SESSION_ID)?.sessionId).toBe(CANONICAL_ID);
     expect(reads).toHaveLength(2);
     expect(reads[0]).toBe(reads[1]);
     expect(isDispatchId(reads[0])).toBe(true);

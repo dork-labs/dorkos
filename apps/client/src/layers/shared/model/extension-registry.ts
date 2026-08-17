@@ -191,7 +191,7 @@ export interface RightPanelContribution extends BaseContribution {
    * is selected, or the lookup hasn't resolved yet.
    *
    * `explicitAgentPath` is the path of an agent the operator *explicitly* opened
-   * to inspect this session (via the Agent Hub), or null when none has been
+   * to inspect this session (via the profile), or null when none has been
    * picked. Unlike `agentId`/`cwd` — which track the ambient working directory
    * the server chose at startup — this is click-driven, so a tab can stay hidden
    * until the user actually selects an agent instead of surfacing an agent they

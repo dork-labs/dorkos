@@ -33,7 +33,7 @@ export function initializeExtensions(): void {
   // on AppShell chrome the Obsidian embed never renders, so acting on them there
   // is a dead-end: Create Agent / "Bring in existing projects" open dialogs
   // (CreateAgentDialog / ImportProjectsDialog) that mount only in AppShell;
-  // Agent Profile and Canvas open the right panel the embed never renders; and
+  // Profile and Canvas open the right panel the embed never renders; and
   // Dashboard / Agents call navigate(), which throws with no RouterProvider (the
   // pattern documented in features/status/model/use-runtime-chip.ts). Skip them
   // under the embed.
@@ -147,7 +147,7 @@ export function registerRightPanelTabs(register: RegisterFn): void {
   // no-selection fallback: `isGlobal` tells the container's auto-select to prefer
   // a contextual tab when one is visible and only land on Pulse when none is — the
   // Chrome sidePanel rule (contextual wins when present, global is the fallback),
-  // so /session still opens to Agent Profile (honoring DOR-227) while
+  // so /session still opens to Profile (honoring DOR-227) while
   // home/activity/tasks/… open to Pulse. Its body promotes global content
   // (attention + activity teasers) into the panel so the shell is never dead.
   //

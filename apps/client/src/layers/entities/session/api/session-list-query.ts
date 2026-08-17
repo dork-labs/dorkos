@@ -66,7 +66,7 @@ export function sessionListQueryOptions(deps: SessionListQueryDeps, cwd: string 
       );
       // These rows are the same answer the detail endpoint gives, so any detail
       // entry they cover is refreshed too. A refetch triggered from elsewhere —
-      // a Claude account switch, an agent-hub rename — would otherwise leave a
+      // a Claude account switch, a rename from a profile — would otherwise leave a
       // frozen detail entry outranking a list row that had just been corrected.
       syncSessionDetailCache(deps.queryClient, sessions, observedAt);
       return sessions;

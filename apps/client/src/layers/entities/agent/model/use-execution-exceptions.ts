@@ -99,7 +99,7 @@ const EMPTY: readonly ExecutionException[] = [];
  *   two catalog-free breakages — a runtime this machine has not connected, and
  *   an effort on a runtime whose API has none — while a model that is gone, and
  *   an effort on a model that does not take one, need a catalog and so appear
- *   only in the Settings strip and the agent's own Config tab. The trade was
+ *   only in the Settings strip and the agent's own Runs on picker. The trade was
  *   made in favor of the sidebar staying free: making Needs-attention complete
  *   means fetching every runtime's catalog on every fleet render, to change an
  *   amber dot. The user-facing copy is written to match — the changelog promises
@@ -179,7 +179,7 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
     const catalog = byRuntime.get(runtime);
     const serverDefaultModel = serverModelFor(runtime);
     // The model that will actually run this agent's turn — its own pin, else
-    // what it inherits. The Config tab has always reasoned about this one; the
+    // what it inherits. The Runs on picker has always reasoned about this one; the
     // strip used to look only at the pin, which meant an agent asking for high
     // effort on an inherited Haiku was called broken on one screen and healthy
     // on the other.

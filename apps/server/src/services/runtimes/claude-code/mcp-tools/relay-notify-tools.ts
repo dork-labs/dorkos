@@ -10,6 +10,20 @@
  * Telegram or Slack chat resolves, the message goes there under exactly the
  * rules it always did. The DM is what happens instead of nothing (DOR-1209).
  *
+ * **What bounds it is an hourly count, not a card** (DOR-1265). This verb no
+ * longer raises an approval prompt for an agent-identified session — one raised
+ * during a room turn parked the turn on a card nobody was watching — so
+ * {@link NotifyBudget} is what stands between a looping agent and a person's
+ * evening. Be precise about what that gave up and what it did not: the note goes
+ * only inside a scope the OPERATOR configured — their own DorkOS DM, or a
+ * binding they switched "Agent can start conversations" on for (`canInitiate`,
+ * default false, so setup consent is untouched). That scope is frequently WIDER
+ * than one person: a binding may name a group or somebody else's chat, and one
+ * with the chat filter left empty (the cockpit's default) covers every chat that
+ * has messaged the adapter. What the auto-allow removed is the per-call card an
+ * operator watching a DIRECT session could have denied — not the scope, and not
+ * the switch.
+ *
  * @module services/runtimes/claude-code/mcp-tools/relay-notify-tools
  */
 import type { McpToolDeps } from './types.js';
@@ -18,6 +32,8 @@ import { requireRelay, type SenderIdentity } from './relay-helpers.js';
 import { resolveNotifyTarget, type NotifyTarget } from '../../../relay/notify-target.js';
 import { buildBridgePrincipal } from '../../../relay/bridge-principal.js';
 import { deliverNotifyDm, type NotifyDmDeps } from '../../../relay/notify-dm.js';
+import type { NotifyBudget } from '../../../relay/notify-budget.js';
+import { logRefusal } from '../../../observability/refusals.js';
 
 /**
  * Whether a failed integration lookup should fall back to the operator's DM.
@@ -49,18 +65,38 @@ function shouldFallBackToDm(
 }
 
 /**
- * Deliver into the agent's DM with the operator, or answer `null` when this
- * install cannot (rooms not wired, or the DM refused the write — both already
- * logged by {@link deliverNotifyDm}).
+ * Deliver into the agent's DM with the operator, or answer `null` when the DM
+ * refused the write (already logged by {@link deliverNotifyDm}).
  *
- * @param notifyDm - The rooms/authors/mesh seam, absent when rooms are not wired.
+ * **Charges the hour only for a note that LANDED.** The reservation is taken
+ * first, so two notes decided in the same tick cannot both take the last one,
+ * and it is given back when the write did not happen. Giving it back is exact
+ * here and nowhere else: `deliverNotifyDm` is local, synchronous and returns a
+ * structured outcome, and there is no `await` between the two calls — so the
+ * timestamp refunded is provably the one this call reserved, and "did it land"
+ * is a question with an answer. Contrast the external adapter path below, which
+ * charges before publishing and never refunds: that message goes off this
+ * machine, so a throw or a timeout does not mean it failed to arrive, and
+ * refunding on one would hand back a note the person already read.
+ *
+ * The DM path is the one that had to be exact, because it is the one a stock
+ * install uses: an agent the mesh cannot place fails every time, and charging
+ * for those would spend a person's whole hour on notes nobody received, then
+ * report it as being too chatty.
+ *
+ * @param notifyDm - The rooms/authors/mesh seam. The caller checks it is there
+ *   before spending a note on it: an install with rooms unwired has nowhere to
+ *   deliver, and a call that could never land must cost nothing.
+ * @param budget - The hourly allowance, reserved and given back around the write.
  * @param agentId - The server-resolved sender.
  * @param message - What to say.
  */
-function tryDm(notifyDm: NotifyDmDeps | undefined, agentId: string, message: string) {
-  if (!notifyDm) return null;
+function tryDm(notifyDm: NotifyDmDeps, budget: NotifyBudget, agentId: string, message: string) {
   const outcome = deliverNotifyDm({ agentId, message }, notifyDm);
-  if (!outcome.ok) return null;
+  if (!outcome.ok) {
+    budget.refund(agentId);
+    return null;
+  }
   return jsonContent({
     sent: true,
     surface: 'dorkos-dm',
@@ -70,14 +106,52 @@ function tryDm(notifyDm: NotifyDmDeps | undefined, agentId: string, message: str
 }
 
 /**
+ * Take one note off this agent's hourly allowance, or say it has none left.
+ *
+ * Called immediately before a message is handed to a transport, so a call
+ * refused for any other reason — no binding, a channel that resolves to nothing,
+ * an owner who never switched initiating on — costs nothing.
+ *
+ * The refusal is written for the agent to ACT on: it names the alternative it
+ * has (say it in the conversation it is already in) and the fact that the
+ * allowance comes back, so the honest response is not to retry the same call.
+ *
+ * @param budget - The install's rolling per-agent count.
+ * @param agentId - The server-resolved sender.
+ * @returns The refusal to return to the model, or `null` to carry on.
+ */
+function refuseIfSpent(budget: NotifyBudget, agentId: string) {
+  if (budget.tryReserve(agentId)) return null;
+  // Nobody is told but the agent. There is no room notice for this — the tool is
+  // not a room verb and the person it would be about is the one being protected
+  // from it — so this line is the only record a person could later find.
+  logRefusal('[relay] an agent has sent as many proactive notes as it may this hour', {
+    reason: 'notify_budget',
+    visibility: 'silent',
+    detail: { agentId, tool: 'relay_notify_user' },
+  });
+  return jsonContent(
+    {
+      sent: false,
+      error: 'You have sent as many notes as you can for now — say it here instead, or wait.',
+      code: 'NOTIFY_RATE_LIMITED',
+    },
+    true
+  );
+}
+
+/**
  * Send a message to a user — on a bound external integration when one can carry
  * it, and otherwise in the caller's direct message with the operator.
  *
- * @param deps - Tool dependencies
+ * @param deps - Tool dependencies, including the install's hourly note budget
+ *   (`notifyBudget`, DOR-1265) — built once at boot and shared by every session,
+ *   which is what makes the ceiling a ceiling rather than a per-session reset.
  * @param identity - Server-injected sender identity; its `agentId` selects the
  *   caller's own integration bindings (never taken from tool args)
  */
 export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: SenderIdentity) {
+  const budget = deps.notifyBudget;
   return async (args: { message: string; channel?: string }) => {
     const err = requireRelay(deps);
     if (err) return err;
@@ -118,8 +192,10 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
       // surface that is always there, so the message goes to the one this agent
       // shares with the operator (DOR-1209). A DM that cannot be reached falls
       // through to the same errors as before, already logged by `deliverNotifyDm`.
-      if (shouldFallBackToDm(target, args.channel)) {
-        const delivered = tryDm(deps.notifyDm, agentId, args.message);
+      if (shouldFallBackToDm(target, args.channel) && deps.notifyDm) {
+        const spent = refuseIfSpent(budget, agentId);
+        if (spent) return spent;
+        const delivered = tryDm(deps.notifyDm, budget, agentId, args.message);
         if (delivered) return delivered;
       }
       switch (target.reason) {
@@ -170,6 +246,12 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
           );
       }
     }
+
+    // Asked here rather than at the top of the handler: everything above this
+    // line is a refusal, and a caller that was going to be refused anyway must
+    // not have a note taken off it on the way out.
+    const spent = refuseIfSpent(budget, agentId);
+    if (spent) return spent;
 
     try {
       // Same server-injected principal as every other send tool — the bare

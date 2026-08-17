@@ -163,7 +163,7 @@ function renderRow(
   room: RoomSummary,
   opts: {
     transport?: Transport;
-    onOpenAgentProfile?: (path: string) => void;
+    viewAgentProfile?: (path: string) => () => void;
     /** The mark the sidebar's view model resolved for this room. */
     visual?: SidebarItemVisual;
     /** Asked for the inline group-create editor, carrying this room's reference. */
@@ -184,7 +184,7 @@ function renderRow(
   } = {}
 ) {
   // Mesh is always answered: the row maps a 1:1's `agentRef` back to a path
-  // through it, so a transport that never answers would make "Agent profile"
+  // through it, so a transport that never answers would make "View profile"
   // silently absent in every test rather than in the ones that mean it.
   const transport = opts.transport ?? createMockTransport();
   transport.listMeshAgentPaths = vi.fn().mockResolvedValue(MESH_AGENTS);
@@ -207,7 +207,7 @@ function renderRow(
       visual={opts.visual ?? { kind: 'sigil' }}
       isActive={opts.isActive ?? false}
       onSelect={vi.fn()}
-      onOpenAgentProfile={opts.onOpenAgentProfile ?? vi.fn()}
+      viewAgentProfile={opts.viewAgentProfile ?? (() => vi.fn())}
       onRequestNewGroup={opts.onRequestNewGroup ?? vi.fn()}
     />,
     { wrapper }
@@ -306,19 +306,20 @@ describe('RoomRow menus', () => {
   });
 
   it('jumps to the agent a one-to-one is with, matched on its directory handle', async () => {
-    const onOpenAgentProfile = vi.fn();
-    renderRow(oneToOne('/repo/ana'), { onOpenAgentProfile });
+    const viewed = vi.fn();
+    const viewAgentProfile = vi.fn((path: string) => () => viewed(path));
+    renderRow(oneToOne('/repo/ana'), { viewAgentProfile });
 
     // Awaited, because the row resolves the handle back to a directory through
     // mesh, which is a shared warm cache entry in the app and a cold request
     // here. The item appears when the answer does.
     const menu = openDropdown('Ana actions');
-    fireEvent.click(await within(menu).findByText('Agent hub'));
+    fireEvent.click(await within(menu).findByText('View profile'));
 
-    expect(onOpenAgentProfile).toHaveBeenCalledWith('/repo/ana');
+    expect(viewed).toHaveBeenCalledWith('/repo/ana');
   });
 
-  it('offers no Agent profile for an agent the fleet no longer knows', async () => {
+  it('offers no View profile for an agent the fleet no longer knows', async () => {
     // A mesh rebuild can retire an agent under an open sidebar. Nothing should
     // offer a profile it cannot resolve to a directory.
     renderRow(oneToOne('/repo/departed'));
@@ -326,7 +327,7 @@ describe('RoomRow menus', () => {
     // Waits for the SAME signal the passing case waits for, so this asserts an
     // absence after the answer arrived rather than before it.
     await within(menu).findByText('Members…');
-    expect(itemLabels(menu)).not.toContain('Agent hub');
+    expect(itemLabels(menu)).not.toContain('View profile');
   });
 });
 
