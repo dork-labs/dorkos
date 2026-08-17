@@ -26,6 +26,7 @@ interface WireExperiment {
   costNote?: string;
   enabled: boolean;
   lockedByEnv: boolean;
+  envOverride?: string;
 }
 
 const WARM: WireExperiment = {
@@ -117,22 +118,27 @@ describe('ExperimentsTab', () => {
     });
   });
 
-  it('disables a row an environment variable decides, and says why', async () => {
-    renderTab([WARM, { ...A2A, enabled: true, lockedByEnv: true }]);
+  it('disables a row an environment variable decides, and names the variable', async () => {
+    renderTab([
+      WARM,
+      { ...A2A, enabled: true, lockedByEnv: true, envOverride: 'DORKOS_A2A_ENABLED' },
+    ]);
 
     const locked = await screen.findByRole('switch', { name: A2A.title });
     expect(locked).toBeDisabled();
-    // The position shown is the variable's, and the row explains itself — a
-    // disabled switch with no reason reads as a bug.
+    // The position shown is the variable's, and the row explains itself BY NAME —
+    // a disabled switch that will not say what to unset is a dead end.
     expect(locked).toBeChecked();
-    expect(screen.getByText(/decides it, so this switch cannot/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Right now DORKOS_A2A_ENABLED on this machine decides it/)
+    ).toBeInTheDocument();
     // The other row is untouched by its neighbour's lock.
     expect(screen.getByRole('switch', { name: WARM.title })).not.toBeDisabled();
   });
 
   it('never writes from a locked row', async () => {
     const user = userEvent.setup();
-    renderTab([{ ...A2A, lockedByEnv: true }]);
+    renderTab([{ ...A2A, lockedByEnv: true, envOverride: 'DORKOS_A2A_ENABLED' }]);
 
     await user.click(await screen.findByRole('switch', { name: A2A.title }));
 
@@ -145,6 +151,27 @@ describe('ExperimentsTab', () => {
     expect(await screen.findByTestId('experiments-empty')).toHaveTextContent(
       /Nothing’s cooking right now/
     );
+    expect(screen.queryAllByRole('switch')).toHaveLength(0);
+  });
+
+  it('does not claim the list is empty while the config is still loading', () => {
+    // A getConfig that never resolves pins the loading state open: the empty
+    // message asserts "nothing is waiting on you", which is unknown mid-fetch.
+    updateConfig = vi.fn().mockResolvedValue(undefined);
+    const transport: Transport = createMockTransport({
+      getConfig: vi.fn().mockReturnValue(new Promise(() => {})),
+      updateConfig,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <ExperimentsTab />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    expect(screen.queryByTestId('experiments-empty')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('switch')).toHaveLength(0);
   });
 

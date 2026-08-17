@@ -93,6 +93,10 @@ export function describeExperiments(): ExperimentState[] {
       ...(entry.costNote !== undefined && { costNote: entry.costNote }),
       enabled: resolveEnabled(entry, envName),
       lockedByEnv: envName !== undefined,
+      // Only when it has actually taken over: the client interpolates this into
+      // the locked-row sentence, and naming a variable that is NOT deciding
+      // anything would send somebody to their shell for nothing.
+      ...(envName !== undefined && { envOverride: envName }),
     };
   });
 }

@@ -1193,13 +1193,21 @@ describe('GET /api/config', () => {
       const res = await request(server).get('/api/config').expect(200);
 
       const a2a = res.body.experiments.find((e: { key: string }) => e.key === 'a2a.enabled');
-      expect(a2a).toMatchObject({ enabled: false, lockedByEnv: true });
+      // The VARIABLE rides along by name: the client interpolates it into the
+      // locked-row sentence, so the one person who can unset it knows what to
+      // unset. Absent, the disabled switch is a dead end.
+      expect(a2a).toMatchObject({
+        enabled: false,
+        lockedByEnv: true,
+        envOverride: 'DORKOS_A2A_ENABLED',
+      });
       // The other entry has no variable at all, so it stays switchable — the two
-      // are resolved independently.
+      // are resolved independently, and no variable name is invented for it.
       const warm = res.body.experiments.find(
         (e: { key: string }) => e.key === 'runtimes.claudeCode.persistentSession'
       );
       expect(warm.lockedByEnv).toBe(false);
+      expect(warm).not.toHaveProperty('envOverride');
     });
 
     it('locks it ON when the variable says true, whatever the setting says', async () => {
@@ -1208,7 +1216,11 @@ describe('GET /api/config', () => {
       const res = await request(server).get('/api/config').expect(200);
 
       const a2a = res.body.experiments.find((e: { key: string }) => e.key === 'a2a.enabled');
-      expect(a2a).toMatchObject({ enabled: true, lockedByEnv: true });
+      expect(a2a).toMatchObject({
+        enabled: true,
+        lockedByEnv: true,
+        envOverride: 'DORKOS_A2A_ENABLED',
+      });
     });
   });
 

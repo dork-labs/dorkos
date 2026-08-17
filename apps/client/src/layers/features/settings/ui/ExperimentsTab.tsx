@@ -39,33 +39,32 @@ export function buildNestedPatch(path: string, value: boolean): Record<string, u
 /**
  * What a row says about itself once the setting and reality are compared.
  *
- * A variable that has taken the decision away has to be said out loud, or the
- * disabled switch reads as a bug. Same sentence shape the background-systems
- * rows use, for the same reason.
+ * A variable that has taken the decision away has to be said out loud — BY NAME,
+ * so the one person who can unset it knows what to unset — or the disabled
+ * switch reads as a bug. Same sentence the background-systems rows use, for the
+ * same reason.
  *
  * @param description - The entry's own description.
  * @param costNote - The cost, when the entry states one.
- * @param lockedByEnv - Whether this machine's environment decides it.
+ * @param envOverride - The variable deciding it, when one has taken over.
  * @returns The description line for the row.
  */
 function rowDescription(
   description: string,
   costNote: string | undefined,
-  lockedByEnv: boolean
+  envOverride: string | undefined
 ): string {
   const parts = [description];
   if (costNote !== undefined) parts.push(costNote);
-  if (lockedByEnv) {
-    parts.push(
-      'Right now a setting in this machine’s environment decides it, so this switch cannot.'
-    );
+  if (envOverride !== undefined) {
+    parts.push(`Right now ${envOverride} on this machine decides it, so this switch cannot.`);
   }
   return parts.join(' ');
 }
 
 /** The Experiments tab: things you can try before they are finished. */
 export function ExperimentsTab() {
-  const { data: config } = useConfig();
+  const { data: config, isLoading } = useConfig();
   const updateConfig = useUpdateConfig();
 
   const experiments = config?.experiments ?? [];
@@ -73,11 +72,12 @@ export function ExperimentsTab() {
   return (
     <div className="space-y-6" data-testid="experiments-tab">
       <p className="text-muted-foreground text-xs">
-        Things we are still proving out. They work, but we have not lived with them long enough to
-        make them the default, so you get to decide.
+        Things we are still proving out. Not finished being proved, so you get to decide.
       </p>
 
-      {experiments.length === 0 ? (
+      {/* While the config is in flight, say nothing: the empty message makes a
+          claim ("nothing is waiting on you") that is false mid-fetch. */}
+      {isLoading ? null : experiments.length === 0 ? (
         <p className="text-muted-foreground text-sm" data-testid="experiments-empty">
           Nothing’s cooking right now. Experiments show up here while we prove them out.
         </p>
@@ -91,7 +91,7 @@ export function ExperimentsTab() {
                 description={rowDescription(
                   experiment.description,
                   experiment.costNote,
-                  experiment.lockedByEnv
+                  experiment.envOverride
                 )}
                 checked={experiment.enabled}
                 onCheckedChange={(value) =>

@@ -3107,6 +3107,10 @@ export const ExperimentStateSchema = z
       description:
         'True when an environment variable on this machine decides the experiment instead of the setting. The client shows the position and disables the switch',
     }),
+    envOverride: z.string().optional().openapi({
+      description:
+        'The variable doing the deciding, present only while `lockedByEnv` is true — so the disabled switch can name what to unset instead of leaving a dead end',
+    }),
   })
   .openapi('ExperimentState');
 
