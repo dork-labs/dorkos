@@ -4,8 +4,9 @@
  *
  * @module services/runtimes/claude-code/mcp-tools
  */
-import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
+import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import type { McpToolDeps } from './types.js';
+import { DORKOS_MCP_SERVER_NAME, toolExposure } from './tool-exposure.js';
 import { getCoreTools } from './core-tools.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
@@ -146,22 +147,55 @@ export function handRegisteredInSessionTools(
   const resolveDevtoolsSessionId =
     session || sessionId ? () => session?.sdkSessionId || sessionId || undefined : undefined;
 
-  return gateHandRegisteredMcpTools(
-    [
-      ...getCoreTools(deps),
-      ...getTasksTools(deps),
-      ...getRelayTools(deps, relayIdentity),
-      ...getAdapterTools(deps),
-      ...getBindingTools(deps),
-      ...getTraceTools(deps),
-      ...getMeshTools(deps),
-      ...getAgentTools(deps),
-      ...getUiTools(deps, session),
-      ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
-      ...getExtensionTools(deps),
-    ],
-    resolveContext
+  // Exposure is applied AFTER the gate, never before: the gate rebuilds each
+  // tool's advertised input schema (it adds `approvalToken` to destructive ones),
+  // so hinting the pre-gate definition would hint a schema the model never sees.
+  return withToolExposure(
+    gateHandRegisteredMcpTools(
+      [
+        ...getCoreTools(deps),
+        ...getTasksTools(deps),
+        ...getRelayTools(deps, relayIdentity),
+        ...getAdapterTools(deps),
+        ...getBindingTools(deps),
+        ...getTraceTools(deps),
+        ...getMeshTools(deps),
+        ...getAgentTools(deps),
+        ...getUiTools(deps, session),
+        ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
+        ...getExtensionTools(deps),
+      ],
+      resolveContext
+    )
   );
+}
+
+/**
+ * Attach each tool's loading policy and search hint, using the SDK's own factory.
+ *
+ * Rebuilt through `tool()` rather than by writing `_meta` here, because the meta
+ * keys (`anthropic/alwaysLoad`, `anthropic/searchHint`) are the SDK's private
+ * spelling of that contract — hand-writing them would pin this codebase to an
+ * internal string. The hint source is the tool's own description, so nothing has
+ * to be maintained per tool; see `tool-exposure.ts` for why only five load eagerly.
+ *
+ * @param tools - Gated tool definitions.
+ * @returns The same tools, carrying their exposure metadata.
+ */
+function withToolExposure(tools: SdkMcpTool[]): SdkMcpTool[] {
+  return tools.map((definition) => {
+    const rebuilt = tool(
+      definition.name,
+      definition.description,
+      definition.inputSchema,
+      definition.handler as Parameters<typeof tool>[3],
+      {
+        ...toolExposure(definition.name, definition.description),
+        ...(definition.annotations ? { annotations: definition.annotations } : {}),
+      }
+    );
+    return rebuilt as unknown as SdkMcpTool;
+  });
 }
 
 /**
@@ -241,7 +275,11 @@ export function createDorkOsToolServer(
   // stub, a hermetic test — capabilities keep the token/poll flow untouched.
   const hold = session && deps.approvals ? { session, approvals: deps.approvals } : undefined;
   const server = createSdkMcpServer({
-    name: 'dorkos',
+    // Not a label: Claude Code qualifies every tool on this server as
+    // `mcp__<name>__<tool>`, so this string is half of what the model must type
+    // to call anything here. `tool-names.ts` owns it and the prompt blocks render
+    // from the same constant (DOR-1292).
+    name: DORKOS_MCP_SERVER_NAME,
     version: '1.0.0',
     tools: [
       ...handRegisteredInSessionTools(deps, {

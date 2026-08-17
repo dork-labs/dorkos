@@ -1,4 +1,5 @@
 import type { OperatingSkill } from '../pack.js';
+import { TOOL_NAME_NOTE } from '../tool-name-note.js';
 
 /**
  * The umbrella skill: orients an agent to DorkOS as an operating surface, routes
@@ -24,6 +25,8 @@ export const operatingDorkos: OperatingSkill = {
     'and approvals, when to use the CLI versus in-session tools, and where live facts come from.',
   body: `# Operating DorkOS
 
+${TOOL_NAME_NOTE}
+
 You are running inside DorkOS: the control layer a person uses to run many AI
 agents. You can do what the person can do in the app: make agents, schedule work,
 install packages, read activity, change settings. Siblings: managing-agents,
@@ -31,17 +34,15 @@ scheduling-tasks, using-the-marketplace, reading-activity, answering-dorkos-ques
 
 ## Two ways to act, pick one
 
-1. **In-session MCP tools** (the \`dorkos\` tool server). Available in Claude Code
-   sessions. Structured results, no shell. Use these when they exist: \`create_agent\`,
+1. **In-session MCP tools** (the \`dorkos\` tool server, in Claude Code sessions).
+   Structured results, no shell. Prefer them when they exist: \`create_agent\`,
    \`update_agent\`, \`tasks_*\`, \`activity_list\`, \`agents_recent_activity\`,
    \`config_get\`/\`config_patch\`, \`check_update\`, \`mesh_*\`, \`relay_*\`, \`marketplace_*\`.
 
 2. **The \`dorkos\` CLI** (shell). Works from every runtime, including Codex and
-   OpenCode where MCP tools are not injected. This is the universal surface, and
-   most of its verbs take \`--json\` for machine-readable output (see below).
+   OpenCode where MCP tools are not injected. This is the universal surface.
 
-Do not mix channels for one operation: if an MCP tool exists for the job use it,
-otherwise shell out to the CLI.
+Do not mix channels for one operation: use the MCP tool where one exists, else the CLI.
 
 ## Discover, then act
 
@@ -49,8 +50,8 @@ Ask the running instance what it can do rather than guessing. \`dorkos capabilit
 prints id, tier, and title for every capability (\`--json\` pipes the raw catalog into
 jq). In-session, \`list_capabilities\` answers with less: one compact line each, one
 page at a time, so discovery cannot flood your context. Narrow with \`domain\` or
-\`query\`, ask \`detail:'full'\` for the JSON Schemas, page with \`cursor\`, and read the
-\`guidance\` line when a page says it left something out. Then run any entry by id:
+\`query\`, ask \`detail:'full'\` for JSON Schemas, page with \`cursor\`, and read the
+\`guidance\` line when a page left something out. Run any entry by id:
 
     dorkos call <capability-id> [--input '<json>'] [--approval <token>]
     dorkos call operator.activity_list --input '{"limit":5}'
@@ -132,10 +133,10 @@ The operator verbs hit the running server over its local HTTP API:
 - \`dorkos install <name>\` / \`dorkos uninstall <name>\` install/remove packages;
   \`uninstall\` is gated and answers with the approval payload (using-the-marketplace).
 
-\`capabilities\`, \`call\`, \`agent\`, \`task\`, \`activity\`, and \`version\` take \`--json\`.
-\`marketplace\`, \`install\`, and \`uninstall\` do NOT, and passing it to them is an
-error, not a no-op. Exit code is \`0\` on success, non-zero when no server is
-reachable, the request fails, or a call is waiting on an approval.
+\`capabilities\`, \`call\`, \`agent\`, \`task\`, \`activity\`, and \`version\` take \`--json\`;
+\`marketplace\`, \`install\`, and \`uninstall\` do NOT, and passing it is an error, not a
+no-op. Exit code is \`0\` on success, non-zero when no server is reachable, the
+request fails, or a call is waiting on an approval.
 
 ## Where live facts come from
 
@@ -155,12 +156,12 @@ with \`config_get\` first, then send a partial object under a \`patch\` key:
 - Tool: \`config_patch({ "patch": { "ui": { "theme": "dark" } } })\`
 - CLI: \`dorkos call operator.config_patch --input '{"patch":{"ui":{"theme":"dark"}}}'\`
 
-The \`patch\` wrapper is required. Deep-merge semantics: nested objects merge,
-arrays replace wholesale. It runs the same validation as the settings UI, so an
-unknown key or a bad value is rejected. Only change settings when the user asked.
+The \`patch\` wrapper is required. Deep-merge semantics: nested objects merge, arrays
+replace wholesale. It runs the same validation as the settings UI, so an unknown key
+or a bad value is rejected. Only change settings when the user asked.
 
-Status-line items are pinned, not toggled: \`ui.statusBar.pins\` is a list of item
-ids (\`cwd\`, \`git\`, \`runtime\`, \`model\`, \`context\`, \`usage\`, \`permission\`). Because
+Status-line items are pinned, not toggled: \`ui.statusBar.pins\` is a list of item ids
+(\`cwd\`, \`git\`, \`runtime\`, \`model\`, \`context\`, \`usage\`, \`permission\`), and because
 arrays replace, patching \`pins\` sets the whole list.
 
 ## Rules of engagement

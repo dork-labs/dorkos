@@ -70,17 +70,23 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
       server: { registerCapabilities: vi.fn() },
     },
   })),
+  // Mirrors the real `SdkMcpToolDefinition`: the field is `inputSchema`, and the
+  // fifth argument (annotations, alwaysLoad, searchHint) becomes `_meta`. An
+  // earlier version of this mock called it `schema`, which the in-session server's
+  // exposure pass then read as `undefined` and dropped (DOR-1292).
   tool: vi.fn(
     (
       name: string,
       desc: string,
-      schema: Record<string, unknown>,
-      handler: (...args: unknown[]) => unknown
+      inputSchema: Record<string, unknown>,
+      handler: (...args: unknown[]) => unknown,
+      extras?: Record<string, unknown>
     ) => ({
       name,
       description: desc,
-      schema,
+      inputSchema,
       handler,
+      ...(extras ? { _meta: extras } : {}),
     })
   ),
 }));
@@ -595,11 +601,11 @@ describe('MCP Tool Handlers', () => {
     /** The `status` field's Zod schema, as captured off the real (unmocked) tool() call. */
     function statusSchema(): { safeParse: (value: unknown) => { success: boolean } } {
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer & {
-        tools: { name: string; schema: Record<string, unknown> }[];
+        tools: { name: string; inputSchema: Record<string, unknown> }[];
       };
       const tool = server.tools.find((t) => t.name === 'relay_inbox');
       if (!tool) throw new Error("Tool 'relay_inbox' was not registered");
-      return tool.schema.status as { safeParse: (value: unknown) => { success: boolean } };
+      return tool.inputSchema.status as { safeParse: (value: unknown) => { success: boolean } };
     }
 
     it('accepts the HTTP inbox route vocabulary: pending, delivered, failed, all', () => {

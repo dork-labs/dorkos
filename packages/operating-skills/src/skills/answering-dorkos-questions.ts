@@ -1,4 +1,5 @@
 import type { OperatingSkill } from '../pack.js';
+import { TOOL_NAME_NOTE } from '../tool-name-note.js';
 
 /**
  * Teaches an agent to answer questions ABOUT DorkOS out of the published
@@ -45,6 +46,8 @@ export const answeringDorkosQuestions: OperatingSkill = {
     'agents exist, what ran last night, whether a task succeeded): those are tool reads, see ' +
     'operating-dorkos and reading-activity.',
   body: `# Answering questions about DorkOS
+
+${TOOL_NAME_NOTE}
 
 When someone asks how DorkOS works, look the answer up. Do not answer from
 memory: DorkOS ships most weeks, so what you remember describes a version nobody

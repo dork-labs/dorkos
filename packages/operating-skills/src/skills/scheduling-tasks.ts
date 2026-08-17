@@ -1,4 +1,5 @@
 import type { OperatingSkill } from '../pack.js';
+import { TOOL_NAME_NOTE } from '../tool-name-note.js';
 
 /** Teaches an agent to schedule tasks and read their run history. */
 export const schedulingTasks: OperatingSkill = {
@@ -8,6 +9,8 @@ export const schedulingTasks: OperatingSkill = {
     'or checking whether past task runs succeeded. Covers cron schedules, the task approval ' +
     'gate, and reading run history.',
   body: `# Scheduling tasks
+
+${TOOL_NAME_NOTE}
 
 A task (also called a schedule) runs an agent on a cron timer, or on demand.
 DorkOS runs tasks in the background; you set them up and read their history.

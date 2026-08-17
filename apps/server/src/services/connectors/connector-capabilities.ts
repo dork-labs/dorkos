@@ -152,7 +152,7 @@ export const connectorDomain: CapabilityDomain = {
       description:
         'Recommend how to connect a named service, best route first: a purpose-built relay ' +
         'adapter outranks a gateway connector, which outranks a raw MCP server. Call this before ' +
-        'connector_start_connect when the user asks to connect something.',
+        'the start-connecting tool when the user asks to connect something.',
       tier: 'observe',
       input: z.object({
         service: z.string().min(1).describe("Service slug, e.g. 'gmail' or 'slack'."),
@@ -176,8 +176,8 @@ export const connectorDomain: CapabilityDomain = {
       title: 'List connected accounts',
       description:
         'List the accounts the user has connected (optionally filtered to one service), each ' +
-        'with its status and its plain-language custody line. Use the account id with ' +
-        'connector_attach_account to expose its tools to a session.',
+        'with its status and its plain-language custody line. Pass the account id to the ' +
+        'attach-account tool to expose its tools to a session.',
       tier: 'observe',
       input: z.object({
         toolkit: z.string().min(1).optional().describe('Filter to one service slug.'),
@@ -209,7 +209,8 @@ export const connectorDomain: CapabilityDomain = {
       description:
         'Begin connecting a service account. Returns markdown with the sign-in link and the ' +
         'custody disclosure — show BOTH to the user verbatim, then wait for them to say they ' +
-        'have signed in before calling connector_poll_connect with the returned flowId. ' +
+        'have signed in before checking the flow with the poll-connect tool, passing the ' +
+        'returned flowId. ' +
         'Pass a label (e.g. "work") to tell two accounts of one service apart.',
       tier: 'act',
       input: z.object({
@@ -293,7 +294,7 @@ export const connectorDomain: CapabilityDomain = {
         'says they have signed in.',
       tier: 'act',
       input: z.object({
-        flowId: z.string().min(1).describe('The flow id from connector_start_connect.'),
+        flowId: z.string().min(1).describe('The flow id the start-connecting tool returned.'),
       }),
       output: z.unknown(),
       surfaces: {

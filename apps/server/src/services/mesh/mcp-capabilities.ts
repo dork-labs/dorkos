@@ -118,7 +118,8 @@ export const mcpDomain: CapabilityDomain = {
         'remote endpoint (http/sse) that will run in the agent’s environment, so a person ' +
         'approves it first at a card showing the exact command/args/url. Rejects the reserved ' +
         'name "dorkos" and any name the agent already uses. If the added entry comes back with ' +
-        'connection.authKind "oauth2", the server needs a sign-in: call mcp_signin for it ' +
+        'connection.authKind "oauth2", the server needs a sign-in: call the MCP sign-in tool ' +
+        'for it ' +
         'immediately, in the same turn, rather than asking permission first — the person ' +
         'already approved this endpoint at the card above, and nothing leaves this machine ' +
         'until they open the sign-in link. Its tools are live on the next turn once they ' +

@@ -1,4 +1,5 @@
 import type { OperatingSkill } from '../pack.js';
+import { TOOL_NAME_NOTE } from '../tool-name-note.js';
 
 /** Teaches an agent to read the activity feed and recent-agent activity. */
 export const readingActivity: OperatingSkill = {
@@ -8,6 +9,8 @@ export const readingActivity: OperatingSkill = {
     'were active lately, or for a summary of recent events. Covers reading the activity feed with ' +
     'filters, the recent-agent activity map, and how your own actions appear in the feed.',
   body: `# Reading activity
+
+${TOOL_NAME_NOTE}
 
 DorkOS records events (agent lifecycle, tasks, relay messages, config changes,
 system events) in an activity feed. Read it to answer "what happened?" and never

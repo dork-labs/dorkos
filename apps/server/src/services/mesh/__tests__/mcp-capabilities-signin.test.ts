@@ -240,7 +240,11 @@ describe('mcp.signin / mcp.poll_signin', () => {
     const description = capability('mcp.signin').description;
     expect(description).toContain('automatically');
     expect(description).toContain('ONE short line');
-    expect(description).toContain('do not call mcp_poll_signin');
+    // Phrased as the ACTION, not the tool's bare name (DOR-1292): this same
+    // string is served to the external `/mcp` server, where `mcp_poll_signin`
+    // carries whatever prefix the caller's harness config gave DorkOS.
+    expect(description).toContain('do not poll for the result');
+    expect(description).not.toContain('mcp_poll_signin');
     // …but the surfaces with no card must still be told to show both, or an
     // external `/mcp` caller gets a sign-in with no link in it.
     expect(description).toContain('no card');

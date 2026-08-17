@@ -11,6 +11,7 @@ import { createInSessionContextResolver } from '../../../core/agent-identity/ind
 import { logRefusal } from '../../../observability/refusals.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
+import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
 import {
   approvalTimeoutDenial,
   questionTimeoutDenial,
@@ -67,10 +68,20 @@ const READ_ONLY_TOOLS = new Set([
  * future `act` tool to a no-prompt path as a side effect of picking a tier, and
  * that is fail-open on the one axis where it costs something real.
  *
- * So it stays hand-written, and the relationship is pinned in the safe direction
- * instead: `core/__tests__/mcp-tool-gate.test.ts` asserts every name here is a real
- * tool and that none is `destructive`. That catches a rename going stale and a
+ * So the MEMBERSHIP stays hand-written, and the relationship is pinned in the safe
+ * direction instead: `core/__tests__/mcp-tool-gate.test.ts` asserts every name here is
+ * a real tool and that none is `destructive`. That catches a rename going stale and a
  * dangerous addition, without letting the tier table grant anything.
+ *
+ * The QUALIFIED SPELLING is not hand-written, though, and that distinction matters
+ * (DOR-1292). These names are matched against what the SDK sends, which is
+ * `mcp__<server>__<tool>` — so they used to be typed out with the prefix baked in,
+ * in three separate places. Renaming the MCP server would then have silently
+ * emptied this set: not a crash, just every DorkOS tool raising an approval card
+ * from that moment on, the room verbs included, whose entire purpose is to avoid a
+ * card nobody is positioned to answer. Deriving the prefix from
+ * {@link inSessionToolName} makes that impossible, and `tool-exposure.test.ts` pins
+ * that every entry here starts with it.
  *
  * ## Membership is necessary, not sufficient (DOR-625)
  *
@@ -82,33 +93,35 @@ const READ_ONLY_TOOLS = new Set([
  * per-argument gated. Read the two together — this set alone no longer answers
  * the question.
  */
-export const DORKOS_AGENT_TOOLS = new Set([
-  // The `rooms` domain, plus the one relay verb that reaches a PERSON. Every one
-  // of these is auto-allowed only for a session that HAS an agent identity — see
-  // {@link IDENTITY_SCOPED_TOOLS}, which is where the whole argument for them
-  // lives.
-  'mcp__dorkos__post_to_room',
-  'mcp__dorkos__react_to_room_entry',
-  'mcp__dorkos__read_room_history',
-  'mcp__dorkos__search_room_history',
-  'mcp__dorkos__relay_notify_user',
-  'mcp__dorkos__relay_send',
-  'mcp__dorkos__relay_inbox',
-  'mcp__dorkos__relay_list_endpoints',
-  'mcp__dorkos__relay_register_endpoint',
-  'mcp__dorkos__mesh_list',
-  'mcp__dorkos__mesh_inspect',
-  'mcp__dorkos__mesh_discover',
-  'mcp__dorkos__mesh_register',
-  'mcp__dorkos__mesh_status',
-  'mcp__dorkos__mesh_query_topology',
-  'mcp__dorkos__get_agent',
-  // UI control tools. `get_ui_state` only reads. `control_ui` is the multiplexer
-  // — most of its actions only move pixels, but not all of them, so its calls go
-  // through `isAutoAllowedCall` below rather than riding this membership alone.
-  'mcp__dorkos__control_ui',
-  'mcp__dorkos__get_ui_state',
-]);
+export const DORKOS_AGENT_TOOLS = new Set(
+  [
+    // The `rooms` domain, plus the one relay verb that reaches a PERSON. Every one
+    // of these is auto-allowed only for a session that HAS an agent identity — see
+    // {@link IDENTITY_SCOPED_TOOLS}, which is where the whole argument for them
+    // lives.
+    'post_to_room',
+    'react_to_room_entry',
+    'read_room_history',
+    'search_room_history',
+    'relay_notify_user',
+    'relay_send',
+    'relay_inbox',
+    'relay_list_endpoints',
+    'relay_register_endpoint',
+    'mesh_list',
+    'mesh_inspect',
+    'mesh_discover',
+    'mesh_register',
+    'mesh_status',
+    'mesh_query_topology',
+    'get_agent',
+    // UI control tools. `get_ui_state` only reads. `control_ui` is the multiplexer
+    // — most of its actions only move pixels, but not all of them, so its calls go
+    // through `isAutoAllowedCall` below rather than riding this membership alone.
+    'control_ui',
+    'get_ui_state',
+  ].map(inSessionToolName)
+);
 
 /**
  * The members of {@link DORKOS_AGENT_TOOLS} whose auto-allow holds only while
@@ -234,16 +247,18 @@ export const DORKOS_AGENT_TOOLS = new Set([
  * `ReactionBudget` for a reaction, the hourly `NotifyBudget` for a note. This
  * list was the one place not told.
  */
-export const IDENTITY_SCOPED_TOOLS = new Set([
-  'mcp__dorkos__post_to_room',
-  'mcp__dorkos__react_to_room_entry',
-  'mcp__dorkos__read_room_history',
-  'mcp__dorkos__search_room_history',
-  'mcp__dorkos__relay_notify_user',
-]);
+export const IDENTITY_SCOPED_TOOLS = new Set(
+  [
+    'post_to_room',
+    'react_to_room_entry',
+    'read_room_history',
+    'search_room_history',
+    'relay_notify_user',
+  ].map(inSessionToolName)
+);
 
 /** The multiplexer on {@link DORKOS_AGENT_TOOLS}: one name, 22 different effects. */
-const CONTROL_UI_TOOL = 'mcp__dorkos__control_ui';
+const CONTROL_UI_TOOL = inSessionToolName('control_ui');
 
 /**
  * Whether one CALL to a safe-listed tool may skip the approval card, given its

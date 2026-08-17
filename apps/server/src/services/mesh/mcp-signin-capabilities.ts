@@ -53,7 +53,7 @@ export const mcpSigninCapabilities: CapabilityDefinition[] = [
       'Begin signing in to an OAuth-protected managed server. In a DorkOS conversation the ' +
       'sign-in card is shown to the user automatically — say ONE short line naming what you ' +
       'are connecting, then stop. Do not repeat the link or the disclosure, do not ask the ' +
-      'user to tell you when they are done, and do not call mcp_poll_signin: you are brought ' +
+      'user to tell you when they are done, and do not poll for the result: you are brought ' +
       'back automatically once the sign-in lands, with the server named and its tools ready. ' +
       'On surfaces with no card the result’s message field carries the link and the custody ' +
       'disclosure instead — show BOTH verbatim there. DorkOS obtains and refreshes the token ' +
@@ -67,7 +67,9 @@ export const mcpSigninCapabilities: CapabilityDefinition[] = [
     tier: 'act',
     input: AgentServerInput,
     output: z.object({
-      flowId: z.string().describe('The sign-in flow id to pass to mcp_poll_signin.'),
+      flowId: z
+        .string()
+        .describe('The sign-in flow id, for the poll-sign-in tool if a surface needs it.'),
       authorizeUrl: z
         .string()
         .optional()

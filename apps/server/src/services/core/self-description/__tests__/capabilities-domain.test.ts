@@ -308,8 +308,15 @@ describe('list_capabilities surface', () => {
         )
         .map(([name]) => name);
 
-      expect(destructiveHandRegistered.length).toBeGreaterThan(0);
-      for (const tool of destructiveHandRegistered) expect(text).toContain(tool);
+      // The sentence names these by ACTION, not by tool name (DOR-1292): this
+      // description is served verbatim to the external `/mcp` server too, where a
+      // bare `tasks_delete` is not what the caller's harness exposes. The
+      // "stays true" guarantee the derivation exists for is kept by pinning the
+      // SET — a third destructive hand-registered tool fails here and forces
+      // whoever added it to update the sentence.
+      expect(destructiveHandRegistered.sort()).toEqual(['mesh_unregister', 'tasks_delete']);
+      expect(text).toContain('deleting a schedule and unregistering an agent');
+      for (const tool of destructiveHandRegistered) expect(text).not.toContain(tool);
     });
 
     it('is written without em-dashes (repo-wide ban on model-facing prose)', () => {

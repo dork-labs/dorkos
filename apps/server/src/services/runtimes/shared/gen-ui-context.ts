@@ -45,7 +45,7 @@ A <node> is { "type": <type>, ...props }. Catalog:
   action: button { label, variant?, action }, form { children: node[], submit: { label, action } },
           input { name, label?, placeholder?, kind? }, select { name, label?, options: [{ label, value }] }
 
-Actions are one of: { kind: "ui", command: <control_ui command> } (dispatched locally),
+Actions are one of: { kind: "ui", command: <a DorkOS UI command object> } (dispatched locally),
 { kind: "url", href: "https://…" }, or { kind: "agent", id, label?, payload? } (sent back to you).
 { "kind": "ui", "command": { "action": "celebrate", "kind"?: "fireworks"|"cannons"|"emoji"|"rain"|"stars", "emoji"?: "🏆" } } throws confetti (default burst; emoji kind throws the glyph).
 
