@@ -194,7 +194,13 @@ room it is a member of, and should spend one where a whole message would be
 noise: ✅ "seen", 👍 "agreed", 👀 "looking". This is the one emoji triple named
 across the product — the `react_to_room_entry` tool description and the
 claude-code room-tools context (`ROOM_TOOLS_CONTEXT`) both use it verbatim, so an
-agent reading either sees the same three choices. It is the cheapest thing an agent can say, and
+agent reading either sees the same three choices. Knowing the tool exists is not
+the same as being able to point it, and for a while it was all an agent had: the
+verb takes a room id and a message id, neither was ever rendered, and the first
+live measurement of this rule caught an agent told "no reply needed, just ack
+this" posting the word instead. Both ids now ride the per-turn room context — the
+room's own, the one on every message shown, and the one for the message being
+answered (DOR-1263). It is the cheapest thing an agent can say, and
 the point of allowing it is the message it replaces — an agent that has
 understood you and has nothing to add used to post filler, because filler was the
 only acknowledgment it had. The bound is a mechanism, not this rule: **20

@@ -10,6 +10,7 @@
  *
  * The one substitution is the runner, because the alternative is a model call.
  */
+import path from 'path';
 import { describe, it, expect, vi } from 'vitest';
 import { eq, rooms, type Db } from '@dorkos/db';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
@@ -211,6 +212,29 @@ describe('the room context a trigger derives', () => {
       await say('is the build green?');
       expect(JSON.stringify(contextFor(ana))).not.toContain(ana);
       expect(JSON.stringify(contextFor(ana))).not.toContain(human);
+    });
+
+    it('carries the id of every message, and of the one being answered (DOR-1263)', async () => {
+      // The opposite call from the assertion above, and the difference is what
+      // each id BUYS. An author is reached by handle, so their id is opaque
+      // weight; a message has no handle, and every verb that acts on one — a
+      // reaction, a threaded reply, a history read — takes exactly this string.
+      // Without it an agent asked to acknowledge a message has to guess, and a
+      // live run measured what it guesses: the channel's name.
+      open({ responseMode: 'mention-only' });
+      const earlier = service.post(room.id, { authorId: human, text: 'the deploy is stuck' });
+      await service.triggersIdle();
+      service.post(room.id, { authorId: human, text: '@ana can you look?' });
+      await service.triggersIdle();
+
+      const context = contextFor(ana);
+      // The unread one, by the id the store actually gave it.
+      expect(context.pending.map((entry) => entry.id)).toEqual([earlier.id]);
+      // And the message the turn is answering, which has no line of its own.
+      const trigger = service
+        .readHistory(room.id, human, { limit: 1 })
+        .find((entry) => entry.body.text === '@ana can you look?');
+      expect(context.triggerEntryId).toBe(trigger?.id);
     });
   });
 
@@ -950,7 +974,7 @@ describe('the room context a trigger derives', () => {
       return turns[turns.length - 1].attachmentProjection;
     }
 
-    it('names every file on an entry, in upload order, as a relative path', async () => {
+    it('names every file on an entry, in upload order, by an absolute path', async () => {
       // `mention-only` so Ana is not woken by the message carrying the files:
       // her cursor stays put, and that message is genuinely unread when the
       // `@ana` below finally triggers her (main's ambient window, RP3).
@@ -967,12 +991,20 @@ describe('the room context a trigger derives', () => {
       // the triggering entry — `pending` is what this test is about.
       await say('@ana any idea?');
 
+      // Absolute, and rooted at the agent's OWN working directory (DOR-1266).
+      // A relative path here is only openable by a reader who knows what it is
+      // relative to, and the live run that produced this ticket measured the
+      // model guessing wrong: it resolved the same string against the DorkOS
+      // home and was told the file does not exist.
       const carried = contextFor(ana).pending.find((entry) => entry.text === 'both of these');
       expect(carried?.attachments).toEqual([
-        { name: 'crash.log', path: `.dork/.temp/room-attachments/${posted.id}/${first}-crash.log` },
+        {
+          name: 'crash.log',
+          path: `/agents/ana/.dork/.temp/room-attachments/${posted.id}/${first}-crash.log`,
+        },
         {
           name: 'trace.txt',
-          path: `.dork/.temp/room-attachments/${posted.id}/${second}-trace.txt`,
+          path: `/agents/ana/.dork/.temp/room-attachments/${posted.id}/${second}-trace.txt`,
         },
       ]);
     });
@@ -1048,13 +1080,19 @@ describe('the room context a trigger derives', () => {
       expect(window.some((entry) => entry.text === 'the old one')).toBe(false);
       expect(window.some((entry) => entry.text === 'the new one')).toBe(true);
 
-      // Told about: only the fresh one.
+      // Told about: only the fresh one, by a path rooted at the agent's own tree.
       const toldPaths = window.flatMap((entry) => entry.attachments.map((file) => file.path));
       expect(toldPaths).toEqual([
-        `.dork/.temp/room-attachments/${freshEntry.id}/${fresh}-recent.log`,
+        `/agents/ana/.dork/.temp/room-attachments/${freshEntry.id}/${fresh}-recent.log`,
       ]);
       // Planned: exactly the same one, and nothing for the entry that aged out.
-      expect(projectionFor(ana).map((file) => file.relativePath)).toEqual(toldPaths);
+      // The plan stays RELATIVE — it is a plan for a tree the projector joins
+      // onto `agentPath` — so the two are compared through that same join
+      // rather than as literals, which is the identity that actually has to
+      // hold (DOR-1266).
+      expect(projectionFor(ana).map((file) => path.join('/agents/ana', file.relativePath))).toEqual(
+        toldPaths
+      );
       expect(projectionFor(ana).some((file) => file.entryId === staleEntry.id)).toBe(false);
     });
   });

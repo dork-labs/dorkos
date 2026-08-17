@@ -500,6 +500,14 @@ different answer for codex and opencode.
 So the file is brought to the agent instead, which is what chat's shipped shape already does — files
 live inside the working directory, and the agent is told a relative path (ADR-0100).
 
+> **Superseded in one detail — 2026-08-16 (DOR-1266).** The file is still brought to the agent and
+> still lands inside its working directory; what the agent is TOLD is now that same location spelled
+> **cwd-absolute** (`agentPath` + the relative path below) rather than relative. A live eval measured
+> the relative form failing: with no base stated, the agent resolved it against the DorkOS home and
+> got "File does not exist". Nothing about the projection, the shared helper, or the
+> outside-the-cwd worry changes — see the amendment on ADR `260807-233816`. Every "relative path"
+> below describes the PROJECTION PLAN, which is still relative, and no longer the rendered string.
+
 Before a triggered turn starts, `room-turn-runner` projects every attachment that turn's context
 mentions into that agent's tree:
 
@@ -737,6 +745,12 @@ until phase 4.
    is a projection into the agent's own working directory rather than an absolute path — an approval
    prompt on a read outside the cwd _is_ an opt-in step, so absolute paths would have made the locked
    answer false in practice.
+   **Amended 2026-08-16 (DOR-1266):** the phrase "rather than an absolute path" conflated two
+   different things, and only one of them was the point. What must not happen is a read OUTSIDE the
+   working directory, because that is what prompts. An absolute path INSIDE it prompts for nothing,
+   and is what now renders — the projection is unchanged, and the locked answer ("automatically, no
+   opt-in step") is what the change restores: with a bare relative path the agent could not open the
+   file at all, which is a worse failure than an approval prompt.
 
 2. ~~**Can a person post an attachment with no words?**~~ **(RESOLVED — derived from the shipped chat
    behavior.)** **Answer:** no. `text` stays `z.string().min(1)` on both write requests, and the
@@ -783,7 +797,8 @@ No open questions remain for spec review.
 - **Draft, extracted from this spec:** `260807-233815` — room attachments are room-scoped,
   upload-then-reference, stored under `dorkHome` behind a store seam.
 - **Draft, extracted from this spec:** `260807-233816` — room attachments reach agents as files
-  projected into the agent's own working directory, never as an absolute path.
+  projected into the agent's own working directory. (Amended 2026-08-16, DOR-1266: the rendered path
+  is absolute INSIDE that directory; what is still refused is a path outside it.)
 - **ADR-0100** (file path injection for agent uploads) — chat's fold-into-prompt path. Unchanged, and
   the source of the negative this spec is built around (_"if the agent's cwd differs from the upload
   cwd, relative paths may not resolve correctly"_).

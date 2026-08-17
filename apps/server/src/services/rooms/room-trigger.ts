@@ -1261,6 +1261,10 @@ export class RoomTriggerDispatcher {
       const turnContext = buildRoomContext(this.deps, {
         room,
         agentAuthorId: target.authorId,
+        // The tree the turn below runs in, so a file the context names is named
+        // by a path that opens from where the agent actually stands (DOR-1266).
+        // The same value reaches the runner as `agentPath` a few lines down.
+        agentPath: target.agentPath,
         entry,
         working: this.workingIn(room.id),
         // The cursor as it stood before the claim moved it. The stored row has
@@ -1817,6 +1821,7 @@ export class RoomTriggerDispatcher {
       const turnContext = buildRoomContext(this.deps, {
         room,
         agentAuthorId: authorId,
+        agentPath: input.agentPath,
         entry,
         working: this.workingIn(room.id),
         // NO AMBIENT WINDOW, and no cursor moved. A trigger replays what the
@@ -1831,6 +1836,11 @@ export class RoomTriggerDispatcher {
         // says the same thing to the guard.
         repliesLeftInThisChain: 0,
         engaged: null,
+        // The same word the claim above uses. Nothing asked for this turn, so
+        // the block names no "message you are answering": `entry` here is the
+        // greeter's own status post, and pointing the agent at it would point it
+        // at a line written about itself (DOR-1263).
+        aside: true,
       });
       const result = await this.deps.runner.run({
         room,
