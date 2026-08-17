@@ -38,10 +38,6 @@ import { agentLookupFor, createRoomHarness, scriptedRunner } from './room-test-h
 /** The window `buildRoomContext` renders; more entries than this and the oldest fall out. */
 const PENDING_MAX_ENTRIES = 30;
 
-const agents = agentLookupFor({
-  '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always' },
-});
-
 describe('every path the agent is told about', () => {
   let service: RoomService;
   let authors: AuthorRegistry;
@@ -61,9 +57,18 @@ describe('every path the agent is told about', () => {
     uploaded = 0;
 
     runner = scriptedRunner(() => null);
+    // **The agent's directory IS the temp tree the projector writes into**, and
+    // since DOR-1266 that identity is what the test turns on: the rendered path
+    // is absolute, anchored at whatever `agentPath` the dispatcher passed, so a
+    // fixture that named the agent `/agents/ana` while projecting somewhere else
+    // would render a path that could never open — and would prove nothing about
+    // production, where the two are the same directory by construction.
+    const agents = agentLookupFor({
+      [agentPath]: { name: 'ana', displayName: 'Ana', responseMode: 'always' },
+    });
     ({ service, authors, attachments, human } = createRoomHarness({ agents, runner }));
     room = service.createRoom(
-      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [agentPath] },
       human
     );
     // `mention-only` so the messages carrying files do NOT wake Ana: her read
@@ -71,7 +76,7 @@ describe('every path the agent is told about', () => {
     // therefore still in the context window — when the final `@ana` triggers
     // her. Under `always` each post advances the cursor past itself, and the
     // window this test is about would be empty (main's ambient window, RP3).
-    const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+    const ana = authors.resolveAgent(agentPath, 'Ana').id;
     service.updateMembership(room.id, human, ana, 'mention-only');
   });
 
@@ -166,10 +171,13 @@ describe('every path the agent is told about', () => {
     ]);
 
     // 2. THE CLAIM: every path in the prompt opens, read back out of the
-    //    rendered string rather than out of the structure that produced it.
+    //    rendered string rather than out of the structure that produced it —
+    //    and opened AS WRITTEN, with nothing joined onto it here, because
+    //    "as written" is exactly what the model gets to do with it (DOR-1266).
     for (const told of toldPaths(block)) {
+      expect(path.isAbsolute(told), `the agent was told a relative path: ${told}`).toBe(true);
       await expect(
-        access(path.join(agentPath, told)),
+        access(told),
         `the agent was told about ${told}, which is not there`
       ).resolves.toBeUndefined();
     }
@@ -220,9 +228,9 @@ describe('every path the agent is told about', () => {
     // And the trimmed name still ends in the suffix it was uploaded with, so the
     // file still reads as what it is.
     expect(told[0].endsWith('.log')).toBe(true);
-    // THE claim: the path the model was told still opens.
+    // THE claim: the path the model was told still opens, as written.
     await expect(
-      access(path.join(agentPath, told[0])),
+      access(told[0]),
       `the agent was told about ${told[0]}, which is not there`
     ).resolves.toBeUndefined();
   });
@@ -257,12 +265,15 @@ describe('every path the agent is told about', () => {
 
     // But its file is named, in the labels region beside the rest of what DorkOS
     // says about the message being answered.
-    const told = `.dork/.temp/room-attachments/${posted.id}/${file}-crash.log`;
+    const told = path.join(
+      agentPath,
+      `.dork/.temp/room-attachments/${posted.id}/${file}-crash.log`
+    );
     expect(block).toContain(`A file is attached to the message you are answering: ${told}`);
 
-    // And the claim: the path the model was told OPENS.
+    // And the claim: the path the model was told OPENS, as written.
     await expect(
-      access(path.join(agentPath, told)),
+      access(told),
       `the agent was told about ${told}, which is not there`
     ).resolves.toBeUndefined();
   });

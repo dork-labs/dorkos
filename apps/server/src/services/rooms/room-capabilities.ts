@@ -261,7 +261,12 @@ function answering<T>(body: () => T): T {
 
 /** Shared by both reads: which room, and optionally which thread inside it. */
 const historyScope = {
-  roomId: z.string().describe('The room to read. You must be a member of it.'),
+  roomId: z
+    .string()
+    .describe(
+      'The room to read, by its id — not its #name. Inside a room turn your room context ' +
+        'names it; outside one, list your rooms to find it. You must be a member of it.'
+    ),
   threadRootEntryId: z
     .string()
     .optional()
@@ -290,7 +295,12 @@ export const roomsDomain: CapabilityDomain = {
         'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary.',
       tier: 'act',
       input: z.object({
-        roomId: z.string().describe('The channel to post in. You must be a member of it.'),
+        roomId: z
+          .string()
+          .describe(
+            'The channel to post in, by its id — not its #name. Inside a room turn your room ' +
+              'context names it. You must be a member of it.'
+          ),
         text: z.string().min(1).max(8000).describe('What to say. Mention someone with @handle.'),
         replyTo: z
           .string()
@@ -339,8 +349,14 @@ export const roomsDomain: CapabilityDomain = {
         'otherwise be noise — and when something needs saying, say it.',
       tier: 'act',
       input: z.object({
-        roomId: z.string().describe('The room the message is in.'),
-        entryId: z.string().describe('The message to react to.'),
+        roomId: z.string().describe('The room the message is in, by its id — not its #name.'),
+        entryId: z
+          .string()
+          .describe(
+            'The message to react to, by its id. Inside a room turn your room context carries ' +
+              'one for every message it shows and names the message you are answering; outside ' +
+              'one, read the room history and use the entryId it returns.'
+          ),
         emoji: z.string().min(1).max(16).describe('One emoji, e.g. 👍.'),
         on: z
           .boolean()

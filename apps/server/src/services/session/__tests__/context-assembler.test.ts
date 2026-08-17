@@ -46,6 +46,7 @@ const SAMPLE_ROOM_CONTEXT: RoomContextData = {
   pendingTruncated: false,
   ownRecent: [],
   acknowledgments: [],
+  triggerEntryId: 'entry-trigger',
   triggerAttachments: [],
   addressing: {
     responseMode: 'always',

@@ -33,6 +33,7 @@
  *
  * @module server/services/rooms/room-context
  */
+import path from 'path';
 import type {
   RoomContextAcknowledgment,
   RoomContextAuthor,
@@ -156,6 +157,22 @@ export interface RoomContextInput {
   room: Room;
   /** The agent whose turn this is. */
   agentAuthorId: string;
+  /**
+   * That agent's working directory — the `cwd` its turn runs in
+   * (`room-turn-runner.ts`) and the root every attachment is projected under.
+   *
+   * Passed in rather than derived, exactly as {@link RoomContextInput.engaged}
+   * and {@link RoomContextInput.lastReadSeq} are: it is a fact about the
+   * DISPATCH, and this module reads no registry that would tell it which tree an
+   * agent runs in.
+   *
+   * It is here so an attachment can be named by a path the agent can open
+   * WITHOUT knowing what it is relative to (DOR-1266). The relative path is
+   * still what the projector plans against — see
+   * {@link ProjectableAttachment.relativePath} — so the two halves of "the model
+   * is only told about files it can open" stay one expression.
+   */
+  agentPath: string;
   /** The entry that triggered it. Never appears in `pending`: it IS the message. */
   entry: RoomEntry;
   /**
@@ -203,6 +220,17 @@ export interface RoomContextInput {
    */
   arrivedDuringPrevTurn?: ReadonlySet<string>;
   /**
+   * True when no message in the room asked for this turn — a welcome-back offer
+   * (`RoomTriggerDispatcher.askAside`), which is anchored to the greeter's own
+   * status post rather than triggered by it.
+   *
+   * The same word the claim uses for the same turn (`ActiveClaim.aside`), so the
+   * two cannot describe one turn differently. It decides one thing here: whether
+   * there is a "message you are answering" to name at all. Naming the anchor
+   * would tell an agent to act on a line DorkOS wrote ABOUT it (DOR-1263).
+   */
+  aside?: boolean;
+  /**
    * The ids of the messages the collector gathered BEHIND the trigger — the rest
    * of what this one turn is answering (room-participation spec §10.4).
    *
@@ -224,9 +252,9 @@ export interface RoomContextInput {
  * One file the agent is about to be TOLD about, and therefore one the projector
  * is obliged to put on disk before the turn starts.
  *
- * It carries the ids and the extension the built context deliberately does not:
- * a `RoomContextEntry` names a file by relative path and human name only,
- * because that is all a model needs.
+ * It carries the attachment id and the extension the built context deliberately
+ * does not: a `RoomContextEntry` names a file by absolute path and human name
+ * only, because that is all a model needs to open one.
  */
 export interface ProjectableAttachment {
   /** The entry the file was posted with — what scopes its projected directory. */
@@ -435,7 +463,15 @@ export function buildRoomContext(
         name: file.name,
         relativePath,
       });
-      return { name: file.name, path: relativePath };
+      // **Told absolute, planned relative, joined the same way the projector
+      // joins it** (DOR-1266). The plan is relative because it is a plan for a
+      // tree — `projectRoomAttachments` puts it under this same `agentPath` with
+      // this same `path.join` — but a path in a model's context has no base
+      // unless one is stated, and a live run measured the cost of leaving it
+      // implicit: the agent resolved `.dork/.temp/room-attachments/…` against
+      // the DorkOS home instead of its own cwd and was told the file does not
+      // exist. Nothing new is disclosed; an agent already knows its cwd.
+      return { name: file.name, path: path.join(input.agentPath, relativePath) };
     });
 
   // Reactions on those same posts, in ONE query. Scoped to `ownRecent` because
@@ -486,6 +522,10 @@ export function buildRoomContext(
   const flatten = (entry: RoomEntry): RoomContextEntry => {
     const author = nameOf(entry.authorId);
     return {
+      // The one id that travels. A member is reached by handle, so no author id
+      // is carried; a message has no handle, and every verb that acts on one
+      // takes exactly this string (DOR-1263).
+      id: entry.id,
       authorHandle: author.handle,
       authorDisplayName: author.displayName,
       authorIsPerson: people.has(entry.authorId),
@@ -593,6 +633,14 @@ export function buildRoomContext(
     ...(channelTail && channelTail.omitted > 0 ? { channelTailOmitted: channelTail.omitted } : {}),
     ownRecent: ownRecent.map(flatten),
     acknowledgments: acknowledgments(),
+    // The id of the message being answered. It has no line of its own in the
+    // rendered block — it IS the turn's content — so this is the only place an
+    // agent asked to act on "this message" can learn what to name (DOR-1263).
+    //
+    // `null` for an aside, where the entry is the greeter's own status post and
+    // nobody asked anything: an anchor is not a question, and naming it as one
+    // would point the agent at a line written about it.
+    triggerEntryId: input.aside ? null : input.entry.id,
     // The files on the message being answered. Resolved through the SAME helper
     // the windowed entries use, so the trigger's paths and theirs cannot drift
     // — and so its files are in the projection plan like everything else the
