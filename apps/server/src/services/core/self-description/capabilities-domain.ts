@@ -135,7 +135,8 @@ export const capabilitiesDomain: CapabilityDomain = {
         ' tools are registered directly on the MCP server, so they appear in your own tool list ' +
         'rather than in this catalog and cannot be reached by `dorkos call`. They carry a ' +
         'permission tier all the same and answer to the same approval gate, so a tool being ' +
-        'absent here is not a tool that runs unasked: `tasks_delete` and `mesh_unregister` are ' +
+        'absent here is not a tool that runs unasked: deleting a schedule and unregistering an ' +
+        'agent are ' +
         'destructive and stop for a person. A destructive tool advertises an `approvalToken` ' +
         'argument, which is how you can tell one from its own schema. Call this to find out what ' +
         'is invocable by capability id and at what tier; look at your tool list for the rest. ' +

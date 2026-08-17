@@ -87,7 +87,7 @@
  * @module services/core/mcp-tool-gate
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
 
 import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
@@ -183,6 +183,13 @@ export interface SdkMcpTool {
   description: string;
   /** The advertised input field map. */
   inputSchema: z.ZodRawShape;
+  /**
+   * MCP tool annotations, when the registering domain set any. Carried so a
+   * definition can be rebuilt field for field (the in-session server re-runs each
+   * gated tool through the SDK's `tool()` to attach its loading policy); dropping
+   * it there would silently discard an annotation a domain had declared.
+   */
+  annotations?: ToolAnnotations;
   /**
    * The tool's implementation.
    *

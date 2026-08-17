@@ -1,4 +1,5 @@
 import type { OperatingSkill } from '../pack.js';
+import { TOOL_NAME_NOTE } from '../tool-name-note.js';
 
 /** Teaches an agent to create and edit agents, including self-edit etiquette. */
 export const managingAgents: OperatingSkill = {
@@ -9,6 +10,8 @@ export const managingAgents: OperatingSkill = {
     'fields, the capability id for scripted edits, self-edit etiquette, and the limits on ' +
     'system agents like DorkBot.',
   body: `# Managing agents
+
+${TOOL_NAME_NOTE}
 
 An agent is a workspace on disk (\`.dork/agent.json\` plus SOUL.md/NOPE.md) that
 DorkOS registers and runs. You can create new agents and edit existing ones,

@@ -98,7 +98,7 @@ export function createRelayInboxHandler(deps: McpToolDeps, identity: SenderIdent
       if (endpoint && !ownsEndpoint(identity, endpoint.subject, endpoint.owner)) {
         return endpointAccessDeniedContent(
           args.endpoint_subject,
-          'Read your own subject, the inbox subject relay_send_async gave you, or an inbox you registered yourself with relay_register_endpoint.'
+          'Read your own subject, an inbox subject an async send gave you, or an inbox you registered yourself.'
         );
       }
 
@@ -412,7 +412,7 @@ export function createRelayUnregisterEndpointHandler(deps: McpToolDeps, identity
       if (endpoint && !ownsEndpoint(identity, endpoint.subject, endpoint.owner)) {
         return endpointAccessDeniedContent(
           args.subject,
-          'Only the agent that registered an endpoint can remove it. Clean up the inbox subjects relay_send_async gave you instead.'
+          'Only the agent that registered an endpoint can remove it. Clean up the inbox subjects an async send gave you instead.'
         );
       }
 
@@ -487,7 +487,7 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
     tool(
       'relay_inbox',
       'Read inbox messages for a Relay endpoint you own: your own agent subject, an inbox subject ' +
-        'relay_send_async returned, or one you registered with relay_register_endpoint. Naming another ' +
+        'an async send returned, or one you registered yourself. Naming another ' +
         "agent's endpoint fails with code ENDPOINT_ACCESS_DENIED. Each message includes the sender payload: " +
         '{ id, subject, status, createdAt, sender, payload }. For agent dispatch inboxes the payload is ' +
         'a progress event { type: "progress", step, step_type, text, done: false } or the final ' +
@@ -541,7 +541,7 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
     ),
     tool(
       'relay_send_and_wait',
-      'Send a message to an agent and WAIT for the reply in a single call. Preferred over relay_send + relay_inbox polling for request/reply patterns. Internally registers an ephemeral inbox, sends the message with replyTo set, and blocks until the target agent replies or the timeout elapses. ' +
+      'Send a message to an agent and WAIT for the reply in a single call. Preferred over a fire-and-forget send plus inbox polling for request/reply patterns. Internally registers an ephemeral inbox, sends the message with replyTo set, and blocks until the target agent replies or the timeout elapses. ' +
         'Response shape: { reply, progress, from, replyMessageId, sentMessageId }. ' +
         'progress: array of intermediate steps emitted before the final reply (empty [] for quick replies; populated for multi-step CCA tasks). ' +
         'Each progress step: { type: "progress", step: number, step_type: "message"|"tool_result", text: string, done: false }. ' +
@@ -558,7 +558,7 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
           .max(600000)
           .optional()
           .describe(
-            'Max milliseconds to wait for a reply (default: 60000, max: 600000). For tasks longer than 10 min, use relay_send_async instead.'
+            'Max milliseconds to wait for a reply (default: 60000, max: 600000). For tasks longer than 10 min, dispatch asynchronously instead.'
           ),
         budget: z
           .object({
@@ -579,11 +579,11 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
     tool(
       'relay_send_async',
       'Dispatch a message to an agent and return IMMEDIATELY with a dispatch inbox subject. ' +
-        'Unlike relay_send_and_wait (which blocks), relay_send_async returns { messageId, inboxSubject } at once. ' +
+        'Unlike the send-and-wait tool (which blocks), this returns { messageId, inboxSubject } at once. ' +
         'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
-        'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject, ack=true) for updates (defaults ' +
+        'to the inbox. Poll the inbox tool with that subject and ack=true for updates (defaults ' +
         'to pending/unread messages). When you receive a payload with done:true, call ' +
-        'relay_unregister_endpoint(inboxSubject) to clean up.',
+        'the unregister-endpoint tool on that subject to clean up.',
       {
         to_subject: z.string().describe('Target subject (e.g., "relay.agent.{agentId}")'),
         payload: z.unknown().describe('Message payload'),
@@ -600,7 +600,7 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
     tool(
       'relay_unregister_endpoint',
       'Unregister a Relay endpoint you own, deleting its mailbox and every message still in it. Use to ' +
-        'clean up dispatch inboxes after relay_send_async completes (when done:true received). ' +
+        'clean up dispatch inboxes after an async dispatch completes (when done:true received). ' +
         "Another caller's endpoint fails with code ENDPOINT_ACCESS_DENIED.",
       {
         subject: z.string().describe('Subject of the endpoint to unregister. Must be one you own.'),

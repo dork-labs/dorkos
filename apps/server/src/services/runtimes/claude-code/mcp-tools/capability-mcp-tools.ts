@@ -14,6 +14,7 @@
  * @module services/runtimes/claude-code/mcp-tools/capability-mcp-tools
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { toolExposure } from './tool-exposure.js';
 import type { McpServerId } from '@dorkos/shared/capabilities';
 
 import type {
@@ -104,7 +105,13 @@ export function capabilityMcpTools(
           await resolveContext?.(),
           perCall
         );
-      }
+      },
+      // The hint comes from the capability's TITLE, not its description: a title
+      // is already the curated one-liner ("React to a message") that a search
+      // wants, where a description opens with whatever detail it needs to lead
+      // with. Hand-registered tools have no title and fall back to their
+      // description's first sentence — see `tool-exposure.ts`.
+      toolExposure(capability.surfaces.mcp!.toolName, capability.title)
     )
   );
 }

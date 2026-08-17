@@ -109,7 +109,7 @@ export interface OperatingSkill {
  *   boot is not permission to write into somebody's repository, and a user-initiated
  *   repair for those is DOR-664.
  */
-export const OPERATING_SKILLS_VERSION = 9;
+export const OPERATING_SKILLS_VERSION = 10;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

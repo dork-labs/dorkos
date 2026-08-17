@@ -222,7 +222,7 @@ export function getUiTools(_deps: McpToolDeps, session?: UiToolSession) {
     ),
     tool(
       'get_ui_state',
-      'Get the current DorkOS UI state — which panels are open, canvas state, active agent, and (embedded app only) the sidebar tab. Reflects the last state the client reported (at the start of this turn) merged with the control_ui commands issued this turn; it is not a live read of the client. Note: sidebar.activeTab is null on the web cockpit, which has no sidebar tab strip — it is reported only by the embedded (Obsidian) app. Use it after control_ui to confirm intent, or to make UI decisions.',
+      'Get the current DorkOS UI state — which panels are open, canvas state, active agent, and (embedded app only) the sidebar tab. Reflects the last state the client reported (at the start of this turn) merged with the UI commands issued this turn; it is not a live read of the client. Note: sidebar.activeTab is null on the web cockpit, which has no sidebar tab strip — it is reported only by the embedded (Obsidian) app. Use it after issuing a UI command to confirm intent, or to make UI decisions.',
       {},
       async () => getUiStateHandler()
     ),

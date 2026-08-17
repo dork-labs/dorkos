@@ -15,7 +15,7 @@ import { formatRoomContext } from '../../shared/room-context-block.js';
 import { formatSeedContext } from '../../shared/seed-context-block.js';
 import { formatStagedContext } from '../../shared/staged-context-block.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
-import { IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-names.js';
+import { IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
@@ -44,15 +44,18 @@ const T = IN_SESSION_TOOL_PREFIX;
  * The one block that explains the naming, so the ~90 long names below read as a
  * rule rather than as noise.
  *
- * It also answers the second half of the failure. The tools are DEFERRED in the
- * current SDK — tool search is on, so an MCP server's tools are not in the turn-1
- * prompt and `ToolSearch` is how the model loads one. A `type: 'sdk'` server has no
- * `alwaysLoad` escape (the SDK offers it for stdio/http/sse servers only), so
- * deferral is not something this runtime can switch off; what it can do is tell the
- * model the exact string to search for. Both halves were measured on Haiku: it
- * searched `select:react_to_room_entry`, got "No matching deferred tools found",
- * and gave up — while `select:mcp__dorkos__marketplace_get` resolved on the first
- * try in the run next door.
+ * It also answers the second half of the failure. Tool search is on in this SDK, so
+ * an MCP server's tools are DEFERRED by default — absent from the turn-1 prompt,
+ * reachable only through `ToolSearch`. Measured on Haiku: it searched
+ * `select:react_to_room_entry`, got "No matching deferred tools found", and gave up,
+ * while `select:mcp__dorkos__marketplace_get` resolved first try in the run next door.
+ *
+ * Deferral IS switchable — `createSdkMcpServer` takes `alwaysLoad`, and so does
+ * `tool()`'s fifth argument (verified against the real factory, not the type
+ * declarations). DorkOS uses it for five tools and declines it for the other 78:
+ * eighty-odd schemas on every turn's prompt is a worse trade than one search. So
+ * this block still teaches the search, because for most of the surface it is still
+ * the way in. See `mcp-tools/tool-exposure.ts` for which five and why.
  */
 const DORKOS_TOOLS_CONTEXT = `<dorkos_tools>
 Every DorkOS tool named in the blocks below is written the only way you can call
@@ -60,9 +63,12 @@ it: in full, starting ${T} — copy the whole string. Dropping that start does n
 give you a shorter alias for the same tool; it gives you a name that is not a tool
 at all, and the call comes back "No such tool available".
 
-A tool you do not see in your tool list yet is deferred, not missing. Load it by
-its full name and then call it:
-  ToolSearch(query="select:${T}post_to_room")
+The room tools and ${T}list_capabilities are already in your tool list — call them
+straight away, with no lookup step.
+
+Any OTHER tool you do not see there is deferred, not missing. Load it by its full
+name and then call it:
+  ToolSearch(query="select:${T}marketplace_get")
 A search for the short form finds nothing.
 
 The blocks below are not the whole surface. ${T}list_capabilities() returns the

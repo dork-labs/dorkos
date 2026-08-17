@@ -1,4 +1,5 @@
 import type { OperatingSkill } from '../pack.js';
+import { TOOL_NAME_NOTE } from '../tool-name-note.js';
 
 /** Teaches an agent to search, inspect, and install marketplace packages. */
 export const usingTheMarketplace: OperatingSkill = {
@@ -9,6 +10,8 @@ export const usingTheMarketplace: OperatingSkill = {
     'the install confirmation flow, the uninstall approval flow, listing what is installed, and ' +
     'why only a person may add or remove a source.',
   body: `# Using the marketplace
+
+${TOOL_NAME_NOTE}
 
 The marketplace distributes installable packages: agents, plugins, skill packs,
 and adapters. You can search it, inspect a package, and install or remove one.

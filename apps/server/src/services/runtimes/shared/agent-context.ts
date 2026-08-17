@@ -78,12 +78,13 @@ DorkOS is the operating system for autonomous AI agents.
 Subsystems: Console (chat), Tasks (scheduling), Relay (messaging), Mesh (discovery).
 Run \`dorkos capabilities\` to list the capabilities you can invoke by id, then
 \`dorkos call <capability-id> [--input '<json>']\` to run one. If you have DorkOS MCP
-tools in this session, the capability-listing tool returns the same catalog — call it
-by the full name your own harness exposes it under, which is not the bare name.
+tools in this session, one of them returns that same catalog: its name ENDS in
+\`list_capabilities\`, behind whatever prefix your harness gave DorkOS's MCP server,
+so search for that ending rather than calling the bare word.
 Tasks, Relay, and Mesh are NOT in that catalog and \`dorkos call\` cannot reach them:
-they are MCP tools when your session has them, and otherwise only
-\`dorkos task list|create|trigger|runs\` and \`dorkos agent list|show\` exist.
-Relay and Mesh have no CLI path at all.
+they are MCP tools whose names end in \`tasks_*\`, \`relay_*\` and \`mesh_*\` when your
+session has them, and otherwise only \`dorkos task list|create|trigger|runs\` and
+\`dorkos agent list|show\` exist. Relay and Mesh have no CLI path at all.
 Documentation: ${env.DORKOS_DOCS_BASE_URL}/llms.txt
 Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
 </dorkos_context>`;

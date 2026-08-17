@@ -90,6 +90,7 @@ import {
   DORKOS_AGENT_TOOLS,
   IDENTITY_SCOPED_TOOLS,
 } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
+import { IN_SESSION_TOOL_PREFIX } from '../../runtimes/claude-code/mcp-tools/tool-exposure.js';
 import {
   composeCapabilityRegistryForDocs,
   composeDorkOsCapabilityRegistry,
@@ -420,7 +421,7 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // everything in it outright, with no prompt, in every interactive session.
       // DOR-499 left it hand-written on purpose (see its TSDoc), so this is the
       // safe-direction pin that replaces derivation.
-      const bare = [...DORKOS_AGENT_TOOLS].map((name) => name.replace('mcp__dorkos__', ''));
+      const bare = [...DORKOS_AGENT_TOOLS].map((name) => name.slice(IN_SESSION_TOOL_PREFIX.length));
 
       // A renamed tool leaves a dead entry behind, which silently starts prompting
       // for something meant to be frictionless. Safe, but nobody would notice.
@@ -497,9 +498,9 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           'drives the cockpit the person is already looking at — but ONLY for the actions classified `client-only`. The one that leaves the browser is gated per call; see the next test.',
       };
 
-      const bare = [...DORKOS_AGENT_TOOLS].map((name) => name.replace('mcp__dorkos__', ''));
+      const bare = [...DORKOS_AGENT_TOOLS].map((name) => name.slice(IN_SESSION_TOOL_PREFIX.length));
       const identityScoped = new Set(
-        [...IDENTITY_SCOPED_TOOLS].map((name) => name.replace('mcp__dorkos__', ''))
+        [...IDENTITY_SCOPED_TOOLS].map((name) => name.slice(IN_SESSION_TOOL_PREFIX.length))
       );
       const needsAReason = bare
         .filter((name) => tierOf(name) === 'act' || identityScoped.has(name))
