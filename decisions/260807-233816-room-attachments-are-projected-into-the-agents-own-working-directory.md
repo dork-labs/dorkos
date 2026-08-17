@@ -44,7 +44,9 @@ is left alone), scoped to the same capped 30-entry window `room-context.ts` buil
 directories older than 24 hours on each run so no scheduler is introduced. `RoomContextEntry` carries
 `{ name, path }` where `path` is **relative** to the agent's working directory — identical for every
 agent, a pure function of the entry id and the stored filename — which is what lets `room-context.ts`
-stay pure and knowing of no cwd. One shared helper computes that path for both the projector and the
+stay pure and knowing of no cwd. (**Amended 2026-08-16, DOR-1266:** the rendered `path` is now
+cwd-absolute and `room-context.ts` takes `agentPath`, so this sentence's purity claim no longer
+holds — see the amendment below; the projection PLAN is still relative and still agent-independent.) One shared helper computes that path for both the projector and the
 context builder, so what the model is told and what is on disk cannot drift.
 
 ## Consequences
