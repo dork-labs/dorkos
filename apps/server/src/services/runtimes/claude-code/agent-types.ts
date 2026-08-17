@@ -66,6 +66,18 @@ export interface AgentSession {
   activeQuery?: Query;
   /** Last completed SDK query — persisted after streaming for post-stream control (reloadPlugins). */
   lastQuery?: Query;
+  /**
+   * The query whose stdin DorkOS has already ended — its held prompt was
+   * closed, so the CLI subprocess can no longer receive anything DorkOS writes,
+   * control requests included (`messaging/stdin-hold.ts`).
+   *
+   * Held as the QUERY rather than as a flag because overlapping turns share one
+   * session (DOR-1088): the outgoing turn closing its own stdin must not make
+   * its successor's healthy query look deaf. Read by `interruptGivenQuery`,
+   * which closes such a query at once rather than awaiting an ack that can
+   * never arrive (DOR-1244).
+   */
+  stdinEndedQuery?: Query;
   pendingInteractions: Map<string, PendingInteraction>;
   eventQueue: StreamEvent[];
   eventQueueNotify?: () => void;

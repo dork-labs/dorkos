@@ -155,6 +155,19 @@ export async function* executeSdkQuery(
   const agentQuery = query({ prompt: heldPrompt.prompt, options: sdkOptions });
   session.activeQuery = agentQuery;
 
+  // Ending the held prompt sends the CLI's stdin an EOF, and from that moment
+  // nothing DorkOS writes to this query arrives: the SDK drops the write in
+  // silence and a control request waits on an ack that can never come. Record
+  // WHICH query that happened to, so a Stop arriving afterwards — the CLI can
+  // keep going past the EOF and reopen the turn (DOR-1100) — closes the process
+  // at once instead of spending its whole bound on an undeliverable interrupt
+  // (DOR-1244). Recorded as the query, not a session flag, because an
+  // overlapping turn shares this session (DOR-1088).
+  const endStdin = (): void => {
+    heldPrompt.close();
+    session.stdinEndedQuery = agentQuery;
+  };
+
   // The per-PROCESS probes: what this subprocess supports, asked once per
   // launch and never awaited. Shared with the pump, which launches the same
   // way and owes its session the same answers.
@@ -249,7 +262,7 @@ export async function* executeSdkQuery(
           sessionId,
           liveness,
           deferredClose,
-          close: () => heldPrompt.close(),
+          close: endStdin,
         });
         continue;
       }
@@ -363,7 +376,7 @@ export async function* executeSdkQuery(
           sessionId,
           liveness,
           deferredClose,
-          close: () => heldPrompt.close(),
+          close: endStdin,
         });
       }
 
@@ -526,7 +539,7 @@ export async function* executeSdkQuery(
     // Clearing the deadline here also covers the path where the race THREW —
     // otherwise a rejected SDK promise would leave a live timer behind.
     deferredClose.release();
-    heldPrompt.close();
+    endStdin();
     // Preserve the query reference for post-stream control methods (e.g.
     // reloadPlugins) — but only when this frame still OWNS the active query
     // (DOR-1088). Unconditional, this cleared whatever query happened to be
