@@ -481,15 +481,16 @@ export function PackageDetailSheet() {
                   permissions to mirror the marketing site's header → permissions
                   → readme ordering. Relative-path images won't resolve (no
                   base-URL rewriting yet); streamdown degrades a broken image
-                  without breaking layout. linkSafety gates external links —
-                  README content is third-party and untrusted. */}
+                  without breaking layout. Every `MarkdownContent` link
+                  confirms before opening (DOR-1272), which matters here more
+                  than most call sites — README content is third-party and
+                  untrusted. */}
               {!isLoading && detail?.readme && (
                 <section>
                   <h3 className="mb-3 text-sm font-semibold">About</h3>
                   <MarkdownContent
                     content={detail.readme}
                     className="text-sm"
-                    linkSafety
                     errorFallback={
                       <p className="text-muted-foreground text-sm">
                         This README couldn&rsquo;t be displayed.

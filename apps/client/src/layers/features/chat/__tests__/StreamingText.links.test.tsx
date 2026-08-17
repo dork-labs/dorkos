@@ -2,9 +2,10 @@
 /**
  * Links inside a streamed chat answer, drawn by the REAL `streamdown`
  * package rather than the prop-inspecting mock `StreamingText.test.tsx` uses
- * for its own, unrelated assertions. `StreamingText` always turns link safety
- * on, so this is the one place chat's actual anchor-vs-button behaviour
- * (DOR-1272) gets exercised end to end.
+ * for its own, unrelated assertions. `StreamingText` renders every link
+ * through the shared `MarkdownLink` (DOR-1272), same as `MarkdownContent`, so
+ * this is the one place chat's actual anchor-vs-button behaviour gets
+ * exercised end to end.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
@@ -35,7 +36,7 @@ describe('StreamingText — links stay real anchors under link safety (DOR-1272)
     expect(screen.getByRole('dialog', { name: /open external link/i })).toBeInTheDocument();
   });
 
-  it('a cmd/ctrl-clicked link is left to the browser', () => {
+  it('a cmd/ctrl-clicked http(s) link is left to the browser', () => {
     render(<StreamingText content="See [the docs](https://dorkos.ai/docs)" />);
     const link = screen.getByRole('link', { name: 'the docs' });
 
@@ -45,11 +46,19 @@ describe('StreamingText — links stay real anchors under link safety (DOR-1272)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('a middle-clicked link is left to the browser', () => {
+  it('a synthetic middle-click (button 1) on an http(s) link is left to the browser', () => {
+    // `event.button !== 0` is the guard's belt-and-braces path, not a real
+    // middle-click: browsers fire `auxclick`, not `click`, for a non-primary
+    // button, so React's onClick never observes button 1 from an actual
+    // middle click. This exercises the synthetic-event guard directly
+    // (`fireEvent.click(el, { button: 1 })`) — the only way jsdom can reach
+    // it — not real browser `auxclick` dispatch. The full scheme-aware
+    // behaviour (http(s) bypasses, everything else still confirms) has its
+    // primary coverage in `markdown-content.test.tsx`, which exercises the
+    // same shared `MarkdownLink`.
     render(<StreamingText content="See [the docs](https://dorkos.ai/docs)" />);
     const link = screen.getByRole('link', { name: 'the docs' });
 
-    // Middle click reports as button 1 on the click event.
     const notPrevented = fireEvent.click(link, { button: 1 });
 
     expect(notPrevented).toBe(true);

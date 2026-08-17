@@ -101,13 +101,19 @@ export function RoomEntryBody({
   return (
     <>
       {/*
-        No carve-out for a right-click on a link, and none is needed. Under
-        `linkSafety`, which this call site passes, every link form — markdown,
-        autolink, bare URL — still renders as a real `<a href>` (DOR-1272,
-        `MarkdownLink`); only a plain left click is intercepted for the
-        confirmation modal. A right-click reaches the browser's own native
-        menu — "Copy Link Address" included — same as any other link on the
-        page, so our own row menu has nothing to add here.
+        No carve-out for a right-click on a link, and none is needed — but not
+        for free. Every link form — markdown, autolink, bare URL — renders as
+        a real `<a href>` (DOR-1272, `MarkdownLink`), and only a plain left
+        click is intercepted for the confirmation modal. A right-click on the
+        row still lands on `EntryActionMenu`'s Radix `ContextMenuTrigger`
+        (`RoomEntryRow`), which `preventDefault()`s `contextmenu`
+        unconditionally — so without `MarkdownLink`'s own
+        `onContextMenu={stopPropagation}`, a right-click on a link would open
+        the ROW's menu (no copy-link item) instead of the browser's, exactly
+        the bug this comment used to describe as unavoidable. With it, the
+        event never reaches the trigger, so the browser's native menu wins —
+        "Copy Link Address" included — same as any other link on the page.
+        Pinned in `RoomEntryRow.test.tsx`.
       */}
       <div
         id={contentId}
@@ -134,7 +140,6 @@ export function RoomEntryBody({
         <MentionRosterProvider authors={authors}>
           <MarkdownContent
             content={markdown}
-            linkSafety
             allowedTags={MENTION_ALLOWED_TAGS}
             literalTagContent={MENTION_LITERAL_TAG_CONTENT}
             components={mentionComponents}

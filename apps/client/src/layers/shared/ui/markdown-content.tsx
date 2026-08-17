@@ -3,8 +3,13 @@
  *
  * Wraps streamdown's Streamdown component for rendering markdown in setup
  * guides, help disclosures, info boxes, and widget text nodes. Unlike
- * StreamingText, this has no streaming cursor; external-link confirmation is
- * opt-in via `linkSafety`.
+ * StreamingText, this has no streaming cursor. Every link renders through the
+ * shared {@link MarkdownLink} unconditionally (DOR-1272 round 2) — there is
+ * no "trusted surface, skip the confirmation" mode: Streamdown's own default
+ * `linkSafety` is `{ enabled: true }` regardless of what a caller passes, so
+ * a `MarkdownContent` that opted out would still have gotten Streamdown's own
+ * hrefless `<button>` and its own, non-design-system confirm modal. Every
+ * surface gets the same real anchor and the same confirmation instead.
  */
 import type { ReactNode } from 'react';
 import { Streamdown } from 'streamdown';
@@ -24,13 +29,6 @@ interface MarkdownContentProps {
   content: string;
   /** Additional CSS classes merged onto the container. */
   className?: string;
-  /**
-   * Confirm external links through the shared {@link MarkdownLink}'s
-   * link-safety modal before opening (the same conventions as chat links).
-   * Off by default — most static surfaces (setup guides, help text) carry
-   * only trusted links, and get Streamdown's own plain `<a href>` instead.
-   */
-  linkSafety?: boolean;
   /**
    * Shown in place of the markdown if it fails to render (e.g. Streamdown's
    * lazy code-block chunk fails to load). Defaults to a generic muted note;
@@ -72,7 +70,6 @@ interface MarkdownContentProps {
 export function MarkdownContent({
   content,
   className,
-  linkSafety = false,
   errorFallback,
   components,
   allowedTags,
@@ -100,7 +97,7 @@ export function MarkdownContent({
           instead of throwing to the route boundary. Reset on content change. */}
       <MarkdownErrorBoundary resetKey={content} fallback={errorFallback}>
         <Streamdown
-          components={linkSafety ? { ...components, a: MarkdownLink } : components}
+          components={{ ...components, a: MarkdownLink }}
           allowedTags={allowedTags}
           literalTagContent={literalTagContent}
         >
