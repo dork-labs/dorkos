@@ -33,7 +33,7 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 | C-09 | Steer a message **into** a live turn (`deliverIntoTurn`)                           | session  | U only — see note       |
 | C-10 | Stop a running turn; Stop reaches a still-starting agent                           | session  | U, E                    |
 
-**C-09 is not a coverage gap — it is a missing product half, and the row says `U only` for that reason.** The runtime and dispatcher halves landed with P4.1 (`AgentRuntime.deliverIntoTurn`, `deliverSteer` in `message-dispatcher.ts`), and both are unit-tested. Nothing reaches them: `deliverSteer` has **no caller**, no HTTP route exposes it, `resolveDisposition` degrades every `disposition: 'steer'` on `POST /messages` back to `queue`, and every runtime — claude-code included — still declares `supportsSteer: false`. The composer affordance from DOR-1198 never landed. So there is no user-facing steer to drive, and no e2e can exist until there is (DOR-1214 audit, 2026-08-15).
+**C-09 has a shipped composer affordance that degrades silently on the default path — that is why the row still says `U only`.** PR #1026 (P4.3, DOR-1195) shipped the Steer menu item (`DispositionMenu`, tucked beside Queue in the composer), gated on the runtime's `supportsSteer` capability flag — claude-code now declares that `true`. But the flag is static per-runtime, not per-session: `deliverIntoTurn(mode: 'steer')` only has a live turn to join when the session's `persistentSession` opt-in is on, and that opt-in ships OFF by default, so on a default install picking Steer just runs the message now instead of joining the live turn — the one downgrade the UI stays quiet about, because nothing was lost. Composer and dispatcher are unit-tested; there is no e2e or self-test coverage of Steer actually joining a turn, because on the default path it does not yet. Tracked separately: DOR-1268.
 
 **C-10's e2e covers the running-turn case only.** A turn BLOCKED on an approval offers no Stop at all — the approval card replaces the composer, which is where the Stop button lives. The runtime handles that interrupt correctly (pinned in `test-mode/__tests__/interactive-scenarios.test.ts`); the UI simply never asks it to.
 
@@ -46,7 +46,7 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 | R-03 | Code blocks: highlighting, copy button, HTML shown as code not injected   | session  | E, S                                   |
 | R-04 | Tool-call cards: visible, ordered, expand/collapse                        | session  | E, S                                   |
 | R-05 | Subagent blocks appear while running, clear when done                     | session  | E, S                                   |
-| R-06 | Todos/tasks pill: counts and statuses advance with TodoWrite              | session  | E, S                                   |
+| R-06 | Todos/tasks pill: counts and statuses advance with TaskCreate             | session  | E, S                                   |
 | R-07 | Background task bar for async agents                                      | session  | E                                      |
 | R-08 | Reactions on room entries                                                 | rooms    | E                                      |
 | R-09 | Agent stall/silence notice in rooms                                       | rooms    | U                                      |
