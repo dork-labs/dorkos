@@ -28,6 +28,18 @@ export const COMMAND_INTENT_REQUEST_TIMEOUT_MS = 30_000;
 /**
  * Slack between the server giving up on a queued intent and the client giving up
  * on the request (ms) — room for the lock probe, the 409, and the wire.
+ *
+ * **Nothing else may be charged here, and one thing has tried.** The server's
+ * pre-flight settles a turn the runtime could not finish before opening the
+ * intent's own, and waits for that terminal to reach the projector (DOR-1295,
+ * `services/session/settle-open-turn.ts`). That wait is real time inside the
+ * request, so it needed a budget — and taking it out of this one would have
+ * quietly shortened the margin the DOR-1101 invariant rests on. It is charged
+ * against {@link COMMAND_INTENT_QUEUE_WAIT_MS} instead: both are waits on other
+ * people's work, they share one clock started at queue reservation, and a run
+ * that has already spent the whole of it waits no longer. So this number still
+ * means exactly what it says, and a future consumer that cannot be charged to
+ * the queue budget has to enlarge it here rather than borrow from it.
  */
 const COMMAND_INTENT_RESPONSE_HEADROOM_MS = 5_000;
 
@@ -46,6 +58,12 @@ const COMMAND_INTENT_RESPONSE_HEADROOM_MS = 5_000;
  * starts at queue reservation, so unusually slow pre-reservation work (routing,
  * runtime resolution) eats into it. In the scenario that matters (a turn already
  * running) that preamble is a local read measured in milliseconds.
+ *
+ * **This is a budget for WAITING, not only for queueing.** The stranded-turn
+ * pre-flight (DOR-1295) waits inside the same request and is charged here too,
+ * against one clock started at queue reservation — see
+ * {@link COMMAND_INTENT_RESPONSE_HEADROOM_MS}. Anything else added to this path
+ * that waits on work the request does not own belongs on the same clock.
  *
  * A turn's queue wait is bounded by the lock TTL instead (minutes), because a
  * turn's POST carries no abort signal and so has no client-side deadline to

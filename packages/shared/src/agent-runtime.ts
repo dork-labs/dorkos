@@ -1025,6 +1025,39 @@ export interface AgentRuntime {
   canSteerSession?(sessionId: string): boolean;
 
   /**
+   * End a turn this session has left open, so the turn about to start does not
+   * inherit it (DOR-1295).
+   *
+   * Called by the server ONCE per turn, before that turn's `turn_start` is
+   * minted. Ordinary turns answer `false` — nothing was open — and pay one
+   * method call.
+   *
+   * Optional, and only a runtime that can leave a turn open needs it. A backend
+   * whose turn is bounded by the stream it hands back cannot strand one, so it
+   * omits this and the server reads the absence as "nothing to settle".
+   *
+   * Three things a runtime that implements it owes the caller, all three held to
+   * by conformance C8:
+   *
+   * - **The abandoned turn must still terminate on the session's stream.** The
+   *   person watched a turn start; it has to be seen to end, as a failure. This
+   *   settles it, it never hides it.
+   * - **It must not throw for a session it knows nothing about**, including one
+   *   that has never had a turn. Ending a turn nobody can finish is a repair,
+   *   and a repair may not be the thing that fails the next message.
+   * - **The answer is honest**: `false` when there was nothing to settle. It is
+   *   the runtime's own account of what it did, read by the server for the log
+   *   line that explains why a person's previous reply just went red. The
+   *   server does NOT decide whether to wait from it — it waits on the
+   *   projection either way — so a runtime cannot skip the ordering guarantee by
+   *   answering `false`, and cannot buy extra delay by answering `true`.
+   *
+   * @param sessionId - The session about to open a turn
+   * @returns Whether an open turn was found and settled
+   */
+  settleOpenTurn?(sessionId: string): Promise<boolean>;
+
+  /**
    * How warm this session's backing process is, for a runtime that keeps one
    * alive between turns.
    *

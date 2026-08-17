@@ -380,6 +380,32 @@ export class SessionTurnWindows {
   }
 
   /**
+   * End the window this session has left open, ahead of the turn that is about
+   * to replace it (DOR-1295).
+   *
+   * The same abandonment {@link dispatch} performs as its backstop, reachable
+   * BEFORE a successor's turn exists. That ordering is the whole point.
+   * `dispatch`'s call happens inside the successor's own generator, which
+   * `feedProjector` only pulls AFTER minting the successor's `turn_start` — so
+   * the stranded turn's terminal reliably arrived inside the successor's turn,
+   * settling a healthy turn as the abandoned one's error and splitting its
+   * durable rows across two turns. Called from the seam that composes a turn
+   * (`trigger-turn`), this settles the old turn while the successor is still
+   * only an intention.
+   *
+   * `dispatch` keeps its own backstop: this is a courtesy the composer extends,
+   * and the ingress invariant may not depend on every caller extending it.
+   *
+   * @returns True when a window was open and has been settled, false when there
+   *   was nothing to settle — which is every ordinary turn
+   */
+  abandonOpenWindow(): boolean {
+    if (this.current === undefined) return false;
+    this.abandonStranded(this.current);
+    return true;
+  }
+
+  /**
    * Add a steered message's id to the OPEN window so the turn's `result` still
    * correlates (spec `persistent-session-runtime` §2.3, task 4.1).
    *

@@ -435,6 +435,12 @@ export class SessionStateProjector {
   /** Live subscribers awaiting the next event (resolved on each ingest). */
   private waiters: Waiter[] = [];
 
+  /**
+   * Callers parked on {@link awaitTurnSettled}, woken the moment no turn is in
+   * progress. Never more than a couple — one per turn about to open.
+   */
+  private readonly turnSettledWaiters = new Set<() => void>();
+
   /** Active {@link subscribe} generators (replay or live phase). */
   private subscriberCount = 0;
 
@@ -718,6 +724,10 @@ export class SessionStateProjector {
         break;
       case 'turn_end':
         this.inProgressTurn = null;
+        // Ahead of everything else this case does: a turn waiting to open on
+        // this one settling has nothing to learn from the bookkeeping below,
+        // and it is holding a person's message (DOR-1295).
+        this.wakeTurnSettledWaiters();
         this.ring.markTurnEnded();
         // Nothing is running any more, so nothing may be reported as running.
         delete this.status.activity;
@@ -1193,6 +1203,9 @@ export class SessionStateProjector {
         this.ingest(untracked);
       }
       this.inProgressTurn = null;
+      // This path ingests no `turn_end`, so it is the other place a turn stops
+      // being in progress — and anyone waiting for that has to hear it here too.
+      this.wakeTurnSettledWaiters();
       this.ring.markTurnEnded();
       this.status.lifecycle = 'interrupted';
       // The turn is over, so whatever tool it was in is over with it.
@@ -1208,6 +1221,47 @@ export class SessionStateProjector {
       // it and re-assert the tool this just cleared.
       this.announceNow();
     }
+  }
+
+  /**
+   * Resolve once no turn is in progress on this projection — the ordering gate a
+   * turn about to open uses when the turn ahead of it had to be abandoned
+   * (DOR-1295).
+   *
+   * The terminal of an abandoned turn does not land here synchronously: it is
+   * pushed into a stream whose consumer — the mapper, the stall guard,
+   * `feedProjector` — unwinds on its own schedule, and only `feedProjector`'s
+   * `finally` ingests the `turn_end`. So the caller waits for the PROJECTION to
+   * settle rather than for the layer beneath it to return, which is the only
+   * signal that means what the caller needs it to mean.
+   *
+   * **Always bounded, and the bound is not paranoia.** The abandoned turn's
+   * stream may have no consumer left at all — an HTTP request that went away, a
+   * generator nobody is pulling — in which case nothing will ever close that
+   * turn and the wait would be forever. Timing out resolves rather than
+   * rejecting: the caller's turn must start either way, and a turn that opens
+   * beside a stale one is the pre-DOR-1295 behaviour, which is bad but is not a
+   * reason to refuse a person's message.
+   *
+   * @param timeoutMs - How long to wait before giving up and resolving anyway
+   */
+  awaitTurnSettled(timeoutMs: number): Promise<void> {
+    if (this.inProgressTurn === null) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const settle = (): void => {
+        clearTimeout(timer);
+        this.turnSettledWaiters.delete(settle);
+        resolve();
+      };
+      const timer = setTimeout(settle, timeoutMs);
+      this.turnSettledWaiters.add(settle);
+    });
+  }
+
+  /** Wake everyone parked on {@link awaitTurnSettled}; the turn is over. */
+  private wakeTurnSettledWaiters(): void {
+    if (this.turnSettledWaiters.size === 0) return;
+    for (const settle of [...this.turnSettledWaiters]) settle();
   }
 
   /** Lifecycle to settle into when a turn ends: blocked if interactions remain. */
@@ -1614,6 +1668,10 @@ export class SessionStateProjector {
     if (this.terminated) return 0;
     this.terminated = true;
     this.cancelTimers();
+    // Nothing will ever be fed to this instance again, so a turn that is
+    // "in progress" here will never settle. Release rather than hold to the
+    // bound: the caller is holding a person's message either way.
+    this.wakeTurnSettledWaiters();
     const waiters = this.waiters;
     this.waiters = [];
     for (const wake of waiters) wake(TERMINATED);

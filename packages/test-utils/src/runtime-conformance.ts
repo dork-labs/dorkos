@@ -1353,6 +1353,48 @@ export function runtimeConformance(
             ).toBe(true);
           }
         });
+
+        it('C8: settleOpenTurn answers honestly for a session with nothing open, and never throws', async () => {
+          // A held process is the ONLY thing that can strand a turn: everywhere
+          // else a turn is bounded by the stream the runtime hands back. So the
+          // repair the server runs before every turn (DOR-1295,
+          // `settle-open-turn.ts`) is an obligation this capability creates, and
+          // this is where it is held rather than asked for in a doc.
+          const runtime = makeRuntime();
+          expect(
+            runtime.settleOpenTurn,
+            'this runtime declares `supportsPersistentSession`, so a turn of its own can outlive ' +
+              'the stream that carried it — and without `settleOpenTurn` the server has no way ' +
+              'to end one before opening the next (see AgentRuntime.settleOpenTurn)'
+          ).toBeDefined();
+
+          // A session it has never heard of. The server asks before every turn,
+          // including the first one on a brand-new session, so throwing here
+          // would make a repair the thing that fails a person's first message.
+          await expect(
+            runtime.settleOpenTurn!(nextSessionId()),
+            'threw (or claimed to settle something) for a session it has never seen'
+          ).resolves.toBe(false);
+
+          // And a session that is warm and IDLE — holding a process, running
+          // nothing. This is the half a constant `false` cannot fake its way
+          // through honestly: it is the state the answer is most tempting to get
+          // wrong, because there IS a live process behind it.
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+          await warmSession(runtime, sessionId);
+          expect(
+            runtime.getSessionWarmth?.(sessionId),
+            'the driver was supposed to leave this session warm'
+          ).toBe('warm');
+          await expect(
+            runtime.settleOpenTurn!(sessionId),
+            'a warm session is holding a process, not running a turn — there was nothing to settle'
+          ).resolves.toBe(false);
+
+          // Idempotent, and still honest the second time.
+          await expect(runtime.settleOpenTurn!(sessionId)).resolves.toBe(false);
+        });
       } else {
         it.skip(
           'SKIPPED: this runtime does not declare `supportsPersistentSession`, so it holds no ' +

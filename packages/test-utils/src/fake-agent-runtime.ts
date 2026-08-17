@@ -144,6 +144,13 @@ export class FakeAgentRuntime implements AgentRuntime {
     ) => Promise<RuntimeDeliveryResult>
   >(async () => ({ delivered: true }));
 
+  /**
+   * End a turn left open before the next one starts. Answers `false` — this
+   * fake's turns are the streams it hands back, so it can never strand one —
+   * and is spied so a test can assert the server asks BEFORE it sends.
+   */
+  settleOpenTurn = vi.fn<(sessionId: string) => Promise<boolean>>(async () => false);
+
   ensureSession = vi.fn<(sessionId: string, opts: SessionOpts) => void>();
   hasSession = vi.fn<(sessionId: string) => boolean>(() => false);
   updateSession = vi.fn<

@@ -30,6 +30,7 @@ import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
 import type { SessionStateProjector } from './session-state-projector.js';
 import { feedProjector } from './session-event-normalizer.js';
+import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { withStallGuard } from './stall-guard.js';
 import {
   DetachedTurnLifecycle,
@@ -56,6 +57,12 @@ export interface TriggerCommandIntentDeps {
     intent: RuntimeCommandIntentId,
     opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent>;
+  /**
+   * End a turn the runtime has left open before this run starts, answering
+   * whether it settled anything (`AgentRuntime.settleOpenTurn`). Absent for a
+   * runtime that cannot strand a turn — which reads as "nothing to settle".
+   */
+  settleOpenTurn?(sessionId: string): Promise<boolean>;
   /** Interrupt the runtime's in-flight work (stall watchdog). Resolves false when none found. */
   interruptQuery(sessionId: string): Promise<boolean>;
   /**
@@ -165,11 +172,14 @@ export async function triggerCommandIntent(
   // Same resolved key a turn uses: one live session answers to every id it has
   // ever held, so keying on the raw request id would queue against nothing.
   const turnKey = deps.getInternalSessionId(sessionId) ?? sessionId;
-  const slot = sessionTurnQueue.reserve(
-    turnKey,
-    clientId,
-    opts.queueWaitMs ?? COMMAND_INTENT_QUEUE_WAIT_MS
-  );
+  // The WHOLE budget this request may spend waiting on other people's work —
+  // the queue ahead of it, and (below) a turn that has to be settled before this
+  // one can open. Measured from here rather than per-wait, so the two cannot add
+  // up past the point the server has to answer by (DOR-1101; see the settle
+  // below, and `COMMAND_INTENT_QUEUE_WAIT_MS`).
+  const waitBudgetMs = opts.queueWaitMs ?? COMMAND_INTENT_QUEUE_WAIT_MS;
+  const waitingSince = Date.now();
+  const slot = sessionTurnQueue.reserve(turnKey, clientId, waitBudgetMs);
   await slot.ready;
 
   // Acquire against a detached lifecycle so the lock is bound to the intent's
@@ -206,6 +216,31 @@ export async function triggerCommandIntent(
   // long-running intent is not declared abandoned and stolen mid-flight.
   let source;
   try {
+    // A compact runs through the runtime's ordinary send path, so it inherits
+    // the same exposure a turn has: a turn the runtime could not finish would be
+    // abandoned beneath it and terminate inside THIS run's window (DOR-1295).
+    // Settled first, on the same terms `triggerTurn` uses.
+    //
+    // **Charged to the same budget the queue wait comes out of**, and that is
+    // the whole reason this line is arithmetic rather than a constant. A turn
+    // can afford a flat two seconds because its POST has no client-side
+    // deadline; a command intent's does — the client aborts at
+    // `COMMAND_INTENT_REQUEST_TIMEOUT_MS`, and a server that answers after that
+    // has told the person it failed and then compacted anyway (DOR-1101). The
+    // headroom the queue wait is derived by subtracting is for the lock probe,
+    // the 409 and the wire, so spending it here would eat the very slack that
+    // invariant rests on. Instead this spends what the QUEUE did not: the normal
+    // case waits milliseconds for its slot and gets the full bound, and a run
+    // that has already spent its whole budget waiting gets nothing and opens
+    // immediately. That trade is deliberate — an intent that inherits a stale
+    // turn is a bad turn, and telling a person their compact failed and then
+    // running it is data loss.
+    await settleOpenTurnBefore(
+      sessionId,
+      projector,
+      deps,
+      Math.min(SESSIONS.STRANDED_TURN_SETTLE_MS, waitBudgetMs - (Date.now() - waitingSince))
+    );
     source = tapEachEvent(deps.executeCommandIntent(sessionId, intent, { cwd, instructions }), () =>
       lifecycle.touch()
     );

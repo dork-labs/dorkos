@@ -1898,3 +1898,69 @@ describe('a row recovered after a restart', () => {
     expect(seen.every(isDispatchId)).toBe(true);
   });
 });
+
+// The wiring, not the mechanism (DOR-1295). `triggerTurn` and
+// `triggerCommandIntent` settle any turn the runtime has left open BEFORE they
+// open one of their own, and they reach the runtime through the narrow port the
+// dispatcher builds. That port is two spreads in `turnDeps` and its command-intent
+// twin, and deleting both left the whole suite green — a fix that exists and is
+// not plugged in. These are what notice.
+describe('the dispatcher asks the runtime to settle an open turn first (DOR-1295)', () => {
+  /** Record the order the runtime's methods were reached in. */
+  function recordOrder(): string[] {
+    const order: string[] = [];
+    runtime.settleOpenTurn.mockImplementation(async (id: string) => {
+      order.push(`settle:${id}`);
+      return false;
+    });
+    return order;
+  }
+
+  it('asks before sending a turn, and asks about this session', async () => {
+    const order = recordOrder();
+    runtime.sendMessage.mockImplementation(async function* (id: string) {
+      order.push(`send:${id}`);
+      yield { type: 'done', data: {} } as StreamEvent;
+    });
+
+    await send('hello');
+    await settle();
+
+    // ORDER, not merely presence: settling AFTER the send is exactly the bug —
+    // the turn is already open by then and inherits the terminal.
+    expect(order).toEqual([`settle:${session}`, `send:${session}`]);
+  });
+
+  it('asks before running a command intent, and asks about this session', async () => {
+    const order = recordOrder();
+    runtime.executeCommandIntent.mockImplementation(async function* (id: string) {
+      order.push(`intent:${id}`);
+      yield { type: 'done', data: {} } as StreamEvent;
+    });
+
+    await dispatchCommandIntent({
+      sessionId: session,
+      clientId: TAB,
+      intent: 'compact',
+      projector: getOrCreateProjector(session),
+      runtime,
+    });
+    await settle();
+
+    expect(order).toEqual([`settle:${session}`, `intent:${session}`]);
+  });
+
+  it('starts the turn anyway when the runtime throws trying to settle', async () => {
+    // A repair may not be the thing that fails the next message — the interface
+    // says so, conformance C8 holds the shipped runtimes to it, and this holds
+    // the COMPOSER to it for a future adapter that reads neither.
+    runtime.settleOpenTurn.mockRejectedValue(new Error('the adapter fell over'));
+    runtime.withScenarios([quickTurn()]);
+
+    const result = await send('hello');
+    await settle();
+
+    expect(result.accepted).toBe(true);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+});

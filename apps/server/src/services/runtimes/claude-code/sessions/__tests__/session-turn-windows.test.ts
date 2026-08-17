@@ -504,6 +504,35 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     expect(h.pump.state).toBe('warm');
   });
 
+  // The same abandonment, reachable BEFORE a successor exists (DOR-1295). The
+  // composer calls this ahead of minting the next turn's `turn_start`, so the
+  // stranded turn's terminal cannot land inside a healthy turn's window. Its
+  // ANSWER is what gates the composer's wait, so both answers are pinned: a
+  // method that said `true` unconditionally would make every ordinary turn wait
+  // for a terminal that is never coming.
+  it('settles the open window on demand, and says so only when there was one', async () => {
+    const h = harness();
+
+    // Nothing open: nothing to settle, and nothing invented.
+    expect(h.windows.abandonOpenWindow()).toBe(false);
+    expect(h.opened).toHaveLength(0);
+
+    await h.dispatch([{ content: 'first', messageId: 'm1' }]);
+    expect(h.windows.abandonOpenWindow()).toBe(true);
+    await settled(h, 1);
+
+    // One turn, ended as the failure it is, with no dispatch involved.
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.events.find((e) => e.type === 'turn_end')).toMatchObject({
+      terminalReason: 'error',
+    });
+    expect(h.windows.openWindow).toBeUndefined();
+    expect(h.pump.state).toBe('warm');
+    // And it is idempotent: the window it settled is gone.
+    expect(h.windows.abandonOpenWindow()).toBe(false);
+  });
+
   // An empty batch would move the pump to RUNNING with nothing sent: a window
   // no result could ever close.
   it('refuses an empty batch', async () => {

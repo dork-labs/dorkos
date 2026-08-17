@@ -765,6 +765,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return this.persistent.shouldDispatch(sessionId);
   }
 
+  /**
+   * @inheritdoc
+   *
+   * Only the pump path can strand a turn: on the resume path a turn IS its
+   * stream, so a session with nothing held answers `false` without touching
+   * anything. Asked with the same id `sendMessage` is asked with, because that
+   * is the id the pump's wiring is filed under.
+   */
+  settleOpenTurn(sessionId: string): Promise<boolean> {
+    return Promise.resolve(this.persistent.settleOpenTurn(sessionId));
+  }
+
   /** @inheritdoc */
   getSessionWarmth(sessionId: string): SessionWarmth {
     return this.pumps.warmth(sessionId);
