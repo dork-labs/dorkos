@@ -122,9 +122,16 @@ export function MakeDefaultStopLine({
             ) : (
               <>Start every new session in {stopLabel(stop)}?</>
             )}
-          </span>
-          {/* Never `truncate`: whatever the sentence gives up, these stay whole
-              and clickable. */}
+          </span>{' '}
+          {/* Never `truncate`, and no `flex-wrap` either: whatever the sentence
+              gives up, these stay on the one line and never shrink below their
+              own content. That has a floor — below roughly 137px of row this
+              cluster no longer fits at all — but nothing renders this offer
+              that narrow today: the popover's fixed content is ~296px wide,
+              matching production's floor, and its `overflow-x` computes to
+              `auto` alongside the `overflow-y-auto` it already carries
+              (`ResponsivePopoverContent`), so even a future narrower row would
+              scroll into view rather than clip. */}
           <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
             {error ? (
               <button
