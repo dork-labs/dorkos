@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,shared): an agent keeps its real name when it uses a room tool (DOR-1264)'
+  - 'fix(server,shared): a room tool never renames an agent, and a fresh row takes the manifest name (DOR-1264)'
 ---
 
 ### Fixed

@@ -200,9 +200,19 @@ export interface AgentRegistryPort {
    */
   getByPath(cwd: string): { id: string; name?: string; displayName?: string } | undefined;
   updateLastSeen(agentId: string, event: string): void;
+  /**
+   * Every registered agent with its directory.
+   *
+   * `name` and `displayName` mean here exactly what they mean on
+   * {@link AgentRegistryPort.getByPath}, and the same rule applies: render
+   * `displayName ?? name`, and reach for the bare slug only when an address is
+   * what is wanted. `displayName` is optional because an agent whose manifest
+   * declares none genuinely has only a slug.
+   */
   listWithPaths(): Array<{
     id: string;
     name: string;
+    displayName?: string;
     projectPath: string;
     icon?: string;
     color?: string;

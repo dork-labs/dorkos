@@ -94,11 +94,16 @@ describe('AuthorRegistry', () => {
     // premise that is reachable: a directory changing hands starts a new author,
     // and the old one stays exactly where it was. `directory-reuse.test.ts`
     // proves the mint; this proves the half that protects history.
-    registerAgent(db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    registerAgent(db, {
+      id: 'ULID_ANA',
+      projectPath: ANA_PATH,
+      name: 'ana',
+      displayName: 'Ana',
+    });
     const ana = registry.resolveAgent(ANA_PATH, 'Ana');
 
     db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
-    registerAgent(db, { id: 'ULID_BO', projectPath: ANA_PATH, name: 'bo' });
+    registerAgent(db, { id: 'ULID_BO', projectPath: ANA_PATH, name: 'bo', displayName: 'Bo' });
     const bo = registry.resolveAgent(ANA_PATH, 'Bo');
 
     expect(bo.id).not.toBe(ana.id);
@@ -255,6 +260,31 @@ describe('AuthorRegistry — a name is only refreshed by a caller that knows one
 
     expect(author.displayName).toBe('Docs Writer');
     expect(registry.getById(author.id)?.displayName).toBe('Docs Writer');
+  });
+
+  it('never mints a blank name, even with no manifest and no caller label', () => {
+    // Nothing can name this author: the directory holds no registered agent and
+    // the caller carried nothing. A blank row would pass the NOT NULL column and
+    // then fail `AuthorRefSchema`'s `min(1)` on its way to a roster, so the
+    // directory's own last segment stands in — the string a slug is derived from
+    // anyway, and never the full path.
+    const author = registry.resolveAgent('/Users/dorian/agents/orphan', undefined);
+
+    expect(author.displayName).toBe('orphan');
+    expect(toAuthorRef(author).displayName).toBe('orphan');
+    expect(JSON.stringify(toAuthorRef(author))).not.toContain('/Users/dorian');
+  });
+
+  it('prefers the manifest over the caller when it mints, and the stored name when it refreshes', () => {
+    // The two orderings, side by side, because they are deliberately opposite.
+    // A MINT has no stored label to protect and the manifest is authoritative;
+    // a REFRESH is protecting one, so a caller that knows a name may move it.
+    const minted = registry.resolveAgent(DOCS_PATH, 'Something Else Entirely');
+    expect(minted.displayName).toBe('Docs Writer');
+
+    const refreshed = registry.resolveAgent(DOCS_PATH, 'Documentation Writer');
+    expect(refreshed.id).toBe(minted.id);
+    expect(refreshed.displayName).toBe('Documentation Writer');
   });
 });
 

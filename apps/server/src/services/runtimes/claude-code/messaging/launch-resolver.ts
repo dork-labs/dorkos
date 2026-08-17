@@ -451,6 +451,14 @@ export async function resolveLaunch(args: {
         // The same string the mint above was given: the pin describes who this
         // launch was minted FOR, so a second name here would be a fingerprint
         // of something that never happened.
+        //
+        // It is also the ONLY thing that keeps a token's label fresh, which
+        // makes it load-bearing rather than bookkeeping. `describeAgentIdentity`
+        // (`launch-fingerprint.ts`) folds this name into a `relaunch` pin, so
+        // renaming an agent ends the warm process and the next turn mints a new
+        // token under the new name. Drop it from the descriptor and a long-lived
+        // warm session would keep attributing every room message that agent
+        // writes to the name it had when the process started.
         displayName: agentDisplayName,
         attributed: Object.keys(agentTokenEnv).length > 0,
       }

@@ -468,7 +468,11 @@ async function buildPeerAgentsBlock(
   try {
     const agents = meshCore.listWithPaths().slice(0, 10);
     if (agents.length === 0) return '';
-    const lines = agents.map((a) => `- ${a.name} (${a.projectPath})`).join('\n');
+    // The name a person reads, not the addressing slug — this block introduces
+    // colleagues, and `mesh_inspect(agentId)` below is how one is reached, so
+    // the slug buys nothing here and misnames every agent that has a real name
+    // (DOR-1264).
+    const lines = agents.map((a) => `- ${a.displayName ?? a.name} (${a.projectPath})`).join('\n');
     return `<peer_agents>\nRegistered agents on this machine (use mesh_list() for live data):\n${lines}\n\nTo contact a peer: mesh_inspect(agentId) for relay endpoint, then relay_send() to that subject.\n</peer_agents>`;
   } catch {
     return '';

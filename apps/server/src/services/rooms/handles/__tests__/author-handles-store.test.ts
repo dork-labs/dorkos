@@ -17,13 +17,25 @@ import { createTestDb } from '@dorkos/test-utils/db';
 const ANA_PATH = '/agents/ana';
 const BO_PATH = '/agents/bo';
 
-/** Register an agent in the mesh cache, the way the reconciler would. */
-function registerAgent(db: Db, id: string, projectPath: string, name: string): void {
+/**
+ * Register an agent in the mesh cache, the way the reconciler would.
+ *
+ * `displayName` defaults to the slug, which is what a manifest declaring none
+ * reads back as. Pass it when the two genuinely differ — a real install mostly
+ * has `mio-clicker-pm` addressing `Mio Clicker PM`, and the handle rules here
+ * are precisely about deriving from the first and never the second.
+ */
+function registerAgent(
+  db: Db,
+  id: string,
+  projectPath: string,
+  called: { name: string; displayName?: string }
+): void {
   db.insert(agents)
     .values({
       id,
-      name,
-      displayName: name,
+      name: called.name,
+      displayName: called.displayName ?? called.name,
       projectPath,
       runtime: 'claude-code',
       registeredAt: new Date().toISOString(),
@@ -42,7 +54,7 @@ describe('claiming a handle', () => {
   });
 
   it('refuses a handle live on another author with HANDLE_TAKEN', () => {
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'ana' });
     registry.resolveAgent(ANA_PATH, 'Ana');
     const person = registry.localHuman();
 
@@ -52,7 +64,7 @@ describe('claiming a handle', () => {
   });
 
   it('refuses a handle tombstoned to another author with HANDLE_RESERVED', () => {
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'ana' });
     const ana = registry.resolveAgent(ANA_PATH, 'Ana');
     const person = registry.localHuman();
 
@@ -84,7 +96,7 @@ describe('claiming a handle', () => {
   });
 
   it('lets the ORIGINAL author take their own handle back', () => {
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'ana' });
     const ana = registry.resolveAgent(ANA_PATH, 'Ana');
 
     registry.setHandle(ana.id, 'ana-pm');
@@ -98,8 +110,8 @@ describe('claiming a handle', () => {
     // The keystone: reuse is the vector a rename is not. GitHub releases a name
     // and got repojacking; Matrix never frees one and cannot rename at all. A
     // permanent reservation takes the safety without the price.
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
-    registerAgent(db, 'ULID_BO', BO_PATH, 'bo');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'ana' });
+    registerAgent(db, 'ULID_BO', BO_PATH, { name: 'bo' });
     const ana = registry.resolveAgent(ANA_PATH, 'Ana');
     const bo = registry.resolveAgent(BO_PATH, 'Bo');
 
@@ -148,7 +160,7 @@ describe('claiming a handle', () => {
   it('clears a handle on an empty string, and never stores one', () => {
     // Many NULLs coexist under the partial unique index; many empty strings do
     // not, so the second person to clear theirs would collide with the first.
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'ana' });
     const ana = registry.resolveAgent(ANA_PATH, 'Ana');
     const person = registry.localHuman();
 
@@ -173,7 +185,7 @@ describe('deriving a handle at mint', () => {
   it('reads `agents.name`, not the display name', () => {
     // For most agent rows the two columns differ, and reading the wrong one is
     // the single most likely way to implement derivation wrong.
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'temp-assetops-aced-iframe');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'temp-assetops-aced-iframe' });
     const ana = registry.resolveAgent(ANA_PATH, 'temp_assetops_aced_iframe');
 
     expect(ana.handle).toBe('temp-assetops-aced-iframe');
@@ -183,12 +195,12 @@ describe('deriving a handle at mint', () => {
     // The path 48 of 52 agents take. A `taken` set built from live rows alone
     // lets a newly-minted agent derive straight onto a handle somebody released,
     // which defeats the tombstone where it matters most.
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'helper');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'helper' });
     const ana = registry.resolveAgent(ANA_PATH, 'Ana');
     expect(ana.handle).toBe('helper');
     registry.setHandle(ana.id, 'ana');
 
-    registerAgent(db, 'ULID_BO', BO_PATH, 'helper');
+    registerAgent(db, 'ULID_BO', BO_PATH, { name: 'helper' });
     const bo = registry.resolveAgent(BO_PATH, 'Bo');
 
     expect(bo.handle).toBe('helper-2');
@@ -202,7 +214,7 @@ describe('deriving a handle at mint', () => {
   });
 
   it('does not refresh the handle when the manifest name changes (D12)', () => {
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'ana' });
     const first = registry.resolveAgent(ANA_PATH, 'Ana');
     expect(first.handle).toBe('ana');
 
@@ -238,7 +250,7 @@ describe('deriving a handle at mint', () => {
     // handle it can see, and `retireAndMint` releases before it mints. Here the
     // retired row keeps its handle, and the fresh mint is inside its own lineage
     // — so `taken` does not report it and derivation walks straight onto it.
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'ana' });
     const first = registry.resolveAgent(ANA_PATH, 'Ana');
     expect(first.handle).toBe('ana');
     db.update(authors)
@@ -276,7 +288,7 @@ describe('the seeded reservations', () => {
     // `DorkOS` that joins first would take `@dorkos` and be addressed as the
     // room itself.
     ensureHandles(db, registry);
-    registerAgent(db, 'ULID_IMPOSTOR', ANA_PATH, 'DorkOS');
+    registerAgent(db, 'ULID_IMPOSTOR', ANA_PATH, { name: 'DorkOS' });
 
     const impostor = registry.resolveAgent(ANA_PATH, 'DorkOS');
 
@@ -300,7 +312,7 @@ describe('the seeded reservations', () => {
     // broadcast, so an unreserved `everyone` is a name an adversarial agent
     // could claim precisely to harvest broadcast-intent messages.
     ensureHandles(db, registry);
-    registerAgent(db, 'ULID_EVERYONE', ANA_PATH, 'everyone');
+    registerAgent(db, 'ULID_EVERYONE', ANA_PATH, { name: 'everyone' });
 
     expect(registry.resolveAgent(ANA_PATH, 'Everyone').handle).toBe('everyone-2');
   });
@@ -309,7 +321,7 @@ describe('the seeded reservations', () => {
     // One `try` around both halves let a seeding failure cancel a backfill that
     // had not run yet, so an install would lose every agent's address to a
     // problem with one reserved word. They repair independent state.
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'ana' });
     registry.resolveAgent(ANA_PATH, 'Ana');
     db.update(authors).set({ handle: null }).run();
     const seedFailure = new Error('the reservations are unreachable');
@@ -353,9 +365,12 @@ describe('the backfill', () => {
 
   /** Mint the shapes a real install holds, with the handle column left empty. */
   function seedLegacyAuthors(): void {
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'mio-clicker-pm');
-    registerAgent(db, 'ULID_BO', BO_PATH, 'Art Blocks Analytics');
-    registerAgent(db, 'ULID_CY', '/agents/cy', 'LifeOS');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, {
+      name: 'mio-clicker-pm',
+      displayName: 'Mio Clicker PM',
+    });
+    registerAgent(db, 'ULID_BO', BO_PATH, { name: 'Art Blocks Analytics' });
+    registerAgent(db, 'ULID_CY', '/agents/cy', { name: 'LifeOS' });
     registry.resolveAgent(ANA_PATH, 'Mio Clicker PM');
     registry.resolveAgent(BO_PATH, 'Art Blocks Analytics');
     registry.resolveAgent('/agents/cy', 'LifeOS');
@@ -390,7 +405,7 @@ describe('the backfill', () => {
     seedLegacyAuthors();
     // A second agent that derives onto the same stem, so a re-run that
     // re-derived would push it to `-3`.
-    registerAgent(db, 'ULID_DUP', '/agents/dup', 'LifeOS');
+    registerAgent(db, 'ULID_DUP', '/agents/dup', { name: 'LifeOS' });
     registry.resolveAgent('/agents/dup', 'LifeOS');
     db.update(authors).set({ handle: null }).run();
 
