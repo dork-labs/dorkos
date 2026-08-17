@@ -4,13 +4,14 @@ import { ChevronRight } from 'lucide-react';
 import type { MessagePart } from '@dorkos/shared/types';
 import type { ChatMessage, HookState } from '../../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
-import { TIMING, getToolLabel } from '@/layers/shared/lib';
+import { TIMING } from '@/layers/shared/lib';
 import { groupApprovalReceipts } from '../../lib/group-approval-receipts';
+import { isSettledQuestion, questionEnding } from '../../lib/question-state';
 import { StreamingText } from './StreamingText';
 import { ToolCallCard } from '../tools/ToolCallCard';
 import { ToolApproval } from '../tools/ToolApproval';
 import type { ToolApprovalHandle } from '../tools/ToolApproval';
-import { ApprovalReceipt } from '../tools/ApprovalReceipt';
+import { ApprovalReceiptRow } from '../tools/ApprovalReceiptRow';
 import { QuestionPrompt } from '../tools/QuestionPrompt';
 import type { QuestionPromptHandle } from '../tools/QuestionPrompt';
 import { ElicitationPrompt } from '../tools/ElicitationPrompt';
@@ -443,36 +444,30 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         .map((index) => parts[index])
         .filter((member) => member.type === 'tool_call');
       return (
-        <div key={`approval-receipt-${toolPart.toolCallId}`} className="flex flex-col">
-          <ApprovalReceipt
-            outcome={receipt.outcome}
-            items={members.map((member) => ({
-              toolCallId: member.toolCallId,
-              label:
-                member.approvalDisplayName || getToolLabel(member.toolName, member.input ?? ''),
-            }))}
-            resolvedAt={toolPart.approvalResolvedAt}
-            startedAt={toolPart.approvalStartedAt}
-            reasonGiven={receipt.reasonGiven}
-          />
-          {/* A denied or expired tool never ran — there is no result worth a
-              card, and the receipt already says what happened. An allowed one
-              did run, so it keeps everything an ungated tool would show,
-              inline MCP App included. */}
-          {receipt.outcome === 'allowed' &&
-            members.map((member) => (
-              <ToolCallWithApp
-                key={member.toolCallId}
-                part={member}
-                sessionId={sessionId}
-                autoHide={autoHideToolCalls}
-                expandToolCalls={expandToolCalls}
-              />
-            ))}
-        </div>
+        <ApprovalReceiptRow
+          key={`approval-receipt-${toolPart.toolCallId}`}
+          group={receipt}
+          members={members}
+          lead={toolPart}
+        >
+          {members.map((member) => (
+            <ToolCallWithApp
+              key={member.toolCallId}
+              part={member}
+              sessionId={sessionId}
+              autoHide={autoHideToolCalls}
+              expandToolCalls={expandToolCalls}
+            />
+          ))}
+        </ApprovalReceiptRow>
       );
     }
-    if (toolPart.interactiveType === 'question' && toolPart.questions) {
+    // Gated on `interactiveType` ALONE. A question whose `questions` array
+    // failed to parse is still a question — the producers decide that, by tool
+    // name — and gating on the array sent it to the plain tool card, where it
+    // rendered as `AskUserQuestion` with raw JSON input and no ending at all
+    // (DOR-1293). It has no options to offer, which is what `?? []` says.
+    if (toolPart.interactiveType === 'question') {
       if (toolPart.toolCallId === inputZoneToolCallId) {
         return (
           <CompactPendingRow
@@ -490,8 +485,17 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           ref={isActive ? questionRefCallback : undefined}
           sessionId={sessionId}
           toolCallId={toolPart.toolCallId}
-          questions={toolPart.questions}
-          answers={toolPart.answers ?? (toolPart.status !== 'pending' ? {} : undefined)}
+          questions={toolPart.questions ?? []}
+          // The empty-record fallback is what collapses the card for a client
+          // that did not submit the answer itself — it has no answers to show,
+          // but the question is over. It must NOT survive a question that ended
+          // WITHOUT one: an empty record reads as "answered, details unknown",
+          // and that is how a question nobody answered came back green
+          // (DOR-1293). `questionOutcome` is the one field that can tell the two
+          // apart; where nothing set it, the old rule stands.
+          answers={toolPart.answers ?? (isSettledQuestion(toolPart) ? {} : undefined)}
+          outcome={questionEnding(toolPart)}
+          result={toolPart.result}
           isActive={isActive}
           focusedOptionIndex={isActive ? focusedOptionIndex : -1}
           onDecided={

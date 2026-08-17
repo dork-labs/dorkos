@@ -11,6 +11,12 @@ import { createInSessionContextResolver } from '../../../core/agent-identity/ind
 import { logRefusal } from '../../../observability/refusals.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
+import {
+  approvalTimeoutDenial,
+  questionTimeoutDenial,
+  toolDenial,
+  WITHDRAWN_DENIALS,
+} from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
 
 // ---------------------------------------------------------------------------
@@ -651,7 +657,7 @@ export function handleAskUserQuestion(
       clearTimeout(timeout);
       session.pendingInteractions.delete(toolUseId);
       notifyInteractionCancelled(session, toolUseId, 'aborted');
-      resolve({ behavior: 'deny', message: 'Question cancelled' });
+      resolve({ behavior: 'deny', message: WITHDRAWN_DENIALS.question });
     };
     signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -661,7 +667,7 @@ export function handleAskUserQuestion(
       logInteractionTimeout(session, { id: toolUseId, kind: 'question' });
       notifyInteractionCancelled(session, toolUseId, 'timeout');
       notifyInteractionTimeoutNotice(session, questionTimeoutNotice(questions));
-      resolve({ behavior: 'deny', message: 'User did not respond within 10 minutes' });
+      resolve({ behavior: 'deny', message: questionTimeoutDenial(INTERACTION_TIMEOUT_MINUTES) });
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 
     session.pendingInteractions.set(toolUseId, {
@@ -686,7 +692,7 @@ export function handleAskUserQuestion(
         clearTimeout(timeout);
         signal?.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
-        resolve({ behavior: 'deny', message: 'Interaction cancelled' });
+        resolve({ behavior: 'deny', message: WITHDRAWN_DENIALS.interaction });
       },
       timeout,
     });
@@ -938,22 +944,6 @@ export function createCanUseTool(
 }
 
 /**
- * What the model is told when a person refuses a tool call.
- *
- * The reason is the whole point of carrying one: told only "denied", an agent
- * typically retries the same call or stalls; told why, it can take another
- * route. A blank reason is treated as no reason — the transcript receipt claims
- * the agent was told why only when something was actually delivered, so an
- * empty string must not quietly become a claim.
- *
- * @param reason - The person's own words, when they gave any.
- */
-function denialMessage(reason?: string): string {
-  const said = reason?.trim();
-  return said ? `User denied tool execution. Reason: ${said}` : 'User denied tool execution';
-}
-
-/**
  * Handle tool approval — pause and wait for a person.
  *
  * Reached for every mode except `bypassPermissions` (see
@@ -1000,7 +990,7 @@ export function handleToolApproval(
       clearTimeout(timeout);
       session.pendingInteractions.delete(toolUseId);
       notifyInteractionCancelled(session, toolUseId, 'aborted');
-      deny('Tool approval aborted');
+      deny(WITHDRAWN_DENIALS.approval);
     };
     context.signal.addEventListener('abort', onAbort, { once: true });
 
@@ -1013,7 +1003,7 @@ export function handleToolApproval(
         session,
         approvalTimeoutNotice(toolLabelFor(context.displayName, toolName))
       );
-      deny(`Tool approval timed out after ${timeoutMinutes} minutes`);
+      deny(approvalTimeoutDenial(timeoutMinutes));
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 
     session.pendingInteractions.set(toolUseId, {
@@ -1042,14 +1032,20 @@ export function handleToolApproval(
         } else if (result) {
           resolve({ behavior: 'allow', updatedInput: input });
         } else {
-          deny(denialMessage(denyReason));
+          // The reason is the whole point of carrying one: told only "denied",
+          // an agent typically retries the same call or stalls; told why, it can
+          // take another route. A blank reason is treated as no reason — the
+          // transcript receipt claims the agent was told why only when something
+          // was actually delivered, so an empty string must not quietly become a
+          // claim.
+          deny(toolDenial(denyReason));
         }
       },
       reject: () => {
         clearTimeout(timeout);
         context.signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
-        deny('Interaction cancelled');
+        deny(WITHDRAWN_DENIALS.interaction);
       },
       timeout,
     });

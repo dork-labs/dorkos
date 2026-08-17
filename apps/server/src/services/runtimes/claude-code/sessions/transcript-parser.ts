@@ -10,7 +10,8 @@ import type {
 } from '@dorkos/shared/types';
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
-import { mapSdkAnswersToIndices, parseQuestionAnswers } from './question-answers.js';
+import { mapSdkAnswersToIndices } from './question-answers.js';
+import { applyToolResult } from './tool-result-outcome.js';
 import { classifyOrigin } from './classify-origin.js';
 
 export interface TranscriptLine {
@@ -78,6 +79,13 @@ export interface ContentBlock {
   input?: Record<string, unknown>;
   tool_use_id?: string;
   content?: string | ContentBlock[];
+  /**
+   * On a `tool_result`: whether the call FAILED. The one machine-readable
+   * signal separating a tool that ran from one that was denied, timed out,
+   * withdrawn, or errored — everything else about which is prose, read by
+   * `sessions/tool-result-outcome.ts`.
+   */
+  is_error?: boolean;
   // Error block fields
   error_type?: string;
   message?: string;
@@ -313,42 +321,16 @@ export function isPersonAuthoredUserRecord(line: TranscriptLine): boolean {
 }
 
 /**
- * Apply a tool_result block to the matching HistoryToolCall and ToolCallPart entries.
+ * A record's ISO timestamp as epoch ms, or undefined when it has none or the
+ * value is unparseable. A receipt without a time renders without one; a
+ * receipt stamped `NaN` renders "Invalid Date".
  *
- * Mutates `tc` and `tcPart` in place with `result` and, for AskUserQuestion,
- * the resolved `answers` record.
- *
- * @param tc - The HistoryToolCall to update, or undefined if not tracked.
- * @param tcPart - The ToolCallPart to update, or undefined if not tracked.
- * @param resultText - Extracted text content from the tool_result block.
- * @param sdkAnswers - Optional SDK-provided answers keyed by question text.
+ * @param timestamp - The record's `timestamp` field, if any.
  */
-export function applyToolResult(
-  tc: HistoryToolCall | undefined,
-  tcPart: ToolCallPart | undefined,
-  resultText: string,
-  sdkAnswers: Record<string, string> | undefined
-): void {
-  if (tc) {
-    tc.result = resultText;
-    if (tc.toolName === SDK_TOOL_NAMES.ASK_USER_QUESTION && tc.questions && !tc.answers) {
-      tc.answers = sdkAnswers
-        ? mapSdkAnswersToIndices(sdkAnswers, tc.questions)
-        : parseQuestionAnswers(resultText, tc.questions);
-    }
-  }
-  if (tcPart) {
-    tcPart.result = resultText;
-    if (
-      tcPart.toolName === SDK_TOOL_NAMES.ASK_USER_QUESTION &&
-      tcPart.questions &&
-      !tcPart.answers
-    ) {
-      tcPart.answers = sdkAnswers
-        ? mapSdkAnswersToIndices(sdkAnswers, tcPart.questions as QuestionItem[])
-        : parseQuestionAnswers(resultText, tcPart.questions as QuestionItem[]);
-    }
-  }
+function epochMs(timestamp: string | undefined): number | undefined {
+  if (!timestamp) return undefined;
+  const ms = Date.parse(timestamp);
+  return Number.isNaN(ms) ? undefined : ms;
 }
 
 /**
@@ -390,6 +372,11 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
   let pendingCompactMetadata: CompactMetadata | null = null;
   const toolCallMap = new Map<string, HistoryToolCall>();
   const toolCallPartMap = new Map<string, ToolCallPart>();
+  // When each call was made, from its assistant record's own timestamp. Paired
+  // with the result record's timestamp it is how long a refused or expired
+  // permission waited — the only place that number exists for a decision DorkOS
+  // did not itself record.
+  const toolCallStartedAt = new Map<string, number>();
 
   for (const line of lines) {
     let parsed: TranscriptLine;
@@ -427,12 +414,15 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
           if (block.type === 'tool_result' && block.tool_use_id) {
             hasToolResult = true;
             const resultText = extractToolResultContent(block.content);
-            applyToolResult(
-              toolCallMap.get(block.tool_use_id),
-              toolCallPartMap.get(block.tool_use_id),
+            applyToolResult({
+              tc: toolCallMap.get(block.tool_use_id),
+              tcPart: toolCallPartMap.get(block.tool_use_id),
               resultText,
-              sdkAnswers
-            );
+              isError: block.is_error,
+              sdkAnswers,
+              resolvedAt: epochMs(parsed.timestamp),
+              startedAt: toolCallStartedAt.get(block.tool_use_id),
+            });
           } else if (block.type === 'text' && block.text) {
             textParts.push(block.text);
           }
@@ -571,12 +561,32 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
             parts.push({ type: 'text', text: block.text });
           }
         } else if (block.type === 'tool_use' && block.name && block.id) {
+          // `complete` is a PLACEHOLDER here, overwritten by `applyToolResult`
+          // the moment the paired result is read — which is where the terminal
+          // status is actually decided (DOR-1293).
+          //
+          // A call whose result never arrives KEEPS it, and that is deliberate.
+          // The honest status would be `pending`, but `use-chat-session`'s scan
+          // treats a pending interaction anywhere in the transcript as the
+          // session waiting on you — so a question orphaned by a turn that died
+          // would leave a closed session permanently claiming it needs an
+          // answer. `questionOutcome` is a different field, which that scan
+          // never reads, so the orphan says "unresolved" there instead (below)
+          // and the lie is closed without inventing a live prompt.
           const tc: HistoryToolCall = {
             toolCallId: block.id,
             toolName: block.name,
             input: block.input ? JSON.stringify(block.input) : undefined,
             status: 'complete',
           };
+          if (block.name === SDK_TOOL_NAMES.ASK_USER_QUESTION) {
+            // Every question starts UNRESOLVED and stays that way unless
+            // something says otherwise: `applyToolResult` overwrites it when the
+            // paired result arrives, and recorded answers below settle it early.
+            // A question that reaches a reader still wearing `unresolved` is one
+            // whose transcript records no ending at all.
+            tc.questionOutcome = 'unresolved';
+          }
           if (block.name === SDK_TOOL_NAMES.ASK_USER_QUESTION && block.input) {
             if (Array.isArray(block.input.questions)) {
               tc.questions = block.input.questions as QuestionItem[];
@@ -589,6 +599,15 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
               tc.answers = tc.questions
                 ? mapSdkAnswersToIndices(rawAnswers, tc.questions)
                 : rawAnswers;
+              // DorkOS writes answers back into the tool's input only after
+              // somebody submitted them, so this question is answered NOW — the
+              // paired result, when it comes, agrees. (It does not always come:
+              // a turn can die between the submission and the result, and this
+              // is what keeps that case from reading as unresolved.) A failing
+              // result still wins, because `applyToolResult` runs later and a
+              // recorded submission that the tool then rejected did not answer
+              // anything.
+              tc.questionOutcome = 'answered';
             }
           }
           if (block.name === SDK_TOOL_NAMES.SKILL && block.input) {
@@ -597,6 +616,8 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
           }
           toolCalls.push(tc);
           toolCallMap.set(block.id, tc);
+          const startedAt = epochMs(parsed.timestamp);
+          if (startedAt !== undefined) toolCallStartedAt.set(block.id, startedAt);
 
           const toolCallPart: ToolCallPart = {
             type: 'tool_call',
@@ -604,11 +625,15 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
             toolName: block.name,
             input: block.input ? JSON.stringify(block.input) : undefined,
             status: 'complete',
-            ...(tc.questions
+            // Keyed off the tool NAME, matching `resolveToolCall`: a question
+            // whose `questions` failed to parse is still a question, and a part
+            // that said otherwise would take the approval arm downstream.
+            ...(block.name === SDK_TOOL_NAMES.ASK_USER_QUESTION
               ? {
                   interactiveType: 'question' as const,
                   questions: tc.questions,
                   answers: tc.answers,
+                  questionOutcome: tc.questionOutcome,
                 }
               : {}),
           };

@@ -523,10 +523,12 @@ describe('OpenCodeSessionMapper', () => {
         status: 'error',
         result: 'command failed',
       });
-      // HistoryToolCall.status is the literal 'complete'; finished-with-error
-      // still records the call, carrying the error text as its result.
+      // Both shapes say the same thing. History's status used to be the literal
+      // `'complete'`, so this half had to record a failure as a success and let
+      // the error text in `result` carry the truth — a green check on a tool
+      // that failed (DOR-1293).
       expect(message!.toolCalls?.[0]).toMatchObject({
-        status: 'complete',
+        status: 'error',
         result: 'command failed',
       });
     });

@@ -8,7 +8,9 @@ import {
   isBlockingInteractionEventType,
   isBlockingInteractionEvent,
   approvalOutcomeOf,
+  questionOutcomeOf,
   type ToolApprovalOutcome,
+  type QuestionOutcome,
   type SessionEvent,
 } from '../session-stream.js';
 
@@ -504,6 +506,45 @@ describe('approvalOutcomeOf', () => {
       const expected = EARNED[key];
       it(`${key} → ${expected ?? 'no receipt'}`, () => {
         expect(approvalOutcomeOf({ kind, resolution })).toBe(expected);
+      });
+    }
+  }
+});
+
+/**
+ * The question-shaped twin, swept the same way and for the same reason.
+ *
+ * It differs from its twin in two places, and both are deliberate. It KEEPS
+ * `cancelled`: a withdrawn approval leaves nothing behind because the tool it
+ * gated says the rest, while a withdrawn question is already drawn in the
+ * transcript, so leaving it unmarked is exactly what let it keep reading as
+ * answered (DOR-1293). And it drops `approved`, which is not a thing that
+ * happens to a question.
+ */
+describe('questionOutcomeOf', () => {
+  const kinds = ['approval', 'question', 'elicitation', undefined] as const;
+  const resolutions = [
+    'approved',
+    'denied',
+    'answered',
+    'expired',
+    'cancelled',
+    undefined,
+  ] as const;
+
+  const EARNED: Record<string, QuestionOutcome> = {
+    'question/answered': 'answered',
+    'question/denied': 'denied',
+    'question/expired': 'expired',
+    'question/cancelled': 'cancelled',
+  };
+
+  for (const kind of kinds) {
+    for (const resolution of resolutions) {
+      const key = `${String(kind)}/${String(resolution)}`;
+      const expected = EARNED[key];
+      it(`${key} → ${expected ?? 'nothing recorded'}`, () => {
+        expect(questionOutcomeOf({ kind, resolution })).toBe(expected);
       });
     }
   }

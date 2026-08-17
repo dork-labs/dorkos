@@ -13,6 +13,9 @@
  *     merged by toolCallId, `tool_progress` appended) emits one assistant
  *     message per turn, only once the turn closes with `turn_end` — the open
  *     turn's events are delivered separately as `inProgressTurn`.
+ *   - `question_prompt` attaches its questions to the tool call that raised it,
+ *     and the `interaction_resolved` that retires it attaches how it ended, so
+ *     a reopened transcript still shows what was asked and what became of it.
  *   - `compact_boundary` emits a `messageType: 'compaction'` message at its own
  *     seq — the same shape the Claude adapter builds from JSONL, so one row
  *     renders both. It is the only fold that does not require an open turn.
@@ -33,16 +36,25 @@
  *
  * @module services/session/event-log-history
  */
-import { approvalOutcomeOf, type SessionEvent } from '@dorkos/shared/session-stream';
+import {
+  approvalOutcomeOf,
+  questionOutcomeOf,
+  type SessionEvent,
+} from '@dorkos/shared/session-stream';
 import type { ErrorPart, HistoryMessage, HistoryToolCall, MessagePart } from '@dorkos/shared/types';
+import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
 
 /** The `error` session-event member, the per-turn error accumulator entry. */
 type ErrorSessionEvent = Extract<SessionEvent, { type: 'error' }>;
 
-/** The answered-approval fields a tool call carries into history. */
+/** The resolved-interaction fields a tool call carries into history. */
 type ApprovalReceipt = Pick<
   HistoryToolCall,
-  'approvalOutcome' | 'approvalResolvedAt' | 'approvalStartedAt' | 'approvalReasonGiven'
+  | 'approvalOutcome'
+  | 'approvalResolvedAt'
+  | 'approvalStartedAt'
+  | 'approvalReasonGiven'
+  | 'questionOutcome'
 >;
 
 /** Accumulator for one turn while folding the event stream. */
@@ -89,6 +101,103 @@ function applyReceipts(turn: TurnAccumulator): void {
 }
 
 /**
+ * Say so when a question in this turn never resolved.
+ *
+ * A turn really can end with a question still open. The cases are narrower than
+ * "something crashed", and worth naming precisely:
+ *
+ * - The turn was INTERRUPTED, or ended for its own reasons, while the ask was
+ *   still pending — the projector models exactly this (it holds interactions
+ *   across `turn_end` and settles `blocked` separately).
+ * - The log was TRIMMED between the ask and its answer (`EVENT_LOG_MAX_EVENTS`).
+ * - The resolution arrived LATE, after `turn_end` — handled, but by
+ *   {@link applyLateReceipts} rather than here.
+ *
+ * A runtime dying is NOT one of them: `feedProjector` closes the turn in its
+ * `finally`, so a dead runtime still emits `turn_end` and its questions are
+ * marked here like any other. A SERVER crash emits no `turn_end` at all, and
+ * then this turn produces no assistant message to mark.
+ *
+ * Left unmarked, such a question reaches the renderer as "settled, with no
+ * answers" — the exact shape an ANSWERED question takes on a client that did
+ * not submit it — and drew a green "Question answered" over it (DOR-1293).
+ *
+ * Marked by TOOL NAME as well as by a parsed `questions` array, so the row
+ * survives the fail-closed `question_prompt` fold: an ask whose id did not
+ * match any tool call loses its options, but the call that raised it still
+ * says it went unanswered instead of showing a bare tool card.
+ */
+function markUnresolvedQuestions(turn: TurnAccumulator): void {
+  for (const tool of turn.tools.values()) {
+    const isQuestion =
+      tool.questions !== undefined || tool.toolName === SDK_TOOL_NAMES.ASK_USER_QUESTION;
+    if (isQuestion && tool.questionOutcome === undefined) {
+      tool.questionOutcome = 'unresolved';
+    }
+  }
+}
+
+/**
+ * What one resolved interaction leaves on the tool call it belongs to, or
+ * `undefined` when it earns no record at all (a withdrawn approval, a
+ * resolution whose kind the runtime never said).
+ *
+ * `approvalOutcomeOf` and `questionOutcomeOf` are the shared definitions — the
+ * same two the client's live fold and the claude-code overlay read — so a
+ * reopened transcript says what the person saw.
+ *
+ * @param event - The resolving `interaction_resolved` event.
+ */
+function receiptFor(
+  event: Extract<SessionEvent, { type: 'interaction_resolved' }>
+): ApprovalReceipt | undefined {
+  const questionOutcome = questionOutcomeOf(event);
+  if (questionOutcome !== undefined) return { questionOutcome };
+  const approvalOutcome = approvalOutcomeOf(event);
+  if (approvalOutcome === undefined) return undefined;
+  return {
+    approvalOutcome,
+    approvalResolvedAt: event.at,
+    approvalStartedAt: event.startedAt,
+    approvalReasonGiven: event.reasonGiven,
+  };
+}
+
+/**
+ * Apply resolutions that arrived AFTER their turn closed.
+ *
+ * `interaction_resolved` is not bounded by the turn that raised the ask — the
+ * projector deliberately holds interactions across `turn_end`, settling
+ * `blocked` on its own schedule — so a question answered a beat late used to
+ * hit `if (!turn) break` and be dropped. Before DOR-1293 that read as
+ * "Question answered" and was right by accident; after it, the turn-end stamp
+ * had already written `unresolved`, so a question somebody DID answer claimed
+ * nobody had. Neither is acceptable, and the fix is the same: keep the late
+ * resolution and let it land.
+ *
+ * Runs once at the end of the fold, over the emitted messages, so it reaches
+ * BOTH shapes — the `toolCalls` a clean turn carries and the `parts` a failed
+ * one rebuilds (which are fresh objects, not the accumulator's).
+ *
+ * @param messages - Every message the fold produced.
+ * @param late - Receipts whose turn had already closed, by tool-call id.
+ */
+function applyLateReceipts(messages: HistoryMessage[], late: Map<string, ApprovalReceipt>): void {
+  if (late.size === 0) return;
+  for (const message of messages) {
+    for (const tool of message.toolCalls ?? []) {
+      const receipt = late.get(tool.toolCallId);
+      if (receipt) Object.assign(tool, receipt);
+    }
+    for (const part of message.parts ?? []) {
+      if (part.type !== 'tool_call') continue;
+      const receipt = late.get(part.toolCallId);
+      if (receipt) Object.assign(part, receipt);
+    }
+  }
+}
+
+/**
  * Map an accumulated `error` event to an {@link ErrorPart}. `ErrorPart` carries
  * no `code` field, so a code is folded into the details string (prefixed
  * `[code]`) rather than dropped.
@@ -127,6 +236,17 @@ function buildFailedTurnParts(turn: TurnAccumulator): MessagePart[] {
       ...(tool.input !== undefined ? { input: tool.input } : {}),
       ...(tool.result !== undefined ? { result: tool.result } : {}),
       ...(tool.progressOutput !== undefined ? { progressOutput: tool.progressOutput } : {}),
+      // Same reason as the approval receipt below: a part list is what the
+      // client renders from when present, so a question that lived only on
+      // `toolCalls` would lose both its options and its ending on a failed turn.
+      ...(tool.questions !== undefined
+        ? {
+            interactiveType: 'question' as const,
+            questions: tool.questions,
+            answers: tool.answers,
+            questionOutcome: tool.questionOutcome,
+          }
+        : {}),
       // A part list is what the client renders from when present, so a receipt
       // that lived only on `toolCalls` would vanish on a failed turn.
       // `interactiveType` is what marks the part as a permission prompt at all.
@@ -157,6 +277,10 @@ function buildFailedTurnParts(turn: TurnAccumulator): MessagePart[] {
 export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMessage[] {
   const messages: HistoryMessage[] = [];
   let turn: TurnAccumulator | null = null;
+  // Resolutions that landed after their own turn closed — see
+  // {@link applyLateReceipts}. Last writer wins, which is what an id reused
+  // across turns needs: only the most recent row could still be open.
+  const lateReceipts = new Map<string, ApprovalReceipt>();
 
   for (const event of events) {
     switch (event.type) {
@@ -192,6 +316,37 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
         const entry = toolEntry(turn, event.toolCallId, event.toolName);
         if (event.input !== undefined) entry.input = event.input;
         if (event.result !== undefined) entry.result = event.result;
+        // The terminal status the runtime reported, rather than the optimistic
+        // `complete` the entry was created with. A denied or failed tool that
+        // came back from history wearing a check is half of DOR-1293.
+        entry.status = event.status;
+        break;
+      }
+      case 'question_prompt': {
+        // The QUESTION itself, kept. Without it a reopened transcript holds a
+        // bare `AskUserQuestion` tool call — the thing a person was asked
+        // vanishes, and with it any place to say how it ended (DOR-1293).
+        //
+        // FAILS CLOSED, exactly as `applyReceipts` does, and for the same
+        // reason: this annotates a tool call the turn already holds and never
+        // mints one. A runtime whose interaction ids live in their own id space
+        // (the shape OpenCode's `Permission.id` already takes) would otherwise
+        // produce a SECOND `AskUserQuestion` row beside the real tool call —
+        // one with the questions and no result, one with the result and no
+        // questions — and an id-less `question_prompt`, which the normalizer's
+        // `?? ''` makes representable, would mint a row keyed on the empty
+        // string.
+        //
+        // What survives a miss is worth being exact about. When a `tool_call`
+        // raised the ask under a DIFFERENT id, that row is still in the turn and
+        // `markUnresolvedQuestions` marks it by tool NAME — so the reader sees
+        // an `AskUserQuestion` that went unanswered, having lost only the
+        // options. When there was no tool call at all, nothing is shown, which
+        // is the honest end of a trail that leads nowhere. Neither case invents
+        // a row.
+        if (!turn) break;
+        const asked = turn.tools.get(event.id);
+        if (asked) asked.questions = event.questions;
         break;
       }
       case 'tool_progress': {
@@ -267,20 +422,26 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
         // open. `approvalOutcomeOf` is the one place the two rules live (an
         // approval, actually answered) — shared with the client's live fold so
         // the reopened line matches the one the person saw.
-        if (!turn) break;
-        const outcome = approvalOutcomeOf(event);
-        if (outcome === undefined) break;
-        turn.receipts.set(event.id, {
-          approvalOutcome: outcome,
-          approvalResolvedAt: event.at,
-          approvalStartedAt: event.startedAt,
-          approvalReasonGiven: event.reasonGiven,
-        });
+        //
+        // A question's ending rides the same fold (DOR-1293): for a log-backed
+        // runtime this stream is the ONLY transcript, so an expired or
+        // dismissed question that was not recorded here came back from a reload
+        // looking answered.
+        //
+        // A resolution arriving after its own `turn_end` is NOT dropped. The
+        // projector holds interactions across the turn boundary by design, so
+        // "late" is a state it models rather than an anomaly — it goes to
+        // {@link applyLateReceipts}, which lands it on the already-emitted row.
+        const receipt = receiptFor(event);
+        if (receipt === undefined) break;
+        if (turn) turn.receipts.set(event.id, receipt);
+        else lateReceipts.set(event.id, receipt);
         break;
       }
       case 'turn_end': {
         if (!turn) break;
         applyReceipts(turn);
+        markUnresolvedQuestions(turn);
         // An errors-only turn still emits an assistant message: the failure IS
         // the turn's output, and dropping it would make a failed turn vanish
         // from a log-backed runtime's history.
@@ -301,5 +462,6 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
     }
   }
 
+  applyLateReceipts(messages, lateReceipts);
   return messages;
 }

@@ -50,6 +50,7 @@ export type {
   TextPart,
   ToolCallPart,
   ToolApprovalOutcome,
+  QuestionOutcome,
   MessagePart,
   MessageType,
   HistoryMessage,

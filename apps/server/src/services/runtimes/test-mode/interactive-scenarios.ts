@@ -492,6 +492,65 @@ const stoppableTurn: ScenarioFn = async function* (_content, ctx) {
 };
 
 /**
+ * I-07 — a question NOBODY answers, and a turn that closes over it.
+ *
+ * The one state a test cannot reach by pressing buttons. Production auto-denies
+ * an unanswered ask after ten minutes; this reaches the identical state through
+ * the identical code path — an `interaction_cancelled` with `reason: 'timeout'`,
+ * which the normalizer maps to `interaction_resolved` / `expired` and the
+ * projector stamps `kind: 'question'` from the entry it retires — released by
+ * the test's own step barrier instead of by a clock nothing can wait out.
+ *
+ * The turn then ENDS, which is the half that matters here and the half I-05
+ * cannot cover: a reload after `turn_end` is served from reconstructed history
+ * rather than from a replayed live turn, and history is where an unanswered
+ * question came back wearing a green "Question answered" (DOR-1293).
+ */
+const questionExpires: ScenarioFn = async function* (_content, ctx) {
+  const toolCallId = 'question-expired-1';
+  yield sessionStatus();
+  yield text('One decision before I scaffold anything.\n\n');
+  yield {
+    type: 'tool_call_start',
+    data: { toolCallId, toolName: 'AskUserQuestion', status: 'running' },
+  } as StreamEvent;
+  yield {
+    type: 'question_prompt',
+    data: {
+      toolCallId,
+      startedAt: Date.now(),
+      questions: [
+        {
+          header: 'Test runner',
+          question: 'Which test runner should I set up?',
+          options: [
+            { label: 'Vitest', description: 'Fast, Vite-native, what the repo already uses.' },
+            { label: 'Jest', description: 'Widely known, slower to boot.' },
+          ],
+          multiSelect: false,
+        },
+      ],
+    },
+  } as StreamEvent;
+  // The resultless close claude-code emits at `content_block_stop` — see
+  // `questionPrompt` for why every question scenario has to carry it.
+  yield {
+    type: 'tool_call_end',
+    data: { toolCallId, toolName: 'AskUserQuestion', status: 'complete' },
+  } as StreamEvent;
+
+  // Parked, and answerable, until the test says the clock ran out.
+  await ctx.awaitStep();
+
+  yield {
+    type: 'interaction_cancelled',
+    data: { interactionId: toolCallId, reason: 'timeout' },
+  } as StreamEvent;
+  yield text('MOVED-ON: nobody answered, so I picked Vitest myself.');
+  yield done();
+};
+
+/**
  * Interactive scenarios keyed by the name accepted at `POST /api/test/scenario`.
  * Merged into the test-mode scenario registry at import time.
  */
@@ -499,6 +558,7 @@ export const INTERACTIVE_SCENARIOS: Record<string, ScenarioFn> = {
   'approval-gated': approvalGated,
   'approval-batch': approvalBatch,
   'question-prompt': questionPrompt,
+  'question-expires': questionExpires,
   'elicitation-prompt': elicitationPrompt,
   'todo-progress': todoProgress,
   'subagent-fanout': subagentFanout,

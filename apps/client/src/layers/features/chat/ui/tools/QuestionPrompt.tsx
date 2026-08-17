@@ -4,8 +4,8 @@ import { Check } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import { Kbd, Button, RadioGroup, RadioGroupItem, Checkbox } from '@/layers/shared/ui';
 import { OptionRow, InteractiveCard } from '../primitives';
-import { QuestionAnswerSummary } from './QuestionAnswerSummary';
-import type { QuestionItem } from '@dorkos/shared/types';
+import { QuestionAnswerSummary, QuestionUnansweredRow } from './QuestionAnswerSummary';
+import type { QuestionItem, QuestionOutcome } from '@dorkos/shared/types';
 
 // --- Animation constants (module-scope to avoid per-render allocation) ---
 
@@ -24,6 +24,17 @@ interface QuestionPromptProps {
   questions: QuestionItem[];
   /** Pre-submitted answers from history — renders collapsed immediately */
   answers?: Record<string, string>;
+  /**
+   * How the question ENDED, when something can say. Anything but `answered`
+   * replaces the form with an honest terminal row instead of the answer
+   * summary — the question is over and nobody answered it (DOR-1293).
+   */
+  outcome?: QuestionOutcome;
+  /**
+   * The transcript's own result text, shown under EVERY non-answered ending —
+   * the label is the summary, this is the evidence for it.
+   */
+  result?: string;
   /** Whether this is the active shortcut target */
   isActive?: boolean;
   /** Which option is focused via keyboard */
@@ -53,6 +64,8 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       toolCallId,
       questions,
       answers: preAnswers,
+      outcome,
+      result,
       isActive = false,
       focusedOptionIndex = -1,
       onDecided,
@@ -386,6 +399,14 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
           )}
         </div>
       );
+    }
+
+    // The question ended and nobody answered it. Checked BEFORE `submitted`,
+    // which a local submission can also set: an answer this client actually
+    // sent outranks a stale outcome, but nothing else does — history's word on
+    // how a question ended is the whole point of carrying it.
+    if (outcome !== undefined && outcome !== 'answered' && !submitted) {
+      return <QuestionUnansweredRow outcome={outcome} result={result} />;
     }
 
     // Collapsed submitted state — fade in the compact answer summary
