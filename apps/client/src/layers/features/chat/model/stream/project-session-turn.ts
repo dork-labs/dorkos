@@ -654,7 +654,8 @@ function foldPendingInteraction(parts: MessagePart[], event: InteractionEvent): 
 }
 
 /**
- * Overwrite an already-represented interaction's countdown with the snapshot's.
+ * Re-assert the hold on an already-represented interaction, and give it the
+ * snapshot's countdown.
  *
  * THE ONLY FRESH TIMER IN THE PAYLOAD. A replayed `approval_required` carries
  * the remainder it had at EMISSION — which for a live ask is the whole budget —
@@ -663,13 +664,29 @@ function foldPendingInteraction(parts: MessagePart[], event: InteractionEvent): 
  * `Last-Event-ID`. The pending DTO's `remainingMs` is computed when the
  * snapshot is built, so it is the one number that is true now (DOR-810).
  *
- * Only the timer is taken. The rest of the DTO is the same payload the turn
- * already folded, and re-applying it would re-pend a card the turn may have
- * settled.
+ * The STATUS is re-asserted for a different reason, and it is what makes a
+ * parked prompt survive a refresh at all (DOR-1269). A DTO exists only while
+ * the server is still waiting: the projector drops it the moment
+ * `interaction_resolved` folds. So its presence is the authority on this
+ * interaction being unanswered, and nothing the turn's replay left behind may
+ * overrule it. The replay routinely does: a cold snapshot's `inProgressTurn`
+ * carries the interaction event itself (the LIVE store deliberately does not —
+ * it routes those three straight to `pendingInteractions`), so on the cold path
+ * `foldApproval`/`foldQuestion` pend the part mid-turn, and the `tool_result`
+ * that claude-code emits when the model finishes STREAMING the tool's input —
+ * `content_block_stop` → `tool_call_end`, long before the gated tool runs —
+ * then overwrote `pending` with `complete`. The card became an answered receipt
+ * over a question nobody had answered, and the pending scan that drives the
+ * composer's answer panel (`status === 'pending'`) went blind, so there was no
+ * way left to answer it.
+ *
+ * Nothing else is taken from the DTO: the rest is the same payload the turn
+ * already folded.
  */
-function applyRecoveredTimer(parts: MessagePart[], dto: PendingInteractionDTO): void {
+function applyRecoveredHold(parts: MessagePart[], dto: PendingInteractionDTO): void {
   const toolCall = findToolCallPart(parts, dto.id);
   if (toolCall) {
+    toolCall.status = 'pending';
     toolCall.approvalStartedAt = dto.startedAt;
     toolCall.approvalRemainingMs = dto.remainingMs;
     // Only when the DTO actually declares a budget: absent means "this runtime
@@ -680,6 +697,7 @@ function applyRecoveredTimer(parts: MessagePart[], dto: PendingInteractionDTO): 
   }
   const elicitation = findElicitationPart(parts, dto.id);
   if (elicitation) {
+    elicitation.status = 'pending';
     elicitation.startedAt = dto.startedAt;
     elicitation.remainingMs = dto.remainingMs;
   }
@@ -691,8 +709,8 @@ function applyRecoveredTimer(parts: MessagePart[], dto: PendingInteractionDTO): 
  * An interaction the turn does not represent is folded whole — this is what
  * surfaces a session still `blocked` after `turn_end`, whose `inProgressTurn`
  * was cleared (DOR-73 recovery). An interaction present in BOTH keeps the
- * turn's part (which owns the live ordering) and takes only the DTO's
- * countdown, via {@link applyRecoveredTimer}.
+ * turn's part (which owns the live ordering) and takes the DTO's hold and
+ * countdown, via {@link applyRecoveredHold}.
  *
  * @param parts - Parts folded from the in-progress turn (mutated in place).
  * @param pendingInteractions - The snapshot's recoverable pending interactions.
@@ -703,7 +721,7 @@ function foldPendingInteractions(
 ): void {
   for (const dto of pendingInteractions) {
     if (partsContainInteraction(parts, dto.id)) {
-      applyRecoveredTimer(parts, dto);
+      applyRecoveredHold(parts, dto);
       continue;
     }
     foldPendingInteraction(parts, pendingInteractionToEvent(dto));

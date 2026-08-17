@@ -62,7 +62,7 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 | I-02 | Batch approval bar for multiple pending tools                                                  | session  | U, E     |
 | I-03 | AskUserQuestion prompt renders; answer is delivered                                            | session  | U, E, S  |
 | I-04 | Elicitation prompt (MCP)                                                                       | session  | U, E     |
-| I-05 | Pending prompts survive switch-away-and-back and hard refresh (snapshot `pendingInteractions`) | session  | U, S     |
+| I-05 | Pending prompts survive switch-away-and-back and hard refresh (snapshot `pendingInteractions`) | session  | U, E, S  |
 | I-06 | Approval answered outside DorkOS (e.g. OpenCode CLI) shows the real outcome                    | session  | U        |
 | I-07 | Approval timeout (~10-min auto-deny) is visible and honest                                     | session  | U        |
 

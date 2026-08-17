@@ -136,11 +136,19 @@ describe('approval-gated (I-01) — the turn waits, and the answer changes the o
     // `tool_call_end` PROJECTS as `tool_result` — the raw member name never
     // reaches a client, so asserting on it here would be asserting on something
     // the browser test downstream can never see.
+    //
+    // TWO of them, and the pair is deliberate (DOR-1269): the first closes the
+    // content block the moment the model stops streaming the tool's input, which
+    // is what claude-code does and what a cold hydrate therefore replays; the
+    // second is the real outcome, minted after the person answered. Only the
+    // LAST one can speak for whether the tool ran.
     const results = replay(projector).filter((e) => e.type === 'tool_result');
-    expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({ status: 'complete' });
+    expect(results).toHaveLength(2);
+    expect(JSON.stringify(results[0])).not.toContain('Applied 1 edit');
+    const terminal = results[results.length - 1];
+    expect(terminal).toMatchObject({ status: 'complete' });
     // The tool really ran: a result came back.
-    expect(JSON.stringify(results[0])).toContain('Applied 1 edit');
+    expect(JSON.stringify(terminal)).toContain('Applied 1 edit');
   });
 
   it('refuses the tool when it is denied, and carries the reason', async () => {
@@ -159,10 +167,12 @@ describe('approval-gated (I-01) — the turn waits, and the answer changes the o
     // The refusal is in the STREAM, not merely on the card: the person's words
     // reached the agent, and the call ended in error with no result.
     expect(streamedText(projector)).toContain('wrong file');
+    // The terminal one, for the reason the approve case spells out: the first
+    // merely closes the streamed input block.
     const results = replay(projector).filter((e) => e.type === 'tool_result');
-    expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({ status: 'error' });
-    expect(JSON.stringify(results[0])).not.toContain('Applied 1 edit');
+    expect(results).toHaveLength(2);
+    expect(results[results.length - 1]).toMatchObject({ status: 'error' });
+    expect(JSON.stringify(results)).not.toContain('Applied 1 edit');
   });
 
   it('drops the pending card from the projection once it is answered', async () => {

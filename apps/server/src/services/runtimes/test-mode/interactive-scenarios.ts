@@ -119,6 +119,16 @@ const approvalGated: ScenarioFn = async function* (_content, ctx) {
     blockedPath: 'notes/release.md',
     hasSuggestions: true,
   });
+  // The gate has not opened, and the tool has NOT run — but the model is done
+  // streaming its input, and that is when claude-code closes the block
+  // (`content_block_stop` → `tool_call_end`, DOR-1269). So a turn replayed onto
+  // a cold tab reports `complete` for a tool still waiting on a person. Emitted
+  // here so the reload test meets the state a real approval actually parks in;
+  // the branch's real result still rides the `tool_call_end` after the decision.
+  yield {
+    type: 'tool_call_end',
+    data: { toolCallId, toolName: 'Edit', status: 'complete' },
+  } as StreamEvent;
 
   const decision = await ctx.awaitApproval(toolCallId);
 
@@ -231,6 +241,17 @@ const questionPrompt: ScenarioFn = async function* (_content, ctx) {
   const toolCallId = 'question-1';
   yield sessionStatus();
   yield text('Before I scaffold the tests, one decision.\n\n');
+  // AskUserQuestion is an ORDINARY tool call, and the pair around the ask is
+  // what makes this scenario able to catch DOR-1269. claude-code emits
+  // `tool_call_end` at `content_block_stop` — the moment the model finishes
+  // STREAMING the tool's input, long before anybody answers — so the turn a
+  // cold hydrate replays holds `complete` for a tool that has not run. A fake
+  // that emitted only the ask would park in a state the real runtime never
+  // reaches, and the reload test resting on it would be green by omission.
+  yield {
+    type: 'tool_call_start',
+    data: { toolCallId, toolName: 'AskUserQuestion', status: 'running' },
+  } as StreamEvent;
   yield {
     type: 'question_prompt',
     data: {
@@ -248,6 +269,10 @@ const questionPrompt: ScenarioFn = async function* (_content, ctx) {
         },
       ],
     },
+  } as StreamEvent;
+  yield {
+    type: 'tool_call_end',
+    data: { toolCallId, toolName: 'AskUserQuestion', status: 'complete' },
   } as StreamEvent;
 
   const answers = await ctx.awaitAnswers(toolCallId);
