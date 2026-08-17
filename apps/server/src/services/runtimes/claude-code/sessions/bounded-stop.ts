@@ -44,18 +44,22 @@
  * healthy-but-slow one KILLS a process that was about to stop politely. What
  * that forfeits is real: the CLI's own interrupt sentinel on each pending call,
  * the `result.terminal_reason` the turn would have settled with, and the
- * `[Request interrupted]` marker the CLI writes into its JSONL — so a session
- * reloaded later reads as a reply that simply ended. And the channel genuinely
- * can be slow under load: this repo already allows 8 s for a control round-trip
- * on the same pipe (`CONTEXT_USAGE_TIMEOUT_MS`, `message-sender.ts`).
+ * `[Request interrupted by user]` marker the CLI writes into its own transcript
+ * — so a reader of that transcript sees no sign the turn was cut short. And the
+ * channel genuinely can be slow under load: this repo already allows 8 s for a
+ * control round-trip on the same pipe (`CONTEXT_USAGE_TIMEOUT_MS`,
+ * `message-sender.ts`).
  *
  * Three seconds anyway, because the person is the tighter constraint: a Stop
  * that has visibly done nothing for longer than that reads as broken, and
  * pressing it again is the natural response. The trade is bounded on the other
- * side too — the LIVE settle is honest either way, since a turn ended by an
- * escalated close is reported as `interrupted` rather than as finished
- * (DOR-1244) — so what a premature escalation costs is the reload story and a
- * warm process, not the operator's understanding of what just happened.
+ * side too — the live settle is honest either way ON THE RESUME PATH, where a
+ * turn ended by an escalated close is reported as `interrupted` rather than as
+ * finished (`messaging/message-sender.ts`, DOR-1244); the persistent pump does
+ * not run that loop and still settles a killed process as a crash, which is a
+ * named DOR-1244 follow-up (`persistentSession` ships OFF). So on the path that
+ * ships, a premature escalation costs the CLI's transcript marker and a warm
+ * process, not the operator's understanding of what just happened.
  *
  * Revisit this number with measurements of real ack latency under load, not
  * with an argument.

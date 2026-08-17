@@ -104,15 +104,27 @@ function resultMsg(): SDKMessage {
 /** A step in the scripted stream: an SDK message, or something the test does. */
 type Step = SDKMessage | (() => Promise<void>);
 
+/** How the fake CLI behaves around the stop it is about to be sent. */
+interface CliBehaviour {
+  /**
+   * What `interrupt()` does. `never-settles` is the wind-down shape (the SDK
+   * drops the write to an ended stdin and waits on an ack nobody will send);
+   * `rejects` reaches the same `close()` escalation without spending the real
+   * three-second bound, which is what the starting-phase case needs.
+   */
+  interrupt?: 'never-settles' | 'rejects';
+  /** The process exits by itself at the end of the script rather than waiting to be closed. */
+  endsOnItsOwn?: boolean;
+}
+
 /**
- * A fake CLI that behaves like the real one in the two ways that matter here:
- * its `interrupt()` never settles once its stdin has ended (the SDK drops the
- * write and waits on an ack nobody will send), and its message stream does not
- * finish until `close()` — which ends it CLEANLY, with no error, exactly as the
- * SDK's own `performCleanup` does (`inputStream.done()`; observed live against
- * CLI 2.1.224 on 2026-08-17).
+ * A fake CLI that behaves like the real one in the ways that matter here: it
+ * outlives its own `result` (so DorkOS ending stdin does not end it), its
+ * `interrupt()` cannot be answered, and its message stream finishes on `close()`
+ * CLEANLY, with no error — exactly as the SDK's `performCleanup` does
+ * (`inputStream.done()`; observed live against CLI 2.1.224 on 2026-08-17).
  */
-function fakeWindDownCli(steps: Step[]) {
+function fakeWindDownCli(steps: Step[], behaviour: CliBehaviour = {}) {
   let closed = false;
   let releaseClose!: () => void;
   const closeSignal = new Promise<void>((resolve) => {
@@ -122,8 +134,11 @@ function fakeWindDownCli(steps: Step[]) {
   return {
     calls,
     handle: {
-      interrupt: () => {
+      interrupt: (): Promise<never> => {
         calls.interrupt++;
+        if (behaviour.interrupt === 'rejects') {
+          return Promise.reject(new Error('interrupt refused'));
+        }
         return new Promise<never>(() => {});
       },
       close: () => {
@@ -140,21 +155,31 @@ function fakeWindDownCli(steps: Step[]) {
           if (closed) return;
           yield step;
         }
-        await closeSignal;
+        if (!behaviour.endsOnItsOwn) await closeSignal;
       },
     } as unknown as ReturnType<typeof query>,
   };
 }
 
+/** One window on the durable stream, `turn_start` through `turn_end`. */
+interface ProjectedWindow {
+  /** `turn_start.origin` — absent for a window a person asked for, `'runtime'` for a reopen. */
+  origin?: string;
+  /** Every event type in the window, in order. */
+  types: string[];
+  events: SessionEvent[];
+}
+
 /** Cut the durable stream into windows at its `turn_start`/`turn_end` pairs. */
-function windows(events: SessionEvent[]): Array<{ origin?: string; events: SessionEvent[] }> {
-  const out: Array<{ origin?: string; events: SessionEvent[] }> = [];
-  let open: { origin?: string; events: SessionEvent[] } | undefined;
+function windows(events: SessionEvent[]): ProjectedWindow[] {
+  const out: ProjectedWindow[] = [];
+  let open: ProjectedWindow | undefined;
   for (const event of events) {
     if (event.type === 'turn_start') {
-      open = { origin: (event as { origin?: string }).origin, events: [] };
+      open = { origin: (event as { origin?: string }).origin, types: [], events: [] };
       out.push(open);
     }
+    open?.types.push(event.type);
     open?.events.push(event);
     if (event.type === 'turn_end') open = undefined;
   }
@@ -162,7 +187,7 @@ function windows(events: SessionEvent[]): Array<{ origin?: string; events: Sessi
 }
 
 /** The `terminalReason` a window's `turn_end` settled with, if it carried one. */
-function endReason(window: { events: SessionEvent[] }): string | undefined {
+function endReason(window: ProjectedWindow): string | undefined {
   const end = window.events.find((e) => e.type === 'turn_end');
   return (end as { terminalReason?: string } | undefined)?.terminalReason;
 }
@@ -171,7 +196,7 @@ interface TurnRun {
   /** Every StreamEvent the send loop yielded. */
   yielded: StreamEvent[];
   /** The durable stream, cut into windows. */
-  windows: Array<{ origin?: string; events: SessionEvent[] }>;
+  windows: ProjectedWindow[];
   /** The lifecycle the session settled at — what a cold hydrate would show. */
   lifecycle: string;
   cli: ReturnType<typeof fakeWindDownCli>;
@@ -183,12 +208,15 @@ interface TurnRun {
  *
  * `store` is handed to the caller's steps so a step can press Stop mid-stream.
  */
-async function runTurn(build: (store: SessionStore) => Step[]): Promise<TurnRun> {
+async function runTurn(
+  build: (store: SessionStore) => Step[],
+  behaviour: CliBehaviour = {}
+): Promise<TurnRun> {
   const store = new SessionStore();
   store.ensureSession(SESSION_ID, { permissionMode: 'default' });
   const session = store.findSession(SESSION_ID)!;
 
-  const cli = fakeWindDownCli(build(store));
+  const cli = fakeWindDownCli(build(store), behaviour);
   vi.mocked(query).mockReturnValue(cli.handle);
 
   const opts: MessageSenderOpts = { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
@@ -252,6 +280,63 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
     // Stopped, not failed: no red anywhere on either stream.
     expect(run.windows.flatMap((w) => w.events).some((e) => e.type === 'error')).toBe(false);
     expect(run.yielded.some((e) => e.type === 'error')).toBe(false);
+    // The terminal the sender synthesizes carries a reason and NOTHING else: with
+    // no status fields on it, `toStatusChange` returns null, so it never reaches
+    // the durable stream as an event of its own. The reopened window is exactly
+    // the content plus its terminal — no second `status_change`, no phantom row.
+    expect(run.windows[0]!.types).toEqual([
+      'turn_start',
+      'text_delta',
+      'status_change',
+      'turn_end',
+    ]);
+    expect(run.windows[1]!.types).toEqual(['turn_start', 'text_delta', 'turn_end']);
+  });
+
+  it('leaves a reopened turn nobody stopped settled as it always was', async () => {
+    // The other half of the gate. Identical to the case above MINUS the Stop:
+    // the CLI reopens the window (DOR-1100), says one more thing, and exits on
+    // its own without a second `result`. Nothing was interrupted, so nothing may
+    // claim it was — this window settles with no reason, exactly as before.
+    const run = await runTurn(
+      () => [initMsg(), textDeltaMsg('working on it'), resultMsg(), textDeltaMsg('one more thing')],
+      { endsOnItsOwn: true }
+    );
+
+    expect(run.cli.calls.close).toBe(0);
+    expect(run.windows).toHaveLength(2);
+    expect(run.windows[1]!.origin).toBe('runtime');
+    expect(endReason(run.windows[0]!)).toBe('completed');
+    expect(endReason(run.windows[1]!)).toBeUndefined();
+    expect(run.lifecycle).toBe('idle');
+  });
+
+  it('settles a Stop pressed before the agent has said anything as interrupted, with no failure card', async () => {
+    // The STARTING phase: the escalation kills the process before the model has
+    // spoken and before any `result`. That is a turn with zero content and no
+    // terminal — which the empty-stream guard called a dead stream, reporting
+    // "The agent did not respond" and settling `error`, so the operator saw the
+    // crash notice "Claude Code stopped unexpectedly" for something they did on
+    // purpose. A stopped turn with nothing in it is a turn somebody ended.
+    let stopOutcome: boolean | undefined;
+    const run = await runTurn(
+      (store) => [
+        initMsg(),
+        async () => {
+          stopOutcome = await store.interruptQuery(SESSION_ID);
+        },
+      ],
+      { interrupt: 'rejects' }
+    );
+
+    expect(stopOutcome).toBe(true);
+    expect(run.cli.calls.close).toBe(1);
+    expect(run.windows).toHaveLength(1);
+    expect(endReason(run.windows[0]!)).toBe('interrupted');
+    expect(run.lifecycle).toBe('interrupted');
+    // No red: neither the empty-stream error nor any other.
+    expect(run.yielded.some((e) => e.type === 'error')).toBe(false);
+    expect(run.windows[0]!.types).not.toContain('error');
   });
 
   it('leaves a turn that finished on its own settled as completed, even when a Stop races the end', async () => {

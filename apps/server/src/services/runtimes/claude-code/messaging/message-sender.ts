@@ -200,6 +200,15 @@ export async function* executeSdkQuery(
     if (event.type === 'done') turnWindowOpen = false;
     else if (TURN_REOPENING_STREAM_EVENT_TYPES.has(event.type)) turnWindowOpen = true;
   };
+  /**
+   * Whether a DorkOS Stop has been aimed at THIS query (`session-store.ts`).
+   *
+   * Read live rather than captured, because a Stop can land at any moment of
+   * the stream and both readers below care about the answer AT THE MOMENT they
+   * ask: the empty-stream guards ask as a turn closes, the terminal synthesis
+   * asks once the stream is over.
+   */
+  const wasStopped = (): boolean => session.stoppedQueries?.has(agentQuery) === true;
   let eventCount = 0;
   let contentEventCount = 0;
   let wasInteractive = false;
@@ -455,7 +464,14 @@ export async function* executeSdkQuery(
           // BEFORE the terminal done — nothing may follow done (a trailing
           // error would leave the durable snapshot idle with a stale
           // lastError instead of settling the turn to error).
-          if (contentEventCount === 0 && !emittedError && !wasInteractive) {
+          //
+          // A turn the operator STOPPED is not a dead stream, even with nothing
+          // in it — the same reason `wasInteractive` is here (DOR-1240). Press
+          // Stop before the agent has said anything and this guard called the
+          // silence a fault, which reaches the operator as the crash notice
+          // "Claude Code stopped unexpectedly" for something they did on
+          // purpose (DOR-1244).
+          if (contentEventCount === 0 && !emittedError && !wasInteractive && !wasStopped()) {
             logger.warn('[sendMessage] stream completed with zero content events', {
               session: sessionId,
               eventCount,
@@ -589,7 +605,20 @@ export async function* executeSdkQuery(
   // in-loop (error yielded BEFORE the terminal done); this arm covers streams
   // that died without any terminal at all, where the trailing done below
   // still closes the turn after this error.
-  if (contentEventCount === 0 && !emittedError && !emittedDone && !wasInteractive) {
+  //
+  // `wasStopped()` for the same reason as the in-loop arm, and this is the arm
+  // a Stop in the STARTING phase actually lands in: the escalation closes the
+  // process before the model has said anything and before any `result`, so
+  // without this the turn reported "The agent did not respond" and settled
+  // `error` — and the error latch set here would suppress the interrupted
+  // terminal below on top of that (DOR-1244).
+  if (
+    contentEventCount === 0 &&
+    !emittedError &&
+    !emittedDone &&
+    !wasInteractive &&
+    !wasStopped()
+  ) {
     logger.warn('[sendMessage] stream completed with zero content events', {
       session: sessionId,
       eventCount,
@@ -617,19 +646,29 @@ export async function* executeSdkQuery(
   // finished by itself: a Stop that had to kill the CLI would tell the operator
   // their agent is fine. So the sender supplies the reason the CLI cannot.
   //
-  // Both conditions are load-bearing, and the first is what keeps a Stop RACING
-  // a natural end from rewriting history. A turn whose `result` already closed
-  // its window is not open here, so it keeps the CLI's own `completed`; only a
-  // window still standing at the end of the stream — content after the last
-  // result, or a turn that never reached one — can be claimed. An error already
-  // reported stays the terminal, because a failure is more specific than a stop.
+  // All three conditions are load-bearing. `turnWindowOpen` is what keeps a Stop
+  // RACING a natural end from rewriting history: a turn whose `result` already
+  // closed its window is not open here, so it keeps the CLI's own `completed`,
+  // and only a window still standing at the end of the stream — content after
+  // the last result, or a turn that never reached one — can be claimed.
+  // `wasStopped()` is what keeps every other way a window can be left open
+  // (a crash after a reopen) settling as it did before. And an error already
+  // reported stays the terminal, because a failure is more specific than a stop
+  // — which is also why the empty-stream guards above have to know about a Stop:
+  // an error latched there would silently swallow this.
+  //
+  // Scope: this is the RESUME path only. The persistent pump does not run this
+  // loop, and a `query.close()` there is a process death — the windower settles
+  // it as `turn_end{terminalReason:'error'}` and the session reports `crashed`
+  // (`sessions/session-turn-windows.ts`, `sessions/persistent-dispatch.ts`).
+  // `persistentSession` ships OFF; making the pump's Stop settle honestly is a
+  // named DOR-1244 follow-up.
   //
   // Carried on a `session_status` because that is where the result mapper puts
   // `terminalReason` too, and the normalizer reads it off either. It projects no
   // status of its own: with no status fields, `toStatusChange` yields null, so
   // this event moves the terminal reason and touches nothing else.
-  const stoppedThisQuery = session.stoppedQueries?.has(agentQuery) === true;
-  if (turnWindowOpen && stoppedThisQuery && !emittedError) {
+  if (turnWindowOpen && wasStopped() && !emittedError) {
     logger.debug('[sendMessage] settling a stopped turn as interrupted', { session: sessionId });
     eventCount++;
     yield { type: 'session_status', data: { sessionId, terminalReason: 'interrupted' } };
