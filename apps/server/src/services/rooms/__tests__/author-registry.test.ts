@@ -28,15 +28,25 @@ import { AuthorRegistry, toAuthorRef } from '../author-registry.js';
 
 const ANA_PATH = '/Users/dorian/agents/ana';
 
-/** Register an agent row the way the mesh registry does, under a given ULID. */
-function registerAgent(db: Db, id: string, projectPath: string, name: string): void {
+/**
+ * Register an agent row the way the mesh registry does.
+ *
+ * `name` is the slug and `displayName` is the label; a manifest with no display
+ * name leaves the column null, which is the state the registry reads back as
+ * "this agent is called by its slug".
+ */
+function registerAgent(
+  db: Db,
+  agent: { id: string; projectPath: string; name: string; displayName?: string }
+): void {
   const now = new Date().toISOString();
   db.insert(agents)
     .values({
-      id,
-      name,
+      id: agent.id,
+      name: agent.name,
+      ...(agent.displayName !== undefined ? { displayName: agent.displayName } : {}),
       runtime: 'claude-code',
-      projectPath,
+      projectPath: agent.projectPath,
       registeredAt: now,
       updatedAt: now,
     })
@@ -64,14 +74,14 @@ describe('AuthorRegistry', () => {
 
   it('keeps the same author id when the registry cache is deleted and rebuilt', () => {
     // The state before: an agent registered under one ULID, with an author.
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
     const before = registry.resolveAgent(ANA_PATH, 'Ana');
 
     // The ADR-0043 rebuild: the derived cache is dropped and rebuilt from
     // `.dork/agent.json` on disk — which is where the id lives, so the id comes
     // back the same. That is what makes this a rebuild rather than a re-init.
     db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
 
     const after = registry.resolveAgent(ANA_PATH, 'Ana');
 
@@ -84,11 +94,16 @@ describe('AuthorRegistry', () => {
     // premise that is reachable: a directory changing hands starts a new author,
     // and the old one stays exactly where it was. `directory-reuse.test.ts`
     // proves the mint; this proves the half that protects history.
-    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, {
+      id: 'ULID_ANA',
+      projectPath: ANA_PATH,
+      name: 'ana',
+      displayName: 'Ana',
+    });
     const ana = registry.resolveAgent(ANA_PATH, 'Ana');
 
     db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
-    registerAgent(db, 'ULID_BO', ANA_PATH, 'bo');
+    registerAgent(db, { id: 'ULID_BO', projectPath: ANA_PATH, name: 'bo', displayName: 'Bo' });
     const bo = registry.resolveAgent(ANA_PATH, 'Bo');
 
     expect(bo.id).not.toBe(ana.id);
@@ -156,6 +171,120 @@ describe('AuthorRegistry', () => {
     expect(toAuthorRef(ana).agentRef).not.toContain(ANA_PATH);
     // A human has no agent to point at.
     expect(toAuthorRef(registry.localHuman()).agentRef).toBeUndefined();
+  });
+});
+
+/**
+ * A cached display name is never DOWNGRADED by a caller that knows less than it
+ * appears to (DOR-1264).
+ *
+ * The bug this pins: an agent acting through a room tool arrives with a name
+ * replayed out of its identity token, and the token used to be minted under
+ * `agents.name` — the slug. Every tool call therefore rewrote `Docs Writer` to
+ * `docs-writer` on the author row, and every message and the member list showed
+ * the slug, while the manifest and the mesh still said `Docs Writer`.
+ *
+ * The runtimes now mint under the display name, so this is the second line: the
+ * registry weighs a caller's label against the manifest rather than trusting it.
+ */
+describe('AuthorRegistry — a name is only refreshed by a caller that knows one', () => {
+  const DOCS_PATH = '/Users/dorian/agents/docs-writer';
+  let db: Db;
+  let registry: AuthorRegistry;
+
+  beforeEach(() => {
+    db = createTestDb();
+    registry = new AuthorRegistry(db);
+    registerAgent(db, {
+      id: 'ULID_DOCS',
+      projectPath: DOCS_PATH,
+      name: 'docs-writer',
+      displayName: 'Docs Writer',
+    });
+  });
+
+  it('stores the display name a mesh-backed caller resolves with', () => {
+    const author = registry.resolveAgent(DOCS_PATH, 'Docs Writer');
+
+    expect(author.displayName).toBe('Docs Writer');
+    expect(registry.getById(author.id)?.displayName).toBe('Docs Writer');
+  });
+
+  it('keeps it when a following resolve carries only the slug', () => {
+    const minted = registry.resolveAgent(DOCS_PATH, 'Docs Writer');
+    const viaToken = registry.resolveAgent(DOCS_PATH, 'docs-writer');
+
+    expect(viaToken.id).toBe(minted.id);
+    expect(viaToken.displayName).toBe('Docs Writer');
+    expect(registry.getById(minted.id)?.displayName).toBe('Docs Writer');
+  });
+
+  it('keeps it when a following resolve carries no name at all', () => {
+    const minted = registry.resolveAgent(DOCS_PATH, 'Docs Writer');
+    const nameless = registry.resolveAgent(DOCS_PATH, undefined);
+
+    expect(nameless.displayName).toBe('Docs Writer');
+    expect(registry.getById(minted.id)?.displayName).toBe('Docs Writer');
+  });
+
+  it('still refreshes when the agent is genuinely renamed', () => {
+    const minted = registry.resolveAgent(DOCS_PATH, 'Docs Writer');
+    // The manifest moves first — the `agents` row is its derived cache — and the
+    // mesh-backed caller resolves with what it now says.
+    db.update(agents)
+      .set({ displayName: 'Documentation Writer' })
+      .where(eq(agents.projectPath, DOCS_PATH))
+      .run();
+    const renamed = registry.resolveAgent(DOCS_PATH, 'Documentation Writer');
+
+    expect(renamed.displayName).toBe('Documentation Writer');
+    expect(registry.getById(minted.id)?.displayName).toBe('Documentation Writer');
+  });
+
+  it('refreshes to the slug when the slug is what the agent is genuinely called', () => {
+    // The guard weighs a label against the manifest; it is not a rule that a
+    // slug-shaped string may never be a display name. An agent renamed TO its
+    // slug must still be renamed.
+    const minted = registry.resolveAgent(DOCS_PATH, 'Docs Writer');
+    db.update(agents).set({ displayName: null }).where(eq(agents.projectPath, DOCS_PATH)).run();
+    const renamed = registry.resolveAgent(DOCS_PATH, 'docs-writer');
+
+    expect(renamed.displayName).toBe('docs-writer');
+    expect(registry.getById(minted.id)?.displayName).toBe('docs-writer');
+  });
+
+  it('mints under the manifest name when the very first resolve carries none', () => {
+    // No stored label to keep, so an unknowing caller takes the occupant's own
+    // name rather than writing a blank one onto a brand-new row.
+    const author = registry.resolveAgent(DOCS_PATH, undefined);
+
+    expect(author.displayName).toBe('Docs Writer');
+    expect(registry.getById(author.id)?.displayName).toBe('Docs Writer');
+  });
+
+  it('never mints a blank name, even with no manifest and no caller label', () => {
+    // Nothing can name this author: the directory holds no registered agent and
+    // the caller carried nothing. A blank row would pass the NOT NULL column and
+    // then fail `AuthorRefSchema`'s `min(1)` on its way to a roster, so the
+    // directory's own last segment stands in — the string a slug is derived from
+    // anyway, and never the full path.
+    const author = registry.resolveAgent('/Users/dorian/agents/orphan', undefined);
+
+    expect(author.displayName).toBe('orphan');
+    expect(toAuthorRef(author).displayName).toBe('orphan');
+    expect(JSON.stringify(toAuthorRef(author))).not.toContain('/Users/dorian');
+  });
+
+  it('prefers the manifest over the caller when it mints, and the stored name when it refreshes', () => {
+    // The two orderings, side by side, because they are deliberately opposite.
+    // A MINT has no stored label to protect and the manifest is authoritative;
+    // a REFRESH is protecting one, so a caller that knows a name may move it.
+    const minted = registry.resolveAgent(DOCS_PATH, 'Something Else Entirely');
+    expect(minted.displayName).toBe('Docs Writer');
+
+    const refreshed = registry.resolveAgent(DOCS_PATH, 'Documentation Writer');
+    expect(refreshed.id).toBe(minted.id);
+    expect(refreshed.displayName).toBe('Documentation Writer');
   });
 });
 
