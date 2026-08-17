@@ -1684,7 +1684,9 @@ const projectors = new Map<string, SessionStateProjector>();
  *
  * Flat by construction: {@link recordProjectorRedirect} collapses chains at
  * write time, so A→B→C resolves in one hop and every value is a live key rather
- * than another retired id.
+ * than another retired id. Size is a live session's rename HISTORY (one entry
+ * per rename, and the SDK renames on every resume), all of it freed by
+ * {@link forgetProjectorRedirects} when the session's projector goes.
  */
 const projectorRedirects = new Map<string, string>();
 
@@ -1713,7 +1715,13 @@ function recordProjectorRedirect(retiredId: string, canonicalId: string): void {
 /**
  * Drop every retired id pointing at `canonicalId`. Called wherever that
  * projector leaves the registry, so a redirect can never outlive the projector
- * it points at (and the map stays bounded by the live fleet, not by history).
+ * it points at.
+ *
+ * This is what bounds the map. It holds one entry per RENAME of a live session,
+ * not one per session — the SDK re-mints its id on every resume, so a
+ * long-running session accumulates an entry per resume — and every one of them
+ * is freed the moment that session's projector is disposed. Lookups are
+ * unaffected either way: they stay one hop, because chains collapse on write.
  */
 function forgetProjectorRedirects(canonicalId: string): void {
   for (const [from, to] of projectorRedirects) {
@@ -1833,11 +1841,25 @@ export function listProjectorStatuses(): ProjectorStatusUpdate[] {
  * session, and who is subscribed?" became a question the 2026-07-31 incident
  * could not answer.
  *
+ * `retiredIds` is the other half of that question: a client, a log line or a
+ * bug report may name an id the session no longer answers to, and without the
+ * redirects on this surface it would appear on no projector at all. Each entry
+ * lists every retired id that resolves to it ({@link projectorRedirects}).
+ *
  * @returns One entry per live projector, ids and counts only.
  */
-export function listProjectorDebugCounters(): Array<{ sessionId: string } & SessionDebugCounters> {
+export function listProjectorDebugCounters(): Array<
+  { sessionId: string; retiredIds: string[] } & SessionDebugCounters
+> {
+  const retiredBySession = new Map<string, string[]>();
+  for (const [retiredId, canonicalId] of projectorRedirects) {
+    const ids = retiredBySession.get(canonicalId);
+    if (ids) ids.push(retiredId);
+    else retiredBySession.set(canonicalId, [retiredId]);
+  }
   return [...projectors.entries()].map(([sessionId, projector]) => ({
     sessionId,
+    retiredIds: retiredBySession.get(sessionId) ?? [],
     ...projector.debugCounters(),
   }));
 }
@@ -1947,6 +1969,11 @@ export function rekeyProjector(oldId: string, newId: string): void {
     // its live subscribers would park forever on an ingest that can never come.
     // End their streams so their clients reconnect onto the winner (DOR-782).
     const endedSubscribers = displaced.terminate();
+    // The displaced projector's OWN retired ids still point at `newId`. Left
+    // alone they would resolve to the winner — one session's ids silently
+    // answering with another session's projector. They belong to the instance
+    // that just died, so they die with it.
+    forgetProjectorRedirects(newId);
     logger.warn('[SessionStateProjector] rekey target already has a projector; active turn wins', {
       oldId: fromId,
       newId,

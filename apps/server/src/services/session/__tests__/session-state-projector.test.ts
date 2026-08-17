@@ -1310,6 +1310,36 @@ describe('SessionStateProjector', () => {
     disposeProjector(A);
   });
 
+  // Failure mode (DOR-1262 review): the collision branch replaces the projector
+  // under `newId`, and the DISPLACED projector's own retired ids still pointed
+  // there. Left behind, session 1's ids would resolve to session 2's projector —
+  // one person's turn readable, and ingestible, under another's id.
+  it('a displaced projector takes its retired ids with it', () => {
+    const S1_UUID = 'displaced-redirect-uuid';
+    const SHARED = 'displaced-redirect-target';
+    const S2_UUID = 'displaced-redirect-other';
+
+    // Session 1 is renamed onto SHARED, leaving S1_UUID → SHARED behind.
+    const first = getOrCreateProjector(S1_UUID);
+    first.ingest({ type: 'turn_start' });
+    rekeyProjector(S1_UUID, SHARED);
+    expect(peekProjector(S1_UUID)).toBe(first);
+
+    // Session 2 collides onto the same id and wins (it holds the active turn).
+    const second = getOrCreateProjector(S2_UUID);
+    second.ingest({ type: 'turn_start' });
+    rekeyProjector(S2_UUID, SHARED);
+    expect(peekProjector(SHARED)).toBe(second);
+
+    // Session 1's retired id must NOT now answer with session 2's projector.
+    expect(peekProjector(S1_UUID)).not.toBe(second);
+    expect(peekProjector(S1_UUID)).toBeUndefined();
+    // Session 2 keeps its own, and its retired id follows it.
+    expect(peekProjector(S2_UUID)).toBe(second);
+
+    disposeProjector(SHARED);
+  });
+
   it('an id that was never rekeyed still mints its own projector, redirect or not', () => {
     // The redirect must be NARROW: only the exact ids a rekey retired resolve
     // elsewhere. Asserted with a live redirect in the registry, because "every

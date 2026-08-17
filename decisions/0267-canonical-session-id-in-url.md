@@ -41,7 +41,7 @@ This is **not** the indefinite dual-id aliasing rejected above:
 - it is in-memory and one-directional (retired → canonical, never the reverse);
 - it is born from the same one-time move, not from a second source of truth;
 - it chains flat, so a session renamed twice resolves in one hop;
-- it is cleared when the canonical projector is disposed, so a retired id never outlives its session;
+- it is cleared when the canonical projector is disposed, so a retired id never outlives its session — the map holds a live session's rename history (one entry per rename, and the SDK renames on every resume), and all of it is freed with the session;
 - and there is still exactly ONE projector per session — the alias is on the key, not on the state.
 
 The foot-gun the original rejection was about — every id-keyed path having to remember to alias — is avoided precisely because the redirect lives at the registry, so no call site has to know. The cockpit is unaffected: it still follows the canonical-id re-announce and rewrites its URL. The collision branch survives as a defensive fallback and is documented as such.

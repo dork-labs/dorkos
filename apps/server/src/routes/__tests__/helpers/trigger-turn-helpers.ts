@@ -57,7 +57,10 @@ export interface EventStreamHandle {
 
 /**
  * Attach to `GET /:id/events` and stream frames into a buffer, resolving `done`
- * when the `until` event appears (or the stream ends / `maxMs` elapses). The
+ * when `until` is reached (or the stream ends / `maxMs` elapses). `until` is an
+ * `event:` name by default — pass a predicate over the raw SSE text for a stop
+ * condition one name cannot express, such as a connection that must survive TWO
+ * turns and so cannot close on the first `turn_end`. The
  * `ready` promise resolves once the cold `snapshot` frame has been received so
  * callers can trigger a turn only after the live subscription exists — the
  * subscribe-first ordering the real client uses (so it cannot miss `turn_start`).
@@ -76,8 +79,6 @@ export function attachEventStream(
   opts: { until?: string | ((raw: string) => boolean); maxMs?: number } = {}
 ): EventStreamHandle {
   const until = opts.until ?? 'turn_end';
-  // A predicate, for the cases one event name cannot express: a connection that
-  // has to survive TWO turns cannot close on the first `turn_end` (DOR-1262).
   const reached =
     typeof until === 'function' ? until : (raw: string) => raw.includes(`event: ${until}`);
   const maxMs = opts.maxMs ?? 4000;
