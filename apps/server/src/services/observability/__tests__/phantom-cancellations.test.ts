@@ -59,6 +59,11 @@ describe('recordPhantomCancellation', () => {
     expect(stats.total).toBe(2);
     expect(stats.batches).toBe(1);
     expect(stats.steered).toBe(1);
+    // Pinned per-CALL, not per-batch. Every other case in this file records
+    // single-phantom batches, where `+= phantoms.length` and `+= 1` are
+    // indistinguishable — so without this line the path split could silently
+    // start counting batches and the whole file would stay green.
+    expect(stats.byPath).toEqual({ turn: 2, pump: 0 });
   });
 
   it('keeps the turn and pump counts apart — the whole point of the measurement', () => {

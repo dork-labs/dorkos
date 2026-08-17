@@ -164,6 +164,30 @@ interface RefusalRow {
   sessionId?: string;
 }
 
+/** One batch of phantom cancellations, as `/api/debug/phantom-cancellations` reports it. */
+interface PhantomRow {
+  at: string;
+  sessionId: string;
+  path: string;
+  toolUseIds: string[];
+  mainThread: boolean;
+  parentToolUseId: string | null;
+  steered: boolean;
+}
+
+/** The tripwire's totals, alongside its recent batches. */
+interface PhantomsPayload {
+  total: number;
+  batches: number;
+  byPath: { turn: number; pump: number };
+  mainThread: number;
+  subagent: number;
+  steered: number;
+  sessions: number;
+  since: string;
+  recent: PhantomRow[];
+}
+
 /** Render a duration the way a person reads one. */
 function duration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -217,6 +241,42 @@ function renderHuman(args: DebugArgs, payload: Record<string, unknown>): void {
           r.visibility,
           r.roomId ?? r.sessionId ?? '—',
           r.dispatchId ?? '—',
+        ])
+      )
+    );
+    return;
+  }
+
+  if (args.subject === 'phantoms') {
+    const p = payload as unknown as PhantomsPayload;
+    if (p.total === 0) {
+      // The expected reading, and worth saying in words rather than as a table
+      // of zeros: nothing has gone wrong since this server started.
+      console.log(`No work has been cut short since ${p.since}.`);
+      return;
+    }
+    console.log(
+      `${p.total} tool ${p.total === 1 ? 'call' : 'calls'} cut short in ${p.batches} ` +
+        `${p.batches === 1 ? 'batch' : 'batches'}, ${p.sessions} ` +
+        `${p.sessions === 1 ? 'session' : 'sessions'}, since ${p.since}`
+    );
+    console.log(
+      `turn ${p.byPath.turn} · pump ${p.byPath.pump} · main thread ${p.mainThread} · ` +
+        `inside helpers ${p.subagent} · ${p.steered} corrected`
+    );
+    console.log('');
+    console.log(
+      renderTable(
+        ['WHEN', 'PATH', 'CALLS', 'THREAD', 'TOLD', 'SESSION'],
+        p.recent.map((r) => [
+          r.at,
+          r.path,
+          String(r.toolUseIds.length),
+          // The helper's own id is not knowable from here, so a helper batch is
+          // named by the task that dispatched it — the id its coordinator uses.
+          r.mainThread ? 'main' : (r.parentToolUseId ?? 'helper'),
+          r.steered ? 'yes' : 'no',
+          r.sessionId,
         ])
       )
     );

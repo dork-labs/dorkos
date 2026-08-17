@@ -159,6 +159,78 @@ describe('runDebug', () => {
     expect(out.join('\n')).toContain('No agent is mid-turn right now.');
   });
 
+  /** The tripwire payload, as the server's stats reader shapes it. */
+  const phantomPayload = {
+    total: 3,
+    batches: 2,
+    byPath: { turn: 1, pump: 2 },
+    mainThread: 1,
+    subagent: 2,
+    steered: 1,
+    sessions: 2,
+    since: '2026-08-17T01:00:00.000Z',
+    recent: [
+      {
+        at: '2026-08-17T01:02:00.000Z',
+        sessionId: 'sess-b',
+        path: 'pump',
+        toolUseIds: ['toolu_1', 'toolu_2'],
+        mainThread: false,
+        parentToolUseId: 'toolu_task_9',
+        steered: false,
+      },
+      {
+        at: '2026-08-17T01:01:00.000Z',
+        sessionId: 'sess-a',
+        path: 'turn',
+        toolUseIds: ['toolu_0'],
+        mainThread: true,
+        parentToolUseId: null,
+        steered: true,
+      },
+    ],
+  };
+
+  it('summarises phantoms by path and tables the recent batches', async () => {
+    apiCallMock.mockResolvedValueOnce(phantomPayload);
+    expect(await runDebug(parseDebugArgs(['phantoms']))).toBe(0);
+    const printed = out.join('\n');
+
+    // The two-line summary: the totals, then the split that IS the measurement.
+    expect(printed).toContain('3 tool calls cut short in 2 batches, 2 sessions');
+    expect(printed).toContain('since 2026-08-17T01:00:00.000Z');
+    expect(printed).toContain('turn 1 · pump 2 · main thread 1 · inside helpers 2 · 1 corrected');
+
+    // The table: one row per batch, counting CALLS rather than listing ids.
+    expect(printed).toContain('WHEN');
+    expect(printed).toContain('CALLS');
+    expect(printed).toMatch(/2026-08-17T01:02:00\.000Z\s+pump\s+2\s+toolu_task_9\s+no\s+sess-b/);
+    // A main-thread batch names the thread, not a parent task it does not have.
+    expect(printed).toMatch(/2026-08-17T01:01:00\.000Z\s+turn\s+1\s+main\s+yes\s+sess-a/);
+  });
+
+  it('says so in plain words when the tripwire has never fired', async () => {
+    apiCallMock.mockResolvedValueOnce({
+      ...phantomPayload,
+      total: 0,
+      batches: 0,
+      byPath: { turn: 0, pump: 0 },
+      recent: [],
+    });
+    await runDebug(parseDebugArgs(['phantoms']));
+    const printed = out.join('\n');
+    expect(printed).toContain('No work has been cut short since 2026-08-17T01:00:00.000Z.');
+    // Zero is the expected reading, so it must not arrive as a table of zeros.
+    expect(printed).not.toContain('WHEN');
+  });
+
+  it('keeps --json raw for phantoms, so it pipes into jq', async () => {
+    apiCallMock.mockResolvedValueOnce(phantomPayload);
+    expect(await runDebug(parseDebugArgs(['phantoms', '--json']))).toBe(0);
+    expect(out).toHaveLength(0);
+    expect(JSON.parse(stdout[0])).toEqual(phantomPayload);
+  });
+
   it('prints only JSON with --json, so it pipes into jq', async () => {
     const payload = { refusals: [{ at: 'now', reason: 'agent_busy', visibility: 'damped' }] };
     apiCallMock.mockResolvedValueOnce(payload);
