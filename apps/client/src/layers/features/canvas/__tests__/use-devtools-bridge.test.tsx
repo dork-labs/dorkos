@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
-import { renderHook, cleanup } from '@testing-library/react';
+import { renderHook, cleanup, act } from '@testing-library/react';
 import { useRef, type RefObject } from 'react';
 import { WORKBENCH_SANDBOX_ISOLATED } from '../lib/browser-url';
 
@@ -47,15 +47,28 @@ let foreignFrame: HTMLIFrameElement;
 function mount(): { current: HTMLIFrameElement | null } {
   const { result } = renderHook(() => {
     const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
-    useDevtoolsBridge({ iframeRef: ref, documentId: 'doc', logicalUrl: 'preview.html' });
+    useDevtoolsBridge({
+      iframeRef: ref,
+      documentId: 'doc',
+      logicalUrl: 'preview.html',
+      reloadNonce: 0,
+    });
     return ref;
   });
   return result.current;
 }
 
 /** Dispatch a message as though it came from `source`. */
-function postFrom(source: Window | null, data: unknown): void {
-  window.dispatchEvent(new MessageEvent('message', { data, source }));
+/**
+ * Dispatch a message as though it came from `source`.
+ *
+ * The default origin is `"null"` because that is what every frame carrying the
+ * shim reports: the shim is injected only into what DorkOS serves or proxies,
+ * and those render in an opaque-origin sandbox. Pass an origin explicitly to
+ * stand in for a frame that is NOT one of ours.
+ */
+function postFrom(source: Window | null, data: unknown, origin = 'null'): void {
+  window.dispatchEvent(new MessageEvent('message', { data, source, origin }));
 }
 
 const consoleEntry = { level: 'error' as const, text: 'boom', timestamp: 1 };
@@ -110,6 +123,102 @@ describe('useDevtoolsBridge — source-identity guard (anti-spoofing)', () => {
     postFrom(iframe.contentWindow, { some: 'other-app-message' });
     vi.advanceTimersByTime(500);
     expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+  });
+
+  it('ignores a frame with a real origin — only our own opaque frames carry the shim', () => {
+    // A directly framed dev server IS `iframeRef.current.contentWindow`, so
+    // source identity alone lets its own page code speak as if it were the shim.
+    // Nothing injects a shim there, so anything arriving from a real origin is
+    // the page impersonating one.
+    mount();
+    postFrom(
+      iframe.contentWindow,
+      { __dorkosDevtools: 'batch', seq: 1, console: [consoleEntry], network: [] },
+      'http://localhost:5173'
+    );
+    vi.advanceTimersByTime(500);
+    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+  });
+
+  it('never acks a hello from a frame with a real origin', () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' }, 'http://localhost:5173');
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('useDevtoolsBridge — resource errors the canvas can show', () => {
+  /** Mount the bridge and keep hold of what it returns, plus a way to re-render it. */
+  function mountCounting() {
+    return renderHook(
+      (props: { logicalUrl: string; reloadNonce: number }) => {
+        const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
+        return useDevtoolsBridge({ iframeRef: ref, documentId: 'doc', ...props });
+      },
+      { initialProps: { logicalUrl: 'http://localhost:5173/', reloadNonce: 0 } }
+    );
+  }
+
+  it('counts each failed resource the shim reports for our own frame', () => {
+    const { result } = mountCounting();
+    expect(result.current.resourceErrorCount).toBe(0);
+
+    act(() => {
+      postFrom(iframe.contentWindow, { __dorkosDevtools: 'resource-error', url: '/main.js' });
+      postFrom(iframe.contentWindow, { __dorkosDevtools: 'resource-error', url: '/style.css' });
+    });
+    expect(result.current.resourceErrorCount).toBe(2);
+  });
+
+  it('counts them with no session attached — the banner is for the person watching', () => {
+    // Relaying captures to a session is gated on attach; telling the user their
+    // page is broken is not.
+    mockState.sessionId = null;
+    const { result } = mountCounting();
+    act(() => {
+      postFrom(iframe.contentWindow, { __dorkosDevtools: 'resource-error', url: '/main.js' });
+    });
+    expect(result.current.resourceErrorCount).toBe(1);
+  });
+
+  it('ignores a resource error from a foreign frame', () => {
+    const { result } = mountCounting();
+    act(() => {
+      postFrom(foreignFrame.contentWindow, { __dorkosDevtools: 'resource-error', url: '/main.js' });
+    });
+    expect(result.current.resourceErrorCount).toBe(0);
+  });
+
+  it('ignores one from a real origin, so a direct frame cannot fake the banner', () => {
+    const { result } = mountCounting();
+    act(() => {
+      postFrom(
+        iframe.contentWindow,
+        { __dorkosDevtools: 'resource-error', url: '/main.js' },
+        'http://localhost:5173'
+      );
+    });
+    expect(result.current.resourceErrorCount).toBe(0);
+  });
+
+  it('starts over on navigation and on reload — the count belongs to one document', () => {
+    const { result, rerender } = mountCounting();
+    act(() => {
+      postFrom(iframe.contentWindow, { __dorkosDevtools: 'resource-error', url: '/main.js' });
+    });
+    expect(result.current.resourceErrorCount).toBe(1);
+
+    rerender({ logicalUrl: 'http://localhost:5173/other', reloadNonce: 0 });
+    expect(result.current.resourceErrorCount).toBe(0);
+
+    act(() => {
+      postFrom(iframe.contentWindow, { __dorkosDevtools: 'resource-error', url: '/main.js' });
+    });
+    expect(result.current.resourceErrorCount).toBe(1);
+
+    rerender({ logicalUrl: 'http://localhost:5173/other', reloadNonce: 1 });
+    expect(result.current.resourceErrorCount).toBe(0);
   });
 });
 

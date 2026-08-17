@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { injectDevtoolsScript, DEVTOOLS_AGENT_SCRIPT } from '../devtools-inject.js';
-import { serializeConsoleArg } from '../devtools-shim.js';
+import { describeResourceError, serializeConsoleArg } from '../devtools-shim.js';
 
 describe('DEVTOOLS_AGENT_SCRIPT — the injected shim source', () => {
   it('never references /api anywhere (the load-bearing security guarantee)', () => {
@@ -24,6 +24,48 @@ describe('DEVTOOLS_AGENT_SCRIPT — the injected shim source', () => {
     // parent capture requests with rendered results, all over postMessage.
     expect(DEVTOOLS_AGENT_SCRIPT).toContain('capture-request');
     expect(DEVTOOLS_AGENT_SCRIPT).toContain('capture-result');
+  });
+
+  it('reports resources that failed to load, which only a capture listener sees', () => {
+    // A 404'd <script> fires `error` at the element and does not bubble, so the
+    // shim's other window listener cannot see it. Without this, the page that
+    // needs the message most — a dev server whose modules never loaded — is the
+    // one that reports nothing.
+    expect(DEVTOOLS_AGENT_SCRIPT).toContain('resource-error');
+    expect(DEVTOOLS_AGENT_SCRIPT).toContain('describeResourceError');
+    // The listener that reports them must be registered with capture = true;
+    // the shim source is minified before it is embedded, so this reads the
+    // emitted text rather than the authored formatting.
+    expect(DEVTOOLS_AGENT_SCRIPT).toMatch(/resource-error[\s\S]{0,500}?\}\s*,\s*true\s*\)/);
+  });
+});
+
+describe('describeResourceError — which error events are a failed resource', () => {
+  it('reads a script/img URL from src and a stylesheet URL from href', () => {
+    expect(
+      describeResourceError({ tagName: 'SCRIPT', src: 'http://localhost:5173/main.js' })
+    ).toEqual({ tag: 'script', url: 'http://localhost:5173/main.js' });
+    expect(describeResourceError({ tagName: 'IMG', src: '/logo.png' })).toEqual({
+      tag: 'img',
+      url: '/logo.png',
+    });
+    expect(describeResourceError({ tagName: 'LINK', href: '/app.css' })).toEqual({
+      tag: 'link',
+      url: '/app.css',
+    });
+  });
+
+  it('ignores an uncaught script error, whose target is the window', () => {
+    // The same capture listener sees those; they are already captured as console
+    // errors, and counting them as failed resources would double-report.
+    expect(describeResourceError({ location: {}, document: {} })).toBeNull();
+    expect(describeResourceError(null)).toBeNull();
+    expect(describeResourceError('window')).toBeNull();
+  });
+
+  it('ignores an element with no URL to report', () => {
+    expect(describeResourceError({ tagName: 'SCRIPT', src: '' })).toBeNull();
+    expect(describeResourceError({ tagName: 'DIV' })).toBeNull();
   });
 });
 

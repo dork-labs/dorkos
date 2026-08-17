@@ -2957,6 +2957,34 @@ export const WorkbenchSignResponseSchema = z
 
 export type WorkbenchSignResponse = z.infer<typeof WorkbenchSignResponseSchema>;
 
+/**
+ * Request for `POST /api/workbench/probe` — ask whether a loopback port has a
+ * server on it before the embedded browser frames it. A dead port would
+ * otherwise render as a blank frame with nothing to explain it.
+ *
+ * The port is the only input: the host is pinned to loopback server-side, so
+ * this can never be aimed at another machine, and the probe opens a TCP
+ * connection and closes it without sending anything.
+ */
+export const WorkbenchProbeRequestSchema = z
+  .object({
+    /** Loopback port to check (1–65535). */
+    port: z.number().int().min(1).max(65535),
+  })
+  .openapi('WorkbenchProbeRequest');
+
+export type WorkbenchProbeRequest = z.infer<typeof WorkbenchProbeRequestSchema>;
+
+/** Response for `POST /api/workbench/probe`: whether the port accepted a connection. */
+export const WorkbenchProbeResponseSchema = z
+  .object({
+    /** True when something on this machine accepted a connection on that port. */
+    listening: z.boolean(),
+  })
+  .openapi('WorkbenchProbeResponse');
+
+export type WorkbenchProbeResponse = z.infer<typeof WorkbenchProbeResponseSchema>;
+
 // === Directory Browsing Types ===
 
 export const BrowseDirectoryQuerySchema = z

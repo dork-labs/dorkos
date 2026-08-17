@@ -240,6 +240,13 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       return null;
     },
 
+    // No server to ask what this machine is listening on, so the answer is
+    // "unknown" rather than "nothing" — the browser must not claim a dev server
+    // is down on the strength of a transport that cannot check.
+    async probeLoopbackPort(_port: number): Promise<null> {
+      return null;
+    },
+
     // The embedded terminal is a web-only surface: it needs a server-side PTY
     // and a WebSocket byte channel the in-process host does not provide. The tab
     // is gated on `supportsTerminal`, so `openTerminal` should never be reached;

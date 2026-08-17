@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260816-155913",
+      "slug": "canvas-dev-server-preview",
+      "title": "Canvas dev-server preview: make localhost dev servers render in the embedded browser",
+      "created": "2026-08-16",
+      "status": "specified"
+    },
+    {
       "id": "260816-070451",
       "slug": "profile-unification",
       "title": "One Profile — fold the Agent Hub and the profile drawer into a single identity surface",

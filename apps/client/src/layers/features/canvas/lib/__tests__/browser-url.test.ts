@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   classifyBrowserTarget,
   describeAddress,
+  loopbackStrategy,
   normalizeAddressInput,
   WORKBENCH_SANDBOX_ISOLATED,
   WORKBENCH_SANDBOX_EXTERNAL,
@@ -12,16 +13,30 @@ import {
 // content must NOT get `allow-same-origin`.
 
 describe('classifyBrowserTarget', () => {
-  it('routes a loopback dev-server URL through the proxy, carrying its port and path', () => {
+  it('routes a loopback dev-server URL through the proxy, carrying its host, port and path', () => {
     expect(classifyBrowserTarget('http://localhost:5173/app')).toEqual({
       mode: 'proxy',
+      hostname: 'localhost',
       port: 5173,
       path: '/app',
     });
     expect(classifyBrowserTarget('http://127.0.0.1:3000/')).toMatchObject({
       mode: 'proxy',
+      hostname: '127.0.0.1',
       port: 3000,
     });
+  });
+
+  it('treats every spelling of "this machine" as loopback, including 0.0.0.0', () => {
+    // 0.0.0.0 is the one the server's trusted-origins deliberately calls public.
+    // Here the question is where the BROWSER goes, and it goes to itself.
+    for (const host of ['localhost', '127.0.0.1', '0.0.0.0', '[::1]', 'app.localhost']) {
+      expect(classifyBrowserTarget(`http://${host}:4242/`)).toMatchObject({
+        mode: 'proxy',
+        hostname: host,
+        port: 4242,
+      });
+    }
   });
 
   it('treats a non-loopback http(s) site as external (framed directly)', () => {
@@ -45,6 +60,25 @@ describe('classifyBrowserTarget', () => {
   it('blocks script/URI-smuggling protocols', () => {
     expect(classifyBrowserTarget('javascript:alert(1)')).toEqual({ mode: 'blocked' });
     expect(classifyBrowserTarget('data:text/html,<h1>x</h1>')).toEqual({ mode: 'blocked' });
+  });
+});
+
+describe('loopbackStrategy', () => {
+  // "localhost" means the machine looking at the page. So a dev server can be
+  // framed by its own URL only when the page itself is on that machine.
+  it('frames directly when the cockpit is open on the machine running the dev server', () => {
+    expect(loopbackStrategy('localhost')).toBe('direct');
+    expect(loopbackStrategy('127.0.0.1')).toBe('direct');
+    expect(loopbackStrategy('[::1]')).toBe('direct');
+    expect(loopbackStrategy('app.localhost')).toBe('direct');
+  });
+
+  it('goes through the server when the cockpit is open on another device', () => {
+    // A phone on Tailscale, a tunnel, a LAN address: "localhost" there is the
+    // viewer's own device, which is not running the dev server.
+    expect(loopbackStrategy('machine.tail.ts.net')).toBe('server');
+    expect(loopbackStrategy('192.168.1.20')).toBe('server');
+    expect(loopbackStrategy('demo.ngrok.app')).toBe('server');
   });
 });
 

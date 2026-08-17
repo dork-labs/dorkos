@@ -81,6 +81,73 @@ describe('POST /api/workbench/sign', () => {
   });
 });
 
+describe('POST /api/workbench/probe', () => {
+  let upstream: http.Server;
+  let upstreamPort: number;
+
+  beforeAll(async () => {
+    upstream = http.createServer((_req, res) => res.end('ok'));
+    await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+    upstreamPort = (upstream.address() as AddressInfo).port;
+  });
+
+  afterAll(() => {
+    upstream.close();
+  });
+
+  it('reports a port with a server on it as listening', async () => {
+    const res = await request(app).post('/api/workbench/probe').send({ port: upstreamPort });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ listening: true });
+  });
+
+  it('reports a port with nothing on it as not listening', async () => {
+    // Bind a port, read it, then release it: nothing else can have claimed it in
+    // the microseconds since, so "closed" is a fact rather than a guess.
+    const probe = http.createServer();
+    await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+    const deadPort = (probe.address() as AddressInfo).port;
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+    const res = await request(app).post('/api/workbench/probe').send({ port: deadPort });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ listening: false });
+  });
+
+  it('finds a server bound only to IPv6 loopback', async () => {
+    // A dev server that binds "localhost" can land on ::1 alone, and the browser
+    // resolves "localhost" for itself when it loads the frame. Probing IPv4 only
+    // would call such a server dead while the frame renders it perfectly.
+    const v6 = http.createServer((_req, res) => res.end('ok'));
+    const bound = await new Promise<boolean>((resolve) => {
+      v6.once('error', () => resolve(false));
+      v6.listen(0, '::1', () => resolve(true));
+    });
+    if (!bound) {
+      // A runner with no IPv6 loopback cannot answer this question either way.
+      // Skipping is honest; passing on a listener that never bound would not be.
+      v6.close();
+      return;
+    }
+    try {
+      const port = (v6.address() as AddressInfo).port;
+      const res = await request(app).post('/api/workbench/probe').send({ port });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ listening: true });
+    } finally {
+      await new Promise<void>((resolve) => v6.close(() => resolve()));
+    }
+  });
+
+  it('rejects a port outside the valid range (400)', async () => {
+    expect((await request(app).post('/api/workbench/probe').send({ port: 70000 })).status).toBe(
+      400
+    );
+    expect((await request(app).post('/api/workbench/probe').send({ port: 0 })).status).toBe(400);
+    expect((await request(app).post('/api/workbench/probe').send({})).status).toBe(400);
+  });
+});
+
 describe('GET /api/workbench/serve/:token/*', () => {
   const validToken = () => workbenchTokenSigner.mint({ kind: 'serve', cwd: root });
 

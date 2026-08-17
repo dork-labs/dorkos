@@ -1,0 +1,87 @@
+{
+  "spec": "canvas-dev-server-preview",
+  "createdAt": "2026-08-16",
+  "source": "02-specification.md",
+  "tracker": {
+    "umbrella": "DOR-1258",
+    "project": "Canvas dev-server preview"
+  },
+  "conventions": {
+    "worktree": "one per task, from origin/main, via `git gtr new <branch> --from origin/main --yes` (verify with the guard in the working-in-worktrees skill)",
+    "review": "adversarial review by a separate agent per REVIEW.md before the PR opens; fixes land; then PR",
+    "models": "builders and reviewers: opus, effort high",
+    "pr": "branch named after the task slug; body `Closes DOR-<n>`; changelog fragment; OpenAPI regen when packages/shared/src/schemas.ts changes; real-browser screenshot in the PR body"
+  },
+  "phases": [
+    {
+      "id": "P1",
+      "title": "Direct framing on a loopback cockpit + honest failure states",
+      "tasks": [
+        {
+          "id": "1.1",
+          "slug": "canvas-direct-loopback-preview",
+          "issue": "DOR-1259",
+          "title": "Frame loopback dev servers directly; probe route; honest messages; shim resource-errors; Vite-style e2e; docs",
+          "spec": "§1",
+          "dependsOn": [],
+          "owns": [
+            "apps/client/src/layers/features/canvas/lib/browser-url.ts",
+            "apps/client/src/layers/features/canvas/ui/CanvasBrowserContent.tsx",
+            "apps/client/src/layers/features/canvas/model/use-devtools-bridge.ts",
+            "apps/client/src/layers/features/canvas/__tests__/**",
+            "apps/client/src/layers/shared/lib/transport/system-methods.ts",
+            "apps/client/src/layers/shared/lib/direct/system-methods.ts",
+            "packages/shared/src/transport.ts",
+            "packages/shared/src/schemas.ts (WorkbenchProbe*)",
+            "packages/test-utils/src/mock-factories.ts",
+            "apps/server/src/routes/workbench-serve.ts (probe route)",
+            "apps/server/src/services/workbench-serve/devtools-shim.ts",
+            "apps/server/src/routes/__tests__/workbench-serve.test.ts",
+            "apps/e2e/tests/workbench/dev-server-preview.spec.ts",
+            "docs/guides/workbench.mdx",
+            "docs/api/openapi.json (regen)",
+            "changelog/unreleased/<id>-canvas-dev-server-preview-direct.md"
+          ],
+          "done": "See DOR-1259 description (mirrors 02-specification.md §1). e2e proven red before / green after; video app renders in a running cockpit; screenshot in PR.",
+          "status": "ready"
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "title": "A real origin per preview target",
+      "tasks": [
+        {
+          "id": "2.1",
+          "slug": "canvas-preview-origin-listener",
+          "issue": "DOR-1260",
+          "title": "PreviewListenerManager (cookie-authorized, all methods, WS, shim); sign returns preview origin or tunnel-unavailable; retire path proxy; client frames own origin; ADR",
+          "spec": "§2",
+          "dependsOn": ["1.1"],
+          "owns": [
+            "apps/server/src/services/workbench-serve/preview-listener.ts (new)",
+            "apps/server/src/services/workbench-serve/proxy.ts (retire; keep header helpers)",
+            "apps/server/src/services/workbench-serve/index.ts",
+            "apps/server/src/services/workbench-serve/__tests__/**",
+            "apps/server/src/routes/workbench-serve.ts",
+            "apps/server/src/services/core/auth/session-gate.ts (drop proxy exemption)",
+            "apps/server/src/config/constants.ts (PREVIEW_IDLE_TTL_MS)",
+            "apps/server/src/index.ts (wire manager + shutdown)",
+            "packages/shared/src/schemas.ts (WorkbenchSignResponse)",
+            "packages/shared/src/transport.ts",
+            "apps/client/src/layers/features/canvas/**",
+            "apps/client/src/layers/shared/lib/{transport,direct}/system-methods.ts",
+            "packages/test-utils/src/mock-factories.ts",
+            "apps/e2e/tests/workbench/dev-server-preview.spec.ts",
+            "decisions/<id>-dev-server-previews-own-origin.md (new) + decisions/260708-185519-local-html-serving-origin-isolation.md (Status amendment) + decisions/manifest.json",
+            "docs/guides/workbench.mdx",
+            "docs/api/openapi.json (regen)",
+            "changelog/unreleased/<id>-canvas-preview-origin.md"
+          ],
+          "done": "See DOR-1260 description (mirrors 02-specification.md §2). Listener unit suite incl. WS; video app renders through the listener with HMR connected; screenshot in PR.",
+          "status": "ready"
+        }
+      ]
+    }
+  ]
+}

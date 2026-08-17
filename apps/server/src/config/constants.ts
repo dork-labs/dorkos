@@ -41,6 +41,14 @@ export const WORKBENCH = {
   /** Request timeout (ms) when the localhost proxy calls the dev server. */
   PROXY_TIMEOUT_MS: 30 * 1000,
   /**
+   * How long the loopback port probe waits for a connection before answering
+   * "nothing is listening". A connection to a port on this same machine either
+   * completes or is refused within a millisecond or two, so this is a ceiling
+   * for a wedged socket, not a budget — and it runs before every dev-server
+   * preview, so it has to stay well under the time a person would notice.
+   */
+  PROBE_TIMEOUT_MS: 1000,
+  /**
    * DevTools capture ring-buffer caps per session (DOR-213). Bounded so memory
    * is O(cap), not O(page lifetime): once full, the oldest entry is dropped.
    * Console keeps more than network because a noisy page logs far more lines
