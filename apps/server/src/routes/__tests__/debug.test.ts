@@ -52,6 +52,10 @@ import {
   DISPATCH_BUFFER_SIZE,
 } from '../../services/observability/dispatch-buffers.js';
 import { logRefusal } from '../../services/observability/refusals.js';
+import {
+  recordPhantomCancellation,
+  resetPhantomCancellations,
+} from '../../services/observability/phantom-cancellations.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import {
   getOrCreateProjector,
@@ -79,12 +83,14 @@ function buildApp(deps?: DebugDeps) {
 
 beforeEach(() => {
   resetDispatchBuffers();
+  resetPhantomCancellations();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   disposeProjector(SESSION_ID);
   resetDispatchBuffers();
+  resetPhantomCancellations();
 });
 
 /**
@@ -183,6 +189,43 @@ describe('GET /api/debug/refusals', () => {
     );
     expect(kept).toBeDefined();
     expect(kept?.dispatchId).toBeUndefined();
+  });
+});
+
+describe('GET /api/debug/phantom-cancellations', () => {
+  it('reports the counter split by the path that produced it', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    recordPhantomCancellation({
+      sessionId: SESSION_ID,
+      path: 'turn',
+      phantoms: [{ toolUseId: 'toolu_1', mainThread: true, parentToolUseId: null }],
+      steered: true,
+    });
+    recordPhantomCancellation({
+      sessionId: SESSION_ID,
+      path: 'pump',
+      phantoms: [{ toolUseId: 'toolu_2', mainThread: false, parentToolUseId: 'toolu_task' }],
+      steered: false,
+    });
+
+    const res = await get(buildApp(), '/api/debug/phantom-cancellations');
+    expect(res.body).toMatchObject({
+      total: 2,
+      batches: 2,
+      byPath: { turn: 1, pump: 1 },
+      mainThread: 1,
+      subagent: 1,
+      steered: 1,
+      sessions: 1,
+    });
+    expect(res.body.recent[0]).toMatchObject({ path: 'pump', toolUseIds: ['toolu_2'] });
+  });
+
+  it('answers with zeros when nothing has tripped it — the expected reading', async () => {
+    const res = await get(buildApp(), '/api/debug/phantom-cancellations');
+    expect(res.body.total).toBe(0);
+    expect(res.body.byPath).toEqual({ turn: 0, pump: 0 });
+    expect(res.body.recent).toEqual([]);
   });
 });
 
@@ -404,6 +447,16 @@ describe('the whole surface leaks nothing (I7)', () => {
           sessionId: SESSION_ID,
           detail: { note: POISON.token },
         });
+        // Every field of a phantom record is an id, a count or a coarse enum —
+        // there is no free-form input to poison, which is the property this
+        // sweep is confirming rather than an exemption from it. The id fields
+        // take the token, as the room-binding case does.
+        recordPhantomCancellation({
+          sessionId: POISON.token,
+          path: 'pump',
+          phantoms: [{ toolUseId: POISON.token, mainThread: false, parentToolUseId: POISON.token }],
+          steered: false,
+        });
       });
 
       const app = buildApp({
@@ -416,6 +469,7 @@ describe('the whole surface leaks nothing (I7)', () => {
       const routes = [
         '/api/debug/dispatches',
         '/api/debug/refusals',
+        '/api/debug/phantom-cancellations',
         '/api/debug/projectors',
         `/api/debug/sessions/${SESSION_ID}`,
         '/api/debug/rooms/room-1/bindings',
