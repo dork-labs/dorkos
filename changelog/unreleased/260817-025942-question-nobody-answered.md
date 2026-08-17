@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,client): a question nobody answered no longer reads "answered" after a reload (DOR-1293)'
+  - "fix(server,client): read a refusal's own words, and say when a question was never resolved (DOR-1293)"
 ---
 
 ### Fixed
