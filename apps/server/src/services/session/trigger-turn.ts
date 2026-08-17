@@ -90,6 +90,7 @@ import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import type { SessionStateProjector } from './session-state-projector.js';
 import type { LockActivity } from './session-lock.js';
 import { feedProjector } from './session-event-normalizer.js';
+import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { assembleAdditionalContext } from './context-assembler.js';
 import { takeStagedContext } from './staged-context-store.js';
 import { withStallGuard } from './stall-guard.js';
@@ -359,6 +360,12 @@ export interface TriggerTurnDeps {
   releaseLock(sessionId: string, clientId: string, token?: symbol): void;
   /** The runtime's per-turn event generator. */
   sendMessage(sessionId: string, content: string, opts: MessageOpts): AsyncGenerator<StreamEvent>;
+  /**
+   * End a turn the runtime has left open before this one starts, answering
+   * whether it settled anything (`AgentRuntime.settleOpenTurn`). Absent for a
+   * runtime that cannot strand a turn — which reads as "nothing to settle".
+   */
+  settleOpenTurn?(sessionId: string): Promise<boolean>;
   /** Interrupt the runtime's in-flight turn (stall watchdog). Resolves false when none found. */
   interruptQuery(sessionId: string): Promise<boolean>;
   /** Resolve the backend-internal (canonical) id once the adapter assigns it. */
@@ -650,6 +657,18 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // holds nothing and pays a single map lookup. A native-staging runtime never
     // fills this hold, so its dispatches are untouched.
     additionalContext.push(...takeStagedContext(sessionId));
+    // Nothing below may open a turn while this session still has one open
+    // (DOR-1295) — `feedProjector` mints this turn's `turn_start` before it pulls
+    // the generator once, so a turn settled any later than here settles INSIDE
+    // this one. `settle-open-turn.ts` carries the whole reasoning, including why
+    // the wait is unconditional and why it may precede the boundary gate.
+    //
+    // Asked with `sessionId` rather than `turnKey` because it addresses the same
+    // wiring `deps.sendMessage` below addresses, and that takes the id the
+    // request carried. A turn's budget is the flat bound: unlike a command
+    // intent, a turn's POST carries no abort signal and so has no client-side
+    // deadline to stay under.
+    await settleOpenTurnBefore(sessionId, projector, deps, SESSIONS.STRANDED_TURN_SETTLE_MS);
     const tapped = tapEachEvent(
       deps.sendMessage(sessionId, content, {
         cwd,

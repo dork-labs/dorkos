@@ -361,6 +361,29 @@ export class PersistentDispatch {
   }
 
   /**
+   * End a turn this session has left open, so the turn about to replace it does
+   * not inherit it (DOR-1295).
+   *
+   * The window is abandoned exactly as {@link SessionTurnWindows.dispatch}'s
+   * backstop abandons one — a synthetic error `result`, one `turn_end`, the
+   * pump's turn ended — only EARLIER: called ahead of the successor's
+   * `turn_start`, so the abandoned turn's terminal cannot land inside the
+   * successor's window.
+   *
+   * A bundle the registry no longer backs is treated as holding nothing, for
+   * the same reason {@link steer} does: a reaped pump is spent and refuses
+   * everything asked of it, and there is no window under it to settle anyway.
+   *
+   * @param sessionId - The session about to open a turn
+   * @returns True when a window was open and has been settled
+   */
+  settleOpenTurn(sessionId: string): boolean {
+    const bundle = this.bundles.get(sessionId);
+    if (bundle === undefined || this.registry.peek(sessionId) !== bundle.pump) return false;
+    return bundle.windows.abandonOpenWindow();
+  }
+
+  /**
    * Steer a message into a session's OPEN turn — the claude-code half of P4's
    * `deliverIntoTurn(mode: 'steer')` (spec §2.3, task 4.1).
    *

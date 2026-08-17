@@ -43,6 +43,8 @@ export class FakeCliProcess {
   readonly options: Options;
   /** How many turns this process has answered. */
   answered = 0;
+  /** How many assistant messages this process has produced, answered or not. */
+  spoke = 0;
   /** True once the process is gone, however it went. */
   ended = false;
   /** How many times the forceful `close()` was reached for. */
@@ -156,16 +158,28 @@ export class FakeCliProcess {
     this.wake = undefined;
   }
 
-  /** Answer the message with this id, as the CLI would at the end of a turn. */
-  answer(messageId: string | undefined, text = 'ok'): void {
-    this.answered += 1;
+  /**
+   * Say something mid-turn WITHOUT ending it — a process that is visibly
+   * working. On its own (no {@link answer} behind it) this is a turn that
+   * produces and never terminates, which is the shape a stranded window has.
+   *
+   * @param text - What the model says
+   */
+  say(text: string): void {
+    this.spoke += 1;
     this.emit({
       type: 'stream_event',
       event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
       parent_tool_use_id: null,
       session_id: SESSION_ID,
-      uuid: `assistant-${this.answered}`,
+      uuid: `assistant-${this.spoke}`,
     } as unknown as SDKMessage);
+  }
+
+  /** Answer the message with this id, as the CLI would at the end of a turn. */
+  answer(messageId: string | undefined, text = 'ok'): void {
+    this.answered += 1;
+    this.say(text);
     this.emit(resultMessage(messageId));
   }
 

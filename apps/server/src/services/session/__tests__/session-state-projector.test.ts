@@ -1809,3 +1809,57 @@ describe('in-conversation MCP sign-in card (DOR-1004)', () => {
     expect((await p.buildSnapshot(async () => [])).inProgressTurn).toBeNull();
   });
 });
+
+// The ordering gate a turn about to open waits on when the turn ahead of it had
+// to be abandoned (DOR-1295). Its whole job is to be a signal that means
+// something and a wait that always ends.
+describe('awaitTurnSettled', () => {
+  it('resolves immediately when no turn is in progress', async () => {
+    const p = new SessionStateProjector('s1');
+    // A bound long enough that only an immediate resolve can beat the test.
+    await expect(p.awaitTurnSettled(TIMEOUT_MS)).resolves.toBeUndefined();
+  });
+
+  it('waits for the open turn and resolves the moment it ends', async () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start', userMessage: 'hi' });
+
+    let settled = false;
+    const waiting = p.awaitTurnSettled(TIMEOUT_MS).then(() => {
+      settled = true;
+    });
+    // Still open: a mid-turn event must not release it.
+    p.ingest({ type: 'text_delta', text: 'working' });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    p.ingest({ type: 'turn_end' });
+    await waiting;
+    expect(settled).toBe(true);
+  });
+
+  it('gives up on a turn nothing will ever close, rather than waiting forever', async () => {
+    vi.useFakeTimers();
+    try {
+      const p = new SessionStateProjector('s1');
+      // The stranded shape: a turn opened by a feed whose consumer is gone, so
+      // no `turn_end` is ever coming.
+      p.ingest({ type: 'turn_start', userMessage: 'hi' });
+      const waiting = p.awaitTurnSettled(2_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(waiting).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('releases waiters when the projector is retired mid-turn', async () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start', userMessage: 'hi' });
+    const waiting = p.awaitTurnSettled(TIMEOUT_MS);
+    // Nothing will ever be fed to this instance again, so holding to the bound
+    // would make every later turn pay a wait that cannot end well.
+    p.terminate();
+    await expect(waiting).resolves.toBeUndefined();
+  });
+});

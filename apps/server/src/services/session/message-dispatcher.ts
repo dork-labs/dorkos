@@ -610,6 +610,12 @@ function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
     acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
     releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
     sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
+    // Omitted rather than stubbed when the runtime cannot strand a turn: the
+    // absence is what `triggerTurn` reads as "nothing to settle", and a stub
+    // answering `false` would only hide which runtimes have the exposure.
+    ...(runtime.settleOpenTurn !== undefined
+      ? { settleOpenTurn: (sid: string) => runtime.settleOpenTurn!(sid) }
+      : {}),
     interruptQuery: (sid) => runtime.interruptQuery(sid),
     getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
     rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
@@ -1611,6 +1617,10 @@ export async function dispatchCommandIntent(
         acquireLock: (sid, cid, lifecycle, tok) => runtime.acquireLock(sid, cid, lifecycle, tok),
         releaseLock: (sid, cid, tok) => runtime.releaseLock(sid, cid, tok),
         executeCommandIntent: (sid, i, o) => runtime.executeCommandIntent(sid, i, o),
+        // Omitted rather than stubbed, for the reason `turnDeps` gives.
+        ...(runtime.settleOpenTurn !== undefined
+          ? { settleOpenTurn: (sid: string) => runtime.settleOpenTurn!(sid) }
+          : {}),
         interruptQuery: (sid) => runtime.interruptQuery(sid),
         getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
       },

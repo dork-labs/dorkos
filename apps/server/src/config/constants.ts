@@ -200,6 +200,20 @@ export const SESSIONS = {
    */
   TURN_FIRST_EVENT_TIMEOUT_MS: 2 * 60 * 1000,
   /**
+   * How long a turn about to open waits for an ABANDONED turn's terminal to
+   * reach the projector before opening anyway (DOR-1295).
+   *
+   * Only ever spent when the runtime reported that it had to end a turn nobody
+   * could finish — an ordinary turn never reaches this wait. What is being
+   * waited for is a stream unwinding through mappers and generators that are
+   * already holding their terminal, which is microtasks; two seconds is orders
+   * of magnitude of slack for a machine running ten agents, and short enough
+   * that the fallback — a person's message starting a couple of seconds late —
+   * beats the alternative it replaces, which was that message settling as the
+   * abandoned turn's error.
+   */
+  STRANDED_TURN_SETTLE_MS: 2_000,
+  /**
    * How long the stall watchdog waits for the runtime's interrupt to settle
    * before closing the turn anyway (DOR-782). `interruptQuery` reaches a
    * possibly-wedged subprocess, so the call that is meant to unstick a hung turn
