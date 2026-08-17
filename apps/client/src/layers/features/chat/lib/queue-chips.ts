@@ -59,6 +59,13 @@ const DOWNGRADE_NOTICE: Record<
   // already waiting, and naming a position the chip cannot know would be a
   // second small lie in the sentence written to stop the first one.
   'not-steerable': "Couldn't cut in. It's waiting in line.",
+  // Quiet on purpose, like `session-idle` and for the same reason: nothing was
+  // lost, and the person has ALREADY been told. A stage that folds joins no
+  // queue — it has no row for a chip to hang on — and the transcript says
+  // "Added context for the next reply" above the words themselves. A second
+  // sentence here would be a duplicate at best, and at worst it would imply a
+  // failure where the design simply chose the later of two honest routes.
+  'not-stageable': null,
   'no-open-turn': 'Queued. The task had already finished.',
   'pending-interaction': 'Queued. The agent needs your answer first.',
 };
@@ -68,12 +75,13 @@ const DOWNGRADE_NOTICE: Record<
  * asked for, or `null` when there is nothing worth saying.
  *
  * Now that steer and stage have real mechanisms (P4), a downgrade is a live
- * event: a steer or a stage the runtime could not honour is queued instead, and
- * the chip owns up to it once — `unsupported`, `not-steerable`, `no-open-turn`,
- * and `pending-interaction` each get one plain line. `session-idle` is the one
- * this deliberately stays quiet about, because "it ran immediately" is not a
- * loss anybody needs told. Returns `null` for a clean delivery and for that
- * quiet case alike.
+ * event: a steer the runtime could not honour is queued instead, and the chip
+ * owns up to it once — `unsupported`, `not-steerable`, `no-open-turn`, and
+ * `pending-interaction` each get one plain line. Two are deliberately quiet:
+ * `session-idle`, because "it ran immediately" is not a loss anybody needs told,
+ * and `not-stageable`, because a folded stage sits on no queue and the transcript
+ * already shows what was added. Returns `null` for a clean delivery and for both
+ * quiet cases alike.
  *
  * `not-steerable` is the reason `session-idle` used to swallow (DOR-1268): a
  * turn was running and could not be joined, so the message really did go to the

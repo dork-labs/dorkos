@@ -285,7 +285,8 @@ type LadderRung = { landed: MessageDispatchResult } | { degrade: DispositionDown
  * steer -> supportsSteer AND no pending interaction AND a turn is open
  *            -> deliverIntoTurn({ mode: 'steer' })   (joins the live turn)
  *          else -> queue, and say why
- * stage -> supportsContextStaging -> deliverIntoTurn({ mode: 'stage' })
+ * stage -> supportsContextStaging AND canStageSession(id) is not false
+ *            -> deliverIntoTurn({ mode: 'stage' })   (reaches the transcript)
  *          else -> fold into the next dispatch as additional context
  * ```
  *
@@ -365,11 +366,23 @@ async function deliverByDisposition(
   // its transcript natively; one that does not folds the words into the next
   // dispatch (ADR-0273) WITHOUT a native attempt that would contradict the flag.
   if (!caps.supportsContextStaging) {
-    return landed(foldStage(sessionId, content, messageId, queueKey));
+    return landed(foldStage({ sessionId, content, messageId, queueKey, reason: 'unsupported' }));
+  }
+  // The flag is not the whole truth, for the same reason it was not for a steer
+  // (DOR-1268): claude-code's native stage rides a process held between turns, so
+  // a session on the resume path — how a default install ships — has no
+  // transcript to append to. Asking anyway is what made Add context BOOT an agent
+  // and move the session onto the persistent path behind the operator's back
+  // (DOR-1307), because the adapter's only way to answer yes was to start one.
+  // A runtime whose staging is uniform omits the method and its flag stands.
+  if (runtime.canStageSession?.(sessionId) === false) {
+    return landed(foldStage({ sessionId, content, messageId, queueKey, reason: 'not-stageable' }));
   }
   // {@link deliverStage} is the native primitive, reused whole. It should deliver
-  // natively here (flag true, method present); a fold receipt would mean the
-  // adapter declared ahead of its mechanism, so it is logged and recorded as one.
+  // natively here (flag true, the session says yes, method present); a fold
+  // receipt would mean the adapter declared ahead of its mechanism BOTH times, so
+  // it is logged and recorded as one. This is now the ONLY route to that log: a
+  // fold the design intends never reaches it (DOR-1307).
   const result = await deliverStage({ sessionId, clientId, content, messageId, runtime });
   if (result.delivered) {
     if (result.viaFallback === true) {
@@ -407,30 +420,43 @@ async function deliverByDisposition(
  * durable stream because no queue row backs a fold.
  *
  * The same two steps {@link deliverStage} takes on its own fallback, reached here
- * by the routing flag instead of by a native attempt. To the person a stage
- * landed either way; `degradedBecause: 'unsupported'` on the receipt is only how.
+ * by the routing decision instead of by a native attempt. To the person a stage
+ * landed either way; the receipt's reason is only how, and it is a DESIGNED fold
+ * rather than an adapter bug — nothing here is logged as one.
  *
- * @param sessionId - Either id a caller might hold (request uuid or canonical)
- * @param content - The person's staged text, pristine
- * @param messageId - The server-minted correlation id for the staged message
- * @param queueKey - The session's queue key, for the durable-stream announcement
+ * @param opts - The staged message and why it took this route
  */
-function foldStage(
-  sessionId: string,
-  content: string,
-  messageId: string,
-  queueKey: string
-): MessageDeliveryOutcome {
+function foldStage(opts: FoldStageOpts): MessageDeliveryOutcome {
+  const { sessionId, content, messageId, queueKey, reason } = opts;
   holdStagedContext(sessionId, content, messageId);
   emitContextStaged(sessionId, content, messageId);
   const outcome: MessageDeliveryOutcome = {
     messageId,
     requested: 'stage',
     applied: 'stage',
-    degradedBecause: 'unsupported',
+    degradedBecause: reason,
   };
   emitQueueUpdate(queueKey, outcome);
   return outcome;
+}
+
+/** Inputs for {@link foldStage}. */
+interface FoldStageOpts {
+  /** Either id a caller might hold (request uuid or canonical). */
+  sessionId: string;
+  /** The person's staged text, pristine. */
+  content: string;
+  /** The server-minted correlation id for the staged message. */
+  messageId: string;
+  /** The session's queue key, for the durable-stream announcement. */
+  queueKey: string;
+  /**
+   * Why the native path was not taken: `unsupported` when the adapter cannot
+   * stage at all, `not-stageable` when it can but this session's seam is not
+   * live (DOR-1307). Never conflated — the second would otherwise contradict a
+   * capability the runtime openly declares.
+   */
+  reason: Extract<DispositionDowngradeReason, 'unsupported' | 'not-stageable'>;
 }
 
 /**

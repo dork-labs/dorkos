@@ -728,7 +728,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // transcript, and a cold one has none live — so it needs the session
       // record and the launch ports, exactly as a turn does. They are resolved
       // here, from the session's own persisted settings (a stage carries no
-      // per-send cwd or model of its own), and handed to the pump.
+      // per-send cwd or model of its own), and handed to the pump. Warming is
+      // gated on the opt-in inside {@link PersistentDispatch.stage}, so a session
+      // that has not opted in is refused before any process is booted — reaching
+      // that refusal means the server ignored {@link canStageSession}.
       const session = await this.sessionStore.ensureForMessage(
         sessionId,
         this.transcriptReader,
@@ -762,6 +765,29 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * already open would flicker with the turn rather than describe the session.
    */
   canSteerSession(sessionId: string): boolean {
+    return this.persistent.shouldDispatch(sessionId);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * The same question as {@link canSteerSession}, and for this runtime the same
+   * answer — because both rides are the same ride. A native stage appends to the
+   * pump's held input stream (`shouldQuery: false`), so a session that will not
+   * run its next turn on a held process has no transcript to append to.
+   *
+   * They stay two methods because they are two claims about two mechanisms, and a
+   * runtime can honestly hold one without the other: test-mode declares both while
+   * holding no process at all, and a backend with a transcript API but no mid-turn
+   * injection would be stageable and not steerable. That claude-code answers them
+   * identically is a fact about claude-code, not about the contract.
+   *
+   * The `false` here is not a refusal. It routes the words to the server's
+   * fold-into-next fallback, which is why the composer keeps offering Add context
+   * on both paths — and why answering honestly costs the person nothing, while
+   * answering `true` cost them a subprocess they never asked for (DOR-1307).
+   */
+  canStageSession(sessionId: string): boolean {
     return this.persistent.shouldDispatch(sessionId);
   }
 
@@ -1180,7 +1206,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // and a close that takes its grace window must not hold it up — and never
       // bare `void`, because a wedged teardown rejecting would take the server
       // down with it. A no-op for a session that never opted in: nothing warms a
-      // pump unless `runtimes.claudeCode.persistentSession` is on.
+      // pump unless `runtimes.claudeCode.persistentSession` is on — not a turn,
+      // and not a staged message either, which is what DOR-1307 restored.
       //
       // The wiring is forgotten alongside the process, so a session that comes
       // back builds a fresh pump rather than dispatching into a spent one. Done

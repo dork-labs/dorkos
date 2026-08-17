@@ -1025,6 +1025,36 @@ export interface AgentRuntime {
   canSteerSession?(sessionId: string): boolean;
 
   /**
+   * Whether a stage sent to THIS session right now could reach the runtime's own
+   * transcript — the per-session half of the per-runtime {@link
+   * RuntimeCapabilities.supportsContextStaging}, and the exact counterpart of
+   * {@link canSteerSession}.
+   *
+   * `supportsContextStaging` says the ADAPTER can append to its transcript; this
+   * says whether the seam that does it is under this session right now. Claude
+   * Code forced the split a second time (DOR-1307): its native stage rides the
+   * persistent pump's held input stream, so a session on the resume path — how a
+   * default install ships — has no transcript to append to. Answering `false`
+   * there is what keeps the server from asking, because the adapter's only way to
+   * say yes would be to START a process the operator never opted into.
+   *
+   * **A `false` is not a refusal.** The server folds the words into the next
+   * dispatch instead (ADR-0273's neutral context bag) and reports
+   * `degradedBecause: 'not-stageable'`, so a stage always lands. That is the
+   * difference from {@link canSteerSession}, whose `false` means the composer
+   * should not offer a cut-in at all: a fold is a real, useful answer, so Add
+   * context stays offered on both paths and this method never reaches the client.
+   *
+   * Optional: a runtime whose staging is uniform across its sessions omits it,
+   * and every consumer reads the absence as `supportsContextStaging`. It NARROWS
+   * that flag and never widens it — a runtime declaring `false` has no stageable
+   * session, and the server checks the flag first either way.
+   *
+   * @param sessionId - Session to report on; either id a caller might hold
+   */
+  canStageSession?(sessionId: string): boolean;
+
+  /**
    * End a turn this session has left open, so the turn about to start does not
    * inherit it (DOR-1295).
    *

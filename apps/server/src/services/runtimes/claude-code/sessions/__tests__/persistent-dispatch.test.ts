@@ -840,6 +840,92 @@ describe('deliverIntoTurn — a stage reaches the transcript with no turn (task 
   });
 });
 
+// DOR-1307. Every case in the block above turns the opt-in ON, which is how the
+// one path that starts a process for a staged message went untested with the
+// setting in the state it ships in. With it OFF, "Add context" was warming a real
+// CLI subprocess AND registering the session, so every later message ran on the
+// pump and the composer started offering Steer — a session opting itself into an
+// experiment nobody switched on. The opt-in stays OFF here (the file's
+// `beforeEach` leaves it off), which is the whole point of the block.
+describe('Add context starts nothing while the opt-in is off (DOR-1307)', () => {
+  it('refuses a stage on a COLD session, launching nothing and registering nothing', async () => {
+    const sessionId = nextSession();
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'use the staging bucket', {
+      mode: 'stage',
+      messageId: 'stage-off-1',
+    });
+
+    // The refusal the server reads as "fold it into the next turn instead".
+    expect(receipt).toEqual({ delivered: false, reason: 'unsupported' });
+    // Not one process. This is the assertion the bug fails: it booted one here.
+    expect(cli.launches).toBe(0);
+    expect(cli.processes).toHaveLength(0);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    // And no registry entry, which is the half that OUTLIVED the stage: any entry
+    // makes `shouldDispatch` true forever after, so every later message runs on
+    // the pump path. Both per-session answers read that registry, so both prove
+    // it is still empty.
+    expect(runtime.canStageSession(sessionId)).toBe(false);
+    expect(runtime.canSteerSession(sessionId)).toBe(false);
+  });
+
+  it('leaves the NEXT message on the resume path', async () => {
+    const sessionId = nextSession();
+
+    await runtime.deliverIntoTurn(sessionId, 'a note', { mode: 'stage', messageId: 'stage-off-2' });
+    await turn(sessionId, 'now do the thing');
+
+    // ONE process — the turn's own, started and given back the way the resume
+    // path always does. A stage that had warmed one would make this two, or make
+    // the session `warm` afterwards.
+    expect(cli.launches).toBe(1);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(runtime.canSteerSession(sessionId)).toBe(false);
+  });
+
+  it('starts no SECOND process while a resume-path turn is running', async () => {
+    const sessionId = nextSession();
+    // A turn that has launched and not finished — precisely when a person reaches
+    // for Add context, and the moment the cold path would have raced a second
+    // process onto the same session.
+    cli.deferNextInit = true;
+    const running = turn(sessionId, 'do the thing');
+    await vi.waitFor(() => expect(cli.processes).toHaveLength(1));
+
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'also check the tests', {
+      mode: 'stage',
+      messageId: 'stage-off-3',
+    });
+
+    expect(receipt).toEqual({ delivered: false, reason: 'unsupported' });
+    expect(cli.launches).toBe(1);
+    // The running turn's own process never saw the staged words either — they
+    // ride the NEXT dispatch, which the dispatcher owns (message-dispatcher.test).
+    expect(cli.processes[0]!.staged).toHaveLength(0);
+
+    cli.processes[0]!.reportReady();
+    await running;
+  });
+
+  it('stages natively again the moment the operator opts in', async () => {
+    const sessionId = nextSession();
+    expect(runtime.canStageSession(sessionId)).toBe(false);
+
+    optIn.persistentSession = true;
+    expect(runtime.canStageSession(sessionId)).toBe(true);
+
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'now it can land', {
+      mode: 'stage',
+      messageId: 'stage-on-1',
+    });
+    expect(receipt).toEqual({ delivered: true });
+    expect(cli.launches).toBe(1);
+    await vi.waitFor(() => expect(cli.processes[0]!.staged).toHaveLength(1));
+  });
+});
+
 // DOR-1235. A `/compact` turn produces no assistant output at all — the SDK
 // compacts, the model has nothing left to say, and the turn closes on the
 // boundary alone. The empty-stream guard used to read that as a dead stream, so

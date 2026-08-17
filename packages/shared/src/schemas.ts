@@ -495,7 +495,7 @@ export type MessageDisposition = z.infer<typeof MessageDispositionSchema>;
  * "queued instead of steered — this runtime cannot steer mid-turn" rather than
  * quietly doing something other than what was asked.
  *
- * - `unsupported` — the session's runtime does not declare the capability, or a
+ * - `unsupported` — the session's runtime does not declare the capability, so a
  *   stage folded into the next dispatch instead of reaching the transcript
  *   natively (to the person a stage landed either way; this says how).
  * - `session-idle` — no turn was running, so the message ran immediately. The
@@ -505,6 +505,12 @@ export type MessageDisposition = z.infer<typeof MessageDispositionSchema>;
  *   `canSteerSession`). Distinct from `session-idle`, which
  *   it used to be reported as: nothing ran early here, the message went to the
  *   back of the line, and the sender has to be told (DOR-1268).
+ * - `not-stageable` — the runtime CAN stage, but the seam that does it is not
+ *   under this session (the runtime's `canStageSession`), so the words were
+ *   folded into the next dispatch instead of reaching the transcript now. The
+ *   stage still landed. Distinct from `unsupported`, which claimed the adapter
+ *   could not stage at all and so contradicted its own declared capability on
+ *   every default claude-code install (DOR-1307).
  * - `no-open-turn` — there is no turn this caller may join: it ended between the
  *   request and the delivery, its input stream had closed, or a DIFFERENT client
  *   owns the live turn. The message waits in the queue instead.
@@ -513,7 +519,14 @@ export type MessageDisposition = z.infer<typeof MessageDispositionSchema>;
  *   asked.
  */
 export const DispositionDowngradeReasonSchema = z
-  .enum(['unsupported', 'session-idle', 'not-steerable', 'no-open-turn', 'pending-interaction'])
+  .enum([
+    'unsupported',
+    'session-idle',
+    'not-steerable',
+    'not-stageable',
+    'no-open-turn',
+    'pending-interaction',
+  ])
   .openapi('DispositionDowngradeReason');
 
 /** Why a disposition was downgraded. See {@link DispositionDowngradeReasonSchema}. */
