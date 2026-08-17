@@ -119,6 +119,18 @@ const approvalGated: ScenarioFn = async function* (_content, ctx) {
     blockedPath: 'notes/release.md',
     hasSuggestions: true,
   });
+  // The gate has not opened, and the tool has NOT run — but the model is done
+  // streaming its input, and that is when claude-code closes the block
+  // (`content_block_stop`, DOR-1269), which projects as a resultless
+  // `tool_result` marked `complete`. So a turn replayed onto a cold tab reports
+  // `complete` for a tool still waiting on a person. Emitted here so the reload
+  // test meets the state a real approval actually parks in; the branch's real
+  // outcome is the second projected `tool_result`, after the decision. Their
+  // relative order with the ask is a race in production (see `questionPrompt`).
+  yield {
+    type: 'tool_call_end',
+    data: { toolCallId, toolName: 'Edit', status: 'complete' },
+  } as StreamEvent;
 
   const decision = await ctx.awaitApproval(toolCallId);
 
@@ -231,6 +243,25 @@ const questionPrompt: ScenarioFn = async function* (_content, ctx) {
   const toolCallId = 'question-1';
   yield sessionStatus();
   yield text('Before I scaffold the tests, one decision.\n\n');
+  // AskUserQuestion is an ORDINARY tool call, and the pair around the ask is
+  // what makes this scenario able to catch DOR-1269. claude-code closes the
+  // tool's content block at `content_block_stop` — the moment the model finishes
+  // STREAMING the input, long before anybody answers — and that PROJECTS as a
+  // `tool_result` with `status: 'complete'` and no result, because the
+  // normalizer maps `tool_call_end` and a real `tool_result` onto the same
+  // member. So the turn a cold hydrate replays holds `complete` for a tool that
+  // has not run. A fake that emitted only the ask would park in a state the real
+  // runtime never reaches, and the reload test resting on it would be green by
+  // omission.
+  //
+  // The ORDER of the ask and this close is a race in production — the ask drains
+  // through the priority queue (`messaging/message-sender.ts`) while the close
+  // rides the SDK iterator — so this scenario pins the order that loses, not the
+  // only order that happens.
+  yield {
+    type: 'tool_call_start',
+    data: { toolCallId, toolName: 'AskUserQuestion', status: 'running' },
+  } as StreamEvent;
   yield {
     type: 'question_prompt',
     data: {
@@ -248,6 +279,10 @@ const questionPrompt: ScenarioFn = async function* (_content, ctx) {
         },
       ],
     },
+  } as StreamEvent;
+  yield {
+    type: 'tool_call_end',
+    data: { toolCallId, toolName: 'AskUserQuestion', status: 'complete' },
   } as StreamEvent;
 
   const answers = await ctx.awaitAnswers(toolCallId);
