@@ -80,6 +80,28 @@ const serverEnvSchema = z.object({
   DORKOS_DEFAULT_CWD: z.string().optional(),
   DORKOS_BOUNDARY: z.string().optional(),
   DORKOS_LOG_LEVEL: z.coerce.number().int().min(0).max(5).optional(),
+  // Dev-server previews in the canvas each open a listener on a port of their
+  // own (DOR-1260). By default the OS picks it, which is right for anyone
+  // reaching DorkOS directly. Set a `<from>-<to>` range to pin the choice, so
+  // someone running DorkOS in Docker or behind `ssh -L` can forward those ports
+  // once (`-p 4243-4252:4243-4252`) and have previews work. Inclusive; `from`
+  // must not exceed `to`.
+  DORKOS_PREVIEW_PORT_RANGE: z
+    .string()
+    .regex(/^\d{1,5}-\d{1,5}$/, 'must look like "4243-4252"')
+    .transform((value, ctx) => {
+      const [from, to] = value.split('-').map(Number);
+      const valid = from >= 1 && to <= 65535 && from <= to;
+      if (!valid) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'must be an ascending port range within 1-65535, e.g. "4243-4252"',
+        });
+        return z.NEVER;
+      }
+      return { from, to };
+    })
+    .optional(),
   DORK_HOME: z.string().optional(),
   DORKOS_VERSION_OVERRIDE: z.string().optional(),
   CLIENT_DIST_PATH: z.string().optional(),

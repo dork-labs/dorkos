@@ -502,9 +502,41 @@ function installDevtoolsShim(
 }
 
 /**
+ * The compiler helpers the stringified functions may still refer to, defined in
+ * the emitted script's own scope.
+ *
+ * A function turned into source with `toString()` carries whatever the compiler
+ * did to it — but NOT the module-scope helpers that transform leans on. Under
+ * `tsx` (how `pnpm dev` runs this server) esbuild's `keepNames` appends
+ * `__name(fn, "fn")` after every nested function declaration, and `__name` is
+ * declared at the top of the compiled module, outside the string. In a browser
+ * that is `ReferenceError: __name is not defined` on the shim's first statement,
+ * swallowed by its own `try/catch` — the whole shim silently absent from every
+ * dev session, which is exactly what happened until 2026-08-17.
+ *
+ * Declaring the helper here closes that by construction rather than by hoping a
+ * compile mode leaves the source alone: if the wrappers are present they call
+ * this identity function, and if they are absent (the `tsc` build, the test
+ * runner) it is one unused `var`. `__name` returns its target because esbuild
+ * uses the call as an expression as well as a statement.
+ *
+ * `devtools-shim-page.test.ts` runs the emitted script in a real page under
+ * `tsx`, and a sibling test fails if a helper this prologue does not define
+ * appears in the emitted source.
+ */
+const COMPILER_HELPER_PROLOGUE = 'var __name=function(f){return f};';
+
+/**
+ * The compiler-helper identifiers {@link COMPILER_HELPER_PROLOGUE} supplies.
+ * Exported so a test can assert the emitted script needs no others.
+ */
+export const DEVTOOLS_SHIM_COMPILER_HELPERS = ['__name'] as const;
+
+/**
  * The self-contained IIFE source injected as the first `<head>` child of every
  * served/proxied preview. Built by stringifying the authored functions and
  * passing the two helpers into the installer as arguments — see the module doc
- * for why this survives bundling and stays free of `/api` and Node-only syntax.
+ * for why this survives bundling and stays free of `/api` and Node-only syntax,
+ * and {@link COMPILER_HELPER_PROLOGUE} for why it carries its own prologue.
  */
-export const DEVTOOLS_AGENT_SCRIPT = `(${installDevtoolsShim.toString()})(${serializeConsoleArg.toString()}, ${describeResourceError.toString()});`;
+export const DEVTOOLS_AGENT_SCRIPT = `(function(){${COMPILER_HELPER_PROLOGUE}(${installDevtoolsShim.toString()})(${serializeConsoleArg.toString()}, ${describeResourceError.toString()});})();`;

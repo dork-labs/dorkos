@@ -1,23 +1,27 @@
 /**
- * Workbench embedded-browser serving routes (DOR-216, ADR 260708-185519).
+ * Workbench embedded-browser serving routes (DOR-216, DOR-1260;
+ * ADR 260708-185519).
  *
- * Four routes:
- * - `POST /api/workbench/sign` — mint a short-lived signed URL (auth-gated by the
- *   app-wide session gate). Validates the target cwd is within the boundary
- *   before minting a `serve` token; range-validates the port for a `proxy` token.
+ * Three routes:
+ * - `POST /api/workbench/sign` — mint what the embedded browser needs to load a
+ *   target (auth-gated by the app-wide session gate). A `serve` request gets a
+ *   short-lived signed URL into the static route below, after its cwd is checked
+ *   against the boundary. A `proxy` request opens (or reuses) a preview listener
+ *   for that dev-server port and returns its bootstrap URL — a whole origin of
+ *   its own, because a dev server served under a path prefix cannot resolve its
+ *   own root-absolute assets. See `services/workbench-serve/preview-listener.ts`.
  * - `POST /api/workbench/probe` — report whether a loopback port has a server on
  *   it, so the browser can explain a dead port instead of framing it. Auth-gated
- *   like `/sign`; loopback-pinned like the proxy.
+ *   like `/sign`, and loopback-pinned: the body carries a port and nothing else.
  * - `GET /api/workbench/serve/:token/*splat` — statically serve a local file from
  *   the token's cwd so relative assets resolve. Authorized by the signed token,
  *   NOT cookie/header auth (the browser frame is opaque-origin, credential-less),
  *   so this path is exempted from the session gate.
- * - `ALL /api/workbench/proxy/:token/*splat` — reverse-proxy a localhost dev
- *   server (loopback-pinned), stripping framing headers. Same token auth + gate
- *   exemption as serve.
  *
- * The client renders both in a sandbox WITHOUT `allow-same-origin` (opaque
- * origin), so served/proxied content can never call `/api/*` as the user.
+ * Local files render in a sandbox WITHOUT `allow-same-origin` (opaque origin), so
+ * untrusted local HTML can never call `/api/*` as the user. A dev-server preview
+ * has its own origin and keeps `allow-same-origin`, which grants it nothing
+ * against the DorkOS origin.
  *
  * @module routes/workbench-serve
  */
@@ -30,12 +34,15 @@ import path from 'path';
 import { WorkbenchProbeRequestSchema, WorkbenchSignRequestSchema } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
+import { getTunnelHost, parseHostname } from '../lib/trusted-origins.js';
 import {
   workbenchTokenSigner,
   WorkbenchTokenError,
-  proxyToLocalhost,
+  PreviewPortExhaustedError,
+  previewListeners,
   probeLoopbackPort,
   injectDevtoolsScript,
+  PREVIEW_BOOTSTRAP_PARAM,
 } from '../services/workbench-serve/index.js';
 
 const router = Router();
@@ -92,19 +99,20 @@ function tokenErrorStatus(err: WorkbenchTokenError): number {
 }
 
 /**
- * `POST /api/workbench/sign` — mint a signed serve/proxy URL. Auth-gated: only an
- * authenticated caller can obtain a token, which then authorizes the (gate-
- * exempt) serve/proxy routes. Returns an absolute URL derived from the request's
- * own origin so it resolves in dev (cross-origin Vite), prod, and via a tunnel.
+ * `POST /api/workbench/sign` — mint what the embedded browser needs to load a
+ * target. Auth-gated: only an authenticated caller can obtain a token, which then
+ * authorizes the (gate-exempt) serve route or the preview listener. Every URL is
+ * absolute and built from the host the caller actually reached, so it resolves in
+ * dev (cross-origin Vite), in production, and from another device on the network.
  */
 router.post('/sign', async (req, res) => {
   const parsed = WorkbenchSignRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
   }
-  const origin = `${req.protocol}://${req.get('host')}`;
 
   if (parsed.data.kind === 'serve') {
+    const origin = `${req.protocol}://${req.get('host')}`;
     let validatedCwd: string;
     try {
       validatedCwd = await validateBoundary(parsed.data.cwd);
@@ -133,10 +141,47 @@ router.post('/sign', async (req, res) => {
     return res.json({ url: `${origin}/api/workbench/serve/${token}/${encoded}` });
   }
 
-  // proxy — port is range-validated by the schema (1–65535).
-  const token = workbenchTokenSigner.mint({ kind: 'proxy', port: parsed.data.port });
-  return res.json({ url: `${origin}/api/workbench/proxy/${token}/` });
+  // proxy — the port is range-validated by the schema (1–65535).
+  return signPreview(req, res, parsed.data.port);
 });
+
+/**
+ * Open (or reuse) the preview listener for a dev-server port and answer with the
+ * bootstrap URL the browser should frame.
+ *
+ * The hostname is the one the caller reached DorkOS on, not a hardcoded
+ * `localhost`: a cockpit at `machine.tail.ts.net` has to be sent back to
+ * `machine.tail.ts.net`, or the frame would look for the preview on the phone.
+ * The scheme is always `http`, because the listener speaks plain HTTP — telling
+ * a caller `https` would name an address that cannot answer.
+ */
+async function signPreview(req: Request, res: Response, port: number) {
+  const hostname = parseHostname(req.get('host')) ?? 'localhost';
+  const tunnelHost = getTunnelHost();
+  if (tunnelHost !== null && hostname === tunnelHost) {
+    // A tunnel publishes one port, and it is not this one. Say so rather than
+    // handing back an address that will quietly fail to load.
+    return res.json({ url: null, unavailable: 'tunnel' as const });
+  }
+
+  let listenPort: number;
+  try {
+    ({ listenPort } = await previewListeners.acquire(port));
+  } catch (err) {
+    if (err instanceof PreviewPortExhaustedError) {
+      return res.json({ url: null, unavailable: 'no-port' as const });
+    }
+    logger.error('[workbench-serve] preview listener failed to open', { err, port });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  const token = workbenchTokenSigner.mint({ kind: 'proxy', port });
+  // An IPv6 literal has to be bracketed to sit beside a port in a URL.
+  const authority = hostname.includes(':') ? `[${hostname}]` : hostname;
+  return res.json({
+    url: `http://${authority}:${listenPort}/?${PREVIEW_BOOTSTRAP_PARAM}=${token}`,
+  });
+}
 
 /**
  * `POST /api/workbench/probe` — report whether a loopback port has a server on
@@ -250,42 +295,7 @@ async function handleServe(req: Request, res: Response) {
   stream.pipe(res);
 }
 
-/**
- * Reverse-proxy a localhost dev server (loopback-pinned), stripping framing
- * headers. Forwards GET/HEAD only. Registered for both the bare and splat forms
- * (the `*splat` param does not match the empty root remainder).
- */
-async function handleProxy(req: Request, res: Response) {
-  let port: number;
-  try {
-    const payload = workbenchTokenSigner.verify(param(req.params.token));
-    if (payload.scope.kind !== 'proxy') {
-      return res.status(403).json({ error: 'Token is not a proxy token', code: 'WRONG_SCOPE' });
-    }
-    port = payload.scope.port;
-  } catch (err) {
-    if (err instanceof WorkbenchTokenError) {
-      return res.status(tokenErrorStatus(err)).json({ error: err.message, code: err.code });
-    }
-    throw err;
-  }
-
-  // Re-encode each decoded path segment before forwarding: Express decodes the
-  // splat, so a filename with a literal `?`/`#`/`&` (arriving percent-encoded)
-  // would otherwise split into an unintended upstream query. `originalUrl` keeps
-  // the real query encoded, so its first literal `?` is the true separator.
-  const relPath = splatToPath(req.params.splat);
-  const encodedPath = relPath.split('/').map(encodeURIComponent).join('/');
-  const queryIndex = req.originalUrl.indexOf('?');
-  const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
-  const targetPath = `/${encodedPath}${query}`;
-
-  await proxyToLocalhost(port, targetPath, req, res);
-}
-
 router.get('/serve/:token', handleServe);
 router.get('/serve/:token/*splat', handleServe);
-router.all('/proxy/:token', handleProxy);
-router.all('/proxy/:token/*splat', handleProxy);
 
 export default router;

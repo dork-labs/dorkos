@@ -103,6 +103,7 @@ import type {
   McpAppResourceResponse,
   DevtoolsIngest,
   WorkbenchProbeResponse,
+  WorkbenchSignResponse,
   ForkShapeRequest,
   MessageDisposition,
   QueueMoveTarget,
@@ -876,17 +877,22 @@ export interface Transport extends RoomTransport {
    */
   createServeUrl(cwd: string, filePath?: string): Promise<string | null>;
   /**
-   * Mint a short-lived signed URL that reverse-proxies a localhost dev server so
-   * the embedded browser can frame it (the proxy strips `X-Frame-Options` /
-   * `frame-ancestors`). The target host is pinned to loopback server-side — no
-   * arbitrary-host SSRF. Rendered in the same opaque-origin sandbox as served
-   * content.
+   * Ask for an origin the embedded browser can frame a localhost dev server on.
    *
-   * Returns `null` on the in-process Obsidian transport (web-only surface).
+   * The server opens (or reuses) a preview listener in front of that port and
+   * answers with a bootstrap URL: a real origin of its own, on the same host the
+   * caller reached DorkOS at, so root-absolute assets, client-side routers and
+   * live-reload sockets all resolve the way they do in a browser tab. The
+   * listener strips the framing guards, injects the DevTools shim, and is pinned
+   * to loopback upstream — no arbitrary-host SSRF.
    *
-   * @param port - Localhost port of the dev server to proxy (1–65535).
+   * The response's `url` is `null` when no origin can be offered, with
+   * `unavailable` saying why, so the browser can explain it. The whole response
+   * is `null` on the in-process Obsidian transport (web-only surface).
+   *
+   * @param port - Localhost port of the dev server to preview (1–65535).
    */
-  createProxyUrl(port: number): Promise<string | null>;
+  createProxyUrl(port: number): Promise<WorkbenchSignResponse | null>;
   /**
    * Ask whether anything is listening on a loopback port, so the embedded
    * browser can say "nothing is running there" instead of framing a dead port

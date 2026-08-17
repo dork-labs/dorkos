@@ -236,7 +236,7 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
     async createServeUrl(_cwd: string, _filePath?: string): Promise<string | null> {
       return null;
     },
-    async createProxyUrl(_port: number): Promise<string | null> {
+    async createProxyUrl(_port: number): Promise<null> {
       return null;
     },
 

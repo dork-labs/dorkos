@@ -2,8 +2,9 @@
  * The parent side of the DevTools capture bridge (DOR-213).
  *
  * The injected in-page shim (server-side `devtools-shim.ts`) posts its captures
- * to `window.parent` — never to `/api/*`, because it runs in an opaque-origin
- * sandbox (ADR 260708-185519). This hook, mounted by `CanvasBrowserContent`, is
+ * to `window.parent` — never to `/api/*`, which would need a CORS hole any page
+ * could POST to and would be subject to the previewed page's own CSP. This hook,
+ * mounted by `CanvasBrowserContent`, is
  * that parent: it acks the shim's handshake, coalesces its batches, and forwards
  * them to `POST /sessions/:id/devtools/ingest` through the transport — the only
  * same-origin, authenticated party allowed to reach the API.
@@ -13,12 +14,12 @@
  *   `event.source === iframe.contentWindow`, which rejects a nested frame or any
  *   foreign window. Origin cannot do this job: an opaque frame's `event.origin`
  *   is the literal string `"null"`, shared by every opaque frame there is.
- * - **Opaque origin.** The frame must ALSO report `event.origin === "null"`. The
- *   shim is injected only into what DorkOS serves or proxies, and those are
- *   exactly the frames that render opaque, so `"null"` is the marker for "this
- *   frame runs our shim". A directly framed dev server (its own real origin, no
- *   shim) therefore cannot drive the bridge by posting messages that look like
- *   the shim's.
+ * - **Known origin.** The frame must ALSO report an origin DorkOS instrumented:
+ *   `"null"` for a local file served on the DorkOS origin (which renders
+ *   opaque), or the exact preview-listener origin minted for THIS document.
+ *   Everything else is rejected — including a dev server framed by its own
+ *   address, which carries no shim and so cannot drive the bridge by posting
+ *   messages that look like the shim's.
  * - **Attached session only.** Captures relay to the attached session
  *   (`app-store.sessionId`) and no other, so one session's preview can never feed
  *   another session's buffer.
@@ -79,6 +80,13 @@ export interface UseDevtoolsBridgeParams {
    * failed-resource count starts over with it, as it does on navigation.
    */
   reloadNonce: number;
+  /**
+   * The one REAL origin allowed to drive this bridge for the current document —
+   * the preview listener DorkOS opened for a dev server, which is the only
+   * non-opaque frame our shim is injected into. `null` for every other kind of
+   * frame, which leaves `'null'` (an opaque origin) as the only accepted source.
+   */
+  previewOrigin: string | null;
 }
 
 /** What the bridge hands back to the canvas. */
@@ -88,11 +96,10 @@ export interface DevtoolsBridge {
    * load, as reported by the shim. The canvas turns a non-zero count into a
    * banner, because a page whose scripts 404 renders blank and says nothing.
    *
-   * Counts only what an opaque-origin frame reports — that is, only pages DorkOS
-   * itself served or proxied, which are the only ones carrying the shim. A
-   * directly framed dev server has a real origin, so its messages are rejected
-   * by the bridge's origin guard and it can neither raise this count nor keep it
-   * at zero to reassure anybody: the count only ever SHOWS a warning, it never
+   * Counts only what an instrumented frame reports — a local file DorkOS served,
+   * or a dev server on a DorkOS preview listener. A dev server framed by its own
+   * address carries no shim, so it can neither raise this count nor keep it at
+   * zero to reassure anybody: the count only ever SHOWS a warning, it never
    * promises a page is fine.
    */
   resourceErrorCount: number;
@@ -115,6 +122,7 @@ export function useDevtoolsBridge({
   documentId,
   logicalUrl,
   reloadNonce,
+  previewOrigin,
 }: UseDevtoolsBridgeParams): DevtoolsBridge {
   const transport = useTransport();
   const sessionId = useAppStore((s) => s.sessionId);
@@ -136,12 +144,14 @@ export function useDevtoolsBridge({
   const sessionIdRef = useRef(sessionId);
   const documentIdRef = useRef(documentId);
   const logicalUrlRef = useRef(logicalUrl);
+  const previewOriginRef = useRef(previewOrigin);
   // Keep the refs current for the long-lived listener without re-adding it. Synced
   // in an effect (not during render) so a stale batch never posts under old ids.
   useEffect(() => {
     sessionIdRef.current = sessionId;
     documentIdRef.current = documentId;
     logicalUrlRef.current = logicalUrl;
+    previewOriginRef.current = previewOrigin;
   });
 
   const pendingConsole = useRef<DevtoolsConsoleEntry[]>([]);
@@ -191,16 +201,20 @@ export function useDevtoolsBridge({
       // Two guards, and both are needed.
       //
       // SOURCE IDENTITY rejects any other window — a nested frame, a popup, the
-      // opener. It is the only guard that can, because an opaque frame's origin
-      // is the useless literal string "null".
+      // opener. It is the only guard that can distinguish windows, because every
+      // opaque frame in existence reports the same origin: the string "null".
       //
-      // ORIGIN rejects the frame itself when it is not one of ours. The shim is
-      // injected only into what DorkOS serves or proxies, and that is exactly
-      // what renders opaque — so `"null"` IS the marker for "this frame runs our
-      // shim". A directly framed dev server has a real origin and no shim, so
-      // anything arriving from it is the page's own code impersonating the
-      // bridge, and it is dropped rather than counted or relayed.
-      if (!frame || ev.source !== frame.contentWindow || ev.origin !== 'null') return;
+      // ORIGIN rejects the frame itself when it is not one DorkOS instrumented.
+      // Two kinds are: a local file served on the DorkOS origin, which renders
+      // opaque and so reports `"null"`, and a dev server on a preview listener,
+      // which has a real origin — the exact one the resolve cascade minted for
+      // THIS document, and nothing else. A dev server framed by its own address
+      // carries no shim, so `previewOrigin` is null for it and anything it posts
+      // is the page's own code impersonating the bridge; it is dropped rather
+      // than counted or relayed.
+      if (!frame || ev.source !== frame.contentWindow) return;
+      const allowedOrigin = previewOriginRef.current;
+      if (ev.origin !== 'null' && (allowedOrigin === null || ev.origin !== allowedOrigin)) return;
       const data = ev.data as DevtoolsMessage | null;
       if (!data || typeof data !== 'object' || typeof data.__dorkosDevtools !== 'string') return;
 

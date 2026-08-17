@@ -15,9 +15,11 @@ import type { RightPanelPage } from '../../pages/RightPanelPage';
  * root-absolute module script, and a deep path that serves the same HTML the way
  * a client-side router's fallback does.
  *
- * Nothing here asserts HOW the page is loaded — only that a running dev server
- * renders and that a port with nothing on it says so. That is deliberate: the
- * loading strategy changes again in phase 2, and the promise to the user does not.
+ * The first two tests assert only the promise to the user: a running dev server
+ * renders, and a port with nothing on it says so. The third is about the
+ * mechanism that now delivers it — a preview origin of its own, on a port
+ * DorkOS opened, which the deep-path test proves survives the one-time
+ * bootstrap redirect that moves the token into a cookie.
  */
 
 /** What the fixture app writes into the page once its module script has run. */
@@ -109,6 +111,29 @@ test.describe('Canvas — a dev server running on this machine @smoke', () => {
     // fallback instead of the dev server.
     const frame = page.frameLocator('iframe[title="Web Page"]');
     await expect(frame.getByTestId(APP_READY)).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('serves the preview from an origin of its own, and keeps the deep path', async ({
+    page,
+    rightPanel,
+  }) => {
+    await openInCanvasBrowser(page, rightPanel, `http://localhost:${devPort}${DEEP_PATH}`);
+    const frame = page.frameLocator('iframe[title="Web Page"]');
+    await expect(frame.getByTestId(APP_READY)).toBeVisible({ timeout: 15_000 });
+
+    const previewFrame = page
+      .frames()
+      .find((candidate) => candidate !== page.mainFrame() && candidate.url().startsWith('http'));
+    expect(previewFrame).toBeDefined();
+    const framed = new URL(previewFrame!.url());
+
+    // A port DorkOS opened: not the cockpit's, and not the dev server's either.
+    expect(framed.port).not.toBe(new URL(page.url()).port);
+    expect(framed.port).not.toBe(String(devPort));
+    // The page asked for is the page shown — the bootstrap redirect moved the
+    // token into a cookie without losing the route on the way.
+    expect(framed.pathname).toBe(DEEP_PATH);
+    expect(framed.searchParams.get('__dorkos_preview')).toBeNull();
   });
 
   test('says nothing is listening rather than framing a dead port', async ({

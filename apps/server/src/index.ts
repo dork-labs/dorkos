@@ -2,6 +2,7 @@ import path from 'path';
 import { createApp, finalizeApp } from './app.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
+import { previewListeners } from './services/workbench-serve/index.js';
 import {
   CodexRuntime,
   CodexThreadMap,
@@ -3015,6 +3016,8 @@ async function shutdownServices() {
   }
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();
+  // Give back every port an open dev-server preview is holding.
+  await previewListeners.close();
   // Cancel any pending managed-MCP OAuth token refresh timers.
   agentMcpOAuthService?.shutdown();
   // Flush any buffered usage events so a clean exit doesn't drop the tail of the

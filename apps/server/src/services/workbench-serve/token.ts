@@ -1,14 +1,23 @@
 /**
  * Signed-token minting/verification for the workbench embedded browser
- * (DOR-216, ADR 260708-185519).
+ * (DOR-216, DOR-1260; ADRs 260708-185519 and 260817-152705).
  *
- * The embedded browser renders local HTML and localhost dev servers in an
- * opaque-origin sandbox (no `allow-same-origin`) — a frame that carries no
- * cookies. So the serve/proxy routes cannot rely on the API's cookie/header
- * auth; instead each request is authorized by a short-lived signed token carried
- * in the URL path. This module mints and verifies those tokens with an HMAC over
- * a compact, scope-bound payload (a cwd for `serve`, a port for `proxy`) plus an
- * expiry. Verification is constant-time and rejects tampered or expired tokens.
+ * Neither kind of preview can use the API's cookie/header auth, for two
+ * different reasons, and one short-lived signed token covers both:
+ *
+ * - **`serve`** renders local HTML in an opaque-origin sandbox (no
+ *   `allow-same-origin`) — a frame that carries no credentials at all. The token
+ *   travels in the URL path and authorizes each request on its own.
+ * - **`proxy`** renders a dev server on a preview listener of its own
+ *   (`preview-listener.ts`), a separate port that is not the API and shares none
+ *   of its middleware. The token arrives once in the bootstrap URL's query, is
+ *   moved straight into an `HttpOnly` cookie, and authorizes that listener —
+ *   that listener only, because the scope names the target port and the cookie
+ *   is named for the listen port.
+ *
+ * Tokens are an HMAC over a compact, scope-bound payload (a cwd for `serve`, a
+ * port for `proxy`) plus an expiry. Verification is constant-time and rejects
+ * tampered or expired tokens.
  *
  * The signing secret is process-random by default (a server restart invalidates
  * outstanding tokens — acceptable for a short-lived, re-mintable URL). Tests pass

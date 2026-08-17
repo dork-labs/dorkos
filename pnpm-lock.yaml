@@ -709,6 +709,9 @@ importers:
       '@types/express-serve-static-core':
         specifier: ^5.1.1
         version: 5.1.1
+      '@types/jsdom':
+        specifier: ^27.0.0
+        version: 27.0.0
       '@types/multer':
         specifier: ^2.1.0
         version: 2.1.0
@@ -727,6 +730,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.10
         version: 4.1.10(vitest@4.1.10)
+      jsdom:
+        specifier: ^29.0.2
+        version: 29.0.2(@noble/hashes@2.2.0)
       supertest:
         specifier: ^7.2.2
         version: 7.2.2
@@ -7700,6 +7706,12 @@ packages:
         integrity: sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg==,
       }
 
+  '@types/jsdom@27.0.0':
+    resolution:
+      {
+        integrity: sha512-NZyFl/PViwKzdEkQg96gtnB8wm+1ljhdDay9ahn4hgb+SfVtPCbm3TlmDUFXTA+MGN3CijicnMhG18SI5H3rFw==,
+      }
+
   '@types/json-schema@7.0.15':
     resolution:
       {
@@ -7892,6 +7904,12 @@ packages:
     resolution:
       {
         integrity: sha512-f2Pu5Hrepfgavttdye3PsH5RWyY/AvdZQwIVhrc4uNtvF7nOWJacQKcoVJn0S4f0yYbmAE6AR+ve7xDcuYtMGw==,
+      }
+
+  '@types/tough-cookie@4.0.5':
+    resolution:
+      {
+        integrity: sha512-/Ad8+nIOV7Rl++6f1BdKxFSMgmoqEoYbHRpPcx3JEfv8VRsQe9Z4mCXeJBzxs7mbHY/XOZZuXlRNfhpVPbs6ZA==,
       }
 
   '@types/trusted-types@2.0.7':
@@ -22316,6 +22334,12 @@ snapshots:
 
   '@types/http-errors@2.0.5': {}
 
+  '@types/jsdom@27.0.0':
+    dependencies:
+      '@types/node': 24.12.2
+      '@types/tough-cookie': 4.0.5
+      parse5: 7.3.0
+
   '@types/json-schema@7.0.15': {}
 
   '@types/json5@0.0.29': {}
@@ -22432,6 +22456,8 @@ snapshots:
       '@webgpu/types': 0.1.71
       fflate: 0.8.3
       meshoptimizer: 1.0.1
+
+  '@types/tough-cookie@4.0.5': {}
 
   '@types/trusted-types@2.0.7': {}
 

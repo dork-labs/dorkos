@@ -1,21 +1,22 @@
 /**
  * URL classification + sandbox posture for the embedded browser canvas
- * (DOR-216, ADR 260708-185519).
+ * (DOR-216, DOR-1260; ADR 260708-185519).
  *
  * The browser renders three kinds of target, each routed differently:
  * - `external` — an arbitrary `http(s)` site, framed directly (and falling back
  *   to the system browser when the site refuses embedding).
- * - `proxy` — a `localhost`/loopback dev server. Framed by its own URL when the
- *   cockpit is running on the same machine, and routed through the signed
- *   localhost reverse-proxy otherwise — see {@link loopbackStrategy}.
+ * - `proxy` — a `localhost`/loopback dev server. Framed on a preview origin
+ *   DorkOS opens for it, and — when that origin cannot be reached but this page
+ *   is open on the same machine — by its own address instead
+ *   (see {@link loopbackStrategy}).
  * - `serve` — a local file within the session cwd, routed through the signed
  *   static-serve route so relative assets resolve.
  *
- * Served content renders in an opaque-origin sandbox (WITHOUT
- * `allow-same-origin`) so untrusted local HTML can never call `/api/*` as the
- * user. External sites — and a directly framed dev server, which is one — keep
- * `allow-same-origin`: they live on their own origin, so it grants them nothing
- * against the DorkOS origin.
+ * Local files render in an opaque-origin sandbox (WITHOUT `allow-same-origin`)
+ * so untrusted local HTML can never call `/api/*` as the user. External sites —
+ * and a dev server, on whichever origin it ends up — keep `allow-same-origin`:
+ * they live on their own origin, so it grants them nothing against the DorkOS
+ * origin.
  *
  * @module features/canvas/lib/browser-url
  */
@@ -72,19 +73,23 @@ export type LoopbackStrategy = 'direct' | 'server';
  * page asking.
  *
  * `localhost` names whichever machine is looking at the page. So a dev server
- * can be framed by its own URL only when the cockpit is open ON the machine
+ * can be framed by its own address only when the cockpit is open ON the machine
  * running it — the browser then resolves `localhost:5173` to the same server the
- * user started. Open the same cockpit from a phone over Tailscale or through a
- * tunnel and `localhost` is the phone, which is running nothing; those go
- * through the server, which can still reach the dev server itself.
+ * user started. Open the same cockpit from a phone over Tailscale and
+ * `localhost` is the phone, which is running nothing.
  *
- * A directly framed dev server gets {@link WORKBENCH_SANDBOX_EXTERNAL}, and that
- * is not a loosening: its origin is `http://localhost:<port>`, which is
- * cross-origin to the cockpit and absent from the server's trusted origins, so
- * it cannot read `/api/*`. It is exactly as privileged as the same dev server
- * open in another browser tab on that machine. The `serve` path — local files on
- * the DorkOS origin, where the untrusted-HTML threat actually lives — keeps its
- * opaque origin.
+ * This is the FALLBACK, not the first choice: a preview origin works from any
+ * device that can reach DorkOS and carries the DevTools shim, so it is tried
+ * first. This answer only decides whether there is anything left to try when
+ * that origin turns out to be unreachable — which is the case where DorkOS runs
+ * in a container or behind `ssh -L` and its preview port was never forwarded.
+ *
+ * Either way the frame gets {@link WORKBENCH_SANDBOX_EXTERNAL}, and that is not
+ * a loosening: the origin is `http://<host>:<port>`, cross-origin to the cockpit
+ * and absent from the server's trusted origins, so it cannot read `/api/*`. It
+ * is exactly as privileged as the same dev server open in another browser tab.
+ * The `serve` path — local files on the DorkOS origin, where the untrusted-HTML
+ * threat actually lives — keeps its opaque origin.
  *
  * @param pageHostname - `window.location.hostname` of the page rendering the frame.
  * @returns Whether to frame the dev server's own URL or route it via the server.
@@ -92,6 +97,53 @@ export type LoopbackStrategy = 'direct' | 'server';
 export function loopbackStrategy(pageHostname: string): LoopbackStrategy {
   return isLoopbackHost(pageHostname) ? 'direct' : 'server';
 }
+
+/**
+ * Put the page the user actually asked for onto the preview origin.
+ *
+ * The server hands back a bootstrap URL for the origin's root — `http://host:
+ * 4243/?__dorkos_preview=<token>` — because the token, not the path, is what it
+ * is answering about. But someone who opened `/projects/promo/edit` should land
+ * there, not on the app's home page, so the logical path is spliced in and the
+ * token rides along behind it. The listener checks the token, sets its cookie,
+ * and redirects to the same path without it.
+ *
+ * @param bootstrapUrl - The URL the server minted for the preview origin.
+ * @param logicalPath - The path (and query) of the target, e.g. `/some/route?a=1`.
+ * @returns The URL to frame, or `null` when the bootstrap URL is unparsable.
+ */
+export function splicePreviewPath(bootstrapUrl: string, logicalPath: string): string | null {
+  let minted: URL;
+  try {
+    minted = new URL(bootstrapUrl);
+  } catch {
+    return null;
+  }
+  const token = minted.searchParams.get(PREVIEW_BOOTSTRAP_PARAM);
+  // Built by SETTING the components, never by resolving `logicalPath` against
+  // the origin. A path is allowed to begin with `//` — `http://localhost:5178//
+  // evil.example.com/x` classifies with exactly that path — and resolving one
+  // would read it as protocol-relative and leave the preview origin for a host
+  // of the page's choosing. The setters cannot do that.
+  const target = new URL(minted.origin);
+  const queryAt = logicalPath.indexOf('?');
+  target.pathname = (queryAt === -1 ? logicalPath : logicalPath.slice(0, queryAt)) || '/';
+  target.search = queryAt === -1 ? '' : logicalPath.slice(queryAt);
+  if (token !== null) target.searchParams.set(PREVIEW_BOOTSTRAP_PARAM, token);
+  return target.toString();
+}
+
+/**
+ * The query parameter the preview listener reads its one-time token from, and
+ * the path it answers reachability probes on. Both are duplicated from the
+ * server (`services/workbench-serve/preview-listener.ts`) rather than shared,
+ * because they are wire format between a browser and a plain HTTP listener that
+ * has no other contract with the client.
+ */
+const PREVIEW_BOOTSTRAP_PARAM = '__dorkos_preview';
+
+/** The listener's unauthenticated reachability endpoint, relative to its origin. */
+export const PREVIEW_HEALTH_PATH = '/__dorkos_preview/health';
 
 /** Default port for a URL that omits one, by protocol. */
 function defaultPort(protocol: string): number {

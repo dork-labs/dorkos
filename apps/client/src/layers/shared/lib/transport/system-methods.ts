@@ -149,14 +149,13 @@ export function createSystemMethods(baseUrl: string) {
       return res.url;
     },
 
-    /** Mint a signed localhost reverse-proxy URL for a dev server (DOR-216). */
-    async createProxyUrl(port: number): Promise<string | null> {
+    /** Ask for an origin the embedded browser can frame a dev server on (DOR-1260). */
+    async createProxyUrl(port: number): Promise<WorkbenchSignResponse> {
       const body: WorkbenchSignRequest = { kind: 'proxy', port };
-      const res = await fetchJSON<WorkbenchSignResponse>(baseUrl, '/workbench/sign', {
+      return fetchJSON<WorkbenchSignResponse>(baseUrl, '/workbench/sign', {
         method: 'POST',
         body: JSON.stringify(body),
       });
-      return res.url;
     },
 
     /** Ask whether a loopback port has a dev server on it, before framing it. */

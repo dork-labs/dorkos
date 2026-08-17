@@ -26,23 +26,25 @@ const mockState = {
   }),
 };
 const createServeUrl = vi.fn(async () => '/api/workbench/serve/tok/preview.html');
-const createProxyUrl = vi.fn(async () => '/api/workbench/proxy/tok/');
+/** What the server hands back for a dev server: a whole origin of its own. */
+const PREVIEW_ORIGIN = 'http://localhost:4390';
+const PREVIEW_BOOTSTRAP = `${PREVIEW_ORIGIN}/?__dorkos_preview=tok`;
+const createProxyUrl = vi.fn(
+  async () => ({ url: PREVIEW_BOOTSTRAP }) as { url: string | null; unavailable?: string }
+);
 const probeLoopbackPort = vi.fn(async () => ({ listening: true }) as { listening: boolean } | null);
 
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
-  // Stable transport reference (the real context value is stable too) — a fresh
-  // object each render would re-fire the resolve effect and double the mint.
-  // Lazily built on first use so the spies are initialized by then.
-  let transport: {
-    createServeUrl: typeof createServeUrl;
-    createProxyUrl: typeof createProxyUrl;
-    probeLoopbackPort: typeof probeLoopbackPort;
-  };
+  // A FRESH transport object on every render, deliberately. Which transport is
+  // in play never changes what a URL resolves to, so the browser must not
+  // re-resolve because a provider handed it a new object — and when it did, the
+  // render/effect cycle span at 100% CPU rather than failing (the two tests
+  // asserting a single mint below are what catch it).
   return {
     useAppStore,
-    useTransport: () => (transport ??= { createServeUrl, createProxyUrl, probeLoopbackPort }),
+    useTransport: () => ({ createServeUrl, createProxyUrl, probeLoopbackPort }),
   };
 });
 
@@ -51,6 +53,11 @@ vi.mock('@/layers/shared/model', () => {
 // `lib/__tests__/probe-direct.test.ts`; stubbed here so the cascade between the
 // two probes is what these tests exercise.
 const probeDirect = vi.fn(async (_url: string) => true);
+
+/** Answer the browser's reachability probe differently per URL. */
+function reachable(predicate: (url: string) => boolean): void {
+  probeDirect.mockImplementation(async (url: string) => predicate(url));
+}
 vi.mock('../lib/probe-direct', () => ({
   probeDirect: (url: string) => probeDirect(url),
 }));
@@ -67,6 +74,7 @@ beforeEach(() => {
   mockState.writeBrowserHistory.mockClear();
   createServeUrl.mockClear();
   createProxyUrl.mockClear();
+  createProxyUrl.mockResolvedValue({ url: PREVIEW_BOOTSTRAP });
   probeLoopbackPort.mockClear();
   probeLoopbackPort.mockResolvedValue({ listening: true });
   probeDirect.mockClear();
@@ -133,27 +141,145 @@ describe('CanvasBrowserContent — sandbox posture', () => {
 describe('CanvasBrowserContent — a dev server on this machine', () => {
   const DEV_URL = 'http://localhost:5178/dorkos/flagship-promo/vo';
 
-  it('frames the dev server by its own URL, so its root-absolute assets resolve', async () => {
+  it('frames the dev server on a preview origin of its own', async () => {
     // The path-prefixed proxy made `/src/main.tsx` resolve against the cockpit,
     // which answered with its own SPA shell — every Vite/Next/CRA app rendered
-    // blank. The frame's origin has to BE the dev server's.
+    // blank. The frame's origin root has to BE the app's root.
     render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
 
-    await waitFor(() => expect(iframeSrc()).toBe(DEV_URL));
-    expect(createProxyUrl).not.toHaveBeenCalled();
-    // The reachability question was asked of the browser, about the URL the
-    // browser would actually load.
-    expect(probeDirect).toHaveBeenCalledWith(DEV_URL);
+    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
+    // The reachability question was asked of the BROWSER, about the origin it
+    // would actually load — and about the one path that needs no token.
+    expect(probeDirect).toHaveBeenCalledWith(`${PREVIEW_ORIGIN}/__dorkos_preview/health`);
   });
 
-  it('gives it allow-same-origin — it is on its own origin, cross-origin to the API', async () => {
+  it('lands on the page that was asked for, not the app’s front door', async () => {
+    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
+
+    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
+    const framed = new URL(iframeSrc() as string);
+    expect(framed.pathname).toBe('/dorkos/flagship-promo/vo');
+    // The one-time token rides along behind the path; the listener strips it.
+    expect(framed.searchParams.get('__dorkos_preview')).toBe('tok');
+  });
+
+  it('resolves once, however many times the transport object is rebuilt', async () => {
+    // The transport arrives fresh on every render here. Re-resolving on that
+    // would re-mint a preview token per render — and, because storing the result
+    // renders again, would never stop.
+    const { rerender } = render(
+      <CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />
+    );
+    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
+    for (let i = 0; i < 5; i++) {
+      rerender(
+        <CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />
+      );
+    }
+    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
+
+    expect(createProxyUrl).toHaveBeenCalledTimes(1);
+    expect(probeLoopbackPort).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives the preview origin allow-same-origin — it is cross-origin to the API', async () => {
     render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
     const frame = await screen.findByTitle('Embedded browser');
     expect(frame.getAttribute('sandbox')).toBe(WORKBENCH_SANDBOX_EXTERNAL);
   });
 
+  it('frames the dev server directly when the preview origin cannot be reached', async () => {
+    // "Dev server on my laptop, DorkOS in a container": the preview port was
+    // never forwarded, but this page and the dev server are on one machine.
+    reachable((url) => url === DEV_URL);
+    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
+
+    await waitFor(() => expect(iframeSrc()).toBe(DEV_URL));
+    const frame = await screen.findByTitle('Embedded browser');
+    expect(frame.getAttribute('sandbox')).toBe(WORKBENCH_SANDBOX_EXTERNAL);
+  });
+
+  it('says the connection does not reach the preview port, from a device that is not the machine', async () => {
+    // A phone over Tailscale: DorkOS can see the dev server, this browser can
+    // see neither the origin DorkOS opened nor `localhost` (which is the phone).
+    vi.stubGlobal('location', { ...window.location, hostname: 'machine.tail.ts.net' });
+    reachable(() => false);
+    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
+
+    expect(
+      await screen.findByText(
+        /DorkOS can see your dev server, but this connection doesn’t reach port 4390 on localhost\./i
+      )
+    ).toBeInTheDocument();
+    expect(document.querySelector('iframe')).toBeNull();
+    // Not a loopback page, so the dev server's own address was never tried.
+    expect(probeDirect).not.toHaveBeenCalledWith(DEV_URL);
+  });
+
+  /**
+   * Every way step 2 can fail, and what each one owes the user.
+   *
+   * The column that matters is `triesDirect`. A preview origin that could not be
+   * opened says NOTHING about whether this page can reach the dev server's own
+   * address, so every one of these still has to fall through to step 3 — except
+   * a tunnel, where it is already known that it cannot: a tunnel hostname is not
+   * a loopback host, so `localhost` there is the viewer's own machine.
+   */
+  const step2Failures = [
+    {
+      what: 'a tunnel cockpit',
+      mint: () => createProxyUrl.mockResolvedValue({ url: null, unavailable: 'tunnel' }),
+      triesDirect: false,
+      message: /Dev-server previews aren’t available through a tunnel\./i,
+    },
+    {
+      what: 'every preview port taken',
+      mint: () => createProxyUrl.mockResolvedValue({ url: null, unavailable: 'no-port' }),
+      triesDirect: true,
+      message: /All preview ports are in use\. Close a preview, then reload\./i,
+    },
+    {
+      what: 'the mint itself failing',
+      mint: () => createProxyUrl.mockRejectedValue(new Error('network down')),
+      triesDirect: true,
+      message: /This preview couldn’t be loaded\. Reload to try again/i,
+    },
+    {
+      what: 'a preview origin this browser cannot reach',
+      mint: () => createProxyUrl.mockResolvedValue({ url: PREVIEW_BOOTSTRAP }),
+      triesDirect: true,
+      message: /DorkOS can see your dev server, but this connection doesn’t reach port 4390/i,
+    },
+  ] as const;
+
+  for (const { what, mint, triesDirect, message } of step2Failures) {
+    it(`falls back to the dev server’s own address when step 2 fails: ${what}`, async () => {
+      mint();
+      // This page IS on the machine running it, and the dev server answers.
+      reachable((url) => url === DEV_URL);
+      render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
+
+      if (!triesDirect) {
+        expect(await screen.findByText(message)).toBeInTheDocument();
+        expect(probeDirect).not.toHaveBeenCalledWith(DEV_URL);
+        return;
+      }
+      await waitFor(() => expect(iframeSrc()).toBe(DEV_URL));
+      expect(probeDirect).toHaveBeenCalledWith(DEV_URL);
+    });
+
+    it(`says what went wrong when nothing works either: ${what}`, async () => {
+      mint();
+      reachable(() => false);
+      render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(document.querySelector('iframe')).toBeNull();
+    });
+  }
+
   it('says so when nothing is listening, instead of framing a blank page', async () => {
-    probeDirect.mockResolvedValue(false);
+    reachable(() => false);
     probeLoopbackPort.mockResolvedValue({ listening: false });
     render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
 
@@ -163,10 +289,12 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
       )
     ).toBeInTheDocument();
     expect(document.querySelector('iframe')).toBeNull();
+    // Nothing is there, so no listener is opened for it.
+    expect(createProxyUrl).not.toHaveBeenCalled();
   });
 
   it('names the address the way the user typed it', async () => {
-    probeDirect.mockResolvedValue(false);
+    reachable(() => false);
     probeLoopbackPort.mockResolvedValue({ listening: false });
     render(
       <CanvasBrowserContent
@@ -182,61 +310,46 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
     ).toBeInTheDocument();
   });
 
-  it('re-checks the port when the user reloads', async () => {
-    probeDirect.mockResolvedValue(false);
+  it('re-mints on reload, because a token expires', async () => {
+    reachable(() => false);
     probeLoopbackPort.mockResolvedValue({ listening: false });
     render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
     await screen.findByText(/Nothing is listening on localhost:5178/i);
 
+    probeLoopbackPort.mockResolvedValue({ listening: true });
     probeDirect.mockResolvedValue(true);
     fireEvent.click(screen.getByLabelText('Reload'));
-    await waitFor(() => expect(iframeSrc()).toBe(DEV_URL));
-  });
-
-  it('falls back to the server when the browser cannot reach the port itself', async () => {
-    // A port-forwarded cockpit (`docker run -p`, `ssh -L`): the viewer's own
-    // `localhost` has nothing on 5178, but the machine running DorkOS does. The
-    // server's answer must never license a frame the BROWSER cannot load —
-    // Chrome's connection-refused page fires `load`, so nothing would say a word.
-    probeDirect.mockResolvedValue(false);
-    probeLoopbackPort.mockResolvedValue({ listening: true });
-    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
-
-    await waitFor(() => expect(iframeSrc()).toContain('/api/workbench/proxy/'));
-    const frame = await screen.findByTitle('Embedded browser');
-    expect(frame.getAttribute('sandbox')).toBe(WORKBENCH_SANDBOX_ISOLATED);
+    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
+    expect(createProxyUrl).toHaveBeenCalledTimes(1);
   });
 
   it('frames it anyway when the transport cannot check the port', async () => {
     // `null` means "no server to ask", not "nothing is there" — a preview must
     // never be refused on the strength of an answer nobody gave.
-    probeDirect.mockResolvedValue(false);
     probeLoopbackPort.mockResolvedValue(null);
     render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
-    await waitFor(() => expect(iframeSrc()).toContain('/api/workbench/proxy/'));
+    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
   });
 
-  it('routes through the server when the cockpit is open on another device', async () => {
-    // On a phone over Tailscale, `localhost` is the phone. Framing that URL
-    // would load nothing, so the request goes to the machine that can reach it —
-    // and the browser is never even asked, because the answer cannot help.
+  it('falls back to the dev server’s own address when there is no server to mint from', async () => {
+    // The in-process Obsidian transport: no preview origin exists, so the only
+    // remaining option is the address the user typed.
+    probeLoopbackPort.mockResolvedValue(null);
+    createProxyUrl.mockResolvedValue(null as never);
+    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
+
+    await waitFor(() => expect(iframeSrc()).toBe(DEV_URL));
+  });
+
+  it('works from another device, where the dev server’s own address never could', async () => {
+    // On a phone over Tailscale, `localhost` is the phone. The preview origin is
+    // on the machine that can actually reach the dev server.
     vi.stubGlobal('location', { ...window.location, hostname: 'machine.tail.ts.net' });
     render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
 
-    await waitFor(() => expect(iframeSrc()).toContain('/api/workbench/proxy/'));
-    expect(probeDirect).not.toHaveBeenCalled();
+    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
+    expect(probeDirect).not.toHaveBeenCalledWith(DEV_URL);
     expect(probeLoopbackPort).toHaveBeenCalledWith(5178);
-    const frame = await screen.findByTitle('Embedded browser');
-    expect(frame.getAttribute('sandbox')).toBe(WORKBENCH_SANDBOX_ISOLATED);
-  });
-
-  it('says nothing is listening from another device too, when the server agrees', async () => {
-    vi.stubGlobal('location', { ...window.location, hostname: 'machine.tail.ts.net' });
-    probeLoopbackPort.mockResolvedValue({ listening: false });
-    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
-
-    expect(await screen.findByText(/Nothing is listening on localhost:5178/i)).toBeInTheDocument();
-    expect(createProxyUrl).not.toHaveBeenCalled();
   });
 });
 
@@ -261,7 +374,7 @@ describe('CanvasBrowserContent — a preview that loads badly', () => {
     vi.useFakeTimers();
     try {
       await renderSettled(DEV_URL);
-      expect(iframeSrc()).toBe(DEV_URL);
+      expect(iframeSrc()).toContain(PREVIEW_ORIGIN);
       expect(screen.queryByText(/taking a long time/i)).not.toBeInTheDocument();
 
       await act(async () => {

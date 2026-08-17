@@ -108,8 +108,33 @@ Pass environment variables with `-e` or an env file. DorkOS reads the same varia
         'Extra names this container answers to, comma-separated and without ports (e.g. dorkos.lan). Needed when you reach DorkOS by NAME rather than by IP — see below.',
       default: 'unset',
     },
+    DORKOS_PREVIEW_PORT_RANGE: {
+      type: 'string',
+      description:
+        'Ports to use when showing one of your dev servers in the canvas, as a range like 4243-4252. Publish the same range so previews are reachable — see below.',
+      default: 'unset (a free port is picked at random)',
+    },
   }}
 />
+
+### Seeing your dev servers in the canvas
+
+When you open a `localhost` dev server in the canvas, DorkOS gives it a small address
+of its own so the app's links, assets and live reload all work. That address is a port,
+and a container only shows you the ports you publish.
+
+Pick a range, publish it, and tell DorkOS to stay inside it:
+
+```bash
+docker run -d --name dorkos \
+  -e DORKOS_PREVIEW_PORT_RANGE=4243-4252 \
+  -p 4242:4242 -p 4243-4252:4243-4252 \
+  -v dorkos-data:/home/node/.dork \
+  dorklabs/dorkos:latest
+```
+
+Ten ports is ten previews open at once, which is plenty. Skip this and the canvas will
+tell you it can see your dev server but can't reach the port it opened for it.
 
 ### Reaching the container by name
 
