@@ -34,16 +34,31 @@
  *
  * An interrupt is one JSON line written to an already-open pipe and answered by
  * the CLI's control handler without the model being involved, so a healthy
- * subprocess acks it in milliseconds. The number is not sized for that. It is
- * sized against the two things that actually bound it: the slowest HEALTHY ack
- * worth waiting for on a laptop already running ten agents, and the person
- * watching the button, for whom a Stop that has visibly done nothing after a
- * few seconds reads as broken. Giving up early is cheap — the turn was ending
- * either way, and all that is lost is the CLI's graceful unwind of it — so this
- * sits deliberately below the repo's other control bounds, which answer to
- * machines rather than to somebody waiting: `CONTEXT_USAGE_TIMEOUT_MS` is 8 s
- * and `SESSIONS.STALL_INTERRUPT_TIMEOUT_MS` is 30 s for a watchdog nobody is
- * watching.
+ * subprocess acks it in milliseconds.
+ *
+ * **This bound is not free, and the cost is not confined to the wind-down it
+ * was written for.** `interruptGivenQuery` is the bounded Stop for EVERY phase
+ * of a turn (`meta/chat-capabilities.md` §1). In the wind-down the graceful
+ * attempt is already undeliverable, so expiring it loses nothing. In the other
+ * phases the CLI is alive and would very likely have acked, and expiring on a
+ * healthy-but-slow one KILLS a process that was about to stop politely. What
+ * that forfeits is real: the CLI's own interrupt sentinel on each pending call,
+ * the `result.terminal_reason` the turn would have settled with, and the
+ * `[Request interrupted]` marker the CLI writes into its JSONL — so a session
+ * reloaded later reads as a reply that simply ended. And the channel genuinely
+ * can be slow under load: this repo already allows 8 s for a control round-trip
+ * on the same pipe (`CONTEXT_USAGE_TIMEOUT_MS`, `message-sender.ts`).
+ *
+ * Three seconds anyway, because the person is the tighter constraint: a Stop
+ * that has visibly done nothing for longer than that reads as broken, and
+ * pressing it again is the natural response. The trade is bounded on the other
+ * side too — the LIVE settle is honest either way, since a turn ended by an
+ * escalated close is reported as `interrupted` rather than as finished
+ * (DOR-1244) — so what a premature escalation costs is the reload story and a
+ * warm process, not the operator's understanding of what just happened.
+ *
+ * Revisit this number with measurements of real ack latency under load, not
+ * with an argument.
  */
 export const STOP_ACK_TIMEOUT_MS = 3_000;
 

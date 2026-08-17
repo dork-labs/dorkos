@@ -523,8 +523,17 @@ export class SessionStore {
     const ack = await awaitStopAck(() => query.stopTask(taskId));
     if (ack === 'acked') return true;
     logger.warn('[stopTask] the CLI did not stop the task', { sessionId, taskId, ack });
-    // The stop never took effect — do not blind the phantom detector.
-    session.interruptRequestedAt = undefined;
+    // Only a REFUSAL clears the stamp. A refusal is the CLI saying the stop did
+    // not happen, so a sentinel arriving afterwards really is a phantom. An
+    // unacked request is not an answer at all: the CLI may still be about to
+    // honour it, and cancelling the task's pending calls a second past the bound
+    // would then produce sentinels with nothing on record — the operator would
+    // be told "that was a system glitch, not you" about a stop they asked for,
+    // the model would be steered a correction it should not get, and the
+    // DOR-1288 tripwire would count a phantom that never was. The stamp expires
+    // on its own after `INTERRUPT_SUPPRESSION_WINDOW_MS` and is cleared at the
+    // next turn start, so leaving it costs nothing beyond that window.
+    if (ack === 'refused') session.interruptRequestedAt = undefined;
     return false;
   }
 
@@ -559,6 +568,12 @@ export class SessionStore {
    * same phantom-cancellation stamp, so a Stop during launch behaves exactly as
    * a Stop on a turn that has already reached the model.
    *
+   * The persistent path pays the full bound whichever phase it is in: only the
+   * resume path records `stdinEndedQueries`, because only it ends a CLI's stdin
+   * mid-session (the pump deliberately never does, `persistent-dispatch.ts`).
+   * That is the right default there — a needless `close()` costs that path a
+   * warm process — and it is why the fast path below is not simply assumed.
+   *
    * @param sessionId - The session the query belongs to
    * @param query - The live query to interrupt
    * @returns True when the turn was interrupted or the process was closed, false
@@ -573,19 +588,45 @@ export class SessionStore {
     // escalation below on purpose: a `close()` produces exactly those sentinels,
     // and they are as deliberate as an interrupt's would have been.
     session.interruptRequestedAt = Date.now();
+    // Recorded BEFORE the attempt, so a Stop still in flight when the turn's
+    // stream ends is already on record: the send loop reads this to settle a
+    // stopped turn as `interrupted` rather than idle (DOR-1244).
+    (session.stoppedQueries ??= new WeakSet()).add(query);
     // DorkOS ended this query's stdin itself, so nothing it writes can arrive
     // and no ack can come back. Skip a graceful attempt already known to be
     // undeliverable rather than spending the bound proving it again. Matched by
     // IDENTITY, never per-session: overlapping turns share a session, and the
     // outgoing turn's close must not condemn its successor (DOR-1088).
-    const stdinEnded = session.stdinEndedQuery === query;
-    const ack: StopAck = stdinEnded ? 'unacked' : await awaitStopAck(() => query.interrupt());
+    if (session.stdinEndedQueries?.has(query) === true) {
+      logger.info('[interruptQuery] stdin already ended; closing without a graceful attempt', {
+        sessionId,
+      });
+      return this.closeStoppedQuery(session, query);
+    }
+    const ack: StopAck = await awaitStopAck(() => query.interrupt());
     if (ack === 'acked') return true;
     logger.warn('[interruptQuery] the graceful interrupt did not take; closing the process', {
       sessionId,
       ack,
-      stdinEnded,
     });
+    return this.closeStoppedQuery(session, query);
+  }
+
+  /**
+   * The escalation itself: kill the subprocess, and report whether anything at
+   * all stopped the turn.
+   *
+   * `session.interruptRequestedAt` deliberately SURVIVES a successful close — the
+   * sentinels the close produces on every pending tool call are as deliberate as
+   * an interrupt's would have been, and the phantom detector (DOR-1087) has to
+   * read them that way. It is cleared only when the close itself throws, because
+   * then nothing stopped the turn and a sentinel really would be a phantom.
+   *
+   * @param session - The live session, for the phantom-cancellation stamp
+   * @param query - The query to close
+   * @returns True when the process was closed, false when even that failed
+   */
+  private closeStoppedQuery(session: AgentSession, query: Query): boolean {
     try {
       query.close();
       return true;

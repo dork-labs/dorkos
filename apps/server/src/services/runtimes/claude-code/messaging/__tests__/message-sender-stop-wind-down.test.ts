@@ -83,6 +83,12 @@ function textDeltaMsg(text: string): SDKMessage {
   } as unknown as SDKMessage;
 }
 
+/**
+ * A successful `result`, carrying the `terminal_reason` a real one does — the
+ * field the result mapper turns into the turn's `terminalReason`, and the whole
+ * reason a turn that ended by itself can be told apart from one that was
+ * stopped.
+ */
 function resultMsg(): SDKMessage {
   return {
     type: 'result',
@@ -91,6 +97,7 @@ function resultMsg(): SDKMessage {
     session_id: 'sdk-1',
     is_error: false,
     total_cost_usd: 0.01,
+    terminal_reason: 'completed',
   } as unknown as SDKMessage;
 }
 
@@ -154,18 +161,63 @@ function windows(events: SessionEvent[]): Array<{ origin?: string; events: Sessi
   return out;
 }
 
+/** The `terminalReason` a window's `turn_end` settled with, if it carried one. */
+function endReason(window: { events: SessionEvent[] }): string | undefined {
+  const end = window.events.find((e) => e.type === 'turn_end');
+  return (end as { terminalReason?: string } | undefined)?.terminalReason;
+}
+
+interface TurnRun {
+  /** Every StreamEvent the send loop yielded. */
+  yielded: StreamEvent[];
+  /** The durable stream, cut into windows. */
+  windows: Array<{ origin?: string; events: SessionEvent[] }>;
+  /** The lifecycle the session settled at — what a cold hydrate would show. */
+  lifecycle: string;
+  cli: ReturnType<typeof fakeWindDownCli>;
+}
+
+/**
+ * Drive one turn through the production pieces: the real send loop, the real
+ * `mapSdkMessage`, and the real `feedProjector` over a real projector.
+ *
+ * `store` is handed to the caller's steps so a step can press Stop mid-stream.
+ */
+async function runTurn(build: (store: SessionStore) => Step[]): Promise<TurnRun> {
+  const store = new SessionStore();
+  store.ensureSession(SESSION_ID, { permissionMode: 'default' });
+  const session = store.findSession(SESSION_ID)!;
+
+  const cli = fakeWindDownCli(build(store));
+  vi.mocked(query).mockReturnValue(cli.handle);
+
+  const opts: MessageSenderOpts = { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
+  const yielded: StreamEvent[] = [];
+  const projector = new SessionStateProjector(SESSION_ID);
+  async function* stream(): AsyncIterable<StreamEvent> {
+    for await (const event of executeSdkQuery(SESSION_ID, 'hello', session, opts)) {
+      yielded.push(event);
+      yield event;
+    }
+  }
+  await feedProjector(projector, stream(), { userMessage: 'hello' });
+
+  return {
+    yielded,
+    windows: windows(projector.replayFrom(0)),
+    lifecycle: projector.getStatus().lifecycle,
+    cli,
+  };
+}
+
 describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('ends the reopened turn, and ends it as a stop rather than as a red failure', async () => {
-    const store = new SessionStore();
-    store.ensureSession(SESSION_ID, { permissionMode: 'default' });
-    const session = store.findSession(SESSION_ID)!;
-
+  it('ends the reopened turn, and settles it as interrupted rather than as finished', async () => {
     let stopOutcome: boolean | undefined;
-    const cli = fakeWindDownCli([
+    const run = await runTurn((store) => [
       initMsg(),
       textDeltaMsg('working on it'),
       // The `result` DorkOS takes for the end of the turn: it closes the CLI's
@@ -179,36 +231,49 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
         stopOutcome = await store.interruptQuery(SESSION_ID);
       },
     ]);
-    vi.mocked(query).mockReturnValue(cli.handle);
-
-    const opts: MessageSenderOpts = { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
-    const yielded: StreamEvent[] = [];
-    const projector = new SessionStateProjector(SESSION_ID);
-    async function* stream(): AsyncIterable<StreamEvent> {
-      for await (const event of executeSdkQuery(SESSION_ID, 'hello', session, opts)) {
-        yielded.push(event);
-        yield event;
-      }
-    }
-    await feedProjector(projector, stream(), { userMessage: 'hello' });
 
     // The Stop was answered — it did not hang waiting for an ack that could not
     // come, and it took the only route left.
     expect(stopOutcome).toBe(true);
-    expect(cli.calls.close).toBe(1);
+    expect(run.cli.calls.close).toBe(1);
 
-    const stream0 = projector.replayFrom(0);
-    const opened = windows(stream0);
     // Two windows: the turn, and the continuation the CLI woke itself for.
-    expect(opened).toHaveLength(2);
-    expect(opened[1]!.origin).toBe('runtime');
-    // The reopened window SETTLES. Before the bound it stayed open until the CLI
-    // died on its own, so the cockpit showed a running turn nobody could stop.
-    const reopenedEnd = opened[1]!.events.find((e) => e.type === 'turn_end');
-    expect(reopenedEnd).toBeDefined();
-    // And it settles honestly: a turn that stopped, not a turn that failed.
-    expect((reopenedEnd as { terminalReason?: string }).terminalReason).not.toBe('error');
-    expect(stream0.some((e) => e.type === 'error')).toBe(false);
-    expect(yielded.some((e) => e.type === 'error')).toBe(false);
+    expect(run.windows).toHaveLength(2);
+    expect(run.windows[1]!.origin).toBe('runtime');
+    // The first window closed on the CLI's own `result`, and keeps saying so —
+    // a Stop landing later must not rewrite a turn that already finished.
+    expect(endReason(run.windows[0]!)).toBe('completed');
+    // The reopened window SETTLES, and settles as a turn somebody stopped.
+    // Before this it closed with no reason at all, which the projector reads as
+    // idle — the same thing it says about a reply that finished by itself, so
+    // the sidebar told the operator their agent was fine.
+    expect(endReason(run.windows[1]!)).toBe('interrupted');
+    expect(run.lifecycle).toBe('interrupted');
+    // Stopped, not failed: no red anywhere on either stream.
+    expect(run.windows.flatMap((w) => w.events).some((e) => e.type === 'error')).toBe(false);
+    expect(run.yielded.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('leaves a turn that finished on its own settled as completed, even when a Stop races the end', async () => {
+    // The non-flip. The CLI answered, its `result` closed the window, and only
+    // THEN does the Stop arrive — the ordinary race between a reply ending and
+    // the button being pressed. Nothing here was interrupted, and the transcript
+    // must not claim it was.
+    let stopOutcome: boolean | undefined;
+    const run = await runTurn((store) => [
+      initMsg(),
+      textDeltaMsg('all done'),
+      resultMsg(),
+      async () => {
+        stopOutcome = await store.interruptQuery(SESSION_ID);
+      },
+    ]);
+
+    expect(stopOutcome).toBe(true);
+    expect(run.windows).toHaveLength(1);
+    expect(endReason(run.windows[0]!)).toBe('completed');
+    expect(run.lifecycle).toBe('idle');
+    // And nothing trails the terminal `done` that closed it.
+    expect(run.yielded.at(-1)?.type).toBe('done');
   });
 });

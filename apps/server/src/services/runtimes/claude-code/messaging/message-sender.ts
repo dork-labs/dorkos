@@ -40,6 +40,10 @@ import type { MessageSenderOpts } from './message-sender-shared.js';
 import { boundaryViolationEvent, validateDispatchBoundary } from '../dispatch-boundary.js';
 import { logger } from '../../../../lib/logger.js';
 import { recordPhantomCancellation } from '../../../observability/phantom-cancellations.js';
+// The projector's own rule for which events REOPEN a turn window, imported
+// rather than restated so the loop's idea of "a window is open" cannot drift
+// from the normalizer's (DOR-1244).
+import { TURN_REOPENING_STREAM_EVENT_TYPES } from '../../../session/session-event-normalizer.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 
 // The vocabulary and the two small helpers both dispatch paths use. Re-exported
@@ -161,11 +165,14 @@ export async function* executeSdkQuery(
   // WHICH query that happened to, so a Stop arriving afterwards — the CLI can
   // keep going past the EOF and reopen the turn (DOR-1100) — closes the process
   // at once instead of spending its whole bound on an undeliverable interrupt
-  // (DOR-1244). Recorded as the query, not a session flag, because an
-  // overlapping turn shares this session (DOR-1088).
+  // (DOR-1244). Added to a SET keyed by the query rather than written to a
+  // session flag or a single slot, because an overlapping turn shares this
+  // session (DOR-1088): a flag would condemn the successor's healthy query, and
+  // a slot would let this turn — which may settle after its successor started —
+  // overwrite the successor's own record. Weak, so nothing has to clear it.
   const endStdin = (): void => {
     heldPrompt.close();
-    session.stdinEndedQuery = agentQuery;
+    (session.stdinEndedQueries ??= new WeakSet()).add(agentQuery);
   };
 
   // The per-PROCESS probes: what this subprocess supports, asked once per
@@ -181,6 +188,18 @@ export async function* executeSdkQuery(
 
   let emittedDone = false;
   let emittedError = false;
+  // Whether a turn WINDOW stands open right now, mirroring `feedProjector`'s own
+  // `turnOpen` latch (`session/session-event-normalizer.ts`): the projector opens
+  // a window before this stream's first event, `done` closes it, and a reopening
+  // event opens a fresh one. Tracked here so the loop can tell, at the end, that
+  // it is leaving a window somebody still has to close — which is the DOR-1100
+  // wind-down shape and the only case that needs the terminal below.
+  let turnWindowOpen = true;
+  /** Follow {@link turnWindowOpen} through one event this loop is about to yield. */
+  const trackTurnWindow = (event: StreamEvent): void => {
+    if (event.type === 'done') turnWindowOpen = false;
+    else if (TURN_REOPENING_STREAM_EVENT_TYPES.has(event.type)) turnWindowOpen = true;
+  };
   let eventCount = 0;
   let contentEventCount = 0;
   let wasInteractive = false;
@@ -231,6 +250,7 @@ export async function* executeSdkQuery(
         // true here, and an interactive-only turn (nothing but an unanswered
         // prompt, no content) would misreport as a dead stream (DOR-1240).
         if (isInteractiveEvent(queuedEvent)) wasInteractive = true;
+        trackTurnWindow(queuedEvent);
         eventCount++;
         yield queuedEvent;
       }
@@ -454,6 +474,7 @@ export async function* executeSdkQuery(
         // Track content events for empty-stream detection
         if (isContentEvent(event)) contentEventCount++;
         if (isInteractiveEvent(event)) wasInteractive = true;
+        trackTurnWindow(event);
         eventCount++;
         yield event;
       }
@@ -584,6 +605,35 @@ export async function* executeSdkQuery(
     eventCount,
     contentEventCount,
   });
+
+  // A turn a Stop ENDED settles as interrupted, never as idle (DOR-1244).
+  //
+  // Nothing else can say so on this path. The CLI names its own terminal in
+  // `result.terminal_reason`, which the result mapper puts on the turn's final
+  // `session_status` — but a turn ended by `query.close()` produces no further
+  // `result`, so the window the CLI reopened (DOR-1100) is closed by
+  // `feedProjector`'s `finally` with no reason at all. `deriveTurnEndLifecycle`
+  // reads that as idle, which is the same thing it says about a reply that
+  // finished by itself: a Stop that had to kill the CLI would tell the operator
+  // their agent is fine. So the sender supplies the reason the CLI cannot.
+  //
+  // Both conditions are load-bearing, and the first is what keeps a Stop RACING
+  // a natural end from rewriting history. A turn whose `result` already closed
+  // its window is not open here, so it keeps the CLI's own `completed`; only a
+  // window still standing at the end of the stream — content after the last
+  // result, or a turn that never reached one — can be claimed. An error already
+  // reported stays the terminal, because a failure is more specific than a stop.
+  //
+  // Carried on a `session_status` because that is where the result mapper puts
+  // `terminalReason` too, and the normalizer reads it off either. It projects no
+  // status of its own: with no status fields, `toStatusChange` yields null, so
+  // this event moves the terminal reason and touches nothing else.
+  const stoppedThisQuery = session.stoppedQueries?.has(agentQuery) === true;
+  if (turnWindowOpen && stoppedThisQuery && !emittedError) {
+    logger.debug('[sendMessage] settling a stopped turn as interrupted', { session: sessionId });
+    eventCount++;
+    yield { type: 'session_status', data: { sessionId, terminalReason: 'interrupted' } };
+  }
 
   if (!emittedDone) {
     yield {

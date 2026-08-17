@@ -136,7 +136,7 @@ describe('Stop is bounded (DOR-1244)', () => {
   it('skips the graceful attempt entirely when DorkOS has already ended that query stdin', async () => {
     const { query, calls } = fakeQuery({ interrupt: 'never-settles' });
     const store = storeWithLiveTurn(query);
-    store.findSession(SESSION_ID)!.stdinEndedQuery = query;
+    store.findSession(SESSION_ID)!.stdinEndedQueries = new WeakSet([query]);
 
     // No clock is advanced: the whole point is that this does not wait.
     await expect(store.interruptQuery(SESSION_ID)).resolves.toBe(true);
@@ -151,7 +151,7 @@ describe('Stop is bounded (DOR-1244)', () => {
     const { query: retired } = fakeQuery({ interrupt: 'acks' });
     const store = storeWithLiveTurn(query);
     // An overlapping turn's close must not condemn its successor (DOR-1088).
-    store.findSession(SESSION_ID)!.stdinEndedQuery = retired;
+    store.findSession(SESSION_ID)!.stdinEndedQueries = new WeakSet([retired]);
 
     await expect(store.interruptQuery(SESSION_ID)).resolves.toBe(true);
 
@@ -170,7 +170,22 @@ describe('Stop is bounded (DOR-1244)', () => {
     expect(calls.stopTask).toEqual(['task-7']);
     // One task was asked to stop, not the whole session.
     expect(calls.close).toBe(0);
-    // Nothing was stopped, so the phantom detector must stay unblinded.
+    // The stamp SURVIVES: silence is not a refusal, so the CLI may still honour
+    // the stop a moment later. Clearing it would make the sentinels of a stop
+    // the operator asked for read as phantoms — a false "that was a system
+    // glitch, not you", a correction steered at the model, and a miscounted
+    // tripwire (DOR-1288). It expires on its own instead.
+    expect(stamp(store)).toBeDefined();
+  });
+
+  it('clears the stamp when the CLI refuses a task stop outright', async () => {
+    const { query, calls } = fakeQuery({ stopTask: 'rejects' });
+    const store = storeWithLiveTurn(query);
+
+    await expect(store.stopTask(SESSION_ID, 'task-7')).resolves.toBe(false);
+
+    expect(calls.close).toBe(0);
+    // A refusal IS an answer: nothing was stopped, so a sentinel now is a phantom.
     expect(stamp(store)).toBeUndefined();
   });
 
