@@ -5,7 +5,7 @@
  * chrome is now the shared primitives (`SectionHeader`, `SidebarRow` via
  * `SessionRowSidebar`, `useRovingFocus`) rather than a second idea about how a
  * sidebar looks. `SessionsView`, which this replaced HERE and only here, stays
- * exactly as it was for the Agent Hub's Sessions tab: that surface is a panel in
+ * exactly as it was for the profile's Sessions page: that surface is a panel in
  * a page, not a sidebar, and re-skinning it is not this change (DOR-1080).
  *
  * **Zones stay out.** Heads up / Today / Library need router state — the active

@@ -140,7 +140,7 @@ function DrawerTimingDemo() {
   return (
     <>
       <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        Open the profile
+        View profile
       </Button>
       <ProfileSheet
         member={member}

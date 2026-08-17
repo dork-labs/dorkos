@@ -6,7 +6,7 @@ import { Button } from '@/layers/shared/ui/button';
 import { Drawer, DrawerContent } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
 import { useProfileStore } from '@/layers/features/profile';
-import { useAppStore, useOpenConnections } from '@/layers/shared/model';
+import { useOpenConnections } from '@/layers/shared/model';
 import { useDirectoryState } from '@/layers/entities/session';
 import { useTopology } from '@/layers/entities/mesh';
 import { normalizeTeamView } from '@/layers/shared/lib';
@@ -158,7 +158,7 @@ export function TeamRoute() {
                           search: (prev) => ({ ...prev, agent: agentId }),
                         })
                       }
-                      onOpenSettings={(_agentId, projectPath) => {
+                      onViewProfile={(_agentId, projectPath) => {
                         useProfileStore.getState().openProfileDocked(projectPath);
                       }}
                       onOpenChat={(projectPath) => setDir(projectPath)}

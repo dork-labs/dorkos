@@ -83,7 +83,7 @@ export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPa
   // both are null when no agent/folder is resolved (the honest degraded value).
   const agentId = useAppStore((s) => s.currentAgentId);
   const cwd = useAppStore((s) => s.selectedCwd);
-  // The agent the operator explicitly opened this session (Agent Hub). Unlike
+  // The agent the operator explicitly opened this session (the profile). Unlike
   // `cwd`/`agentId` (ambient — the server's startup directory) this is
   // click-driven, so a tab can gate on a real selection instead of a default
   // nobody chose. Null until the first explicit open.

@@ -7,13 +7,13 @@
  * The sheet is handed an identity; the dock is handed a DIRECTORY and has to
  * find one. So what is pinned here is the resolution chain and its three
  * failures — nobody picked an agent, the chain is still running, and it settled
- * on nobody — plus the two rules the Agent Hub had before it that must survive:
+ * on nobody — plus the two rules the panel it replaced had that must survive:
  * the ambient working directory is only honest on `/session`, and the agent you
  * were looking at stays on screen while the next one resolves.
  */
 import { createContext, useContext, type ReactNode } from 'react';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -242,7 +242,7 @@ describe('when the chain cannot finish', () => {
 
   it('switches straight to the next agent, with no skeleton in between', async () => {
     // Both reads are shared caches, so a switch resolves out of data already in
-    // hand. The Agent Hub had to hold the old agent painted through a per-agent
+    // hand. The panel this replaced had to hold the old agent painted through a per-agent
     // manifest fetch; there is nothing here to paint over.
     useAppStore.setState({ selectedCwd: WARDEN_PATH });
     const harness = renderDock();
@@ -264,6 +264,31 @@ describe('when the chain cannot finish', () => {
     useAppStore.setState({ selectedCwd: '/repo/gone' });
 
     expect(await screen.findByText('Agent not found')).toBeInTheDocument();
+  });
+
+  it('is where the sidebar’s fallback lands, and it says the agent is gone', async () => {
+    // The sidebar's one opener addresses the SHEET by roster id, and falls back
+    // to `openProfileDocked` for a directory the fleet cannot name
+    // (`SidebarChrome.viewProfileFor`). This is the other end of that fallback,
+    // and it is pinned here so the two cannot drift apart in what they claim.
+    //
+    // **The dock resolves through the SAME path → id map**, so it cannot draw a
+    // profile the sheet could not address either. What the fallback buys is a
+    // panel that opens and names the directory that went dead — an answer —
+    // rather than a face that is not a control and a menu with the item missing.
+    // Anything that calls this a working profile is overselling it (DOR-1255).
+    const dead = '/repo/retired-mid-session';
+    const harness = renderDock({ url: '/' });
+    await harness.ready();
+
+    act(() => useProfileStore.getState().openProfileDocked(dead));
+
+    expect(await screen.findByText('Agent not found')).toBeInTheDocument();
+    expect(await screen.findByText(dead)).toBeInTheDocument();
+    // And the panel is genuinely open on the profile tab — the door opened,
+    // which is the whole of what the fallback promises.
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
+    expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
   });
 });
 

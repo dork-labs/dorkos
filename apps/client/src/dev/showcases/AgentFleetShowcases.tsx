@@ -120,7 +120,7 @@ const FLEET: AgentTableRow[] = [
 
 const NOOP_CALLBACKS = {
   onNavigate: () => {},
-  onManage: () => {},
+  onViewProfile: () => {},
   onStartSession: () => {},
 };
 

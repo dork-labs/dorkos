@@ -127,7 +127,7 @@ export function AgentIdentityShowcases() {
               wear a coloured ring keyed on "seen within the last hour" and a
               pulsing dot lit from the same fact. The corner reports what the
               agent is doing right now; health is said in words, on the two
-              surfaces that need it (the Agent Hub hero, the topology page). */}
+              surfaces that need it (the profile header, the topology page). */}
           <div className="flex items-center gap-6">
             {IDENTITY_STATUSES.map(({ status, label }) => (
               <div key={status} className="flex flex-col items-center gap-2">

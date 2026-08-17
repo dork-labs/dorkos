@@ -82,7 +82,7 @@ export function App({ transformContent }: AppProps) {
 
   useShortcutsPanel();
   // The embed now mounts the right-panel Inspector, so its shortcut hooks earn
-  // their keep: Cmd+. toggles the panel and Cmd+Shift+A opens Agent Profile.
+  // their keep: Cmd+. toggles the panel and Cmd+Shift+A opens the Profile.
   useRightPanelShortcut();
   useProfileShortcut();
 
@@ -195,7 +195,7 @@ export function App({ transformContent }: AppProps) {
             </main>
 
             {/* Right-panel Inspector — overlay Sheet in the embed (no PanelGroup,
-                narrow pane). Pulse + Agent Profile + Files render under the
+                narrow pane). Pulse + Profile + Files render under the
                 in-process transport; the terminal tab hides via its
                 `supportsTerminal` gate. Fixed `/session` pathname: the embed is
                 always a single session surface. */}

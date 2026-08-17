@@ -225,7 +225,6 @@ function AgentListItemShowcase() {
               displayName={displayName}
               isActive={activePath === path}
               onSelect={() => setActivePath(path)}
-              onOpenProfile={() => {}}
               onRequestNewGroup={() => {}}
               onSessionClick={() => {}}
               onNewSession={() => {}}
@@ -244,7 +243,6 @@ function AgentListItemShowcase() {
             displayName={MOCK_AGENTS[1].displayName}
             isActive
             onSelect={() => {}}
-            onOpenProfile={() => {}}
             onRequestNewGroup={() => {}}
             onSessionClick={() => {}}
             onNewSession={() => {}}
@@ -263,7 +261,6 @@ function AgentListItemShowcase() {
             isActive={false}
             isMuted
             onSelect={() => {}}
-            onOpenProfile={() => {}}
             onRequestNewGroup={() => {}}
             onSessionClick={() => {}}
             onNewSession={() => {}}
@@ -279,7 +276,6 @@ function AgentListItemShowcase() {
 function RowMenuSurfaceShowcase() {
   const nodes = useAgentRowMenuNodes({
     path: MOCK_AGENTS[0].path,
-    onOpenProfile: () => {},
     onOpenSessions: () => {},
     onViewProfile: () => {},
     onNewSession: () => {},

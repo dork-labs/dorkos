@@ -20,6 +20,7 @@ import {
 } from '@dorkos/shared/convention-files';
 import { Button, Skeleton } from '@/layers/shared/ui';
 import { ConventionFileEditor } from '@/layers/features/agent-settings';
+import { InjectionPreview } from '../InjectionPreview';
 import { soulFile } from '../../lib/soul-file';
 import { useProfileLeaveGuard } from '../../model/profile-leave-guard';
 import { useProfileAgent, type ProfileAgentManifest } from '../../model/use-profile-agent';
@@ -213,6 +214,24 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
         >
           Save
         </Button>
+      </div>
+      {/* Both files, assembled — on BOTH pages, because the agent reads them
+          together and neither editor can show you the other half. Fed the draft
+          rather than what is on disk: `file.write` is the same function Save
+          sends, so the preview is what saving right now would produce. */}
+      <div className="shrink-0">
+        <InjectionPreview
+          name={agent.name}
+          displayName={agent.displayName || agent.name}
+          id={agent.id}
+          description={agent.description}
+          capabilities={agent.capabilities}
+          traits={agent.traits}
+          conventions={conventions}
+          soulContent={agent.soulContent ?? ''}
+          nopeContent={agent.nopeContent ?? ''}
+          {...file.write(agent, draft)}
+        />
       </div>
     </div>
   );

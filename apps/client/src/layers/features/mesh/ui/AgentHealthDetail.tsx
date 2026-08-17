@@ -1,4 +1,4 @@
-import { Settings, User, X } from 'lucide-react';
+import { User, X } from 'lucide-react';
 import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { Badge } from '@/layers/shared/ui/badge';
 import { useMeshAgentHealth } from '@/layers/entities/mesh';
@@ -43,13 +43,11 @@ function CloseButton({ onClick }: CloseButtonProps) {
 interface AgentHealthDetailProps {
   /**
    * ID of the agent to show health details for — the mesh registry id, which is
-   * also the id the team roster and the profile drawer file this agent under.
+   * also the id the team roster and the profile file this agent under.
    */
   agentId: string;
   /** Callback invoked when the user closes the detail panel. */
   onClose: () => void;
-  /** Optional callback to open the agent settings dialog. */
-  onOpenSettings?: () => void;
 }
 
 /**
@@ -63,7 +61,7 @@ interface AgentHealthDetailProps {
  * profile drawer every other face in the cockpit opens, and everything about who
  * this agent IS belongs there rather than being restated here.
  */
-export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHealthDetailProps) {
+export function AgentHealthDetail({ agentId, onClose }: AgentHealthDetailProps) {
   const { data: health, isLoading } = useMeshAgentHealth(agentId);
   const { open: openProfile } = useProfileDeepLink();
 
@@ -149,16 +147,6 @@ export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHea
           <User className="size-3.5" />
           View profile
         </button>
-        {onOpenSettings && (
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="hover:bg-muted inline-flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium"
-          >
-            <Settings className="size-3.5" />
-            Open Settings
-          </button>
-        )}
       </div>
     </div>
   );

@@ -87,6 +87,7 @@ export type {
   SetResponseModeInput,
 } from './model/use-room-members';
 export {
+  roomName,
   roomDisplayTitle,
   directMessageTitle,
   authorColor,

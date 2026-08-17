@@ -5,8 +5,8 @@
  * embed deliberately does not (it renders `App` directly — session state lives
  * in the store, not the URL). Calling `useSearch` or `useRouterState` without a
  * provider throws, so every shared hook that reads route state in a surface the
- * embed also renders (session search, dialog/agent-hub deep-links, the Pulse
- * teasers, the Agent Hub) routes through these wrappers instead.
+ * embed also renders (session search, dialog/profile deep-links, the Pulse
+ * teasers, the profile) routes through these wrappers instead.
  *
  * The branch keys on `getPlatform().isEmbedded`, which is set once at bootstrap
  * (`setPlatformAdapter` in the Obsidian view) and never changes for the life of

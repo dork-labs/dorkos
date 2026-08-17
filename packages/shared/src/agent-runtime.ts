@@ -497,7 +497,7 @@ export interface RuntimeCapabilities {
    * Distinct from {@link supportsMcp}, which specifically means the in-process
    * DorkOS tool server. A runtime can accept external managed servers without
    * hosting the DorkOS tool server (Codex, DOR-892) or vice versa. Gates the
-   * client's "Add server" affordance in the Agent Hub toolkit.
+   * client's "Add server" affordance on an agent's Tools & MCP page.
    */
   supportsManagedMcpServers: boolean;
 

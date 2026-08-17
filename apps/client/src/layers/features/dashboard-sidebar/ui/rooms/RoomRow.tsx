@@ -62,8 +62,14 @@ interface RoomRowProps {
   isActive: boolean;
   /** Open the room. */
   onSelect: () => void;
-  /** Open an agent's profile in the right-panel hub. */
-  onOpenAgentProfile: (agentPath: string) => void;
+  /**
+   * View an agent's profile — the sidebar's one opener, so a room row and an
+   * agent row send you to the same place.
+   *
+   * Takes a DIRECTORY, which is why the gate below is about resolving one and
+   * nothing else: given a path this always opens something (`viewProfileFor`).
+   */
+  viewAgentProfile: (agentPath: string) => () => void;
   /** Open the inline group-create flow, moving this room into the new group on commit. */
   onRequestNewGroup: (ref: SidebarItemRef) => void;
   /**
@@ -99,7 +105,7 @@ export function RoomRow({
   visual,
   isActive,
   onSelect,
-  onOpenAgentProfile,
+  viewAgentProfile,
   onRequestNewGroup,
   sortable = DISABLED_SORTABLE_BINDINGS,
 }: RoomRowProps) {
@@ -359,7 +365,6 @@ export function RoomRow({
   const menuModel = {
     kind: room.kind,
     hasUnread: unread,
-    soleAgentPath,
     isOneToOne,
     canLeave: selfAuthorId !== null,
     isSystemRoom,
@@ -375,7 +380,7 @@ export function RoomRow({
     onNewGroup: () => onRequestNewGroup(roomRef),
     onAddAgents: () => setDetailsFocus('add'),
     onOpenMembers: () => setDetailsFocus('members'),
-    onOpenAgentProfile,
+    onViewAgentProfile: soleAgentPath === null ? null : viewAgentProfile(soleAgentPath),
     onRename: startRename,
     onEditTopic: () => setDetailsFocus('topic'),
     onLeave: () => setLeaveOpen(true),

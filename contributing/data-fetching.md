@@ -956,7 +956,7 @@ export function useMcpConfig(projectPath: string | null, runtime?: string | null
 }
 ```
 
-The optional `runtime` param scopes the list to the runtime that owns the agent, so a Codex agent sees its own servers rather than the default runtime's, and keys the cache so switching runtime refetches instead of serving a stale list. Used by `AgentMcpServers` (`layers/features/agent-settings/`) — the managed-MCP-server UI behind the Agent Hub's Toolkit tab — alongside the sibling `useAgentMcpServers` hook, which layers live per-server status (connected/error/pending) onto this entry list by server `name`.
+The optional `runtime` param scopes the list to the runtime that owns the agent, so a Codex agent sees its own servers rather than the default runtime's, and keys the cache so switching runtime refetches instead of serving a stale list. Used by `AgentMcpServers` (`layers/features/agent-settings/`) — the managed-MCP-server UI behind an agent profile's Tools & MCP page — alongside the sibling `useAgentMcpServers` hook, which layers live per-server status (connected/error/pending) onto this entry list by server `name`.
 
 ## References
 
