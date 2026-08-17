@@ -508,7 +508,8 @@ export interface RoomContextData {
    */
   acknowledgments: RoomContextAcknowledgment[];
   /**
-   * The id of the message this turn is ANSWERING.
+   * The id of the message this turn is ANSWERING, or `null` when it is not
+   * answering one.
    *
    * Carried for the same reason {@link RoomContextData.triggerAttachments}
    * below is: the triggering entry is deliberately not in
@@ -521,8 +522,15 @@ export interface RoomContextData {
    * acknowledge this" — has nothing to aim at: every verb that acts on a
    * message takes an id, and the only message with no line of its own in the
    * rendered block is the very one being answered (DOR-1263).
+   *
+   * **`null` on an ASIDE turn, and that is not a missing value.** A welcome-back
+   * offer (`RoomTriggerDispatcher.askAside`) runs a turn no message triggered;
+   * it is anchored to the greeter's own status post, so naming that post as
+   * "the message you are answering" would invite the agent to react to a line
+   * DorkOS wrote about it. There is no such message, and the honest render is
+   * to say nothing rather than to name the nearest entry.
    */
-  triggerEntryId: string;
+  triggerEntryId: string | null;
   /**
    * The files posted with the message this turn is ANSWERING, as absolute paths
    * inside the agent's own working directory. Empty when it carried none.
@@ -801,7 +809,7 @@ export const RoomContextDataSchema = z.object({
   channelTailOmitted: z.number().int().nonnegative().optional(),
   ownRecent: z.array(RoomContextEntrySchema),
   acknowledgments: z.array(RoomContextAcknowledgmentSchema),
-  triggerEntryId: z.string(),
+  triggerEntryId: z.string().nullable(),
   triggerAttachments: z.array(z.object({ name: z.string(), path: z.string() })),
   addressing: z.object({
     responseMode: ResponseModeSchema,

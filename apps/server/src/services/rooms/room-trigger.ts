@@ -1836,6 +1836,11 @@ export class RoomTriggerDispatcher {
         // says the same thing to the guard.
         repliesLeftInThisChain: 0,
         engaged: null,
+        // The same word the claim above uses. Nothing asked for this turn, so
+        // the block names no "message you are answering": `entry` here is the
+        // greeter's own status post, and pointing the agent at it would point it
+        // at a line written about itself (DOR-1263).
+        aside: true,
       });
       const result = await this.deps.runner.run({
         room,

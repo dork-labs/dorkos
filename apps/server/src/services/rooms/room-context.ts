@@ -220,6 +220,17 @@ export interface RoomContextInput {
    */
   arrivedDuringPrevTurn?: ReadonlySet<string>;
   /**
+   * True when no message in the room asked for this turn — a welcome-back offer
+   * (`RoomTriggerDispatcher.askAside`), which is anchored to the greeter's own
+   * status post rather than triggered by it.
+   *
+   * The same word the claim uses for the same turn (`ActiveClaim.aside`), so the
+   * two cannot describe one turn differently. It decides one thing here: whether
+   * there is a "message you are answering" to name at all. Naming the anchor
+   * would tell an agent to act on a line DorkOS wrote ABOUT it (DOR-1263).
+   */
+  aside?: boolean;
+  /**
    * The ids of the messages the collector gathered BEHIND the trigger — the rest
    * of what this one turn is answering (room-participation spec §10.4).
    *
@@ -625,7 +636,11 @@ export function buildRoomContext(
     // The id of the message being answered. It has no line of its own in the
     // rendered block — it IS the turn's content — so this is the only place an
     // agent asked to act on "this message" can learn what to name (DOR-1263).
-    triggerEntryId: input.entry.id,
+    //
+    // `null` for an aside, where the entry is the greeter's own status post and
+    // nobody asked anything: an anchor is not a question, and naming it as one
+    // would point the agent at a line written about it.
+    triggerEntryId: input.aside ? null : input.entry.id,
     // The files on the message being answered. Resolved through the SAME helper
     // the windowed entries use, so the trigger's paths and theirs cannot drift
     // — and so its files are in the projection plan like everything else the

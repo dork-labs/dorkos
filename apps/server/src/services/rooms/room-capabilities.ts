@@ -264,7 +264,8 @@ const historyScope = {
   roomId: z
     .string()
     .describe(
-      'The room to read: its id, not its #name. Your room context names it. You must be a member of it.'
+      'The room to read, by its id — not its #name. Inside a room turn your room context ' +
+        'names it; outside one, list your rooms to find it. You must be a member of it.'
     ),
   threadRootEntryId: z
     .string()
@@ -297,7 +298,8 @@ export const roomsDomain: CapabilityDomain = {
         roomId: z
           .string()
           .describe(
-            'The channel to post in: its id, not its #name. Your room context names it. You must be a member of it.'
+            'The channel to post in, by its id — not its #name. Inside a room turn your room ' +
+              'context names it. You must be a member of it.'
           ),
         text: z.string().min(1).max(8000).describe('What to say. Mention someone with @handle.'),
         replyTo: z
@@ -347,12 +349,13 @@ export const roomsDomain: CapabilityDomain = {
         'otherwise be noise — and when something needs saying, say it.',
       tier: 'act',
       input: z.object({
-        roomId: z.string().describe('The room the message is in: its id, not its #name.'),
+        roomId: z.string().describe('The room the message is in, by its id — not its #name.'),
         entryId: z
           .string()
           .describe(
-            'The message to react to, by its id. Your room context carries one for every ' +
-              'message it shows, and names the one you are answering.'
+            'The message to react to, by its id. Inside a room turn your room context carries ' +
+              'one for every message it shows and names the message you are answering; outside ' +
+              'one, read the room history and use the entryId it returns.'
           ),
         emoji: z.string().min(1).max(16).describe('One emoji, e.g. 👍.'),
         on: z
