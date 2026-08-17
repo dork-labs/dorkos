@@ -1559,7 +1559,7 @@ Via ngrok tunnel:
 
 ## A2A Gateway
 
-The A2A gateway implements Google's Agent-to-Agent protocol, exposing DorkOS agents to external A2A-compatible clients. Feature-flag gated via `DORKOS_A2A_ENABLED` (requires `DORKOS_RELAY_ENABLED=true`).
+The A2A gateway implements Google's Agent-to-Agent protocol, exposing DorkOS agents to external A2A-compatible clients. Gated on the `a2a.enabled` setting (default `false`), which `DORKOS_A2A_ENABLED` overrules in both directions when present. Requires Relay.
 
 Like the MCP endpoint, A2A is a protocol endpoint — it speaks JSON-RPC, not REST.
 

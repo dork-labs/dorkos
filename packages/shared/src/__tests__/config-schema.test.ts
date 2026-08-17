@@ -53,6 +53,9 @@ describe('UserConfigSchema', () => {
       },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
       relay: { enabled: true, dataDir: null },
+      // Ships closed: nothing outside DorkOS reaches these agents over A2A
+      // until a person opens that door (DOR-1304).
+      a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
       mesh: { scanRoots: [] },
       rooms: {
@@ -394,6 +397,9 @@ describe('USER_CONFIG_DEFAULTS', () => {
       },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
       relay: { enabled: true, dataDir: null },
+      // Ships closed: nothing outside DorkOS reaches these agents over A2A
+      // until a person opens that door (DOR-1304).
+      a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
       mesh: { scanRoots: [] },
       rooms: {

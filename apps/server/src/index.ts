@@ -2384,7 +2384,17 @@ async function start() {
   }
 
   // Mount A2A gateway if enabled — requires both Relay (message routing) and Mesh (agent registry)
-  if (env.DORKOS_A2A_ENABLED && relayCore && meshCore) {
+  //
+  // The gate is `a2a.enabled` in config, with `DORKOS_A2A_ENABLED` winning in
+  // BOTH directions when it is present — the same shape Tasks and Relay use
+  // above, so a headless deployment keeps deciding from its environment and the
+  // Experiments section can honestly report the setting as locked (DOR-1304).
+  const a2aEnabled =
+    // eslint-disable-next-line no-restricted-syntax -- Checking presence, not value: env.ts can't distinguish "unset" from "set to false"
+    'DORKOS_A2A_ENABLED' in process.env
+      ? env.DORKOS_A2A_ENABLED
+      : (configManager.get('a2a')?.enabled ?? false);
+  if (a2aEnabled && relayCore && meshCore) {
     // The A2A surface is guarded by createMcpAuth({ surface: 'a2a' }). In
     // login-off mode the per-instance local token gates JSON-RPC execution, but
     // that token is a loopback-trust mechanism (a 0600 file only a local operator

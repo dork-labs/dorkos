@@ -21,12 +21,18 @@ This is developer reference: it assumes you're wiring up an external A2A client 
 
 ## Enabling the gateway
 
-The gateway is feature-flag gated and requires Relay:
+The gateway is off until you turn it on, and it needs Relay running. There are two ways to turn it on.
+
+**In the cockpit.** Open **Settings → Experiments** and flip "Let outside agents reach yours". DorkOS reads it once when it starts, so restart to pick up the change.
+
+**By environment variable**, for a headless deployment:
 
 ```bash
 DORKOS_RELAY_ENABLED=true
 DORKOS_A2A_ENABLED=true
 ```
+
+`DORKOS_A2A_ENABLED` wins over the setting whenever it is present — including when it says `false`. The switch in Settings shows what is really happening on that machine and goes read-only, rather than offering you a choice the server will ignore.
 
 On startup you'll see a log line confirming the mount point and auth mode:
 

@@ -3073,6 +3073,46 @@ export const ExecutionDefaultsSchema = z
 /** The server's per-runtime execution defaults, as read. See {@link ExecutionDefaultsSchema}. */
 export type ExecutionDefaults = z.infer<typeof ExecutionDefaultsSchema>;
 
+/**
+ * One staged opt-in, resolved, as Settings → Experiments renders it (DOR-1304).
+ *
+ * Everything the switch needs arrives already decided: the prose, the position,
+ * and whether the position is even the setting's to give. The client holds no
+ * table of experiments and no knowledge of what any of them do — it splits `key`
+ * to build its `PATCH /api/config` body and draws a row. That is what lets an
+ * experiment be added, or graduate and disappear, with no client change at all.
+ *
+ * The server list is `services/core/config/experiments-registry.ts`, whose module
+ * docs carry the rule that every entry is expected to be deleted.
+ */
+export const ExperimentStateSchema = z
+  .object({
+    key: z.string().openapi({
+      description:
+        'Dot-path of the boolean setting this switch writes, e.g. "runtimes.claudeCode.persistentSession". Also the entry identity: the client splits it into the nested PATCH /api/config body',
+    }),
+    title: z.string().openapi({ description: 'What the experiment is called, in plain words' }),
+    description: z
+      .string()
+      .openapi({ description: 'What turning it on does for the person. Benefit first' }),
+    costNote: z.string().optional().openapi({
+      description:
+        'What it costs them — memory, spend, exposure — when there is a real cost worth stating. Absent when there is not',
+    }),
+    enabled: z.boolean().openapi({
+      description:
+        "Whether it is on right now. When `lockedByEnv` is true this is the environment variable's answer, not the setting's, so the switch reports reality instead of an inert preference",
+    }),
+    lockedByEnv: z.boolean().openapi({
+      description:
+        'True when an environment variable on this machine decides the experiment instead of the setting. The client shows the position and disables the switch',
+    }),
+  })
+  .openapi('ExperimentState');
+
+/** One resolved experiment. See {@link ExperimentStateSchema}. */
+export type ExperimentState = z.infer<typeof ExperimentStateSchema>;
+
 export const ServerConfigSchema = z
   .object({
     version: z.string().openapi({ description: 'Current server version' }),
@@ -3459,6 +3499,10 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
+    experiments: z.array(ExperimentStateSchema).optional().openapi({
+      description:
+        'The staged opt-ins Settings → Experiments offers, already resolved, in the order to show them. An EMPTY array is a normal answer — it means every experiment has graduated or been withdrawn. A server that omits the block has no Experiments section at all',
+    }),
   })
   .openapi('ServerConfig');
 

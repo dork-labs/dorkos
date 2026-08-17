@@ -24,6 +24,7 @@ export type SettingsTab =
   | 'runtimes'
   | 'privacy'
   | 'advanced'
+  | 'experiments'
   | (string & {});
 
 // ---------------------------------------------------------------------------

@@ -130,13 +130,17 @@ Tasks runs agent jobs on a schedule (like "every night at 2am"), on their own, w
 
 ### A2A Gateway
 
-The A2A gateway exposes your DorkOS agents to external A2A-compatible clients (other agent frameworks, orchestrators, or tools that speak Google's Agent-to-Agent protocol). Requires Relay to be enabled.
+The A2A gateway lets agents built by other people, on other systems, send work to the agents here — anything that speaks Google's Agent-to-Agent protocol. Agent messaging (Relay) has to be on for it to do anything.
+
+It is off until you turn it on, and there are two ways to do that. In DorkOS, open **Settings → Experiments** and flip "Let outside agents reach yours". On a server you run headless, set the environment variable instead — that wins over the setting either way, and the switch says so rather than pretending it decides.
+
+It is still early alpha. Only turn it on when you know what is on the other side of the door.
 
 <TypeTable
   type={{
     DORKOS_A2A_ENABLED: {
       description:
-        'Enable the A2A external gateway for cross-vendor agent communication. Requires `DORKOS_RELAY_ENABLED=true`. Auth reuses `MCP_API_KEY`.',
+        'Enable the A2A external gateway for cross-vendor agent communication. Requires `DORKOS_RELAY_ENABLED=true`. Auth reuses `MCP_API_KEY`. When set, it overrules the `a2a.enabled` setting in both directions.',
       type: 'boolean',
       default: 'false',
     },
@@ -703,6 +707,12 @@ DorkOS sends us nothing unless you turn it on. Two anonymous channels are availa
   status` shows each channel and any override; `DORKOS_TELEMETRY_DEBUG=1` prints the exact payload
   to your terminal instead of sending it. See the [telemetry page](/docs/self-hosting/telemetry).
 </Callout>
+
+### Experiments
+
+Some features work but have not been lived with long enough to be the default. Those wait in **Settings → Experiments**, off until you turn them on, each one saying plainly what it gives you and what it costs.
+
+Every experiment ends the same two ways: it becomes the normal behaviour and leaves the list, or it goes away. So the list is meant to be short, and an empty one means nothing is waiting on you.
 
 ### Config Directory
 

@@ -20,6 +20,7 @@ import {
   USER_CONFIG_DEFAULTS,
   USER_PROFILE_DEFAULTS,
 } from '@dorkos/shared/config-schema';
+import { describeExperiments } from '../services/core/config/describe-experiments.js';
 import { deepMerge } from '../services/core/operator/config-patch.js';
 import {
   applyGuardedConfigWrite,
@@ -303,6 +304,12 @@ router.get('/', async (_req, res) => {
       // way to clear it. `?? null` covers the pre-migration read window only.
       autonomyAcknowledgedAt: configManager.get('ui')?.autonomyAcknowledgedAt ?? null,
     },
+    // The staged opt-ins, RESOLVED (DOR-1304). This is the block that exists
+    // because curation is not free: `runtimes.claudeCode.persistentSession`
+    // shipped behind a config flag and was unreachable from the cockpit, because
+    // nothing above listed it. Anything registered as an experiment is listed
+    // here automatically, so the next flag cannot go missing the same way.
+    experiments: describeExperiments(),
   });
 });
 

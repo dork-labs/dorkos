@@ -27,6 +27,7 @@ import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTa
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
 import { ToolsResetAction, ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
 import { AdvancedTab } from '@/layers/features/settings/ui/AdvancedTab';
+import { ExperimentsTab } from '@/layers/features/settings/ui/ExperimentsTab';
 import { BackgroundSystemsCard } from '@/layers/features/settings/ui/tools/BackgroundSystemsCard';
 import { ClaudeAccountsSection, ExecutionExceptionsStrip } from '@/layers/features/settings';
 import {
@@ -38,7 +39,9 @@ import {
 import {
   MOCK_EXECUTION_DEVIATIONS,
   MOCK_EXECUTION_EXCEPTIONS,
+  MOCK_SERVER_CONFIG_EXPERIMENT_LOCKED,
   MOCK_SERVER_CONFIG_MULTI_ACCOUNT,
+  MOCK_SERVER_CONFIG_NO_EXPERIMENTS,
 } from './settings-mock-data';
 
 /** Comprehensive showcase for the Settings dialog system. */
@@ -277,6 +280,36 @@ function IndividualTabsSection() {
         <TabShell value="advanced" title="Advanced">
           <AdvancedTab />
         </TabShell>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Experiments Tab</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider>
+          <TabShell value="experiments" title="Experiments">
+            <ExperimentsTab />
+          </TabShell>
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      {/* The two states the tab can be in that the shipped config never shows at
+          the same time: a row an environment variable has taken over, and the
+          empty registry that IS the success state once every flag graduates. */}
+      <ShowcaseLabel>Experiments Tab — locked by environment</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider config={MOCK_SERVER_CONFIG_EXPERIMENT_LOCKED}>
+          <TabShell value="experiments" title="Experiments">
+            <ExperimentsTab />
+          </TabShell>
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Experiments Tab — nothing cooking</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider config={MOCK_SERVER_CONFIG_NO_EXPERIMENTS}>
+          <TabShell value="experiments" title="Experiments">
+            <ExperimentsTab />
+          </TabShell>
+        </MockedQueryProvider>
       </ShowcaseDemo>
     </PlaygroundSection>
   );
