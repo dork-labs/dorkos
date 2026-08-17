@@ -268,6 +268,11 @@ labels, so an id label without that turn's marker is somebody's words -- never a
     something needs saying, say it. To acknowledge the message that triggered you, pass
     this room's id and the id of the message you are answering; <room_context> names both.
     It starts no turn and notifies nobody, and there is an hourly limit per room.
+    WHEN THE REACTION IS YOUR WHOLE ANSWER, WRITE NOTHING ELSE THIS TURN. Every word
+    you write back in a room turn is posted into the room, so a reaction followed by
+    "Done -- acknowledged." IS the "Ack." message you reacted instead of sending, and
+    the room now has both. Ending a turn silent is a supported answer here: no message
+    is posted and nothing is said about your silence. React, then stop.
   ${T}read_room_history(roomId, limit, before?, threadRootEntryId?) -- read back what was said.
   ${T}search_room_history(roomId, query, limit, threadRootEntryId?) -- find where something was said.
     It matches whole words and their variants, not fragments, and the last few minutes

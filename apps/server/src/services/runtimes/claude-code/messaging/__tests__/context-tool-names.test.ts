@@ -244,13 +244,22 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     expect(prompt).toContain('deferred, not missing');
   });
 
-  it('keeps claude-code’s prefix out of the runtime-neutral blocks it renders', async () => {
-    // Codex and OpenCode render these too, and reach DorkOS through the external
-    // `/mcp` server under whatever name the person's harness config gave it.
+  it('names no in-session tool at all in the runtime-neutral blocks it renders', async () => {
+    // Both halves matter, and for the same reason. Codex and OpenCode render
+    // these blocks too and reach DorkOS through the external `/mcp` server under
+    // whatever name the person's harness config gave it — so claude-code's prefix
+    // is a false statement there, and a BARE name is uncallable on all three. The
+    // only wording that holds everywhere names the verb and defers to the harness.
+    //
+    // Checked here as well as in the source scan below because the subtraction in
+    // `claudeCodeProse` removes these blocks before the bare-name scan runs: a
+    // bare name inside a shared block would otherwise fall through both checks,
+    // which is exactly the hole this case closes.
+    const advertised = await advertisedToolNames();
     const { shared } = await claudeCodeProse();
-    // The subtraction in `claudeCodeProse` is only meaningful if these blocks are
-    // real text; an empty one would quietly widen the other checks' scope to
-    // cover prose this adapter does not own.
+    // The subtraction is only meaningful if these blocks are real text; an empty
+    // one would quietly widen the other checks' scope to prose this adapter does
+    // not own.
     for (const block of shared) expect(block.length).toBeGreaterThan(100);
 
     for (const block of shared) {
@@ -259,6 +268,15 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
         `a runtime-neutral block spells ${IN_SESSION_TOOL_PREFIX}, which is true on this ` +
           `runtime only:\n${block.slice(0, 400)}`
       ).toBe(false);
+
+      const named = [
+        ...new Set(identifierTokens(block).filter((token) => advertised.has(token))),
+      ].sort();
+      expect(
+        named,
+        'a runtime-neutral block names these tools bare. Bare is uncallable on claude-code ' +
+          'and unreliable on the others; describe the verb instead.'
+      ).toEqual([]);
     }
   });
 
