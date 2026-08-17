@@ -15,12 +15,14 @@
  * - **`/api/auth/*`** — the Better Auth endpoints themselves (sign-in must be
  *   reachable to obtain a cookie).
  * - **`/api/health`** — health/status probe.
- * - **`/api/workbench/serve/*` and `/api/workbench/proxy/*`** — the embedded
- *   browser's serve/proxy routes. They are authorized by a short-lived signed
- *   token in the URL (minted by the gated `/api/workbench/sign`), NOT the API's
- *   cookie/header auth, because the browser frame is opaque-origin and carries no
- *   credentials by design (DOR-216, ADR 260708-185519). The token is the
- *   capability; the gate would otherwise block the credential-less frame.
+ * - **`/api/workbench/serve/*`** — the embedded browser's local-file route. It is
+ *   authorized by a short-lived signed token in the URL (minted by the gated
+ *   `/api/workbench/sign`), NOT the API's cookie/header auth, because the browser
+ *   frame is opaque-origin and carries no credentials by design (DOR-216,
+ *   ADR 260708-185519). The token is the capability; the gate would otherwise
+ *   block the credential-less frame. Dev-server previews need no exemption at
+ *   all: they no longer ride this server's routes, they answer on a listener of
+ *   their own (DOR-1260).
  *
  * The credential check is factored into {@link verifyRequestAuth}, a single
  * verification path (session cookie, then Bearer API key) that the rewritten MCP
@@ -106,8 +108,7 @@ function isExemptPath(path: string): boolean {
     path === '/api/health' ||
     path.startsWith('/api/health/') ||
     // Signed-token-authorized embedded-browser content (see the module doc).
-    path.startsWith('/api/workbench/serve/') ||
-    path.startsWith('/api/workbench/proxy/')
+    path.startsWith('/api/workbench/serve/')
   );
 }
 

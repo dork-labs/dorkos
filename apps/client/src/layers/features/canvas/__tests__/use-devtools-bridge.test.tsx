@@ -44,7 +44,7 @@ let iframe: HTMLIFrameElement;
 /** A window that is NOT our iframe's contentWindow, standing in for a foreign frame. */
 let foreignFrame: HTMLIFrameElement;
 
-function mount(): { current: HTMLIFrameElement | null } {
+function mount(previewOrigin: string | null = null): { current: HTMLIFrameElement | null } {
   const { result } = renderHook(() => {
     const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
     useDevtoolsBridge({
@@ -52,6 +52,7 @@ function mount(): { current: HTMLIFrameElement | null } {
       documentId: 'doc',
       logicalUrl: 'preview.html',
       reloadNonce: 0,
+      previewOrigin,
     });
     return ref;
   });
@@ -146,6 +147,30 @@ describe('useDevtoolsBridge — source-identity guard (anti-spoofing)', () => {
     postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' }, 'http://localhost:5173');
     expect(postSpy).not.toHaveBeenCalled();
   });
+
+  it('accepts the preview origin this document was minted on', () => {
+    // A dev server on a DorkOS preview listener has a REAL origin and does carry
+    // the shim, so its exact origin — and only that one — is allowed through.
+    mount('http://localhost:4390');
+    postFrom(
+      iframe.contentWindow,
+      { __dorkosDevtools: 'batch', seq: 1, console: [consoleEntry], network: [] },
+      'http://localhost:4390'
+    );
+    vi.advanceTimersByTime(500);
+    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('still rejects a different real origin while a preview origin is allowed', () => {
+    mount('http://localhost:4390');
+    postFrom(
+      iframe.contentWindow,
+      { __dorkosDevtools: 'batch', seq: 1, console: [consoleEntry], network: [] },
+      'http://localhost:4391'
+    );
+    vi.advanceTimersByTime(500);
+    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+  });
 });
 
 describe('useDevtoolsBridge — resource errors the canvas can show', () => {
@@ -154,7 +179,12 @@ describe('useDevtoolsBridge — resource errors the canvas can show', () => {
     return renderHook(
       (props: { logicalUrl: string; reloadNonce: number }) => {
         const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
-        return useDevtoolsBridge({ iframeRef: ref, documentId: 'doc', ...props });
+        return useDevtoolsBridge({
+          iframeRef: ref,
+          documentId: 'doc',
+          previewOrigin: null,
+          ...props,
+        });
       },
       { initialProps: { logicalUrl: 'http://localhost:5173/', reloadNonce: 0 } }
     );

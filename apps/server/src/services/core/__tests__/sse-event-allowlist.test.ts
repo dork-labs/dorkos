@@ -96,10 +96,11 @@ async function productionSources(dir: string): Promise<string[]> {
  *    71,000 characters of the file, including four live broadcasts, and the scan
  *    passed over the wreckage.
  * 2. Fixing the order. The block-comment pass is still blind to STRING LITERALS,
- *    and three files carry a `'*&#47;*'` media type — `services/core/upload-handler.ts`,
- *    `routes/relay-adapters.ts`, `services/workbench-serve/proxy.ts`. Each opens a
- *    fake comment at offset 1 that the next real `*&#47;` closes, masking anything
- *    between. Seeding one broadcast behind each still gave three green tests.
+ *    and two files carry a `'*&#47;*'` media type — `services/core/upload-handler.ts`
+ *    and `routes/relay-adapters.ts`. Each opens a fake comment at offset 1 that the
+ *    next real `*&#47;` closes, masking anything between. Seeding one broadcast behind
+ *    each still gave green tests. (A third file, the workbench's path-prefixed
+ *    localhost proxy, carried the same literal until DOR-1260 retired it.)
  *
  * Getting this right needs a real tokenizer, and the whole point of the file is to
  * be a cheap floor. So it does not try: it matches the raw text, and accepts that a

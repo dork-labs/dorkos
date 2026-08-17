@@ -29,17 +29,54 @@ export const FILE_LIMITS = {
 
 export const WORKBENCH = {
   /**
-   * TTL (ms) of a signed workbench serve/proxy URL (DOR-216, ADR 260708-185519).
-   * Short-lived by design: the token — a bearer credential embedded in the URL
-   * path — authorizes the opaque-origin browser frame instead of cookie/header
-   * auth, so it must expire. It still has to outlive a working preview (relative-
-   * asset fetches reuse the same token), and the client re-mints on reload, so an
-   * expired token is recoverable. 30 minutes keeps the bearer window tight while
-   * not breaking an open preview mid-session.
+   * TTL (ms) of a signed workbench token (DOR-216, DOR-1260).
+   *
+   * Short-lived by design: the token is a bearer credential that authorizes a
+   * frame the API's own auth cannot reach — carried in the URL path for a
+   * `serve` frame (opaque origin, no credentials) and in a cookie on the preview
+   * listener for a dev server (a separate port, not the API). Either way it has
+   * to expire.
+   *
+   * It also has to outlive a working preview, since every asset the page fetches
+   * reuses it. 30 minutes keeps the bearer window tight; the client re-mints on
+   * every navigation and reload, so an expired token is always recoverable by
+   * reloading.
    */
   SIGNED_URL_TTL_MS: 30 * 60 * 1000,
-  /** Request timeout (ms) when the localhost proxy calls the dev server. */
+  /** Request timeout (ms) when a preview listener calls the dev server it fronts. */
   PROXY_TIMEOUT_MS: 30 * 1000,
+  /**
+   * How long a dev-server preview listener stays open with no requests before it
+   * gives its port back (DOR-1260).
+   *
+   * Long enough to survive reading a page, switching tabs and coming back —
+   * reopening is invisible but re-mints the frame, which reloads it. Short
+   * enough that a laptop left running overnight is not still holding a bound
+   * port for a dev server that stopped hours ago.
+   *
+   * The same number as {@link SIGNED_URL_TTL_MS}, but NOT the same clock, and
+   * the difference shows: this one restarts on every request (and never runs at
+   * all while a live-reload socket is open), while the token's expiry is
+   * absolute from the moment it was minted. So a preview left open and in use
+   * keeps its listener and loses its token — at 30 minutes its next request
+   * meets the "this preview link has expired" page, and reloading the canvas
+   * mints a fresh one. Deliberate: an unbounded bearer credential would be the
+   * worse trade.
+   */
+  PREVIEW_IDLE_TTL_MS: 30 * 60 * 1000,
+  /**
+   * How much of an HTML preview response may be held in memory to inject the
+   * DevTools shim into it (DOR-1260).
+   *
+   * The shim has to go in before the page's first script runs, which means
+   * buffering the document rather than streaming it. "An HTML document" is
+   * whatever the dev server labels one, though, and a generated report or a
+   * data-URI-heavy artifact can be tens of megabytes. Past this cap the response
+   * streams through uninstrumented instead — the same disclosed degradation a
+   * page declaring a non-UTF-8 charset already gets. 5 MB is far above any real
+   * app shell and far below anything that would trouble the server.
+   */
+  PREVIEW_HTML_INJECT_MAX_BYTES: 5 * 1024 * 1024,
   /**
    * How long the loopback port probe waits for a connection before answering
    * "nothing is listening". A connection to a port on this same machine either

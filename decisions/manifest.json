@@ -2,6 +2,20 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260817-152705",
+      "slug": "dev-server-previews-get-their-own-origin",
+      "title": "Dev-server previews get their own origin; local-file serving keeps the opaque one",
+      "status": "accepted",
+      "created": "2026-08-17",
+      "specSlug": "canvas-dev-server-preview",
+      "amends": ["260708-185519"],
+      "affects": [
+        "apps/server/src/services/workbench-serve/preview-listener.ts",
+        "apps/server/src/routes/workbench-serve.ts",
+        "apps/client/src/layers/features/canvas/model/use-resolved-frame.ts"
+      ]
+    },
+    {
       "id": "260804-093322",
       "slug": "bridging-adopts-a-session-only-behind-a-transcript-probe-and-imports-no-history",
       "title": "Bridging adopts an existing session only behind a transcript probe, and never imports platform history",

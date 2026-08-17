@@ -2,19 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import type { BrowserHistoryState } from '@/layers/shared/model';
-import { useAppStore, useTransport } from '@/layers/shared/model';
+import { useAppStore } from '@/layers/shared/model';
 import { Input } from '@/layers/shared/ui';
 import { cn, openExternalLink } from '@/layers/shared/lib';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
+import {
+  useResolvedFrame,
+  type ResolveError,
+  type ResolvedFrame,
+} from '../model/use-resolved-frame';
 import {
   classifyBrowserTarget,
   describeAddress,
   loopbackStrategy,
   normalizeAddressInput,
-  WORKBENCH_SANDBOX_EXTERNAL,
-  WORKBENCH_SANDBOX_ISOLATED,
 } from '../lib/browser-url';
-import { probeDirect } from '../lib/probe-direct';
 
 /**
  * How long a frame may sit without firing `load` before the browser says so.
@@ -62,31 +64,27 @@ function seedHistory(
   return { stack: [contentUrl], cursor: 0 };
 }
 
-/** Why the frame has no resolvable source (served/proxied local content only). */
-type ResolveError = 'no-session' | 'unsupported' | 'failed' | 'no-upstream' | null;
-
 /**
  * Embedded browser canvas with navigation chrome (back/forward/reload/address
  * bar). Local files are routed through the signed serve route and rendered in an
  * opaque-origin sandbox (no `allow-same-origin`, ADR 260708-185519) so untrusted
  * content can never call `/api/*` as the user. External sites are framed
- * directly. A localhost dev server is framed by its own URL when the cockpit is
- * running on the same machine, and routed through the signed proxy otherwise —
- * see `loopbackStrategy`.
+ * directly. A localhost dev server is framed on a preview origin DorkOS opens
+ * for it, falling back to its own address — see `useResolvedFrame`.
  *
  * Honesty about embedding, in three parts:
  * - An external site's `X-Frame-Options` / `frame-ancestors` refusal cannot be
  *   reliably detected from the parent (a blocked frame still fires `load`
  *   cross-origin), so rather than guess, the browser always surfaces an "open in
  *   system browser" affordance for external pages.
- * - A dev-server port is checked before it is framed, so a port with nothing on
- *   it is a sentence rather than a white rectangle.
+ * - A dev server is checked before it is framed — by DorkOS AND by this browser
+ *   — so a port with nothing on it, or an origin this device cannot reach, is a
+ *   sentence rather than a white rectangle.
  * - A frame that never finishes loading, and a page whose own resources failed,
  *   both say so above the frame — which stays mounted, because a slow or partly
  *   broken page is still a page.
  */
 export function CanvasBrowserContent({ documentId, content }: CanvasBrowserContentProps) {
-  const transport = useTransport();
   const cwd = useAppStore((s) => s.selectedCwd);
   const writeBrowserHistory = useAppStore((s) => s.writeBrowserHistory);
 
@@ -124,112 +122,26 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
     [target]
   );
 
-  // DevTools bridge seam (DOR-213): relay the served/proxied preview's console +
-  // network to the attached session. The shim talks only to this frame's parent
-  // (never `/api/*`); this hook is that parent. Inert for external frames and for
-  // a directly framed dev server (nothing injects the shim into either), and when
-  // no session is attached.
+  // DevTools bridge seam (DOR-213): relay the preview's console + network to the
+  // attached session. The shim talks only to this frame's parent (never
+  // `/api/*`); this hook is that parent. Inert for external frames and for a
+  // dev server framed by its own address (nothing injects the shim into either),
+  // and when no session is attached.
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const { resolved, resolveError } = useResolvedFrame({
+    target,
+    currentUrl,
+    strategy,
+    cwd,
+    reloadNonce,
+  });
   const { resourceErrorCount } = useDevtoolsBridge({
     iframeRef,
     documentId,
     logicalUrl: currentUrl,
     reloadNonce,
+    previewOrigin: resolved?.previewOrigin ?? null,
   });
-
-  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
-  const [resolveError, setResolveError] = useState<ResolveError>(null);
-  // Whether the CURRENT `resolvedSrc` is the dev server's own URL. An outcome of
-  // the cascade below, not a property of the target — so the sandbox is chosen
-  // from what was actually loaded rather than from what was hoped for.
-  const [framedDirectly, setFramedDirectly] = useState(false);
-
-  // Resolve the frame source: mint a signed URL for served/proxied local
-  // content, or use the external URL directly. Re-runs on navigation + reload.
-  useEffect(() => {
-    let cancelled = false;
-
-    async function resolve() {
-      setResolveError(null);
-      setResolvedSrc(null);
-      setFramedDirectly(false);
-      if (target.mode === 'blocked') return;
-      if (target.mode === 'external') {
-        setResolvedSrc(target.url);
-        return;
-      }
-      if (target.mode === 'serve' && cwd === null) {
-        setResolveError('no-session');
-        return;
-      }
-      if (target.mode === 'proxy' && strategy === 'direct') {
-        // Ask the BROWSER, not the server. The server's port probe answers about
-        // the machine running DorkOS, and on a forwarded port (`docker run -p`,
-        // `ssh -L`) that is not the machine looking at this page — it would say
-        // "yes, it's listening" about a port this browser cannot reach. Chrome
-        // then renders its own connection-refused page and fires `load`, so even
-        // the slow-preview banner stays quiet: a silent blank rectangle.
-        //
-        // Three outcomes, and `probeDirect` folds the two that share an answer:
-        // - it answers        → frame it directly;
-        // - it REFUSES        → this browser cannot reach it, so fall through to
-        //                       the server, which on a forwarded port still can;
-        // - it stays SILENT   → still compiling, not missing. Frame it directly
-        //                       anyway; the frame's own 10-second load deadline
-        //                       is what speaks up if nothing ever arrives.
-        if (await probeDirect(currentUrl)) {
-          if (cancelled) return;
-          // The dev server's own URL, so its root-absolute assets, its router
-          // and its live-reload socket all resolve against the server that
-          // serves them.
-          setFramedDirectly(true);
-          setResolvedSrc(currentUrl);
-          return;
-        }
-        if (cancelled) return;
-        // Refused from here — but the machine running DorkOS may still reach it,
-        // which is exactly the forwarded-port case. Fall through to the server,
-        // which either proxies it or says nothing is there.
-      }
-      if (target.mode === 'proxy') {
-        // A `null` answer means the transport has no server to ask (Obsidian) —
-        // unknown, not empty, so nothing is claimed and the mint goes ahead.
-        let probe: { listening: boolean } | null;
-        try {
-          probe = await transport.probeLoopbackPort(target.port);
-        } catch {
-          probe = null;
-        }
-        if (cancelled) return;
-        if (probe !== null && !probe.listening) {
-          setResolveError('no-upstream');
-          return;
-        }
-      }
-      try {
-        let url: string | null;
-        if (target.mode === 'proxy') {
-          const base = await transport.createProxyUrl(target.port);
-          const suffix = target.path.replace(/^\//, '');
-          url = base && suffix ? base + suffix : base;
-        } else {
-          // Relative paths resolve against the CURRENT session cwd. A persisted
-          // document restored into a session with a different cwd can fail the
-          // server's cwd-confinement check on re-mint (surfaced as 'failed').
-          url = await transport.createServeUrl(cwd as string, target.path);
-        }
-        if (cancelled) return;
-        if (url === null) setResolveError('unsupported');
-        else setResolvedSrc(url);
-      } catch {
-        if (!cancelled) setResolveError('failed');
-      }
-    }
-    void resolve();
-    return () => {
-      cancelled = true;
-    };
-  }, [target, currentUrl, strategy, cwd, transport, reloadNonce]);
 
   const navigate = useCallback(
     (url: string) => {
@@ -281,8 +193,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
 
       <BrowserBody
         target={target}
-        framedDirectly={framedDirectly}
-        resolvedSrc={resolvedSrc}
+        resolved={resolved}
         resolveError={resolveError}
         reloadNonce={reloadNonce}
         resourceErrorCount={resourceErrorCount}
@@ -396,10 +307,9 @@ function AddressDisplay({ url, onActivate }: { url: string; onActivate: () => vo
 
 interface BrowserBodyProps {
   target: ReturnType<typeof classifyBrowserTarget>;
-  /** Whether a loopback target is framed by its own URL rather than via the server. */
-  framedDirectly: boolean;
-  resolvedSrc: string | null;
-  resolveError: ResolveError;
+  /** What the resolve cascade settled on, or `null` while it is still deciding. */
+  resolved: ResolvedFrame | null;
+  resolveError: ResolveError | null;
   reloadNonce: number;
   /** Resources the current document failed to load, as the DevTools bridge counted them. */
   resourceErrorCount: number;
@@ -410,11 +320,50 @@ interface BrowserBodyProps {
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
 }
 
+/**
+ * One plain sentence for each way a preview can fail to appear, and a next step
+ * in every one of them. Every branch here is a failure DorkOS can actually
+ * detect — a blank frame is what this whole component exists to avoid, so
+ * nothing is guessed and nothing is silent.
+ *
+ * @param error - What the resolve cascade concluded.
+ * @param target - The classified target, so a message can name the address the
+ *   user typed rather than a normalized one they never wrote.
+ * @returns The sentence to show.
+ */
+function explainResolveError(
+  error: ResolveError,
+  target: ReturnType<typeof classifyBrowserTarget>
+): string {
+  switch (error.kind) {
+    case 'no-session':
+      return 'Open a session to preview local files.';
+    case 'unsupported':
+      return 'Local previews aren’t available in this environment.';
+    case 'failed':
+      return 'This preview couldn’t be loaded. Reload to try again, or open the app in your browser.';
+    case 'tunnel':
+      return 'Dev-server previews aren’t available through a tunnel. Open DorkOS on the machine that runs it, or open the app in your browser.';
+    case 'no-port':
+      return 'All preview ports are in use. Close a preview, then reload.';
+    case 'origin-unreachable':
+      // DorkOS can see the dev server; this browser cannot reach the port
+      // DorkOS opened for it. Almost always a forwarded port that was not
+      // forwarded wide enough — so the fix named is the one that always works.
+      return `DorkOS can see your dev server, but this connection doesn’t reach port ${error.listenPort} on ${error.host}. Open DorkOS on the machine that runs it, or open the app in your browser.`;
+    case 'no-upstream': {
+      // Named the way the user typed it: someone who entered `127.0.0.1:5399`
+      // and is told about `localhost` doubts the message instead of the port.
+      const where = target.mode === 'proxy' ? `${target.hostname}:${target.port}` : 'that address';
+      return `Nothing is listening on ${where}. Start the dev server, then reload.`;
+    }
+  }
+}
+
 /** The frame (or a message) for the current navigation state. */
 function BrowserBody({
   target,
-  framedDirectly,
-  resolvedSrc,
+  resolved,
   resolveError,
   reloadNonce,
   resourceErrorCount,
@@ -426,42 +375,23 @@ function BrowserBody({
   if (target.mode === 'blocked') {
     return <BrowserMessage>This address can’t be displayed for security reasons.</BrowserMessage>;
   }
-  if (resolveError === 'no-session') {
-    return <BrowserMessage>Open a session to preview local files.</BrowserMessage>;
-  }
-  if (resolveError === 'unsupported') {
-    return <BrowserMessage>Local previews aren’t available in this environment.</BrowserMessage>;
-  }
-  if (resolveError === 'no-upstream') {
-    // Named the way the user typed it: someone who entered `127.0.0.1:5399` and
-    // is told about `localhost` doubts the message instead of the port.
-    const where = target.mode === 'proxy' ? `${target.hostname}:${target.port}` : 'that address';
+  if (resolveError !== null) {
     return (
       <BrowserMessage>
-        <p>Nothing is listening on {where}. Start the dev server, then reload.</p>
-        <button type="button" onClick={onReload} className="text-foreground mt-3 hover:underline">
-          Reload
-        </button>
+        <p>{explainResolveError(resolveError, target)}</p>
+        {resolveError.kind !== 'no-session' && resolveError.kind !== 'unsupported' && (
+          <button type="button" onClick={onReload} className="text-foreground mt-3 hover:underline">
+            Reload
+          </button>
+        )}
       </BrowserMessage>
     );
   }
-  if (resolveError === 'failed') {
-    return <BrowserMessage>This preview couldn’t be loaded.</BrowserMessage>;
-  }
-  if (resolvedSrc === null) {
+  if (resolved === null) {
     return <BrowserMessage>Loading…</BrowserMessage>;
   }
 
   const external = target.mode === 'external';
-  // A directly framed dev server is on its own origin, exactly like an external
-  // site, so it gets the same sandbox — see `loopbackStrategy` for why that
-  // grants it nothing against the DorkOS origin. `framedDirectly` is the outcome
-  // of the resolve cascade, so this reads what was loaded, never an intention:
-  // a target that failed the browser's own reachability check never reaches
-  // here as a direct frame at all. Anything DorkOS itself serves keeps the
-  // opaque origin (ADR 260708-185519).
-  const sandbox =
-    external || framedDirectly ? WORKBENCH_SANDBOX_EXTERNAL : WORKBENCH_SANDBOX_ISOLATED;
 
   return (
     <PreviewFrame
@@ -469,9 +399,9 @@ function BrowserBody({
       // reload of the SAME src still bumps the nonce. Remounting is also what
       // resets "has it loaded yet" and "is it past its deadline" — a page's
       // loading state belongs to that page and nothing else.
-      key={`${resolvedSrc}:${reloadNonce}`}
-      src={resolvedSrc}
-      sandbox={sandbox}
+      key={`${resolved.src}:${reloadNonce}`}
+      src={resolved.src}
+      sandbox={resolved.sandbox}
       title={title}
       iframeRef={iframeRef}
       // An external site's slowness is the site's, and its escape hatch is

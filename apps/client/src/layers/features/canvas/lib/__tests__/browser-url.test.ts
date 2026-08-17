@@ -83,7 +83,7 @@ describe('loopbackStrategy', () => {
 });
 
 describe('sandbox posture', () => {
-  it('served/proxied content NEVER carries allow-same-origin (opaque origin)', () => {
+  it('locally served files NEVER carry allow-same-origin (opaque origin)', () => {
     expect(WORKBENCH_SANDBOX_ISOLATED).not.toContain('allow-same-origin');
     expect(WORKBENCH_SANDBOX_ISOLATED).toContain('allow-scripts');
   });

@@ -236,7 +236,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       async (cwd: string, filePath?: string) =>
         `/api/workbench/serve/mock-token/${filePath ?? 'index.html'}?cwd=${cwd}`
     ),
-    createProxyUrl: vi.fn(async (port: number) => `/api/workbench/proxy/mock-token/?port=${port}`),
+    createProxyUrl: vi.fn(async (port: number) => ({
+      url: `http://localhost:4999/?__dorkos_preview=mock-token-${port}`,
+    })),
     // Default: the port answers. Tests covering the dead-port message override
     // this with `{ listening: false }`, and DirectTransport tests with `null`.
     probeLoopbackPort: vi.fn(async () => ({ listening: true })),

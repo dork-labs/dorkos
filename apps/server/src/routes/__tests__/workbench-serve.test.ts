@@ -1,14 +1,15 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import http from 'http';
 import type { AddressInfo } from 'net';
 
-// Exercises the real serve/proxy routes end-to-end: real boundary confinement,
+// Exercises the real serve + sign routes end-to-end: real boundary confinement,
 // the real token signer (so token auth is the actual security boundary), and a
-// real localhost upstream for the proxy. Config/tunnel are stubbed so createApp
-// builds without a live server.
+// real preview listener in front of a real localhost upstream. Config/tunnel are
+// stubbed so createApp builds without a live server. What the listener itself
+// does with a request is covered in services/workbench-serve/__tests__.
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -24,7 +25,12 @@ import request from 'supertest';
 import { createApp } from '../../app.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { WORKBENCH } from '../../config/constants.js';
-import { workbenchTokenSigner } from '../../services/workbench-serve/index.js';
+import {
+  previewListeners,
+  PreviewPortExhaustedError,
+  workbenchTokenSigner,
+} from '../../services/workbench-serve/index.js';
+import { tunnelManager } from '../../services/core/tunnel-manager.js';
 
 let root: string;
 let outside: string;
@@ -226,124 +232,77 @@ describe('GET /api/workbench/serve — DevTools shim injection (DOR-213)', () =>
   });
 });
 
-describe('ALL /api/workbench/proxy/:token/*', () => {
+describe('POST /api/workbench/sign — dev-server preview', () => {
   let upstream: http.Server;
   let upstreamPort: number;
 
   beforeAll(async () => {
-    upstream = http.createServer((req, res) => {
-      // A non-HTML asset must stream through the proxy untouched.
-      if (req.url?.endsWith('.css')) {
-        res.setHeader('Content-Type', 'text/css');
-        res.end('p{color:blue}');
-        return;
-      }
-      // A page declaring a non-UTF-8 charset: 0xE9 is 'é' in latin-1 but an
-      // invalid byte sequence in UTF-8 — a UTF-8 decode would corrupt it.
-      if (req.url?.endsWith('/latin1.html')) {
-        res.setHeader('Content-Type', 'text/html; charset=iso-8859-1');
-        res.end(
-          Buffer.from([...Buffer.from('<html><body>caf'), 0xe9, ...Buffer.from('</body></html>')])
-        );
-        return;
-      }
-      // A dev server that would refuse framing — the proxy must strip these.
-      res.setHeader('X-Frame-Options', 'DENY');
-      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
-      res.setHeader('Content-Type', 'text/html');
-      // Echo the received URL so tests can assert exactly what was forwarded.
-      res.end(`<h1>dev server</h1><pre>${req.url}</pre>`);
-    });
+    upstream = http.createServer((_req, res) => res.end('<h1>dev server</h1>'));
     await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
     upstreamPort = (upstream.address() as AddressInfo).port;
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    await previewListeners.close();
     upstream.close();
   });
 
-  it('relays the dev server and strips X-Frame-Options / frame-ancestors so it can be framed', async () => {
-    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
-    const res = await request(app).get(`/api/workbench/proxy/${token}/`);
-    expect(res.status).toBe(200);
-    expect(res.text).toContain('dev server');
-    expect(res.headers['x-frame-options']).toBeUndefined();
-    // CSP survives but with frame-ancestors removed.
-    expect(res.headers['content-security-policy']).toBeDefined();
-    expect(res.headers['content-security-policy']).not.toContain('frame-ancestors');
-    // The bearer token in the URL must not leak to the framed page's onward nav.
-    expect(res.headers['referrer-policy']).toBe('no-referrer');
+  afterEach(() => {
+    tunnelManager.status.url = null;
+    vi.restoreAllMocks();
   });
 
-  it('keeps a literal `?` in a path segment out of the upstream query (no unintended split)', async () => {
-    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
-    // `foo%3Fbar.js` is a filename containing `?`; it must reach the upstream as
-    // an encoded path segment, not split into a query.
-    const res = await request(app).get(`/api/workbench/proxy/${token}/foo%3Fbar.js`);
-    expect(res.status).toBe(200);
-    expect(res.text).toContain('/foo%3Fbar.js');
-  });
-
-  it('injects the shim into a proxied HTML page and still strips frame-ancestors', async () => {
-    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
-    const res = await request(app).get(`/api/workbench/proxy/${token}/`);
-    expect(res.status).toBe(200);
-    expect(res.text).toContain('__dorkosDevtools');
-    expect(res.text).toContain('dev server');
-    // Composes with the framing transform — both apply on the same HTML branch.
-    expect(res.headers['content-security-policy']).not.toContain('frame-ancestors');
-    expect(Number(res.headers['content-length'])).toBe(Buffer.byteLength(res.text));
-  });
-
-  it('sends injected HTML with an explicit charset=utf-8 content-type', async () => {
-    // The upstream declared no charset. The ~8 KB shim can push an in-document
-    // <meta charset> past the browser's 1024-byte prescan, so the response we DO
-    // inject into must declare its (UTF-8) encoding on the header.
-    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
-    const res = await request(app).get(`/api/workbench/proxy/${token}/`);
-    expect(res.status).toBe(200);
-    expect(res.text).toContain('__dorkosDevtools');
-    expect(res.headers['content-type']).toContain('charset=utf-8');
-  });
-
-  it('relays non-UTF-8 HTML byte-for-byte UNINSTRUMENTED, keeping its charset header', async () => {
-    // A UTF-8 text() decode would corrupt latin-1 bytes while the header still
-    // claimed iso-8859-1 — so the proxy must not inject here at all.
-    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
+  it('answers with a preview origin on the host the caller reached, not the API port', async () => {
     const res = await request(app)
-      .get(`/api/workbench/proxy/${token}/latin1.html`)
-      .buffer(true)
-      .parse((r, cb) => {
-        const chunks: Buffer[] = [];
-        r.on('data', (c: Buffer) => chunks.push(c));
-        r.on('end', () => cb(null, Buffer.concat(chunks)));
-      });
+      .post('/api/workbench/sign')
+      // Not `localhost`, so a hardcoded hostname would show up here. (A LAN or
+      // Tailscale name would too, but the app's host guard rejects those before
+      // the route sees them — that guard is tested in `trusted-origins`.)
+      .set('Host', '127.0.0.1:4242')
+      .send({ kind: 'proxy', port: upstreamPort });
+
     expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toContain('iso-8859-1');
-    const body = res.body as Buffer;
-    const original = Buffer.concat([
-      Buffer.from('<html><body>caf'),
-      Buffer.from([0xe9]),
-      Buffer.from('</body></html>'),
-    ]);
-    // Byte-for-byte: the 0xE9 latin-1 byte survives and no shim was inserted.
-    expect(body.equals(original)).toBe(true);
-    expect(body.toString('latin1')).not.toContain('__dorkosDevtools');
+    const url = new URL(res.body.url);
+    // The hostname the caller used, kept: telling a phone to load `localhost`
+    // would point it at the phone.
+    expect(url.hostname).toBe('127.0.0.1');
+    expect(url.port).not.toBe('4242');
+    expect(url.searchParams.get('__dorkos_preview')).toBeTruthy();
   });
 
-  it('streams a proxied non-HTML asset byte-for-byte unchanged (no shim)', async () => {
-    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
-    const res = await request(app).get(`/api/workbench/proxy/${token}/app.css`);
-    expect(res.status).toBe(200);
-    expect(res.text).toBe('p{color:blue}');
-    expect(res.text).not.toContain('__dorkosDevtools');
+  it('reuses one listener for one dev server', async () => {
+    const first = await request(app)
+      .post('/api/workbench/sign')
+      .send({ kind: 'proxy', port: upstreamPort });
+    const second = await request(app)
+      .post('/api/workbench/sign')
+      .send({ kind: 'proxy', port: upstreamPort });
+
+    expect(new URL(second.body.url).port).toBe(new URL(first.body.url).port);
   });
 
-  it('returns 502 when nothing is listening on the target port (no arbitrary-host reach)', async () => {
-    // A closed loopback port — the proxy is loopback-pinned, so this is the only
-    // failure mode; there is no way to point it at a non-loopback host.
-    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: 59999 });
-    const res = await request(app).get(`/api/workbench/proxy/${token}/`);
-    expect(res.status).toBe(502);
+  it('says previews are unavailable through a tunnel instead of naming an unreachable port', async () => {
+    tunnelManager.status.url = 'https://demo.ngrok.app';
+
+    const res = await request(app)
+      .post('/api/workbench/sign')
+      .set('Host', 'demo.ngrok.app')
+      .send({ kind: 'proxy', port: upstreamPort });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ url: null, unavailable: 'tunnel' });
+  });
+
+  it('says so when every preview port in the configured range is taken', async () => {
+    vi.spyOn(previewListeners, 'acquire').mockRejectedValue(
+      new PreviewPortExhaustedError({ from: 4243, to: 4243 })
+    );
+
+    const res = await request(app)
+      .post('/api/workbench/sign')
+      .send({ kind: 'proxy', port: upstreamPort });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ url: null, unavailable: 'no-port' });
   });
 });

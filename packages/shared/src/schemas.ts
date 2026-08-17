@@ -2925,9 +2925,10 @@ export type FileMutationResponse = z.infer<typeof FileMutationResponseSchema>;
  *   (`cwd`), rooted at `path` so relative assets resolve. The signed URL — not
  *   the API's cookie/header auth — authorizes the request, because a sandboxed
  *   (no `allow-same-origin`) iframe carries no credentials by design.
- * - `proxy`: reverse-proxy a localhost dev server bound to `port`. The host is
- *   pinned to loopback server-side (no arbitrary-host SSRF); the token carries
- *   only the port.
+ * - `proxy`: open (or reuse) a preview listener in front of a localhost dev
+ *   server bound to `port`. The host is pinned to loopback server-side (no
+ *   arbitrary-host SSRF); the token carries only the port, and authorizes that
+ *   listener and no other.
  */
 export const WorkbenchSignRequestSchema = z
   .discriminatedUnion('kind', [
@@ -2947,11 +2948,27 @@ export const WorkbenchSignRequestSchema = z
 
 export type WorkbenchSignRequest = z.infer<typeof WorkbenchSignRequestSchema>;
 
-/** Response for `POST /api/workbench/sign`: the signed, short-lived URL to load. */
+/**
+ * Response for `POST /api/workbench/sign`: the URL the embedded browser should
+ * load, or an honest reason there isn't one.
+ *
+ * A `serve` request always gets a URL. A `proxy` request gets the bootstrap URL
+ * of a preview listener — a whole origin of its own, so the dev server's
+ * root-absolute assets, its router and its live-reload socket all resolve. When
+ * no such origin can be offered, `url` is `null` and `unavailable` says why, so
+ * the browser can put a sentence on screen instead of a blank frame.
+ */
 export const WorkbenchSignResponseSchema = z
   .object({
-    /** Same-origin URL embedding the signed token; load directly as an iframe `src`. */
-    url: z.string(),
+    /** The URL to load as an iframe `src`, or `null` when none can be offered. */
+    url: z.string().nullable(),
+    /**
+     * Why there is no URL:
+     * - `tunnel` — the caller reached DorkOS through a tunnel, which publishes
+     *   one port and not the preview's.
+     * - `no-port` — every port in the configured preview range is in use.
+     */
+    unavailable: z.enum(['tunnel', 'no-port']).optional(),
   })
   .openapi('WorkbenchSignResponse');
 
