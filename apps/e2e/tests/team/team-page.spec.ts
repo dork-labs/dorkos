@@ -187,7 +187,13 @@ test.describe('Team — the roster @smoke', () => {
     await page.goto(`/team?view=table&q=${encodeURIComponent(agent.name)}`);
     await basePage.waitForAppReady();
 
-    await page.getByRole('button', { name: `Open ${agent.name}’s profile` }).click();
+    // Scoped to the roster table: the sidebar draws the same agent with the same
+    // accessible name (its face is a profile control too), so a page-wide query
+    // is ambiguous by design, not by accident.
+    await page
+      .getByRole('row', { name: new RegExp(agent.name) })
+      .getByRole('button', { name: `Open ${agent.name}’s profile` })
+      .click();
 
     await expect(page).toHaveURL(new RegExp(`[?&]profile=${agent.id}`));
     await expect(page.locator('[data-slot="profile"]')).toHaveAttribute('data-member-id', agent.id);
