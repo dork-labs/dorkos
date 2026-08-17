@@ -50,6 +50,15 @@ There is **one Profile**. It is a single component keyed by the roster member id
 - **Another person:** Role · Manages › · Rooms ›. **Bridged person:** Rooms › · First seen.
 - **Your agent:** About › · Runs on ▾ · Personality ▾ · Folder ⧉ ‖ Sessions N · last › · Tasks (N scheduled · next) › · Rooms › ‖ Skills › · Tools & MCP › · Connections › · Instructions (SOUL.md) › · Boundaries (NOPE.md) ›.
 - **Someone else's agent:** About · Runs on · Rooms › — nothing private.
-- **DorkBot:** About 🔒 · Runs on ▾ · Personality 🔒 ‖ Sessions › · Tasks › · Rooms › ‖ Skills › · Tools & MCP ›; kebab: Set as default only.
+- **DorkBot:** About 🔒 · Runs on ▾ · Personality ▾ (amended in execution — see §6) ‖ Sessions › · Tasks › · Rooms › ‖ Skills › · Tools & MCP ›; kebab: Set as default only.
 
 **Pushed pages** all share one top: "‹ Profile" + a small strip (face · name · status). Then a title, then the content owns the full height (Sessions: search + day groups, live one first; Tasks: agent-filtered runs + schedules, presets only when empty; Instructions/Boundaries: full-height editor + Save; Manages: agent list where each row pushes that agent's profile; owner: their profile, chained on the same stack). Motion on push: the portrait shrinks into the strip, list slides left, ~250 ms, position-only, back reverses. Sheet entrance stays 300 ms with the static identity rule. Never a celebration on open.
+
+## 6. Amendments during execution (2026-08-16)
+
+- **DorkBot's Personality is a control, not a locked row.** Onboarding writes DorkBot's personality and the server's `SYSTEM_PROTECTED_FIELDS` allows `traits`; locking it in the profile broke that promise. Amended (W3.1): Personality on DorkBot is `pick ▾` like a managed agent's; About and the face stay locked ("DorkBot's name, face and description are part of DorkOS").
+- **"Replying to you in #team" is dropped** — `activity.working` records a claim in a room, never whom the turn addresses; the sentence reads "Working in #team · 2 min".
+- **No Message button on people or Telegram guests, and no About/Message on someone else's agent** — no target exists (spec §8 overrides `design/05-states-final.html`, which predates that decision).
+- **Rooms link is `/channels?id=`** (spec §1.5 said `?room=`).
+- **Labels:** accessible names stay `Open {name}’s profile` (repo majority; e2e asserts it; "Open your profile" for yourself); visible menu items and buttons say **View profile**.
+- **The injected-prompt preview survives** on the Instructions/Boundaries pages as a closed "Preview what {name} will see" (spec §0: every capability survives).

@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (2026-08-08) — implemented across the Team, Identity & Profiles programme (DOR-966). (auto-extracted from spec: identity-consistency)
 
+**Amended by 260816-223619 (2026-08-16, profile-unification):** the drawer is now one Profile with two homes (docked on `/session`, sheet elsewhere) and editing your own identity happens in place on its rows — Settings › Profile stays only as a second door. Still governing from this ADR: the `?profile=<id>` address, one component for every identity kind, `ResponsiveSheet`, and the hover card's `onViewProfile` callback prop.
+
 ## Context
 
 `IdentityHoverCard` ships with a "View profile" footer marked **soon**, because there was nowhere to
