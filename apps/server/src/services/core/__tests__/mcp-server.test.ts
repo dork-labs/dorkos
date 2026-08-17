@@ -78,10 +78,12 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedVa
 
 import { createExternalMcpServer } from '../mcp-server.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import { NotifyBudget } from '../../relay/notify-budget.js';
 
 /** Create minimal deps with only required fields */
 function createMinimalDeps(): McpToolDeps {
   return {
+    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],
