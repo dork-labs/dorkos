@@ -73,9 +73,13 @@ export interface EventStreamHandle {
 export function attachEventStream(
   server: http.Server,
   sessionId: string,
-  opts: { until?: string; maxMs?: number } = {}
+  opts: { until?: string | ((raw: string) => boolean); maxMs?: number } = {}
 ): EventStreamHandle {
   const until = opts.until ?? 'turn_end';
+  // A predicate, for the cases one event name cannot express: a connection that
+  // has to survive TWO turns cannot close on the first `turn_end` (DOR-1262).
+  const reached =
+    typeof until === 'function' ? until : (raw: string) => raw.includes(`event: ${until}`);
   const maxMs = opts.maxMs ?? 4000;
   const addr = server.address();
   const port = typeof addr === 'object' && addr ? addr.port : 0;
@@ -114,7 +118,7 @@ export function attachEventStream(
         res.on('data', (chunk: string) => {
           raw += chunk;
           if (raw.includes('event: snapshot')) signalReady();
-          if (raw.includes(`event: ${until}`)) finish(200);
+          if (reached(raw)) finish(200);
         });
         res.on('end', () => finish(200));
       }
@@ -139,7 +143,8 @@ export function attachEventStream(
  *
  * @param server - The file's one listening server (see {@link attachEventStream}).
  * @param sessionId - Session id for the stream path.
- * @param opts.until - The `event:` name that closes the stream.
+ * @param opts.until - The `event:` name that closes the stream, or a predicate
+ *   over the raw SSE text for a stop condition no single name expresses.
  * @param opts.maxMs - Safety cap so a missing terminator can't hang the test.
  */
 export function openEventStream(

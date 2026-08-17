@@ -1142,10 +1142,11 @@
       "created": "2026-06-10",
       "extractedFrom": "chat-stream-reconnection",
       "specSlug": "chat-stream-reconnection",
-      "lastVerified": "2026-08-06",
+      "lastVerified": "2026-08-16",
       "affects": [
         "apps/client/src/layers/features/chat/model/use-session-submit.ts",
-        "apps/client/src/layers/entities/session/model/session-stream-store.ts"
+        "apps/client/src/layers/entities/session/model/session-stream-store.ts",
+        "apps/server/src/services/session/session-state-projector.ts"
       ]
     },
     {

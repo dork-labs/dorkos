@@ -1664,6 +1664,64 @@ export class SessionStateProjector {
 const projectors = new Map<string, SessionStateProjector>();
 
 /**
+ * Retired session id → the id its projector actually lives under now (DOR-1262).
+ *
+ * A brand-new session's 202 carries the REQUEST UUID whenever the runtime
+ * assigns its canonical id after the response has already gone out, so a client
+ * can legitimately hold an id this registry no longer keys anything by. Every
+ * OTHER layer already accepts that id — the runtime resolves it, the routes
+ * accept it, the lock follows it — and the projector registry was the one place
+ * that did not: it minted a FRESH EMPTY projector, splitting the session in two
+ * and (once the runtime re-announced the canonical id) terminating the live
+ * subscribers of the real one.
+ *
+ * This is not the indefinite dual-id aliasing ADR-0267 rejected. The entry is
+ * in-memory, one-directional (a retired id points at the canonical one, never
+ * the reverse), born from the same one-time move {@link rekeyProjector} already
+ * performs, and cleared when the canonical projector is disposed — so a retired
+ * id never outlives the session that retired it, and there is still exactly ONE
+ * projector per session.
+ *
+ * Flat by construction: {@link recordProjectorRedirect} collapses chains at
+ * write time, so A→B→C resolves in one hop and every value is a live key rather
+ * than another retired id.
+ */
+const projectorRedirects = new Map<string, string>();
+
+/**
+ * The id `sessionId`'s projector is registered under — itself, unless the id was
+ * retired by a rekey, in which case the canonical id it moved to.
+ */
+function resolveProjectorId(sessionId: string): string {
+  return projectorRedirects.get(sessionId) ?? sessionId;
+}
+
+/**
+ * Record that `retiredId`'s projector now lives under `canonicalId`, keeping the
+ * map flat: the new canonical id can no longer be a retired key, and anything
+ * that pointed at the id being retired is re-pointed at its destination (so a
+ * second rekey collapses A→B→C into A→C rather than growing a chain).
+ */
+function recordProjectorRedirect(retiredId: string, canonicalId: string): void {
+  projectorRedirects.delete(canonicalId);
+  for (const [from, to] of projectorRedirects) {
+    if (to === retiredId) projectorRedirects.set(from, canonicalId);
+  }
+  projectorRedirects.set(retiredId, canonicalId);
+}
+
+/**
+ * Drop every retired id pointing at `canonicalId`. Called wherever that
+ * projector leaves the registry, so a redirect can never outlive the projector
+ * it points at (and the map stays bounded by the live fleet, not by history).
+ */
+function forgetProjectorRedirects(canonicalId: string): void {
+  for (const [from, to] of projectorRedirects) {
+    if (to === canonicalId) projectorRedirects.delete(from);
+  }
+}
+
+/**
  * Durable session-event store for LOG-BACKED runtimes (DOR-189), injected once
  * at boot. `undefined` until wired — and in unit tests / embedded hosts without
  * a Db — in which case persistence is a no-op and history degrades to the
@@ -1694,13 +1752,21 @@ export function getSessionEventStore(): SessionEventStore | undefined {
  * entry that now belongs to a DIFFERENT projector would orphan live state.
  */
 function disposeProjectorIfCurrent(sessionId: string, instance: SessionStateProjector): void {
-  if (projectors.get(sessionId) === instance) projectors.delete(sessionId);
+  if (projectors.get(sessionId) !== instance) return;
+  projectors.delete(sessionId);
+  forgetProjectorRedirects(sessionId);
 }
 
 /**
  * Return the single {@link SessionStateProjector} for a session, creating it on
  * first access. Task #4 (adapter) and task #5 (route) obtain the same instance
  * for a session through this registry.
+ *
+ * A RETIRED id resolves to the projector it was rekeyed to and never mints a
+ * second one ({@link projectorRedirects}) — a client that only ever saw the
+ * request UUID (the 202 for a brand-new session hands out nothing else when the
+ * runtime names the session late) gets the session's one live projector, not an
+ * empty duplicate.
  *
  * @param sessionId - DorkOS session id.
  * @param cwd - The session's working directory, when the caller knows it.
@@ -1718,10 +1784,11 @@ export function getOrCreateProjector(
   cwd?: string,
   opts?: { persist?: ProjectorPersistenceMode }
 ): SessionStateProjector {
-  let projector = projectors.get(sessionId);
+  const key = resolveProjectorId(sessionId);
+  let projector = projectors.get(key);
   if (!projector) {
-    projector = new SessionStateProjector(sessionId);
-    projectors.set(sessionId, projector);
+    projector = new SessionStateProjector(key);
+    projectors.set(key, projector);
   }
   if (cwd !== undefined && projector.cwd === undefined) projector.cwd = cwd;
   if (opts?.persist !== undefined && sessionEventStore !== undefined) {
@@ -1781,26 +1848,37 @@ export function listProjectorDebugCounters(): Array<{ sessionId: string } & Sess
  * and drop only live projectors — never to allocate a throwaway for an id that
  * was never streamed.
  *
+ * Redirect-aware like {@link getOrCreateProjector}: a retired id answers with
+ * the projector it was rekeyed to, so a caller holding the pre-rekey id reads
+ * the session's real state instead of `undefined` (DOR-1262).
+ *
  * @param sessionId - DorkOS session id.
  */
 export function peekProjector(sessionId: string): SessionStateProjector | undefined {
-  return projectors.get(sessionId);
+  return projectors.get(resolveProjectorId(sessionId));
 }
 
 /**
  * Drop a session's projector (e.g. on session eviction). A later
  * {@link getOrCreateProjector} for the same id yields a fresh instance.
  *
+ * Takes either of the session's ids: a retired one disposes the projector it
+ * points at, and every redirect onto that projector goes with it — a session
+ * being disposed under one of its ids must not leave the other half alive.
+ *
  * @param sessionId - DorkOS session id.
  */
 export function disposeProjector(sessionId: string): void {
+  const key = resolveProjectorId(sessionId);
   // Before the entry goes: an armed timer would otherwise fire on an instance
   // nothing can reach and announce a session that is gone.
-  projectors.get(sessionId)?.cancelTimers();
-  projectors.delete(sessionId);
+  projectors.get(key)?.cancelTimers();
+  projectors.delete(key);
+  forgetProjectorRedirects(key);
   // Drop the session's DevTools capture buffer alongside its projector — the
-  // preview is gone, and the buffer must not outlive the session (DOR-213).
-  devtoolsCaptureStore.dropSession(sessionId);
+  // preview is gone, and the buffer must not outlive the session (DOR-213). The
+  // buffer moved to the canonical id on the rekey, so it is dropped by that id.
+  devtoolsCaptureStore.dropSession(key);
 }
 
 /**
@@ -1823,27 +1901,45 @@ export function disposeProjector(sessionId: string): void {
  * across the rekey with no interruption — the move only changes how a FUTURE
  * `getOrCreateProjector`/`getSessionSnapshot` resolves the id.
  *
- * Edge case: if a projector already exists under `newId` (normally impossible
- * for a brand-new session — the canonical id has never been streamed before),
- * the ACTIVE turn's instance (`oldId`) wins and replaces the stale `newId`
- * entry, with a warning. Dropping the active turn's instance would orphan the
- * in-flight feed; the pre-existing `newId` projector has no active turn, so it
- * is the safer one to discard. The displaced instance is
- * {@link SessionStateProjector.terminate}d rather than merely dropped (DOR-782):
- * once it is off the registry nothing can ingest into it, so its live
- * subscribers would otherwise sit on an open `/events` connection receiving
- * only keepalives, forever. Ending their streams sends them through their
- * normal reconnect onto the winner.
+ * The move leaves a REDIRECT behind ({@link projectorRedirects}): `oldId` keeps
+ * resolving to this projector for as long as it lives, so a client, an API
+ * caller or a second trigger that still holds the retired id reaches the live
+ * session instead of minting an empty duplicate beside it (DOR-1262). Callers
+ * may therefore pass either id here too — a rekey announced under an already
+ * retired id moves whatever that id resolves to.
  *
- * No-op when `oldId === newId` (an existing session whose id never changes) or
- * when no projector is registered under `oldId`.
+ * Edge case: if a projector already exists under `newId`, the ACTIVE turn's
+ * instance wins and replaces the stale `newId` entry, with a warning. Dropping
+ * the active turn's instance would orphan the in-flight feed; the pre-existing
+ * `newId` projector has no active turn, so it is the safer one to discard. The
+ * displaced instance is {@link SessionStateProjector.terminate}d rather than
+ * merely dropped (DOR-782): once it is off the registry nothing can ingest into
+ * it, so its live subscribers would otherwise sit on an open `/events`
+ * connection receiving only keepalives, forever. Ending their streams sends them
+ * through their normal reconnect onto the winner. This branch is DEFENSIVE and
+ * no longer reachable by the path that made it fire in practice: a second turn
+ * triggered under the retired id used to mint a fresh projector there, and the
+ * runtime's next re-announce of the canonical id then killed the real
+ * projector's live subscribers (DOR-1262). The redirect removes both halves —
+ * the retired id cannot mint, and re-announcing a move that already happened
+ * resolves to `newId` and returns below.
+ *
+ * No-op when `oldId === newId` (an existing session whose id never changes),
+ * when `oldId` already resolves to `newId` (the same move announced twice), or
+ * when no projector is registered under it.
  *
  * @param oldId - The id the projector is currently registered under (the request UUID).
  * @param newId - The canonical id to re-key it to.
  */
 export function rekeyProjector(oldId: string, newId: string): void {
   if (oldId === newId) return;
-  const projector = projectors.get(oldId);
+  // Everything below works on the id the projector ACTUALLY lives under, so a
+  // rekey announced under an already-retired id chains (A→B then A→C moves B to
+  // C) rather than silently doing nothing, and the durable rows/observers below
+  // are told about the move that really happened.
+  const fromId = resolveProjectorId(oldId);
+  if (fromId === newId) return;
+  const projector = projectors.get(fromId);
   if (!projector) return;
   const displaced = projectors.get(newId);
   if (displaced !== undefined) {
@@ -1852,16 +1948,17 @@ export function rekeyProjector(oldId: string, newId: string): void {
     // End their streams so their clients reconnect onto the winner (DOR-782).
     const endedSubscribers = displaced.terminate();
     logger.warn('[SessionStateProjector] rekey target already has a projector; active turn wins', {
-      oldId,
+      oldId: fromId,
       newId,
       endedSubscribers,
     });
   }
   projectors.set(newId, projector);
-  projectors.delete(oldId);
+  projectors.delete(fromId);
+  recordProjectorRedirect(fromId, newId);
   // Carry any DevTools capture buffer across the same rekey so a preview opened
   // under the request UUID keeps feeding the canonical session (DOR-213).
-  devtoolsCaptureStore.rekeySession(oldId, newId);
+  devtoolsCaptureStore.rekeySession(fromId, newId);
   // Carry the DURABLE rows too, or every permission decision made before the
   // rename stops existing. Rows key by the id held at flush time and readers
   // ask one id, so a session renamed after it has turns behind it would leave
@@ -1870,30 +1967,30 @@ export function rekeyProjector(oldId: string, newId: string): void {
   // flushed nothing); the SECOND does, and the SDK issues one on a resume.
   // Failure costs the older receipts, never the rename.
   try {
-    sessionEventStore?.rekeySession(oldId, newId);
+    sessionEventStore?.rekeySession(fromId, newId);
     // The queue moves on the same beat, and it is the half that CANNOT be lost:
     // a person is told their message was accepted, and a row left behind at the
     // pre-rename id is invisible to every window and to the dispatcher, so their
     // words would evaporate on the session's very first turn. One call site,
     // beside the receipts, because both are "durable rows keyed by session id".
-    getMessageQueueStore()?.rekeySession(oldId, newId);
+    getMessageQueueStore()?.rekeySession(fromId, newId);
   } catch (err) {
     logger.warn('[SessionStateProjector] durable rows not carried across rekey', {
-      oldId,
+      oldId: fromId,
       newId,
       error: err instanceof Error ? err.message : String(err),
     });
   }
-  // Re-announce under the canonical id, carrying the request UUID as retired:
-  // transitions broadcast before the rekey landed in client stores under the
-  // UUID, and no session_removed will ever fire for it — without the retire
+  // Re-announce under the canonical id, carrying the id it just left as retired:
+  // transitions broadcast before the rekey landed in client stores under that
+  // id, and no session_removed will ever fire for it — without the retire
   // signal, a pre-rekey 'streaming' would pin agent-row liveness forever.
   projector.adoptSessionId(newId);
-  notifyStatusChange(projector, oldId);
+  notifyStatusChange(projector, fromId);
   // Notify id-keyed subsystems that hold their own per-session state (e.g. the
   // connector attach set) so they can move it across the same rekey. Kept as an
   // observer list so this session-core module never imports those domains.
-  for (const listener of rekeyListeners) listener(oldId, newId);
+  for (const listener of rekeyListeners) listener(fromId, newId);
 }
 
 /** A subscriber notified when a session reaches a turn boundary. */
