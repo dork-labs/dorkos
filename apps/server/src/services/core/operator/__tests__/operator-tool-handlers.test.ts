@@ -43,6 +43,7 @@ vi.mock('../../../session/index.js', () => ({ listRecentSessions: mocks.listRece
 
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { ActivityService } from '../../../activity/activity-service.js';
+import { NotifyBudget } from '../../../relay/notify-budget.js';
 import {
   createUpdateAgentHandler,
   createActivityListHandler,
@@ -61,6 +62,7 @@ function parsePayload<T = unknown>(result: OperatorToolResult): T {
 /** Build a deps bundle populated only with the fields a given test exercises. */
 function buildDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
   return {
+    notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/tmp/test',
     ...overrides,

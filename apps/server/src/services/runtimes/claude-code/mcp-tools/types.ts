@@ -7,6 +7,7 @@ import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BridgeStore } from '../../../relay/chat-bridge/bridge-store.js';
 import type { TraceStore } from '../../../relay/trace-store.js';
 import type { NotifyDmDeps } from '../../../relay/notify-dm.js';
+import type { NotifyBudget } from '../../../relay/notify-budget.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ExtensionManager } from '../../../extensions/extension-manager.js';
 import type { RuntimeRegistry } from '../../../core/runtime-registry.js';
@@ -49,6 +50,21 @@ export interface McpToolDeps {
    * it did before, rather than pretending.
    */
   notifyDm?: NotifyDmDeps;
+  /**
+   * How many proactive notes each agent has left this hour (DOR-1265) — the
+   * mechanism that replaced `relay_notify_user`'s approval card once an
+   * identified agent stopped being asked for one.
+   *
+   * **Required, unlike every other collaborator here.** The others are optional
+   * because their subsystem can be switched off; a bound cannot be, and one that
+   * can go missing by omission is not a bound. It is also the reason this cannot
+   * be constructed alongside the tool handlers: the `dorkos` tool server is
+   * rebuilt per session, so a budget with the handlers' lifetime would be a
+   * ceiling an agent resets by opening a new session. This object is built once
+   * at boot and handed to every session (`index.ts`), which is the same lifetime
+   * `RoomService` gives {@link ReactionBudget}.
+   */
+  notifyBudget: NotifyBudget;
   /** Optional ExtensionManager — undefined when extensions are disabled */
   extensionManager?: ExtensionManager;
   /**

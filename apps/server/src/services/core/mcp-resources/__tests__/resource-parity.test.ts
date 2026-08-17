@@ -26,10 +26,12 @@ import { createDorkOsToolServer } from '../../../runtimes/claude-code/mcp-tools/
 import { createExternalMcpServer } from '../../mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-registry.js';
 import { DORKOS_RESOURCE_URIS } from '../index.js';
+import { NotifyBudget } from '../../../relay/notify-budget.js';
 
 /** A hermetic `McpToolDeps` carrying only what the resources actually read. */
 function makeDeps(): McpToolDeps {
   return {
+    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: async () => [],
     } as unknown as McpToolDeps['transcriptReader'],
