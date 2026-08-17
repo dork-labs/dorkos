@@ -198,9 +198,17 @@ export async function resolveLaunch(args: {
   // than text in the model's context and the transcript. Yields `{}` when the
   // working directory hosts no registered agent, leaving the session
   // unattributed exactly as before.
+  //
+  // The name it is minted under is the one a PERSON reads, never the slug.
+  // `agents.name` is the address an `@` reaches; `display_name` is the label,
+  // and the token's label is replayed onto the agent's author row every time it
+  // uses a room tool (`room-capabilities.ts` → `AuthorRegistry.resolveAgent`).
+  // Minting under the slug therefore renamed a live agent to `docs-writer`
+  // mid-conversation, in every message and in the member list (DOR-1264).
+  const agentDisplayName = meshAgent?.displayName ?? meshAgent?.name;
   const agentTokenEnv = await resolveAgentTokenEnv(
     meshAgent ? effectiveCwd : undefined,
-    meshAgent?.name
+    agentDisplayName
   );
 
   // Which Claude Code account this turn runs and BILLS on (spec
@@ -440,7 +448,10 @@ export async function resolveLaunch(args: {
   const agentIdentity: AgentIdentityPin | undefined = meshAgent
     ? {
         agentPath: effectiveCwd,
-        displayName: meshAgent.name,
+        // The same string the mint above was given: the pin describes who this
+        // launch was minted FOR, so a second name here would be a fingerprint
+        // of something that never happened.
+        displayName: agentDisplayName,
         attributed: Object.keys(agentTokenEnv).length > 0,
       }
     : undefined;

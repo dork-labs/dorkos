@@ -557,10 +557,14 @@ export class CodexRuntime implements AgentRuntime {
     // credential for the `dorkos` commands the agent runs rather than text in its
     // context and transcript (spec `agent-trust` §3.1). `{}` leaves the turn
     // unattributed, exactly as before.
+    //
+    // Minted under the name a PERSON reads, never the slug: the token's label
+    // is replayed onto the agent's author row by every room tool it calls, so
+    // the slug there renames a live agent mid-conversation (DOR-1264).
     const meshAgent = this.meshCore?.getByPath(cwd);
     const agentTokenEnv = await resolveAgentTokenEnv(
       meshAgent ? cwd : undefined,
-      meshAgent?.name ?? undefined
+      meshAgent?.displayName ?? meshAgent?.name
     );
 
     // The agent's ENABLED managed MCP servers for this cwd, injected inline via

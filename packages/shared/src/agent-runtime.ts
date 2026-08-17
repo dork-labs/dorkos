@@ -186,7 +186,19 @@ export type McpAppServerConnection =
  * MeshCore satisfies this structurally — no `implements` clause needed.
  */
 export interface AgentRegistryPort {
-  getByPath(cwd: string): { id: string; name?: string } | undefined;
+  /**
+   * The agent registered at a working directory, or `undefined` when none is.
+   *
+   * **`name` and `displayName` are different strings and are not
+   * interchangeable.** `name` is the slug — the address somebody types after an
+   * `@` — and `displayName` is what a person reads (`docs-writer` against
+   * `Docs Writer`). A caller that is labelling, rendering or attributing asks
+   * for `displayName ?? name`; the slug alone belongs only where an address is
+   * wanted. The port carried no display name at all until DOR-1264, which is
+   * why both runtimes minted identity tokens under the slug and every room
+   * message an agent wrote through a tool renamed it to one.
+   */
+  getByPath(cwd: string): { id: string; name?: string; displayName?: string } | undefined;
   updateLastSeen(agentId: string, event: string): void;
   listWithPaths(): Array<{
     id: string;

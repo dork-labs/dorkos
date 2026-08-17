@@ -64,11 +64,24 @@ vi.mock('@openai/codex-sdk', () => ({
   },
 }));
 
-/** A mesh registry that reports exactly one agent, rooted at `agentPath`. */
-function meshWithAgent(agentPath: string): AgentRegistryPort {
+/**
+ * A mesh registry that reports exactly one agent, rooted at `agentPath`.
+ *
+ * The default is the pair a real manifest carries and the reason DOR-1264
+ * existed: a SLUG that addresses the agent and a DISPLAY NAME that renders it,
+ * two different strings. A fake that gave them the same value could not tell
+ * which one the runtime minted its token under.
+ */
+function meshWithAgent(
+  agentPath: string,
+  agent: { name: string; displayName?: string } = {
+    name: 'researcher',
+    displayName: 'Researcher',
+  }
+): AgentRegistryPort {
   return {
     getByPath: (cwd: string) =>
-      cwd === agentPath ? { id: '01JAGENT0000000000000000', name: 'Researcher' } : undefined,
+      cwd === agentPath ? { id: '01JAGENT0000000000000000', ...agent } : undefined,
     listWithPaths: () => [],
     updateLastSeen: () => {},
   } as unknown as AgentRegistryPort;
@@ -182,6 +195,33 @@ describe('what a Codex turn carries', () => {
     expect(identity?.agentPath).toBe(agentDir);
     expect(identity?.displayName).toBe('Researcher');
     expect(identity?.tierCeiling).toBe('destructive');
+  });
+
+  it('mints under the name a person reads, never the agent addressing slug', async () => {
+    const runtime = makeRuntime();
+    await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
+
+    const env = sdkMocks.constructorOptions.at(-1)?.env as Record<string, string>;
+    const identity = await initAgentIdentityService(db).resolve(env[AGENT_TOKEN_ENV_VAR]!);
+
+    // The token's label is replayed onto this agent's author row every time it
+    // uses a room tool (`AuthorRegistry.resolveAgent`), so a token minted under
+    // `researcher` renames it in every message it writes and in the member list
+    // (DOR-1264).
+    expect(identity?.displayName).not.toBe('researcher');
+    expect(identity?.displayName).toBe('Researcher');
+  });
+
+  it('falls back to the slug for an agent that has no display name of its own', async () => {
+    const runtime = makeRuntime({ mesh: meshWithAgent(agentDir, { name: 'researcher' }) });
+    await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
+
+    const env = sdkMocks.constructorOptions.at(-1)?.env as Record<string, string>;
+    const identity = await initAgentIdentityService(db).resolve(env[AGENT_TOKEN_ENV_VAR]!);
+
+    // Nothing is invented: an agent whose manifest names no display name is
+    // honestly called by its slug, which is also the only string there is.
+    expect(identity?.displayName).toBe('researcher');
   });
 
   it('keeps inheriting the parent environment when it adds the token', async () => {

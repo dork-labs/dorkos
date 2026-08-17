@@ -50,9 +50,12 @@ describe('POST /api/test/agent-token', () => {
     // The same shape the two production runtimes consult before they let
     // `resolveAgentTokenEnv` mint anything (`launch-resolver.ts`,
     // `codex-runtime.ts`): a path lookup against the mesh registry.
+    // The slug and the display name are DIFFERENT strings, exactly as a real
+    // manifest has them: `ana` addresses the agent, `Ana` renders it. A fixture
+    // where the two agree could not tell which one the seam minted (DOR-1264).
     app.locals.meshCore = {
       getByPath: (projectPath: string) =>
-        projectPath === REGISTERED ? { name: 'Ana' } : undefined,
+        projectPath === REGISTERED ? { name: 'ana', displayName: 'Ana' } : undefined,
     };
     app.use('/api/test', testControlRouter);
   });
@@ -73,7 +76,10 @@ describe('POST /api/test/agent-token', () => {
     const row = db.select().from(agentIdentityTokens).all()[0]!;
     expect(row.agentPath).toBe(REGISTERED);
     // The manifest's name, not one the caller asked for — a caller-supplied
-    // name would let a real agent's token carry a label nobody gave it.
+    // name would let a real agent's token carry a label nobody gave it — and
+    // the DISPLAY name rather than the slug, because a room attributes every
+    // message an agent writes to whatever label its token carries.
+    expect(row.displayName).not.toBe('ana');
     expect(row.displayName).toBe('Ana');
     // NOT the `destructive` default. `act` covers the rooms verbs a test drives
     // (`post_to_room`, `react_to_room_entry`) and refuses everything above them.

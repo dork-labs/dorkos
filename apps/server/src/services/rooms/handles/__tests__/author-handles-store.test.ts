@@ -206,7 +206,15 @@ describe('deriving a handle at mint', () => {
     const first = registry.resolveAgent(ANA_PATH, 'Ana');
     expect(first.handle).toBe('ana');
 
-    db.update(agents).set({ name: 'Ana The Second' }).where(eq(agents.id, 'ULID_ANA')).run();
+    // Both columns, because a manifest rename moves both: `name` addresses the
+    // agent and `display_name` renders it. Moving only `name` would stage a
+    // state no manifest produces, and `AuthorRegistry` now (correctly) declines
+    // to overwrite a display name with a slug the manifest contradicts
+    // (DOR-1264).
+    db.update(agents)
+      .set({ name: 'Ana The Second', displayName: 'Ana The Second' })
+      .where(eq(agents.id, 'ULID_ANA'))
+      .run();
     const again = registry.resolveAgent(ANA_PATH, 'Ana The Second');
 
     // The mesh reconciler rebuilds `agents` from disk every five minutes, so a
