@@ -981,6 +981,28 @@ export interface AgentRuntime {
   ): Promise<RuntimeDeliveryResult>;
 
   /**
+   * Whether a steer sent to THIS session right now could actually join its live
+   * turn — the per-session half of the per-runtime {@link
+   * RuntimeCapabilities.supportsSteer}.
+   *
+   * The two are different questions, and conflating them is how a person gets
+   * offered a cut-in that silently becomes an ordinary follow-up (DOR-1268).
+   * `supportsSteer` says the ADAPTER can steer; this says whether the mechanism
+   * that does it is actually under this session. Claude Code is the case that
+   * forced the split: steering rides the persistent pump's held input stream, so
+   * a session on the resume path — how a default install ships — has nothing to
+   * push into, however capable the adapter is.
+   *
+   * Optional: a runtime whose steering is uniform across its sessions omits it,
+   * and every consumer reads the absence as `supportsSteer`. It answers about
+   * the MECHANISM, not about the moment: `true` on a session with no turn open
+   * means "a turn here would be joinable", not "a turn is open".
+   *
+   * @param sessionId - Session to report on; either id a caller might hold
+   */
+  canSteerSession?(sessionId: string): boolean;
+
+  /**
    * How warm this session's backing process is, for a runtime that keeps one
    * alive between turns.
    *

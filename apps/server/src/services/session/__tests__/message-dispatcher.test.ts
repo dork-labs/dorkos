@@ -1023,6 +1023,103 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  it('says a running turn could not be joined, rather than the silent session-idle (DOR-1268)', async () => {
+    // The reported failure: claude-code declares `supportsSteer` for the
+    // adapter, but a session on the resume path holds no process to push into.
+    // The runtime answers `no-open-turn` for a turn that is plainly running, and
+    // reporting that as `session-idle` — the one downgrade the composer stays
+    // quiet about — told the person their cut-in landed when it did not.
+    withCapabilities({ supportsSteer: true });
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await settle();
+    expect(projectorStatus()).toBe('streaming');
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'no-open-turn' });
+
+    const result = await send('course-correct', { disposition: 'steer' });
+
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'steer',
+      applied: 'queue',
+      degradedBecause: 'not-steerable',
+    });
+    // It really did go to the back of the line, which is why staying quiet was
+    // a lie: nothing ran early.
+    expect(result.queued).toBe(true);
+    expect(listQueuedMessages(session)).toHaveLength(1);
+
+    first.open();
+    await settle();
+  });
+
+  it('still says session-idle when the turn ended between the click and the POST', async () => {
+    // The other half of the same fork. `session-idle` keeps its meaning exactly
+    // — the turn is over, the message runs now, nothing was lost — and the
+    // session's own projection is what tells the two apart.
+    withCapabilities({ supportsSteer: true });
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await settle();
+    first.open();
+    await settle();
+    expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull();
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'no-open-turn' });
+
+    const result = await send('course-correct', { disposition: 'steer' });
+    await settle();
+
+    expect(result.outcome.degradedBecause).toBe('session-idle');
+    expect(result.queued).toBe(false);
+  });
+
+  it('publishes whether the session can be steered, once, before the ladder runs', async () => {
+    // The composer offers Steer on this value (DOR-1268), so it has to be on the
+    // session's own status before any turn a person could steer is open. The
+    // fake implements no `canSteerSession`, so the runtime's static flag stands
+    // — which is exactly the fallback a uniform runtime relies on.
+    withCapabilities({ supportsSteer: false });
+    runtime.withScenarios([quickTurn(), quickTurn()]);
+
+    await send('first');
+    await settle();
+    const projector = getOrCreateProjector(session);
+    expect(projector.getStatus().steerable).toBe(false);
+
+    // A second message re-asks and finds the same answer, so it announces
+    // nothing: one event per session, not one per message.
+    await send('second');
+    await settle();
+    const announcements = projector
+      .replayFrom(0)
+      .filter((e) => e.type === 'status_change' && e.status.steerable !== undefined);
+    expect(announcements).toHaveLength(1);
+  });
+
+  it("re-publishes steerability when the runtime's per-session answer changes", async () => {
+    // Turning the persistent-session setting on must reach an open window at the
+    // session's next message rather than only at its next reload.
+    withCapabilities({ supportsSteer: true });
+    const canSteerSession = vi.fn(() => false);
+    Object.assign(runtime, { canSteerSession });
+    runtime.withScenarios([quickTurn(), quickTurn()]);
+
+    await send('first');
+    await settle();
+    const projector = getOrCreateProjector(session);
+    // The per-SESSION answer wins over the runtime's static `true`.
+    expect(projector.getStatus().steerable).toBe(false);
+
+    canSteerSession.mockReturnValue(true);
+    await send('second');
+    await settle();
+    expect(projector.getStatus().steerable).toBe(true);
+
+    delete (runtime as { canSteerSession?: unknown }).canSteerSession;
+  });
+
   it('queues a steer behind an open interaction and never fires it into the ask (AC4)', async () => {
     withCapabilities({ supportsSteer: true });
     const first = gate();
@@ -1298,11 +1395,12 @@ describe('deliverSteer — a delivered steer emits one turn_input into the open 
     });
 
     // A cold replay shows it inline, in order, inside the open turn — the steer
-    // sits after the assistant text it followed. (`queue_update` bookkeeping from
-    // the send also rides the stream; it is not part of the turn's transcript.)
+    // sits after the assistant text it followed. (`queue_update` and
+    // `status_change` bookkeeping from the send also ride the stream; neither is
+    // part of the turn's transcript.)
     const turnContent = projector
       .replayFrom(0)
-      .filter((e) => e.type !== 'queue_update')
+      .filter((e) => e.type !== 'queue_update' && e.type !== 'status_change')
       .map((e) => e.type);
     expect(turnContent).toEqual(['turn_start', 'text_delta', 'turn_input']);
     // A mid-turn resume returns only the tail, gap-free: the turn_input's seq is

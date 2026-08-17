@@ -1704,6 +1704,41 @@ export function runtimeConformance(
         }
       });
 
+      it('C7: canSteerSession, where implemented, answers a plain boolean and never outruns supportsSteer', () => {
+        // The per-SESSION half of steering (DOR-1268). Optional: a runtime whose
+        // steering is uniform omits it and its static flag stands. One that
+        // implements it is held to three things, because the composer offers a
+        // cut-in on the strength of this answer.
+        const runtime = makeRuntime();
+        if (runtime.canSteerSession === undefined) return;
+
+        // (1) A session it has never heard of is answerable, not a throw. The
+        // client asks about whatever session is on screen, including one this
+        // process has never dispatched for.
+        const unknown = runtime.canSteerSession(nextSessionId());
+        expect(typeof unknown, 'canSteerSession must answer a boolean for any session id').toBe(
+          'boolean'
+        );
+
+        // (2) So is a session it knows about.
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        const known = runtime.canSteerSession(sessionId);
+        expect(typeof known, 'canSteerSession must answer a boolean for a live session').toBe(
+          'boolean'
+        );
+
+        // (3) It NARROWS the static flag, never widens it. A runtime that cannot
+        // steer at all has no steerable session, and claiming one would put a
+        // Steer in front of a person that the ladder is bound to degrade.
+        if (!declaresSteer(runtime)) {
+          expect(
+            unknown || known,
+            'a runtime declaring supportsSteer: false must report no session as steerable'
+          ).toBe(false);
+        }
+      });
+
       it('C1: a disposition it does not declare is absent or refused as unsupported, never thrown', async () => {
         // The not-declared arm, proven at rest — no open turn needed. Either the
         // method is not there at all (honest ONLY when the runtime declares

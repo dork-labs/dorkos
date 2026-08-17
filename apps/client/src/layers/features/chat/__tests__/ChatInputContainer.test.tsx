@@ -177,6 +177,17 @@ function seedQueue(...contents: string[]) {
   });
 }
 
+/**
+ * Publish the server's per-session answer to "could a message sent now cut into
+ * this session's live turn" — a `status_change` on the durable stream, exactly
+ * as the dispatcher sends it (DOR-1268).
+ */
+function seedSteerable(steerable: boolean) {
+  useSessionStreamStore
+    .getState()
+    .applyEvent('test-session', { seq: 3, type: 'status_change', status: { steerable } });
+}
+
 const baseProps = {
   chatInputRef: createRef<null>(),
   input: '',
@@ -521,6 +532,31 @@ describe('ChatInputContainer — the composer only gets the verbs the runtime ho
     const props = lastChatInputProps();
     expect(props.onSteer).toBeUndefined();
     expect(props.onStage).toBeUndefined();
+  });
+
+  it('withholds Steer when THIS session cannot cut in, however capable the runtime is (DOR-1268)', () => {
+    // claude-code declares steering for the adapter; a session that starts a
+    // fresh agent process per message still has nothing to cut into. Offering
+    // Steer here promised a cut-in and delivered an ordinary follow-up turn.
+    seedSteerable(false);
+    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    const props = lastChatInputProps();
+    expect(props.onSteer).toBeUndefined();
+    // Add context is untouched by this — it needs no open turn to join.
+    expect(props.onStage).toBeInstanceOf(Function);
+  });
+
+  it('offers Steer when the session says it can cut in', () => {
+    seedSteerable(true);
+    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    expect(lastChatInputProps().onSteer).toBeInstanceOf(Function);
+  });
+
+  it('falls back to the runtime flag when the session gives no answer', () => {
+    // A runtime whose steering is uniform across sessions never sets the field.
+    // Reading its silence as "no" would hide a capability that works.
+    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    expect(lastChatInputProps().onSteer).toBeInstanceOf(Function);
   });
 
   it('routes the composer Steer action through the steer delivery, and clears', async () => {

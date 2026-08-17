@@ -1627,6 +1627,9 @@
                   },
                   "lastError": {
                     "$ref": "#/components/schemas/ErrorEvent"
+                  },
+                  "steerable": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -3366,6 +3369,7 @@
         "enum": [
           "unsupported",
           "session-idle",
+          "not-steerable",
           "no-open-turn",
           "pending-interaction"
         ]
@@ -3412,6 +3416,9 @@
           },
           "activity": {
             "$ref": "#/components/schemas/SessionActivity"
+          },
+          "steerable": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -9032,6 +9039,9 @@
                             },
                             "lastError": {
                               "$ref": "#/components/schemas/ErrorEvent"
+                            },
+                            "steerable": {
+                              "type": "boolean"
                             }
                           }
                         }

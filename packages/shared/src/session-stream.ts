@@ -222,6 +222,24 @@ export const SessionStatusSchema = z
      * that outlives its turn is a lie, and a lying verb is worse than none.
      */
     activity: SessionActivitySchema.optional(),
+    /**
+     * Whether a message sent right now could CUT INTO this session's live turn
+     * — the per-session answer the runtime's static `supportsSteer` cannot give
+     * (DOR-1268).
+     *
+     * A runtime can be able to steer and a given session still not be
+     * steerable: Claude Code's steer rides a held process, and a session on the
+     * resume path (how a default install ships) has none to push into. Offering
+     * a cut-in there promised something that could not happen, so the composer
+     * reads this and offers Steer only when it is not `false`.
+     *
+     * ABSENT means "no per-session answer" — fall back to the runtime's
+     * `supportsSteer`. Optional rather than defaulted for the same reason
+     * {@link activity} is: one shape for "we don't know", which every consumer
+     * degrades on. Set by the dispatcher before each message, so it is current
+     * by the time any turn is open to steer.
+     */
+    steerable: z.boolean().optional(),
   })
   .openapi('SessionStatus');
 

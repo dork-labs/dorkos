@@ -60,8 +60,12 @@ describe('createEmbeddedTurnTrigger', () => {
       expect.any(Symbol)
     );
     // The detached turn settles asynchronously — wait for the closing turn_end.
+    // The dispatcher's own `status_change` bookkeeping (whether this session can
+    // be steered) rides the same stream and is not part of the turn.
     await vi.waitFor(() => {
-      const types = (peekProjector(id)?.replayFrom(0) ?? []).map((e) => e.type);
+      const types = (peekProjector(id)?.replayFrom(0) ?? [])
+        .filter((e) => e.type !== 'status_change')
+        .map((e) => e.type);
       expect(types).toEqual(['turn_start', 'text_delta', 'turn_end']);
     });
     const delta = peekProjector(id)
@@ -91,8 +95,11 @@ describe('createEmbeddedTurnTrigger', () => {
 
     expect(result).toMatchObject({ accepted: true, queued: true });
     expect(runtime.sendMessage).not.toHaveBeenCalled();
-    // The projector exists (created before the dispatch) but ingested nothing.
-    expect(peekProjector(id)?.getCursor()).toBe(0);
+    // The projector exists (created before the dispatch) and ingested no TURN —
+    // only the dispatcher's steerability bookkeeping, which every message
+    // announces before it decides anything.
+    const events = peekProjector(id)?.replayFrom(0) ?? [];
+    expect(events.every((e) => e.type === 'status_change')).toBe(true);
   });
 
   it('returns the canonical id when the adapter resolves one mid-turn', async () => {

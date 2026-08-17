@@ -745,6 +745,26 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return this.persistent.steer(sessionId, content, opts);
   }
 
+  /**
+   * @inheritdoc
+   *
+   * Steering here rides the persistent pump's held input stream, so the honest
+   * answer is the same question `dispatch` asks before every message: will this
+   * session's next turn run on a held process? A session already holding one is
+   * steerable whatever the setting says now (turning the opt-in OFF does not
+   * take a warm session back), and a session holding none is steerable only if
+   * the opt-in would give it one. On the resume path — how a default install
+   * ships — the answer is `false`, and `deliverIntoTurn` reports `no-open-turn`
+   * for a turn that is plainly running (DOR-1268).
+   *
+   * Deliberately NOT {@link getSessionWarmth}: warmth is about the process this
+   * instant (`warm` vs `running`), and a steer offered only while a turn is
+   * already open would flicker with the turn rather than describe the session.
+   */
+  canSteerSession(sessionId: string): boolean {
+    return this.persistent.shouldDispatch(sessionId);
+  }
+
   /** @inheritdoc */
   getSessionWarmth(sessionId: string): SessionWarmth {
     return this.pumps.warmth(sessionId);

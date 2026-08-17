@@ -35,6 +35,7 @@ import {
   useSessionChatStore,
   useSessionQueue,
   useSessionRuntime,
+  useSessionSteerable,
   useSessionStreamLifecycle,
   useSessionStreamState,
 } from '@/layers/entities/session';
@@ -184,7 +185,15 @@ export function ChatInputContainer({
   // safe default.
   const sessionRuntime = useSessionRuntime(sessionId);
   const capabilities = useCapabilitiesForRuntime(sessionRuntime);
-  const canSteer = capabilities?.supportsSteer ?? false;
+  // Steer needs BOTH answers, because the runtime's is not the whole truth: a
+  // claude-code session only cuts in when it holds its agent process open
+  // between messages, and a default install does not. Offering Steer on the
+  // strength of the runtime flag alone promised a cut-in and delivered an
+  // ordinary follow-up turn (DOR-1268). The server publishes the per-session
+  // answer on the session's own status; `undefined` means it has none to give,
+  // and the runtime's flag stands.
+  const sessionSteerable = useSessionSteerable(sessionId);
+  const canSteer = (capabilities?.supportsSteer ?? false) && (sessionSteerable ?? true);
   const canAddContext = capabilities?.supportsContextStaging ?? false;
 
   const chatQueue = useChatQueue({
