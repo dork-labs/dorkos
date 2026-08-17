@@ -1088,6 +1088,15 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     const projector = getOrCreateProjector(session);
     expect(projector.getStatus().steerable).toBe(false);
 
+    // BEFORE the turn — the ordering the whole design rests on. A window watching
+    // this session learns it cannot cut in while the turn it would have steered
+    // is still opening, not after. An announcement made later would reach the
+    // composer only once the Steer row had already been offered.
+    expect(projector.replayFrom(0)[0]).toMatchObject({
+      type: 'status_change',
+      status: { steerable: false },
+    });
+
     // A second message re-asks and finds the same answer, so it announces
     // nothing: one event per session, not one per message.
     await send('second');
@@ -1116,8 +1125,10 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     await send('second');
     await settle();
     expect(projector.getStatus().steerable).toBe(true);
-
-    delete (runtime as { canSteerSession?: unknown }).canSteerSession;
+    // No teardown for the stub: the suite's `beforeEach` builds a fresh
+    // `FakeAgentRuntime` for every case, so it cannot outlive this one. A
+    // trailing `delete` here would look like cleanup while being skipped by any
+    // assertion above it that failed.
   });
 
   it('queues a steer behind an open interaction and never fires it into the ask (AC4)', async () => {

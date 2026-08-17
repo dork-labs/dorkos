@@ -35,10 +35,13 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     // be joined, and the message really did go to the back of the line. Staying
     // quiet about that was the lie.
     const notice = queueDowngradeNotice(downgraded('not-steerable'));
-    expect(notice).toBe("Couldn't cut in. Queued as your next message.");
+    expect(notice).toBe("Couldn't cut in. It's waiting in line.");
     expect(notice).not.toMatch(/steer|stage|disposition|degrad|session|runtime/i);
     // And it is NOT the silent one, which is the whole point.
     expect(notice).not.toBeNull();
+    // It claims no POSITION. A steer sent behind two waiting messages lands
+    // third, so "your next message" would be a fresh small lie.
+    expect(notice).not.toMatch(/next message|first|front/i);
   });
 
   it('explains a turn that closed first', () => {

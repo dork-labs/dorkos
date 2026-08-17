@@ -1682,7 +1682,7 @@ export function runtimeConformance(
       });
     });
 
-    describe('dispositions (C1, C2, C3, C6)', () => {
+    describe('dispositions (C1, C2, C3, C6, C7)', () => {
       const declaresSteer = (runtime: AgentRuntime): boolean =>
         runtime.getCapabilities().supportsSteer === true;
       const declaresStage = (runtime: AgentRuntime): boolean =>
@@ -1704,39 +1704,82 @@ export function runtimeConformance(
         }
       });
 
-      it('C7: canSteerSession, where implemented, answers a plain boolean and never outruns supportsSteer', () => {
+      it('C7: canSteerSession tracks the mechanism a steer needs, and never outruns supportsSteer', async (ctx) => {
         // The per-SESSION half of steering (DOR-1268). Optional: a runtime whose
-        // steering is uniform omits it and its static flag stands. One that
-        // implements it is held to three things, because the composer offers a
-        // cut-in on the strength of this answer.
+        // steering is uniform omits it and its static flag stands for every
+        // session. One that implements it is held to the claims below, because
+        // the composer offers a cut-in on the strength of this answer.
         const runtime = makeRuntime();
-        if (runtime.canSteerSession === undefined) return;
+        const canSteerSession = runtime.canSteerSession?.bind(runtime);
+        if (canSteerSession === undefined) {
+          // Reported as a SKIP, not as a pass: an `it` that returns early looks
+          // identical to one that asserted something, and a green tick over zero
+          // assertions is the shape this whole suite exists to refuse.
+          ctx.skip(
+            'this runtime does not implement `canSteerSession`, so its static `supportsSteer` is ' +
+              'the answer for every one of its sessions (see AgentRuntime.canSteerSession)'
+          );
+          return;
+        }
 
-        // (1) A session it has never heard of is answerable, not a throw. The
+        // (1) A session it has never heard of is ANSWERABLE, not a throw. The
         // client asks about whatever session is on screen, including one this
-        // process has never dispatched for.
-        const unknown = runtime.canSteerSession(nextSessionId());
-        expect(typeof unknown, 'canSteerSession must answer a boolean for any session id').toBe(
-          'boolean'
-        );
+        // process has never dispatched for, and a lookup that dereferenced a
+        // missing entry would take the composer down with it.
+        const strangerId = nextSessionId();
+        expect(
+          () => canSteerSession(strangerId),
+          'canSteerSession must answer for a session it has never heard of, not throw'
+        ).not.toThrow();
+        const stranger = canSteerSession(strangerId);
+        expect(typeof stranger, 'canSteerSession must answer a boolean').toBe('boolean');
 
-        // (2) So is a session it knows about.
-        const sessionId = nextSessionId();
-        runtime.ensureSession(sessionId, sessionOpts(runtime));
-        const known = runtime.canSteerSession(sessionId);
-        expect(typeof known, 'canSteerSession must answer a boolean for a live session').toBe(
-          'boolean'
-        );
-
-        // (3) It NARROWS the static flag, never widens it. A runtime that cannot
+        // (2) It NARROWS the static flag, never widens it. A runtime that cannot
         // steer at all has no steerable session, and claiming one would put a
         // Steer in front of a person that the ladder is bound to degrade.
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
         if (!declaresSteer(runtime)) {
           expect(
-            unknown || known,
+            stranger || canSteerSession(sessionId),
             'a runtime declaring supportsSteer: false must report no session as steerable'
           ).toBe(false);
+          return;
         }
+
+        // (3) The answer FOLLOWS THE MECHANISM rather than the adapter — which is
+        // the entire reason the method exists, and the only claim that a constant
+        // cannot satisfy. Checkable exactly where the suite can move a session
+        // between the two states: a runtime holding a process between turns, with
+        // a `warmSession` driver to reach the warm one.
+        if (!warmSession) {
+          expect(
+            runtime.getCapabilities().supportsPersistentSession,
+            'a runtime that implements canSteerSession without holding a process between turns ' +
+              'has no state for the answer to follow — say what varies, or drop the method and ' +
+              'let supportsSteer stand'
+          ).toBe(false);
+          return;
+        }
+
+        const cold = canSteerSession(sessionId);
+        await warmSession(runtime, sessionId);
+        const warm = canSteerSession(sessionId);
+
+        // A session HOLDING the process a steer pushes into is steerable. A
+        // constant `false` fails here.
+        expect(
+          warm,
+          'a session holding this runtime`s process must report steerable — a steer has somewhere to go'
+        ).toBe(true);
+        // And one that holds no process yet has nothing to cut into. A constant
+        // `true` fails here, which is exactly the defect DOR-1268 shipped: the
+        // composer offered a cut-in on a session that could not take one.
+        expect(
+          cold,
+          'a session holding no process cannot report steerable — there is nothing to push into, ' +
+            'and saying otherwise is the promise DOR-1268 was filed for'
+        ).toBe(false);
       });
 
       it('C1: a disposition it does not declare is absent or refused as unsupported, never thrown', async () => {

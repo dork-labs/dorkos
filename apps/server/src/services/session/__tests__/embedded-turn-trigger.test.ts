@@ -97,9 +97,15 @@ describe('createEmbeddedTurnTrigger', () => {
     expect(runtime.sendMessage).not.toHaveBeenCalled();
     // The projector exists (created before the dispatch) and ingested no TURN —
     // only the dispatcher's steerability bookkeeping, which every message
-    // announces before it decides anything.
-    const events = peekProjector(id)?.replayFrom(0) ?? [];
-    expect(events.every((e) => e.type === 'status_change')).toBe(true);
+    // announces once before it decides anything. Asserted as the WHOLE list
+    // rather than as a property of each entry: `[].every(...)` is true, so a
+    // projector that never existed would satisfy the property form and prove
+    // nothing.
+    expect(
+      peekProjector(id)
+        ?.replayFrom(0)
+        .map((e) => e.type)
+    ).toEqual(['status_change']);
   });
 
   it('returns the canonical id when the adapter resolves one mid-turn', async () => {

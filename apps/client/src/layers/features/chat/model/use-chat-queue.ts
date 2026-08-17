@@ -27,17 +27,22 @@ interface UseChatQueueOptions {
    */
   onEnqueue: (content: string) => Promise<boolean>;
   /**
-   * Send the composer's text into the running turn now (steer). Passed ONLY when
-   * the session's runtime can take a message mid-task; omitted, {@link
-   * UseChatQueueReturn.handleSteer} is inert and the host offers no Steer
-   * affordance. Resolves `true` once the server has it, exactly like
-   * {@link onEnqueue}.
+   * Send the composer's text into the running turn now (steer). Resolves `true`
+   * once the server has it, exactly like {@link onEnqueue}.
+   *
+   * This is the DELIVERY, not the affordance, and the two are gated in different
+   * places on purpose. The host passes it whenever it has one to pass; whether a
+   * person is ever OFFERED a steer is decided where the button is rendered, on
+   * the runtime's `supportsSteer` and — since DOR-1268 — on whether this
+   * particular session can be cut into at all. Optional here only so a host with
+   * no steer path at all may omit it, which leaves
+   * {@link UseChatQueueReturn.handleSteer} inert.
    */
   onSteer?: (content: string) => Promise<boolean>;
   /**
    * Add the composer's text as context the agent uses next, without cutting into
-   * the running turn (stage). Passed ONLY when the runtime can take added
-   * context. Same shape and rule as {@link onSteer}.
+   * the running turn (stage). Same shape and same split as {@link onSteer}: this
+   * is the delivery, and the affordance is gated at the render site.
    */
   onStage?: (content: string) => Promise<boolean>;
   /**
@@ -58,9 +63,10 @@ interface UseChatQueueReturn {
   editingIndex: number | null;
   handleQueue: () => void;
   /**
-   * Steer: send the composer's text into the running turn now. Inert when the
-   * runtime cannot steer — the host gates the affordance on the same capability,
-   * so this is never reached without one behind it.
+   * Steer: send the composer's text into the running turn now. Inert when no
+   * `onSteer` was supplied. The host decides separately whether to SHOW a Steer
+   * affordance (runtime capability plus this session's own steerability), so in
+   * practice this is only reachable behind one.
    */
   handleSteer: () => void;
   /** Add context: stage the composer's text for the next turn, without cutting in. */

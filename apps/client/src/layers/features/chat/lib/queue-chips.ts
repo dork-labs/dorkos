@@ -55,7 +55,10 @@ const DOWNGRADE_NOTICE: Record<
   // "It ran immediately" is not a loss, and nobody needs telling about it.
   'session-idle': null,
   unsupported: "Queued. This agent can't take a message mid-task.",
-  'not-steerable': "Couldn't cut in. Queued as your next message.",
+  // Deliberately not "queued as your next message": it lands BEHIND whatever is
+  // already waiting, and naming a position the chip cannot know would be a
+  // second small lie in the sentence written to stop the first one.
+  'not-steerable': "Couldn't cut in. It's waiting in line.",
   'no-open-turn': 'Queued. The task had already finished.',
   'pending-interaction': 'Queued. The agent needs your answer first.',
 };
