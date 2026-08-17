@@ -1,9 +1,9 @@
 import { createContext, useContext, useMemo } from 'react';
 import { Streamdown } from 'streamdown';
-import type { LinkSafetyModalProps } from 'streamdown';
+import type { Components } from 'streamdown';
 import { cn, DEFAULT_TEXT_EFFECT, resolveStreamdownAnimation } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
-import { LinkSafetyModal, MarkdownErrorBoundary } from '@/layers/shared/ui';
+import { MarkdownErrorBoundary, MarkdownLink } from '@/layers/shared/ui';
 import { WidgetFence } from '@/layers/features/gen-ui';
 import 'streamdown/styles.css';
 
@@ -27,10 +27,15 @@ interface StreamingTextProps {
   isLatestWidgetMessage?: boolean;
 }
 
-const linkSafety = {
-  enabled: true,
-  renderModal: (props: LinkSafetyModalProps) => <LinkSafetyModal {...props} />,
-};
+/**
+ * Chat always confirms an external link before it opens (DOR-1272): every
+ * `<a>` Streamdown renders — markdown links, autolinks, bare URLs — goes
+ * through {@link MarkdownLink} instead of Streamdown's own anchor, so it
+ * stays a real `<a href>` (hover preview, cmd/middle-click into a tab, "Copy
+ * Link Address" all keep working) while an unmodified left click still opens
+ * the shared link-safety modal first.
+ */
+const streamdownComponents: Components = { a: MarkdownLink };
 
 /** The message-scoped values a `dorkos-ui` fence needs beyond its own code. */
 interface FenceContextValue {
@@ -99,7 +104,7 @@ export function StreamingText({
         >
           <Streamdown
             shikiTheme={['github-light', 'github-dark']}
-            linkSafety={linkSafety}
+            components={streamdownComponents}
             animated={animatedConfig}
             isAnimating={isStreaming}
             plugins={widgetPlugins}

@@ -473,16 +473,18 @@ describe('RoomEntryRow — the action surface', () => {
     expect(screen.getByRole('button', { name: 'React with thumbsup' })).not.toHaveFocus();
   });
 
-  it('renders links as safety-gated buttons, so no native link menu is at stake', () => {
-    // Pins the premise behind having NO carve-out for a right-click on a link:
-    // `MarkdownContent` never emits an `<a href>`, so the browser's own menu has
-    // no "Copy link address" to offer and our menu is taking nothing away. If
-    // this ever fails, the carve-out has to be reconsidered.
+  it('renders links as real anchors, so the browser already offers a link menu', () => {
+    // Pins the premise behind having NO carve-out for a right-click on a link
+    // (DOR-1272): `MarkdownContent` under `linkSafety` renders a genuine
+    // `<a href>` (`MarkdownLink`), not a button, so the browser's own menu
+    // already has "Copy Link Address" to offer and our menu isn't taking
+    // anything away. If this ever fails, the carve-out has to be reconsidered.
     renderRow(entry({ body: { text: 'see [the run](https://example.com/run)' } }));
     const row = screen.getByTestId('room-entry');
 
-    expect(within(row).queryByRole('link')).not.toBeInTheDocument();
-    expect(within(row).getByRole('button', { name: 'the run' })).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'the run' })).not.toBeInTheDocument();
+    const link = within(row).getByRole('link', { name: 'the run' });
+    expect(link).toHaveAttribute('href', 'https://example.com/run');
   });
 
   it('opens the thread panel when the reply button is pressed', () => {

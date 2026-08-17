@@ -236,6 +236,7 @@ Animation should feel like physics, not decoration. Things should move because t
 - **Assistant messages:** No background, content speaks for itself
 - **Avatars:** 28px circles. User = primary color with User icon. Claude = subtle warm gray with Bot icon.
 - **Labels:** "You" and "Claude" in `text-xs`, `text-secondary`, `font-medium`
+- **Links in an answer are real anchors** (`MarkdownLink`, DOR-1272): hover shows the destination, cmd/middle-click opens a tab, "Copy Link Address" works. A plain left click still routes in-app through the shared link-safety confirmation first.
 
 ### Code Blocks
 

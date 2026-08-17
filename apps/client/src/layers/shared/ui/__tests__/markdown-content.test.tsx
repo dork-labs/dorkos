@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MarkdownContent } from '../markdown-content';
 
 describe('MarkdownContent', () => {
@@ -37,7 +37,6 @@ describe('MarkdownContent', () => {
 
   it('renders links in markdown', () => {
     render(<MarkdownContent content="Visit [Slack](https://slack.com)" />);
-    // streamdown renders links as buttons with data-streamdown="link"
     expect(screen.getByText('Slack')).toBeTruthy();
   });
 
@@ -65,5 +64,56 @@ describe('MarkdownContent', () => {
       />
     );
     expect(screen.getByText(/This README couldn/i)).toBeTruthy();
+  });
+});
+
+describe('MarkdownContent — linkSafety links stay real anchors (DOR-1272)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('renders a real `<a href>`, not a button, when linkSafety is on', () => {
+    // Before the fix, Streamdown's own `linkSafety` handling rendered a
+    // `<button>` here instead — no `href`, so no hover preview, no
+    // cmd/middle-click into a tab, no native "Copy Link Address".
+    render(<MarkdownContent content="Visit [Slack](https://slack.com)" linkSafety />);
+
+    const link = screen.getByRole('link', { name: 'Slack' });
+    expect(link.tagName).toBe('A');
+    // Streamdown's URL transform canonicalizes to a trailing slash.
+    expect(link).toHaveAttribute('href', 'https://slack.com/');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    expect(link.getAttribute('rel')).toContain('noreferrer');
+    expect(screen.queryByRole('button', { name: 'Slack' })).not.toBeInTheDocument();
+  });
+
+  it('an unmodified left click is intercepted for the safety confirmation', () => {
+    render(<MarkdownContent content="Visit [Slack](https://slack.com)" linkSafety />);
+    const link = screen.getByRole('link', { name: 'Slack' });
+
+    // fireEvent.click returns false when a handler called preventDefault.
+    const notPrevented = fireEvent.click(link);
+
+    expect(notPrevented).toBe(false);
+    expect(screen.getByRole('dialog', { name: /open external link/i })).toBeInTheDocument();
+  });
+
+  it('a modifier-clicked link is left to the browser — no confirm, no preventDefault', () => {
+    render(<MarkdownContent content="Visit [Slack](https://slack.com)" linkSafety />);
+    const link = screen.getByRole('link', { name: 'Slack' });
+
+    const notPrevented = fireEvent.click(link, { metaKey: true });
+
+    expect(notPrevented).toBe(true);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('a middle-clicked link is left to the browser — no confirm, no preventDefault', () => {
+    render(<MarkdownContent content="Visit [Slack](https://slack.com)" linkSafety />);
+    const link = screen.getByRole('link', { name: 'Slack' });
+
+    // Middle click reports as button 1 on the click event.
+    const notPrevented = fireEvent.click(link, { button: 1 });
+
+    expect(notPrevented).toBe(true);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

@@ -101,12 +101,13 @@ export function RoomEntryBody({
   return (
     <>
       {/*
-        No carve-out for a right-click on a link. Under `linkSafety`, which
-        this call site passes, every link form — markdown, autolink, bare URL
-        — renders as a BUTTON that opens the link-safety modal rather than as
-        an `<a href>`, so there is no native "Copy link address" here for our
-        menu to be taking away. That is a property of this call site, not of
-        `MarkdownContent` everywhere.
+        No carve-out for a right-click on a link, and none is needed. Under
+        `linkSafety`, which this call site passes, every link form — markdown,
+        autolink, bare URL — still renders as a real `<a href>` (DOR-1272,
+        `MarkdownLink`); only a plain left click is intercepted for the
+        confirmation modal. A right-click reaches the browser's own native
+        menu — "Copy Link Address" included — same as any other link on the
+        page, so our own row menu has nothing to add here.
       */}
       <div
         id={contentId}
