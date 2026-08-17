@@ -137,11 +137,12 @@ describe('approval-gated (I-01) — the turn waits, and the answer changes the o
     // reaches a client, so asserting on it here would be asserting on something
     // the browser test downstream can never see.
     //
-    // TWO of them, and the pair is deliberate (DOR-1269): the first closes the
-    // content block the moment the model stops streaming the tool's input, which
-    // is what claude-code does and what a cold hydrate therefore replays; the
-    // second is the real outcome, minted after the person answered. Only the
-    // LAST one can speak for whether the tool ran.
+    // TWO of them, and the pair is deliberate (DOR-1269). The normalizer folds
+    // `tool_call_end` and a real `tool_result` onto the same member, and
+    // claude-code produces one of each: the block CLOSE the moment the model
+    // stops streaming the tool's input (which a cold hydrate then replays as
+    // `complete` for a tool that has not run), and later the actual outcome.
+    // Only the LAST one can speak for whether the tool ran.
     const results = replay(projector).filter((e) => e.type === 'tool_result');
     expect(results).toHaveLength(2);
     expect(JSON.stringify(results[0])).not.toContain('Applied 1 edit');

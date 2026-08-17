@@ -680,13 +680,33 @@ function foldPendingInteraction(parts: MessagePart[], event: InteractionEvent): 
  * composer's answer panel (`status === 'pending'`) went blind, so there was no
  * way left to answer it.
  *
- * Nothing else is taken from the DTO: the rest is the same payload the turn
- * already folded.
+ * TWO THINGS OUTRANK THE DTO, and both are the same rule
+ * {@link foldInteractionResolved} applies with its own `status === 'pending'`
+ * guard: an answer the turn already carries, and a result the tool already
+ * produced. A DTO can outlive either by a beat — the snapshot is a copy taken
+ * at one instant — and re-pending on top of one draws an Approve/Deny card over
+ * an edit that has already been applied. So the hold is re-asserted only when
+ * nothing in the turn says otherwise.
+ *
+ * The elicitation branch takes the countdown and nothing else. Its status has
+ * exactly two writers — `foldElicitation` (pending) and
+ * {@link foldInteractionResolved} (submitted) — and no `tool_result` can reach
+ * an elicitation part, so there is no un-pending to undo and the only thing a
+ * re-assert could do is resurrect a form somebody has already submitted.
+ *
+ * @param parts - The trailing segment's parts (mutated in place).
+ * @param dto - The interaction the snapshot still reports as unanswered.
+ * @param settledInTurn - Whether the turn already folded an
+ *   `interaction_resolved` for this id.
  */
-function applyRecoveredHold(parts: MessagePart[], dto: PendingInteractionDTO): void {
+function applyRecoveredHold(
+  parts: MessagePart[],
+  dto: PendingInteractionDTO,
+  settledInTurn: boolean
+): void {
   const toolCall = findToolCallPart(parts, dto.id);
   if (toolCall) {
-    toolCall.status = 'pending';
+    if (!settledInTurn && toolCall.result === undefined) toolCall.status = 'pending';
     toolCall.approvalStartedAt = dto.startedAt;
     toolCall.approvalRemainingMs = dto.remainingMs;
     // Only when the DTO actually declares a budget: absent means "this runtime
@@ -697,7 +717,6 @@ function applyRecoveredHold(parts: MessagePart[], dto: PendingInteractionDTO): v
   }
   const elicitation = findElicitationPart(parts, dto.id);
   if (elicitation) {
-    elicitation.status = 'pending';
     elicitation.startedAt = dto.startedAt;
     elicitation.remainingMs = dto.remainingMs;
   }
@@ -714,18 +733,31 @@ function applyRecoveredHold(parts: MessagePart[], dto: PendingInteractionDTO): v
  *
  * @param parts - Parts folded from the in-progress turn (mutated in place).
  * @param pendingInteractions - The snapshot's recoverable pending interactions.
+ * @param settledIds - Interaction ids the turn already resolved. Read from the
+ *   WHOLE turn rather than this segment, because a steer can split the two
+ *   apart and an answer is an answer wherever in the turn it landed.
  */
 function foldPendingInteractions(
   parts: MessagePart[],
-  pendingInteractions: PendingInteractionDTO[]
+  pendingInteractions: PendingInteractionDTO[],
+  settledIds: ReadonlySet<string>
 ): void {
   for (const dto of pendingInteractions) {
     if (partsContainInteraction(parts, dto.id)) {
-      applyRecoveredHold(parts, dto);
+      applyRecoveredHold(parts, dto, settledIds.has(dto.id));
       continue;
     }
     foldPendingInteraction(parts, pendingInteractionToEvent(dto));
   }
+}
+
+/** The interaction ids an `interaction_resolved` in this turn already answered. */
+function settledInteractionIds(events: SessionEvent[]): Set<string> {
+  const ids = new Set<string>();
+  for (const event of events) {
+    if (event.type === 'interaction_resolved') ids.add(event.id);
+  }
+  return ids;
 }
 
 /**
@@ -895,10 +927,62 @@ function projectInProgressSegments(
   // The trailing (open) segment: it takes the pending interactions and keeps the
   // stable trailing id, so a turn with no steer is identical to the old output.
   const parts = projectInProgressTurn(run);
-  foldPendingInteractions(parts, pendingInteractions);
+  foldPendingInteractions(parts, pendingInteractions, settledInteractionIds(inProgressTurn));
   const trailing = buildInProgressMessage(parts, IN_PROGRESS_ASSISTANT_ID);
   if (trailing) out.push(trailing);
   return out;
+}
+
+/** Every `toolCallId` the live turn's own bubbles already speak for. */
+function liveToolCallIds(segments: ChatMessage[]): Set<string> {
+  const ids = new Set<string>();
+  for (const message of segments) {
+    for (const part of message.parts) {
+      if (part.type === 'tool_call') ids.add(part.toolCallId);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Drop the history copies of tool calls the live turn is still rendering.
+ *
+ * The two halves of the transcript can describe the SAME tool call at once, and
+ * for a parked prompt they describe it differently (DOR-1269). claude-code
+ * persists an assistant record the moment the model emits the `tool_use` block,
+ * and the transcript parser stamps every such block `complete` — so while a
+ * person is being asked, history already holds a finished-looking
+ * `AskUserQuestion` with its questions and no answers, which renders as a green
+ * "Question answered" line. Concatenating that with the live turn put the lie
+ * directly above the card the person still has to answer.
+ *
+ * The LIVE part wins because it is the one that knows the call is still open:
+ * it carries the hold, the countdown, and whatever the turn has streamed since.
+ * History will speak for the call again on the next reload, once the turn it
+ * belongs to has closed and stopped being replayed.
+ *
+ * @param message - One mapped history message.
+ * @param liveIds - Tool-call ids the in-progress turn already renders.
+ * @returns The message without those parts, or `null` when nothing is left of it.
+ */
+function withoutDuplicatedToolCalls(
+  message: ChatMessage,
+  liveIds: ReadonlySet<string>
+): ChatMessage | null {
+  const kept = message.parts.filter(
+    (part) => part.type !== 'tool_call' || !liveIds.has(part.toolCallId)
+  );
+  if (kept.length === message.parts.length) return message;
+  if (kept.length === 0) return null;
+  // `content`/`toolCalls` are derived from the parts, so they have to be
+  // re-derived rather than carried over from the full list.
+  const derived = deriveFromParts(kept);
+  return {
+    ...message,
+    parts: kept,
+    content: derived.content,
+    toolCalls: derived.toolCalls.length > 0 ? derived.toolCalls : undefined,
+  };
 }
 
 /**
@@ -914,6 +998,10 @@ function projectInProgressSegments(
  * in the `blocked`-after-`turn_end` state, where the turn was cleared and the
  * interaction lives ONLY in `pendingInteractions` — without it, a refreshed
  * blocked session would show no Approve/Deny card (regressing DOR-73 recovery).
+ *
+ * History is then deduped AGAINST that turn: a tool call the live turn is still
+ * rendering has its history copy dropped, so one call is one card
+ * ({@link withoutDuplicatedToolCalls}).
  *
  * Under the trigger-only POST contract the just-sent user message is NOT yet in
  * `snapshotMessages` (the snapshot was captured before the send, and the
@@ -934,10 +1022,17 @@ export function projectSessionMessages(
   pendingInteractions: PendingInteractionDTO[] = [],
   optimisticUserMessage: { id: string; content: string } | null = null
 ): ChatMessage[] {
-  const messages = snapshotMessages.map(mapHistoryMessage);
+  // The turn is projected FIRST because history is deduped against it.
+  const segments = projectInProgressSegments(inProgressTurn, pendingInteractions);
+  const liveIds = liveToolCallIds(segments);
+  const messages: ChatMessage[] = [];
+  for (const message of snapshotMessages.map(mapHistoryMessage)) {
+    const kept = liveIds.size === 0 ? message : withoutDuplicatedToolCalls(message, liveIds);
+    if (kept) messages.push(kept);
+  }
   if (optimisticUserMessage) {
     messages.push(buildOptimisticUserMessage(optimisticUserMessage.content));
   }
-  messages.push(...projectInProgressSegments(inProgressTurn, pendingInteractions));
+  messages.push(...segments);
   return messages;
 }

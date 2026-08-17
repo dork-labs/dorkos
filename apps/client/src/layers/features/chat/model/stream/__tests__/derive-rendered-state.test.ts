@@ -181,7 +181,13 @@ describe('selectRenderedMessages — a prompt parked across a hard refresh (DOR-
     expect(answerable(SID)).toEqual(ids);
   });
 
-  it('keeps an MCP elicitation pending across hydration', () => {
+  it('does not put an already-submitted elicitation back in front of the person', () => {
+    // The OTHER half of the rule, and the reason the re-assert is not blanket.
+    // An elicitation part cannot be un-pended by anything — no `tool_result`
+    // reaches one, and its only two status writers are the ask (pending) and the
+    // resolution (submitted) — so a hold to restore never exists here, while a
+    // DTO that outlived its own resolution by one snapshot certainly can. The
+    // countdown is still taken; the status is not.
     const id = 'elicit-1';
     useSessionStreamStore.getState().applySnapshot(
       SID,
@@ -197,6 +203,7 @@ describe('selectRenderedMessages — a prompt parked across a hard refresh (DOR-
             startedAt: 1000,
             remainingMs: 600_000,
           },
+          { seq: 3, type: 'interaction_resolved', id, resolution: 'answered' },
         ],
         [
           {
@@ -213,47 +220,7 @@ describe('selectRenderedMessages — a prompt parked across a hard refresh (DOR-
     const stream = useSessionStreamStore.getState().getSession(SID);
     const parts = selectRenderedMessages(stream, []).flatMap((m) => m.parts);
     expect(parts.filter((p) => p.type === 'elicitation')).toEqual([
-      expect.objectContaining({ interactionId: id, status: 'pending' }),
-    ]);
-  });
-
-  it('takes the snapshot countdown, not the one the replayed ask was emitted with', () => {
-    // The recovered hold must not reset the clock: the DTO's `remainingMs` is
-    // computed when the snapshot is built, the turn's copy is what it was at
-    // emission (DOR-810).
-    const id = 'toolu_timer_1';
-    useSessionStreamStore.getState().applySnapshot(
-      SID,
-      snapshot(
-        gatedToolTurn(id, 'Edit', {
-          seq: 3,
-          type: 'approval_required',
-          id,
-          toolName: 'Edit',
-          input: '{}',
-          startedAt: 1000,
-          remainingMs: 600_000,
-          timeoutMs: 600_000,
-          hasSuggestions: false,
-        }),
-        [
-          {
-            type: 'approval',
-            id,
-            startedAt: 1000,
-            remainingMs: 12_345,
-            timeoutMs: 600_000,
-            toolName: 'Edit',
-            input: '{}',
-            hasSuggestions: false,
-          },
-        ]
-      )
-    );
-    const stream = useSessionStreamStore.getState().getSession(SID);
-    const toolCalls = selectRenderedMessages(stream, []).flatMap((m) => m.toolCalls ?? []);
-    expect(toolCalls).toEqual([
-      expect.objectContaining({ toolCallId: id, approvalRemainingMs: 12_345, status: 'pending' }),
+      expect.objectContaining({ interactionId: id, status: 'submitted' }),
     ]);
   });
 });

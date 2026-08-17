@@ -56,15 +56,15 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 
 ## 3. Interactive prompts (the agent asks you something)
 
-| ID   | Capability                                                                                     | Surfaces | Coverage |
-| ---- | ---------------------------------------------------------------------------------------------- | -------- | -------- |
-| I-01 | Tool approval card renders; Approve runs the tool; Deny refuses it                             | session  | U, E, S  |
-| I-02 | Batch approval bar for multiple pending tools                                                  | session  | U, E     |
-| I-03 | AskUserQuestion prompt renders; answer is delivered                                            | session  | U, E, S  |
-| I-04 | Elicitation prompt (MCP)                                                                       | session  | U, E     |
-| I-05 | Pending prompts survive switch-away-and-back and hard refresh (snapshot `pendingInteractions`) | session  | U, E, S  |
-| I-06 | Approval answered outside DorkOS (e.g. OpenCode CLI) shows the real outcome                    | session  | U        |
-| I-07 | Approval timeout (~10-min auto-deny) is visible and honest                                     | session  | U        |
+| ID   | Capability                                                                                     | Surfaces | Coverage                    |
+| ---- | ---------------------------------------------------------------------------------------------- | -------- | --------------------------- |
+| I-01 | Tool approval card renders; Approve runs the tool; Deny refuses it                             | session  | U, E, S                     |
+| I-02 | Batch approval bar for multiple pending tools                                                  | session  | U, E                        |
+| I-03 | AskUserQuestion prompt renders; answer is delivered                                            | session  | U, E, S                     |
+| I-04 | Elicitation prompt (MCP)                                                                       | session  | U, E                        |
+| I-05 | Pending prompts survive switch-away-and-back and hard refresh (snapshot `pendingInteractions`) | session  | U, E (hard refresh only), S |
+| I-06 | Approval answered outside DorkOS (e.g. OpenCode CLI) shows the real outcome                    | session  | U                           |
+| I-07 | Approval timeout (~10-min auto-deny) is visible and honest                                     | session  | U                           |
 
 ## 4. Session lifecycle & context
 

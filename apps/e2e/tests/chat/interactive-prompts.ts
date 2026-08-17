@@ -375,6 +375,10 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
       await expect(transcript(page)).toContainText('APPROVED-BRANCH', {
         timeout: SERVER_ROUND_TRIP_MS,
       });
+      // And the RECOVERED card closes behind the answer, like the live one does.
+      // A recovery that restores an unanswerable-but-still-showing card would
+      // satisfy every assertion above this line.
+      await expect(card).toHaveCount(0, { timeout: SERVER_ROUND_TRIP_MS });
     });
   });
 

@@ -907,6 +907,159 @@ describe('projectSessionMessages', () => {
     const parts = projectInProgressTurn(turn);
     expect(parts[0]).toMatchObject({ toolCallId: 'rec-1', status: 'error' });
   });
+
+  it('leaves an answer the turn already carries alone, even with a stale pending DTO', () => {
+    // The same shape as the settle test above, plus the DTO. A snapshot is one
+    // instant's copy, so it can still list an interaction the turn has just
+    // answered — and re-pending on top of that draws an Approve/Deny card over
+    // an edit that has already been applied. The turn's own answer outranks it,
+    // which is the rule `foldInteractionResolved` applies to itself.
+    const turn: SessionEvent[] = [
+      { seq: 1, type: 'turn_start' },
+      { seq: 2, type: 'tool_call', toolCallId: 'rec-1', toolName: 'Edit', status: 'pending' },
+      {
+        seq: 3,
+        type: 'approval_required',
+        id: 'rec-1',
+        toolName: 'Edit',
+        input: '{"file_path":"notes/release.md"}',
+        startedAt: 1000,
+        remainingMs: 20000,
+        hasSuggestions: false,
+      },
+      { seq: 4, type: 'interaction_resolved', id: 'rec-1', resolution: 'approved' },
+      {
+        seq: 5,
+        type: 'tool_result',
+        toolCallId: 'rec-1',
+        toolName: 'Edit',
+        status: 'complete',
+        result: 'Applied 1 edit to notes/release.md',
+      },
+    ];
+    const staleDto: PendingInteractionDTO = {
+      type: 'approval',
+      id: 'rec-1',
+      startedAt: 1000,
+      remainingMs: 20000,
+      toolName: 'Edit',
+      input: '{"file_path":"notes/release.md"}',
+      hasSuggestions: false,
+    };
+    const messages = projectSessionMessages(history, turn, [staleDto]);
+    const toolCalls = (messages[2].parts ?? []).filter((p) => p.type === 'tool_call');
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0]).toMatchObject({
+      toolCallId: 'rec-1',
+      status: 'complete',
+      result: 'Applied 1 edit to notes/release.md',
+    });
+  });
+
+  it('leaves a submitted elicitation alone, even with a stale pending DTO', () => {
+    // Nothing can un-pend an elicitation part — no `tool_result` reaches one, and
+    // its only two status writers are the ask (pending) and the resolution
+    // (submitted). So the recovery fold has no hold to restore here, and the one
+    // thing a re-assert could do is put a form somebody already submitted back
+    // in front of them.
+    const turn: SessionEvent[] = [
+      { seq: 1, type: 'turn_start' },
+      {
+        seq: 2,
+        type: 'elicitation_prompt',
+        id: 'elicit-1',
+        serverName: 'deploy-tools',
+        message: 'Which environment?',
+        startedAt: 1000,
+        remainingMs: 20000,
+      },
+      { seq: 3, type: 'interaction_resolved', id: 'elicit-1', resolution: 'answered' },
+    ];
+    const staleDto: PendingInteractionDTO = {
+      type: 'elicitation',
+      id: 'elicit-1',
+      startedAt: 1000,
+      remainingMs: 20000,
+      serverName: 'deploy-tools',
+      message: 'Which environment?',
+    };
+    const messages = projectSessionMessages(history, turn, [staleDto]);
+    const elicitations = (messages[2].parts ?? []).filter((p) => p.type === 'elicitation');
+    expect(elicitations).toHaveLength(1);
+    expect(elicitations[0]).toMatchObject({ interactionId: 'elicit-1', status: 'submitted' });
+  });
+
+  it('renders one card, not two, when history already holds the parked tool call', () => {
+    // claude-code persists the assistant record the moment the model emits the
+    // `tool_use` block, and the transcript parser stamps every such block
+    // `complete` — so while a person is being asked, history ALSO holds a
+    // finished-looking AskUserQuestion with its questions and no answers, which
+    // renders as a green "Question answered". Concatenating that with the live
+    // turn put that line directly above the card still waiting to be answered
+    // (DOR-1269). The live part wins; the history copy goes.
+    const askedHistory: HistoryMessage[] = [
+      { id: 'h1', role: 'user', content: 'ask me', timestamp: '2026-01-01T00:00:00Z' },
+      {
+        id: 'h2',
+        role: 'assistant',
+        content: '',
+        timestamp: '2026-01-01T00:00:01Z',
+        parts: [
+          { type: 'thinking', text: 'deciding what to ask', isStreaming: false },
+          {
+            type: 'tool_call',
+            toolCallId: 'toolu_q1',
+            toolName: 'AskUserQuestion',
+            input: '{}',
+            status: 'complete',
+            interactiveType: 'question',
+            questions: [
+              {
+                header: 'Runner',
+                question: 'Which?',
+                options: [{ label: 'Vitest' }],
+                multiSelect: false,
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    const turn: SessionEvent[] = [
+      { seq: 1, type: 'turn_start' },
+      {
+        seq: 2,
+        type: 'tool_call',
+        toolCallId: 'toolu_q1',
+        toolName: 'AskUserQuestion',
+        input: '{}',
+        status: 'running',
+      },
+    ];
+    const messages = projectSessionMessages(askedHistory, turn, [
+      {
+        type: 'question',
+        id: 'toolu_q1',
+        startedAt: 1000,
+        remainingMs: 500_000,
+        questions: [
+          {
+            header: 'Runner',
+            question: 'Which?',
+            options: [{ label: 'Vitest' }],
+            multiSelect: false,
+          },
+        ],
+      },
+    ]);
+    const questionParts = messages
+      .flatMap((m) => m.parts ?? [])
+      .filter((p) => p.type === 'tool_call' && p.toolCallId === 'toolu_q1');
+    expect(questionParts).toHaveLength(1);
+    expect(questionParts[0]).toMatchObject({ interactiveType: 'question', status: 'pending' });
+    // The rest of the history message survives — only the duplicate goes.
+    expect((messages[1].parts ?? []).map((p) => p.type)).toEqual(['thinking']);
+  });
 });
 
 describe('projectInProgressTurn — approval receipts', () => {
