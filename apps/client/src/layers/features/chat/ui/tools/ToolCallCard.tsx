@@ -9,45 +9,8 @@ import {
   cn,
   formatDuration,
 } from '@/layers/shared/lib';
-import { getToolStatusIcon, CollapsibleCard } from '../primitives';
+import { getToolStatusIcon, CollapsibleCard, TruncatedOutput } from '../primitives';
 import { OutputRenderer } from '../message/OutputRenderer';
-
-/** Maximum characters to render before truncation (5KB). */
-const TRUNCATE_THRESHOLD = 5120;
-
-interface TruncatedOutputProps {
-  /** Text content to display, truncated if over threshold. */
-  content: string;
-  /** Maximum characters before truncation. Defaults to TRUNCATE_THRESHOLD. */
-  threshold?: number;
-  /** Additional className for the wrapper div. */
-  className?: string;
-}
-
-/** Renders text content with character-based truncation and a one-way expand button. */
-function TruncatedOutput({
-  content,
-  threshold = TRUNCATE_THRESHOLD,
-  className,
-}: TruncatedOutputProps) {
-  const [showFull, setShowFull] = useState(false);
-  const isTruncated = content.length > threshold;
-  const displayContent = isTruncated && !showFull ? content.slice(0, threshold) : content;
-
-  return (
-    <div className={cn('mt-2 border-t pt-2', className)}>
-      <pre className="max-h-48 overflow-y-auto text-xs whitespace-pre-wrap">{displayContent}</pre>
-      {isTruncated && !showFull && (
-        <button
-          onClick={() => setShowFull(true)}
-          className="text-muted-foreground hover:text-foreground mt-1 text-xs underline"
-        >
-          Show full output ({(content.length / 1024).toFixed(1)}KB)
-        </button>
-      )}
-    </div>
-  );
-}
 
 interface HookRowProps {
   /** Single hook execution to display as a compact sub-row. */
@@ -186,7 +149,7 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
         />
       ) : null}
       {toolCall.progressOutput && !toolCall.result && (
-        <TruncatedOutput content={toolCall.progressOutput} />
+        <TruncatedOutput content={toolCall.progressOutput} className="mt-2 border-t pt-2" />
       )}
       {toolCall.result && (
         <div className="mt-2 border-t pt-2">

@@ -18,12 +18,23 @@ type ToolCallPart = Extract<MessagePart, { type: 'tool_call' }>;
  * renderer's empty-answers fallback may stand in for.
  *
  * `questionOutcome` is authoritative wherever it exists, and for a question in
- * HISTORY it always does: claude-code's parser re-derives it from the JSONL on
- * every read (so there is no such thing as an old transcript that lacks it),
- * and the log-backed fold stamps `unresolved` on anything its event stream
- * never resolved. It is absent only on the LIVE path, where a question nothing
- * has resolved yet is still `pending` — so the fallback answers for that one
- * case, exactly as it always did.
+ * history it very nearly always does: claude-code's parser re-derives it from
+ * the JSONL on every read (so there is no such thing as an old transcript that
+ * lacks it), and the log-backed fold stamps `unresolved` on anything its event
+ * stream never resolved.
+ *
+ * The fallback is not decoration, and these are the cases that reach it:
+ *
+ * - The LIVE path. A question nothing has resolved yet is still `pending`, and
+ *   nothing has folded an ending onto it.
+ * - A log-backed turn that produced no `turn_end` — a server crash mid-turn —
+ *   so `markUnresolvedQuestions` never ran over it.
+ * - A log-backed ask whose `question_prompt` id did not match any tool call and
+ *   whose row is not named `AskUserQuestion` either, so nothing identified it
+ *   as a question to mark.
+ *
+ * In all three, "settled means answered" is the same rule the renderer used
+ * before any of this existed.
  *
  * @param part - The question's tool-call part.
  */

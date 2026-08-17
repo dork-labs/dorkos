@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import { Check, Clock, HelpCircle, MinusCircle, X } from 'lucide-react';
-import { CompactResultRow } from '../primitives';
+import { CompactResultRow, TruncatedOutput } from '../primitives';
 import type { QuestionItem, QuestionOutcome } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 
@@ -99,7 +99,13 @@ export function QuestionUnansweredRow({
       icon={<Icon className={cn('size-(--size-icon-sm) shrink-0', iconClass)} />}
       label={<span className="truncate">{label}</span>}
     >
-      {result && <p className="text-muted-foreground mt-1 pl-6 text-xs break-words">{result}</p>}
+      {result && (
+        <TruncatedOutput
+          data-testid="question-prompt-result"
+          content={result}
+          className="text-muted-foreground mt-1 pl-6"
+        />
+      )}
     </CompactResultRow>
   );
 }

@@ -249,6 +249,86 @@ afterAll(() => {
   rmSync(account.root, { recursive: true, force: true });
 });
 
+/**
+ * The working directory the unanswered-question driver writes under (DOR-1293).
+ *
+ * Its OWN cwd, like the first seeded fixture and for the same reason: this
+ * transcript is written mid-suite, and under the suite's own slug it would
+ * appear in `listSessions('/projects/conformance')` answers that other cases
+ * are asserting on at the time.
+ */
+const QUESTION_CWD = '/projects/conformance-question';
+
+/**
+ * Write the transcript a claude-code session leaves behind when a question goes
+ * unanswered, then read history back the way the product does.
+ *
+ * This is the equivalent of test-mode's `question-expires` scenario for a
+ * runtime whose transcript IS the file: the SDK is mocked, so no turn can
+ * produce JSONL, and the honest stand-in is the JSONL the SDK would have
+ * written — the `tool_use` block, then the auto-deny `tool_result` DorkOS's own
+ * `handleAskUserQuestion` hands back at the ten-minute mark, `is_error` and all.
+ * Nothing writes a `questionOutcome`; the adapter derives it.
+ */
+async function seedExpiredQuestionHistory(runtime: AgentRuntime, sessionId: string) {
+  const dir = join(account.root, 'projects', '-projects-conformance-question');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `${sessionId}.jsonl`),
+    [
+      {
+        type: 'user',
+        message: { role: 'user', content: 'set up the tests' },
+        timestamp: '2026-01-01T10:00:00.000Z',
+        cwd: QUESTION_CWD,
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-01-01T10:00:01.000Z',
+        message: {
+          role: 'assistant',
+          model: 'probe',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-q',
+              name: 'AskUserQuestion',
+              input: {
+                questions: [
+                  {
+                    question: 'Which test runner should I set up?',
+                    header: 'Test runner',
+                    multiSelect: false,
+                    options: [{ label: 'Vitest' }, { label: 'Jest' }],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-01-01T10:10:01.000Z',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tool-q',
+              content: 'User did not respond within 10 minutes',
+              is_error: true,
+            },
+          ],
+        },
+      },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join('\n') + '\n'
+  );
+  return runtime.getMessageHistory(QUESTION_CWD, sessionId);
+}
+
 /** Warm processes this file booted, closed after each case so none leaks. */
 let warmCli: FakeCli | undefined;
 
@@ -287,6 +367,8 @@ runtimeConformance(
     // not persist, DOR-189), which is exactly what `drivePresenceTurn` does.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
+    // DOR-1293: a question NOBODY answered. See `seedExpiredQuestionHistory`.
+    expiredQuestionHistory: (runtime, sessionId) => seedExpiredQuestionHistory(runtime, sessionId),
     // Claude-code declares `supportsPersistentSession`, so it owes the suite a
     // way to reach WARM. Turning the opt-in on is part of the driver's job: the
     // capability says this adapter CAN hold a process open, and whether a given

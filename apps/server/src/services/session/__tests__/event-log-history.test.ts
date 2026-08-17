@@ -496,8 +496,89 @@ describe('reconstructHistoryFromEvents — answered approvals', () => {
 
     expect(messages[1].toolCalls).toHaveLength(1);
     expect(messages[1].toolCalls?.[0].toolCallId).toBe('tool-abc');
-    // Nothing was annotated, and nothing was invented — the honest failure.
+    // The options are lost with the unmatched ask…
     expect(messages[1].toolCalls?.[0].questions).toBeUndefined();
+    // …but the row that RAISED it still says it went unanswered, marked by
+    // tool name. A bare `AskUserQuestion` card would hide that entirely.
+    expect(messages[1].toolCalls?.[0].questionOutcome).toBe('unresolved');
+  });
+
+  it('lands a resolution that arrives AFTER its turn closed', () => {
+    // The projector holds interactions across `turn_end` by design, so "late"
+    // is a state it models. Dropped, this read as "Question answered" before
+    // DOR-1293 (right by accident) and "No answer was recorded" after it —
+    // a question somebody DID answer claiming nobody had.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'tool_call',
+          toolCallId: 'tc-q',
+          toolName: 'AskUserQuestion',
+          status: 'pending',
+        },
+        {
+          seq: 3,
+          type: 'question_prompt',
+          id: 'tc-q',
+          questions: [{ question: 'Which?', header: 'Q', multiSelect: false, options: [] }],
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        { seq: 4, type: 'turn_end' },
+        {
+          seq: 5,
+          type: 'interaction_resolved',
+          id: 'tc-q',
+          kind: 'question',
+          resolution: 'answered',
+          at: 1_700_000_005_000,
+        }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0].questionOutcome).toBe('answered');
+  });
+
+  it('lands a late resolution on a FAILED turn’s rebuilt parts too', () => {
+    // A failed turn's `parts` are fresh objects, not the accumulator's rows, so
+    // a fix that only mutated `toolCalls` would leave the half the client
+    // actually renders still claiming nobody answered.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'tool_call',
+          toolCallId: 'tc-q',
+          toolName: 'AskUserQuestion',
+          status: 'pending',
+        },
+        {
+          seq: 3,
+          type: 'question_prompt',
+          id: 'tc-q',
+          questions: [{ question: 'Which?', header: 'Q', multiSelect: false, options: [] }],
+          startedAt: 1_700_000_000_000,
+          remainingMs: 600_000,
+        },
+        { seq: 4, type: 'error', message: 'turn failed' },
+        { seq: 5, type: 'turn_end', terminalReason: 'error' },
+        {
+          seq: 6,
+          type: 'interaction_resolved',
+          id: 'tc-q',
+          kind: 'question',
+          resolution: 'answered',
+          at: 1_700_000_005_000,
+        }
+      )
+    );
+
+    expect(messages[1].parts).toContainEqual(
+      expect.objectContaining({ type: 'tool_call', questionOutcome: 'answered' })
+    );
   });
 
   it('never mints a row from an id-less ask', () => {

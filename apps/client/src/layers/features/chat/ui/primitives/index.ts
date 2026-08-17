@@ -8,5 +8,6 @@ export { OptionRow } from './OptionRow';
 export { CompactResultRow } from './CompactResultRow';
 export { CompactPendingRow } from './CompactPendingRow';
 export { CollapsibleCard } from './CollapsibleCard';
+export { TruncatedOutput } from './TruncatedOutput';
 export { InteractiveCard } from './InteractiveCard';
 export { TypingDots } from './TypingDots';

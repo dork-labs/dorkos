@@ -11,7 +11,7 @@ import { StreamingText } from './StreamingText';
 import { ToolCallCard } from '../tools/ToolCallCard';
 import { ToolApproval } from '../tools/ToolApproval';
 import type { ToolApprovalHandle } from '../tools/ToolApproval';
-import { ApprovalReceiptGroup } from '../tools/ApprovalReceiptGroup';
+import { ApprovalReceiptRow } from '../tools/ApprovalReceiptRow';
 import { QuestionPrompt } from '../tools/QuestionPrompt';
 import type { QuestionPromptHandle } from '../tools/QuestionPrompt';
 import { ElicitationPrompt } from '../tools/ElicitationPrompt';
@@ -444,7 +444,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         .map((index) => parts[index])
         .filter((member) => member.type === 'tool_call');
       return (
-        <ApprovalReceiptGroup
+        <ApprovalReceiptRow
           key={`approval-receipt-${toolPart.toolCallId}`}
           group={receipt}
           members={members}
@@ -459,10 +459,15 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
               expandToolCalls={expandToolCalls}
             />
           ))}
-        </ApprovalReceiptGroup>
+        </ApprovalReceiptRow>
       );
     }
-    if (toolPart.interactiveType === 'question' && toolPart.questions) {
+    // Gated on `interactiveType` ALONE. A question whose `questions` array
+    // failed to parse is still a question — the producers decide that, by tool
+    // name — and gating on the array sent it to the plain tool card, where it
+    // rendered as `AskUserQuestion` with raw JSON input and no ending at all
+    // (DOR-1293). It has no options to offer, which is what `?? []` says.
+    if (toolPart.interactiveType === 'question') {
       if (toolPart.toolCallId === inputZoneToolCallId) {
         return (
           <CompactPendingRow
@@ -480,7 +485,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           ref={isActive ? questionRefCallback : undefined}
           sessionId={sessionId}
           toolCallId={toolPart.toolCallId}
-          questions={toolPart.questions}
+          questions={toolPart.questions ?? []}
           // The empty-record fallback is what collapses the card for a client
           // that did not submit the answer itself — it has no answers to show,
           // but the question is over. It must NOT survive a question that ended

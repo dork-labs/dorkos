@@ -2,14 +2,15 @@ import type { ReactNode } from 'react';
 import type { MessagePart } from '@dorkos/shared/types';
 import { getToolLabel } from '@/layers/shared/lib';
 import { ApprovalReceipt } from './ApprovalReceipt';
-import type { ApprovalReceiptGroup as ReceiptGroup } from '../../lib/group-approval-receipts';
+import { TruncatedOutput } from '../primitives';
+import type { ApprovalReceiptGroup } from '../../lib/group-approval-receipts';
 
 /** The `tool_call` member of {@link MessagePart}. */
 type ToolCallPart = Extract<MessagePart, { type: 'tool_call' }>;
 
-interface ApprovalReceiptGroupProps {
+interface ApprovalReceiptRowProps {
   /** The grouped decision — its outcome, and whether a reason was carried. */
-  group: ReceiptGroup;
+  group: ApprovalReceiptGroup;
   /** Every answered ask the receipt speaks for, in transcript order. */
   members: ToolCallPart[];
   /** The group's lead part, which carries the timestamps and the result text. */
@@ -38,13 +39,20 @@ interface ApprovalReceiptGroupProps {
  *   said:", or the command a permission rule blocked — and it is often the only
  *   record of WHY. Suppressing it along with the card threw that away
  *   (DOR-1293). A receipt may summarise the transcript; it may not delete it.
+ *
+ * ## What that text can contain, and why it is shown anyway
+ *
+ * A rule refusal echoes the WHOLE blocked command, absolute paths and all — and
+ * a command can carry a secret inline (`curl -H "Authorization: Bearer …"`).
+ * Showing it is a deliberate choice, not an oversight. This is the operator's
+ * own transcript of their own machine, rendered to the person the agent was
+ * acting for; the tool card one row up already prints the command for every
+ * call that was ALLOWED, so suppressing it only for refusals would hide the
+ * command in exactly the case somebody is most likely to be auditing. Nothing
+ * here is transmitted anywhere. A surface that leaves the machine — a shared
+ * artifact, a bridged room — would owe this a different answer.
  */
-export function ApprovalReceiptGroup({
-  group,
-  members,
-  lead,
-  children,
-}: ApprovalReceiptGroupProps) {
+export function ApprovalReceiptRow({ group, members, lead, children }: ApprovalReceiptRowProps) {
   return (
     <div className="flex flex-col">
       <ApprovalReceipt
@@ -58,7 +66,11 @@ export function ApprovalReceiptGroup({
         reasonGiven={group.reasonGiven}
       />
       {group.outcome !== 'allowed' && lead.result && (
-        <p className="text-muted-foreground mt-0.5 ml-6 text-xs break-words">{lead.result}</p>
+        <TruncatedOutput
+          data-testid="approval-receipt-result"
+          content={lead.result}
+          className="text-muted-foreground mt-0.5 ml-6"
+        />
       )}
       {group.outcome === 'allowed' && children}
     </div>

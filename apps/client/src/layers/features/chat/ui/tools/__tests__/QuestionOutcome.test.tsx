@@ -173,6 +173,45 @@ describe('a question that ended in history (DOR-1293)', () => {
     expect(screen.queryByTestId('question-prompt-unanswered')).toBeNull();
   });
 
+  it('a question whose options did not parse still renders as a question', () => {
+    // The server routes on tool NAME, so a malformed `AskUserQuestion` arrives
+    // marked `interactiveType: 'question'` with no `questions` array. The
+    // client used to gate on the array too, dropping it to a plain tool card
+    // titled `AskUserQuestion` — no ending, and the reason hidden (DOR-1293).
+    renderQuestionPart({
+      questions: undefined,
+      status: 'error',
+      questionOutcome: 'expired',
+      result: 'User did not respond within 10 minutes',
+    });
+
+    const row = screen.getByTestId('question-prompt-unanswered');
+    expect(row).toHaveTextContent('Nobody answered in time');
+    expect(screen.queryByTestId('tool-call-card')).toBeNull();
+  });
+
+  it('keeps the newlines in a multi-line refusal, and bounds a huge one', () => {
+    // A rule refusal quotes the whole blocked command, which is routinely a
+    // multi-line pipeline; a `<p>` collapsed it into one run-on line. And an
+    // errored result can run to tens of thousands of characters, which a
+    // transcript cannot render in place.
+    const multiline =
+      'Permission to use Bash with command\n  git log \\\n  | head -3\nhas been denied.';
+    renderQuestionPart({ status: 'error', questionOutcome: 'denied', result: multiline });
+
+    const output = screen.getByTestId('question-prompt-result').querySelector('pre');
+    expect(output?.className).toContain('whitespace-pre-wrap');
+    expect(output?.textContent).toBe(multiline);
+
+    cleanup();
+
+    const huge = 'x'.repeat(20_000);
+    renderQuestionPart({ status: 'error', questionOutcome: 'errored', result: huge });
+    const clamped = screen.getByTestId('question-prompt-result').querySelector('pre');
+    expect(clamped?.textContent?.length).toBe(5120);
+    expect(screen.getByRole('button', { name: /Show full output/ })).toBeDefined();
+  });
+
   it('a RECOVERED pending question is answerable, whatever history said', () => {
     // The DOR-1269 recovery deliberately re-pends a question from the
     // snapshot's `pendingInteractions`, and history's copy of that same

@@ -116,8 +116,14 @@ function receiptFields(
   return {
     // `interactiveType` is what marks the part as a permission prompt at all;
     // the receipt renderer keys off it, so carrying the outcome without it
-    // would restore the data and none of the display. A question needs no such
-    // mark — its own `questions` array already carries it.
+    // would restore the data and none of the display.
+    //
+    // A question needs no mark FROM HERE — not because its `questions` array
+    // carries one (it does not; an array is not a kind, and a question whose
+    // input failed to parse has none), but because the part is already
+    // identified by the time it reaches this overlay: the transcript parser
+    // stamps `interactiveType: 'question'` by tool NAME. This annotates an
+    // ending onto a part that already knows what it is.
     interactiveType: 'approval',
     approvalOutcome: receipt.outcome,
     approvalResolvedAt: receipt.resolvedAt,

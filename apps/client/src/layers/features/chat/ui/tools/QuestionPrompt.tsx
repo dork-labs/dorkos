@@ -30,7 +30,10 @@ interface QuestionPromptProps {
    * summary — the question is over and nobody answered it (DOR-1293).
    */
   outcome?: QuestionOutcome;
-  /** The transcript's own result text, shown when the question FAILED. */
+  /**
+   * The transcript's own result text, shown under EVERY non-answered ending —
+   * the label is the summary, this is the evidence for it.
+   */
   result?: string;
   /** Whether this is the active shortcut target */
   isActive?: boolean;
