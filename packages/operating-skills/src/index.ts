@@ -9,4 +9,5 @@
  * @module @dorkos/operating-skills
  */
 export { OPERATING_SKILLS_PACK, OPERATING_SKILLS_VERSION, type OperatingSkill } from './pack.js';
+export { TOOL_NAME_NOTE } from './tool-name-note.js';
 export { seedOperatingSkills, type SeedAction, type SeedOutcome, type SeedResult } from './seed.js';

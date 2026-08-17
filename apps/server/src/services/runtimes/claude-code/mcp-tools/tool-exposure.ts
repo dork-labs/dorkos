@@ -109,6 +109,10 @@ const SEARCH_HINT_MAX_CHARS = 120;
  * there rather than the simpler pattern. An em-dash aside is cut too, because the
  * clause before it is the part that names the job.
  *
+ * Over-long hints are cut at a WORD boundary. Cutting at the character count
+ * turned `relay_inbox`'s hint into "…or o", which is not a phrase anybody or
+ * anything can match on — a hint that ends mid-word is worse than a shorter one.
+ *
  * @param source - The capability's title, or the tool's description.
  * @returns A trimmed one-line hint, or `undefined` when there is nothing to say.
  */
@@ -120,9 +124,14 @@ export function searchHintFrom(source: string): string | undefined {
     .replace(/[.\s]+$/, '')
     .trim();
   if (hint === '') return undefined;
-  return hint.length > SEARCH_HINT_MAX_CHARS
-    ? `${hint.slice(0, SEARCH_HINT_MAX_CHARS - 1).trimEnd()}…`
-    : hint;
+  if (hint.length <= SEARCH_HINT_MAX_CHARS) return hint;
+
+  const clipped = hint.slice(0, SEARCH_HINT_MAX_CHARS - 1);
+  const lastSpace = clipped.lastIndexOf(' ');
+  // A single word longer than the budget has no boundary to fall back to, so it
+  // is cut where it is rather than dropped entirely.
+  const body = lastSpace > 0 ? clipped.slice(0, lastSpace) : clipped;
+  return `${body.replace(/[,;:\s]+$/, '')}…`;
 }
 
 /**

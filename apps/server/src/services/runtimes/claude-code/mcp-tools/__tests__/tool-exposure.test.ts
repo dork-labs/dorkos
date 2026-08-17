@@ -198,8 +198,19 @@ describe('searchHintFrom', () => {
     );
   });
 
-  it('truncates a description that is really a paragraph', () => {
-    const hint = searchHintFrom(`${'x'.repeat(400)} and more`);
+  it('truncates a long description at a word boundary, never mid-word', () => {
+    const hint = searchHintFrom(`${'alpha beta '.repeat(40)}omega`);
+    expect(hint?.endsWith('…')).toBe(true);
+    expect(hint!.length).toBeLessThanOrEqual(120);
+    // The cut lands after a whole word: dropping the ellipsis leaves words that
+    // are all intact. Cutting at the character count produced "…or o" for
+    // `relay_inbox`, which nothing can match on.
+    const words = hint!.slice(0, -1).split(' ');
+    expect(words.every((word) => word === 'alpha' || word === 'beta')).toBe(true);
+  });
+
+  it('cuts a single over-long word where it is, having no boundary to use', () => {
+    const hint = searchHintFrom('x'.repeat(400));
     expect(hint).toHaveLength(120);
     expect(hint?.endsWith('…')).toBe(true);
   });

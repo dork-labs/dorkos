@@ -3,6 +3,7 @@ covers:
   - 'fix(server): agents are taught DorkOS tools by the names they can actually call (DOR-1292)'
   - 'fix(server): a reaction is the whole answer, so the turn says nothing else (DOR-1292)'
   - 'fix(server,operating-skills): room tools load without a lookup, and no doc names a tool nobody can call (DOR-1292)'
+  - 'fix(server,operating-skills): the skills guard reads the rendered pack, not the import line (DOR-1292)'
 ---
 
 ### Fixed

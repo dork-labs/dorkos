@@ -58,10 +58,13 @@ const T = IN_SESSION_TOOL_PREFIX;
  * the way in. See `mcp-tools/tool-exposure.ts` for which five and why.
  */
 const DORKOS_TOOLS_CONTEXT = `<dorkos_tools>
-Every DorkOS tool named in the blocks below is written the only way you can call
-it: in full, starting ${T} — copy the whole string. Dropping that start does not
-give you a shorter alias for the same tool; it gives you a name that is not a tool
-at all, and the call comes back "No such tool available".
+In the tool blocks below — the ones whose tags end in _tools — every DorkOS tool is
+written the only way you can call it: in full, starting ${T}. Copy the whole
+string. Dropping that start does not give you a shorter alias for the same tool; it
+gives you a name that is not a tool at all, and the call comes back "No such tool
+available". Prose elsewhere may instead describe a tool by the END of its name,
+because other runtimes reach these same tools under a different prefix; on THIS
+runtime the prefix is always ${T}.
 
 The room tools and ${T}list_capabilities are already in your tool list — call them
 straight away, with no lookup step.
@@ -71,10 +74,10 @@ name and then call it:
   ToolSearch(query="select:${T}marketplace_get")
 A search for the short form finds nothing.
 
-The blocks below are not the whole surface. ${T}list_capabilities() returns the
-full catalog of what you can do on this machine — settings, agents, connectors,
-the marketplace — with each entry's id and input schema. Ask it before concluding
-that something cannot be done here.
+Those blocks are not the whole surface. ${T}list_capabilities() returns the full
+catalog of what you can do on this machine — settings, agents, connectors, the
+marketplace — with each entry's id and input schema. Ask it before concluding that
+something cannot be done here.
 </dorkos_tools>`;
 
 const RELAY_TOOLS_CONTEXT = `<relay_tools>

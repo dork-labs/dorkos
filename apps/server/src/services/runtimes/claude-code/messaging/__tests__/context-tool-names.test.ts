@@ -41,10 +41,14 @@
  *    verbatim to the external `/mcp` server, so a description saying "call
  *    `mcp_signin` first" is wrong on claude-code and unreliable elsewhere. Eleven
  *    descriptions were failing this when it was written.
- * 4. **Source scans** of `runtimes/shared/` and `packages/operating-skills`, for the
- *    prose that needs a fixture to render or ships to another harness entirely.
- *    Comments are stripped: TSDoc there legitimately names tools while explaining
- *    why the prose must not.
+ * 4. **`runtimes/shared/` at the source**, for the per-turn bodies (`<room_context>`,
+ *    `<seed_context>`) that need a whole room fixture to render. Comments are
+ *    stripped: TSDoc there legitimately names tools while explaining why the prose
+ *    must not.
+ * 5. **The operating skills, as RENDERED** — `skill.body` off the pack, never the
+ *    file text. These ship into `.claude/skills/` for every harness, and the names
+ *    are the payload of a reference doc, so each page must carry the endings note
+ *    instead of losing them.
  *
  * Check 1 scopes itself by SUBTRACTING the shared blocks from the assembled prompt
  * rather than by listing the claude-code blocks, so a block added tomorrow is
@@ -63,6 +67,10 @@
  *   was prefix-only and missed it.
  * - A hand-written `'mcp__dorkos__post_to_room'` in the auto-approval allow-list:
  *   red in `tool-exposure.test.ts`, which owns that half.
+ * - `${TOOL_NAME_NOTE}` deleted from `managing-agents.ts`'s BODY with the import
+ *   left in place: red. The previous revision scanned the file text for the
+ *   identifier, which the import alone satisfied, so a skill that shipped naming
+ *   `mesh_list` bare with no note passed. Check 5 reads the rendered body instead.
  *
  * @vitest-environment node
  */
@@ -112,6 +120,7 @@ import {
 import { createDorkOsToolServer } from '../../mcp-tools/index.js';
 import { ALWAYS_LOADED_TOOLS, IN_SESSION_TOOL_PREFIX } from '../../mcp-tools/tool-exposure.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
+import { OPERATING_SKILLS_PACK, TOOL_NAME_NOTE } from '@dorkos/operating-skills';
 import { GEN_UI_CONTEXT } from '../../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../../shared/agent-context.js';
 import type { McpToolDeps } from '../../mcp-tools/types.js';
@@ -208,9 +217,12 @@ function namedAsCallable(block: string, advertised: ReadonlySet<string>): string
     // Whole-block rather than per-line: the qualifier and the token routinely
     // land on either side of a wrap, and `\s` spans the newline.
     const before = block.slice(0, match.index);
-    // The optional backslash matches the SOURCE form: inside a template literal
-    // the delimiter is written `\``, so a scan of raw source sees the escape.
-    if (!/ends in\s+\\?`?$/i.test(before)) offenders.push(token);
+    // The backtick is REQUIRED, so the one permitted form is unambiguous: an
+    // un-backticked "ends in post_to_room" reads as a name to type and would have
+    // slipped through. The optional backslash matches the SOURCE form — inside a
+    // template literal the delimiter is written `\``, so a raw-source scan sees
+    // the escape.
+    if (!/ends in\s+\\?`$/i.test(before)) offenders.push(token);
   }
   return offenders;
 }
@@ -327,7 +339,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // The reverse guard on the guard: if nothing were prefixed at all, the check
     // above would pass while teaching nothing callable. Counted exactly, so the
     // day a block stops rendering the number moves rather than the bound holding.
-    expect(prefixed.length).toBe(78);
+    expect(prefixed.length).toBe(79);
   });
 
   it('explains the naming rule, and which tools need no lookup at all', async () => {
@@ -481,35 +493,39 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // would make the pages useless to search. The names stay; the page has to say
     // what they are. One shared note, so six documents cannot drift into six
     // slightly different claims.
+    //
+    // Read off the RENDERED pack, never the source. An earlier revision scanned
+    // the file text for `TOOL_NAME_NOTE`, which the `import` line alone satisfied:
+    // the reviewer deleted `${TOOL_NAME_NOTE}` from `managing-agents.ts`'s body,
+    // left the import, and this passed while the projected skill named `mesh_list`
+    // and `create_agent` bare with no note in sight. `skill.body` is the artifact
+    // an agent actually receives, so it cannot be satisfied by an import.
     const advertised = await advertisedToolNames();
-    const dir = fileURLToPath(
-      new URL('../../../../../../../../packages/operating-skills/src/skills/', import.meta.url)
-    );
-    const skills = (await readdir(dir)).filter((name) => name.endsWith('.ts')).sort();
-    expect(skills).toEqual([
-      'answering-dorkos-questions.ts',
-      'managing-agents.ts',
-      'operating-dorkos.ts',
-      'reading-activity.ts',
-      'scheduling-tasks.ts',
-      'using-the-marketplace.ts',
+    expect(OPERATING_SKILLS_PACK.map((skill) => skill.name).sort()).toEqual([
+      'answering-dorkos-questions',
+      'managing-agents',
+      'operating-dorkos',
+      'reading-activity',
+      'scheduling-tasks',
+      'using-the-marketplace',
     ]);
 
     const offenders: string[] = [];
-    for (const name of skills) {
-      const source = stripComments(await readFile(join(dir, name), 'utf8'));
-      const names = [...new Set(namedAsCallable(source, advertised))];
-      if (names.length > 0 && !source.includes('TOOL_NAME_NOTE')) {
-        offenders.push(`${name}: names ${names.sort().join(', ')} without the endings note`);
+    for (const skill of OPERATING_SKILLS_PACK) {
+      const names = [...new Set(namedAsCallable(skill.body, advertised))];
+      if (names.length > 0 && !skill.body.includes(TOOL_NAME_NOTE)) {
+        offenders.push(`${skill.name}: names ${names.sort().join(', ')} without the endings note`);
       }
       // The prefix itself is never right here: one of the three runtimes would be
       // reading somebody else's tool name.
-      if (source.includes(IN_SESSION_TOOL_PREFIX)) offenders.push(`${name}: spells the prefix`);
+      if (skill.body.includes(IN_SESSION_TOOL_PREFIX)) {
+        offenders.push(`${skill.name}: spells the prefix`);
+      }
     }
     expect(
       offenders,
       'these skills name DorkOS tools without telling the reader the names are endings. ' +
-        'Prepend TOOL_NAME_NOTE to the body.'
+        'Interpolate TOOL_NAME_NOTE into the body.'
     ).toEqual([]);
   });
 });
