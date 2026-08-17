@@ -1,7 +1,7 @@
 /**
  * The prompts a turn STOPS on, answered through the real UI (DOR-1214).
  *
- * Backs four rows of `meta/chat-capabilities.md` that had only unit or
+ * Backs five rows of `meta/chat-capabilities.md` that had only unit or
  * live-self-test coverage:
  *
  * - **I-01** — the tool-approval card renders; Approve runs the tool and the
@@ -10,6 +10,8 @@
  * - **I-03** — an AskUserQuestion prompt renders, choosing an option delivers
  *   the answer, and the turn continues.
  * - **I-04** — an MCP elicitation prompt.
+ * - **I-05** — a parked prompt survives a hard refresh and is still answerable
+ *   (DOR-1269, which is what the row's missing `E` was hiding).
  *
  * **What makes these tests able to fail.** Each scenario the test-mode runtime
  * runs genuinely PARKS on the answer and then streams a branch-naming sentence
@@ -312,6 +314,71 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
       // and the rebuild from history replaces that row — so asserting it is a
       // race against the turn closing. It lost that race once in 3 repeats.
       await expect(group).toHaveCount(0, { timeout: SERVER_ROUND_TRIP_MS });
+    });
+  });
+
+  test.describe('a parked prompt survives a reload (I-05)', () => {
+    test('a question is still there, and still answerable, after a hard refresh', async ({
+      page,
+      request,
+    }) => {
+      const { chatPage } = await openScenario(page, request, 'question-prompt');
+      await chatPage.sendAndLand('set up the tests');
+
+      const question = 'Which test runner should I set up?';
+      await expect(page.getByRole('radiogroup', { name: question })).toBeVisible({
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+
+      // The refresh. Everything the browser held is gone; the card has to come
+      // back from the session's own cold snapshot or not at all.
+      await page.reload();
+      await chatPage.basePage.waitForAppReady();
+
+      const group = page.getByRole('radiogroup', { name: question });
+      await expect(group).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+      await expect(group.getByText('Vitest')).toBeVisible();
+
+      // Still parked — the reload did not answer it on the person's behalf.
+      await expect(transcript(page)).not.toContainText('ANSWER-RECEIVED');
+
+      // And answering the RECOVERED card still reaches the agent: the choice is
+      // quoted back, which the other option would not produce.
+      await group.getByRole('radio', { name: /Vitest/ }).click();
+      await page.getByRole('button', { name: /^Submit/ }).click();
+      await expect(transcript(page)).toContainText('ANSWER-RECEIVED: Vitest', {
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+      await expect(group).toHaveCount(0, { timeout: SERVER_ROUND_TRIP_MS });
+    });
+
+    test('a tool approval is still there, and still answerable, after a hard refresh', async ({
+      page,
+      request,
+    }) => {
+      const { chatPage } = await openScenario(page, request, 'approval-gated');
+      await chatPage.sendAndLand('edit the release notes');
+
+      await expect(page.getByTestId('tool-approval')).toBeVisible({
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+
+      await page.reload();
+      await chatPage.basePage.waitForAppReady();
+
+      const card = page.getByTestId('tool-approval');
+      await expect(card).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+      await expect(card).toContainText('Edit notes/release.md');
+      await expect(transcript(page)).not.toContainText('APPROVED-BRANCH');
+
+      await card.getByRole('button', { name: /^Approve(?!\s+All)/ }).click();
+      await expect(transcript(page)).toContainText('APPROVED-BRANCH', {
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+      // And the RECOVERED card closes behind the answer, like the live one does.
+      // A recovery that restores an unanswerable-but-still-showing card would
+      // satisfy every assertion above this line.
+      await expect(card).toHaveCount(0, { timeout: SERVER_ROUND_TRIP_MS });
     });
   });
 
