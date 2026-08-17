@@ -26,6 +26,7 @@ import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { withClaudeConfigDir } from '../claude-config-env-lock.js';
 import type { TranscriptReader } from './transcript-reader.js';
 import type { SessionLockManager } from '../../../session/session-lock.js';
+import { awaitStopAck, type StopAck } from './bounded-stop.js';
 
 /**
  * Manages in-memory session state for the Claude Code runtime.
@@ -502,29 +503,45 @@ export class SessionStore {
     return true;
   }
 
-  /** Stop a running background task. */
+  /**
+   * Stop a running background task, bounded like every other stop (DOR-1244).
+   *
+   * `stop_task` is a control request, so it hangs on a CLI whose stdin DorkOS
+   * has already ended exactly as `interrupt()` does. Past the bound this
+   * reports failure and leaves the turn alone — deliberately NOT escalating to
+   * `close()`, because the button asked to end ONE background task and killing
+   * the subprocess would take the whole turn with it.
+   */
   async stopTask(sessionId: string, taskId: string): Promise<boolean> {
     const session = this.findSession(sessionId);
-    if (!session?.activeQuery) return false;
+    const query = session?.activeQuery;
+    if (!session || !query) return false;
     // Like interruptQuery: an operator-driven cancellation may surface as the
     // CLI's interrupt sentinel on the task's pending calls — stamp it so the
     // phantom detector (DOR-1087) treats those as legitimate.
     session.interruptRequestedAt = Date.now();
-    try {
-      await session.activeQuery.stopTask(taskId);
-      return true;
-    } catch {
-      // The stop never took effect — do not blind the phantom detector.
-      session.interruptRequestedAt = undefined;
-      return false;
-    }
+    const ack = await awaitStopAck(() => query.stopTask(taskId));
+    if (ack === 'acked') return true;
+    logger.warn('[stopTask] the CLI did not stop the task', { sessionId, taskId, ack });
+    // Only a REFUSAL clears the stamp. A refusal is the CLI saying the stop did
+    // not happen, so a sentinel arriving afterwards really is a phantom. An
+    // unacked request is not an answer at all: the CLI may still be about to
+    // honour it, and cancelling the task's pending calls a second past the bound
+    // would then produce sentinels with nothing on record — the operator would
+    // be told "that was a system glitch, not you" about a stop they asked for,
+    // the model would be steered a correction it should not get, and the
+    // DOR-1288 tripwire would count a phantom that never was. The stamp expires
+    // on its own after `INTERRUPT_SUPPRESSION_WINDOW_MS` and is cleared at the
+    // next turn start, so leaving it costs nothing beyond that window.
+    if (ack === 'refused') session.interruptRequestedAt = undefined;
+    return false;
   }
 
   /**
    * Interrupt the active query for a session.
    *
-   * Tries `query.interrupt()` first (graceful). If that throws,
-   * falls back to `query.close()` (forceful subprocess termination).
+   * Tries `query.interrupt()` first (graceful), bounded; escalates to
+   * `query.close()` when that is refused or goes unacknowledged.
    */
   async interruptQuery(sessionId: string): Promise<boolean> {
     const session = this.findSession(sessionId);
@@ -533,14 +550,29 @@ export class SessionStore {
   }
 
   /**
-   * Interrupt a SPECIFIC query for a session, escalating to a forceful
-   * `close()` if the graceful `interrupt()` throws.
+   * Interrupt a SPECIFIC query for a session — **the bounded Stop** every
+   * caller here ends up in (the cockpit's button, a room's halt, the stall
+   * watchdog, a Stop during launch).
+   *
+   * **The property: Stop is bounded.** A graceful `interrupt()` that is neither
+   * answered nor refused inside `STOP_ACK_TIMEOUT_MS` is abandoned and the
+   * process is closed, so the turn ends within that window whatever the CLI is
+   * doing. Waiting on the ack alone was unbounded in the one case where it
+   * matters most — a turn winding down, whose stdin DorkOS itself has closed,
+   * where the SDK drops the request in silence and the promise behind it is
+   * settled by nothing (DOR-1244; the mechanics are in `bounded-stop.ts`).
    *
    * Split out of {@link interruptQuery} so the persistent path can stop a turn
    * that is still BOOTING — one whose live query the pump holds before its
    * `running` edge has armed `session.activeQuery` (DOR-1191). Same escalation,
    * same phantom-cancellation stamp, so a Stop during launch behaves exactly as
    * a Stop on a turn that has already reached the model.
+   *
+   * The persistent path pays the full bound whichever phase it is in: only the
+   * resume path records `stdinEndedQueries`, because only it ends a CLI's stdin
+   * mid-session (the pump deliberately never does, `persistent-dispatch.ts`).
+   * That is the right default there — a needless `close()` costs that path a
+   * warm process — and it is why the fast path below is not simply assumed.
    *
    * @param sessionId - The session the query belongs to
    * @param query - The live query to interrupt
@@ -552,21 +584,56 @@ export class SessionStore {
     if (!session) return false;
     // A deliberate stop is about to cancel every pending tool call; stamp it so
     // the phantom-cancellation detector (DOR-1087) treats the resulting CLI
-    // interrupt sentinels as legitimate rather than phantoms.
+    // interrupt sentinels as legitimate rather than phantoms. It SURVIVES the
+    // escalation below on purpose: a `close()` produces exactly those sentinels,
+    // and they are as deliberate as an interrupt's would have been.
     session.interruptRequestedAt = Date.now();
+    // Recorded BEFORE the attempt, so a Stop still in flight when the turn's
+    // stream ends is already on record: the send loop reads this to settle a
+    // stopped turn as `interrupted` rather than idle (DOR-1244).
+    (session.stoppedQueries ??= new WeakSet()).add(query);
+    // DorkOS ended this query's stdin itself, so nothing it writes can arrive
+    // and no ack can come back. Skip a graceful attempt already known to be
+    // undeliverable rather than spending the bound proving it again. Matched by
+    // IDENTITY, never per-session: overlapping turns share a session, and the
+    // outgoing turn's close must not condemn its successor (DOR-1088).
+    if (session.stdinEndedQueries?.has(query) === true) {
+      logger.info('[interruptQuery] stdin already ended; closing without a graceful attempt', {
+        sessionId,
+      });
+      return this.closeStoppedQuery(session, query);
+    }
+    const ack: StopAck = await awaitStopAck(() => query.interrupt());
+    if (ack === 'acked') return true;
+    logger.warn('[interruptQuery] the graceful interrupt did not take; closing the process', {
+      sessionId,
+      ack,
+    });
+    return this.closeStoppedQuery(session, query);
+  }
+
+  /**
+   * The escalation itself: kill the subprocess, and report whether anything at
+   * all stopped the turn.
+   *
+   * `session.interruptRequestedAt` deliberately SURVIVES a successful close — the
+   * sentinels the close produces on every pending tool call are as deliberate as
+   * an interrupt's would have been, and the phantom detector (DOR-1087) has to
+   * read them that way. It is cleared only when the close itself throws, because
+   * then nothing stopped the turn and a sentinel really would be a phantom.
+   *
+   * @param session - The live session, for the phantom-cancellation stamp
+   * @param query - The query to close
+   * @returns True when the process was closed, false when even that failed
+   */
+  private closeStoppedQuery(session: AgentSession, query: Query): boolean {
     try {
-      await query.interrupt();
+      query.close();
       return true;
     } catch {
-      // Interrupt failed — escalate to forceful close
-      try {
-        query.close();
-        return true;
-      } catch {
-        // Neither path stopped the turn — do not blind the phantom detector.
-        session.interruptRequestedAt = undefined;
-        return false;
-      }
+      // Neither path stopped the turn — do not blind the phantom detector.
+      session.interruptRequestedAt = undefined;
+      return false;
     }
   }
 

@@ -66,6 +66,32 @@ export interface AgentSession {
   activeQuery?: Query;
   /** Last completed SDK query — persisted after streaming for post-stream control (reloadPlugins). */
   lastQuery?: Query;
+  /**
+   * Queries whose stdin DorkOS has already ended — the held prompt was closed,
+   * so that CLI subprocess can no longer receive anything DorkOS writes,
+   * control requests included (`messaging/stdin-hold.ts`).
+   *
+   * A SET keyed by the query, not a single slot and not a flag, for two reasons
+   * that both come from overlapping turns sharing one session (DOR-1088): an
+   * outgoing turn closing its own stdin must not make its successor's healthy
+   * query look deaf, and an older turn settling LATE must not overwrite a
+   * record the newer one already wrote. Weak, so a retired query is collected
+   * with everything else that referenced it and nothing has to be cleared.
+   *
+   * Read by `interruptGivenQuery`, which closes such a query at once rather
+   * than awaiting an ack that can never arrive (DOR-1244).
+   */
+  stdinEndedQueries?: WeakSet<Query>;
+  /**
+   * Queries a DorkOS Stop has been aimed at — `interruptQuery`, the room halt,
+   * the stall watchdog, a Stop during launch. Recorded before the interrupt is
+   * even attempted, so a Stop still in flight when the stream ends still counts.
+   *
+   * Same shape and the same reasons as {@link stdinEndedQueries}. Read by the
+   * send loop, which uses it to settle a turn that was stopped rather than
+   * finished as `interrupted` instead of idle (DOR-1244).
+   */
+  stoppedQueries?: WeakSet<Query>;
   pendingInteractions: Map<string, PendingInteraction>;
   eventQueue: StreamEvent[];
   eventQueueNotify?: () => void;
