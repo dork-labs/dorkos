@@ -97,15 +97,43 @@ export function MakeDefaultStopLine({
           // `animate-in` is a one-shot mount animation, and `motion-reduce`
           // turns it off entirely — reduced motion gets the line at once and
           // keeps every second of its life.
+          //
+          // `flex` here, not `truncate`: the two actions used to share this
+          // element's single `truncate` (`overflow-hidden` + `nowrap`) with the
+          // sentence, so a runtime whose stop label was long enough — "Full
+          // autonomy" is the one that shipped this way — pushed `Make default`
+          // past the clipped edge. The button was still THERE, laid out at its
+          // full-sentence position; `overflow-hidden` just stopped painting it
+          // and stopped it from being hit-tested, so a click on where it looked
+          // like it should be landed on this element instead (DOR-1270). Split
+          // the row into a truncating sentence and a non-shrinking action
+          // cluster instead, so only the words ever give way.
           className={cn(
-            'animate-in fade-in-0 truncate text-xs duration-200 motion-reduce:animate-none',
+            'animate-in fade-in-0 flex min-w-0 items-center gap-1.5 text-xs duration-200 motion-reduce:animate-none',
             error ? 'text-destructive' : 'text-muted-foreground'
           )}
         >
-          {error ? (
-            <>
-              <CircleAlert className="mr-1 inline size-3 shrink-0 align-[-2px]" aria-hidden />
-              {error}{' '}
+          <span className="min-w-0 flex-1 truncate">
+            {error ? (
+              <>
+                <CircleAlert className="mr-1 inline size-3 shrink-0 align-[-2px]" aria-hidden />
+                {error}
+              </>
+            ) : (
+              <>Start every new session in {stopLabel(stop)}?</>
+            )}
+          </span>{' '}
+          {/* Never `truncate`, and no `flex-wrap` either: whatever the sentence
+              gives up, these stay on the one line and never shrink below their
+              own content. That has a floor — below roughly 137px of row this
+              cluster no longer fits at all — but nothing renders this offer
+              that narrow today: the popover's fixed content is ~296px wide,
+              matching production's floor, and its `overflow-x` computes to
+              `auto` alongside the `overflow-y-auto` it already carries
+              (`ResponsivePopoverContent`), so even a future narrower row would
+              scroll into view rather than clip. */}
+          <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+            {error ? (
               <button
                 type="button"
                 disabled={pending}
@@ -115,10 +143,7 @@ export function MakeDefaultStopLine({
               >
                 Try again
               </button>
-            </>
-          ) : (
-            <>
-              Start every new session in {stopLabel(stop)}?{' '}
+            ) : (
               <button
                 type="button"
                 disabled={pending}
@@ -128,17 +153,17 @@ export function MakeDefaultStopLine({
               >
                 Make default
               </button>
-            </>
-          )}
-          <span aria-hidden> · </span>
-          <button
-            type="button"
-            onClick={onDismiss}
-            data-testid="make-default-dismiss"
-            className="focus-ring hover:text-foreground rounded-sm underline underline-offset-2"
-          >
-            Dismiss
-          </button>
+            )}
+            <span aria-hidden>·</span>
+            <button
+              type="button"
+              onClick={onDismiss}
+              data-testid="make-default-dismiss"
+              className="focus-ring hover:text-foreground rounded-sm underline underline-offset-2"
+            >
+              Dismiss
+            </button>
+          </span>
         </p>
       )}
     </div>
