@@ -80,7 +80,6 @@ function renderRow(overrides: Partial<Parameters<typeof AgentListItem>[0]> = {})
     isExpanded: false,
     onSelect: vi.fn(),
     onToggleExpand: vi.fn(),
-    onOpenProfile: vi.fn(),
     onRequestNewGroup: vi.fn(),
     sessions: [],
     isLoadingSessions: false,
@@ -131,7 +130,12 @@ describe('the face on a sidebar agent row', () => {
     expect(props.onSelect).toHaveBeenCalledTimes(1);
   });
 
-  it('draws no control at all when the fleet cannot name this agent', () => {
+  it('draws no control at all when handed no destination', () => {
+    // The component's own contract, not a product state: the sidebar always
+    // supplies a destination now — `SidebarChrome.viewProfileFor` falls back to
+    // the docked profile for an agent the roster cannot name (DOR-1255, covered
+    // in `DashboardSidebar.test.tsx`). What this pins is that the row draws no
+    // dead affordance when there is genuinely nowhere to go.
     renderRow({ onViewProfile: undefined });
 
     expect(screen.queryByRole('button', { name: 'Open Alpha’s profile' })).toBeNull();

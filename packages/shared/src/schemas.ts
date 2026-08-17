@@ -500,6 +500,11 @@ export type MessageDisposition = z.infer<typeof MessageDispositionSchema>;
  *   natively (to the person a stage landed either way; this says how).
  * - `session-idle` — no turn was running, so the message ran immediately. The
  *   one downgrade worth staying quiet about: "it ran now" is not a loss.
+ * - `not-steerable` — a turn WAS running and the runtime could not join it,
+ *   because the mechanism that cuts in is not under this session (the runtime's
+ *   `canSteerSession`). Distinct from `session-idle`, which
+ *   it used to be reported as: nothing ran early here, the message went to the
+ *   back of the line, and the sender has to be told (DOR-1268).
  * - `no-open-turn` — there is no turn this caller may join: it ended between the
  *   request and the delivery, its input stream had closed, or a DIFFERENT client
  *   owns the live turn. The message waits in the queue instead.
@@ -508,7 +513,7 @@ export type MessageDisposition = z.infer<typeof MessageDispositionSchema>;
  *   asked.
  */
 export const DispositionDowngradeReasonSchema = z
-  .enum(['unsupported', 'session-idle', 'no-open-turn', 'pending-interaction'])
+  .enum(['unsupported', 'session-idle', 'not-steerable', 'no-open-turn', 'pending-interaction'])
   .openapi('DispositionDowngradeReason');
 
 /** Why a disposition was downgraded. See {@link DispositionDowngradeReasonSchema}. */

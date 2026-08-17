@@ -1,6 +1,5 @@
 /**
- * `GET /api/debug/*` — the five in-memory truths, made readable without a
- * restart.
+ * `GET /api/debug/*` — the in-memory truths, made readable without a restart.
  *
  * The 2026-07-31 incident asked five questions and the process could answer
  * none of them from outside:
@@ -12,6 +11,11 @@
  * | Which projector owns this session, and who is subscribed?        | the projector registry            |
  * | Did an agent refuse, and was the refusal shown or damped?        | nothing — it was not recorded     |
  * | Does this room binding point at a session with a transcript?     | `room_sessions` vs. the disk slug |
+ *
+ * One more was added later, for a different reason: `phantom-cancellations` is a
+ * regression tripwire rather than an incident read (DOR-1087, DOR-1288). It
+ * counts how often the CLI cancels its own pending tool calls, so a class of bug
+ * that was once counted by watching a session go by has a number instead.
  *
  * ## Always mounted, and why that is the safe choice
  *
@@ -43,6 +47,7 @@ import {
   recentRefusals,
   DISPATCH_BUFFER_SIZE,
 } from '../services/observability/dispatch-buffers.js';
+import { phantomCancellationStats } from '../services/observability/phantom-cancellations.js';
 import {
   listProjectorDebugCounters,
   peekProjector,
@@ -110,6 +115,14 @@ router.get('/dispatches', (req, res) => {
 // GET /api/debug/refusals — every path that recently declined to do the obvious thing.
 router.get('/refusals', (req, res) => {
   res.json({ refusals: recentRefusals(readLimit(req.query.limit)) });
+});
+
+// GET /api/debug/phantom-cancellations — how often the CLI cancelled its own
+// pending tool calls, split by which sender saw it (DOR-1087, DOR-1288). This is
+// the read spec `persistent-session-runtime` task 5.1 samples to compare the
+// flag-off and flag-on legs of its measurement.
+router.get('/phantom-cancellations', (req, res) => {
+  res.json(phantomCancellationStats(readLimit(req.query.limit)));
 });
 
 // GET /api/debug/projectors — the live projector registry.

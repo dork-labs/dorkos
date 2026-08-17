@@ -318,8 +318,8 @@ function readConnectionsRegion(): string | undefined {
  * Render the tab the way the Obsidian embed does: no `RouterProvider` at all.
  *
  * This is a real surface, not a hypothetical. `app/init-extensions.ts` registers
- * the Agent Hub right-panel tab from both the web entry and the embed, and
- * `agent-hub/ui/tabs/ConfigTab.tsx` renders this component inside it.
+ * the profile's Connections page from both the web entry and the embed, and
+ * `features/profile/ui/pages/ConnectionsPage.tsx` renders this component inside it.
  */
 function renderTabWithoutRouter(agent: AgentManifest = baseAgent) {
   const { container } = render(<IntegrationsTab agent={agent} />);

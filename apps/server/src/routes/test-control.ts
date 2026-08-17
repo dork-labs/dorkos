@@ -156,7 +156,10 @@ const TEST_TOKEN_TIER_CEILING: CapabilityTier = 'act';
  *
  * The display name comes from the manifest for the same reason it does there —
  * a caller-supplied one would let a real agent's token carry a name nobody gave
- * it.
+ * it — and it is the manifest's `displayName`, falling back to the slug only
+ * when the agent has none. The token's label is what a room message an agent
+ * writes is attributed with, so minting under the slug renames the agent
+ * (DOR-1264).
  *
  * Gated the same way the rest of this router is: mounted only under
  * `DORKOS_TEST_RUNTIME`, absent in production.
@@ -171,7 +174,9 @@ testControlRouter.post('/agent-token', async (req, res) => {
   const { agentPath } = result.data;
 
   const meshCore = req.app.locals.meshCore as
-    | { getByPath(projectPath: string): { name: string } | undefined }
+    | {
+        getByPath(projectPath: string): { name: string; displayName?: string } | undefined;
+      }
     | undefined;
   const agent = meshCore?.getByPath(agentPath);
   if (!agent) {
@@ -192,7 +197,7 @@ testControlRouter.post('/agent-token', async (req, res) => {
 
   const token = await service.mint({
     agentPath,
-    displayName: agent.name,
+    displayName: agent.displayName ?? agent.name,
     tierCeiling: TEST_TOKEN_TIER_CEILING,
   });
   res.json({ token });

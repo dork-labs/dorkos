@@ -46,6 +46,7 @@ import {
   searchHintFrom,
 } from '../tool-exposure.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
+import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../types.js';
 
 /** The SDK's private spelling of the two loading controls. */
@@ -70,6 +71,7 @@ function createFullDeps(): McpToolDeps {
     extensionManager: stub,
     runtimeRegistry: stub,
     activityService: stub,
+    notifyBudget: new NotifyBudget(),
   };
 }
 

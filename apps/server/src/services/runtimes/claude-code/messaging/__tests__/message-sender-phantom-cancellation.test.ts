@@ -10,8 +10,12 @@
  * the subagent, so its note goes to the coordinator instead (DOR-1150). A REAL
  * operator deny must trigger neither.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
+import {
+  phantomCancellationStats,
+  resetPhantomCancellations,
+} from '../../../../observability/phantom-cancellations.js';
 import type { AgentSession } from '../../agent-types.js';
 import { CLI_INTERRUPT_SENTINEL } from '../phantom-cancellation.js';
 import { DEFERRED_CLOSE_TIMEOUT_MS } from '../stdin-hold.js';
@@ -199,6 +203,44 @@ function isPhantomStatus(e: StreamEvent): boolean {
 describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetPhantomCancellations();
+  });
+
+  afterEach(() => {
+    resetPhantomCancellations();
+  });
+
+  // The tripwire's flag-OFF leg (DOR-1288). Task 5.1 compares this count against
+  // the pump's, so the resume path must attribute its phantoms to `turn` — a
+  // phantom counted under the wrong path would make persistence look like the
+  // cure or the cause depending on which way it landed.
+  it('counts its phantoms against the turn path, never the pump path', async () => {
+    await runTurn(makeSession(), [
+      sentinelMsg(['toolu_x', 'toolu_y']),
+      sentinelMsg('toolu_sub', 'toolu_parent'),
+      resultMsg(),
+    ]);
+
+    const stats = phantomCancellationStats();
+    expect(stats.byPath).toEqual({ turn: 3, pump: 0 });
+    expect(stats.mainThread).toBe(2);
+    expect(stats.subagent).toBe(1);
+    // The resume path DOES steer, and the counter records that it did — the one
+    // field that tells the two paths' records apart after the fact.
+    expect(stats.steered).toBe(2);
+  });
+
+  it('counts nothing for a real operator stop mid-turn', async () => {
+    const session = makeSession();
+    await runTurn(session, [
+      () => {
+        session.interruptRequestedAt = Date.now();
+      },
+      sentinelMsg('toolu_stopped'),
+      resultMsg(),
+    ]);
+
+    expect(phantomCancellationStats().total).toBe(0);
   });
 
   it('steers a corrective note and yields a system_status on a main-thread phantom', async () => {

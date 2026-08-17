@@ -25,9 +25,10 @@ export const dialogSearchSchema = z.object({
   // use today.
   agent: z.string().optional(),
   agentPath: z.string().optional(),
-  // Shell-level right panel: which tab, and (legacy) which of the Agent Hub's
-  // inner tabs. `hubTab` is read only by the redirect above; `profilePage` is
-  // its successor.
+  // Shell-level right panel: which tab, and (LEGACY) which inner tab of the
+  // agent panel the profile replaced. `hubTab` is kept only so the redirect
+  // above can read an old bookmark and translate it; nothing writes it, and
+  // `profilePage` is its successor.
   panel: z.string().optional(),
   hubTab: z.string().optional(),
   // Profile — the one param that names a subject rather than a tab: the roster

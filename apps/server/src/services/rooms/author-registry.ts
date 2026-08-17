@@ -29,6 +29,7 @@
  *
  * @module server/services/rooms/author-registry
  */
+import { basename } from 'node:path';
 import { ulid } from 'ulidx';
 import {
   agents,
@@ -58,11 +59,11 @@ import { RoomError, type RoomAgent, type RoomAgentLookup } from './room-errors.j
 /**
  * The mesh-cache read the registry falls back to when nobody injects a lookup.
  *
- * Deliberately minimal: the registry asks two questions of an agent — which
- * occupant is at this directory, and what is its `name` — so the render fields
- * are filled with placeholders rather than queried. A caller that needs those
- * (the room subsystem, which shares one lookup across the whole domain) injects
- * its own.
+ * Deliberately minimal: the registry asks three questions of an agent — which
+ * occupant is at this directory, what is its `name`, and what does its manifest
+ * call it — so the render fields are filled with placeholders rather than
+ * queried. A caller that needs those (the room subsystem, which shares one
+ * lookup across the whole domain) injects its own.
  *
  * @param db - The database.
  */
@@ -167,7 +168,7 @@ export interface AuthorRecord {
    * Render cache: the URL of the author's photo, or `null` when they have none.
    *
    * The fourth field on the `display_name`/`emoji`/`color` lifecycle — refreshed
-   * every time the author resolves, because it is a cache and its source is
+   * by a resolve whose caller knows it, because it is a cache and its source is
    * elsewhere. Deliberately NOT on `handle`'s lifecycle: a handle is a key and
    * is written once at mint, which is the distinction the two of them sitting
    * next to each other on this interface most needs to make.
@@ -273,12 +274,111 @@ export function isOwnerRecord(record: AuthorRecord, ownerUserId: string | null):
   );
 }
 
+/**
+ * The display name a resolve should WRITE, or `undefined` when this caller does
+ * not know one and the stored label has to stand.
+ *
+ * `displayName` used to be refreshed unconditionally while `emoji`, `color` and
+ * `imageUrl` beside it were guarded, and that asymmetry was a bug rather than a
+ * decision (DOR-1264): the callers that resolve an agent do not all know the
+ * same thing.
+ *
+ * - A **mesh-backed** caller — the roster, the moments feed, the Relay DM
+ *   notifier — read the manifest a moment ago, so its string IS the display
+ *   name.
+ * - An **identity-token** caller — `room-capabilities.ts`, `room-caller.ts` —
+ *   replays whatever name was minted into the token when the session spawned
+ *   (`agent-token-env.ts`). That is a snapshot taken somewhere else, and until
+ *   DOR-1264 it was a snapshot of the SLUG.
+ *
+ * So "knows one" is spelled out rather than assumed, in two halves. A blank
+ * name is a caller that could not name the author at all. And a name that is
+ * exactly the occupant's slug, at a directory whose manifest says the display
+ * name is something else, is a caller holding the ADDRESS rather than the
+ * label — the shape that renamed `Docs Writer` to `docs-writer` in every
+ * message it wrote and in the member list.
+ *
+ * The slug half cannot misfire on an agent whose display name genuinely IS its
+ * slug: there the two strings agree, so there is nothing to downgrade and the
+ * refresh proceeds. It is a guard against a caller that knows less than it
+ * appears to, never a rule about which strings may be display names.
+ *
+ * **It depends on one property of every {@link RoomAgentLookup}, so state it
+ * rather than assume it: `displayName` is COALESCED, never the raw nullable
+ * column.** Both production lookups spell it `row.displayName ?? row.name`
+ * ({@link registryAgentLookup} here, `createAgentLookup` in `rooms/index.ts`),
+ * and roughly half of a real install's agents store no display name at all. A
+ * lookup that surfaced `null` as an empty string, or as a different string from
+ * `name`, would make this guard start refusing legitimate renames for exactly
+ * those agents. Any new implementation coalesces.
+ *
+ * @param supplied - The label this resolve carried.
+ * @param occupant - The agent registered at this directory right now — `null`
+ *   for a non-agent author, and for a directory that hosts none.
+ */
+function knownDisplayName(
+  supplied: string | undefined,
+  occupant: RoomAgent | null
+): string | undefined {
+  const name = supplied?.trim();
+  if (!name) return undefined;
+  if (occupant && name === occupant.name && occupant.displayName !== occupant.name) {
+    return undefined;
+  }
+  return name;
+}
+
+/**
+ * The label a row MINTED by this resolve carries — which is a different question
+ * from what a refresh writes, and takes its answers in the opposite order.
+ *
+ * A refresh protects a STORED label, so the caller's is weighed against it. A
+ * mint has no stored label to protect: the row is new, or the previous one has
+ * just been retired and its name belonged to the agent that left. So the
+ * occupant is authoritative here.
+ *
+ * That ordering is what stops a still-live token from a PREVIOUS occupant of a
+ * directory naming its successor. Tokens are never rewritten and live up to
+ * {@link TOKEN_ABSOLUTE_TTL_MS}, so an agent re-inited in place can be reached
+ * by a bearer call carrying the old agent's name — a name `knownDisplayName`
+ * accepts, because it differs from the new occupant's slug and so looks like a
+ * caller that knows something. It knows something about somebody else.
+ *
+ * The last resort exists because {@link AuthorRefSchema} requires a non-empty
+ * name: a blank row is one no roster could render. It is reachable only for an
+ * agent — a directory with no registered occupant, resolved by a caller that
+ * carried no label — because every human path arrives with a constant or with
+ * `sanitizeIdentity(...) ?? platformUserId`. The directory's own last segment is
+ * the honest answer there, and is the string `agents.name` is itself usually
+ * derived from; nothing is invented, and the full path never renders.
+ *
+ * @param input - The resolve, as its caller spelled it.
+ * @param occupant - The agent registered at this directory right now, or `null`.
+ * @param known - {@link knownDisplayName}'s verdict on the caller's label.
+ */
+function mintDisplayName(
+  input: ResolveAuthorInput,
+  occupant: RoomAgent | null,
+  known: string | undefined
+): string {
+  const named = occupant?.displayName ?? known;
+  if (named) return named;
+  if (input.kind !== 'agent') return input.displayName;
+  return basename(input.naturalKey) || input.naturalKey;
+}
+
 /** What resolving an author needs: its kind, its stable key, and a label. */
 export interface ResolveAuthorInput {
   kind: AuthorKind;
   /** The stable identity: an agent's `agentPath`, `'local'`, or `'system'`. */
   naturalKey: string;
-  /** Human-readable label, refreshed on the row every time it is resolved. */
+  /**
+   * Human-readable label, refreshed on the row every time a caller that KNOWS
+   * one resolves — see {@link knownDisplayName} for what that means and why the
+   * two callers on the agent path do not know the same thing. Blank is "this
+   * caller cannot name the author", and leaves the stored label alone exactly
+   * like an omitted {@link ResolveAuthorInput.emoji}.
+   */
   displayName: string;
   /**
    * Emoji avatar, refreshed on the row like `displayName`. `undefined` means
@@ -472,9 +572,18 @@ export class AuthorRegistry {
    */
   private upsert(input: ResolveAuthorInput): AuthorRecord {
     const existing = this.activeRow(input.kind, input.naturalKey);
-    // Derived here, never accepted: `resolveAgent` has no parameter for a ULID
-    // precisely so no caller can key identity on one.
-    const occupantId = input.kind === 'agent' ? this.occupantIdAt(input.naturalKey) : null;
+    // Both things this takes from the occupant are DERIVED through the one seam
+    // the registry reads an agent through, never accepted from the caller: the
+    // manifest ULID — the intent ADR 260726-170126 protected with a signature
+    // that has no parameter for one — and the manifest's own display name,
+    // which is the authority a caller's label is weighed against below.
+    const occupant = input.kind === 'agent' ? this.agentsAt.byPath(input.naturalKey) : null;
+    const occupantId = occupant?.id ?? null;
+    const known = knownDisplayName(input.displayName, occupant);
+    const minted: ResolveAuthorInput = {
+      ...input,
+      displayName: mintDisplayName(input, occupant, known),
+    };
 
     if (existing) {
       if (
@@ -482,13 +591,14 @@ export class AuthorRegistry {
         existing.mintedForManifestId !== null &&
         existing.mintedForManifestId !== occupantId
       ) {
-        return this.retireAndMint(existing, input, occupantId);
+        return this.retireAndMint(existing, minted, occupantId);
       }
       // Only the fields this caller actually knows are refreshed. `resolveAgent`
-      // from the identity header carries a name and nothing else, and it must
-      // not wipe the avatar the mesh-backed resolve stored.
+      // from the identity header carries a name and nothing else, it must not
+      // wipe the avatar the mesh-backed resolve stored, and the name it carries
+      // is itself only taken when it is one (see {@link knownDisplayName}).
       const refreshed = {
-        displayName: input.displayName,
+        displayName: known ?? existing.displayName,
         emoji: input.emoji === undefined ? existing.emoji : input.emoji,
         color: input.color === undefined ? existing.color : input.color,
         imageUrl: input.imageUrl === undefined ? existing.imageUrl : input.imageUrl,
@@ -527,7 +637,7 @@ export class AuthorRegistry {
       };
     }
 
-    return this.mintRow(input, occupantId);
+    return this.mintRow(minted, occupantId);
   }
 
   /**
@@ -673,20 +783,6 @@ export class AuthorRegistry {
         and(eq(authors.kind, kind), eq(authors.naturalKey, naturalKey), isNull(authors.retiredAt))
       )
       .get();
-  }
-
-  /**
-   * The manifest ULID of whatever agent is registered at a directory right now,
-   * or `null` when none is.
-   *
-   * Read from the `agents` table with the `db` handle this registry already
-   * owns, so the ULID is **derived** rather than accepted — the intent
-   * ADR 260726-170126 protected with a signature that had no parameter for one.
-   *
-   * @param agentPath - The agent's project directory.
-   */
-  private occupantIdAt(agentPath: string): string | null {
-    return this.agentsAt.byPath(agentPath)?.id ?? null;
   }
 
   /**
@@ -859,7 +955,14 @@ export class AuthorRegistry {
    * occupancy generation from the next.
    *
    * @param agentPath - Absolute path to the agent's project directory.
-   * @param displayName - The agent's current name, for rendering.
+   * @param displayName - The agent's current name, for rendering — and only
+   *   when this caller knows one. Nothing, whitespace, or the agent's slug where
+   *   its manifest says otherwise all mean "cannot name it": the stored label
+   *   stands rather than being overwritten ({@link knownDisplayName}). A row
+   *   being MINTED has no stored label, so it takes the occupant's own name,
+   *   and — for a directory with no registered occupant at all — the
+   *   directory's last segment rather than a blank one no roster could render
+   *   ({@link mintDisplayName}).
    * @param presentation - Emoji and colour, when the caller knows them. Omitted
    *   fields leave the stored render cache alone. **`imageUrl` is deliberately
    *   not here**, though the row carries one: an agent's identity language is
@@ -871,14 +974,18 @@ export class AuthorRegistry {
    */
   resolveAgent(
     agentPath: string,
-    displayName: string,
+    displayName: string | undefined,
     presentation: { emoji?: string | null; color?: string | null } = {}
   ): AuthorRecord {
     return {
       ...this.resolve({
         kind: 'agent',
         naturalKey: agentPath,
-        displayName,
+        // A caller that could not name the agent at all and one that passed
+        // only whitespace are saying the same thing, and `upsert` reads both as
+        // "does not know" — so they collapse here rather than each needing a
+        // branch downstream.
+        displayName: displayName ?? '',
         ...presentation,
       }),
     };

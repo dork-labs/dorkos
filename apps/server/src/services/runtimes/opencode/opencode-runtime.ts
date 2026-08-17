@@ -758,7 +758,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * Surfaces the MCP servers OpenCode loaded for a directory from its OWN config
    * (the merged global + per-project `opencode.json` `mcp` map), read-only:
    * `supportsMcp` stays false, so these render as discovered, non-editable rows
-   * in the Agent Hub roster. Delegated to {@link OpenCodeMcpManager}, which warms
+   * in the profile's Tools & MCP roster. Delegated to {@link OpenCodeMcpManager}, which warms
    * a per-cwd cache out-of-band and peek-only (never boots the sidecar just to
    * populate a read-only roster).
    */

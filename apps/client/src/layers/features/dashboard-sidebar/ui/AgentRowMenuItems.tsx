@@ -59,7 +59,6 @@ export interface RowMenuModel {
   onTogglePin: () => void;
   /** Toggle this agent's individual mute state. */
   onToggleMute: () => void;
-  onOpenProfile: () => void;
   /**
    * Open the session switcher on this agent — BC-35's third door.
    *
@@ -73,8 +72,13 @@ export interface RowMenuModel {
    */
   onOpenSessions: () => void;
   /**
-   * Open this agent's identity profile — the drawer its face opens on desktop —
+   * View this agent's profile — the one the row's own face opens on desktop —
    * or `null` when the mesh cannot name it and there is no profile to open.
+   *
+   * The row used to carry a second, differently-worded item beside this one that
+   * opened the right panel instead. There is one profile now and its address
+   * decides which home it lands in (spec `profile-unification` §1.6), so a menu
+   * offering two words for it was offering a choice that no longer exists.
    *
    * The face is an 18px overlay, which is half a touch target and cannot grow
    * without eating the row's own title, so the row does not draw it under a
@@ -169,18 +173,6 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
       opensInput: true,
       run: model.onOpenSessions,
     },
-    {
-      kind: 'action',
-      id: 'profile',
-      // Named for what it opens, not for what it used to be called: the row's
-      // own face opens the profile DRAWER now (DOR-957), and two controls that
-      // close together cannot both claim the word "profile". Same destination
-      // as before — the Agent Hub in the right panel.
-      label: 'Agent hub',
-      icon: PanelRight,
-      opensInput: false,
-      run: model.onOpenProfile,
-    },
     ...(model.onViewProfile === null
       ? []
       : [
@@ -212,11 +204,9 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
 export interface AgentRowMenuParams {
   /** Agent projectPath the menu acts on. */
   path: string;
-  /** Open the agent's profile in the right-panel hub. */
-  onOpenProfile: () => void;
   /** Open the session switcher on this agent (BC-35's third door). */
   onOpenSessions: () => void;
-  /** Open the agent's identity drawer, or `null` when the mesh cannot name it. */
+  /** View the agent's profile, or `null` when the mesh cannot name it. */
   onViewProfile: (() => void) | null;
   /** Start a new session for this agent. */
   onNewSession: () => void;
@@ -238,7 +228,6 @@ export interface AgentRowMenuParams {
  */
 export function useAgentRowMenuNodes({
   path,
-  onOpenProfile,
   onOpenSessions,
   onViewProfile,
   onNewSession,
@@ -260,7 +249,6 @@ export function useAgentRowMenuNodes({
     groups: prefs.groups.filter((g) => g.kind !== 'smart').map((g) => ({ id: g.id, name: g.name })),
     onTogglePin: () => update((prev) => (isPinned ? unpinItem(prev, ref) : pinItem(prev, ref))),
     onToggleMute: () => update((prev) => (isMuted ? unmuteItem(prev, ref) : muteItem(prev, ref))),
-    onOpenProfile,
     onOpenSessions,
     onViewProfile,
     onNewSession,

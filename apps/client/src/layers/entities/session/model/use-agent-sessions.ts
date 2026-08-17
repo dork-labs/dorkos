@@ -12,7 +12,7 @@ import { selectAgentSessions } from '../lib/select-agent-sessions';
  * canonical per-agent membership rule (DOR-203).
  *
  * Every surface that answers "which sessions belong to this agent?" (the session
- * sidebar, the Agent Hub Sessions tab, the command palette agent preview) must
+ * sidebar, the profile's Sessions page, the command palette agent preview) must
  * consume this hook instead of filtering `useSessions()` itself: the left/right
  * divergence it replaces is exactly how cwd-less ghost sessions showed under
  * every agent on one surface and none on the other (DOR-202).
@@ -21,7 +21,7 @@ import { selectAgentSessions } from '../lib/select-agent-sessions';
  * selected directory. Borrowing `useSessions()` — which is hard-keyed on the
  * window's `selectedCwd` — meant an agent whose directory this window had never
  * opened filtered an empty list and always looked empty, even while it was
- * working: the Agent Hub Sessions tab and the command-palette preview both take
+ * working: the profile's Sessions page and the command-palette preview both take
  * an agent path that need not match the window, so both showed nothing (DOR-929).
  * This runs its own query against the SAME shared `sessionListQueryOptions`, so
  * it fills and reads the one cache entry (`['sessions', projectPath]`) that the

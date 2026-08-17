@@ -89,6 +89,17 @@ export const REFUSAL_REASONS = {
   session_failed: 'a session could not be created',
   /** The relay's per-sender rate limit refused the publish. */
   rate_limited: 'too many messages too quickly',
+  /**
+   * An agent had spent its hourly allowance of proactive notes to a person, so
+   * `relay_notify_user` refused one (`relay/notify-budget.ts`, DOR-1265).
+   *
+   * Separate from {@link rate_limited}, which protects the message BUS from a
+   * sender publishing too fast. This one protects a PERSON from being messaged
+   * too often, at a completely different order of magnitude — ten an hour, not a
+   * hundred a minute — and a `group_by(.reason)` that could not tell them apart
+   * would report a bus problem where the truth is an agent being a nuisance.
+   */
+  notify_budget: 'the agent has sent as many notes as it may this hour',
   /** The relay's authoritative budget gate refused the publish. */
   budget_exceeded: 'the message ran out of budget',
   /** Nothing accepted the turn — no subscriber, or a gate that named itself. */

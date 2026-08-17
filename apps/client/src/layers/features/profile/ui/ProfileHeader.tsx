@@ -105,7 +105,7 @@ export function ProfileHeader({
           // Where focus comes back to when the Appearance page is popped, found
           // by the destination it pushed exactly as a `nav` row is
           // (`ProfileStack`). The face is a control that pushes a page, so it is
-          // restored the same way one.
+          // restored the same way one is. Pinned by `ProfileView.test.tsx`.
           data-profile-return="appearance"
           className={cn(IDENTITY_MARK_GROUP, 'focus-ring relative rounded-2xl active:scale-[0.94]')}
         >

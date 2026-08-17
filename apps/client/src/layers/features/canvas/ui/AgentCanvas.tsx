@@ -185,7 +185,7 @@ function CanvasBody() {
  * Renders {@link CanvasBody} inside its own full-height flex column — the
  * right-panel slot wrapper is a plain block container, so each contribution
  * must establish the flex context its body needs to lock height and scroll
- * (same contract AgentHub follows).
+ * (the same contract the docked profile follows).
  */
 export function CanvasContent() {
   return (

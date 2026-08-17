@@ -423,7 +423,7 @@
     "pulse-panel": {
       "specFile": "tests/pulse/pulse-panel.spec.ts",
       "feature": "pulse",
-      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Agent Profile), not Pulse, the attention badge is honest — hidden when nothing needs the operator",
+      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Profile), not Pulse, the attention badge is honest — hidden when nothing needs the operator",
       "lastRun": "2026-08-12T11:54:32.659Z",
       "lastStatus": "passed",
       "runCount": 7,
@@ -799,7 +799,7 @@
     "interactive-prompts": {
       "specFile": "tests/chat/interactive-prompts.ts",
       "feature": "chat",
-      "description": "Tool approval card + Approve/Deny outcomes (I-01), batch approval bar (I-02), AskUserQuestion delivery (I-03), MCP elicitation (I-04) — driven against the test-mode runtime's interactive scenarios.",
+      "description": "Tool approval card + Approve/Deny outcomes (I-01), batch approval bar (I-02), AskUserQuestion delivery (I-03), MCP elicitation (I-04), and a parked question/approval surviving a hard refresh and still being answerable (I-05, DOR-1269) — driven against the test-mode runtime's interactive scenarios.",
       "lastRun": "2026-08-15T15:13:46.184Z",
       "lastStatus": "passed",
       "runCount": 1,
@@ -812,7 +812,8 @@
         "apps/client/src/layers/features/chat/ui/tools/ApprovalReceipt.tsx",
         "apps/client/src/layers/features/chat/ui/tools/BatchApprovalBar.tsx",
         "apps/client/src/layers/features/chat/ui/tools/QuestionPrompt.tsx",
-        "apps/client/src/layers/features/chat/ui/tools/ElicitationPrompt.tsx"
+        "apps/client/src/layers/features/chat/ui/tools/ElicitationPrompt.tsx",
+        "apps/client/src/layers/features/chat/model/stream/project-session-turn.ts"
       ],
       "lastModified": "",
       "explorationNotes": [
@@ -822,7 +823,8 @@
         "Buttons carry their keyboard hint in the accessible name ('Approve Enter', 'Deny Esc', 'Always Allow Shift+Enter'), and the hint only renders while the card is active. Anchor with /^Approve\\b/ — exact never matches, and a loose /approve/i also hits the batch bar's 'Approve All'.",
         "Assert the DURABLE approval-receipt (data-outcome allowed/denied), not the transient tool-approval-decided or question-prompt-submitted rows: those are replaced when the turn ends and the message is rebuilt from history.",
         "Every assertion names a branch the scenario only reaches on that answer (APPROVED-BRANCH / DENIED-BRANCH / ANSWER-RECEIVED: <choice> / ELICITATION-ACCEPTED: <value>), so 'the card went away' can never pass for 'the answer was delivered'.",
-        "Stability: --repeat-each=3 --workers=1, 36/36. WITHOUT --workers=1 repeats land on parallel workers and race the shared /api/test/reset — that alone fails long-standing untouched tests 10/18."
+        "Stability: --repeat-each=3 --workers=1, 36/36. WITHOUT --workers=1 repeats land on parallel workers and race the shared /api/test/reset — that alone fails long-standing untouched tests 10/18.",
+        "The I-05 reload tests only discriminate because the question and approval scenarios close the tool's content block BEFORE the answer (a resultless tool_result marked complete), which is what claude-code does. Drop those two emissions and both reload tests go green against the DOR-1269 bug they exist to catch."
       ]
     },
     "live-turn-visibility": {
@@ -877,18 +879,21 @@
       "failCount": 1,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "profile-pushin": {
+      "specFile": "tests/profile/profile-pushin.spec.ts",
+      "feature": "profile",
+      "description": "the panel opens on the Profile, and a row takes the whole of it, coming back lands on the row it left from, with the root underneath",
+      "lastRun": "2026-08-16T23:28:15.011Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-04T10-13-42",
-      "timestamp": "2026-08-04T10:13:42.204Z",
-      "total": 9,
-      "passed": 9,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 55884
-    },
     {
       "id": "2026-08-04T10-42-18",
       "timestamp": "2026-08-04T10:42:18.727Z",
@@ -1779,6 +1784,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 72908
+    },
+    {
+      "id": "2026-08-16T23-28-15",
+      "timestamp": "2026-08-16T23:28:15.011Z",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 37847
     }
   ]
 }

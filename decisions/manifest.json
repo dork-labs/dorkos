@@ -1142,10 +1142,11 @@
       "created": "2026-06-10",
       "extractedFrom": "chat-stream-reconnection",
       "specSlug": "chat-stream-reconnection",
-      "lastVerified": "2026-08-06",
+      "lastVerified": "2026-08-16",
       "affects": [
         "apps/client/src/layers/features/chat/model/use-session-submit.ts",
-        "apps/client/src/layers/entities/session/model/session-stream-store.ts"
+        "apps/client/src/layers/entities/session/model/session-stream-store.ts",
+        "apps/server/src/services/session/session-state-projector.ts"
       ]
     },
     {
@@ -4517,6 +4518,25 @@
         "apps/server/src/services/session/message-dispatcher.ts",
         "apps/server/src/routes/sessions.ts",
         "packages/test-utils/src/runtime-conformance.ts"
+      ]
+    },
+    {
+      "id": "260816-223619",
+      "slug": "a-profile-is-one-surface-with-two-homes-and-a-push-in-stack",
+      "title": "A profile is one surface with two homes and a push-in stack",
+      "status": "accepted",
+      "created": "2026-08-16",
+      "extractedFrom": "profile-unification",
+      "specSlug": "profile-unification",
+      "amends": "260806-222547",
+      "affects": [
+        "apps/client/src/layers/features/profile/**",
+        "apps/client/src/app/init-extensions.ts",
+        "apps/client/src/layers/shared/model/app-store/app-store-right-panel.ts",
+        "apps/client/src/layers/shared/model/dialog-search-schema.ts",
+        "packages/shared/src/team-schemas.ts",
+        "apps/server/src/services/identity/aggregate-team.ts",
+        "apps/server/src/services/identity/member-rooms.ts"
       ]
     }
   ]

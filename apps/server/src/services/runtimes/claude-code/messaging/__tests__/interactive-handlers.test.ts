@@ -172,23 +172,34 @@ describe('createCanUseTool — approval gate', () => {
     expect(session.pendingInteractions.has('subagent-tool-1')).toBe(true);
   });
 
-  // DOR-1229, both directions. A room triggers a turn INTO THE DARK — nobody
-  // holds that session's stream — under `default`, the strictest mode, so a card
-  // raised for the agent's own room verbs is a card nobody is positioned to
-  // answer: measured live on 2026-08-16, `search_room_history` asked at 15s and
-  // the turn made no further progress until the interaction window auto-denied it
-  // ten minutes later.
+  // DOR-1229 and DOR-1265, both directions. A room triggers a turn INTO THE DARK
+  // — nobody holds that session's stream — under `default`, the strictest mode,
+  // so a card raised for the agent's own room verbs is a card nobody is
+  // positioned to answer: measured live on 2026-08-16, `search_room_history`
+  // asked at 15s and the turn made no further progress until the interaction
+  // window auto-denied it ten minutes later. `relay_notify_user` joined the set
+  // on the same measurement day for the same reason (DOR-1265): asked in a
+  // channel to send the operator a note, the agent parked on `awaiting_approval`
+  // and no message was ever sent. It qualifies because it can only speak inside a
+  // scope the operator configured and switched on — their own DorkOS DM, or a
+  // binding with "Agent can start conversations" enabled, which may cover a
+  // group, somebody else's chat, or (chat filter left empty, the default) every
+  // chat that has messaged that adapter. That is a bound on the SCOPE, not a
+  // promise that only the operator reads it, and the card that went away was the
+  // per-call one, never the setup consent. Frequency is bounded by
+  // `NotifyBudget` instead of by a card.
   //
   // But the auto-allow is only honest while the session HAS an identity. Without
   // one, `callerAuthor` falls back to the person who owns the install — who sees
   // every room on the machine, their DMs included, and posts as a human at
   // cascade depth zero. So both halves are pinned, per verb, by name: a shrinking
   // safe-list or a dropped gate is red here rather than quiet.
-  const ROOM_VERBS: [string, Record<string, unknown>][] = [
+  const OWNER_FACING_VERBS: [string, Record<string, unknown>][] = [
     ['mcp__dorkos__post_to_room', { roomId: 'room-1', text: 'on it' }],
     ['mcp__dorkos__react_to_room_entry', { roomId: 'room-1', entryId: 'e-1', emoji: '🎉' }],
     ['mcp__dorkos__read_room_history', { roomId: 'room-1' }],
     ['mcp__dorkos__search_room_history', { roomId: 'room-1', query: 'deploy' }],
+    ['mcp__dorkos__relay_notify_user', { message: 'the deploy finished' }],
   ];
 
   /** A session whose cwd hosts a registered agent, as the resolver reports it. */
@@ -196,13 +207,13 @@ describe('createCanUseTool — approval gate', () => {
   /** A plain project directory: the resolver names nobody. */
   const withoutIdentity = () => Promise.resolve(undefined);
 
-  it.each(ROOM_VERBS)(
-    'lets an agent-identified session use its own room verb %s without a card nobody can answer',
+  it.each(OWNER_FACING_VERBS)(
+    'lets an agent-identified session use its own owner-facing verb %s without a card nobody can answer',
     async (toolName, input) => {
       const session = makeSession('default');
       const canUseTool = createCanUseTool(session, noopLog, undefined, withIdentity);
 
-      const result = await canUseTool(toolName, input, makeContext(`rooms-${toolName}`));
+      const result = await canUseTool(toolName, input, makeContext(`owner-facing-${toolName}`));
 
       expect(result).toEqual({ behavior: 'allow', updatedInput: input });
       expect(session.eventQueue).toHaveLength(0);
@@ -210,8 +221,11 @@ describe('createCanUseTool — approval gate', () => {
     }
   );
 
-  it.each(ROOM_VERBS)(
-    'still raises a card for %s when the session names nobody, because it would act as the owner',
+  it.each(OWNER_FACING_VERBS)(
+    // Why a card, per verb: a rooms verb from a nameless session acts as the
+    // OWNER, and a note has no sender to be from. The gate does not distinguish
+    // them, and should not — it asks whenever it cannot say who is calling.
+    'still raises a card for %s when the session names nobody',
     async (toolName, input) => {
       const session = makeSession('default');
       const canUseTool = createCanUseTool(session, noopLog, undefined, withoutIdentity);

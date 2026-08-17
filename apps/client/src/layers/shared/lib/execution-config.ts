@@ -4,7 +4,7 @@
  * `execution-defaults` §3, §5).
  *
  * Three surfaces ask the same two questions and must never answer differently:
- * the Config tab's provenance chips ("server default · Opus" vs "set here"), the
+ * the Runs on picker's provenance chips ("server default · Opus" vs "set here"), the
  * Settings exceptions strip (who deviates, who is broken), and the sidebar's
  * Needs-attention group (which is only honest if "broken" means exactly what the
  * strip means by it). So the rules live here, pure, and each surface supplies
@@ -203,7 +203,7 @@ export interface AgentExecutionReport {
  * nothing", though, is about the model that will really run the turn, which is
  * the agent's pin OR the inherited default: an agent asking for high effort on
  * an inherited Haiku is asking for something it will not get, and it says so
- * here, in the Config tab and in the strip alike.
+ * here, in the Runs on picker and in the strip alike.
  *
  * @param input - The agent's settings plus whatever evidence the caller has.
  */

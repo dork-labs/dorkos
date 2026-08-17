@@ -268,7 +268,7 @@ const VOICE_SAMPLES: Record<VoiceKey, string> = {
 
 /**
  * One distinct authored sample line per named personality preset, keyed by the
- * preset id used in the picker (`features/agent-hub/model/personality-presets`).
+ * preset id used in the picker (`entities/agent/lib/personality-presets`).
  * A preset selection posts its own line, so switching presets audibly changes
  * DorkBot's voice even between adjacent archetypes; the trait-space classifier
  * ({@link VOICE_SAMPLES}) is only the fallback for Custom slider blends.

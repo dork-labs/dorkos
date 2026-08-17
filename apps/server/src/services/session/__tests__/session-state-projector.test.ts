@@ -1216,14 +1216,148 @@ describe('SessionStateProjector', () => {
     const snap = await afterRekey.buildSnapshot(async () => []);
     expect(snap.cursor).toBe(3);
 
-    // The old UUID is freed: a lookup there is now a DIFFERENT, fresh instance
-    // (cursor 0), proving the move was not a copy/alias (ADR-0267 — no dual-id).
-    const fresh = getOrCreateProjector(UUID);
-    expect(fresh).not.toBe(original);
-    expect(fresh.getCursor()).toBe(0);
+    // Still exactly ONE projector: the retired UUID redirects onto the same
+    // instance rather than minting a second, empty one beside it (DOR-1262).
+    // The move is a move, not a copy — both ids reach the one live projector.
+    expect(getOrCreateProjector(UUID)).toBe(original);
 
     disposeProjector(UUID);
     disposeProjector(CANONICAL);
+  });
+
+  // Failure mode (DOR-1262, widget-round-trip eval FAIL 2026-08-16): the 202 for
+  // a brand-new session carries the REQUEST UUID whenever the runtime names the
+  // session after the response has gone out, so a client can hold only the
+  // retired id. Under it, a second trigger minted a fresh empty projector; the
+  // runtime's next re-announce of the canonical id then hit the collision branch
+  // and TERMINATED the real projector — killing the live /events subscriber and
+  // sending turn 2 to a projector nobody was watching.
+  it('a retired id resolves to the live projector and never mints a second one', async () => {
+    const UUID = 'redirect-uuid';
+    const CANONICAL = 'redirect-canonical';
+    const original = getOrCreateProjector(UUID);
+    original.ingest({ type: 'turn_start' });
+    rekeyProjector(UUID, CANONICAL);
+
+    // Every registry lookup under the retired id lands on the live projector.
+    expect(getOrCreateProjector(UUID)).toBe(original);
+    expect(peekProjector(UUID)).toBe(original);
+    expect(peekProjector(UUID)).toBe(peekProjector(CANONICAL));
+
+    // A live subscriber on that projector (the /events connection the eval held
+    // open under the retired id).
+    let ended = false;
+    const received: unknown[] = [];
+    const consuming = (async () => {
+      for await (const event of original.subscribe(1)) received.push(event);
+      ended = true;
+    })();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The runtime re-announces the SAME move — as it does on every event of the
+    // next turn triggered under the retired id. It must be a no-op, not a
+    // collision: nothing is displaced and nobody is terminated.
+    rekeyProjector(UUID, CANONICAL);
+    expect(peekProjector(CANONICAL)).toBe(original);
+    expect(ended).toBe(false);
+
+    // …and turn 2 reaches the subscriber that stayed on the retired id.
+    getOrCreateProjector(UUID).ingest({ type: 'turn_start' });
+    await vi.waitFor(() => expect(received).toHaveLength(1));
+
+    original.terminate();
+    await consuming;
+    disposeProjector(CANONICAL);
+  });
+
+  // Failure mode: the SDK renames a session more than once (it re-mints its
+  // internal id on a resume). A chain must collapse, or the FIRST id would point
+  // at an id that no longer exists and mint a fresh projector there.
+  it('chains redirects: A and B both resolve to C, and disposing C forgets both', () => {
+    const A = 'chain-a';
+    const B = 'chain-b';
+    const C = 'chain-c';
+    const projector = getOrCreateProjector(A);
+    projector.ingest({ type: 'turn_start' });
+
+    rekeyProjector(A, B);
+    rekeyProjector(B, C);
+    expect(peekProjector(A)).toBe(projector);
+    expect(peekProjector(B)).toBe(projector);
+    expect(peekProjector(C)).toBe(projector);
+
+    // A rekey announced under an already-retired id moves what that id actually
+    // resolves to — it does not silently do nothing.
+    const D = 'chain-d';
+    rekeyProjector(A, D);
+    expect(peekProjector(A)).toBe(projector);
+    expect(peekProjector(C)).toBe(projector);
+    expect(peekProjector(D)).toBe(projector);
+
+    // Disposing the session clears every id that pointed at it: the redirects
+    // are bounded by the live fleet, and a retired id outliving its session
+    // would hand the next lookup a projector that is gone.
+    disposeProjector(D);
+    expect(peekProjector(A)).toBeUndefined();
+    expect(peekProjector(C)).toBeUndefined();
+    expect(peekProjector(D)).toBeUndefined();
+
+    // Freed for real: a lookup under the retired id now mints a fresh instance.
+    const fresh = getOrCreateProjector(A);
+    expect(fresh).not.toBe(projector);
+    expect(fresh.getCursor()).toBe(0);
+    disposeProjector(A);
+  });
+
+  // Failure mode (DOR-1262 review): the collision branch replaces the projector
+  // under `newId`, and the DISPLACED projector's own retired ids still pointed
+  // there. Left behind, session 1's ids would resolve to session 2's projector —
+  // one person's turn readable, and ingestible, under another's id.
+  it('a displaced projector takes its retired ids with it', () => {
+    const S1_UUID = 'displaced-redirect-uuid';
+    const SHARED = 'displaced-redirect-target';
+    const S2_UUID = 'displaced-redirect-other';
+
+    // Session 1 is renamed onto SHARED, leaving S1_UUID → SHARED behind.
+    const first = getOrCreateProjector(S1_UUID);
+    first.ingest({ type: 'turn_start' });
+    rekeyProjector(S1_UUID, SHARED);
+    expect(peekProjector(S1_UUID)).toBe(first);
+
+    // Session 2 collides onto the same id and wins (it holds the active turn).
+    const second = getOrCreateProjector(S2_UUID);
+    second.ingest({ type: 'turn_start' });
+    rekeyProjector(S2_UUID, SHARED);
+    expect(peekProjector(SHARED)).toBe(second);
+
+    // Session 1's retired id must NOT now answer with session 2's projector.
+    expect(peekProjector(S1_UUID)).not.toBe(second);
+    expect(peekProjector(S1_UUID)).toBeUndefined();
+    // Session 2 keeps its own, and its retired id follows it.
+    expect(peekProjector(S2_UUID)).toBe(second);
+
+    disposeProjector(SHARED);
+  });
+
+  it('an id that was never rekeyed still mints its own projector, redirect or not', () => {
+    // The redirect must be NARROW: only the exact ids a rekey retired resolve
+    // elsewhere. Asserted with a live redirect in the registry, because "every
+    // lookup lands on the most recent canonical id" is the shape of an
+    // over-broad resolve, and it would leak one session's turn into another's.
+    const rekeyed = getOrCreateProjector('narrow-uuid');
+    rekeyed.ingest({ type: 'turn_start' });
+    rekeyProjector('narrow-uuid', 'narrow-canonical');
+
+    const unrelated = getOrCreateProjector('never-rekeyed-id');
+    expect(unrelated).not.toBe(rekeyed);
+    expect(unrelated.getCursor()).toBe(0);
+    expect(peekProjector('never-rekeyed-id')).toBe(unrelated);
+    // …and the retired id still resolves, so this is not just an empty registry.
+    expect(peekProjector('narrow-uuid')).toBe(rekeyed);
+
+    disposeProjector('never-rekeyed-id');
+    disposeProjector('narrow-canonical');
   });
 
   // Failure mode (C1 guards): rekey must be a no-op when the id is unchanged or

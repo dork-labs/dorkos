@@ -179,6 +179,8 @@ The first line is the load-bearing one. Without it an empty `DORK_DIR` makes thi
 
 Report the snapshot path with its restore — `cp "$CONFIG_SNAPSHOT" "$DORK_DIR/config.json"`, then reload the tab; the server re-reads the file on every access, so no restart is needed — and **offer that restore explicitly in the final report**.
 
+The file copy is the restore for the same reason a prior run's key deletion did not hold: any config write re-materialises every default, so a key deleted by hand reappears at its default on the next write. Do not report a re-appeared default-valued key as a finding, and do not "clean up" by deleting keys (`contributing/configuration.md` → "`config.json` holds the effective config", DOR-1267).
+
 ### 1b. Baseline
 
 Navigate to `TEST_URL`. Capture baseline console errors (the `linear-issues` extension 404 is benign). Confirm the two agents exist:
@@ -261,7 +263,7 @@ curl -sf -X PATCH "http://localhost:$API_PORT/api/config" -H 'content-type: appl
 Then type the three messages in the UI, and put it back:
 
 - **Prior value was a number** → `PATCH` that number back, and re-read the file to confirm.
-- **Prior key was absent** → a `PATCH` cannot express absence. Restore the config snapshot taken in Phase 1 instead (`cp "$CONFIG_SNAPSHOT" "$DORK_DIR/config.json"`), then reload the tab; the server re-reads the file on every access. Re-read the file and confirm the key is gone.
+- **Prior key was absent** → a `PATCH` cannot express absence. Restore the config snapshot taken in Phase 1 instead (`cp "$CONFIG_SNAPSHOT" "$DORK_DIR/config.json"`), then reload the tab; the server re-reads the file on every access. Re-read the file and confirm the key is gone. Deleting the key by hand is **not** a durable restore: any later config write re-materialises every default, so the key comes back at 500 on its own (`contributing/configuration.md` → "`config.json` holds the effective config", DOR-1267).
 
 This is a real config write on a live install, not a test fixture. Two caveats on the write itself: `rooms.collectDebounceMs` is `operator-only` (`config-write-policy.ts`), which a plain `curl` clears by simply not sending agent-identity headers; but **with login on it also needs a real session cookie**, so on such an install make the change from the cockpit's own settings rather than the shell. Whichever route you take, **print the window value in force beside the verdict** — a verdict about gathering is meaningless without the window it gathered in — and **say in the report which restore path you took and what the file holds now**.
 

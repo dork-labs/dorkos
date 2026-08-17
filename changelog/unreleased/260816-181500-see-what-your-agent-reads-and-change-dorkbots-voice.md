@@ -1,0 +1,17 @@
+---
+covers:
+  - 'feat(client): read what your agent will actually be given, before you save it'
+  - "fix(client): DorkBot's personality is yours to change, as onboarding promised"
+  - 'fix(client): an agent the roster cannot name still has a door to its profile'
+  - "fix(client,docs,contributing): review sweep — the preview's name, and four surfaces still naming a deleted tab"
+---
+
+### Added
+
+- **See exactly what your agent reads.** The Instructions and Boundaries pages of an agent's profile now end with a line you can open: **Preview what your agent will see**. Inside is the real thing — the short name and description your agent is given, its personality written out in full, your instructions and your boundaries, assembled the way the agent gets them. It follows what you have typed, so you can read it before you save (DOR-1255)
+
+### Fixed
+
+- **DorkBot's voice is yours to change.** Setup asks you to pick how DorkBot should sound, but its profile then refused to let you change your mind. Now the **Personality** row on DorkBot's profile opens the same picker every other agent has. Its name, its face and its description still belong to DorkOS (DOR-1255)
+- An agent your fleet can no longer name — one you retired while the app was open — no longer goes silent in the sidebar. Its face and its menu still open the side panel, which tells you the agent is gone and names the folder it was in, instead of doing nothing at all (DOR-1255)
+- Settings pointed you at a tab that no longer exists. Under **Connect other apps to DorkOS**, the note about giving one of your own agents tools from another MCP server now sends you to the agent's profile and its **Tools & MCP** page (DOR-1255)

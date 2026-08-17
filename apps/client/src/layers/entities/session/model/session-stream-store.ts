@@ -1125,6 +1125,22 @@ export function useSessionStreamLifecycle(sessionId: string): SessionLifecycle |
 }
 
 /**
+ * Granular selector: whether a message sent now could CUT INTO this session's
+ * live turn, or `undefined` when the server has given no per-session answer.
+ *
+ * `undefined` means "fall back to the runtime's static `supportsSteer`" — the
+ * shape the server's own field carries (DOR-1268). It is deliberately not
+ * collapsed to `false` here: a runtime whose steering is uniform across its
+ * sessions never sets the field, and reading its silence as "no" would hide a
+ * capability that works.
+ */
+export function useSessionSteerable(sessionId: string): boolean | undefined {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.status?.steerable, [sessionId])
+  );
+}
+
+/**
  * Granular selector: whether this session is waiting on a decision from the
  * operator — a `blocked` lifecycle, or any pending interaction still on screen.
  *

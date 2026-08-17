@@ -12,7 +12,6 @@ function model(overrides: Partial<RoomRowMenuModel> = {}): RoomRowMenuModel {
     isMuted: false,
     currentGroupId: null,
     groups: [],
-    soleAgentPath: null,
     isOneToOne: false,
     canLeave: true,
     isSystemRoom: false,
@@ -23,7 +22,7 @@ function model(overrides: Partial<RoomRowMenuModel> = {}): RoomRowMenuModel {
     onNewGroup: vi.fn(),
     onAddAgents: vi.fn(),
     onOpenMembers: vi.fn(),
-    onOpenAgentProfile: vi.fn(),
+    onViewAgentProfile: null,
     onRename: vi.fn(),
     onEditTopic: vi.fn(),
     onLeave: vi.fn(),
@@ -88,9 +87,9 @@ describe('buildRoomRowMenuNodes', () => {
     ]);
   });
 
-  it('offers Agent profile on a one-to-one, where exactly one agent is named', () => {
+  it('offers View profile on a one-to-one, where exactly one agent is named', () => {
     // No 'leave' here: a 1:1's own gate withholds it — see the DM test below.
-    expect(ids({ kind: 'dm', soleAgentPath: '/repo/ana', isOneToOne: true })).toEqual([
+    expect(ids({ kind: 'dm', onViewAgentProfile: vi.fn(), isOneToOne: true })).toEqual([
       'mute',
       'move-to-group',
       'sep-organize',
@@ -154,22 +153,22 @@ describe('buildRoomRowMenuNodes', () => {
   });
 
   it('offers neither Leave nor Rejoin on a 1:1 DM — leaving one strands the agent alone', () => {
-    expect(ids({ kind: 'dm', isOneToOne: true, soleAgentPath: '/repo/ana' })).not.toContain(
+    expect(ids({ kind: 'dm', isOneToOne: true, onViewAgentProfile: vi.fn() })).not.toContain(
       'leave'
     );
     expect(
-      ids({ kind: 'dm', isOneToOne: true, soleAgentPath: '/repo/ana', isMember: false })
+      ids({ kind: 'dm', isOneToOne: true, onViewAgentProfile: vi.fn(), isMember: false })
     ).not.toContain('rejoin');
   });
 
   it('still withholds Leave on a 1:1 whose sole agent has left the mesh', () => {
-    // `soleAgentPath` reads `null` for THREE different reasons: not a 1:1,
-    // the fleet has not answered yet, or the one agent departed — and only
-    // the first of those means "not a 1:1." The gate has to read
+    // `onViewAgentProfile` reads `null` for THREE different reasons: not a
+    // 1:1, the fleet has not answered yet, or the one agent departed — and
+    // only the first of those means "not a 1:1." The gate has to read
     // `isOneToOne` instead, or a DM whose agent left the mesh would offer
     // Leave — the exact shape leaving strands (one agent, no human), and the
     // one a probe on this fixture caught before the fix.
-    expect(ids({ kind: 'dm', isOneToOne: true, soleAgentPath: null })).not.toContain('leave');
+    expect(ids({ kind: 'dm', isOneToOne: true, onViewAgentProfile: null })).not.toContain('leave');
   });
 
   it('offers Leave on a group DM — the 1:1 gate is about names-one-agent, not "is a DM"', () => {
@@ -196,8 +195,8 @@ describe('buildRoomRowMenuNodes', () => {
     expect(onLeave).toHaveBeenCalledTimes(1);
   });
 
-  it('withholds Agent profile from a group conversation, which names no single agent', () => {
-    expect(ids({ kind: 'dm', soleAgentPath: null })).not.toContain('agent-profile');
+  it('withholds View profile from a group conversation, which names no single agent', () => {
+    expect(ids({ kind: 'dm', onViewAgentProfile: null })).not.toContain('agent-profile');
   });
 
   it('names the room in the archive label so the item reads out of context', () => {
@@ -208,7 +207,7 @@ describe('buildRoomRowMenuNodes', () => {
   });
 
   it('marks exactly the items that need more input, and only those', () => {
-    const opening = buildRoomRowMenuNodes(model({ hasUnread: true, soleAgentPath: '/repo/ana' }))
+    const opening = buildRoomRowMenuNodes(model({ hasUnread: true, onViewAgentProfile: vi.fn() }))
       .filter((node) => node.kind === 'action' && node.opensInput)
       .map((node) => node.id);
     // Leave and Archive are both absent on purpose: a confirmation alert asks
@@ -235,7 +234,7 @@ describe('buildRoomRowMenuNodes', () => {
   });
 
   it('marks Leave and Archive destructive, and nothing else', () => {
-    // A channel here, not a DM: `soleAgentPath` only ever resolves on a DM
+    // A channel here, not a DM: View profile only ever resolves on a DM
     // (`RoomRow`), so a channel is what exercises Leave sitting beside
     // Archive rather than being withheld by the 1:1 gate.
     const destructive = buildRoomRowMenuNodes(model({ hasUnread: true }))
@@ -251,15 +250,13 @@ describe('buildRoomRowMenuNodes', () => {
     expect(destructive).toEqual(['archive']);
   });
 
-  it('hands Agent profile the agent path rather than making the caller find it', () => {
-    const onOpenAgentProfile = vi.fn();
-    const nodes = buildRoomRowMenuNodes(
-      model({ kind: 'dm', soleAgentPath: '/repo/ana', onOpenAgentProfile })
-    );
+  it('runs the opener the caller resolved, rather than resolving an agent itself', () => {
+    const onViewAgentProfile = vi.fn();
+    const nodes = buildRoomRowMenuNodes(model({ kind: 'dm', onViewAgentProfile }));
     const profile = nodes.find((node) => node.id === 'agent-profile');
     if (profile?.kind !== 'action') throw new Error('expected an action node');
     profile.run();
-    expect(onOpenAgentProfile).toHaveBeenCalledWith('/repo/ana');
+    expect(onViewAgentProfile).toHaveBeenCalledOnce();
   });
 
   // -------------------------------------------------------------------------

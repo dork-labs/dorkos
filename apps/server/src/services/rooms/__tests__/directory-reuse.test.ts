@@ -25,18 +25,40 @@ vi.mock('../../../lib/logger.js', async (importOriginal) => {
 
 const { logger } = await import('../../../lib/logger.js');
 
-/** Register an agent row the way the mesh registry does. */
-function registerAgent(db: Db, id: string, projectPath: string, name = 'ana'): void {
+/**
+ * Register an agent row the way the mesh registry does. `name` is the slug;
+ * `displayName` is left null unless given, which is how a manifest that declares
+ * none is stored.
+ */
+function registerAgent(
+  db: Db,
+  id: string,
+  projectPath: string,
+  called: { name?: string; displayName?: string } = {}
+): void {
   const now = new Date().toISOString();
   db.insert(agents)
-    .values({ id, name, runtime: 'claude-code', projectPath, registeredAt: now, updatedAt: now })
+    .values({
+      id,
+      name: called.name ?? 'ana',
+      ...(called.displayName !== undefined ? { displayName: called.displayName } : {}),
+      runtime: 'claude-code',
+      projectPath,
+      registeredAt: now,
+      updatedAt: now,
+    })
     .run();
 }
 
 /** Swap whichever agent is registered at `projectPath` for a different one. */
-function replaceAgentAt(db: Db, projectPath: string, newId: string, name = 'ana'): void {
+function replaceAgentAt(
+  db: Db,
+  projectPath: string,
+  newId: string,
+  called: { name?: string; displayName?: string } = {}
+): void {
   db.delete(agents).where(eq(agents.projectPath, projectPath)).run();
-  registerAgent(db, newId, projectPath, name);
+  registerAgent(db, newId, projectPath, called);
 }
 
 /** Every `authors` row for a directory, retired ones included. */
@@ -59,11 +81,11 @@ beforeEach(() => {
 
 describe('a directory that changes hands starts a fresh author', () => {
   it('retires the old row, mints a stamped one, and never moves a message', () => {
-    registerAgent(db, 'ULID_ANA', ANA_PATH);
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'ana', displayName: 'Ana' });
     const ana = registry.resolveAgent(ANA_PATH, 'Ana');
     expect(ana.mintedForManifestId).toBe('ULID_ANA');
 
-    replaceAgentAt(db, ANA_PATH, 'ULID_BO');
+    replaceAgentAt(db, ANA_PATH, 'ULID_BO', { name: 'bo', displayName: 'Bo' });
     const bo = registry.resolveAgent(ANA_PATH, 'Bo');
 
     // A DIFFERENT author, which is the entire point: everything Ana ever wrote
@@ -77,6 +99,24 @@ describe('a directory that changes hands starts a fresh author', () => {
     expect(rows).toHaveLength(2);
     expect(rows.filter((row) => row.retiredAt === null).map((row) => row.id)).toEqual([bo.id]);
     expect(rows.find((row) => row.id === ana.id)?.retiredAt).not.toBeNull();
+  });
+
+  it('names the fresh author from the manifest, not from a predecessor still holding a token', () => {
+    // The stale-token path, which is reachable and long-lived: an identity token
+    // is never rewritten, `revoke` has no production caller, and one stays valid
+    // for up to thirty days. So the agent that USED to live here can still make
+    // a bearer call carrying its own name, minutes after the directory changed
+    // hands — and that name looks knowledgeable, because it is nothing like the
+    // new occupant's slug. On a mint the manifest wins for exactly this reason.
+    registerAgent(db, 'ULID_ANA', ANA_PATH, { name: 'ana', displayName: 'Ana' });
+    registry.resolveAgent(ANA_PATH, 'Ana');
+
+    replaceAgentAt(db, ANA_PATH, 'ULID_BO', { name: 'bo', displayName: 'Bo' });
+    const bo = registry.resolveAgent(ANA_PATH, 'Ana');
+
+    expect(bo.mintedForManifestId).toBe('ULID_BO');
+    expect(bo.displayName).toBe('Bo');
+    expect(registry.getById(bo.id)?.displayName).toBe('Bo');
   });
 
   it('leaves the fresh author a member of nothing, and says so loudly', () => {

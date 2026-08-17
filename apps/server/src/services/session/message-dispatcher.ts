@@ -45,6 +45,12 @@
  * theirs the same way. A message therefore appears in the second window the
  * moment it is accepted, and disappears from it the moment it runs.
  *
+ * The same reasoning is why {@link announceSteerable} lives here. Whether a
+ * session can be CUT INTO is a fact about the session, not about one window's
+ * request, and a composer offering a steer no turn could take has promised
+ * something that cannot happen (DOR-1268). It rides the same durable stream,
+ * from the same ingress, and changes at most once in a session's life.
+ *
  * Rows survive a restart; the in-memory entries that pump them do not. That gap
  * is closed by {@link adoptQueuedMessages}, which recreates the entries around
  * the surviving rows **by their existing ids** rather than re-offering them
@@ -334,9 +340,22 @@ async function deliverByDisposition(
       });
       return { degrade: 'unsupported' };
     }
-    // No turn was open to join, so the message just runs now — the one downgrade
-    // the UI stays quiet about, because running immediately lost nothing (AC3).
-    if (result.authorized && result.reason === 'no-open-turn') return { degrade: 'session-idle' };
+    // The runtime found nothing to join. TWO very different situations answer
+    // that way, and reporting both as `session-idle` is what let a steer become
+    // a silent follow-up turn (DOR-1268). So ask the session itself whether a
+    // turn was actually running:
+    //
+    // - No turn open — the session was idle, or its turn ended between the click
+    //   and the POST. The message just runs now, which lost nothing, and this is
+    //   the one downgrade the UI stays quiet about (AC3).
+    // - A turn IS open and the runtime still could not join it — the mechanism
+    //   that cuts in is not under this session (claude-code on the resume path).
+    //   Nothing ran early; the words went to the back of the line, and the
+    //   sender is told so.
+    if (result.authorized && result.reason === 'no-open-turn') {
+      const sessionKey = primaryOf(canonicalId);
+      return { degrade: hasOpenTurn(sessionKey, projector) ? 'not-steerable' : 'session-idle' };
+    }
     // A DIFFERENT client owns the live turn (unauthorized), or its input stream
     // had already closed: there is no turn THIS caller may join, so it waits.
     return { degrade: 'no-open-turn' };
@@ -531,9 +550,57 @@ function emitTurnInput(sessionKey: string, content: string, messageId: string): 
  * @param messageId - The server-minted correlation id for the staged message
  */
 function emitContextStaged(sessionId: string, content: string, messageId: string): void {
-  const projector = peekProjector(primaryOf(sessionId));
+  // `queueKeyOf`, exactly as {@link emitQueueUpdate} resolves it — NOT
+  // `primaryOf`. The filing id is the id the session was BORN with, which after
+  // the canonical-id rename is not what the projector registry is keyed by, so
+  // this receipt reached nobody for every renamed session: the lookup missed and
+  // the early return read as "no listeners" (DOR-1262 review). `queueKeyOf` is
+  // the one resolver that answers "the id the projector is registered under".
+  const projector = peekProjector(queueKeyOf(sessionId));
   if (!projector) return;
   const event: RawContextStaged = { type: 'context_staged', content, messageId };
+  projector.ingest(event);
+}
+
+/**
+ * The `status_change` member as an emitter builds it — the projector stamps the
+ * `seq`, exactly as it does for {@link RawQueueUpdate}.
+ */
+type RawStatusChange = Omit<Extract<SessionEvent, { type: 'status_change' }>, 'seq'>;
+
+/**
+ * Publish whether this session can be STEERED, so a composer offers a cut-in
+ * only when one could really happen (DOR-1268).
+ *
+ * `supportsSteer` is a per-RUNTIME declaration and cannot answer this: claude-code
+ * steers through a held process, so a session on the resume path — how a default
+ * install ships — is not steerable however capable the adapter is. The runtime
+ * answers for the session ({@link AgentRuntime.canSteerSession}); a runtime whose
+ * steering is uniform omits the method and its static flag stands.
+ *
+ * Announced HERE, on the one ingress every turn passes through, and only when
+ * the answer CHANGED — so the value is current before any turn a person could
+ * steer is open, it costs one event per session rather than one per message, and
+ * an operator flipping the persistent-session setting reaches every open window
+ * on the session's next message rather than only on its next reload.
+ *
+ * A no-op when the answer is unchanged; a cold connect reads the value out of
+ * the projector's held status either way.
+ *
+ * @param opts - Whatever a caller of this module already holds: the session, its
+ *   projector and its runtime. Both ingresses qualify.
+ * @param sessionKey - The id the session's projector is filed under
+ */
+function announceSteerable(
+  opts: Pick<DispatchMessageOpts, 'sessionId' | 'projector' | 'runtime'>,
+  sessionKey: string
+): void {
+  const { runtime } = opts;
+  const steerable =
+    runtime.canSteerSession?.(opts.sessionId) ?? runtime.getCapabilities().supportsSteer;
+  const projector = projectorFor(sessionKey) ?? opts.projector;
+  if (projector.getStatus().steerable === steerable) return;
+  const event: RawStatusChange = { type: 'status_change', status: { steerable } };
   projector.ingest(event);
 }
 
@@ -813,10 +880,22 @@ function isStillProducing(
   fallback: SessionStateProjector
 ): boolean {
   if (!open.sawTurnStart) return true;
-  // The registry's projector, which is the one the pump's own gate reads and the
-  // one the turn is ingesting into whichever id the caller happens to hold.
-  const projector = projectorFor(sessionKey) ?? fallback;
-  return projector.peekInProgressTurn() !== null;
+  return hasOpenTurn(sessionKey, fallback);
+}
+
+/**
+ * Whether a turn is open on this session RIGHT NOW, asked of the session's own
+ * projection rather than of the dispatcher's bookkeeping.
+ *
+ * Reads the REGISTRY's projector — the one the pump's own gate reads and the one
+ * a turn ingests into, whichever id the caller happens to hold — and falls back
+ * to the caller's only when the session is not registered.
+ *
+ * @param sessionKey - The id the session's projector is filed under.
+ * @param fallback - The caller's projector, for a session the registry has none for.
+ */
+function hasOpenTurn(sessionKey: string, fallback: SessionStateProjector): boolean {
+  return (projectorFor(sessionKey) ?? fallback).peekInProgressTurn() !== null;
 }
 
 /**
@@ -1164,6 +1243,11 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   const budgetMs = opts.queueWaitMs ?? SESSIONS.LOCK_TTL_MS;
   const whenBusy = opts.whenBusy ?? 'queue';
 
+  // Before anything is decided: tell every window whether this session can be
+  // cut into at all, so the composer stops offering a Steer that could only
+  // become a silent follow-up turn (DOR-1268).
+  announceSteerable(opts, sessionKey);
+
   // The degradation ladder (task 4.4). A steer or stage that can land natively
   // does so here and answers its caller without ever becoming a queue row;
   // everything else — and every downgrade — falls through to the queue below,
@@ -1494,6 +1578,10 @@ export async function dispatchCommandIntent(
   const { sessionId, clientId, intent, projector, runtime } = opts;
   const sessionKey = primaryOf(runtime.getInternalSessionId(sessionId) ?? sessionId);
   const token = Symbol('dispatcher-command-intent');
+  // A `/compact` opens a turn like any other, so the same window may be offered a
+  // Steer while it runs — and must only be offered one this session could take
+  // (DOR-1268).
+  announceSteerable(opts, sessionKey);
   // Claim the session only if nothing already holds it. A compact arriving on a
   // busy session answers for itself at the chain and the lock; overwriting the
   // running turn's claim here would tell the pump that turn had ended.

@@ -186,11 +186,33 @@ export type McpAppServerConnection =
  * MeshCore satisfies this structurally — no `implements` clause needed.
  */
 export interface AgentRegistryPort {
-  getByPath(cwd: string): { id: string; name?: string } | undefined;
+  /**
+   * The agent registered at a working directory, or `undefined` when none is.
+   *
+   * **`name` and `displayName` are different strings and are not
+   * interchangeable.** `name` is the slug — the address somebody types after an
+   * `@` — and `displayName` is what a person reads (`docs-writer` against
+   * `Docs Writer`). A caller that is labelling, rendering or attributing asks
+   * for `displayName ?? name`; the slug alone belongs only where an address is
+   * wanted. The port carried no display name at all until DOR-1264, which is
+   * why both runtimes minted identity tokens under the slug and every room
+   * message an agent wrote through a tool renamed it to one.
+   */
+  getByPath(cwd: string): { id: string; name?: string; displayName?: string } | undefined;
   updateLastSeen(agentId: string, event: string): void;
+  /**
+   * Every registered agent with its directory.
+   *
+   * `name` and `displayName` mean here exactly what they mean on
+   * {@link AgentRegistryPort.getByPath}, and the same rule applies: render
+   * `displayName ?? name`, and reach for the bare slug only when an address is
+   * what is wanted. `displayName` is optional because an agent whose manifest
+   * declares none genuinely has only a slug.
+   */
   listWithPaths(): Array<{
     id: string;
     name: string;
+    displayName?: string;
     projectPath: string;
     icon?: string;
     color?: string;
@@ -497,7 +519,7 @@ export interface RuntimeCapabilities {
    * Distinct from {@link supportsMcp}, which specifically means the in-process
    * DorkOS tool server. A runtime can accept external managed servers without
    * hosting the DorkOS tool server (Codex, DOR-892) or vice versa. Gates the
-   * client's "Add server" affordance in the Agent Hub toolkit.
+   * client's "Add server" affordance on an agent's Tools & MCP page.
    */
   supportsManagedMcpServers: boolean;
 
@@ -979,6 +1001,28 @@ export interface AgentRuntime {
     content: string,
     opts: DeliverIntoTurnOpts
   ): Promise<RuntimeDeliveryResult>;
+
+  /**
+   * Whether a steer sent to THIS session right now could actually join its live
+   * turn — the per-session half of the per-runtime {@link
+   * RuntimeCapabilities.supportsSteer}.
+   *
+   * The two are different questions, and conflating them is how a person gets
+   * offered a cut-in that silently becomes an ordinary follow-up (DOR-1268).
+   * `supportsSteer` says the ADAPTER can steer; this says whether the mechanism
+   * that does it is actually under this session. Claude Code is the case that
+   * forced the split: steering rides the persistent pump's held input stream, so
+   * a session on the resume path — how a default install ships — has nothing to
+   * push into, however capable the adapter is.
+   *
+   * Optional: a runtime whose steering is uniform across its sessions omits it,
+   * and every consumer reads the absence as `supportsSteer`. It answers about
+   * the MECHANISM, not about the moment: `true` on a session with no turn open
+   * means "a turn here would be joinable", not "a turn is open".
+   *
+   * @param sessionId - Session to report on; either id a caller might hold
+   */
+  canSteerSession?(sessionId: string): boolean;
 
   /**
    * How warm this session's backing process is, for a runtime that keeps one

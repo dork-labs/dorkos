@@ -383,4 +383,95 @@ test.describe('Status line — the tier floors, under a degraded session', () =>
     expectNoOverlap(lines);
     await expectNoTruncatedNumbers(page);
   });
+
+  /**
+   * The "start every new session here?" offer never clips its own actions,
+   * or leaves them laid out somewhere a real click cannot land (DOR-1270).
+   *
+   * `MakeDefaultStopLine` used to share one `truncate` element between its
+   * sentence and its two actions, so the longest stop label — "Full
+   * autonomy" — pushed `Make default` and `Dismiss` past the clipped edge.
+   * The buttons were still laid out there, just not painted or hit-tested,
+   * so a real click landed on the ancestor instead of the button:
+   * `test-results/chat-self-test/20260816-155308.md` finding 3 measured
+   * `Make default` 29px past its own row at 1440px, and both a normal and a
+   * forced click failed for 42s. A right-edge check alone cannot tell that
+   * failure apart from a harmless one, which is why this also hit-tests: at
+   * each button's own center, `document.elementFromPoint` must resolve back
+   * to the button, the way it would for the click Playwright is about to
+   * make and a person just made.
+   *
+   * **Driven from the Dev Playground, not a live chat session.**
+   * `LiveMakeDefaultOffer` (`TrustDialShowcases.tsx`) wires the real
+   * component to a real stop change in a `w-72` (288px) box — narrower even
+   * than the ~296px `w-80` the session popover gives it in production — with
+   * no session, no config write, no consent dialog, and none of
+   * `useMakeDefaultStop`'s 6-second `OFFER_MS` timer standing between a
+   * click and a measurement. That combination is what makes the reading
+   * deterministic: a live-chat version of this test drove the SAME bug
+   * through `runtimes.defaultTrustStop` / `ui.autonomyAcknowledgedAt` /
+   * `ui.statusBar.pins` writes on the real-runtime `chromium` project, which
+   * runs under `fullyParallel` workers against one shared server (the same
+   * shape `playwright.config.ts` calls out for `composer-escape-and-ime`,
+   * DOR-948) — worth avoiding for a bug that has nothing to do with the
+   * network.
+   */
+  test("the make-default offer's actions stay inside their row and hittable (DOR-1270)", async ({
+    page,
+  }) => {
+    await page.goto('/dev/chat', { waitUntil: 'domcontentloaded' });
+
+    // Scope to the ONE showcase that renders `MakeDefaultStopLine` — its
+    // `ShowcaseLabel` and `ShowcaseDemo` are siblings under the same
+    // `PlaygroundSection`, so the demo box is the label's next sibling.
+    const sectionLabel = page.getByText(/offered only when it would change something/);
+    await expect(sectionLabel).toBeVisible();
+    const demo = sectionLabel.locator('xpath=following-sibling::*[1]');
+
+    // "Full autonomy" is the longest of the three stop words and the one the
+    // finding reproduced against — the widest sentence this offer ever
+    // draws, so the one most likely to starve the actions first.
+    await demo.getByRole('radio', { name: 'Full autonomy' }).click();
+
+    const row = demo.getByTestId('make-default-slot');
+    await expect(row).toBeVisible();
+    await expect(demo.getByTestId('make-default-offer')).toContainText(
+      'Start every new session in Full autonomy?'
+    );
+
+    const fit = await row.evaluate((rowEl) => {
+      /** One action's right edge and whether its own center is really hittable. */
+      function measure(testid: string) {
+        const el = rowEl.querySelector<HTMLElement>(`[data-testid="${testid}"]`);
+        if (!el) throw new Error(`missing ${testid}`);
+        const rect = el.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const hitEl = document.elementFromPoint(cx, cy);
+        return { right: rect.right, hit: hitEl !== null && (hitEl === el || el.contains(hitEl)) };
+      }
+      return {
+        rowRight: rowEl.getBoundingClientRect().right,
+        viewportWidth: window.innerWidth,
+        confirm: measure('make-default-confirm'),
+        dismiss: measure('make-default-dismiss'),
+      };
+    });
+
+    for (const [label, action] of [
+      ['Make default', fit.confirm],
+      ['Dismiss', fit.dismiss],
+    ] as const) {
+      expect(action.right, `${label} must stay inside its own row`).toBeLessThanOrEqual(
+        fit.rowRight + OVERLAP_SLACK_PX
+      );
+      expect(action.right, `${label} must stay inside the viewport`).toBeLessThanOrEqual(
+        fit.viewportWidth + OVERLAP_SLACK_PX
+      );
+      expect(
+        action.hit,
+        `${label} must be the element a real click at its own center actually hits`
+      ).toBe(true);
+    }
+  });
 });

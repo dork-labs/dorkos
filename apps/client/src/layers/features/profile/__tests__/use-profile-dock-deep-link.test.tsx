@@ -5,7 +5,7 @@
  * shape still out there (spec `profile-unification` §1.6).
  *
  * The bar here is that no link a person could have bookmarked opens nothing.
- * That includes the two the Agent Hub minted (`?panel=agent-hub&hubTab=…`) and
+ * That includes the two the retired agent panel minted (`?panel=agent-hub&hubTab=…`) and
  * the agent dialog's before it (`?agent=…`), and it specifically includes
  * `hubTab=toolkit`, which used to be dropped on the floor and land on Sessions
  * (`01-ideation.md` §3, bug 3).
@@ -294,7 +294,7 @@ describe('the current link', () => {
   });
 });
 
-describe('links minted by the Agent Hub', () => {
+describe('links minted by the retired agent panel', () => {
   it('rewrites ?panel=agent-hub to the profile, keeping which agent', async () => {
     const harness = renderHooks(
       `/session?panel=agent-hub&hubTab=sessions&agentPath=${encodeURIComponent(AGENT)}`
