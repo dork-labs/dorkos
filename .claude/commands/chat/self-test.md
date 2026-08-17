@@ -22,7 +22,7 @@ Parse `$ARGUMENTS` for two optional inputs:
 2. **Focus areas**: An argument starting with `focus:` — comma-separated list of specific areas to test. Examples:
    - `focus:streaming` — Focus on SSE streaming, freeze detection, chunk delivery
    - `focus:history` — Focus on reload-from-history, message persistence, JSONL fidelity
-   - `focus:tasks` — Focus on task list UI (TodoWrite), task state rendering
+   - `focus:tasks` — Focus on task list UI (TaskCreate), task state rendering
    - `focus:tools` — Focus on tool call cards, approval flows, expand/collapse
    - `focus:scroll` — Focus on auto-scroll, viewport overflow, scroll anchoring
    - `focus:sidebar` — Focus on session list, new session, session switching
@@ -64,6 +64,8 @@ The phases below are written against `mcp__claude-in-chrome__*`, which is how th
 | screenshots                   | `browser_take_screenshot`           |
 
 Two gotchas that cost time either way: `browser_click` takes a **`target`** (a ref from the snapshot, or a CSS/`text=` selector), not `ref`; and a raw `el.click()` inside `browser_evaluate` does not reliably fire a Radix handler, so click Radix menu and dialog options for real.
+
+**The transcript is virtualized — a DOM query only ever sees the mounted rows, not the whole history.** `MessageList` (`apps/client/src/layers/features/chat/ui/MessageList.tsx`) renders with `@tanstack/react-virtual`'s `useVirtualizer`, which mounts roughly a viewport's worth of rows plus a small overscan (about 8 rows on a typical screenshot-sized window) and unmounts the rest. Counting `[data-message-role]` elements in the DOM and comparing that number to the API or JSONL message count reads as message loss when nothing was lost — it is only counting what happens to be mounted. Count messages from `GET /api/sessions/:id/messages` (or the JSONL) instead, or scroll the full transcript first and count across the sweep; never treat a raw DOM row count as the message total.
 
 **Every Bash call is a fresh shell** — `$TEST_URL`, `$API_PORT`, `$JSONL_FILE` and friends do not survive between blocks. Substitute the resolved literals into every block you run, and record them in the report header.
 
@@ -297,26 +299,26 @@ The file may not exist yet — re-run this check after the first message is sent
 
 **When focus areas are specified**, tailor messages to exercise those areas. Design 3-5 messages that specifically stress the focused functionality. For example:
 
-| Focus       | Tailored Messages                                                               |
-| ----------- | ------------------------------------------------------------------------------- |
-| `streaming` | Long code generation, multi-tool sequences, rapid follow-ups                    |
-| `history`   | Messages that produce varied content types (code, text, tools)                  |
-| `tasks`     | `Use TodoWrite to create 3 tasks`, `Mark the first task done`, `Add a 4th task` |
-| `tools`     | `Use Bash to list files in /tmp`, `Read the contents of /etc/hostname`          |
-| `code`      | `Write a Python class with decorators`, `Write a React component with JSX`      |
-| `markdown`  | `Explain quicksort with headings, bullet lists, and a table`                    |
-| `scroll`    | Generate very long responses, send many messages in sequence                    |
-| `commands`  | Type `/` in chat input and test palette, try various commands                   |
+| Focus       | Tailored Messages                                                                |
+| ----------- | -------------------------------------------------------------------------------- |
+| `streaming` | Long code generation, multi-tool sequences, rapid follow-ups                     |
+| `history`   | Messages that produce varied content types (code, text, tools)                   |
+| `tasks`     | `Use TaskCreate to create 3 tasks`, `Mark the first task done`, `Add a 4th task` |
+| `tools`     | `Use Bash to list files in /tmp`, `Read the contents of /etc/hostname`           |
+| `code`      | `Write a Python class with decorators`, `Write a React component with JSX`       |
+| `markdown`  | `Explain quicksort with headings, bullet lists, and a table`                     |
+| `scroll`    | Generate very long responses, send many messages in sequence                     |
+| `commands`  | Type `/` in chat input and test palette, try various commands                    |
 
 **When no focus is specified**, use the default 5-message script:
 
-| #   | Message                                                                         | Tests                |
-| --- | ------------------------------------------------------------------------------- | -------------------- |
-| 1   | `Write a JavaScript bubble sort function with comments`                         | Code rendering       |
-| 2   | `Add TypeScript types to the function`                                          | Multi-turn context   |
-| 3   | `Write a minimal HTML page with a <h1>Hello World</h1> heading`                 | HTML in code blocks  |
-| 4   | `Use TodoWrite to create a task list with 3 tasks for our current conversation` | Task UI              |
-| 5   | `What is 2+2?`                                                                  | Simple text response |
+| #   | Message                                                                          | Tests                |
+| --- | -------------------------------------------------------------------------------- | -------------------- |
+| 1   | `Write a JavaScript bubble sort function with comments`                          | Code rendering       |
+| 2   | `Add TypeScript types to the function`                                           | Multi-turn context   |
+| 3   | `Write a minimal HTML page with a <h1>Hello World</h1> heading`                  | HTML in code blocks  |
+| 4   | `Use TaskCreate to create a task list with 3 tasks for our current conversation` | Task UI              |
+| 5   | `What is 2+2?`                                                                   | Simple text response |
 
 ### Per-message observation loop (repeat for each message):
 
@@ -339,7 +341,7 @@ This prevents the test from hanging indefinitely per message. An SSE stream free
 
 **e. Collect network requests** via `mcp__claude-in-chrome__read_network_requests`. Note status codes for `/api/sessions/:id/messages` POST calls.
 
-**f. Extract visible messages from the DOM:**
+**f. Extract visible messages from the DOM** (this only sees the mounted rows — see the Tooling gotcha on virtualization; treat the result as a spot-check on rendering, not a message count):
 
 ```js
 // Use mcp__claude-in-chrome__javascript_tool
@@ -374,7 +376,7 @@ for line in open('$JSONL_FILE'):
 After sending, check whether task list UI elements are visible in the DOM. Compare rendered tasks against:
 
 - `task_update` SSE events captured in the network log
-- `TodoWrite` tool_use blocks in the JSONL
+- `TaskCreate`/`TaskUpdate` tool_use blocks in the JSONL
 
 **j. Record any discrepancy or anomaly** — data mismatch, console error, broken element, missing state update, unexpected blank area, scroll regression, SSE freeze, etc.
 
@@ -386,7 +388,8 @@ After sending, check whether task list UI elements are visible in the DOM. Compa
 - **Streaming duration:** [Xs or "SSE freeze detected"]
 - **Console warnings:** [count new]
 - **Network status:** [POST status code]
-- **DOM message count:** [count] (expected: [count])
+- **API message count:** [count] (source of truth — `GET /api/sessions/:id/messages`)
+- **DOM mounted-row count:** [count] (virtualized — expect fewer than the API count, not a match)
 - **JSONL message count:** [count]
 - **API match:** [yes/no]
 - **Observations:** [any issues or "Clean"]
@@ -441,15 +444,15 @@ Navigate to the same URL with the `?session=` param preserved. Wait for messages
 
 **Verify after each reload:**
 
-| Check                    | Expected                                               |
-| ------------------------ | ------------------------------------------------------ |
-| Message count            | Same as during live session (DOM count == JSONL count) |
-| Code blocks              | Properly rendered (not raw markdown)                   |
-| Tool call cards          | All tool calls visible and collapsible                 |
-| Task list                | Tasks visible with correct status                      |
-| Tool call order          | Same order as during live session                      |
-| Model/permission display | Correct values in status bar                           |
-| Scroll position          | Scrolled to bottom (latest message)                    |
+| Check                    | Expected                                                                                                                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Message count            | Same via the API (`GET /api/sessions/:id/messages`) as during the live session — the transcript is virtualized, so a raw DOM row count differs by design and is not the check |
+| Code blocks              | Properly rendered (not raw markdown)                                                                                                                                          |
+| Tool call cards          | All tool calls visible and collapsible                                                                                                                                        |
+| Task list                | Tasks visible with correct status                                                                                                                                             |
+| Tool call order          | Same order as during live session                                                                                                                                             |
+| Model/permission display | Correct values in status bar                                                                                                                                                  |
+| Scroll position          | Scrolled to bottom (latest message)                                                                                                                                           |
 
 Compare the history-loaded screenshots against the live-session screenshots from Phase 4. Note any visual differences, especially:
 

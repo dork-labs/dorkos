@@ -49,7 +49,7 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 | R-03 | Code blocks: highlighting, copy button, HTML shown as code not injected   | session  | E, S                                   |
 | R-04 | Tool-call cards: visible, ordered, expand/collapse                        | session  | E, S                                   |
 | R-05 | Subagent blocks appear while running, clear when done                     | session  | E, S                                   |
-| R-06 | Todos/tasks pill: counts and statuses advance with TodoWrite              | session  | E, S                                   |
+| R-06 | Todos/tasks pill: counts and statuses advance with TaskCreate             | session  | E, S                                   |
 | R-07 | Background task bar for async agents                                      | session  | E                                      |
 | R-08 | Reactions on room entries                                                 | rooms    | E                                      |
 | R-09 | Agent stall/silence notice in rooms                                       | rooms    | U                                      |
