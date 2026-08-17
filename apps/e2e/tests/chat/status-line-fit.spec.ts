@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures';
+import { ChatPage } from '../../pages/ChatPage.js';
 import type { Locator, Page } from '@playwright/test';
 
 /**
@@ -383,4 +384,200 @@ test.describe('Status line — the tier floors, under a degraded session', () =>
     expectNoOverlap(lines);
     await expectNoTruncatedNumbers(page);
   });
+});
+
+/**
+ * Sub-pixel layout rounding is not a clip, for the offer's own bounds check.
+ *
+ * Wider than {@link OVERLAP_SLACK_PX}: that constant covers ONE level of flex
+ * (siblings in the status line's own row), and this check crosses three
+ * (`make-default-slot` → the offer `<p>` → its action `<span>`), each of which
+ * can round a fractional width independently. Measured on the fixed component,
+ * a real reading came in 1.02–1.52px "past" its own row with nothing painting
+ * over anything and nothing unclickable — the row carries no `overflow`
+ * class, so a sub-pixel spill here is invisible and irrelevant, unlike the bug
+ * this file exists to catch (29–80px, behind a real `overflow-hidden`).
+ */
+const ROW_FIT_SLACK_PX = 2;
+
+/**
+ * One measured action button: its label (for failure messages) and box.
+ */
+interface MeasuredAction {
+  /** What to call it in a failure message. */
+  label: string;
+  /** The button's own border box, or `null` if it could not be measured. */
+  box: { x: number; y: number; width: number; height: number } | null;
+}
+
+/**
+ * Assert that every action in {@link actions} stays inside `rowBox` and the
+ * `width`-px viewport — the property `MakeDefaultStopLine` owes regardless of
+ * which of its two homes (the popover's inline row, or the composer's
+ * floating overlay) is drawing it.
+ *
+ * @param actions - The buttons to check, each already located and measured.
+ * @param rowBox - The offer's own row — the immediate ancestor the actions
+ *   must never spill past.
+ * @param width - The viewport width this reading was taken at.
+ */
+function expectActionsInBounds(
+  actions: readonly MeasuredAction[],
+  rowBox: { x: number; width: number } | null,
+  width: number
+) {
+  expect(rowBox, 'the offer must be laid out to measure it').not.toBeNull();
+  for (const { label, box } of actions) {
+    expect(box, `${label} must be laid out to measure it`).not.toBeNull();
+    const right = box!.x + box!.width;
+    expect(
+      right,
+      `${label} must stay inside the offer's own row at ${width}px`
+    ).toBeLessThanOrEqual(rowBox!.x + rowBox!.width + ROW_FIT_SLACK_PX);
+    expect(
+      box!.x,
+      `${label} must not start left of the ${width}px viewport`
+    ).toBeGreaterThanOrEqual(-ROW_FIT_SLACK_PX);
+    expect(right, `${label} must stay inside the ${width}px viewport`).toBeLessThanOrEqual(
+      width + ROW_FIT_SLACK_PX
+    );
+  }
+}
+
+/**
+ * The "start every new session here?" offer never clips its own actions
+ * (DOR-1270).
+ *
+ * `MakeDefaultStopLine` used to share one `truncate` element between its
+ * sentence and its two actions, so the longest stop label — "Full autonomy" —
+ * pushed `Make default` and `Dismiss` past the clipped edge. The buttons were
+ * still laid out there, just not painted or hit-tested, so a real click landed
+ * on the ancestor instead of the button: `test-results/chat-self-test/
+ * 20260816-155308.md` finding 3 measured `Make default` 29px past its own row
+ * at 1440px, and both a normal and a forced click failed for 42s.
+ *
+ * **Reproduces on the INLINE instance, not the overlay.** The offer has two
+ * homes (`MakeDefaultStopLineProps.placement`): floating full-width over the
+ * composer once the picker's popover has closed, or inline inside that
+ * popover's fixed `w-80` (≈296px) content while it is open. The full-width
+ * overlay has room to spare at every width this file checks — measured at
+ * 1110px available at 1440px, 570px at 900px — so it never reproduces the
+ * finding. The 296px popover does not have that room: measured pre-fix, the
+ * actions ran to x≈1453 in a 1440px window (viewport) and x≈949 in a 900px
+ * one, both well past their own row. The self-test's own report is consistent
+ * with this — reopening the picker to re-check the dial is exactly the extra
+ * step that would have put the offer inline where the finding's numbers land.
+ * So each width below drives BOTH placements, and the property must hold in
+ * either.
+ */
+test.describe('Chat — the make-default offer keeps its actions reachable (DOR-1270)', () => {
+  // Every sub-test writes the same three server-global config leaves —
+  // `ui.statusBar.pins` (to put a normally-quiet item in the row), and
+  // `ui.autonomyAcknowledgedAt` / `runtimes.defaultTrustStop` (the offer's own
+  // write). Serial for the same reason `sidebar-groups.spec.ts` is: fullyParallel
+  // would otherwise let two of these three widths race the same config file.
+  test.describe.configure({ mode: 'serial' });
+
+  test.afterEach(async ({ request }) => {
+    await request
+      .patch('/api/config', {
+        data: {
+          ui: { statusBar: { pins: [] }, autonomyAcknowledgedAt: null },
+          runtimes: { defaultTrustStop: null },
+        },
+      })
+      .catch(() => {});
+  });
+
+  for (const width of [520, 900, 1440] as const) {
+    test.describe(`at ${width}px`, () => {
+      test.use({ viewport: { width, height: 900 } });
+
+      test('both actions stay in the row, and Make default reaches the server', async ({
+        page,
+        request,
+      }) => {
+        // Permissions is quiet by default (spec `trust-dial` — the mode has not
+        // been moved off "Default" yet) and this file's other tests never touch
+        // it, so pin it the same way the Session panel's own pin toggle would:
+        // every width below needs it in the row to reach the dial at all.
+        const pinned = await request.patch('/api/config', {
+          data: { ui: { statusBar: { pins: ['permission'] } } },
+        });
+        expect(pinned.ok()).toBe(true);
+
+        const chatPage = new ChatPage(page);
+        await chatPage.goto();
+
+        const trigger = page.getByRole('button', { name: /^Permissions:/ });
+        await expect(trigger).toBeVisible();
+        await trigger.click();
+
+        // The flow `/chat:self-test live` used: move the dial to Full
+        // autonomy, the longest stop label and the one the finding reproduced.
+        await page.getByRole('radio', { name: 'Full autonomy' }).click();
+        // The session's own consent door (`AutonomyConfirmDialog`) — a mode
+        // that never asks needs an acknowledgement before the write is even
+        // attempted. Closing it is also what closes the picker's popover
+        // (a modal dialog's focus grab), which is why the offer that follows
+        // is the OVERLAY instance, not the inline one.
+        await page.getByRole('button', { name: 'Turn on Full autonomy' }).click();
+
+        const offer = page.getByTestId('make-default-offer');
+        await expect(offer).toContainText('Start every new session in Full autonomy?');
+        const overlay = page.getByTestId('make-default-slot-overlay');
+        await expect(overlay).toBeVisible();
+
+        const overlayBox = await overlay.boundingBox();
+        const overlayConfirmBox = await page.getByTestId('make-default-confirm').boundingBox();
+        const overlayDismissBox = await page.getByTestId('make-default-dismiss').boundingBox();
+        expectActionsInBounds(
+          [
+            { label: 'the overlay Make default', box: overlayConfirmBox },
+            { label: 'the overlay Dismiss', box: overlayDismissBox },
+          ],
+          overlayBox,
+          width
+        );
+
+        // The offer's OTHER home: reopen the picker while the offer is still
+        // live (it survives ~6s unanswered) so the SAME offer redraws inline,
+        // inside the popover's fixed ≈296px content — the width that actually
+        // starved `Make default` in the finding (see the block comment above).
+        await trigger.click();
+        const inlineSlot = page.getByTestId('make-default-slot');
+        await expect(inlineSlot).toBeVisible();
+        const inlineBox = await inlineSlot.boundingBox();
+        const inlineConfirmBox = await page.getByTestId('make-default-confirm').boundingBox();
+        const inlineDismissBox = await page.getByTestId('make-default-dismiss').boundingBox();
+        expectActionsInBounds(
+          [
+            { label: 'the inline Make default', box: inlineConfirmBox },
+            { label: 'the inline Dismiss', box: inlineDismissBox },
+          ],
+          inlineBox,
+          width
+        );
+
+        // Not just laid out in bounds — really clickable, and the click really
+        // reaches the server. This is the assertion DOR-1270's own report could
+        // not make: a normal and a forced click both failed for 42s with no
+        // `PATCH /api/config` ever issued. Clicked from the INLINE instance,
+        // the one the finding's own numbers land in.
+        const patchRequest = page.waitForRequest(
+          (req) => req.method() === 'PATCH' && req.url().includes('/api/config')
+        );
+        await page.getByTestId('make-default-confirm').click();
+        // Making Full autonomy the STANDING default asks a second time — the
+        // session's own consent a moment ago was about one conversation, and
+        // the server requires a durable acknowledgement for the wider claim
+        // (see `useMakeDefaultStop`). Same button, second dialog.
+        await page.getByRole('button', { name: 'Turn on Full autonomy' }).click();
+
+        const req = await patchRequest;
+        expect(req.postDataJSON()).toMatchObject({ runtimes: { defaultTrustStop: 'autonomy' } });
+        await expect(offer).not.toBeVisible();
+      });
+    });
+  }
 });
