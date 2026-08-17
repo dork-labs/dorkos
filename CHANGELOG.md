@@ -13,6 +13,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.61.0] - 2026-08-17
+
+### Added
+
+- **See exactly what your agent reads.** The Instructions and Boundaries pages of an agent's profile now end with a line you can open: **Preview what your agent will see**. Inside is the real thing — the short name and description your agent is given, its personality written out in full, your instructions and your boundaries, assembled the way the agent gets them. It follows what you have typed, so you can read it before you save (DOR-1255)
+- `dorkos debug phantoms` shows how often an agent's own work was cut short by the coding tool rather than by you. This has been a real bug — one session lost eight pieces of work to it in a single sitting — and until now the only way to notice was to sit and watch. Now it is a number you can check, and a warning in the log when it happens (DOR-1087)
+
+### Changed
+
+- Everywhere you could open an agent now says the same thing: **View profile**. The sidebar's "Agent hub", the Team table's "Manage", the status line's right-click menu, the command palette and the topology map all used a different word for the same act, and they all landed somewhere slightly different. One word now, and one place — the profile, which docks beside your session or slides in from the side depending on where you are (DOR-1255)
+- Links you saved to the old Agent Hub still work. They open the profile (DOR-1255)
+- On the Team page, **View profile** in the table now opens the same profile card the cards open, instead of a different panel off to the side (DOR-1255)
+- An agent can send you up to ten notes an hour. Past that it is told to say it in the conversation you are already having, so an agent stuck in a loop cannot fill up your phone. Notes still only go where you already allowed them: your direct message with that agent, or a chat on a connection you set up and gave it permission to start conversations on (DOR-1265)
+
+### Fixed
+
+- **DorkBot's voice is yours to change.** Setup asks you to pick how DorkBot should sound, but its profile then refused to let you change your mind. Now the **Personality** row on DorkBot's profile opens the same picker every other agent has. Its name, its face and its description still belong to DorkOS (DOR-1255)
+- An agent your fleet can no longer name — one you retired while the app was open — no longer goes silent in the sidebar. Its face and its menu still open the side panel, which tells you the agent is gone and names the folder it was in, instead of doing nothing at all (DOR-1255)
+- Settings pointed you at a tab that no longer exists. Under **Connect other apps to DorkOS**, the note about giving one of your own agents tools from another MCP server now sends you to the agent's profile and its **Tools & MCP** page (DOR-1255)
+- A new chat gets its permanent name a moment after you send the first message. Anything still using the name from that first moment — a button inside a reply, a window opened from an old bookmark, or a script talking to the API — used to quietly start a second, empty copy of the chat and cut the live one off mid-answer. Both names now lead to the same chat, so the reply keeps streaming and the click lands where you expect (DOR-1262)
+- The receipt that confirms a message was staged now reaches your screen for a chat that has been renamed, instead of going nowhere (DOR-1262)
+- The "start every new session here?" prompt that appears after you switch to Full autonomy no longer hides its own buttons. Make default and Dismiss now stay fully on screen and clickable, at any window size (DOR-1270)
+- Every room turn now tells the agent the room's id and the id of each message it can act on. Reacting to a message, reading a channel back, and posting to one all ask for those ids, and an agent had never been given them — so one asked to "just acknowledge this" had nothing to point at, and one asked to check a channel's history guessed the channel's name and got an error (DOR-1263)
+- A file someone shares in a room now comes with a full path, so the agent opens it on the first try instead of looking in the wrong folder (DOR-1266)
+- Your agents keep the names you gave them in channels. An agent that posted, reacted, or read back a channel used to rename itself to its short address partway through a conversation, so "Docs Writer" became "docs-writer" in every message and in the member list. Names now stay put (DOR-1264)
+- Ask an agent in a channel to send you a note and it now arrives. It used to stop and wait for a permission card that only ever appeared inside the agent's own chat — somewhere nobody was looking — so the note was never sent (DOR-1265)
+- A question or an approval the agent is waiting on now survives a page refresh. Reloading the tab used to hide the card behind a "Question answered" line, for a question nobody had answered. That left no way to answer it, and the agent sat stuck until it gave up. The card comes back now, ready to answer, and it is the only thing on screen for that question (DOR-1269)
+- "Steer" now appears only when your chat can really hand a message to the agent mid-task. Before, it was offered on every Claude Code chat, but only chats that keep the agent running between messages can be interrupted that way — so the message quietly waited its turn instead of cutting in (DOR-1268)
+- If a message can't cut in after all, the chat says so — "Couldn't cut in. It's waiting in line." — instead of staying silent (DOR-1268)
+- Links in an agent's reply act like normal links again: hover to see where they go, and cmd/ctrl-click opens one in a new tab. In your browser, right-click also copies the link address (DOR-1272)
+- Agents are now told the real name of every DorkOS tool. Claude Code gives your agent these tools under longer names than the ones DorkOS registers them with, and the instructions the agent reads were using the short ones. An agent that followed those instructions exactly got "no such tool" and gave up. Bigger models guessed their way around it. Smaller, faster ones did not. Ask an agent to just acknowledge a message and it now leaves the ✅ on the first try, instead of failing three times and typing a reply nobody wanted (DOR-1292)
+- Room tools are ready the moment a turn starts. Agents used to have to look a tool up before they could use it, which cost a step on every reply in a channel. Posting, reacting, and reading a channel's history now work straight away, so an agent answers instead of hunting (DOR-1292)
+- Every other DorkOS tool is easier to find. Each one now carries a short phrase saying what it does, so an agent can look for "install a package" instead of guessing the exact name (DOR-1292)
+- Agents are also told that a thumbs-up can be the entire reply. Anything an agent writes during a room turn gets posted to the room, so an agent that reacted and then added "Done, acknowledged" left two messages where you asked for none. It now knows it can react and stop (DOR-1292)
+- Reopening a chat used to put a green "Question answered" over a question nobody had answered. If you missed the question and the agent gave up waiting, the record of it said the opposite of what happened. Now the transcript says what actually became of it — nobody answered in time, you dismissed it, it failed, or no answer was ever recorded — and shows the agent's own words when there are any. An answer that lands right as the turn ends still counts as an answer (DOR-1293)
+- A tool you turned down, or left waiting until it timed out, no longer comes back looking like it ran. Reopening the chat shows that it was refused, and shows the reason the agent was given — including refusals that never went through DorkOS, like a tool you turned down in the `claude` command line or one your permission rules blocked (DOR-1293)
+- A tool that simply failed now reads as failed in an old chat, instead of getting a checkmark (DOR-1293)
+- The text under one of these rows keeps its line breaks, so a blocked command reads the way it was written instead of running together on one line. A very long one is cut short with a button to show the rest (DOR-1293)
+- If you turn on the experimental setting that keeps an agent warm between messages (`runtimes.claudeCode.persistentSession`, off by default), sending a message into a reply that was already being written could leave that chat stuck — every message afterwards went nowhere, and only restarting DorkOS brought it back. It no longer can: a late answer is matched to the message it belongs to, and a reply that never finishes is closed out so the next message still runs. When that happens the unfinished reply is marked as an error rather than left spinning, and your next message goes through normally (DOR-1294)
+- With that same experimental setting on, a reply that never finished used to spoil the next one: DorkOS closed out the unfinished reply while your new message was already under way, so the new reply was marked failed and stopped mid-sentence even though the agent was still writing, and the chat's saved history mixed the two together. The unfinished reply is now closed out first, before the new one starts, so it is marked as an error on its own and your next message runs clean. The same goes for `/compact` after a reply that never finished (DOR-1295)
+
 ## [0.60.0] - 2026-08-16
 
 ### Added
@@ -2062,32 +2103,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Link previews and structured data now show a page's edit date only when it actually has one, instead of inventing a change date. (DOR-344)
 - Docs pages now advertise their plain-markdown version, so tools know they can fetch the `.md` alternate. (DOR-345)
 
-## [0.51.0] - 2026-07-17
-
-> Watch messages reach your agents in real time on the topology map, and find every way to install DorkOS on one page at dorkos.ai/install.
-
-### Added
-
-- Watch inbound messages arrive at your agents on the topology map — each message delivered from a connected app sends a quiet pulse along its wire. (DOR-167)
-- New install page at dorkos.ai/install with every way to get DorkOS in one place: the Mac app, the one-line terminal install, npm, the Windows early alpha, and Docker, plus how to update. The same address still works with `curl | bash`, and dorkos.ai/download now sends you there. The site's "Get started" button and homepage link to it.
-
-### Changed
-
-- The left sidebar now starts open on desktop for new installs, so your agents are visible from the first launch. Your own toggle still wins: close it once and it stays closed. On phones it still starts closed to save space.
-
-### Fixed
-
-- The dorkos.ai marketing pages and blog no longer break when your computer is set to dark mode. Before, the install commands on the homepage showed as dark text on a dark pill, and the blog's email signup box had a muddy gray fill. These pages are light by design; the docs keep their dark mode.
-- Code examples in blog posts have their padding back, so commands no longer touch the edge of the box (a leftover from the docs engine upgrade).
-- Release posts now get their Install / Update section from one shared template instead of hand-written copies in all 55 posts, so install guidance stays current everywhere.
-- Blog dates no longer show one day early for readers west of UTC.
-- Same-day releases now list in the right order on the blog (0.45.1 above 0.45.0).
-- Opening a Markdown document in the canvas no longer hides the left sidebar or breaks the app layout.
-
 ---
 
-Older releases (v0.1.0 – v0.50.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.50.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.50.0.md).
+Older releases (v0.1.0 – v0.51.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.51.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.51.0.md).
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.60.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.61.0...HEAD
+[0.61.0]: https://github.com/dork-labs/dorkos/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/dork-labs/dorkos/compare/v0.59.0...v0.60.0
 [0.59.0]: https://github.com/dork-labs/dorkos/compare/v0.58.0...v0.59.0

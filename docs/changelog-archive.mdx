@@ -1,9 +1,31 @@
 ---
 title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.50.0), aged out of the main changelog.
+description: Older DorkOS releases (v0.1.0 – v0.51.0), aged out of the main changelog.
 ---
 
 Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+
+## [0.51.0] - 2026-07-17
+
+> Watch messages reach your agents in real time on the topology map, and find every way to install DorkOS on one page at dorkos.ai/install.
+
+### Added
+
+- Watch inbound messages arrive at your agents on the topology map — each message delivered from a connected app sends a quiet pulse along its wire. (DOR-167)
+- New install page at dorkos.ai/install with every way to get DorkOS in one place: the Mac app, the one-line terminal install, npm, the Windows early alpha, and Docker, plus how to update. The same address still works with `curl | bash`, and dorkos.ai/download now sends you there. The site's "Get started" button and homepage link to it.
+
+### Changed
+
+- The left sidebar now starts open on desktop for new installs, so your agents are visible from the first launch. Your own toggle still wins: close it once and it stays closed. On phones it still starts closed to save space.
+
+### Fixed
+
+- The dorkos.ai marketing pages and blog no longer break when your computer is set to dark mode. Before, the install commands on the homepage showed as dark text on a dark pill, and the blog's email signup box had a muddy gray fill. These pages are light by design; the docs keep their dark mode.
+- Code examples in blog posts have their padding back, so commands no longer touch the edge of the box (a leftover from the docs engine upgrade).
+- Release posts now get their Install / Update section from one shared template instead of hand-written copies in all 55 posts, so install guidance stays current everywhere.
+- Blog dates no longer show one day early for readers west of UTC.
+- Same-day releases now list in the right order on the blog (0.45.1 above 0.45.0).
+- Opening a Markdown document in the canvas no longer hides the left sidebar or breaks the app layout.
 
 ## [0.50.0] - 2026-07-17
 
