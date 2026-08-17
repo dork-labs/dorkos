@@ -539,6 +539,10 @@ export class PersistentDispatch {
     // the two — the same amnesiac race as a `stream-closed`, reported the same
     // way so the caller degrades rather than believing a dropped message landed.
     if (outcome !== 'delivered') return { delivered: false, reason: 'stream-closed' };
+    // The staged message opens no window, but the turn it merges into may be
+    // answered under ITS id — and a `result` naming an id the windower never
+    // heard of is what stranded a turn window in DOR-1294.
+    bundle.windows.noteStagedMessage(opts.messageId);
     return { delivered: true };
   }
 
@@ -714,8 +718,12 @@ export class PersistentDispatch {
    * launches a fresh one under the values it resolved.
    *
    * `evict` rather than `reap`: a reap is polite and may decline, and a pin that
-   * moved is not a request. Nothing is running — the windower refuses a
-   * dispatch while a window is open — so there is no turn to interrupt.
+   * moved is not a request. Safe where a reap would not be, because eviction
+   * tears the process down unconditionally and {@link forget} drops the bundle
+   * with it — so nothing is left holding the old process, and the dispatch that
+   * called this builds fresh wiring for a fresh launch. It is called from
+   * {@link dispatch} before any window is opened, which is the only moment this
+   * session has no turn of its own in flight.
    */
   private async replaceProcess(sessionId: string): Promise<void> {
     await this.registry.evict(sessionId);
