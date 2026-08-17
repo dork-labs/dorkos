@@ -48,6 +48,14 @@
  * is the CLI talking to itself — this module detects it so the sender can
  * steer a corrective note into the live turn and warn the operator.
  *
+ * Detection only. What happens with a hit belongs to the callers: BOTH senders
+ * (`message-sender.ts` on the resume path, `sessions/pump-turn-stream.ts` on the
+ * persistent one) report every hit to `observability/phantom-cancellations.ts`,
+ * which owns the counter and the single `[phantom-cancellation]` warning. That
+ * counter is the tripwire spec `persistent-session-runtime` task 5.1 reads to
+ * test whether persistence removes this class (DOR-1288). Only the resume path
+ * steers a correction; the pump's reason for not doing so is in its module doc.
+ *
  * @module services/runtimes/claude-code/messaging/phantom-cancellation
  */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';

@@ -96,7 +96,8 @@ export function InstallConfirmationDialog() {
   // it can't honor.
   const isShape = pkg?.type === 'shape';
 
-  // Context-aware scope default: agent-local when opened from agent hub, global otherwise.
+  // Context-aware scope default: agent-local when opened from an agent's profile,
+  // global otherwise.
   const [installScope, setInstallScope] = useState<InstallScope>(
     installContext ? 'agent-local' : 'global'
   );

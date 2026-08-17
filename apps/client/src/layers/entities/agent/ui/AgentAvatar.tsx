@@ -59,7 +59,7 @@ export interface AgentAvatarProps {
  * from the same fact — one signal wearing two shapes, on every list row in the
  * product. Health is a diagnostic about the last hour and the corner dot is a
  * claim about this second; the two surfaces that genuinely need health (the
- * Agent Hub hero, the mesh topology page) now say it in their own words, where
+ * profile header, the mesh topology page) now say it in their own words, where
  * there is room to say which health it is.
  */
 export function AgentAvatar({

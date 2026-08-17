@@ -180,20 +180,35 @@ describe('DorkBot', () => {
     expect(shape(build(DORKBOT))).toEqual([
       'About locked',
       'Runs on pick',
-      'Personality locked',
+      'Personality pick',
       'Sessions nav',
       'Tasks nav',
       'Rooms nav',
       'Skills nav',
       'Tools & MCP nav',
     ]);
+    // ONE locked row, not two. What is fixed about DorkBot is who it is — its
+    // name, its face, its description — and the reason has to say exactly that,
+    // or it goes stale the next time something is unlocked.
     const locked = flat(build(DORKBOT)).filter((row) => row.kind === 'locked');
-    expect(locked).toHaveLength(2);
-    for (const row of locked) expect(row.lockedReason).toContain('part of DorkOS');
+    expect(locked).toHaveLength(1);
+    expect(locked[0]!.lockedReason).toBe(
+      'DorkBot’s name, face and description are part of DorkOS.'
+    );
   });
 
   it('still lets you set the model — it runs on your machine', () => {
     expect(flat(build(DORKBOT)).find((row) => row.id === 'runs-on')!.kind).toBe('pick');
+  });
+
+  it('lets you change its voice — onboarding already asked you to pick one', () => {
+    // The first-run beat writes DorkBot's traits and tells you it can change,
+    // and `SYSTEM_PROTECTED_FIELDS` on the server never covered `traits`. A
+    // locked row here made the profile the only thing refusing (DOR-1255).
+    const personality = flat(build(DORKBOT)).find((row) => row.id === 'personality')!;
+    expect(personality.kind).toBe('pick');
+    expect(personality.pick).toBe('personality');
+    expect(personality.lockedReason).toBeUndefined();
   });
 
   it('offers no Connections, Instructions or Boundaries', () => {
@@ -206,11 +221,11 @@ describe('DorkBot', () => {
 
 describe('rooms, wherever they appear', () => {
   /** The Rooms row's value for a given room list. */
-  const roomsValue = (rooms: { name: string; kind: 'channel' | 'dm' }[]) =>
+  const roomsValue = (rooms: { name: string; slug: string | null; kind: 'channel' | 'dm' }[]) =>
     flat(build(SELF, { rooms: { count: rooms.length, rooms } })).find((row) => row.id === 'rooms')!
       .value;
 
-  const channel = (name: string) => ({ name, kind: 'channel' as const });
+  const channel = (slug: string) => ({ name: slug, slug, kind: 'channel' as const });
 
   it('names the first two and counts the rest', () => {
     expect(roomsValue(['team', 'general', 'ops', 'design'].map(channel))).toBe(
@@ -218,12 +233,20 @@ describe('rooms, wherever they appear', () => {
     );
   });
 
-  it('does not give a channel a second # when its own name already carries one', () => {
-    expect(roomsValue([channel('#team'), channel('general')])).toBe('#team, #general');
+  it('writes a channel as its slug, not as its stored title', () => {
+    // The row shares `roomDisplayTitle` with the rest of the cockpit rather
+    // than prefixing a `#` onto whatever string it was handed — which is what
+    // made a channel titled "Team Standup" read as `#Team Standup` here and
+    // `#standup` in the sidebar beside it.
+    expect(roomsValue([{ name: 'Team Standup', slug: 'standup', kind: 'channel' }])).toBe(
+      '#standup'
+    );
   });
 
   it('leaves a DM its plain name — it has no # address to wear', () => {
-    expect(roomsValue([{ name: 'dopel', kind: 'dm' }, channel('team')])).toBe('dopel, #team');
+    expect(roomsValue([{ name: 'dopel', slug: null, kind: 'dm' }, channel('team')])).toBe(
+      'dopel, #team'
+    );
   });
 
   it('says nothing at all rather than "0" while nobody has read them', () => {

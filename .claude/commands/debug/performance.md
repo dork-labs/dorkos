@@ -323,7 +323,7 @@ useEffect(() => {
 
 ### 6.1 Plan the Optimization
 
-Track profile → optimize → measure with TodoWrite when the work spans multiple changes.
+Track profile → optimize → measure with TaskCreate/TaskUpdate when the work spans multiple changes.
 
 ### 6.2 Measure Before/After
 

@@ -115,7 +115,7 @@ test.describe('Settings — URL Deep Links @smoke', () => {
     rightPanel,
     roomsApi,
   }) => {
-    // The Agent Hub's own links are out there in bookmarks and in other
+    // The retired agent panel's own links are out there in bookmarks and in other
     // people's notes. They must open the surface that replaced it, and leave
     // the reader on a URL this build speaks — not on the dead one.
     const agent = await roomsApi.registerAgent(`E2E Legacy ${roomsApi.runId}`, '🛠️', '#22c55e');

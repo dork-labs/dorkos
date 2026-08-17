@@ -221,8 +221,12 @@ export function agentAuthorRef(agentPath: string): string {
  * (ADR 260726-170126).
  *
  * `displayName`, `emoji`, `color` and `imageUrl` are all the same thing — a
- * render cache refreshed whenever the author is resolved. None of them is ever
- * the key, and nothing may look an author up by one.
+ * render cache, refreshed by a resolve whose caller actually knows the field.
+ * For the three avatar fields that means "the caller passed one"; for
+ * `displayName` it also means the name is not an agent's slug where its manifest
+ * says otherwise, so an identity token minted under a slug cannot rename a live
+ * agent (DOR-1264). None of them is ever the key, and nothing may look an author
+ * up by one.
  *
  * **`handle` is the exception, and it is the only one.** It IS a key: unique
  * across this install by index, written once at mint, and the single string that
@@ -249,7 +253,7 @@ export const AuthorRefSchema = z
       .string()
       .optional()
       .describe(
-        "Render cache: the author's photo, when they have one. The fourth field beside `displayName`, `emoji` and `color`, on exactly their lifecycle — refreshed on resolve, never a key. Additive: an author with a photo AND an emoji keeps both, and the renderer picks. Source-agnostic: the value is whatever URL the avatar store returned, so it may be server-relative today and absolute tomorrow."
+        "Render cache: the author's photo, when they have one. The fourth field beside `displayName`, `emoji` and `color`, on exactly their lifecycle — refreshed by a resolve whose caller knows it, never a key. Additive: an author with a photo AND an emoji keeps both, and the renderer picks. Source-agnostic: the value is whatever URL the avatar store returned, so it may be server-relative today and absolute tomorrow."
       ),
     agentRef: z
       .string()

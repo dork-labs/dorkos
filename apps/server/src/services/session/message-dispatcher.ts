@@ -531,7 +531,13 @@ function emitTurnInput(sessionKey: string, content: string, messageId: string): 
  * @param messageId - The server-minted correlation id for the staged message
  */
 function emitContextStaged(sessionId: string, content: string, messageId: string): void {
-  const projector = peekProjector(primaryOf(sessionId));
+  // `queueKeyOf`, exactly as {@link emitQueueUpdate} resolves it — NOT
+  // `primaryOf`. The filing id is the id the session was BORN with, which after
+  // the canonical-id rename is not what the projector registry is keyed by, so
+  // this receipt reached nobody for every renamed session: the lookup missed and
+  // the early return read as "no listeners" (DOR-1262 review). `queueKeyOf` is
+  // the one resolver that answers "the id the projector is registered under".
+  const projector = peekProjector(queueKeyOf(sessionId));
   if (!projector) return;
   const event: RawContextStaged = { type: 'context_staged', content, messageId };
   projector.ingest(event);
@@ -1594,10 +1600,11 @@ export interface SteerDeliveryResult extends RuntimeDeliveryResult {
  * straddle a turn ending or a reap: the same mutex every turn boundary and the
  * warm-process reaper take, so a steer racing either simply does not interleave.
  *
- * This is the ONE server path to a runtime's `deliverIntoTurn`, exactly as
- * {@link dispatchMessage} is the one path to `sendMessage` — the single-ingress
- * audit (`dispatcher-single-ingress.test.ts`) holds it to that, so no caller
- * can reach the write around this gate.
+ * This is the ONE server path to a runtime's `deliverIntoTurn` for a steer —
+ * one of exactly two, the other being {@link deliverStage} for a stage — just
+ * as {@link dispatchMessage} is the one path to `sendMessage`. The
+ * single-ingress audit (`dispatcher-single-ingress.test.ts`) holds both to
+ * that, so no caller can reach the write around this gate.
  *
  * @param opts - The session, the steering client, the message, and the runtime
  * @returns Whether the caller was authorized, whether the steer was delivered,

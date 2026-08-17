@@ -2,7 +2,7 @@
  * The four things you can do to an agent you manage, and the confirmations two
  * of them need (spec `profile-unification` §1.2).
  *
- * Ported from the Agent Hub's `AgentManagementMenu`, whose step machine and
+ * Ported from the retired `AgentManagementMenu`, whose step machine and
  * wording this keeps: the same three confirmations, the same undo on
  * unregister, the same type-the-name gate on delete. What changed is the way in
  * — a dialog of action cards became four items in the profile's kebab, because

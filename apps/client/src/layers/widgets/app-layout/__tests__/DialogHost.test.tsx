@@ -18,8 +18,6 @@ function MockTasksWrapper({ open }: { open: boolean }) {
   return open ? <div data-testid="tasks-panel">TasksPanel</div> : null;
 }
 
-let mockSelectedCwd: string | null = '/test/path';
-
 // --- Dialog contributions matching the real DIALOG_CONTRIBUTIONS shape ---
 
 // Matches the real `DialogContribution['urlParam']` union — keeps `vi.mocked()`
@@ -103,7 +101,6 @@ beforeEach(() => {
   mockStoreState.settingsOpen = false;
   mockStoreState.tasksOpen = false;
   mockStoreState.pickerOpen = false;
-  mockSelectedCwd = '/test/path';
 
   // Reset deep-link hook mocks to inert defaults. Individual tests override
   // with `vi.mocked(useXxxDeepLink).mockReturnValue(...)` as needed.

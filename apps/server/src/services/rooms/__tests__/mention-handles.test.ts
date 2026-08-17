@@ -36,9 +36,15 @@ function mutableLookup(table: Record<string, Partial<RoomAgent> & { name: string
         };
       },
     },
+    // A manifest rename moves BOTH columns: `name` is the address and
+    // `displayName` is the label, and a person renaming their agent changes
+    // what it is called, not one of the two. Moving only `name` would leave the
+    // fake in a state no manifest produces — a display name the manifest no
+    // longer says — which `AuthorRegistry` now (correctly) declines to overwrite
+    // with the new slug (DOR-1264).
     rename: (agentPath, name) => {
       const agent = current[agentPath];
-      if (agent) current[agentPath] = { ...agent, name };
+      if (agent) current[agentPath] = { ...agent, name, displayName: name };
     },
   };
 }

@@ -24,7 +24,7 @@ interface AgentIdentityChipProps {
  *
  * **Click opens the profile** — the one identity surface every other face in the
  * cockpit now opens (spec `identity-consistency` §W3.2). Right-click (long-press
- * on touch) still offers switch agent / profile / new session.
+ * on touch) offers switch agent / view profile / new session.
  *
  * The DOCKED profile is the fallback for the click, and deliberately so: when
  * the mesh cannot name this agent there is no roster id to address a sheet with,
@@ -70,7 +70,7 @@ export function AgentIdentityChip({
       {agentPath ? (
         <AgentChipContextMenu
           onSwitchAgent={handleSwitchAgent}
-          onOpenHub={handleOpenDocked}
+          onViewProfile={handleOpenProfile}
           onNewSession={handleNewSession}
         >
           {/* `max-w-full` is what makes the name truncate instead of overflowing.

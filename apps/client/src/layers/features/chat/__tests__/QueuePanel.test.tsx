@@ -156,6 +156,16 @@ describe('QueuePanel', () => {
     expect(screen.getByText(new RegExp(STATUS_NOTE))).toBeInTheDocument();
   });
 
+  it('joins the count and the note with a middot, never an em dash (DOR-1246)', () => {
+    // Em dashes are banned in copy a person reads (`writing-for-humans`), and
+    // the middot is what every other chat surface already uses to join two
+    // short facts. The gap between the two spans is layout, not text, so the
+    // serialized header has no space before the separator.
+    renderPanel({ queue: [makeItem('A', 0), makeItem('B', 1)] });
+    const header = screen.getByText('Queued (2)').parentElement;
+    expect(header?.textContent).toBe(`Queued (2)· ${STATUS_NOTE}`);
+  });
+
   it('lets the caller say the queue is waiting on a person instead', () => {
     renderPanel({ queue: [makeItem('A', 0)], statusNote: 'Waiting for your answer above' });
     expect(screen.getByText(/Waiting for your answer above/)).toBeInTheDocument();

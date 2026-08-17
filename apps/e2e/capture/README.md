@@ -211,24 +211,24 @@ the same webm + poster.
 
 ## What gets captured
 
-| Surface           | Stills | Loop | Notes                                              |
-| ----------------- | ------ | ---- | -------------------------------------------------- |
-| `cockpit`         | light  | —    | Home: the composer, its tabs, the sidebar roster   |
-| `agents`          | light  | —    | Fleet list with identities/runtimes, Active rows   |
-| `topology`        | light  | dark | Mesh graph, 6 agents across namespaces             |
-| `tasks`           | light  | —    | Schedules + expanded green run history             |
-| `marketplace`     | light  | —    | In-app browse grid                                 |
-| `chat-streaming`  | light  | dark | Mid-stream: markdown + tool-call cards             |
-| `tool-approval`   | light  | —    | Permission prompt awaiting the operator            |
-| `canvas`          | light  | dark | Canvas open beside chat with a file-backed doc     |
-| `canvas-editing`  | light  | dark | Live typing/formatting in the canvas editor        |
-| `subagents`       | light  | dark | Three sub-agents running concurrently, settling    |
-| `multi-session`   | light  | dark | Now + Today: four agents' conversations, all live  |
-| `personality`     | light  | dark | Personality radar morphing through presets         |
-| `agent-discovery` | light  | dark | Onboarding scan finding a mixed existing fleet     |
-| `mobile-sessions` | light  | —    | 390px sidebar sheet: one agent working, one asking |
-| `mobile-chat`     | light  | dark | 390px streaming session (the mobile loop)          |
-| `mobile-approval` | light  | —    | 390px tool-approval prompt                         |
+| Surface           | Stills | Loop | Notes                                             |
+| ----------------- | ------ | ---- | ------------------------------------------------- |
+| `cockpit`         | light  | —    | Home: the composer, its tabs, the sidebar roster  |
+| `agents`          | light  | —    | Fleet list with identities/runtimes, Active rows  |
+| `topology`        | light  | dark | Mesh graph, 6 agents across namespaces            |
+| `tasks`           | light  | —    | Schedules + expanded green run history            |
+| `marketplace`     | light  | —    | In-app browse grid                                |
+| `chat-streaming`  | light  | dark | Mid-stream: markdown + tool-call cards            |
+| `tool-approval`   | light  | —    | Permission prompt awaiting the operator           |
+| `canvas`          | light  | dark | Canvas open beside chat with a file-backed doc    |
+| `canvas-editing`  | light  | dark | Live typing/formatting in the canvas editor       |
+| `subagents`       | light  | dark | Three sub-agents running concurrently, settling   |
+| `multi-session`   | light  | dark | Now + Today: four agents' conversations, all live |
+| `personality`     | light  | dark | Personality radar morphing through presets        |
+| `agent-discovery` | light  | dark | Onboarding scan finding a mixed existing fleet    |
+| `mobile-sessions` | light  | —    | 390px Home panel: one agent working, one asking   |
+| `mobile-chat`     | light  | dark | 390px streaming session (the mobile loop)         |
+| `mobile-approval` | light  | —    | 390px tool-approval prompt                        |
 
 Dark PNGs exist only as loop posters, extracted from the loop during
 post-processing (frame 0, or the settled pre-seam frame for

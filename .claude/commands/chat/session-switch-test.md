@@ -42,6 +42,7 @@ Drive the browser with the **Playwright MCP** (`mcp__plugin_playwright_playwrigh
 - Multi-line prompts: type the whole text (newlines are fine) then submit with **`Meta+Enter`**.
 - **Every Bash call is a fresh shell** — `$TEST_URL`, `$API_PORT`, `$D`, `$SDK_ID` do not survive between blocks. Substitute the resolved literals into every block you run, and record them in the report header.
 - Sidebar session entries are buttons with no stable id and (bug) **identical titles**. Tag them via `browser_evaluate` (assign `el.id`) ordered by `getBoundingClientRect().y`, then click by `#id`. Re-tag after each navigation (React re-renders drop the ids).
+- **The transcript is virtualized — a DOM query only ever sees the mounted rows, not the whole history.** `MessageList` (`apps/client/src/layers/features/chat/ui/MessageList.tsx`) renders with `@tanstack/react-virtual`'s `useVirtualizer`, which mounts roughly a viewport's worth of rows plus a small overscan and unmounts the rest. Phase 5/6's "DOM message text == JSONL == API" check means the API and JSONL, not a raw DOM sweep: comparing DOM row count or unscrolled DOM text against the full JSONL/API history reads as message loss when nothing was lost. Count and compare via `GET /api/sessions/:id/messages` or the JSONL, or scroll the transcript fully first.
 
 ## Results File
 
@@ -219,7 +220,7 @@ for line in lines[-6:]:
 
 - A **trailing `assistant TOOL_USE[...]` with no following `tool_result`** = the agent is **blocked on permission** (matches a stuck UI).
 - Confirm tool side-effects: e.g. does `.../testing` exist? (If the dir is absent but the UI claims "Creating testing directory", the mkdir is gated/stuck.)
-- Compare DOM message text vs API: `GET /api/sessions/$SDK_ID/messages`.
+- Compare DOM message text (mounted rows only — see the Tooling gotcha on virtualization) vs API: `GET /api/sessions/$SDK_ID/messages`.
 
 ## Phase 6 — Assertions (the verification matrix)
 
@@ -227,7 +228,7 @@ Record PASS / FAIL / BLOCKED for each, with evidence:
 
 | #   | Check                                    | How to judge                                                                                              |
 | --- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| 1   | JSONL matches client                     | DOM message text == JSONL == API for both sessions                                                        |
+| 1   | JSONL matches client                     | JSONL == API for both sessions; DOM text matches on the rows actually mounted (virtualized — see Tooling) |
 | 2   | Running subagents visible above composer | `SubagentBlock` / live indicator appears while a subagent runs                                            |
 | 3   | Subagents disappear when done            | indicator clears after the subagent's `tool_result`                                                       |
 | 4   | Queued messages drain & process          | "Compose next" message survives a switch and is sent on turn end                                          |

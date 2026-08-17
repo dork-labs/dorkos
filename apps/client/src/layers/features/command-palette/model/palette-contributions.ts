@@ -52,7 +52,7 @@ export const PALETTE_FEATURES: CommandPaletteContribution[] = [
   },
   {
     id: 'agent-profile',
-    label: 'Agent Profile',
+    label: 'View profile',
     icon: 'User',
     action: 'openAgentProfile',
     category: 'feature',

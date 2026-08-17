@@ -10,8 +10,8 @@ import {
   LogOut,
   Pencil,
   Text,
-  PanelRight,
   UserPlus,
+  UserRound,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -126,15 +126,9 @@ export interface RoomRowMenuModel {
    */
   groups: { id: string; name: string }[];
   /**
-   * The directory of the one agent a one-to-one conversation is with, or `null`
-   * for a channel, a group conversation, or a DM whose roster has not resolved.
-   * Only a 1:1 names an unambiguous agent, so only a 1:1 offers its profile.
-   */
-  soleAgentPath: string | null;
-  /**
    * Whether this room IS a 1:1 — decided from the DM's own participants, and
-   * deliberately NOT from `soleAgentPath === null`. That check conflates
-   * three different facts into one `null`: not a 1:1, the fleet has not
+   * deliberately NOT from whether View profile resolved. That check conflates
+   * three different facts into one absence: not a 1:1, the fleet has not
    * resolved a path yet, or the one agent left the mesh entirely — and the
    * last two are loading/degraded states, not "not a 1:1." A DM whose sole
    * agent left the mesh is still exactly the room shape Leave has to refuse:
@@ -157,8 +151,8 @@ export interface RoomRowMenuModel {
    * because there is no account to match against (`aggregate-team.ts`). That
    * install never sees "Leave" until the account source recovers, and nothing
    * on this menu says why — the item is withheld rather than offered and
-   * refused, the same way `soleAgentPath` withholds "Agent profile" instead of
-   * showing it disabled, and the same silent-omission shape every other
+   * refused, the same way `onViewAgentProfile` withholds "View profile" instead
+   * of showing it disabled, and the same silent-omission shape every other
    * data-gated item on this menu already uses.
    */
   canLeave: boolean;
@@ -194,8 +188,13 @@ export interface RoomRowMenuModel {
   onAddAgents: () => void;
   /** Open the members panel on its roster. */
   onOpenMembers: () => void;
-  /** Open an agent's profile in the right-panel hub. */
-  onOpenAgentProfile: (agentPath: string) => void;
+  /**
+   * View the profile of the one agent a one-to-one conversation is with, or
+   * `null` for a channel, a group conversation, a DM whose roster has not
+   * resolved, or an agent the fleet can no longer name. Only a 1:1 names an
+   * unambiguous agent, so only a 1:1 offers its profile.
+   */
+  onViewAgentProfile: (() => void) | null;
   /** Start the inline rename editor on this row. */
   onRename: () => void;
   /** Open the topic editor. */
@@ -361,18 +360,16 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
   // The bridge between the two sidebar sections: from the conversation you have
   // with an agent to the agent itself. A group conversation and a channel name
   // no single agent, so there is nothing unambiguous to jump to.
-  const soleAgentPath = model.soleAgentPath;
-  if (soleAgentPath !== null) {
+  const viewAgentProfile = model.onViewAgentProfile;
+  if (viewAgentProfile !== null) {
     nodes.push({
       kind: 'action',
       id: 'agent-profile',
-      // "Agent hub" for the reason `AgentRowMenuItems` carries: this opens the
-      // right-panel workbench, and the profile drawer now owns the other word.
-      label: 'Agent hub',
-      icon: PanelRight,
+      label: 'View profile',
+      icon: UserRound,
       opensInput: false,
       destructive: false,
-      run: () => model.onOpenAgentProfile(soleAgentPath),
+      run: viewAgentProfile,
     });
   }
 
@@ -411,8 +408,8 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
   // exact match, and `{owner, agent}` no longer matches anything once the
   // owner has left), so there is no honest "back" to offer. The last of
   // those is `isOneToOne`, decided from the room's own participants —
-  // deliberately NOT `soleAgentPath === null`, which is also true while the
-  // fleet is still loading or once the agent has left the mesh, neither of
+  // deliberately NOT "View profile did not resolve", which is also true while
+  // the fleet is still loading or once the agent has left the mesh, neither of
   // which makes this any less the room shape Leave has to refuse.
   //
   // ONE slot, not two, once the gate above passes: `isMember` decides which

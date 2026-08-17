@@ -73,7 +73,7 @@ const accessRules: CrossNamespaceRule[] = [
 
 function emptyCallbacks() {
   return {
-    onOpenSettings: vi.fn(),
+    onViewProfile: vi.fn(),
     onSelectAgent: vi.fn(),
     onOpenChat: vi.fn(),
   };
@@ -826,8 +826,8 @@ describe('buildTopologyElements', () => {
   });
 
   describe('callbacks', () => {
-    it('injects onOpenSettings callback into agent node data', () => {
-      const onOpenSettings = vi.fn();
+    it('injects the View profile callback into agent node data', () => {
+      const onViewProfile = vi.fn();
       const result = buildTopologyElements(
         singleNamespace,
         noRules,
@@ -836,12 +836,12 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        { onOpenSettings, onSelectAgent: vi.fn(), onOpenChat: vi.fn() }
+        { onViewProfile, onSelectAgent: vi.fn(), onOpenChat: vi.fn() }
       );
       const agentNode = result.rawNodes.find((n) => n.id === 'agent-1');
       const data = agentNode?.data as Record<string, unknown>;
-      (data.onOpenSettings as (id: string) => void)('agent-1');
-      expect(onOpenSettings).toHaveBeenCalledWith('agent-1', '/projects/builder');
+      (data.onViewProfile as (id: string) => void)('agent-1');
+      expect(onViewProfile).toHaveBeenCalledWith('agent-1', '/projects/builder');
     });
   });
 });

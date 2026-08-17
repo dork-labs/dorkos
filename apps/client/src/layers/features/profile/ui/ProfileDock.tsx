@@ -39,7 +39,7 @@ import { ProfileView } from './ProfileView';
  * it is "agent not found".
  *
  * **There is no "keep the last agent painted" here, and there does not need to
- * be.** The Agent Hub held one, because it re-fetched a per-directory manifest
+ * be.** The panel this replaced held one, because it re-fetched a per-directory manifest
  * on every switch and would otherwise blank for that second. Both reads below
  * are shared caches the sidebar and every agent picker already keep warm, and
  * neither is per-agent — so switching sessions resolves the next identity out of

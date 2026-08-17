@@ -76,11 +76,12 @@ interface ProfileStoreState {
   /**
    * Point the right panel at an agent's profile and open it.
    *
-   * The one call every surface that used to open the Agent Hub now makes. It
-   * does all four things that open means — which agent, which tab, the panel
-   * itself, and where in the profile — because doing three of them was the shape
-   * of the old bug: `openHub` alone left the dialog closing onto an unchanged
-   * dashboard and the click read as having done nothing.
+   * The one call every surface that used to open the retired agent panel now
+   * makes. It does all four things that open means — which agent, which tab,
+   * the panel itself, and where in the profile — because doing three of them
+   * was the shape of the old bug: the old store action named the agent and
+   * stopped there, leaving the dialog closing onto an unchanged dashboard and
+   * the click reading as having done nothing.
    *
    * Always lands on the profile's root unless a page is named, so opening a
    * profile shows you a profile.

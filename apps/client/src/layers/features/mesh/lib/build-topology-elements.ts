@@ -29,7 +29,7 @@ export interface TopologyElements {
 
 /** Callbacks injected into agent node data — use stable ref values to avoid re-renders. */
 export interface AgentNodeCallbacks {
-  onOpenSettings?: (agentId: string, projectPath: string) => void;
+  onViewProfile?: (agentId: string, projectPath: string) => void;
   onSelectAgent?: (agentId: string, projectPath: string) => void;
   onOpenChat?: (projectPath: string) => void;
   /** Called when the ghost adapter placeholder is clicked. */
@@ -169,8 +169,8 @@ export function buildTopologyElements(
           avatarColor: visual.color,
           emoji: visual.emoji,
           projectPath: typedAgent.projectPath ?? '',
-          onOpenSettings: (id: string) =>
-            callbacks.onOpenSettings?.(id, typedAgent.projectPath ?? ''),
+          onViewProfile: (id: string) =>
+            callbacks.onViewProfile?.(id, typedAgent.projectPath ?? ''),
           onSelectAgent: (id: string) =>
             callbacks.onSelectAgent?.(id, typedAgent.projectPath ?? ''),
           onOpenChat: (_id: string, path: string) => callbacks.onOpenChat?.(path),

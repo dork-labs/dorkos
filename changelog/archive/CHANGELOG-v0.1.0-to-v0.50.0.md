@@ -1,0 +1,1853 @@
+# Changelog archive: v0.1.0 – v0.50.0
+
+Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
+See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.50.0] - 2026-07-17
+
+> Organize your agents into sidebar groups that follow you across devices, see at a glance which sessions are running low on context room, and rest easier: the DorkOS tools that can change your machine are now token-protected.
+
+### Added
+
+- Universal command intents (foundation): DorkOS now has one shared registry for the three everyday slash actions — compact the conversation, start a fresh session, and show context usage and cost — plus each agent's words for them (`/compress`, `/summarize`, `/new`, `/usage`, `/status`, and more). This groundwork lets the same command work on whichever runtime your session uses.
+- Organize your agents into named groups in the sidebar (DOR-329). Make a group for a project, a client, or however you think about your work. Create, rename, delete, and drag agents in and out. Every drag has a menu and keyboard path too, so you are never stuck. Each group can sort by hand, by name, or by most recent activity.
+- See your latest work at a glance with a new "Recent" section (DOR-329). It shows your most recent sessions across all your agents. One click takes you back to what you were just doing.
+- Pin an agent and it now stays in its group as well (DOR-329). A pinned agent shows up in both places, so pinning no longer pulls it out of the group you put it in.
+- Your sidebar setup now saves to your DorkOS server instead of one browser (DOR-329). Your groups, pins, and sort choices follow you across every browser and the desktop app.
+- When a session's context is nearly full, a quiet chip now offers one-click compaction before things slow down (DOR-112)
+- Relay metrics now include real delivery-latency percentiles (p50/p95/p99) instead of a placeholder (DOR-166)
+- New desktop app guide: install DorkOS as a native Mac app (Windows early alpha included) (DOR-284)
+- See at a glance how full each agent's context is, right in the session list. Every session row now shows a small gauge, and the sessions view sums up how many are near full or just auto-compacted — so you can jump into the right agent before it runs out of room. Claude Code sessions show a reading even when they're closed; other runtimes show it once you open the session. (DOR-113)
+- Read any doc as clean markdown, or pull the whole docs set into your agent in one fetch. Every docs page is now fetchable as markdown (add `.mdx` to any docs URL), a new `/llms-full.txt` gives your agent the whole hand-written corpus in one request, and a quiet action row above each page lets you copy the markdown or open the page in Claude. "Open in Claude" opens claude.ai in your browser — it's not a Claude Code link. (DOR-165)
+- Marketplace installs now remember where each package came from — the source repo, the version you asked for, and the exact commit that was installed. This lays the groundwork for safe reinstalls and contributing changes back. (DOR-147)
+
+### Changed
+
+- External MCP and A2A clients now need your local token when login is off. Health checks and listing tools still work without one, and there is no grace period: paste the token into any client you already set up to keep using the tools that change things. Click "Reveal token" in Settings → Tools → External MCP Server to copy it, or read it from the `mcp-local-token` file in your DorkOS data folder. (DOR-278)
+- We no longer auto-pin your default agent (DOR-329). A small set of agents shows as one clean list, and pinning stays something you choose.
+- The Windows desktop app now has a standard Windows-style menu (File, Edit, View, Window, Help) instead of a Mac-shaped one (DOR-310)
+- Upgraded the docs site's engine (Fumadocs 16.10 and its OpenAPI renderer v11), keeping the docs and API reference on current, supported tooling. (DOR-165)
+- Removed a leftover "rate limited" status banner from the chat UI that could never actually appear. (DOR-201)
+- Simplified the server's error handling to use Express 5's built-in support for async errors. No behavior change — the same errors are caught the same way, with less wrapper code. (DOR-161)
+
+### Removed
+
+- Removed the per-agent message and hourly-call limits from agent settings — they were shown as editable controls but never actually limited anything. Runaway protection still comes from the per-message budget, which is enforced. (DOR-265)
+
+### Fixed
+
+- Fixed crashed package installs leaving behind backup folders that could show up as duplicate agents. (DOR-175)
+- Chat no longer loses its scroll position when you switch away from its tab and back, and it stays pinned to the newest message more reliably while a reply streams in (DOR-163)
+- Fixed new development worktrees starting with stale package builds, which caused false type errors until you rebuilt by hand. (DOR-117)
+- Pushes that only delete branches no longer run the full pre-push test gate. (DOR-116)
+
+### Security
+
+- The DorkOS tools that change things on your machine — creating agents, sending messages, installing packages — and agent-to-agent calls now need a token when login is off. Before, any program on your computer could call them with no token at all. This closes that open door, the same way Jupyter protects its local server. One honest limit: while login is off, a program running on your computer can still ask DorkOS for the token, the same way the app does. Turning on login is what closes that last door. (DOR-278)
+- The activation page now shows the device code on the confirm screen, so you can check it matches what your DorkOS instance is displaying before you approve — even when the code arrives pre-filled from a link. (DOR-200)
+
+## [0.49.0] - 2026-07-14
+
+> DorkOS is easier to run on a server and safer in Docker. You can try it in one command with `npx dorkos@latest`, and start a server from a ready-made Compose file. The published Docker image now runs as a regular user instead of root, checks its own health, and shuts down cleanly.
+
+### Added
+
+- Try DorkOS without installing anything: `npx dorkos@latest` downloads it, starts it, and opens the cockpit in your browser. The first run takes a minute or two; a regular install skips that wait next time.
+- Starting DorkOS on a server got simpler: download a ready-made Docker Compose file from [dorkos.ai/compose.yml](https://dorkos.ai/compose.yml) and run `docker compose up -d`. The deployment guide now also explains when to pick Docker and when a direct install fits better.
+
+### Changed
+
+- **BREAKING**: The published Docker image now runs as a regular, unprivileged user instead of root, so a compromised agent or a bug can't touch the rest of the container as easily. Its data directory moved from `/root/.dork` to `/home/node/.dork`.
+  - Migration: before starting the new image, fix ownership of your existing data with `docker run --rm -v dorkos-data:/data alpine chown -R 1000:1000 /data` (swap `dorkos-data` for your own volume or host path), then change every `-v ...:/root/.dork` to `-v ...:/home/node/.dork`. See the [Docker guide](https://dorkos.ai/docs/self-hosting/docker#upgrading-from-an-older-image) for the full walkthrough.
+- Shrink the published Docker image by dropping the build toolchain it no longer needs at runtime.
+- Add tini to the image so DorkOS starts, shuts down, and cleans up child processes properly, no `--init` flag needed.
+
+### Fixed
+
+- The desktop app no longer fails to launch with "Server exited with code 1" when a connected messaging service is slow to respond. Before, if a service like Telegram took too long to answer during startup, the whole app gave up and showed an error. Now the app starts right away and connects your messaging services in the background. The app also waits longer for slow first-time startups instead of giving up after 10 seconds.
+- Checking for updates in the desktop app right after a new release no longer shows an error. During the few minutes it takes a release's installer to finish building and upload, "Check for updates…" now tells you the new version is still being prepared instead of showing a confusing error message.
+- Fix the Docker image's health check, which never actually worked: the setup guides told you to add a `curl`-based check, but the image has no `curl`, so it silently failed forever. The image now runs its own built-in check every 30 seconds, so `docker ps` correctly reports the container as healthy or unhealthy.
+
+## [0.48.0] - 2026-07-13
+
+> You can now download DorkOS for Windows as an early alpha, alongside the Mac app. This release also moves every bit of analytics onto DorkOS's own site, so no third-party tracker is ever bundled into the app, and it hands you real controls: a Privacy & Data settings tab, command-line switches, and two kill switches that force everything off. A small anonymous heartbeat and usage count are now on by default, but DorkOS shows you the exact data on first run and sends nothing until you have seen it. You can also send your own traces to any observability tool, get crash reports through DorkOS instead of a third party, and send feedback right from the app.
+
+### Added
+
+**Desktop app**
+
+- Download the macOS desktop app straight from dorkos.ai, no terminal required. On a Mac, the install section now shows a "Download for Mac" button (Apple Silicon); the recommended one-line terminal install is still right there for everyone, and Intel Macs use it too.
+- Windows desktop app (early alpha). DorkOS can now be built as a Windows installer for 64-bit PCs, with the bundled Claude Code, the built-in terminal, and `dorkos://` links all wired up the same way they are on Mac. It hasn't been confirmed on a real Windows machine yet, so treat it as experimental until we've tested it end to end. (#268)
+- Download DorkOS for Windows from dorkos.ai. On a Windows PC, the install section now leads with a "Download for Windows" button and the top navigation offers the download too; the one-line terminal install stays a click away, and other machines see a link to the Windows installer under "Other ways to install." This is an early alpha: the installer is unsigned, so Windows may show a "Windows protected your PC" warning on first launch, and we haven't yet confirmed it end to end on a real Windows machine. (#267)
+
+**See and control your data**
+
+- See and control what anonymous data DorkOS sends. A **Privacy & Data** tab in settings lets you flip each channel on or off, and the first-run onboarding shows you the exact data before anything is sent (DOR-312).
+- `dorkos telemetry status`, `dorkos telemetry enable`, and `dorkos telemetry disable` let you check and change telemetry from the command line. Use `--channel install|heartbeat|usage|errors` to change just one.
+- Two environment kill switches, `DO_NOT_TRACK` and `DORKOS_TELEMETRY_DISABLED`, force every channel off no matter what your config says. Set either to `1` and DorkOS sends nothing.
+- A debug mode: set `DORKOS_TELEMETRY_DEBUG=1` and DorkOS prints the exact JSON it would send to your terminal instead of sending it, so you can read every field for yourself.
+- DorkOS now shares a short list of anonymous feature-usage events so we can see which parts of the app get used and make the right things better. Like the heartbeat and install counts, the channel is on by default and sends nothing until the first-run notice has been shown; if you answered a telemetry prompt on an older version, it stays off for you. Only two events ship today: one when the server starts and one when you begin a new agent session. They carry counts and coarse facts (your platform, how many runtimes you have on, which runtime a session uses) and never your prompts, code, file paths, or anything from your sessions. Everything flows through dorkos.ai, so no tracking library is ever bundled into the app. You can see the full list on the [telemetry page](https://dorkos.ai/telemetry), preview the exact events with `DORKOS_TELEMETRY_DEBUG=1`, and turn the channel off in the Privacy & Data settings, with `dorkos telemetry disable --channel usage`, or with `DO_NOT_TRACK=1` (DOR-315).
+- Signed-in, opted-in analytics for DorkOS accounts (DOR-316). When you are signed in to your DorkOS account and have analytics turned on, we now tie your website activity to a random account ID (never your name or email) so we can see how signed-in people use DorkOS. If analytics is off, declined, or you are signed out, nothing is tied to you. Deleting your account also erases the analytics record tied to it.
+- When you link this install to a DorkOS account, you can now also connect its anonymous usage counts to your account, so you can see them when you are signed in on dorkos.ai. It is off by default: a checkbox in the account-link flow (Settings, DorkOS account) turns it on right before you link. No new data is collected, and the `DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED` kill switches turn it off too. It only takes effect at link time, so if you turn it on after linking, the connection happens the next time you link (DOR-320).
+
+**Bring your own observability**
+
+- Send DorkOS traces to your own observability stack (DOR-313). Set the standard `OTEL_EXPORTER_OTLP_ENDPOINT` and DorkOS ships its session, runtime, relay, and task spans to your own Jaeger, Grafana Tempo, Honeycomb, or any OTLP-compatible tool. The spans stay sanitized (durations and counts, never prompts, code, or file paths), and nothing goes to DorkOS: it is your data going to your tools. `OTEL_SDK_DISABLED=1` turns all tracing off. See the new [observability guide](https://dorkos.ai/docs/self-hosting/observability).
+- See AI run details in your own traces (DOR-319). When tracing is on, every agent turn's span now carries standard OpenTelemetry `gen_ai.*` metadata: which model ran, the token counts, and the cost. Any tool that reads LLM traces picks it up automatically, and it stays your data going to your own tools.
+- New opt-in setting to share AI run metadata with DorkOS (DOR-319). Turn on **Share AI run metadata** in the Privacy & Data tab (off by default) and DorkOS sends a small summary of each agent turn: the model, the runtime, token counts, timing, and cost. Never your prompts, your code, or your conversations.
+
+**Feedback**
+
+- Send feedback from the app. A new **Send feedback** button in the help menu opens a small form to tell the DorkOS team what works, what does not, or what you wish it did: general feedback, a bug, or an idea. It goes straight to us and is sent only when you press Send. The **Report a bug on GitHub** and **Request a feature on GitHub** options are still there for when you want a public thread (DOR-317).
+- A matching feedback form on the website at [dorkos.ai/feedback](https://dorkos.ai/feedback), linked from the footer.
+- Feedback is not telemetry: it is a message you choose to send, so it ignores the `DO_NOT_TRACK` and telemetry switches. Those turn off tracking, not the Send button.
+
+### Changed
+
+- On a Mac, the dorkos.ai install section and the top navigation now lead with the desktop app download. The terminal one-liner stays one step away, still front and center and one click to copy, and a new "Other ways to install" section holds npm and the Windows and Linux notes. On other machines, nothing changes: the terminal install still leads, with the Mac download a subtle link away.
+- DorkOS now shares a little anonymous data by default so we can see roughly how many people run it: a small heartbeat (now once a day instead of once a week) and anonymous marketplace install counts. It is anonymous, not personal. It only ever sends a random install id, the version, your OS and chip type, which runtimes you have on, whether the tunnel and cloud link are enabled, and rough counts, never your prompts, code, file paths, or session content. The first time you start DorkOS it prints a plain notice explaining this and sends nothing on that first run; if you do nothing, sharing begins on the next launch. Turn it off any time with `dorkos telemetry disable`, by setting `DO_NOT_TRACK=1`, or in the new Privacy & Data settings tab. If you had already made a telemetry choice, we keep it exactly as it was. Crash reporting is unchanged: it stays off until you turn it on. See exactly what's collected at [dorkos.ai/telemetry](https://dorkos.ai/telemetry) (DOR-314).
+- The dorkos.ai analytics now respect where you are and count everyone privately by default (DOR-311). In the EU, EEA, UK, and Switzerland you still get a banner and nothing is counted with cookies until you accept. Everywhere else, basic visit counting is on by default, and you can turn it off in one click on the Privacy page. Either way, if you decline or turn it off, we still count your visit anonymously: no cookies, no stored ID, and no way to link today's visit to tomorrow's. Do Not Track and Global Privacy Control browser signals are honored automatically, and the cookie banner no longer hides behind the bottom navigation.
+- Crash reports, if you turn them on, now go to dorkos.ai instead of a third-party service. They are scrubbed the same way as before (no error messages, no file paths, no code, no session content) and stay off until you switch them on. There is no longer anything to set up: the old `SENTRY_DSN` step is gone, so the single `telemetry.errorReporting` switch is all it takes. Crashes in the cockpit itself are now reported too, and you can preview a report any time with `DORKOS_TELEMETRY_DEBUG=1` (DOR-318).
+
+### Fixed
+
+- Playing a game inside a widget now works the way you'd expect. Tapping one square marks only that square, instead of filling the whole board at once. A board stays playable even after the agent sends a follow-up message: only a newer board takes its place. And when the agent sends a fresh board (in the chat, the canvas, or the floating panel) it accepts your next move again rather than freezing. Widget buttons and game boards in your existing chats also keep working after the app's server restarts, instead of failing with "Couldn't send the move" until you type something. When you ask for a game or widget in the floating picture-in-picture view, the agent can now pop it out there directly instead of putting it in the side panel (DOR-302).
+
+## [0.46.0] - 2026-07-12
+
+> The Mac desktop app finally works end to end and ships with its own downloadable installer. A new floating panel lets you pop a live widget or an MCP app out of the chat and keep it in view while you work elsewhere. You can review an agent's edits change by change, and your agent can now see its own preview (console errors, network requests, and a screenshot) to fix its own mistakes. Telemetry, crash reporting, and debug tracing are all new, and all opt-in. A security-hardening pass closes several real gaps, and the docs got a full plain-language rewrite.
+
+### Added
+
+**Desktop app**
+
+- There's now a stable download link for the DorkOS desktop app on Mac.
+- You can drag the desktop app window from the top of the sidebar and the header. The sidebar no longer hides behind the Mac window buttons, whether it's expanded or collapsed. Links you click in the app now open in your regular browser instead of popping up a broken, chrome-less extra window (DOR-253)
+
+**Pop things out into a floating window**
+
+- Pop an interactive app or a live widget, like a tic-tac-toe board, out of the chat into a small floating window that stays on top while you move around DorkOS. It keeps working there, even after you switch sessions, until you close it. Use the pop-out button, or let the app open itself that way (DOR-296, DOR-297, DOR-298)
+- On phones, popped-out widgets and apps dock to a bottom sheet instead: it opens at half height so you can glance at it, drags up for more room, and drags down to a small bar you can tap to bring it back or close (DOR-299)
+
+**Review your agent's edits**
+
+- Review your agent's edits change by change. When an agent edits a file, the workbench now opens a diff showing exactly what changed, and you can accept or reject each block on its own. Reject undoes just that block on disk and leaves the rest; accept keeps it. There's a reject-all, a mark-reviewed, a side-by-side view on wide screens, and a toggle to compare against your last commit instead. If the file changes while you're reviewing, you get a calm refresh notice, never a silent overwrite. Text diffs work in the web app and the Obsidian plugin; turn off the automatic open with `workbench.autoOpenDiff` (DOR-212)
+- Changed images get the same treatment, GitHub-style: see before and after side by side, drag a divider across them, or blend between them with a slider. Restore the previous image with one click, or mark the new one reviewed. A brand-new image says so honestly instead of pretending there's something to compare (DOR-212)
+
+**Your agent can see its own preview**
+
+- Your agent can now check its own work in the workbench browser. After it opens a page, it can read the console errors and failed network requests and take a screenshot of the rendered page, so it can catch a broken layout, a stray error, or a blank screen and fix it, all without you describing what went wrong (DOR-213)
+
+**Get notified**
+
+- Get a message when a scheduled task finishes, so you don't have to sit and watch it. Connect a channel like Telegram to the agent, then turn on "Message me when tasks finish." Failures always reach you; turn the switch off to skip the runs that succeed. One-time setup: message your bot once so it's allowed to text you back, and turn on "Agent can start conversations."
+
+**Opt-in telemetry, crash reports, and diagnostics**
+
+- DorkOS can now send an anonymous weekly heartbeat so the project can roughly count how many people are actively running it. It's off by default and asks once, on first run, showing you the exact data before you choose. It only ever sends a random install id, the version, your OS and chip type, which runtimes you have on, whether the tunnel and cloud link are enabled, and rough counts, never your prompts, code, file paths, or session content. See exactly what's collected at dorkos.ai/telemetry (DOR-293)
+- DorkOS can send a crash report to your own Sentry or self-hosted GlitchTip project when something breaks, so a bug can get fixed without anyone asking for your log files. It's off by default and is its own separate choice, never turned on by the telemetry banner. It sends only the error type and a cleaned-up stack trace (which function, file, and line), never the error message, your file paths, tokens, or anything from your sessions. Turn it on by setting `SENTRY_DSN` and flipping `telemetry.errorReporting` (DOR-293)
+- A new `dorkos --debug-trace` mode writes a local timing file you can send when reporting a bug. It records how long session turns, agent calls, relay messages, and task runs take, durations and counts only, never your prompts, file paths, or anything you typed. It's off unless you ask for it, and the file stays on your machine (DOR-294)
+
+**Setup and support**
+
+- New: `dorkos doctor` checks your setup and tells you what's wrong in plain words. It checks your Node version, whether your data folder is writable, whether the port is free, whether the Claude Code CLI is installed, whether extensions can compile, and whether your login and tunnel settings make sense. It reads your config and changes nothing.
+- Report a bug or ask for a feature without hunting down your setup details. Open the command palette (Cmd/Ctrl+K) and pick "Report an issue," use the new help menu at the bottom of the sidebar, or run `dorkos feedback` in your terminal. DorkOS opens a prefilled GitHub issue with your version, operating system, runtimes, and on/off settings already filled in. You see and edit everything before you submit; only safe on/off values are included, never tokens, file paths, or anything from your sessions (DOR-292)
+
+**Docs and pricing**
+
+- New docs pages: a plain-language "What is DorkOS?" intro for people who don't code, a troubleshooting and FAQ page, a glossary, a guide to the workbench (files, terminal, and browser next to your chat), and a guide to publishing your own marketplace packages. The Generative UI guide also picked up a real recording of tic-tac-toe in action.
+- New: a [Pricing](https://dorkos.ai/pricing) page that spells out our money plan before anything actually costs money. Everything DorkOS ships as free stays free, forever; money will only ever come from a future cloud service, and we'll always announce a real price here before you see a bill.
+
+**Small stuff**
+
+- Navigate tab strips with the keyboard: arrow keys move between tabs, Home/End jump to the ends, Delete closes the focused tab.
+- Celebrations now come in six styles instead of one: a bigger multi-stage burst, aerial fireworks, side cannons, a calm confetti drizzle, a golden star pop, or an emoji shower with any glyph you like. Agents can trigger any of them, and the Dev Playground has a new Celebrations showcase to try each one.
+- The workbench browser now keeps each document's back-and-forward history separate, so switching between browser tabs doesn't scramble your navigation history (DOR-252)
+
+### Changed
+
+- In the desktop app, most of the interface now reads like an app instead of a document: text in the sidebar and navigation is no longer selectable. Chat messages, code blocks, and other content you'd actually want to copy still are (DOR-253)
+- The little faces agents use to show how things are going got a real glow-up. Every face now has eyebrows and its own body language: a happy face bobs gently and breaks into a closed-eye smile every so often, a sad one sits heavy with a slow tear, a determined one furrows its brow while tiny steam wisps rise, a sheepish one blushes as a sweat bead slides down, a surprised one startles with its brows shooting up as its mouth pops open, a thinking face glances around while its dots ripple, heart-eyes pulse each to their own beat, and the celebrating face bounces with a happy squash on every landing. Blinks are more human too, with the occasional double-blink. Everything still matches your theme in light and dark; if you prefer reduced motion, the faces hold still but stay just as expressive.
+- X and O now have their own colors in board games like tic-tac-toe, X in blue and O in amber, so you can read the board at a glance. The colors stay distinct for colorblind players in both light and dark themes. If the agent styles a square itself, that styling still wins.
+- Friendlier wording on old game boards and buttons: an out-of-date board now says "This board is from an earlier turn, play on the newest one," and an old button says "This one's from an earlier message," instead of the jargon-y "Superseded" label.
+- The docs got a full makeover. Every page was rewritten in plain language, checked against the code, and organized around what you're trying to do. The sidebar now groups guides by activity (daily driving, making it yours, going autonomous, scaling to a fleet), and the landing page routes you by who you are instead of listing every page. Stale docs are gone: pages no longer describe commands, methods, or behaviors that don't exist anymore (#207)
+- The dorkos.ai privacy and cookie pages now spell out exactly what analytics would collect if we ever turn them on: page visits and a few clicks, no session recording, nothing until you accept the cookie banner. Analytics stays off, and with no key configured the site makes zero requests to PostHog (DOR-268)
+- The remote-access screens and the tunnel guide now tell you up front what setup takes: about 2 minutes, one time, to create your owner login and paste a free ngrok token. After that, approving from your phone really is one tap (DOR-244)
+- Your Telegram and Slack bot tokens are no longer saved as plain text. DorkOS now moves each token into your computer's encrypted store and keeps only a pointer to it in the settings file, so a leaked or shared config file no longer exposes your bots. Bots you already connected keep working; their tokens are moved for you the first time DorkOS starts, with nothing to reconfigure (DOR-280)
+- Telemetry consent is now one clear choice covering both the new heartbeat and the existing marketplace install stats, instead of a marketplace-only banner. Everything stays off until you say yes, and you can change your mind anytime in settings (DOR-293)
+- When an agent compacts its context to free up room, the status strip now shows a clean progress bar that starts when compaction begins and clears when it finishes, and it works the same way across every coding agent, not just one. If a compaction fails, you see the reason inline instead of a stuck indicator (DOR-110)
+
+### Fixed
+
+**Desktop app**
+
+- The desktop app now starts correctly when installed from the DMG. Before, its built-in server was missing from the package, so the app sat in the Dock with no window and no error; if the server ever fails to start now, the app tells you what went wrong instead of silently doing nothing. App updates now install correctly, and the embedded terminal works in the installed app.
+- The Mac desktop app now includes everything it needs to run Claude Code out of the box: the Claude Code program ships inside the app and starts up right away, so your agents can run without a separate install.
+- Extensions, including the built-in Linear dashboard and sidebar, now load in the desktop app. Before, every extension request went to the desktop window itself instead of the DorkOS server, so the extension system silently gave up on startup (DOR-243, DOR-255)
+- The update card no longer tells you to run `npm update -g dorkos`, a terminal command that updates the CLI, not the app you're using. When the desktop app has downloaded a new version, the sidebar now shows a simple "Update ready, restart to install" card, and the button restarts the app to finish the update.
+
+**Game boards (tic-tac-toe and friends)**
+
+- A very fast double-click, or any burst of clicks, on a game board can no longer send more than one move. The first click wins instantly; the rest are ignored. Before, clicks landing in the same instant could all slip through and corrupt the game.
+- Boards no longer treat a blank space as a real mark. Some agents write a space character for an empty square, which used to draw a phantom dot in every empty cell, garble the square's screen-reader name, and, on a completely empty board, declare victory with a stroke through a row of nothing. Blank squares are now truly blank.
+- The victory stroke is now what it was meant to be: a thin, softly translucent line through the winning squares, colored to match the win. It used to render as a thick black bar that buried the marks beneath it.
+- The board now always matches the agent's actual moves: it works out the new game state first, then draws from that state, so the two can't drift apart. If the agent's game record and what's drawn on screen ever disagree, even over a bit of padding or a stray blank line in how the agent wrote it down, the board trusts the record, draws any mark that's missing, and locks that square, without ever erasing or changing a mark you can already see.
+- Widgets no longer flash a "couldn't be rendered" error while they're still arriving. When the agent streams a widget, like a game board, the reply sometimes paused at just the wrong spot, showing an error card for a split second before the widget popped in. Now a widget that's mid-arrival keeps its calm loading shimmer until it's truly done; the error card only appears if the finished widget is genuinely broken.
+- Clicking a game-board square now keeps your mark on the board while the agent replies. Before, the mark vanished the instant you clicked and the whole widget flickered through its entrance animation again.
+
+**Claude Code, Codex, and OpenCode sessions**
+
+- Stop the stray "No response requested." reply that could appear before your message in a Claude Code session. Your messages now always run as the next turn, with nothing slipped in first.
+- DorkOS now finds your Claude Code sessions even when you use a custom Claude config folder (`CLAUDE_CONFIG_DIR`); sessions used to run and bill normally but never show up in your session list (DOR-250)
+- Installing a Claude Code plugin now actually puts its commands and skills where your agents can use them. Before, a project install would report success but quietly project zero files, so neither DorkOS sessions nor the `claude` CLI could see the plugin. The pre-configured official Anthropic marketplace works now too, and real published plugins like `hookify` are no longer rejected over a harmless naming quirk that Claude Code itself accepts.
+- Codex and OpenCode conversations now keep their history when the DorkOS server restarts. Every completed reply is saved to disk the moment its turn finishes, so the full conversation is right where you left it.
+- OpenCode sessions keep the same id after you restart the DorkOS server. Before, a restart quietly re-keyed every OpenCode conversation under a new id, so bookmarks and open tabs hit a dead "session not found" page while the same conversation reappeared in the list as a stranger (DOR-251)
+- Codex sessions no longer slowly fill your disk with logs; the Codex engine no longer writes endless debug records to its log database (DOR-188)
+- Sessions that don't belong to any project no longer get announced to every open cockpit. Before, a Codex or OpenCode session with no working directory could show up as a nameless ghost row under agents it had nothing to do with (DOR-202)
+- Enabling a coding agent whose command-line tool isn't installed no longer stops DorkOS from starting; that agent is skipped with a warning and everything else works.
+
+**Scheduled tasks and usage**
+
+- Scheduled task history now shows the truth: finished runs stay finished, even after a restart. Runs used to get stuck showing "running" forever even though they'd actually succeeded, and a server restart could rewrite that entire successful history to "failed" (DOR-248, DOR-249)
+- Creating a scheduled task now shows its next run time right away, instead of only after refreshing the task list.
+- The usage item in the status bar now actually shows your Claude subscription usage, including a less common weekly usage window some accounts have. It updates at the end of every reply with how much of your rate-limit window you've used and when it resets. Before, it stayed empty unless you were about to hit a limit (DOR-99)
+- The Marketplace card in Settings > Extensions now says "Required" instead of showing an on/off switch that did nothing. If you flipped that dead switch in the past, Marketplace turns itself back on (DOR-122)
+- A brand-new install no longer prints a scary "initial scan failed" warning at startup. Having no Claude Code sessions yet is normal, and the log now treats it that way (DOR-247)
+
+**Sign-in, working directories, and setup**
+
+- Signing in after `dorkos auth enable` now works on a fresh install. Before, turning on login and then signing in failed with a server error unless you happened to set a secret environment variable by hand, and nothing told you it was needed. DorkOS now creates and remembers that secret for you the first time you enable login, so sign-in just works. This also unblocks exposing your instance over a tunnel, which requires login first (DOR-242)
+- DorkOS installed from npm or the one-liner now correctly sets up its built-in extensions (Marketplace, Linear, Hello World) on first run, and the Marketplace tab itself now loads instead of failing; the published package was silently missing the files it needed (DOR-245, DOR-256)
+- Fixed the default working directory sometimes pointing outside the allowed folder, which could block opening a terminal or starting a new session. The git status panel now falls back to your workspace's real default folder when none is picked, instead of wherever the server process happened to start (DOR-266)
+- Building DorkOS from a fresh checkout now works on the first try; a naming collision between the root project and the CLI package used to make the build trip over its own files (DOR-190)
+- The docs, the install script, and the website now all correctly say DorkOS requires Node.js 22 or later, instead of the outdated "18 or later" that printed a wall of warnings on install (DOR-246)
+- Opening the same terminal in a second window no longer silently kills it in the first; the first window now shows a note that the session moved. Reconnecting after being away also tells you when some output was dropped (DOR-257)
+- The status bar no longer shows a stray thin scrollbar under its fade edge, and the chat message list hides its scrollbar the standard way (DOR-164)
+
+**Agent messaging safety**
+
+- Agent-to-agent call budgets now actually stop the spending, not just the mailbox copy. Before, a message that had run out of budget was correctly refused delivery, but the target agent still ran a full, paid turn anyway. The budget check now happens once, up front: an out-of-budget message is dead-lettered, no agent turn starts, and a caller waiting on a reply is told immediately instead of timing out (DOR-260)
+- The "agent can start conversations" switch on a channel now controls every way an agent could message you, not just the built-in "notify me" action. Before, an agent could still reach you on Telegram or Slack by addressing the raw channel directly even with the switch off. Replying to something you sent first, and your task-done notifications, keep working exactly as before (DOR-239, DOR-277)
+- Installing a marketplace package can no longer plant a shortcut that reaches outside where it's installed. A package could previously ship a symlink that, once copied and synced, let it read or write files outside its own folder. Every symlink is now dropped while the package is being staged, and each one is noted in the install log. Real packages are unaffected; they're plain files and folders, never shortcuts (DOR-279)
+
+**Docs media pipeline**
+
+- Product videos and screenshots in the docs now fill their frame edge to edge; before, they showed a gap at the top and were cut off at the sides.
+- Video previews in the docs and release notes now show the finished widget instead of a loading skeleton, and a botched capture can no longer publish a set with missing files. The capture pipeline itself now starts and stops cleanly between runs instead of occasionally hanging or recording against the wrong server.
+
+### Security
+
+- Hardening pass on the parts of DorkOS that decide what a package can do and who can reach it: marketplace installs can no longer be tricked into running a command through a booby-trapped source link, your login secret and any chat-bot tokens are now kept private on disk and readable only by you, and the key that protects the tool endpoint is checked in a way that gives nothing away. Full write-up in `research/20260711_security-hardening-audit.md`.
+- Sign-in and sign-up now slow down after too many tries from the same place, so no one can sit there guessing your password. A few mistyped tries still work fine (DOR-281)
+- Cleared the last critical security warning in our test tooling; `npm audit` on the DorkOS source no longer reports any critical findings (DOR-168)
+
+## [0.45.1] - 2026-07-09
+
+> A same-day fix for widget interactions: clicks and form submits with bigger payloads no longer lose their data.
+
+### Fixed
+
+- Fixed widget clicks and form submits losing their data when the payload spanned multiple lines, both live and when a session reloads. A protocol change in 0.45.0 left the payload parser behind. (#185)
+
+## [0.45.0] - 2026-07-09
+
+> The right panel grows into a real workbench (terminal, file explorer, embedded browser), agents can answer with interactive widgets you can click, Codex and OpenCode join Claude Code in one cockpit, and DorkOS accounts replace tunnel passcodes with real login.
+
+### Added
+
+**Run Claude Code, Codex, and OpenCode side by side**
+
+- Run Codex and OpenCode agents next to Claude Code, all in one cockpit. Every session shows which runtime it belongs to, and the session list keeps working even when one runtime is down.
+- Switch runtimes right from the chat composer: pick Claude Code, Codex, or OpenCode for a new session, and DorkOS remembers the choice per session.
+- Connect a runtime account without leaving DorkOS: guided connect flows check what's installed, walk you through login, and store credentials as secure references (never plaintext).
+- DorkOS detects which runtimes are installed on your machine and offers the ones that are ready, so getting a second runtime running takes one click instead of a config file.
+- See what a session is costing you while it runs: token usage and cost now show in the status strip for every runtime that reports them.
+- Give each agent its own isolated workspace: DorkOS can create and manage git worktrees (or clones) with their own ports, so parallel agents never trample each other's checkout. Browse and manage them on the new Workspaces page.
+
+**Generative UI: widgets in chat and canvas**
+
+- Agents can render real, interactive widgets in chat instead of walls of text: stat cards, tables, lists, charts, progress bars, images, and forms. A malformed widget degrades to a small error card instead of breaking the chat.
+- Click a widget's button, pick from a list, or submit a form, and the agent picks up exactly where you left off: it sees what you did and answers in its next turn.
+- Four more widgets: a timeline for sequenced events, a checklist that reports back what you checked, a compare table that highlights the best option, and a star rating.
+- Three playful widgets: a mood face that blinks and emotes, a board for turn-based games like tic-tac-toe you can play right in chat, and a reveal that flips a coin, rolls a die, or shakes a magic 8-ball. Agents can also fire confetti on their own.
+- Widgets feel alive: they rise into place, numbers count up, progress bars fill, and charts draw themselves in. Turn on reduced motion and every widget appears instantly instead.
+- Skills can ship reusable widget templates with fill-in-the-blank placeholders, so agents don't hand-build the same widget JSON every time.
+- MCP servers can ship full interactive apps that render right in chat or pop out to the canvas (the MCP Apps standard, SEP-1865). The first app from a server always asks permission before it renders, and apps can never reach your files, cookies, or credentials.
+- View images and PDFs right in the agent canvas, with click-to-zoom on images.
+
+**The workbench (right panel)**
+
+- Run a real shell in the cockpit: open a Terminal tab in your session's working directory without leaving DorkOS (web only).
+- Open more than one terminal at once, with tabs to switch between them; your open terminals survive a page refresh.
+- Browse, open, and edit your project's files without leaving DorkOS: a file explorer with create, rename, delete, and drag-to-move, a code editor, a 3D model viewer, a CSV viewer, and image zoom, all in one multi-document canvas.
+- Open an embedded browser in the canvas with back, forward, reload, and an address bar, for any URL, local HTML file, or dev server.
+- Agents can drive the workbench for you: open a file, reveal the terminal, or navigate the embedded browser, on both Claude Code and Codex.
+- The right panel remembers which tab was open, per agent, so it's where you left it next time.
+
+**Your DorkOS account and cloud**
+
+- Create a DorkOS account at dorkos.ai with email and password, GitHub, or Google. It's your identity, separate from any one DorkOS install.
+- Link a self-hosted DorkOS to your account from Settings > DorkOS account (or `dorkos cloud login`): approve a short code at dorkos.ai/activate, then see and revoke linked instances anytime.
+- Turn on owner login for a self-hosted instance from Settings > Security. It's off by default; once on, DorkOS requires an owner account before anyone can reach it, with no email server needed.
+- Give MCP clients, scripts, and agents their own scoped API keys instead of one shared key (Settings > Security). Existing global keys migrate automatically.
+- Recover a lost password or create the owner account from the command line with `dorkos auth enable` and `dorkos auth reset-password`, no running server or email required.
+- Manage cloud accounts from a new admin console: view accounts, and let people self-serve delete or export their data, with every admin action logged.
+- Sign up for the DorkOS newsletter right from the site, with double opt-in confirmation.
+
+**Desktop app**
+
+- Open the desktop app straight to a page with `dorkos://` links.
+- A real Mac menu: Cmd+comma opens Settings, and there's a proper About window and Help links.
+- The desktop app checks for updates on its own, or you can check anytime; you choose when to restart.
+
+**Extensibility and platform**
+
+- Extensions can subscribe to live session, turn, tool, and relay events instead of polling, declared right in their manifest. Events never carry your conversation content.
+- The external MCP server (`/mcp`) now lists browsable resources for sessions, agents, and skills, and every tool says whether it's read-only, destructive, or reaches the network, so MCP clients can be careful without asking you first.
+- See and manage everything installed from the Marketplace, across global and per-agent installs, in one Manage Installed view; get a warning before an extension-bearing package affects every agent; and share a Marketplace search or filter as a URL.
+- Installed plugins now project their commands, skills, and hooks to Cursor and GitHub Copilot too (Gemini support isn't there yet), and re-sync automatically whenever you install or uninstall one.
+- Scheduled tasks now have real safety rails: they only fire in production, one leader owns dispatch, and a task can't fire twice for the same run.
+
+**Docs and legal**
+
+- Documentation guides now show the same real product screenshots and video clips as the marketing site.
+- Plain-English privacy, terms, and cookie pages.
+
+### Changed
+
+- Rewrote the npm README, root README, Mesh concepts guide, Generative UI guide, and MCP feature page in plain language, so you can tell what DorkOS does before you dig into the reference details.
+- Rewrote the dorkos.ai feature catalog and FAQ in plain language, and reframed the homepage around "You, multiplied": one thesis section, plainer problem cards, and a real origin story in the closing section.
+- Renamed the in-app marketplace from "Dork Hub" to "Marketplace."
+- The right panel's tab strip can no longer disappear out from under a panel.
+- Product-media recordings can now run in parallel (`capture:record --shards N`) instead of one long serial pass.
+- You can edit one canvas document while agents keep updating the others.
+- Relay (the message bus between agents) now cleans up after itself: expired messages, stuck deliveries, and abandoned mailboxes are swept on a schedule instead of piling up forever.
+
+### Removed
+
+- **Breaking:** Tunnel passcode protection is gone. Better Auth login is now the only way to protect DorkOS. If you expose DorkOS (start a tunnel or bind to a non-loopback address), you must turn on login and create an owner account first. Old passcode settings are dropped automatically on upgrade, not migrated.
+- `/flow` no longer ships inside the DorkOS repo. Install it from the Marketplace instead; it works the same way.
+
+### Fixed
+
+- Agent-to-agent messages and A2A tasks now report a real failure instead of a fake success when an agent's turn crashes or times out.
+- Fixed several ways relay messages could go missing: adapter start-up races, silent delivery failures, and Slack/Telegram formatting and reconnect issues.
+- Recover agents that go unreachable, and clean up properly when one is unregistered.
+- Ghost Codex sessions no longer show up under every agent; sessions without a working directory now belong to no project, and untitled sessions show "Untitled session" instead of a blank row.
+- `get_ui_state` and `control_ui` now tell agents the truth: current state instead of stale data, and a clear error instead of a fake success when no client is attached.
+- Generative UI widgets now tolerate the natural, slightly-off-spec values agents actually write (pixel numbers, percentages over 100, alternate wording) instead of failing outright.
+- Fixed widgets flickering between their loading skeleton and final content while a reply streams in, fixed gaps in chart lines on certain slopes, and fixed images not refreshing when their source changes.
+- Clicking a widget (like a tic-tac-toe square) now always gets a response from the agent, the board can't drift out of sync, and a widget locks the moment you play so a stray double-tap or a stale reload can't corrupt it.
+- Fixed the Terminal tab sometimes failing to reopen, and hardened the terminal's WebSocket connection with an origin allowlist.
+- Closing a terminal tab the instant it was created no longer leaks a hidden shell process: a terminal that finishes starting after its tab is gone is cleaned up (or kept for re-attach when grace applies).
+- Renaming or moving a file in the workbench no longer conflicts when two names collide, and file/folder deletes can no longer escape the project through a symlink.
+- The canvas file viewer now shows your latest edits right away, and a refresh button reloads the newest version from disk.
+- Every embedded webpage in the canvas now has real browser controls (back, forward, reload, address bar); before, agent-opened pages had none.
+- Fixed the desktop app opening a second window when launched twice, and fixed it forgetting its window position after a monitor change.
+- Fixed the desktop app showing a black window in development: its pages were blocked from talking to its own server.
+- Fixed CORS so the browser correctly sends credentials to allowed origins.
+- Marketplace pages (browse, package detail, install privacy) now show the site header and footer instead of dead-ending.
+- Fixed several marketplace install bugs: replaced an unsafe git-branch rollback with a safer file-scoped transaction, made package downloads concurrency-safe, and added toast feedback when an install or update fails.
+- Site fixes: no more stale claims or dead links, PostHog analytics only run after you consent, the feature-card layout no longer has gaps or cropped screenshots, and pages render correctly on first paint.
+- Connecting a runtime now selects and launches it right away, and Codex sessions now match Claude Code for models, MCP tools, and slash commands.
+- Linking a self-hosted instance to your DorkOS account no longer fails on device-link.
+
+### Security
+
+- Agent-to-agent messages now carry a verified sender identity, and DorkOS enforces that agents in different namespaces can't message each other unless you allow it.
+- The external MCP server's mesh tools now enforce the same directory boundaries as the HTTP API, so a caller can't register agents outside the allowed folders.
+
+## [0.44.0] - 2026-06-16
+
+### Added
+
+- Agent context (git status, UI state, queued-message notes) now travels alongside your message instead of inside it — your message reaches the agent exactly as written, and that context never shows up as if you had typed it (#258)
+- Agents no longer receive git status twice per turn, trimming redundant prompt context (DOR-132)
+- Surface session hook progress ("Running hook X…") in the chat status strip, clearing when the model resumes (DOR-125)
+- Tiered command/file palette ranking + alias provenance (DOR-119, DOR-120)
+- Render local slash-command output in chat (DOR-126)
+- Introduce Core Extensions tier (rename builtin → core)
+- Match slash commands by their aliases in the palette, and refresh the command
+  list when the agent changes it mid-session (DOR-108)
+- Persist a context-compaction row in chat ("Context compacted · N tokens ·
+  manual/auto") sourced from the durable transcript, plus a live "Compacting
+  context…" strip that resolves and an inline failed-compaction notice (DOR-118)
+
+### Changed
+
+### Fixed
+
+- Chat status strip was starved of live `system_status` events (the projected turn dropped them), so "Compacting context…" and hook progress only appeared after the durable history reload — now retained live (DOR-125, completes DOR-118)
+- Open the canvas when an agent pushes content (DOR-97, DOR-104)
+- Apply enable/disable live instead of requiring a page reload
+
+## [0.43.1] - 2026-06-13
+
+### Changed
+
+- Upgrade Claude Agent SDK to 0.3.177 (restores background-agent and MCP task
+  state on session resume)
+- Derive Obsidian model/subagent catalog from the SDK
+- Codify "one checkout, one writer" worktree strategy
+
+### Fixed
+
+- Give the marketing site a worktree-unique dev port
+- Dispatch slash commands as bare prompts so the CLI parses them (DOR-107)
+- Read SDK-persisted session titles, drop in-memory overlay (DOR-101)
+- Establish flex column root so tall canvas documents scroll (DOR-96)
+
+---
+
+## [0.43.0] - 2026-06-11
+
+### Added
+
+- Docs/ADRs + consolidated dead-code retirement (task #18 — spec complete)
+- Stateless EventLog-backed test-mode runtime — runtime-agnosticism proof (task #15)
+- Live-turn fidelity events + task/status-strip wiring (#19)
+- Restore chat send via trigger-only POST + durable /events (Phase 5)
+- Live sidebar + session list via global stream, drop poll (Phase 4)
+- Client streaming foundation — StreamManager, hydration, flag removal (Phase 3)
+- Runtime-agnostic session streaming — server foundation (Phases 1-2)
+- Integrate worktrees into spec execution and Linear loop
+- Batch 9 — browser acceptance PASS; implementation complete (DOR-73)
+- Batch 7 — resolve recovered cards on result + countdown-zero (DOR-73)
+- Batch 6 — Path-B sync routing + server cross-cutting tests (DOR-73)
+- Batch 5 — Path A fetch-on-mount, single-resolve verification, docs (DOR-73)
+- Batch 4b — Path B re-emit pending interactions on /stream connect (DOR-73)
+- Batch 4a — Path A GET /pending-interactions endpoint + transport (DOR-73)
+- Batch 3 — getPendingInteractions on the runtime abstraction (DOR-73)
+- Batch 2 — pending-interactions selector + idempotent client renderers (DOR-73)
+- Batch 1 — pending-interaction snapshots + shared remainingMs/DTO (DOR-73)
+- SDK-native breakdown via held-open prompt (A1)
+- Runtime auto-mode guard + plain-language confirm copy (#253 follow-ups)
+- Adopt auto as a model-gated permission mode (#253 Phase 2)
+- Persist per-session settings; allow instant live bypass
+- Stream subagent text into the background-task block
+- Adopt SDK 0.3.168 native binary, refusal & error surfacing
+
+### Changed
+
+- Triage-type states are never dispatchable
+- Evidence-on-close convention — proof, not claims
+- Adopt Linear Method conventions + dispatch policy
+- Regenerate API docs for GET /pending-interactions (DOR-73)
+- Batch 8 — client cross-cutting tests (DOR-73)
+- Document Composio CLI as a fallback Linear access path
+- Drop orphaned makeUserPrompt
+- Guard the generated OpenAPI spec against schema drift
+- Correct Claude Code install guidance for the SDK 0.3.168 native binary
+- Reconcile developer guides with the past week's changes
+- Remove the no-op autoMode toggle and disableAutoMode plumbing (#253 Phase 1)
+- Relocate the sdk-event-mapper streaming tests, drop dead mock
+- Group claude-code/ into domain subdirs
+- Split sdk-event-mapper into focused per-category mappers
+- Document granular npm token for 2FA-bypass publish
+
+### Fixed
+
+- Follow-the-rekey continuity (NF-2) + rail row resolution (NF-3) + cross-client pins (task #17)
+- F2 identity-seed rekey + test-mode e2e rescue — acceptance re-run fixes (task #16)
+- Client quality pass — one /events connection, trigger latch, honest liveness (task #6 batch B)
+- Fleet-wide session discovery + server quality pass (task #6 batch A)
+- Transport seam — embedded send, real stream methods, baseUrl-aware StreamManager (CLI-C2)
+- Sidebar liveness via session_status fanout + hide SDK resume-bootstrap messages
+- First-turn id split-brain + interaction-cancel ghosts (acceptance F1/F2/F4/F5)
+- Repair command drift, harden checks, probe port collisions
+- Harden resume protocol + live approvals (review blockers)
+- Report the last request's window, not the turn's cumulative usage
+- Report accurate context-window usage in the status bar
+- Prune orphan API-reference MDX and repair the docs CI guard
+- Don't mutate session mode in the auto-mode guard (self-review)
+- Restore streamed thinking on Opus 4.8/4.7
+- Harden answer formatting and extract the answer summary
+- Stack multi-question answers and remove answered-row flicker
+- Deliver structured-question answers to the agent and persist them in the UI
+- Address review — reconcile validation docs, echo all settings in PATCH
+- Match agent display name in fleet-page search
+- Sort agent lists by resolved display name
+
+---
+
+## [0.42.0] - 2026-06-05
+
+> Memory recall transparency and per-session runtime ownership — see which memory files shaped each reply, gate capabilities per session, and upgrade SDK runtimes with a dedicated workflow.
+
+### Added
+
+- Surface SDK memory recall events in assistant bubbles
+- Render calm status copy from system_status.status
+- Enhance SDK event handling with memory recall and terminal reason support
+- Surface SDK terminal_reason as informational chip
+- Chat: Memory recall indicator — see which memory files shaped each response
+- Sunset deferred items from spec 244 prework
+- Per-session runtime ownership + capability gating + runtime-neutral relay
+- Add /app:runtime-upgrade command for strategic SDK upgrades
+- Add new shared skills for Linear workflows
+
+### Changed
+
+- Polish memory recall indicator per code review
+- Move shared skills to .agents/skills/ with symlinks
+- Add `pnpm dev:dogfood` to run the dev preview and built CLI cockpit side by side
+
+### Fixed
+
+- Downgrade fumadocs-openapi 10.7.1 → 10.6.8 to fix api-doc generation
+- Address code review on spec 244 implementation
+
+## [0.41.0] - 2026-04-15
+
+> Plugin installation polish and chat input reliability — responsive dialogs, personality picker enhancements, and critical fixes for agent discovery and server stability.
+
+### Added
+
+- Enhance plugin activation and refresh mechanism
+- Responsive install dialog and agent picker
+- Enhance PersonalityPicker and onboarding flow
+- Add PersonalityPicker showcase and integrate into FeaturesPage
+- Introduce new chat input components and enhance functionality
+
+### Changed
+
+- Enhance RightPanelContainer styling and transitions
+- Streamline imports and enhance ChatInput styling
+
+### Fixed
+
+- Resolve PluginSource objects to giget-compatible strings
+- Eliminate spurious 404 and 400 errors on agents page load
+- Prevent unhandled errors from crashing Express process
+- Prevent AgentPicker dropdown clipping in install dialog
+- Show all registered agents in install dialog
+- Update project management copy for clarity
+- Fix playground registry slug and agent management copy
+- Improve agent management action descriptions for clarity
+
+## [0.40.0] - 2026-04-14
+
+> Agent personality and sidebar polish — verbosity-based traits, lifecycle management actions, scoped marketplace installs, and refined animations across the Agent Hub, sidebar, and session components.
+
+### Added
+
+- Add agent lifecycle management actions and split navigation
+- Enhance sidebar functionality and UI components
+- Add polished avatar picker with micro-interactions and transitions
+- Enhance agent trait management and UI components
+- Update personality traits from tone-based to verbosity-based system
+- Improve PersonalityRadar component for light/dark mode adaptability
+- Implement AgentChipContextMenu and enhance ShortcutChips for agent actions
+- Update PersonalityRadar component for improved light/dark mode support
+- Add nebula theme utilities and PresetPill component
+- Polish AgentListItem expand/collapse with spring animations and loading states
+- Implement context menu and compact/full session row components
+- Enhance AgentHub with loading skeleton and animation transitions
+- Add scoped installs and skills-first Toolkit tab
+- Add dev tools dropdown menu with unified TanStack devtools panel
+
+### Changed
+
+- Update agent management actions and enhance UI components
+- Streamline RightPanelHeader and enhance AgentHubHero UI
+- Replace hardcoded default traits with DEFAULT_TRAITS constant
+- Remove 'active' status from session indicators and update related tests
+- Replace SessionItem with SessionRow components in sidebar and features sections
+- Enhance AgentListItem animation and expand/collapse logic
+- Fix stale JSDoc referencing removed Sessions drill-down
+- Simplify AgentListItem interactions and visual container
+
+### Fixed
+
+- Add success toasts for deny/unblock actions
+- Address code review findings in AgentListItem
+- Wire route projectPath param and address review findings
+
+## [0.39.0] - 2026-04-12
+
+> Agent Hub reimagined — immersive hero design, Cosmic Nebula personality visualization, shell-level right panel infrastructure, and smooth panel animations across the platform.
+
+### Added
+
+- Animate right panel open/close and unify sidebar transition timing
+- Redesign Agent Hub with immersive hero, inline pickers, and shared panel header
+- Add Cosmic Nebula visualization to personality radar and onboarding
+- Redesign Agent Hub with Personality Theater and 3-tab layout
+- Add unified Agent Hub right-panel replacing AgentDialog modal
+- Add shell-level right panel infrastructure with canvas migration
+- Add displayName field to decouple display label from slug
+
+### Changed
+
+- Remove orphaned session.canvas slot and add right-panel to ExtensionPointId
+- Update extension slot references to include right-panel
+- Merge duplicate imports from @dorkos/marketplace
+
+### Fixed
+
+- Remove dead onClose prop from CanvasHeader and unused TabBar import
+- Sync animRef state when animated=false and rename stale testid
+- Register agent-hub right-panel contribution and fix 13 broken tests
+- Merge DorkOS sidecar in server aggregation and unify shared logic
+
+## [0.38.0] - 2026-04-11
+
+> Agent creation polish and chat input reliability — new session navigation after agent creation, improved directory picker, and three fixes that ensure the textarea is always focused and typeable after switching agents.
+
+### Added
+
+- Navigate to new session after creating an agent
+- Add PathInput component, improve ConfigureStep layout, allow existing dirs
+
+### Fixed
+
+- Include session param in setDir navigation to fix chat input
+- Ensure session param on agent switch so textarea gets focus
+- Resolve textarea focus loss after interactive mode exit
+
+## [0.37.0] - 2026-04-11
+
+> Mesh discovery and agent creation — pre-scan landing states, 7 new AI agent strategies, an instant-advance creation wizard, and a unified /agents page streamline onboarding and daily management.
+
+### Added
+
+- Enhance DiscoveryView with pre-scan state and illustration
+- Add discovery strategies for 7 new AI coding agents
+- Redesign dialog as instant-advance wizard
+- Consolidate mesh panel dialog into /agents page
+- Add marketplace-dev skill for package authoring
+- Redesign Marketplace with trust signals, animations, and progressive disclosure
+
+### Changed
+
+- Reconcile 8 guides with recent mesh, tool-approval, state, and API changes
+- Use ResponsiveDialog, extract sub-components, optimize for mobile
+
+### Fixed
+
+- Use actual emoji character instead of escaped surrogate pair
+- Accept template name in handleTemplateSelect, remove unused prop
+- Preserve search params when switching view tabs
+- Fix sidebar add-agent buttons not opening creation dialog
+
+## [0.36.0] - 2026-04-11
+
+> Agent sidebar redesign — stable alphabetical ordering, pinning, context menus, and activity badges replace the old LRU-shuffling 8-agent cap, alongside a tool approval overhaul and SDK-driven model discovery.
+
+### Added
+
+- Redesign agent list with stable ordering, pinning, and context menu
+- Unify dashboard and session sidebars with expandable agents
+- Comprehensive tool approval system overhaul
+- SDK-driven model discovery with disk cache, warm-up, and universal schema
+- Add opensrc skill for fetching dependency source code
+- Channels tab functionality — pause, test, activity metadata
+- Channels tab visual polish — brand icons, progressive disclosure, humanized copy
+
+### Changed
+
+- Use bg-secondary for selected model card
+- Use ResponsivePopover for model config, fix card width
+
+### Fixed
+
+- Synthesize DorkOS manifest from CC plugin.json for CC-only packages
+- Prevent popover drift during status bar content changes
+- Preserve model selection during effort/mode changes
+- Prevent model popover overflow and blank state on config change
+- Migrate stagePackage to fetchPackage dispatcher for relative-path sources
+- Prevent stale ToolApproval card after input-zone approval
+- Align ModelConfigPopover with Design B mockup
+- Filter internal adapters from channels tab and inline setup wizard
+
+## [0.35.0] - 2026-04-09
+
+> Release tooling and configuration robustness — schema validation gates, migration automation, and marketplace stability converge to prevent upgrade breakage.
+
+### Added
+
+- `/system:release` now detects config schema changes without a paired migration and offers to scaffold one inline before the tag is cut. Catches the class of "shipped a schema change, forgot the migration, broke upgrades for existing users" bugs before they reach npm.
+- New `adding-config-fields` skill walks contributors through the full Zod → migration → docs → test lifecycle when adding, renaming, removing, or retyping a user-config field. Model-invoked — activates automatically when editing `UserConfigSchema`.
+- Agent discovery guide now distinguishes marketplace-installed agents (in `~/.dork/{plugins,agents}`) from agents discovered anywhere on disk via the mesh scanner. The two-registry split is no longer implicit — `GET /api/marketplace/installed` and `GET /api/agents` answer different questions and the docs now say so plainly.
+- New `context-isolator` subagent for running data-heavy read-and-summarize operations (release analysis, schema-diff classification, large searches) in an isolated context window. Ported from a sibling project and wired into `/system:release` Phase 3, which was silently missing the agent before.
+
+### Changed
+
+- Persistent user config now sources its migration `projectVersion` from `SERVER_VERSION` automatically — no more hardcoded stub. Migration keys tie to real release boundaries for the first time, so future schema migrations actually fire on upgrade.
+- Corrupt-config recovery path now preserves the migration chain. Previously, users who hit corrupt-recovery on any prior build would silently stop running migrations on subsequent upgrades — the fallback Conf instance was missing `projectVersion` and `migrations`. Both the primary and recovery branches now use a single shared options object.
+- Schema migration process is now documented first-class in `contributing/configuration.md` with the full `conf` `projectVersion` model, append-only rule, step-by-step procedure, real examples, and anti-patterns. Previously covered in one sentence.
+- CI/CD: All JavaScript-based GitHub Actions workflows opt into the Node 24 runtime ahead of GitHub's September 2026 Node 20 deprecation. Preempts the forced-upgrade disruption.
+
+### Fixed
+
+- The Marketplace now loads correctly. Previously it showed zero packages because the default community source URL pointed at `github.com/dorkos/marketplace` (an org that doesn't exist — the real repo is at `dork-labs/marketplace`) AND the upstream parser rejected the real Anthropic `claude-plugins-official` catalog entirely because of a strict reserved-name check and a kebab-case regex that couldn't handle the `wordpress.com` plugin. Existing users' `~/.dork/marketplaces.json` files get auto-migrated to the correct URL on first read — no manual editing required. End-to-end verified: 8 plugins from the Dork Labs community marketplace + 126 from the Anthropic catalog now load successfully.
+
+---
+
+## [0.34.1] - 2026-04-09
+
+> Emergency patch — unblocks `npm install -g dorkos` / `npm update -g dorkos` and restores the Docker image publish pipeline after the v0.34.0 release shipped broken.
+
+### Fixed
+
+- Fix `npm install -g dorkos` and `npm update -g dorkos` failing with `E404 '@dorkos/marketplace@0.0.0' is not in this registry`. The v0.34.0 package mistakenly listed a private workspace package as a runtime dependency — v0.34.1 removes it from the published tarball entirely. The marketplace validator and install commands are unaffected because the code was already bundled into the CLI binary at build time, so nothing is actually missing from the runtime. If you hit the 404 on v0.34.0, run `npm install -g dorkos@0.34.1` to recover.
+- Restore the Docker image publish pipeline. The v0.34.0 release failed CI because of a cross-environment TypeScript resolution drift in the server build, which blocked `ghcr.io/dork-labs/dorkos:v0.34.0` from being published. v0.34.1 pins `@types/node` deterministically so CI reproduces the local tsc behavior exactly.
+
+---
+
+## [0.34.0] - 2026-04-08
+
+> The marketplace lands — install pipeline, in-app Marketplace, public web catalog, and strict Claude Code superset format all ship together, plus external MCP agent access and a redesigned agent Settings Tools tab.
+
+### Changed
+
+- **Marketplace**: Converted `marketplace.json` to a **strict superset** of the Claude Code marketplace format. Schema now supports 5 source types (relative-path, github, url, git-subdir, npm), `owner` / `metadata` / `author` object shapes, `.claude-plugin/` file location, and a sidecar `dorkos.json` for DorkOS-specific extensions. The `dorkos-community/marketplace` repo is renamed to `dork-labs/marketplace` and uses the same-repo monorepo layout. Plugin runtime activation now goes through the Claude Agent SDK `options.plugins` API so DorkOS owns install and the SDK owns runtime. Empirically verified against `claude plugin validate` (CC 2.1.92). See spec `marketplace-05-claude-code-format-superset` and ADRs 0236–0239. (`marketplace-05-claude-code-format-superset`)
+
+### Added
+
+- Unify validate CLI + add source reachability check
+- Add Settings page and sections to the dev playground
+- URL deep links for Settings, Agent, Tasks, Relay, Mesh dialogs
+- CLI validators, telemetry, seed fixture, docs (marketplace-05 Batches 5-8)
+- Strict CC superset — schema, install, runtime, site (marketplace-05 Batches 1-4)
+- Add MCP server surface (marketplace-05-agent-installer) + in-flight WIP
+- **Marketplace as MCP server.** The DorkOS marketplace is now exposed as an MCP server at `/mcp`, alongside the existing DorkOS tools. Any AI agent that speaks MCP — Claude Code, Cursor, Codex, Cline, ChatGPT, Gemini — can search the marketplace, get package details, install packages (with user confirmation), and scaffold new packages on the fly. See `contributing/external-agent-marketplace-access.md` for setup instructions. (`marketplace-05-agent-installer`)
+- **Personal marketplace.** A per-user local marketplace at `~/.dork/personal-marketplace/` is now created on first server boot. Agents can scaffold new packages here via `marketplace_create_package` without leaving their tool of choice. (`marketplace-05-agent-installer`)
+- **8 new MCP tools:** `marketplace_search`, `marketplace_get`, `marketplace_list_marketplaces`, `marketplace_list_installed`, `marketplace_recommend`, `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package`. (`marketplace-05-agent-installer`)
+- Add `/marketplace` browse page on dorkos.ai with hourly registry refresh from `dorkos-community/marketplace` (`marketplace-04-web-and-registry`)
+- Add per-package detail pages with README rendering, install instructions, related packages, and OG images (`marketplace-04-web-and-registry`)
+- Add `/marketplace/privacy` page documenting the install telemetry contract (`marketplace-04-web-and-registry`)
+- Add opt-in install telemetry endpoint (`/api/telemetry/install`) backed by Neon Postgres + Drizzle ORM as the single source of truth (`marketplace-04-web-and-registry`)
+- Add telemetry consent banner in the in-product Marketplace (off by default) (`marketplace-04-web-and-registry`)
+- Add `dorkos package validate-marketplace` and `dorkos package validate-remote` CLI commands for the dorkos-community submission workflow (`marketplace-04-web-and-registry`)
+- Include all marketplace packages in `sitemap.xml` and `llms.txt` (`marketplace-04-web-and-registry`)
+- Ship Marketplace browse UI as built-in extension (marketplace-03-extension)
+- Add Marketplace — in-app marketplace browse experience for discovering and installing agents, plugins, skill packs, and adapters without leaving the app, shipped as the built-in `@dorkos-builtin/marketplace` extension (`marketplace-03-extension`)
+- Add featured agents rail and type filters (agents, plugins, skills, adapters) with debounced search across the catalog (`marketplace-03-extension`)
+- Add package detail sheet with rendered README and permission preview (`marketplace-03-extension`)
+- Add install confirmation dialog with blocking conflict detection before any write (`marketplace-03-extension`)
+- Add installed packages view for updating and uninstalling from the Hub (`marketplace-03-extension`)
+- Add marketplace sources management for adding and removing git registries from the Hub (`marketplace-03-extension`)
+- Add "From Marketplace" tab to TemplatePicker so agent creation can pull directly from marketplace agents (`marketplace-03-extension`)
+- Complete install/uninstall/update pipeline (Batches 4-9 of marketplace-02-install)
+- Add `dorkos install <name>` to install plugins, agents, skill packs, and adapters from configured marketplaces — atomic transactions with rollback on failure and permission preview before install (`marketplace-02-install`)
+- Add `dorkos uninstall <name>` with `--purge` flag for full data removal (`marketplace-02-install`)
+- Add `dorkos update [<name>]` advisory update notifications, with `--apply` to perform upgrades (`marketplace-02-install`)
+- Add `dorkos marketplace add/remove/list/refresh` to manage marketplace sources (`marketplace-02-install`)
+- Add `dorkos cache list/prune/clear` to manage the local marketplace cache (`marketplace-02-install`)
+- Add `/api/marketplace/*` HTTP endpoints for sources, packages, install/uninstall/update, and cache (`marketplace-02-install`)
+- Implement foundation package, CLI commands, and kind field addendum
+- Show MCP servers in Tools tab
+- Add external MCP access controls — toggle, API key, rate limiting, and setup instructions
+- Use official brand logos for agent runtimes
+- Redesign Tools tab with tool inventories, init errors, and override counts
+- Make Settings, Tasks, Relay, Mesh, and Agent dialogs URL-addressable via search params — share links like `?settings=tools` to deep-link teammates to a specific dialog and tab; browser back closes dialogs and reload preserves dialog state. Note: deep links containing `?agentPath=...` include your local project path.
+- Add `@dorkos/marketplace` package with schemas, parser, validator, scanner, and scaffolder (spec 1 of 5)
+- Add `dorkos package init <name>` CLI command for scaffolding new marketplace packages
+- Add `dorkos package validate [path]` CLI command for validating package manifests
+- Add optional `kind` field to `SkillFrontmatterSchema` (addendum to ADR-0220)
+
+### Changed (other)
+
+- Extract `TabbedDialog` widget primitive — `SettingsDialog` and `AgentDialog` now consume it as thin declarative wrappers (491 → 54 lines and 177 → 75 lines respectively)
+- Split four oversized dialog files under 300 lines
+- Reconcile developer guides for marketplace-init branch
+- Restructure dialog tabs — replace Capabilities with Tools
+- Redesign PersonalityTab with extracted TraitSliders and response mode
+- Redesign IdentityTab with hero preview and extract useDebouncedInput
+- Move warning to top, multi-line endpoint, Remove on generated key, dork*mcp* prefix
+- Redesign ExternalMcpCard with sectioned layout and better visual hierarchy
+- Nest scheduler config inside Tasks tool group expansion
+
+### Fixed
+
+- Address code review findings on dialog URL deep links
+- Convert RateLimitSection to SwitchSettingRow
+- Address code review feedback from 413d74d3
+- Close 4 critical install-pipeline gaps from Session 2 review
+- Close code-review gaps from 6fdd065c
+- Repair .gtrconfig format and assign unique dev ports
+- Add error handling for API key lifecycle and restart hint for rate limits
+
+---
+
+## [0.33.0] - 2026-04-05
+
+> Intelligent channel binding and dependency awareness — adapters become channels, runtime requirements surface during onboarding, and system configuration becomes discoverable.
+
+### Added
+
+- Rename relay adapters to channels, add adapter runtime cards and agent-first channel binding
+- Enhance ServerTab with subsystem configuration and relocated adapter settings
+- Add system requirements check to onboarding with adapter dependency checking
+- Add Remote Access shortcut to settings sidebar
+
+### Changed
+
+- Add agent runtime landscape research covering Codex, ACP, Pi Agent, Gemini CLI, and Aider
+- Add guidelines for capturing design decisions in visual companion sessions
+- Reconcile guides with v0.32.0 changes
+
+---
+
+## [0.32.0] - 2026-04-04
+
+> Chat refinement and architectural cleanup — interrupt running queries with Escape, see agent activity at a glance with colored borders, and benefit from a cleaner, better-organized codebase under the hood.
+
+### Added
+
+- Add server-side query interrupt and Escape-to-stop
+- Replace activity dot with colored border indicator
+
+### Changed
+
+- Add pre-commit directory size check for codebase hygiene
+- Organize oversized directories and expand dir-size allowlist
+- Organize ui/ into domain subdirectories
+- Decompose ChatPanel and reduce ChatInputContainer prop surface
+- Remove unused Transport import and add onStop prop to ChatInput
+
+### Fixed
+
+- Add horizontal padding to chat scroll area for improved layout
+
+---
+
+## [0.31.0] - 2026-04-03
+
+> Refining agent UX through redesigns and standards adoption — clearer palettes, transparent context usage, and portable skill definitions bring polish and portability to the operator platform.
+
+### Added
+
+- Redesign CommandPalette and FilePalette for clarity and reusability
+- Add cache hit rate and usage status bar items, refactor context to per-message
+- Redesign tool/thinking blocks for clarity and visual cohesion
+- Redesign onboarding copy and project discovery UX
+- Adopt SKILL.md file-first architecture for task system
+- Add @dorkos/skills package implementing SKILL.md open standard
+- Introduce maintaining-dev-playground skill documentation
+- Allow disabling tunnel passcode for open or trusted environments
+
+### Fixed
+
+- Include legacy .claude/commands/ in command list after SDK session starts
+- Make SDK command and subagent caches per-cwd instead of global
+- Resolve all lint warnings across server, client, and CLI
+- Serve SPA on tunnel requests so PasscodeGate renders instead of raw JSON
+
+---
+
+## [0.30.0] - 2026-03-31
+
+> Discovery and documentation refinement — unified scan actions, onboarding polish, and a full contributing guide refresh bring consistency to both the agent discovery experience and developer documentation.
+
+### Added
+
+- Unify Skip/Deny actions and add scan options to onboarding
+
+### Changed
+
+- Update contributing guides, external docs, and AGENTS.md
+- Fix review issues — FSD compliance, DRY extractions, resetActed
+- Unify scan UI — fix DiscoveryView parity, extract shared utilities
+- Complete Pulse→Tasks terminology migration and improve docs infrastructure
+- Update CLI README and config guide for Tasks rename and new features
+
+### Fixed
+
+- Add resetActed to handleRescan dependency array
+- Surface existing agents during onboarding scan
+- Update SettingsDialog tests after Remote indicator relocation
+
+---
+
+## [0.29.0] - 2026-03-30
+
+> Agent fleet management and UI refinement — DataTable-powered agent lists, command palette agent settings, breadcrumb navigation, and a streamlined dashboard bring polish and power to the operator experience.
+
+### Added
+
+- Enhance command palette with agent settings dialog
+- Convert agents list to DataTable with responsive column hiding
+- Auto-focus prompt textarea on session change
+- Add Table primitives, DataTable, and Dev Playground showcase
+- Add AgentIdentity to shortcut chips row
+- Add dedicated Onboarding page to dev playground
+
+### Changed
+
+- Consolidate agent identity to chat input, add breadcrumb nav
+- Reorganize Dev Playground sidebar into domain-oriented groups
+- Relocate Remote indicator from status bar to sidebar footer
+- Streamline dashboard — remove Active Sessions, fix status alignment, unify activity feed
+- Polish onboarding flow UI and extract OnboardingNavBar
+
+### Fixed
+
+- Remove unused AgentVisual type import from AppShell
+- Remote-access promo opens TunnelDialog directly
+- Align sidebar back chevron with content below
+- Use dynamic agent name in chat input placeholder
+- Improve dev playground overview card layout
+- Expand tilde paths in boundary validation and add startup diagnostics
+- Cast spawn proc through EventEmitter to fix CI type resolution
+- Remove unnecessary ChildProcess cast that fails in CI Node 20
+
+---
+
+## [0.28.0] - 2026-03-30
+
+> Tasks redesign, DorkBot system agent, and the extensibility platform matures — file-based task definitions, manifest-driven settings, extension hooks, session forking, and MCP elicitation bring DorkOS closer to a fully autonomous coordination layer.
+
+### Added
+
+- Redesign Tasks system — rename Pulse→Tasks, add file-based definitions, and make scheduling optional for on-demand tasks
+- Replace Damon with DorkBot as the sole system agent
+- Add MCP elicitation UI for auth flows and form inputs
+- Add session forking via SDK forkSession() and session rename via renameSession()
+- Add server-side extension hooks with encrypted secrets and Linear reference extension
+- Add manifest-driven settings forms with placeholder hints and grouped sections
+- Auto-generate settings UI from extension manifests
+- Add plugin hot-reload via reloadPlugins()
+- Show available subagents via supportedAgents()
+- Evolve linear-issues into Loop-aware dashboard
+- Add commands for product management and issue handling
+- Add 5-level error handling hierarchy with Dev Playground showcase
+- Display context usage meter with category breakdown tooltip for token visibility
+- Decouple chat state from React lifecycle into session-keyed Zustand store
+- Add openBlank() to task template dialog store
+- Fix prompt suggestions, add api_retry events, and effort level controls
+- Add spec manifest management system
+
+### Changed
+
+- Extract PageHeader for consistent top-level route headers
+- Extract SessionStore, RuntimeCache, and constants from ClaudeCodeRuntime
+- Extract extension-manager into focused collaborators
+- Extract setting field renderers to separate file
+- Document getSubagents() across architecture, API, and data-fetching guides
+- Update docs and templates for auto-generated settings tabs
+
+### Fixed
+
+- Eliminate setState-during-render errors on session and tasks pages
+- Resolve all 15 client lint warnings
+- Update stale test mocks after Tasks rename (Pulse→Tasks)
+- Tighten activity filter bar chip sizing and spacing
+- Exclude archived issues and fix query complexity in Linear queries
+- Unify dashboard section styling for visual consistency
+- Add padding to collapsible settings groups and vertical layout for wide controls
+- Expose React globally for extension runtime and fix Linear example import
+- Clean up lint warnings and fix site build frontmatter
+- Fork UX feedback, tests, and tooltip accessibility
+- Spread process.env in SDK env option to prevent code 127
+- Load local settings so project-level plugin MCP servers are discovered
+
+---
+
+## [0.27.0] - 2026-03-28
+
+> Canvas as a first-class surface — persistent, toggleable, and mobile-ready.
+
+### Added
+
+- Add canvas toggle button in session header with `Cmd+.` keyboard shortcut and command palette action
+- Persist canvas state (open/closed, content, panel width) per session in localStorage — survives page refreshes and session switches
+- Show dot indicator on canvas toggle when content is available but panel is closed
+
+### Changed
+
+- Remove "New Session" and "Schedule" buttons from dashboard header to reduce clutter
+
+### Fixed
+
+- Match canvas background to sidebar color (`bg-sidebar`) for visual consistency
+- Replace chunky 6px resize handle with a subtle 1px line and 8px hit target
+- Render canvas as a full-width Sheet on mobile instead of an unusable side panel
+
+---
+
+## [0.26.0] - 2026-03-28
+
+> Network resilience and operator onboarding — faster SSE streams with custom headers and a welcoming first-time experience.
+
+### Added
+
+- Upgrade to fetch-based SSE transport with custom headers, HTTP/2 multiplexing, and retry backoff for more reliable streaming
+- Consolidate all SSE connections into a unified /api/events stream for simpler client integration and improved sync reliability
+- Add splash screen with onboarding flow and command palette quick-launch entry for faster agent discovery
+
+### Changed
+
+- Update architecture guide to reflect fetch-based SSE transport implementation
+
+---
+
+## [0.25.0] - 2026-03-27
+
+> Extensibility platform and composable filtering — agents can now build and install extensions, and every list surface gets URL-synced, filterable, sortable data views.
+
+### Added
+
+- Build extensions that agents install, configure, and run — the extensibility platform spans agent UI control, extension point registry, extension system core, and agent-built extensions (Phases 1–4)
+- Filter and sort agent lists with a composable filter system — text search, enum pills, date ranges, boolean toggles, and URL-synced state
+- Redesign Remote Access dialog with progressive disclosure
+- Show the default agent in the dashboard sidebar
+- Add AgentAvatar and AgentIdentity primitives for consistent agent visual identity
+- Add /adr:review command for ADR lifecycle management
+- Absorb superpowers plugin into first-party skills and agents
+- Add dedicated Feature Promos page to dev playground
+
+### Changed
+
+- Migrate agents list to the composable filter system
+- Consolidate agent display to use shared AgentAvatar primitive
+- Simplify AgentNode, extract sidebar hooks, update session list
+- Unify dev playground with PAGE_CONFIG and shared layout
+- Extract resolveAgentVisual for consistent agent visual identity
+- Update README screenshot to dark mode with real chat session
+- Reconcile contributing and doc guides for extensions and FilterBar
+
+### Fixed
+
+- Wire UI tools to session and align sidebar tab schema
+- Harden extension system security and fix flaky tests
+- Display human-readable labels for dateRange, boolean, and numericRange filters
+- Fix dynamic enum deserialize and color dot rendering in FilterBar
+- Resolve workspace packages in electron-vite renderer build
+- Alias @dorkos/shared subpaths to source for CI compat
+- Add better-sqlite3 as direct dependency for packaging
+- Update SchedulesView tests to match rewritten component
+- Provide TanStack Router context in DevPlayground
+
+---
+
+## [0.24.0] - 2026-03-25
+
+> Desktop app, tunnel security, and resilience — native macOS distribution, passcode-gated remote access, and SSE auto-reconnect harden the operator experience.
+
+### Added
+
+- Add 6-digit passcode gate for remote access
+- Add Electron desktop app for native macOS distribution
+- Add status bar inline management with scroll and configure popover
+- Generalize subagent system to background task model with stopTask support
+- Add rotating placeholder hints in chat input
+- Move version display from status bar to sidebar footer
+- Add declarative feature promo system with contextual discovery
+- Add SSE resilience infrastructure with connection health UI
+- Display friendly tool names in ToolApproval
+- Add relay outbound awareness for agent-initiated messaging
+
+### Changed
+
+- Remove unnecessary border from SidebarFooterBar component
+- Reconcile harness inventory counts with actual files
+
+### Fixed
+
+- Target arm64, externalize manifest, skip codesign discovery
+- Remove postinstall electron-rebuild, add dual-mode server spawning
+- Exclude desktop from default dev, approve electron builds
+
+---
+
+## [0.23.0] - 2026-03-23
+
+> Task visibility and execution awareness — progress bars, dependencies, and animated background indicators bring your agent fleet to life.
+
+### Added
+
+- View task dependencies and progress at a glance — TaskListPanel now displays real-time progress bars, dependency-aware sorting (blocked tasks dimmed), and click-to-expand detail view with description, owner, elapsed time, and dependency links
+- See running background agents with animated indicator showing active subagent execution
+- Poll tasks automatically when background refresh is enabled — subagent todo updates appear without manual reload
+
+### Changed
+
+- Extract shared `useTabVisibility` hook for consistent tab-aware polling across features
+- Decompose TaskListPanel into focused sub-components (TaskProgressHeader, TaskRow, TaskDetail, TaskActiveForm)
+
+### Fixed
+
+- Fix indicator bar exit animation and always-render pattern
+- Fix Rules of Hooks violation in TaskListPanel where useCallback was called after conditional return
+
+---
+
+## [0.22.0] - 2026-03-23
+
+> TodoWrite task system, speculative sessions, and brand icon refresh
+
+### Added
+
+- Add TodoWrite support to task system — recognize the SDK's new batch todo tool with snapshot semantics so tasks appear in the TaskListPanel during streaming and on reload
+- Eliminate null sessionId with speculative UUID pattern — sessions get a client-generated ID immediately, avoiding null guards and 404s during the first message
+- Replace emoji adapter icons with real brand SVG logos for Slack, Telegram, and other adapters
+
+### Fixed
+
+- Preserve session state across SDK remaps and inline errors — model, permission mode, and cost survive session ID transitions and tool validation failures
+
+---
+
+## [0.21.0] - 2026-03-23
+
+> Agent creation pipeline, fleet management surface, and A2A gateway
+
+### Added
+
+- Create agents from a guided dialog with name validation, directory resolution, personality sliders, and workspace template picker
+- Overhaul tool call display with MCP server parsing, streaming state tracking, and classified output rendering
+- Redesign agents page as a fleet management surface with health monitoring, filtering, and session launch
+- Improve Slack adapter with 8 enhancements including message threading, reaction management, and format fidelity
+- Implement A2A external gateway for cross-platform agent interoperability
+- Improve ConnectionsTab UX with decomposed components and actionable deep-links to adapter setup
+- Adopt TanStack Form for submit-lifecycle forms with validation and error handling
+- Add Telegram typing indicator during agent processing for real-time feedback
+
+### Fixed
+
+- Resolve architectural debt from agent creation review — consolidate duplicated route/service logic, fix FSD cross-feature import, add auth token redaction
+- Restore result border separator and clean up OutputRenderer imports
+- Make dashboard responsive on mobile with proper viewport handling
+- Fix Chat SDK HTML rendering, port splitMessage utility, and deprecate legacy adapter
+- Update server integration tests for new validation and convention-files patterns
+
+---
+
+## [0.20.0] - 2026-03-22
+
+> Adapter ecosystem expansion — Chat SDK Telegram integration, A2A gateway spec, and agent personality conventions
+
+### Added
+
+- Improve adapter binding validation, routing, and instance-aware codecs
+- Add A2A external gateway spec and drop Channels from scope
+- Add Chat SDK Telegram adapter and PlatformClient architecture
+- Add SOUL.md and NOPE.md convention files for agent personality
+
+### Changed
+
+- Reconcile guides after chat-sdk-relay-adapter-refactor spec
+
+### Fixed
+
+- Add StreamEvent buffering to Chat SDK Telegram adapter
+- Normalize Chat SDK thread IDs before relay subject encoding
+- Eliminate visible scroll animation on session load
+- Improve binding row UX with consistent icons and clearer overflow
+- Add missing traits_json and conventions_json migration
+
+---
+
+## [0.19.0] - 2026-03-21
+
+> Fleet management dashboard — dedicated agents page, mission control, and client-side routing
+
+### Added
+
+- Browse and manage agents from a dedicated fleet management page with health monitoring, filtering, and session launch
+- Access mission control dashboard with needs-attention alerts, active sessions, system status, and activity feed
+- Navigate between dashboard, sessions, and agents with animated sidebar and header transitions
+- Add TanStack Router with code-based route definitions and URL search params
+- Browse features by product and category on SEO-optimized catalog pages
+- Monitor chat status at a glance with a unified status strip combining inference and system indicators
+- Toggle multi-window sync and background refresh from the status bar
+- Experience smoother chat with per-word text animation and spring-based scroll physics
+
+### Changed
+
+- MCP tools require agent context for session counts and use clearer naming (get_agent)
+- Relay tools renamed for clarity: relay_send_and_wait (was relay_query), relay_send_async (was relay_dispatch)
+- Relay mailboxes use human-readable subject strings instead of SHA-256 hashes
+- Feature catalog split into product and category dimensions for richer filtering
+- Clean up routing migration — remove dead code, fix test/code consistency
+- Move scan line effect to chat input area with subtle edge fade
+
+### Fixed
+
+- Resolve all ESLint warnings across the monorepo (0 errors, 0 warnings)
+- Code review fixes for mesh discovery, MCP tools, and schema validation
+- Adapter setup pipeline protected with timeout guards and diagnostic logging
+- Relay and Pulse enabled by default on fresh installations
+- Fix llms.txt feature categories formatting
+- Fix Stop hook hanging and add auto-format on file write
+- Fix dashboard navigation router context and auto-select suppression
+- Fix DoneEventSchema missing messageIds and export SubagentStatus
+
+---
+
+## [0.18.0] - 2026-03-19
+
+> Chat simulator, interactive tool fixes, and developer guide refresh
+
+### Added
+
+- Add chat simulator to Dev Playground for testing streaming, tool approval, and question flows without a live agent
+
+### Changed
+
+- Reconcile developer guides and external docs with recent architecture changes
+- Add test-results directory to .gitignore
+
+### Fixed
+
+- Fix stuck input bar and 404 errors in AskUserQuestion flow
+- Fix createPulseRouter missing dorkHome parameter
+- Fix tunnel CORS test using hardcoded port instead of dynamic assignment
+
+## [0.17.2] - 2026-03-19
+
+> Dev port convention update and test reliability fixes
+
+### Changed
+
+- Update dev port convention from 4xxx to 6xxx for simultaneous dev/production operation
+- Move tunnel port resolution to call time so tests can override VITE_PORT
+- Move `createTestDb` to `@dorkos/test-utils/db` subpath to avoid pulling Node.js-only db into jsdom tests
+
+### Fixed
+
+- Fix 153 client test failures caused by NODE_ENV=production leaking into jsdom environment
+- Fix error handler and tunnel tests failing when shell has NODE_ENV=production
+- Fix getCommands test finding real `.claude/commands/` from repo root
+
+---
+
+## [0.17.1] - 2026-03-19
+
+> Streaming message integrity and reliability fixes
+
+### Added
+
+- Document Claude Agent SDK Message History and Session Listing API for research library
+
+### Fixed
+
+- Prevent session remap flash and merge consecutive assistant JSONL entries
+- Eliminate message flash and disappearing errors on stream completion
+- Pause background-tab polling for always-on query hooks
+- Add hourglass reaction immediately and clean up orphaned reactions
+
+---
+
+## [0.17.0] - 2026-03-18
+
+> CLI polish, Apple-style field grouping, and relay hardening
+
+### Added
+
+- Improve CLI UX with clickable URLs, unknown option handling, and browser open prompt
+- Add FieldCard primitives and apply Apple-style field grouping
+
+### Changed
+
+- Move platform formatting rules into adapters
+- Eliminate DRY violations, enforce file size limits, and instance-scope mutable state
+
+### Fixed
+
+- Populate sender on index rebuild and fix stale TSDoc
+- Fix second hasStarted bug in updateSession and add resume diagnostics
+- Fix per-sender rate limiting, add publish rejection logging and inbound result checks
+- Prevent new sessions from crashing with invalid SDK resume ID
+- Enhance Slack inbound message handling with improved reaction management
+- Add inbound typing reaction with FIFO cleanup on stream completion
+- Improve ConfigFieldInput layout, error UX, and password toggle
+- Persist session map across restarts for Slack DM continuity
+- Extract binding permissionMode in CCA agent handler
+- Clear pending approval timeouts on SlackAdapter stop
+
+---
+
+## [0.16.0] - 2026-03-18
+
+> Interactive tool approval, standardized form fields, and resilient streaming
+
+### Added
+
+- Standardize form fields with Shadcn Field, SettingRow, and PasswordInput
+- Add interactive tool approval for Slack and Telegram adapters
+- Add dedicated Forms page and split registry into per-page section files
+- Add data path debug toggles for cross-client sync and message polling
+- Add unified input zone for interactive cards
+- Add 4 sidebar component showcases to dev playground
+
+### Fixed
+
+- Flush stream buffer before posting tool approval cards
+- Move empty-stream and retry-depth tests into sendMessage() describe block
+- Break infinite SDK retry loop and surface errors to adapters
+- Prevent tool_call_end from overwriting pending status on interactive tool calls
+
+---
+
+## [0.15.0] - 2026-03-17
+
+> Multi-client awareness, extended thinking visibility, and dev playground overhaul
+
+### Added
+
+- Add multi-client presence indicator, subagent/hook lifecycle visibility, and tool call enhancements
+- Implement tool-approval-timeout-visibility, prompt-suggestion-chips, multi-client-session-indicator
+- Add transport error categorization and retry affordance
+- Truncate tool results at 5KB with raw JSON fallback for large payloads
+- Surface SDK system status messages and compact boundary events in chat UI
+- Implement result-error-distinction, extended-thinking-visibility, and tool-progress-streaming
+- Add rate-limit countdown UI and prop threading
+- Add subagent lifecycle visibility to chat UI
+- Redesign QuestionPrompt and unify compact final states
+- Add scrollspy TOC, Cmd+K search, and overview landing page to Dev Playground
+- Implement navigation overhaul for Dev Playground with improved sidebar and routing
+- Add 14 missing component showcases to dev playground
+- Add slugify, copyable names, and responsive viewport toggle to dev playground
+- Add multi-select and 3-tab question showcases to design system
+- Add hook lifecycle showcase and refactor stream-event-handler
+- Add ClientsItem presence indicator showcase to design system
+- Add ToolApproval countdown timer showcases to design system
+- Add truncated tool result showcase to design system
+- Add SystemStatusZone to design system showcase
+- Add ErrorMessageBlock and ThinkingBlock showcases
+- Add rate-limit states to InferenceIndicator showcase
+- Add SubagentBlock to design system showcase
+
+### Changed
+
+- Unify ToolApproval and QuestionPrompt container styling
+- Extract shared primitives from duplicated chat UI components
+- Reconcile contributing guides with recent commits (37 commits since 2026-03-12)
+- Improve playground UX with demo wells and DRY cleanup
+
+### Fixed
+
+- Add setSystemStatusWithClear to useMemo deps
+- Stabilize ThinkingBlock tests — remove motion mock, add cleanup
+
+---
+
+## [0.14.0] - 2026-03-16
+
+> Binding-level permissions, relay panel redesign, and SDK command discovery
+
+### Added
+
+- Configure permission modes per adapter-agent binding so headless sessions (Slack, Telegram) use the right tool approval level instead of stalling
+- Redesign the Relay panel with a 2-tab layout, semantic health indicators, inline permissions, and aggregated dead letter management
+- Discover slash commands via the SDK `supportedCommands()` API for more reliable command availability
+
+### Changed
+
+- Derive binding working directory from the agent registry instead of storing a separate path
+
+### Fixed
+
+- Prevent dead letter panel from re-opening after the user explicitly collapses it
+- Fix relay panel follow-up issues with health bar rendering, empty states, and label consistency
+- Discover root-level commands and fix SDK command cache returning stale results
+
+---
+
+## [0.13.1] - 2026-03-14
+
+### Fixed
+
+- Fix CLI crash on startup caused by duplicate `createRequire` declaration in ESM bundle
+- Fix relay build script failing on non-Bash shells by using POSIX-compatible substitution
+
+## [0.13.0] - 2026-03-14
+
+> Slack integration, Docker containerization, and adapter system unification
+
+### Added
+
+- Publish Docker images automatically to GHCR via GitHub Actions for easy containerized deployment
+- Add `dorkos cleanup` command to safely remove stored agent data and sessions
+- Add Slack adapter with Socket Mode support, message streaming, and format conversion
+- Add streaming toggle and typing indicators for real-time Slack message updates
+- Add layered adapter documentation system with per-field setup guides and help text
+- Unify discovery UI with shared candidate cards and consistent approve/skip workflows
+
+### Changed
+
+- Unify adapter system with BaseRelayAdapter base class, shared callbacks, and DRY utilities
+- Add upgrade guidance, rollback instructions, and breaking-change callouts to docs
+- Add dedicated Docker guide with install tabs for containerized setup
+- Fix documentation drift — update AGENTS.md, API reference, and correct broken links
+
+### Fixed
+
+- Harden onboarding gate validation, error handling, logging, and documentation clarity
+- Harden Slack adapter with throttled streaming updates, bounded caches, and better error surfaces
+- Fix adapter setup wizard scrollability when forms exceed viewport height
+
+---
+
+## [0.12.0] - 2026-03-13
+
+> Marketing storytelling, topology intelligence, and Pulse schedule management
+
+### Added
+
+- Add /story page with dual-mode presentation support for brand storytelling
+- Add ScanLine component with three-layer composited animation responding to text streaming
+- Enhance Pulse with agent filtering, inline enable/disable toggle, delete with confirmation, and edit-from-sidebar
+- Add presentation mode with keyboard navigation, progress indicators, and incremental step reveal
+- Add story sections: Hero, Monday Morning Dashboard, How It Was Built, Just Prompts equation, Future Vision, and Close
+- Implement agent filtering and caps in ConnectionsView with motion animations
+- Filter agent connections to reachable-only so the connections panel only shows agents you can actually reach
+- Cap MCP servers list at 4 and agents at 3 with overflow links
+- Introduce Pulse presets management and UI components
+- Add structured debug logging across chat flow layers
+- Add smooth LOD transitions, adapter labels, and ghost node tests to topology
+- Redesign AdapterCard with bindings display and CCA treatment
+- Implement adapter-binding UX overhaul with ghost adapter placeholders
+- Add BaseRelayAdapter, compliance suite, API versioning, and adapter template
+- Add useUpdateBinding hook and BindingList component for managing adapter-agent bindings
+- Add NavigationLayout sidebar navigation for polished dialog navigation
+
+### Changed
+
+- Remove relay message path from web client, use direct SSE only for more reliable streaming
+- Humanize raw IDs and technical jargon across Relay/Mesh UI
+- Reconcile contributing guides against relay removal, pulse presets, and ConnectionsView changes
+- Document test simulation infrastructure and fix mock proxy routing
+
+### Fixed
+
+- Fix LayoutGroup layout animation to eliminate timeline item jumps
+- Fix presentation mode keyboard nav, progress bar, header hiding, and animation replay
+- Replace pendingUserContent with optimistic messages in virtualizer
+- Disable model/permission selectors before first message, fix post-remap PATCH
+- Filter adapter list to agent-bound adapters only
+- Prevent form revert and fix AnimatePresence key warnings
+- Restore scroll in tabpanel views by adding h-full
+- Use text-foreground for node name text consistency
+- Filter CCA adapter nodes and always show namespace groups
+- Use correct logo SVG paths in OG share card
+- Resolve createRequire duplicate declaration in server bundle
+- Add missing Fumadocs frontmatter title to spec and plan docs
+
+---
+
+## [0.11.0] - 2026-03-11
+
+> Shortcut discoverability, design system refinements, and UX fixes
+
+### Added
+
+- Add centralized shortcut registry and discoverability panel
+- Add design system showcase playground
+- Integrate brand orange into client design system
+- Replace custom gradient button with Aceternity HoverBorderGradient
+
+### Changed
+
+- Replace custom gradient button with HoverBorderGradient
+
+### Fixed
+
+- Deduplicate remote access toast notifications
+- Filter schedules by agent and show adapter display names
+- Handle empty roots array in scan endpoint
+- Fix toast notifications rendering with transparent backgrounds
+
+---
+
+## [0.10.0] - 2026-03-11
+
+> Tabbed sidebar navigation, agent identity chip, ScheduleBuilder, and always-editable chat input
+
+### Added
+
+- Navigate between Sessions, Schedules, and Connections from tabbed sidebar views
+- Build schedules with progressive disclosure — pick frequency, then refine timing
+- Pick agents from a direct-selection list when creating schedules
+- Switch active agent from the identity chip in the top navigation bar
+- See agent emoji in the identity chip at a glance
+- Open the command palette directly from the header
+- Keep typing while agents stream — messages queue and send when ready
+- Auto-hide scrollbars in sidebar and message list until hover
+- Detect dev builds and dismiss upgrade prompts with persistent version display
+
+### Changed
+
+- Replace cron presets and visual builder with unified ScheduleBuilder
+- Replace AgentCombobox dropdown with AgentPicker direct-selection list
+- Restructure StatusLine as a compound component
+
+### Fixed
+
+- Fix agent picker combobox behavior, dialog layout, and default cron expression
+- Fix Enter and Cmd+Enter not working in command palette agent sub-menu
+- Fix sidebar content overflow caused by Radix ScrollArea table layout
+- Fix queued messages not appearing until animation completes
+- Fix message loss during streaming and model selector flicker
+- Fix scrollbar overlay obscuring sidebar content
+
+---
+
+## [0.9.1] - 2026-03-10
+
+> Chat UX refinements — file attachments rendered inline, message bubbles right-aligned, and relay directory fixes
+
+### Added
+
+- See attached files as inline thumbnails and styled chips in chat message bubbles
+- Distinguish your messages at a glance with right-aligned chat bubbles
+
+### Fixed
+
+- Fix relay messages losing working directory context
+- Fix agent messages running in wrong directory when sent via relay
+- Fix sidebar logo color not adapting to light/dark mode
+
+---
+
+## [0.9.0] - 2026-03-09
+
+> MCP server integration, file uploads, chat UX overhaul, and SSE reliability fixes
+
+### Added
+
+- Embed MCP server with Streamable HTTP transport — external agents (Claude Code, Cursor, Windsurf) can connect via `/mcp`
+- File uploads in chat — drag-and-drop, paperclip, and paste to attach files
+- Redesign chat message theming — semantic tokens, TV variants, MessageItem decomposition
+- Add chat microinteraction polish — spring physics, layoutId, session crossfade
+- Unify discovery scanners and fix onboarding scan root
+- Add endpoint types, dispatch TTL sweeper, and relay_send_and_wait progress accumulation
+- Add /chat:self-test slash command
+- Add relay_send_async fire-and-poll for long-running tasks
+
+### Changed
+
+- Message-first session creation — eliminate POST /sessions
+- Extract ChatInputContainer from ChatPanel
+- Split http-transport.ts into transport/ subdirectory (742 → 7 files)
+- Extract 4 hooks + 1 component from ChatPanel (617 → 267 lines)
+- Clean up URL query params — remove dead code, add pushState, fix setTimeout hack
+- Unify page title and favicon system, remove dead code
+- Update MessageItem typography to use font-light for improved readability
+- Tighten chat typography to text-sm (14px)
+- Decompose root eslint.config.js into per-package configs with shared @dorkos/eslint-config
+- Extract AgentRuntime interface and RuntimeRegistry abstraction
+- Replace text branding with DorkOS logo linking to dorkos.ai
+- Rename pulse and agent tools to follow domain_verb_noun convention
+
+### Fixed
+
+- Create MCP server per request to avoid connect() reuse
+- Update stale tests and add pre-push test gate via lefthook
+- Eliminate ghost messages via per-message correlation IDs
+- Improve message history retrieval and error handling in session routes
+- Resolve streaming vs history inconsistencies via queueMicrotask and scroll-intent tracking
+- Prevent relay-mode polling storm and tool-call spinner regression
+- Upgrade streamdown to ^2.4.0 to fix inline code truncation
+- Resolve history gaps, SSE session mismatch, and done event loss
+- Export health thresholds to eliminate fragile hardcoded test values
+- Resolve SSE delivery pipeline causing ~40-50% message freezes
+- Apply SSE backpressure handling to session broadcaster relay writes
+- Resolve SSE freeze, blank refresh, and relay metadata leaks
+- Remove acted candidates from discovery list after approve/deny
+
+---
+
+## [0.8.0] - 2026-03-04
+
+> Agent-centric control, enhanced discovery UX, and critical infrastructure hardening
+
+### Added
+
+- Per-agent tool filtering and cascade disable — configure which tools each agent can access
+- Add relay_send_and_wait blocking MCP tool for inter-agent communication
+- Rebuild command palette with preview panel, fuzzy search, and sub-menu navigation for agent discovery
+- Migrate sidebar to Shadcn Sidebar component with agent-centric layout
+- Add tool context injection with configurable toggles throughout the interface
+- Enable Mesh always-on mode for continuous agent discovery and visibility
+- Enhance UI primitives with responsive touch targets and sizing variants
+
+### Changed
+
+- Improve developer guides documenting domain-grouped services and agent tool elevation patterns
+- Update README and CLI documentation to reflect complete DorkOS feature set
+
+### Fixed
+
+- Fix critical agent-to-agent routing bug causing CWD mismatches and harden CCA pipeline
+- Improve Mesh agent health detection with auto-stamping and widened thresholds
+- Fix mobile sidebar sheet close behavior, transparency issues, and remove stale cookie code
+- Improve command palette search with keyword inclusion for better path/ID matching
+- Clean up command palette cmdk prop usage and @ filtering logic
+- Enforce file-first write-through storage pattern for agent identity (ADR-0043)
+- Improve onboarding step completion logic to handle rapid user interactions
+- Register relay_send_and_wait in tool filter and add test coverage
+
+---
+
+## [0.7.0] - 2026-03-02
+
+> Brand refresh, CI hardening, and marketing site overhaul
+
+### Added
+
+- Add full-app Docker integration testing and runnable container
+- Enforce dorkHome parameter usage in server code via ESLint rule
+- Add Docker and GitHub Actions smoke testing for CLI installs
+- Add GitHub Actions CLI smoke test workflow for npm package install validation
+- Add Dockerfile and .dockerignore for isolated CLI smoke testing
+- Add `smoke:docker` convenience script for local Docker smoke tests
+- Add DorkLogo to onboarding welcome screen
+- Add FAQ accordion section before install CTA on marketing site
+- Align site copy with pro-human positioning
+- Rewrite IdentityClose copy to celebrate human ambition
+- Rewrite PivotSection with "intelligence doesn't scale" metaphor
+- Upgrade timeline beam with Aceternity-inspired SVG tracing
+- Replace dorkian logos with new dork logos and update references
+- Enhance WelcomeStep with dynamic gradient effects
+- Add agent discovery scroll fix image and enhance CLI build configuration
+
+### Changed
+
+- Migrate domain from dorkos.ai to dorkos.ai
+- Add DORKOS_HOST, Docker workflow, and discovery endpoint to guides
+
+### Fixed
+
+- Use cd for CLI version bump and gitignore tarballs
+- Resolve Docker runtime and npm publishing issues
+- Support dark mode in favicon SVG
+- Gate shouldShowOnboarding on config loading state
+- Send partial patches to prevent skip dismiss race condition
+- Fix missing `better-sqlite3` dependency in CLI package that crashed on `npm install -g dorkos`
+- Adjust beam visibility range in TimelineSection
+
+---
+
+## [0.6.0] - 2026-03-02
+
+> First-time user experience, remote access overhaul, and research library curation
+
+### Added
+
+- Walk through first-time setup with guided agent discovery, Pulse presets, and animated onboarding flow
+- Overhaul remote access with multi-tab sync, UX redesign, and CLI QR code
+- Add curl install script, tabbed UI, Homebrew tap, and CLI check
+- Reset all data and restart server from the Advanced settings tab
+- Add research library curation with file reduction phases
+- Replace static llms.txt with dynamic route handler
+- Add header, breadcrumb, prev/next nav, tags, RSS link, and SEO improvements to blog
+- Wire research library into agent and main context
+
+### Changed
+
+- Remove standalone roadmap app and all references
+- Rename apps/web to apps/site for clarity
+- Codify plans/ as canonical location and migrate from docs/plans/
+- Update all contributing guides based on 30 recent specs
+
+### Fixed
+
+- Target registered agents in Pulse presets step instead of server default directory
+- Unify onboarding nav bar, select all agents by default, reduce spacing
+- Fix scroll containment and improve agent discovery UX
+- Reset stale tunnel status fields on stop and broadcast changes to other tabs
+- Restore code block padding after opting out of fumadocs dark theme
+- Update debug commands for .dork directory and fix ADR/README inventory
+
+---
+
+## [0.5.0] - 2026-03-01
+
+> Human-readable Relay messaging, marketing site overhaul, and 125+ code quality fixes
+
+### Added
+
+- Rebuild marketing homepage with narrative-driven design, approachable language, and new imagery
+- Improve social share cards, SEO metadata, and AI readability for the marketing site
+- Browse, install, and configure external adapters from a built-in catalog
+- Route external messages to specific agents with visual binding management in topology
+- Group related messages into threaded conversations in the Relay activity feed
+- Display human-readable names for endpoints, adapters, and message subjects throughout Relay
+- Monitor Relay health at a glance with status bar, message filters, and smooth animations
+- Test Telegram adapter connections before going live
+- Choose from all available Claude models dynamically instead of a hardcoded list
+- See available updates at a glance with a version indicator and details popover
+- Access agent settings and start chats directly from topology graph nodes
+
+### Changed
+
+- Standardize logging across all packages with structured, parseable output
+- Rename "Tunnel" to "Remote" throughout the UI for clarity
+
+### Fixed
+
+- Fix critical Relay publish pipeline bug where adapter delivery was silently skipped, blocking all Relay-routed chat messages and Pulse dispatches
+- Return detailed delivery results from adapters instead of discarding status information
+- Add 30-second timeout protection for adapter delivery
+- Include adapter-delivered messages in the SQLite audit trail
+- Return real trace IDs for Relay messages instead of placeholder values
+- Fix Telegram feedback loop that caused duplicate messages
+- Send properly formatted messages through Telegram instead of raw JSON chunks
+- Resolve CWD resolution and MCP transport reuse issues
+- Show correct sender names on delivered conversation messages
+- Track message delivery end-to-end through the Relay publish pipeline
+- Fix header overlap on marketing homepage hero section
+- Fix Vercel deployment failures for the marketing site
+- Handle console endpoint registration errors gracefully
+- Resolve 125+ code quality issues across server, relay, mesh, client, and shared packages
+
+---
+
+## [0.4.0] - 2026-02-26
+
+> Multi-agent infrastructure — Relay message bus, Mesh discovery, Agent Identity, and unified database
+
+### Added
+
+- Elevate topology chart with ELK.js layout, zoom LOD, and enriched nodes
+- Add agent identity as first-class entity
+- Add fullscreen toggle, min-height, and overflow fixes to ResponsiveDialog
+- Add registry integrity with reconciliation, idempotent upserts, and orphan cleanup
+- Improve sidebar UX with shortcut, persistence, tooltips, and mobile fixes
+- Consolidate three SQLite databases into single Drizzle-managed dork.db
+- Wire edges and namespace grouping into topology graph
+- Disciplined env var handling with per-app Zod validation
+- Enable Relay, Mesh, and Pulse by default
+- Env-aware data dir, mesh panel UX overhaul, web lint fixes
+- Enhance browser testing methodology and documentation
+- Add AI-driven browser testing system with Playwright
+- Add Mesh agent discovery with registry, topology graph, health monitoring, and MCP tools
+- Add Relay inter-agent message bus with delivery tracing, dead-letter handling, and MCP tools
+- Add Relay external adapter system for Telegram and webhook channels
+- Add unified adapter system with plugin loading and Claude Code runtime adapter
+- Add Access tab to Mesh panel for managing agent permissions
+- Add standalone roadmap management app with table, kanban, MoSCoW, and Gantt views
+- Add visual cron builder, directory picker integration, and calm tech notifications to Pulse
+- Add interactive clarification to ideation and recommendation discipline
+
+### Changed
+
+- Replace raw HTML elements with shadcn Button/Input primitives
+- Add agent identity documentation across internal and external guides
+- Migrate from npm to pnpm for faster installs and stricter dependency resolution
+- Route Pulse jobs and console output through Relay transport for unified message delivery and tracing
+- Comprehensive Relay & Mesh release preparation
+- Redesign Pulse scheduler UI with filtering, accessibility, and navigation improvements
+- Rebrand homepage modules and create DorkOS litepaper
+- Rename Vault module to Wing with updated brand positioning
+- Replace triangles logo with DORK monogram
+
+### Fixed
+
+- Prevent agent node overlap in topology expanded view
+- Pass consolidated db to RelayCore and add init error diagnostics
+- Restore migration journal timestamp for 0004_ambitious_spectrum
+- Resolve unused variable warnings across server package
+- Resolve @dorkos/shared subpath imports in esbuild bundle
+- Correct Relay documentation to match implementation
+- Correct Mesh documentation to match implementation
+- Correct Pulse documentation to match implementation
+- Replace julianday() with strftime() in TraceStore latency metric
+- Correct access rule directionality, endpoint, and add priority scheme
+- Resolve React Flow zero-height error in topology tab
+- Surface API errors in MeshPanel and harden MeshCore init
+- Aggregate manifest reporter counts per spec file, not per test case
+- Wire live health data into Mesh topology graph and fix aggregate SQL boundary
+- Support array subjectPrefix in Relay and wire adapter context builder
+- Fix 7 critical wiring bugs in Relay convergence implementation
+- Resolve four completion gaps in Pulse scheduler — runs now correctly persist state, handle timeouts, and clean up on cancellation
+- Declare runtime env vars in turbo.json globalPassThroughEnv
+- Fix docs search, add blog footer and TOC sidebar
+
+---
+
+## [0.3.0] - 2026-02-18
+
+### Added
+
+- Add Pulse scheduler for autonomous cron-based agent jobs with web UI, REST API, MCP tools, and SQLite persistence
+- Add runtime tunnel toggle with QR code sharing from the sidebar
+- Add blog infrastructure with Fumadocs
+- Add ADR draft/archived lifecycle with daily auto-curation and auto-extraction from specs
+- Add context builder for SDK system prompt injection
+- Add activity feed hero and marketing page sections
+
+### Changed
+
+- Refactor agent-manager to use modular context-builder pattern
+- Redesign landing page with new hero variants and content sections
+- Complete documentation overhaul — fill all stubs, add concepts section, rewrite stale guides
+
+## [0.2.0] - 2026-02-17
+
+### Added
+
+- Add marketing website and documentation site with Fumadocs integration
+- Add logging infrastructure with request middleware and CLI integration
+- Add directory boundary enforcement for API endpoint security
+- Add versioning, release, and update system
+- Add git worktree runner (gtr) for parallel development workflows
+- Add persistent config file system at `~/.dork/config.json`
+- Add ngrok tunnel integration for remote access
+- Add ESLint 9 and Prettier with FSD layer enforcement
+- Add Architecture Decision Records (ADR) system
+- Add TSDoc documentation standards for public API
+
+### Changed
+
+- Migrate client to Feature-Sliced Design architecture
+- Rename guides/ to contributing/ for self-documenting audience
+- Extract hardcoded values into centralized constants
+- Split oversized files into focused modules
+- Change default server port from 6942 to 4242
+- Centralize .env loading via dotenv-cli at monorepo root
+
+### Fixed
+
+- Fix shell eval error in release command backticks
+- Fix OpenAPI JSON generation for Vercel builds
+- Fix API docs generation when openapi.json is missing
+- Resolve React Compiler and ESLint warnings
+- Fix barrel and import paths after FSD migration
+
+## [0.1.0] - 2025-02-08
+
+### Added
+
+- Web-based chat UI for Claude Code sessions
+- REST/SSE API powered by the Claude Agent SDK
+- Tool approval and deny flows
+- AskUserQuestion interactive prompts
+- Slash command discovery from `.claude/commands/`
+- Cross-client session synchronization via file watching
+- Obsidian plugin with sidebar integration
+- ngrok tunnel support for remote access
+- OpenAPI documentation at `/api/docs` (Scalar UI)
+- CLI package (`dorkos`) for standalone usage
+- Keyboard shortcuts for navigation
+- Directory picker for working directory selection
+
+[0.21.0]: https://github.com/dork-labs/dorkos/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/dork-labs/dorkos/compare/v0.19.0...v0.20.0
+[0.19.0]: https://github.com/dork-labs/dorkos/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/dork-labs/dorkos/compare/v0.17.2...v0.18.0
+[0.17.2]: https://github.com/dork-labs/dorkos/compare/v0.17.1...v0.17.2
+[0.17.1]: https://github.com/dork-labs/dorkos/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/dork-labs/dorkos/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/dork-labs/dorkos/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/dork-labs/dorkos/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/dork-labs/dorkos/compare/v0.13.1...v0.14.0
+[0.13.1]: https://github.com/dork-labs/dorkos/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/dork-labs/dorkos/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/dork-labs/dorkos/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/dork-labs/dorkos/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/dork-labs/dorkos/compare/v0.9.1...v0.10.0
+[0.9.1]: https://github.com/dork-labs/dorkos/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/dork-labs/dorkos/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/dork-labs/dorkos/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/dork-labs/dorkos/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/dork-labs/dorkos/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/dork-labs/dorkos/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/dork-labs/dorkos/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/dork-labs/dorkos/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/dork-labs/dorkos/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/dork-labs/dorkos/releases/tag/v0.1.0

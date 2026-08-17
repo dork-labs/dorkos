@@ -60,7 +60,7 @@ apps/e2e/
 │   ├── ChatPage.ts            # Chat interactions
 │   ├── command-palette.ts     # Shared opener every dialog POM uses
 │   ├── DashboardSidebarPage.ts # Sidebar roster, groups, drag-and-drop
-│   ├── RightPanelPage.ts      # Right panel tabs (Pulse, Agent Profile)
+│   ├── RightPanelPage.ts      # Right panel tabs (Pulse, Profile)
 │   ├── RoomsPage.ts           # Channels and DMs
 │   ├── SettingsPage.ts        # Settings dialog
 │   ├── TasksPage.ts           # Tasks Scheduler dialog

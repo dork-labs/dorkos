@@ -186,11 +186,33 @@ export type McpAppServerConnection =
  * MeshCore satisfies this structurally — no `implements` clause needed.
  */
 export interface AgentRegistryPort {
-  getByPath(cwd: string): { id: string; name?: string } | undefined;
+  /**
+   * The agent registered at a working directory, or `undefined` when none is.
+   *
+   * **`name` and `displayName` are different strings and are not
+   * interchangeable.** `name` is the slug — the address somebody types after an
+   * `@` — and `displayName` is what a person reads (`docs-writer` against
+   * `Docs Writer`). A caller that is labelling, rendering or attributing asks
+   * for `displayName ?? name`; the slug alone belongs only where an address is
+   * wanted. The port carried no display name at all until DOR-1264, which is
+   * why both runtimes minted identity tokens under the slug and every room
+   * message an agent wrote through a tool renamed it to one.
+   */
+  getByPath(cwd: string): { id: string; name?: string; displayName?: string } | undefined;
   updateLastSeen(agentId: string, event: string): void;
+  /**
+   * Every registered agent with its directory.
+   *
+   * `name` and `displayName` mean here exactly what they mean on
+   * {@link AgentRegistryPort.getByPath}, and the same rule applies: render
+   * `displayName ?? name`, and reach for the bare slug only when an address is
+   * what is wanted. `displayName` is optional because an agent whose manifest
+   * declares none genuinely has only a slug.
+   */
   listWithPaths(): Array<{
     id: string;
     name: string;
+    displayName?: string;
     projectPath: string;
     icon?: string;
     color?: string;
@@ -497,7 +519,7 @@ export interface RuntimeCapabilities {
    * Distinct from {@link supportsMcp}, which specifically means the in-process
    * DorkOS tool server. A runtime can accept external managed servers without
    * hosting the DorkOS tool server (Codex, DOR-892) or vice versa. Gates the
-   * client's "Add server" affordance in the Agent Hub toolkit.
+   * client's "Add server" affordance on an agent's Tools & MCP page.
    */
   supportsManagedMcpServers: boolean;
 
@@ -538,8 +560,9 @@ export interface RuntimeCapabilities {
   commandIntents: Record<RuntimeCommandIntentId, CommandIntentSupport>;
 
   /**
-   * Required - every adapter declares its settings surface. Compile-time
-   * forcing per the `commandIntents` precedent (ADR-0256): a new runtime
+   * Every adapter declares its settings surface. A first-class structured
+   * field per ADR-0256, not the `features` bag. Required — compile-time forcing
+   * per the `commandIntents` precedent in this interface, so a new runtime
    * cannot silently omit it. Static only: account lists, current provider and
    * readiness stay on the refetched surfaces (`GET /api/config`,
    * `GET /api/system/requirements`) so capabilities remain safe to cache with
@@ -558,9 +581,12 @@ export interface RuntimeCapabilities {
 
   /**
    * Whether the runtime holds ONE live session open across turns instead of
-   * starting fresh work each time. Required — compile-time forcing per the
-   * `commandIntents` precedent (ADR-0256), so a new adapter cannot silently
-   * omit it and inherit a behavior it never declared.
+   * starting fresh work each time. A first-class boolean rather than a
+   * `features` entry, which is what ADR-0256 asks for a capability that
+   * genuinely is a boolean. Required — compile-time forcing per the
+   * `commandIntents` precedent in this interface, not ADR-0256, which does not
+   * decide that question — so a new adapter cannot silently omit it and inherit
+   * a behavior it never declared (ADR `260816-143752`).
    *
    * Usually the prerequisite for the other two: a runtime whose every turn is
    * its OWN subprocess has nothing to steer into or stage onto between turns, so

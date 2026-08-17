@@ -54,30 +54,41 @@ const MOBILE_FLEET: readonly { agent: string; prompt: string; scenario: string }
 ];
 
 /**
- * Slide the sidebar sheet open and wait until it is really up.
+ * Raise one of the phone's bottom-bar destinations and wait until it is really
+ * up.
  *
- * On a phone the sidebar is a sheet (`data-mobile="true"`), and it closes
- * itself on any navigation — so every pass through the drive has to open it
- * again rather than assume it stayed.
+ * **There is no sidebar sheet on a phone any more** (DOR-1078 P4): the shell
+ * mounts `MobileTabsLayout` instead, four destinations along the bottom and no
+ * hamburger to open — the old `[data-sidebar="trigger"]` is not rendered at this
+ * width at all. Each panel stays mounted and is put away with `visibility`, so
+ * "it is up" is the panel being *visible*, not being present. A panel is lowered
+ * by any navigation, so every pass through the drive raises it again.
+ *
+ * @param page - The phone page.
+ * @param tab - Which destination: `home` is Now + Today, `library` is the roster.
  */
-async function openMobileSidebar(page: Page): Promise<void> {
-  await page.locator('[data-sidebar="trigger"]').first().tap();
-  await page.locator('[data-mobile="true"]').first().waitFor({ timeout: WAIT_MS });
-  await sleep(500); // let the sheet finish sliding in
+async function openMobileTab(page: Page, tab: 'home' | 'library'): Promise<void> {
+  await page.getByTestId(`mobile-tab-${tab}`).tap({ timeout: WAIT_MS });
+  await page.getByTestId(`mobile-tab-panel-${tab}`).waitFor({ state: 'visible', timeout: WAIT_MS });
+  await sleep(500); // let the panel finish rising
 }
 
 /**
- * Drive the phone's session sheet: start one agent's turn, open that agent from
- * the sheet's roster, and repeat — so the sheet ends up showing Now (what is
- * running, and who stopped to ask) over the two live conversations in Today,
- * one green and one amber.
+ * Drive the phone's Home panel: start one agent's turn, open that agent from
+ * the Library panel's roster, and repeat — so Home ends up showing Now (what is
+ * running, and who stopped to ask) over the two live conversations in Today, one
+ * green and one amber.
  *
  * Same two rules as the desktop fleet drive (`driveMultiSession`), for the same
  * reasons: a conversation only earns a Today row once this person has opened it
  * from the panel, and each turn is triggered just before its agent is opened so
- * both rows are still live when the shutter falls. The extra wrinkle here is
- * that tapping a row navigates, and navigating closes the sheet — so the sheet
- * is re-opened for each agent, and once more at the end for the shot itself.
+ * both rows are still live when the shutter falls.
+ *
+ * The wrinkle the bottom bar adds is that Now/Today and the agent roster are no
+ * longer one scroll: Home draws every zone except Library, and Library draws
+ * only itself (`HOME_ZONE_IDS`/`LIBRARY_ZONE_IDS`). So each agent is opened from
+ * **Library**, and Home is raised at the end for the shot itself — and, because
+ * opening a conversation lowers whatever is up, both are raised every pass.
  */
 async function driveMobileSessions(page: Page): Promise<void> {
   await page.goto(url('/'));
@@ -88,7 +99,7 @@ async function driveMobileSessions(page: Page): Promise<void> {
     await post('/api/test/scenario', { name: entry.scenario, sessionId: id });
     await post(`/api/sessions/${id}/messages`, { content: entry.prompt, cwd });
     await sleep(MOBILE_RESOLVE_MS);
-    await openMobileSidebar(page);
+    await openMobileTab(page, 'library');
     await page
       .getByRole('button', { name: `Switch to ${entry.agent}` })
       .first()
@@ -96,13 +107,13 @@ async function driveMobileSessions(page: Page): Promise<void> {
     await page.waitForURL(new RegExp(`session=${id}`), { timeout: WAIT_MS });
     await sleep(600);
   }
-  await openMobileSidebar(page);
+  await openMobileTab(page, 'home');
   await page
     .locator('[data-sidebar-zone="today"] [data-sidebar-row]')
     .nth(MOBILE_FLEET.length - 1)
     .waitFor({ timeout: WAIT_MS });
   // Opening a conversation scrolls its Today row into view; put Now back on
-  // top so the sheet reads from the summary down to the rows it summarises.
+  // top so the panel reads from the summary down to the rows it summarises.
   await page.locator('[data-sidebar-zone="now"]').first().scrollIntoViewIfNeeded();
   await sleep(400);
 }
@@ -174,7 +185,7 @@ async function recordMobileChatLoop(browser: Browser, rec: RunRecorder): Promise
 }
 
 /**
- * Capture the mobile set: session-sheet, streaming-chat, and tool-approval light
+ * Capture the mobile set: Home-panel, streaming-chat, and tool-approval light
  * stills, plus the mobile chat loop (whose dark poster is extracted from the
  * loop's own first frame at process time). Runs late so the Now zone carries
  * the whole stack's outstanding work, not just this drive's.

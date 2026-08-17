@@ -2,7 +2,7 @@
  * Runs on — the runtime, the model and the effort an agent starts a turn with
  * (spec `profile-unification` §1.4).
  *
- * The Agent Hub spread these across a Config tab as three separate fields. They
+ * The panel this replaced spread these across a Config tab as three separate fields. They
  * are one answer to one question, so they are one popover: which engine, which
  * model on it, and how hard it thinks.
  *

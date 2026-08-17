@@ -507,7 +507,7 @@ async function startFleetTurn(turn: FleetTurn): Promise<void> {
  * The old drive waited on `[data-testid="session-row"]`, which the redesign
  * stopped mounting in the sidebar entirely — the panel builds its rows from
  * `SidebarRowModel` now (`[data-sidebar-row]`), and `SessionRowFull`/`Compact`
- * survive only on the Agent Hub's Sessions tab.
+ * survive only on the profile's Sessions page.
  */
 async function driveMultiSession(page: Page): Promise<void> {
   const turns = planFleetTurns();
@@ -569,18 +569,21 @@ const PERSONALITY_PANEL_PCT = 35;
 
 /**
  * Drive the agent personality picker: seed a wide right-panel split, open
- * Atlas's profile panel via its Manage control, open the personality picker
- * (the animated radar), and step through presets so the visualization morphs
- * and flashes in response. Ends on a vivid preset.
+ * Atlas's profile from the Team table, open the Personality row's picker (the
+ * animated radar), and step through presets so the visualization morphs and
+ * flashes in response. Ends on a vivid preset.
  */
 async function drivePersonality(page: Page, mark?: LoopMark): Promise<void> {
   await seedRightPanelSplit(page, PERSONALITY_PANEL_PCT);
   await page.goto(url('/team?view=table'));
-  // The agent-hub panel binds to the agent whose Manage control opened it —
-  // a bare ?agent= URL param resolves against the default cwd instead.
-  await page.getByRole('button', { name: 'Manage atlas' }).click({ timeout: WAIT_MS });
+  // The docked profile binds to the agent whose row action opened it — a bare
+  // ?agent= URL param resolves against the default cwd instead.
+  await page.getByRole('button', { name: 'Open atlas\u2019s profile' }).click({ timeout: WAIT_MS });
+  // Personality is a row on the profile's root that opens a popover, and its
+  // accessible name carries the current archetype after the label — hence the
+  // prefix match rather than an exact one.
   await page
-    .locator('[data-testid="personality-picker-trigger"]')
+    .getByRole('button', { name: /^Personality/ })
     .first()
     .click({ timeout: WAIT_MS });
   await page.locator('[data-testid="personality-radar"]').first().waitFor({ timeout: WAIT_MS });

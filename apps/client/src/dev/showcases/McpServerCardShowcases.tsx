@@ -13,7 +13,7 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 
 /**
- * The width the cards actually get in the Agent Hub's right panel. Every state
+ * The width the cards actually get in the docked profile's right panel. Every state
  * below is shown at it, because the whole redesign exists because six controls
  * did not fit on one line here.
  */
@@ -522,7 +522,7 @@ function OpeningOrderSection() {
 }
 
 /**
- * Every state an MCP server card can reach, at the 340px the Agent Hub's right
+ * Every state an MCP server card can reach, at the 340px the docked profile's right
  * panel actually gives it (spec `mcp-server-cards-redesign`).
  *
  * The cards here are the presentational shell driven by explicit props rather
