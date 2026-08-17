@@ -102,6 +102,7 @@ import type {
   McpAppResourceRequest,
   McpAppResourceResponse,
   DevtoolsIngest,
+  WorkbenchProbeResponse,
   ForkShapeRequest,
   MessageDisposition,
   QueueMoveTarget,
@@ -886,6 +887,22 @@ export interface Transport extends RoomTransport {
    * @param port - Localhost port of the dev server to proxy (1–65535).
    */
   createProxyUrl(port: number): Promise<string | null>;
+  /**
+   * Ask whether anything is listening on a loopback port, so the embedded
+   * browser can say "nothing is running there" instead of framing a dead port
+   * and showing a blank page.
+   *
+   * The server opens a short TCP connection to the loopback address and closes
+   * it again — it never sends or forwards a request, and the port is the only
+   * input (the host is pinned to loopback server-side, so there is no way to
+   * point this at another machine).
+   *
+   * Returns `null` when the transport has no server to ask (the in-process
+   * Obsidian transport); the caller treats that as "unknown" and carries on.
+   *
+   * @param port - Loopback port to check (1–65535).
+   */
+  probeLoopbackPort(port: number): Promise<WorkbenchProbeResponse | null>;
   /**
    * Relay a DevTools capture batch from the embedded browser preview to the
    * server's per-session buffer (DOR-213), via `POST /sessions/:id/devtools/ingest`.

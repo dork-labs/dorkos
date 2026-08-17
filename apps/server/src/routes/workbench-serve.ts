@@ -1,10 +1,13 @@
 /**
  * Workbench embedded-browser serving routes (DOR-216, ADR 260708-185519).
  *
- * Three routes:
+ * Four routes:
  * - `POST /api/workbench/sign` — mint a short-lived signed URL (auth-gated by the
  *   app-wide session gate). Validates the target cwd is within the boundary
  *   before minting a `serve` token; range-validates the port for a `proxy` token.
+ * - `POST /api/workbench/probe` — report whether a loopback port has a server on
+ *   it, so the browser can explain a dead port instead of framing it. Auth-gated
+ *   like `/sign`; loopback-pinned like the proxy.
  * - `GET /api/workbench/serve/:token/*splat` — statically serve a local file from
  *   the token's cwd so relative assets resolve. Authorized by the signed token,
  *   NOT cookie/header auth (the browser frame is opaque-origin, credential-less),
@@ -24,13 +27,14 @@ import { z } from 'zod';
 import fs from 'fs/promises';
 import { createReadStream } from 'fs';
 import path from 'path';
-import { WorkbenchSignRequestSchema } from '@dorkos/shared/schemas';
+import { WorkbenchProbeRequestSchema, WorkbenchSignRequestSchema } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import {
   workbenchTokenSigner,
   WorkbenchTokenError,
   proxyToLocalhost,
+  probeLoopbackPort,
   injectDevtoolsScript,
 } from '../services/workbench-serve/index.js';
 
@@ -132,6 +136,24 @@ router.post('/sign', async (req, res) => {
   // proxy — port is range-validated by the schema (1–65535).
   const token = workbenchTokenSigner.mint({ kind: 'proxy', port: parsed.data.port });
   return res.json({ url: `${origin}/api/workbench/proxy/${token}/` });
+});
+
+/**
+ * `POST /api/workbench/probe` — report whether a loopback port has a server on
+ * it. Auth-gated like `/sign` (only an authenticated caller can ask this machine
+ * what it is running), and loopback-pinned like the proxy: the body carries a
+ * port and nothing else, so there is no host to point elsewhere.
+ *
+ * The embedded browser calls this before framing a dev server, so a port with
+ * nothing on it becomes a sentence the user can act on instead of a blank frame.
+ */
+router.post('/probe', async (req, res) => {
+  const parsed = WorkbenchProbeRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
+  }
+  const listening = await probeLoopbackPort(parsed.data.port);
+  return res.json({ listening });
 });
 
 /**

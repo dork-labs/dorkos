@@ -21,6 +21,8 @@ import type {
   GitStatusError,
   UploadResult,
   UploadProgress,
+  WorkbenchProbeRequest,
+  WorkbenchProbeResponse,
   WorkbenchSignRequest,
   WorkbenchSignResponse,
 } from '@dorkos/shared/types';
@@ -155,6 +157,15 @@ export function createSystemMethods(baseUrl: string) {
         body: JSON.stringify(body),
       });
       return res.url;
+    },
+
+    /** Ask whether a loopback port has a dev server on it, before framing it. */
+    async probeLoopbackPort(port: number): Promise<WorkbenchProbeResponse | null> {
+      const body: WorkbenchProbeRequest = { port };
+      return fetchJSON<WorkbenchProbeResponse>(baseUrl, '/workbench/probe', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
     },
 
     // ── Workbench file service ────────────────────────────────────────────

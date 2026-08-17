@@ -8,11 +8,17 @@
  * them to `POST /sessions/:id/devtools/ingest` through the transport — the only
  * same-origin, authenticated party allowed to reach the API.
  *
- * Two guarantees are load-bearing:
+ * Three guarantees are load-bearing:
  * - **Source identity.** A capture message is accepted only when
- *   `event.source === iframe.contentWindow`. The opaque frame's `event.origin` is
- *   the literal string `"null"`, so origin tells us nothing — identity is the
- *   check, and it rejects a nested frame or any foreign window.
+ *   `event.source === iframe.contentWindow`, which rejects a nested frame or any
+ *   foreign window. Origin cannot do this job: an opaque frame's `event.origin`
+ *   is the literal string `"null"`, shared by every opaque frame there is.
+ * - **Opaque origin.** The frame must ALSO report `event.origin === "null"`. The
+ *   shim is injected only into what DorkOS serves or proxies, and those are
+ *   exactly the frames that render opaque, so `"null"` is the marker for "this
+ *   frame runs our shim". A directly framed dev server (its own real origin, no
+ *   shim) therefore cannot drive the bridge by posting messages that look like
+ *   the shim's.
  * - **Attached session only.** Captures relay to the attached session
  *   (`app-store.sessionId`) and no other, so one session's preview can never feed
  *   another session's buffer.
@@ -23,12 +29,16 @@
  * along), and the shim's `capture-result` is ingested immediately, tagged with
  * its `requestId`, resolving the awaiting tool call server-side.
  *
+ * It also counts the resources the current document failed to load and hands
+ * that count back to the canvas, which turns it into a banner — a page whose
+ * scripts 404 renders blank and otherwise explains nothing.
+ *
  * Idle-cheap: one window listener, and no timer runs until a batch actually
  * arrives; the rasterizer chunk downloads only on the first capture request.
  *
  * @module features/canvas/model/use-devtools-bridge
  */
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type {
   DevtoolsConsoleEntry,
   DevtoolsIngest,
@@ -44,7 +54,7 @@ const FLUSH_DEBOUNCE_MS = 300;
 
 /** A message the shim posts to the parent. */
 interface DevtoolsMessage {
-  __dorkosDevtools?: 'hello' | 'batch' | 'navigated' | 'capture-result';
+  __dorkosDevtools?: 'hello' | 'batch' | 'navigated' | 'capture-result' | 'resource-error';
   seq?: number;
   console?: DevtoolsConsoleEntry[];
   network?: DevtoolsNetworkEntry[];
@@ -64,6 +74,28 @@ export interface UseDevtoolsBridgeParams {
   documentId: string;
   /** The logical URL currently loaded (never the signed token URL). */
   logicalUrl: string;
+  /**
+   * Bumped by the browser on every reload. Same document, fresh page — so the
+   * failed-resource count starts over with it, as it does on navigation.
+   */
+  reloadNonce: number;
+}
+
+/** What the bridge hands back to the canvas. */
+export interface DevtoolsBridge {
+  /**
+   * How many resources (scripts, styles, images) the current document failed to
+   * load, as reported by the shim. The canvas turns a non-zero count into a
+   * banner, because a page whose scripts 404 renders blank and says nothing.
+   *
+   * Counts only what an opaque-origin frame reports — that is, only pages DorkOS
+   * itself served or proxied, which are the only ones carrying the shim. A
+   * directly framed dev server has a real origin, so its messages are rejected
+   * by the bridge's origin guard and it can neither raise this count nor keep it
+   * at zero to reassure anybody: the count only ever SHOWS a warning, it never
+   * promises a page is fine.
+   */
+  resourceErrorCount: number;
 }
 
 /** Drop the oldest entries in place so `arr` holds at most `cap`. */
@@ -76,14 +108,28 @@ function cap<T>(arr: T[], max: number): void {
  * per-session buffer. See the module doc for the security guarantees.
  *
  * @param params - The preview iframe ref plus the document id and logical URL.
+ * @returns What the canvas can show about this preview — see {@link DevtoolsBridge}.
  */
 export function useDevtoolsBridge({
   iframeRef,
   documentId,
   logicalUrl,
-}: UseDevtoolsBridgeParams): void {
+  reloadNonce,
+}: UseDevtoolsBridgeParams): DevtoolsBridge {
   const transport = useTransport();
   const sessionId = useAppStore((s) => s.sessionId);
+
+  // Failed resources for the CURRENT document only. Reset during render rather
+  // than in an effect (React's documented "adjusting state when a prop changes"
+  // pattern): an effect would let one render paint the previous page's count
+  // against the new page.
+  const [resourceErrorCount, setResourceErrorCount] = useState(0);
+  const documentKey = `${logicalUrl}:${reloadNonce}`;
+  const [countedFor, setCountedFor] = useState(documentKey);
+  if (countedFor !== documentKey) {
+    setCountedFor(documentKey);
+    setResourceErrorCount(0);
+  }
 
   // Refs so the single, long-lived window listener always reads current values
   // without being torn down and re-added on every render.
@@ -142,8 +188,19 @@ export function useDevtoolsBridge({
 
     function onMessage(ev: MessageEvent): void {
       const frame = iframeRef.current;
-      // Source identity is the whole guard (the opaque frame's origin is "null").
-      if (!frame || ev.source !== frame.contentWindow) return;
+      // Two guards, and both are needed.
+      //
+      // SOURCE IDENTITY rejects any other window — a nested frame, a popup, the
+      // opener. It is the only guard that can, because an opaque frame's origin
+      // is the useless literal string "null".
+      //
+      // ORIGIN rejects the frame itself when it is not one of ours. The shim is
+      // injected only into what DorkOS serves or proxies, and that is exactly
+      // what renders opaque — so `"null"` IS the marker for "this frame runs our
+      // shim". A directly framed dev server has a real origin and no shim, so
+      // anything arriving from it is the page's own code impersonating the
+      // bridge, and it is dropped rather than counted or relayed.
+      if (!frame || ev.source !== frame.contentWindow || ev.origin !== 'null') return;
       const data = ev.data as DevtoolsMessage | null;
       if (!data || typeof data !== 'object' || typeof data.__dorkosDevtools !== 'string') return;
 
@@ -155,6 +212,12 @@ export function useDevtoolsBridge({
           // The attached-session gate below still keeps unattached CAPTURES from
           // ever relaying.
           frame.contentWindow?.postMessage({ __dorkosDevtools: 'ack' }, '*');
+          return;
+        case 'resource-error':
+          // Counted before the attached-session gate below: relaying captures
+          // to an agent needs a session, but telling the person watching that
+          // their page is broken does not.
+          setResourceErrorCount((n) => n + 1);
           return;
       }
 
@@ -246,4 +309,6 @@ export function useDevtoolsBridge({
       loadRasterizerSource().then(forward, () => forward(undefined));
     });
   }, [iframeRef]);
+
+  return { resourceErrorCount };
 }

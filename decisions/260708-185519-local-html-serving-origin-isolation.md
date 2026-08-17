@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+**Amended 2026-08-17 (DOR-1259, PR #1084):** a loopback dev server opened from a cockpit that is itself on a loopback host is now framed **directly** on its own origin (`http://localhost:<port>`) with `allow-same-origin` (`WORKBENCH_SANDBOX_EXTERNAL`), after a client-side reachability check. That origin is cross-origin to the cockpit and is not in `resolveTrustedOrigins()`, so the framed page cannot reach `/api/*`: it is no more privileged than the same dev server open in a browser tab on that machine. The decision below still governs everything DorkOS itself serves — the `serve` (local file) path and the server-side proxy path both keep the opaque-origin sandbox, and that is where this ADR's threat model (untrusted local HTML on the DorkOS origin) actually lives. The full per-target-origin decision for proxied previews lands with Phase 2 and gets its own ADR (`specs/canvas-dev-server-preview/`).
+
 ## Context
 
 Closing DOR-98, the workbench's embedded browser needs to render local HTML files and localhost dev servers inline. That content is untrusted by construction — it can be arbitrary project files or content an agent fetched from the internet — a different threat model from `mcp-apps`' server-fetched, trusted app HTML (`lib/sandbox.ts`). If served content shared the cockpit's own origin or credentials, a malicious local HTML file could call `/api/*` as the logged-in user.

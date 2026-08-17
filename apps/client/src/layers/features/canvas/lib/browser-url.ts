@@ -5,15 +5,17 @@
  * The browser renders three kinds of target, each routed differently:
  * - `external` — an arbitrary `http(s)` site, framed directly (and falling back
  *   to the system browser when the site refuses embedding).
- * - `proxy` — a `localhost`/loopback dev server, routed through the signed
- *   localhost reverse-proxy so it can be framed.
+ * - `proxy` — a `localhost`/loopback dev server. Framed by its own URL when the
+ *   cockpit is running on the same machine, and routed through the signed
+ *   localhost reverse-proxy otherwise — see {@link loopbackStrategy}.
  * - `serve` — a local file within the session cwd, routed through the signed
  *   static-serve route so relative assets resolve.
  *
- * Served and proxied content renders in an opaque-origin sandbox (WITHOUT
+ * Served content renders in an opaque-origin sandbox (WITHOUT
  * `allow-same-origin`) so untrusted local HTML can never call `/api/*` as the
- * user. External sites keep `allow-same-origin` — they live on their own origin,
- * so it grants them nothing against the DorkOS origin.
+ * user. External sites — and a directly framed dev server, which is one — keep
+ * `allow-same-origin`: they live on their own origin, so it grants them nothing
+ * against the DorkOS origin.
  *
  * @module features/canvas/lib/browser-url
  */
@@ -37,19 +39,58 @@ export const WORKBENCH_SANDBOX_EXTERNAL =
 /** Protocols never loaded in the browser frame (script/URI-smuggling vectors). */
 const BLOCKED_PROTOCOLS = new Set(['javascript:', 'data:', 'blob:']);
 
-/** Hostnames treated as loopback (routed through the localhost proxy). */
+/**
+ * Hostnames treated as loopback (routed through the localhost proxy).
+ *
+ * `0.0.0.0` is in this set on purpose, and the server's `trusted-origins.ts`
+ * deliberately treats it as public — the two are answering different questions.
+ * The server is asked "may a request claiming this origin be trusted", where
+ * `0.0.0.0` means every interface and so cannot be vouched for. Here the question
+ * is "where will this page's browser go if it loads this URL", and a browser
+ * pointed at `0.0.0.0` goes to the machine it is running on. Same string,
+ * opposite meaning, both correct.
+ */
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '::1']);
 
 /** A classified browser target. */
 export type BrowserTarget =
   | { mode: 'external'; url: string }
-  | { mode: 'proxy'; port: number; path: string }
+  | { mode: 'proxy'; hostname: string; port: number; path: string }
   | { mode: 'serve'; path: string }
   | { mode: 'blocked' };
 
 /** Whether a URL's hostname is a loopback address. */
 function isLoopbackHost(hostname: string): boolean {
   return LOOPBACK_HOSTS.has(hostname) || hostname.endsWith('.localhost');
+}
+
+/** How a loopback (`proxy`) target is loaded: straight into the frame, or via the server. */
+export type LoopbackStrategy = 'direct' | 'server';
+
+/**
+ * Decide how a loopback dev server should be loaded, from the hostname of the
+ * page asking.
+ *
+ * `localhost` names whichever machine is looking at the page. So a dev server
+ * can be framed by its own URL only when the cockpit is open ON the machine
+ * running it — the browser then resolves `localhost:5173` to the same server the
+ * user started. Open the same cockpit from a phone over Tailscale or through a
+ * tunnel and `localhost` is the phone, which is running nothing; those go
+ * through the server, which can still reach the dev server itself.
+ *
+ * A directly framed dev server gets {@link WORKBENCH_SANDBOX_EXTERNAL}, and that
+ * is not a loosening: its origin is `http://localhost:<port>`, which is
+ * cross-origin to the cockpit and absent from the server's trusted origins, so
+ * it cannot read `/api/*`. It is exactly as privileged as the same dev server
+ * open in another browser tab on that machine. The `serve` path — local files on
+ * the DorkOS origin, where the untrusted-HTML threat actually lives — keeps its
+ * opaque origin.
+ *
+ * @param pageHostname - `window.location.hostname` of the page rendering the frame.
+ * @returns Whether to frame the dev server's own URL or route it via the server.
+ */
+export function loopbackStrategy(pageHostname: string): LoopbackStrategy {
+  return isLoopbackHost(pageHostname) ? 'direct' : 'server';
 }
 
 /** Default port for a URL that omits one, by protocol. */
@@ -85,7 +126,16 @@ export function classifyBrowserTarget(raw: string): BrowserTarget {
   if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
     if (isLoopbackHost(parsed.hostname)) {
       const port = parsed.port ? Number(parsed.port) : defaultPort(parsed.protocol);
-      return { mode: 'proxy', port, path: `${parsed.pathname}${parsed.search}` };
+      // The hostname is carried so a message about this target can name it the
+      // way the user typed it — telling someone who entered `127.0.0.1:5399`
+      // that nothing is listening on `localhost` invites them to doubt the
+      // message rather than the port.
+      return {
+        mode: 'proxy',
+        hostname: parsed.hostname,
+        port,
+        path: `${parsed.pathname}${parsed.search}`,
+      };
     }
     return { mode: 'external', url: raw };
   }

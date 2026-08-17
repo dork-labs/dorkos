@@ -86,6 +86,8 @@ export type {
   RevertDiffBaselineRequest,
   WorkbenchSignRequest,
   WorkbenchSignResponse,
+  WorkbenchProbeRequest,
+  WorkbenchProbeResponse,
   HealthResponse,
   TunnelStatus,
   ExecutionDefaults,

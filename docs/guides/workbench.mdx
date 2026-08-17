@@ -81,8 +81,10 @@ Open the Terminal tab and you get an actual shell, running in your session's wor
 
 Open the Canvas tab and navigate to a URL, or click a local HTML file from the Files tab, and it renders inline with real browser chrome: back, forward, reload, and an address bar you can type into.
 
-- **Local HTML files** and **localhost dev servers** render right in the canvas, relative links and assets included.
+- **Local HTML files** render right in the canvas, relative links and assets included.
+- **Dev servers you're running** — Vite, Next, anything on a `localhost` address — render too, as long as you're using DorkOS on the same machine that runs them. Live reload keeps working. From another device (a phone, a tablet, a tunnel), "localhost" means _that_ device, so the page won't render in the canvas yet — use the "Open in system browser" button in the browser toolbar, which is always there.
 - **External sites** are framed too, when the site allows it. When a site refuses (many do, for security), DorkOS shows an "Open in system browser" button instead of a blank frame.
+- When something goes wrong, the canvas says so instead of showing a blank white page: nothing running on that port, a page taking too long, or a page that failed to load some of its own files.
 - Each browser tab keeps its own back/forward history, so switching between an open file and an open browser tab never mixes up your navigation.
 
 ## Multi-Document Tabs

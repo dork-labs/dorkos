@@ -18,11 +18,12 @@
  *
  * ## How it is authored and embedded
  *
- * {@link serializeConsoleArg} and the internal `installDevtoolsShim` are real,
- * self-contained functions (typechecked + linted), embedded into
- * {@link DEVTOOLS_AGENT_SCRIPT} via `Function.prototype.toString()`. `install`
- * receives the serializer as a parameter (a local binding), so nothing depends on
- * cross-scope identifier names surviving bundling/minification. Type assertions
+ * {@link serializeConsoleArg}, {@link describeResourceError} and the internal
+ * `installDevtoolsShim` are real, self-contained functions (typechecked +
+ * linted), embedded into {@link DEVTOOLS_AGENT_SCRIPT} via
+ * `Function.prototype.toString()`. `install` receives the two helpers as
+ * parameters (local bindings), so nothing depends on cross-scope identifier
+ * names surviving bundling/minification. Type assertions
  * erase at emit, so the string is clean browser JS regardless of this file's
  * Node type environment. The target is ES2022 (no downlevel helpers).
  *
@@ -90,13 +91,42 @@ export function serializeConsoleArg(
 }
 
 /**
- * The shim body. Self-contained except the injected `serialize` parameter and
- * browser globals. Wraps `console.*`, uncaught errors, and `fetch`/XHR, batches
+ * Classify an `error` event's target as a resource that failed to load.
+ *
+ * A `<script>`, `<link>` or `<img>` whose URL 404s fires `error` at the element,
+ * not at `window`, and the event does not bubble — so only a capture-phase
+ * listener ever sees it. That same listener also sees uncaught script errors,
+ * whose target is `window`; those are already captured elsewhere, so they answer
+ * `null` here.
+ *
+ * Exported both to embed into the shim (via `toString()`) and to unit-test in
+ * isolation. Self-contained: it references no module-scope binding, so its
+ * stringified source is complete.
+ *
+ * @param target - The `error` event's target.
+ * @returns The failed resource's tag name and URL, or `null` if this was not one.
+ */
+export function describeResourceError(target: unknown): { tag: string; url: string } | null {
+  if (!target || typeof target !== 'object') return null;
+  const el = target as { tagName?: unknown; src?: unknown; href?: unknown };
+  // `window` has no tagName — an uncaught script error, not a failed resource.
+  if (typeof el.tagName !== 'string') return null;
+  const url = typeof el.src === 'string' && el.src ? el.src : el.href;
+  if (typeof url !== 'string' || url === '') return null;
+  return { tag: el.tagName.toLowerCase(), url };
+}
+
+/**
+ * The shim body. Self-contained except the injected `serialize` and
+ * `describeResource` parameters and browser globals. Wraps `console.*`, uncaught errors, and `fetch`/XHR, batches
  * captures on a short debounce, and delivers them to `window.parent` — only after
  * a handshake ack, so it is inert anywhere that is not our browser pane. Every
  * hook swallows its own errors: instrumentation must never break the page.
  */
-function installDevtoolsShim(serialize: (value: unknown) => unknown): void {
+function installDevtoolsShim(
+  serialize: (value: unknown) => unknown,
+  describeResource: (target: unknown) => { tag: string; url: string } | null
+): void {
   try {
     const w = window as unknown as { __dorkosDevtoolsInstalled?: boolean };
     if (w.__dorkosDevtoolsInstalled) return;
@@ -217,6 +247,32 @@ function installDevtoolsShim(serialize: (value: unknown) => unknown): void {
         /* ignore */
       }
     });
+    // --- Resources that failed to load (scripts, styles, images) ---
+    // Capture phase, because a failed subresource fires `error` at the element
+    // and never bubbles — the listener above cannot see it. This is what turns a
+    // page whose scripts 404 from a blank frame into something the canvas can
+    // say out loud, so the parent is told directly as well as via the console.
+    window.addEventListener(
+      'error',
+      (ev: Event) => {
+        try {
+          const failed = describeResource(ev.target);
+          if (!failed) return;
+          const url = clamp(failed.url, MAX_URL);
+          post({ __dorkosDevtools: 'resource-error', url });
+          pushConsole({
+            level: 'error',
+            text: clamp('Failed to load ' + failed.tag + ': ' + failed.url, MAX_TEXT),
+            timestamp: Date.now(),
+            source: url,
+          });
+        } catch {
+          /* ignore */
+        }
+      },
+      true
+    );
+
     window.addEventListener('unhandledrejection', (ev: PromiseRejectionEvent) => {
       try {
         const reason = ev.reason;
@@ -447,8 +503,8 @@ function installDevtoolsShim(serialize: (value: unknown) => unknown): void {
 
 /**
  * The self-contained IIFE source injected as the first `<head>` child of every
- * served/proxied preview. Built by stringifying the two authored functions and
- * passing the serializer into the installer as an argument — see the module doc
+ * served/proxied preview. Built by stringifying the authored functions and
+ * passing the two helpers into the installer as arguments — see the module doc
  * for why this survives bundling and stays free of `/api` and Node-only syntax.
  */
-export const DEVTOOLS_AGENT_SCRIPT = `(${installDevtoolsShim.toString()})(${serializeConsoleArg.toString()});`;
+export const DEVTOOLS_AGENT_SCRIPT = `(${installDevtoolsShim.toString()})(${serializeConsoleArg.toString()}, ${describeResourceError.toString()});`;
