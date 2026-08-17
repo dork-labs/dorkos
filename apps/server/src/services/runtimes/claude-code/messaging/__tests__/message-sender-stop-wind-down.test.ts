@@ -101,6 +101,23 @@ function resultMsg(): SDKMessage {
   } as unknown as SDKMessage;
 }
 
+/**
+ * The `result` a CLI emits after it ACKS an interrupt: no content, and its own
+ * `terminal_reason` naming the abort. The SDK's `TerminalReason` union, and one
+ * of the values the projector already reads as an interrupted turn.
+ */
+function abortedResultMsg(): SDKMessage {
+  return {
+    type: 'result',
+    subtype: 'success',
+    uuid: 'result-aborted',
+    session_id: 'sdk-1',
+    is_error: false,
+    total_cost_usd: 0.01,
+    terminal_reason: 'aborted_streaming',
+  } as unknown as SDKMessage;
+}
+
 /** A step in the scripted stream: an SDK message, or something the test does. */
 type Step = SDKMessage | (() => Promise<void>);
 
@@ -110,9 +127,10 @@ interface CliBehaviour {
    * What `interrupt()` does. `never-settles` is the wind-down shape (the SDK
    * drops the write to an ended stdin and waits on an ack nobody will send);
    * `rejects` reaches the same `close()` escalation without spending the real
-   * three-second bound, which is what the starting-phase case needs.
+   * three-second bound, which is what the starting-phase case needs; `acks` is
+   * the healthy CLI, which answers and then ends the turn itself.
    */
-  interrupt?: 'never-settles' | 'rejects';
+  interrupt?: 'never-settles' | 'rejects' | 'acks';
   /** The process exits by itself at the end of the script rather than waiting to be closed. */
   endsOnItsOwn?: boolean;
 }
@@ -134,11 +152,12 @@ function fakeWindDownCli(steps: Step[], behaviour: CliBehaviour = {}) {
   return {
     calls,
     handle: {
-      interrupt: (): Promise<never> => {
+      interrupt: (): Promise<unknown> => {
         calls.interrupt++;
         if (behaviour.interrupt === 'rejects') {
           return Promise.reject(new Error('interrupt refused'));
         }
+        if (behaviour.interrupt === 'acks') return Promise.resolve(undefined);
         return new Promise<never>(() => {});
       },
       close: () => {
@@ -337,6 +356,42 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
     // No red: neither the empty-stream error nor any other.
     expect(run.yielded.some((e) => e.type === 'error')).toBe(false);
     expect(run.windows[0]!.types).not.toContain('error');
+  });
+
+  it('keeps the CLI own abort reason when it acks a Stop it had nothing to show for', async () => {
+    // The gracefully-ACKED zero-content Stop, which lands in the OTHER
+    // empty-stream arm — the in-loop one, at the `done` the CLI's own `result`
+    // maps to. Press Stop the moment a turn starts and the healthy CLI answers,
+    // ends the turn itself, and reports `aborted_streaming`; the turn has no
+    // content, so without the stop-aware guard it also collected "The agent did
+    // not respond" and settled `error` instead.
+    let stopOutcome: boolean | undefined;
+    const run = await runTurn(
+      (store) => [
+        initMsg(),
+        async () => {
+          stopOutcome = await store.interruptQuery(SESSION_ID);
+        },
+        // The CLI honours it and closes the turn on its own terms.
+        abortedResultMsg(),
+      ],
+      { interrupt: 'acks', endsOnItsOwn: true }
+    );
+
+    expect(stopOutcome).toBe(true);
+    // Acked, so the process was never killed.
+    expect(run.cli.calls.interrupt).toBe(1);
+    expect(run.cli.calls.close).toBe(0);
+    expect(run.windows).toHaveLength(1);
+    // The CLI's own reason wins: the synthesis stays out because that `result`
+    // closed the window, and the runtime's answer is better than ours.
+    expect(endReason(run.windows[0]!)).toBe('aborted_streaming');
+    expect(run.lifecycle).toBe('interrupted');
+    // The zero-content turn earns no "the agent did not respond" — the operator
+    // is who ended it. Asserted before the event list so a regression reads as
+    // the error it is rather than as a shape mismatch.
+    expect(run.yielded.some((e) => e.type === 'error')).toBe(false);
+    expect(run.windows[0]!.types).toEqual(['turn_start', 'status_change', 'turn_end']);
   });
 
   it('leaves a turn that finished on its own settled as completed, even when a Stop races the end', async () => {
