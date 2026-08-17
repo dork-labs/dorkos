@@ -252,6 +252,7 @@ Every event `sendMessage` yields must satisfy `StreamEventSchema` (`packages/sha
 - **Errors are typed, non-terminal `error` events.** A recoverable or informational failure surfaces as `{ type: 'error', ... }` and the turn still terminates via `done`. Reserve turn termination for your backend's authoritative turn-end signal; both SDKs emit misleading "error" events mid-turn (see [Common Traps](#common-traps)).
 - **User-initiated aborts are not failures.** OpenCode's interrupt surfaces as a `MessageAbortedError` followed by idle; the mapper suppresses the error and ends with a plain `done`. Codex handles `AbortError` the same way. Match that behavior.
 - **Deltas, not snapshots.** The UI expects incremental `text_delta` / `thinking_delta`. If your SDK emits cumulative snapshots (both Codex and OpenCode do), track last-seen text per item id in the mapper context and emit only the new suffix.
+- **`toolCallId` is unique WITHIN a turn, and only within a turn.** Codex passes the SDK's raw `item.id` through and opens a fresh thread per turn, so turn 2 starts counting at `'0'` again; the test-mode scenarios re-run with the same literal ids on every turn. Adapters may keep doing that, but nothing downstream may key across turns by id alone — matching a history part to a live one on the id by itself deletes a real earlier call out of the transcript the moment a later turn reuses its number (DOR-1269).
 
 ## Step-by-Step: Runtime #4
 

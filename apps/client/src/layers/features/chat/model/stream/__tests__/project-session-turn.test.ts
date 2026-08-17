@@ -1060,6 +1060,174 @@ describe('projectSessionMessages', () => {
     // The rest of the history message survives — only the duplicate goes.
     expect((messages[1].parts ?? []).map((p) => p.type)).toEqual(['thinking']);
   });
+
+  it("keeps an earlier turn's finished call when a later turn reuses its id (codex)", () => {
+    // TOOL CALL IDS ARE NOT SESSION-UNIQUE. codex passes the SDK's raw item id
+    // through and opens a fresh thread per turn, so turn 2 starts counting at
+    // '0' again — as do the codex fixtures, and as do the test-mode scenarios,
+    // which re-run with the same literal ids every turn. Deduping on an id match
+    // alone would delete a real, finished call out of the transcript the moment
+    // a new turn happened to reuse its number.
+    const reusedId = '0';
+    const priorTurn: HistoryMessage[] = [
+      { id: 'h1', role: 'user', content: 'read the file', timestamp: '2026-01-01T00:00:00Z' },
+      {
+        id: 'h2',
+        role: 'assistant',
+        content: '',
+        timestamp: '2026-01-01T00:00:01Z',
+        parts: [
+          {
+            type: 'tool_call',
+            toolCallId: reusedId,
+            toolName: 'Read',
+            input: '{"path":"a.ts"}',
+            status: 'complete',
+            result: 'export const a = 1;',
+          },
+        ],
+      },
+    ];
+    const turnTwo: SessionEvent[] = [
+      { seq: 1, type: 'turn_start' },
+      {
+        seq: 2,
+        type: 'tool_call',
+        toolCallId: reusedId,
+        toolName: 'Edit',
+        input: '{"path":"b.ts"}',
+        status: 'running',
+      },
+      {
+        seq: 3,
+        type: 'approval_required',
+        id: reusedId,
+        toolName: 'Edit',
+        input: '{"path":"b.ts"}',
+        startedAt: 1000,
+        remainingMs: 600_000,
+        hasSuggestions: false,
+      },
+    ];
+    const messages = projectSessionMessages(priorTurn, turnTwo, [
+      {
+        type: 'approval',
+        id: reusedId,
+        startedAt: 1000,
+        remainingMs: 540_000,
+        toolName: 'Edit',
+        input: '{"path":"b.ts"}',
+        hasSuggestions: false,
+      },
+    ]);
+    const toolParts = messages
+      .flatMap((m) => m.parts ?? [])
+      .filter((p) => p.type === 'tool_call' && p.toolCallId === reusedId);
+    // BOTH survive: the finished read from turn 1, and the pending edit in turn 2.
+    expect(toolParts).toHaveLength(2);
+    expect(toolParts[0]).toMatchObject({ toolName: 'Read', result: 'export const a = 1;' });
+    expect(toolParts[1]).toMatchObject({ toolName: 'Edit', status: 'pending' });
+  });
+
+  it('keeps an answered question when the next turn reuses its id (test-mode)', () => {
+    // The test-mode scenarios re-run per turn with the same literal ids
+    // ('question-1', 'gated-edit-1', 'batch-*'), so a second ask in the same
+    // session collides with the answered one already in history. `answers` is
+    // what marks that one as real.
+    const answeredHistory: HistoryMessage[] = [
+      { id: 'h1', role: 'user', content: 'set up tests', timestamp: '2026-01-01T00:00:00Z' },
+      {
+        id: 'h2',
+        role: 'assistant',
+        content: '',
+        timestamp: '2026-01-01T00:00:01Z',
+        parts: [
+          {
+            type: 'tool_call',
+            toolCallId: 'question-1',
+            toolName: 'AskUserQuestion',
+            input: '{}',
+            status: 'complete',
+            interactiveType: 'question',
+            questions: [
+              {
+                header: 'Runner',
+                question: 'Which?',
+                options: [{ label: 'Vitest' }],
+                multiSelect: false,
+              },
+            ],
+            answers: { '0': 'Vitest' },
+          },
+        ],
+      },
+    ];
+    const secondAsk: SessionEvent[] = [
+      { seq: 1, type: 'turn_start' },
+      {
+        seq: 2,
+        type: 'tool_call',
+        toolCallId: 'question-1',
+        toolName: 'AskUserQuestion',
+        input: '{}',
+        status: 'running',
+      },
+    ];
+    const messages = projectSessionMessages(answeredHistory, secondAsk, [
+      {
+        type: 'question',
+        id: 'question-1',
+        startedAt: 1000,
+        remainingMs: 500_000,
+        questions: [
+          {
+            header: 'Coverage',
+            question: 'Enable it?',
+            options: [{ label: 'Yes' }],
+            multiSelect: false,
+          },
+        ],
+      },
+    ]);
+    const questionParts = messages
+      .flatMap((m) => m.parts ?? [])
+      .filter((p) => p.type === 'tool_call' && p.toolCallId === 'question-1');
+    expect(questionParts).toHaveLength(2);
+    expect(questionParts[0]).toMatchObject({ status: 'complete', answers: { '0': 'Vitest' } });
+    expect(questionParts[1]).toMatchObject({ status: 'pending' });
+  });
+
+  it('never drops a duplicate from a record the open turn cannot overlap', () => {
+    // The second guard, independent of the first: an EMPTY finished-looking call
+    // is still a real record of an earlier turn once a person has spoken after
+    // it. Only the trailing assistant run can overlap the turn still streaming.
+    const olderHistory: HistoryMessage[] = [
+      { id: 'h1', role: 'user', content: 'first', timestamp: '2026-01-01T00:00:00Z' },
+      {
+        id: 'h2',
+        role: 'assistant',
+        content: '',
+        timestamp: '2026-01-01T00:00:01Z',
+        parts: [
+          {
+            type: 'tool_call',
+            toolCallId: '0',
+            toolName: 'Read',
+            input: '{}',
+            status: 'complete',
+          },
+        ],
+      },
+      { id: 'h3', role: 'user', content: 'second', timestamp: '2026-01-01T00:00:02Z' },
+    ];
+    const messages = projectSessionMessages(olderHistory, [
+      { seq: 1, type: 'turn_start' },
+      { seq: 2, type: 'tool_call', toolCallId: '0', toolName: 'Edit', status: 'running' },
+    ]);
+    const toolParts = messages.flatMap((m) => m.parts ?? []).filter((p) => p.type === 'tool_call');
+    expect(toolParts).toHaveLength(2);
+    expect(toolParts[0]).toMatchObject({ toolName: 'Read' });
+  });
 });
 
 describe('projectInProgressTurn — approval receipts', () => {

@@ -945,7 +945,33 @@ function liveToolCallIds(segments: ChatMessage[]): Set<string> {
 }
 
 /**
- * Drop the history copies of tool calls the live turn is still rendering.
+ * Whether a history tool part is a FINISHED-LOOKING BUT EMPTY record — the exact
+ * shape the parked-prompt duplicate takes, and nothing else.
+ *
+ * A tool call that really ran and was really recorded always carries something
+ * it produced: a `result`, the `answers` a question was given, or the
+ * `approvalOutcome` a permission ask settled with. The DOR-1269 duplicate
+ * carries none of the three, because nothing has happened to it yet — the model
+ * has merely emitted the `tool_use` block and the transcript parser stamped it
+ * `complete`.
+ *
+ * This is what keeps {@link withoutEmptyDuplicateToolCalls} from eating a real
+ * earlier call, which matters because tool-call ids are NOT unique across a
+ * session: codex uses the raw SDK item id and starts a fresh thread per turn
+ * (so turn 2 opens at `'0'` again), and the test-mode scenarios re-run with the
+ * same literal ids on every turn.
+ */
+function isEmptyFinishedToolCall(part: MessagePart): boolean {
+  return (
+    part.type === 'tool_call' &&
+    part.result === undefined &&
+    part.answers === undefined &&
+    part.approvalOutcome === undefined
+  );
+}
+
+/**
+ * Drop the history copy of a tool call the live turn is still rendering.
  *
  * The two halves of the transcript can describe the SAME tool call at once, and
  * for a parked prompt they describe it differently (DOR-1269). claude-code
@@ -961,16 +987,28 @@ function liveToolCallIds(segments: ChatMessage[]): Set<string> {
  * History will speak for the call again on the next reload, once the turn it
  * belongs to has closed and stopped being replayed.
  *
- * @param message - One mapped history message.
+ * NARROW ON PURPOSE, in two directions, because an id match ALONE is not
+ * evidence of a duplicate. Tool-call ids repeat across turns on shipped runtimes
+ * — codex passes the SDK's raw item id through and opens a new thread per turn,
+ * so every turn starts counting at `'0'` again — so a wider rule would delete a
+ * real, finished call from an earlier turn out of the transcript the moment the
+ * new turn happened to reuse its id. The two guards are:
+ *
+ * 1. only an {@link isEmptyFinishedToolCall} part, and
+ * 2. only within the trailing run of assistant records, the only ones the open
+ *    turn can overlap (the caller enforces this).
+ *
+ * @param message - One mapped history message from that trailing run.
  * @param liveIds - Tool-call ids the in-progress turn already renders.
  * @returns The message without those parts, or `null` when nothing is left of it.
  */
-function withoutDuplicatedToolCalls(
+function withoutEmptyDuplicateToolCalls(
   message: ChatMessage,
   liveIds: ReadonlySet<string>
 ): ChatMessage | null {
   const kept = message.parts.filter(
-    (part) => part.type !== 'tool_call' || !liveIds.has(part.toolCallId)
+    (part) =>
+      part.type !== 'tool_call' || !liveIds.has(part.toolCallId) || !isEmptyFinishedToolCall(part)
   );
   if (kept.length === message.parts.length) return message;
   if (kept.length === 0) return null;
@@ -983,6 +1021,21 @@ function withoutDuplicatedToolCalls(
     content: derived.content,
     toolCalls: derived.toolCalls.length > 0 ? derived.toolCalls : undefined,
   };
+}
+
+/**
+ * Index of the first message in the trailing run of assistant records — the
+ * only stretch of history the still-open turn can overlap.
+ *
+ * Anything before the last person's message belongs to a turn that has closed,
+ * so a matching id there is a DIFFERENT call that happens to share a number.
+ *
+ * @param messages - Mapped history, in order.
+ */
+function trailingAssistantRun(messages: ChatMessage[]): number {
+  let start = messages.length;
+  while (start > 0 && messages[start - 1].role === 'assistant') start -= 1;
+  return start;
 }
 
 /**
@@ -999,9 +1052,10 @@ function withoutDuplicatedToolCalls(
  * interaction lives ONLY in `pendingInteractions` — without it, a refreshed
  * blocked session would show no Approve/Deny card (regressing DOR-73 recovery).
  *
- * History is then deduped AGAINST that turn: a tool call the live turn is still
- * rendering has its history copy dropped, so one call is one card
- * ({@link withoutDuplicatedToolCalls}).
+ * History is then deduped AGAINST that turn, narrowly: an EMPTY finished-looking
+ * copy of a tool call the live turn is still rendering, in the trailing
+ * assistant run, is dropped so one call is one card
+ * ({@link withoutEmptyDuplicateToolCalls}).
  *
  * Under the trigger-only POST contract the just-sent user message is NOT yet in
  * `snapshotMessages` (the snapshot was captured before the send, and the
@@ -1025,9 +1079,13 @@ export function projectSessionMessages(
   // The turn is projected FIRST because history is deduped against it.
   const segments = projectInProgressSegments(inProgressTurn, pendingInteractions);
   const liveIds = liveToolCallIds(segments);
+  const mapped = snapshotMessages.map(mapHistoryMessage);
+  // Only the trailing assistant run is a dedup candidate — see
+  // `withoutEmptyDuplicateToolCalls` for why an id match alone proves nothing.
+  const dedupFrom = liveIds.size === 0 ? mapped.length : trailingAssistantRun(mapped);
   const messages: ChatMessage[] = [];
-  for (const message of snapshotMessages.map(mapHistoryMessage)) {
-    const kept = liveIds.size === 0 ? message : withoutDuplicatedToolCalls(message, liveIds);
+  for (const [index, message] of mapped.entries()) {
+    const kept = index < dedupFrom ? message : withoutEmptyDuplicateToolCalls(message, liveIds);
     if (kept) messages.push(kept);
   }
   if (optimisticUserMessage) {
