@@ -560,6 +560,9 @@ async function shootMultiSession(page: Page, theme: Theme, rec: RunRecorder): Pr
 /** Pause between personality preset selections so each radar morph reads fully. */
 const PERSONALITY_MORPH_MS = 1600;
 
+/** Pause after scrolling the Appearance page down to its personality section. */
+const PERSONALITY_SCROLL_SETTLE_MS = 600;
+
 /**
  * Personality right-panel split (founder art direction: the radar reads far
  * better with a generous right column — 35% ≈ 448px at the 1280px capture
@@ -568,24 +571,36 @@ const PERSONALITY_MORPH_MS = 1600;
 const PERSONALITY_PANEL_PCT = 35;
 
 /**
- * Drive the agent personality picker: seed a wide right-panel split, open
- * Atlas's profile panel via its Manage control, open the personality picker
- * (the animated radar), and step through presets so the visualization morphs
- * and flashes in response. Ends on a vivid preset.
+ * Drive the agent personality picker: seed a wide right-panel split, dock
+ * Atlas's profile via its Manage control, open the profile's Appearance page,
+ * and step through presets so the radar morphs and flashes in response. Ends on
+ * a vivid preset.
+ *
+ * Two things about this route come from the Profile replacing the Agent Hub
+ * (DOR-1253/1254), and both are load-bearing:
+ *
+ * - **Manage docks a Profile now, not a Hub.** The panel still binds to the
+ *   agent whose Manage control opened it (a bare `?agent=` URL param resolves
+ *   against the default cwd instead), so the click stays the way in.
+ * - **The face is the only door to Appearance.** No property row pushes that
+ *   page — it is the portrait itself that opens it (`ProfileView`), and the
+ *   personality radar lives at the bottom of it, under the colour and emoji
+ *   pickers. The face is found by the return target it publishes rather than by
+ *   its label, which is a sentence about the agent's own name.
  */
 async function drivePersonality(page: Page, mark?: LoopMark): Promise<void> {
   await seedRightPanelSplit(page, PERSONALITY_PANEL_PCT);
   await page.goto(url('/team?view=table'));
-  // The agent-hub panel binds to the agent whose Manage control opened it —
-  // a bare ?agent= URL param resolves against the default cwd instead.
   await page.getByRole('button', { name: 'Manage atlas' }).click({ timeout: WAIT_MS });
-  await page
-    .locator('[data-testid="personality-picker-trigger"]')
-    .first()
-    .click({ timeout: WAIT_MS });
+  await page.locator('[data-profile-return="appearance"]').first().click({ timeout: WAIT_MS });
   await page.locator('[data-testid="personality-radar"]').first().waitFor({ timeout: WAIT_MS });
   const pills = page.locator('[data-testid="preset-pills"]');
   await pills.waitFor({ timeout: WAIT_MS });
+  // Personality is the last section of the Appearance page. Scroll it up so the
+  // radar and its presets ARE the frame rather than a strip below the emoji
+  // grid — by locator, because the panel is not the element under the cursor.
+  await pills.scrollIntoViewIfNeeded();
+  await sleep(PERSONALITY_SCROLL_SETTLE_MS);
   // The radar morphs are the money content — start the loop on the settled
   // radar, just before the preset clicks drive it.
   mark?.();

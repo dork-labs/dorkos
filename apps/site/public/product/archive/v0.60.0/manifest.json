@@ -1,0 +1,94 @@
+{
+  "label": "v0.60.0",
+  "archivedAt": "2026-08-16T23:30:41.494Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-08-16T23:24:26.255Z",
+    "runId": "20260816-181747"
+  },
+  "shots": [
+    {
+      "id": "cockpit",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "agents",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "personality",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    }
+  ],
+  "count": 5,
+  "totalBytes": 1676997,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "agents-light.png",
+      "surface": "agents",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 102956,
+      "runId": "20260816-181747",
+      "capturedAt": "2026-08-16T23:22:36.241Z"
+    },
+    {
+      "source": "auto",
+      "file": "cockpit-light.png",
+      "surface": "cockpit",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 71632,
+      "runId": "20260816-181747",
+      "capturedAt": "2026-08-16T23:22:36.241Z"
+    },
+    {
+      "source": "auto",
+      "file": "personality-dark.png",
+      "surface": "personality",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 147620,
+      "runId": "20260816-181747",
+      "capturedAt": "2026-08-16T23:22:36.241Z"
+    },
+    {
+      "source": "auto",
+      "file": "personality-dark.webm",
+      "surface": "personality",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 1169733,
+      "durationMs": 8129,
+      "runId": "20260816-181747",
+      "capturedAt": "2026-08-16T23:22:36.241Z"
+    },
+    {
+      "source": "auto",
+      "file": "personality-light.png",
+      "surface": "personality",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 185056,
+      "runId": "20260816-181747",
+      "capturedAt": "2026-08-16T23:22:36.241Z"
+    }
+  ]
+}
