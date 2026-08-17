@@ -791,6 +791,37 @@ describe('deliverIntoTurn — a stage reaches the transcript with no turn (task 
     expect(process.answered).toBe(1);
   });
 
+  // DOR-1294, through the composition rather than the windower. A staged note is
+  // merged into the next querying message by the CLI, and the merged turn's one
+  // `result` can name the STAGED id — an id the windower never saw, because a
+  // stage opens no window. Unless the dispatcher tells the windower about it,
+  // that result reads as one nobody sent, the dispatched window is left with no
+  // result that can close it, and this turn never ends. Delete the
+  // `noteStagedMessage` call in `PersistentDispatch.stage` and this hangs.
+  it('closes the dispatched window when the result names the staged message', async () => {
+    const sessionId = nextSession();
+
+    await runtime.deliverIntoTurn(sessionId, 'context first', {
+      mode: 'stage',
+      messageId: 'stage-1',
+    });
+    const process = cli.processes[0]!;
+    await vi.waitFor(() => expect(process.staged).toHaveLength(1));
+    // The result is ours to time, so the merge can be modelled exactly.
+    process.goSilent();
+
+    const running = turn(sessionId, 'now do the thing');
+    await vi.waitFor(() => expect(process.received).toHaveLength(1));
+
+    // One turn, one result — and it names the note, not the message that ran.
+    process.answer('stage-1');
+
+    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('warm'));
+    const events = await running;
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(cli.launches).toBe(1);
+  });
+
   it('appends two staged notes before one dispatch, in order (AC5)', async () => {
     const sessionId = nextSession();
 
