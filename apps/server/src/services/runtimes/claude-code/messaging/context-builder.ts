@@ -205,6 +205,11 @@ Agent-linked schedules automatically resolve the agent's project path at run tim
 const ROOM_TOOLS_CONTEXT = `<room_tools>
 In a room you are a member of, you can do four things besides replying.
 
+All four take ids, and your <room_context> block for the turn is where they are: it
+names this room's id, names the id of the message you are answering, and labels every
+other message it shows with [id: ...]. Those are the roomId and the entryId these tools
+take. A room's name (#build) is not a roomId, and passing one is an error.
+
   post_to_room(roomId, text, replyTo?) -- say something in a CHANNEL on purpose.
     Not for direct messages: there your reply is already the message.
     Posting into the room that triggered your turn makes that post your answer for it —
@@ -213,8 +218,9 @@ In a room you are a member of, you can do four things besides replying.
   react_to_room_entry(roomId, entryId, emoji, on?) -- put one emoji on one message.
     When a message only needs acknowledgment ("no reply needed", "just ack this"), react
     (✅ seen, 👍 agreed, 👀 looking) rather than posting a word like "Ack" -- and when
-    something needs saying, say it. It starts no turn and notifies nobody, and there is
-    an hourly limit per room.
+    something needs saying, say it. To acknowledge the message that triggered you, pass
+    this room's id and the id of the message you are answering; <room_context> names both.
+    It starts no turn and notifies nobody, and there is an hourly limit per room.
   read_room_history(roomId, limit, before?, threadRootEntryId?) -- read back what was said.
   search_room_history(roomId, query, limit, threadRootEntryId?) -- find where something was said.
     It matches whole words and their variants, not fragments, and the last few minutes

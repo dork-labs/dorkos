@@ -438,7 +438,9 @@ describe('every @name in the room-context block reaches the member it names', ()
     expect(hers?.authorHandle).toBeNull();
 
     const block = formatRoomContext(context, { nonce: NONCE });
-    expect(block).toContain('Priya (person, cannot be mentioned): the deploy is stuck');
+    expect(block).toContain(
+      `Priya (person, cannot be mentioned) [id: ${hers?.id}]: the deploy is stuck`
+    );
     expect(block).not.toContain('@Priya');
     // And the invariant still holds over the whole block, departed author and all.
     expectEveryHandlePairedWithItsAuthor(block, context);

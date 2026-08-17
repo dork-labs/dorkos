@@ -215,6 +215,7 @@ function request(
       pendingTruncated: false,
       ownRecent: [],
       acknowledgments: [],
+      triggerEntryId: entry.id,
       triggerAttachments: [],
       addressing: {
         responseMode: 'always',

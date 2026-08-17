@@ -157,6 +157,7 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
       working: [],
       pending: [
         {
+          id: 'entry-pending',
           authorHandle: 'dorian',
           authorDisplayName: 'You',
           authorIsPerson: true,
@@ -172,6 +173,7 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
       pendingTruncated: false,
       ownRecent: [],
       acknowledgments: [],
+      triggerEntryId: 'entry-trigger',
       triggerAttachments: [],
       addressing: {
         responseMode: 'mention-only',

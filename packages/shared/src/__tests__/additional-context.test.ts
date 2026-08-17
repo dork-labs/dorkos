@@ -28,6 +28,7 @@ const SAMPLE_ROOM_CONTEXT = {
   pendingTruncated: false,
   ownRecent: [],
   acknowledgments: [],
+  triggerEntryId: 'entry-trigger',
   triggerAttachments: [],
   addressing: {
     responseMode: 'always',
@@ -147,6 +148,7 @@ describe('AdditionalContextEntrySchema', () => {
         channelTailOmitted: 3,
         channelTail: [
           {
+            id: 'e-2',
             authorHandle: null,
             authorDisplayName: 'You',
             authorIsPerson: true,

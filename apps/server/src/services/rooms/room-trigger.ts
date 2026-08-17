@@ -1261,6 +1261,10 @@ export class RoomTriggerDispatcher {
       const turnContext = buildRoomContext(this.deps, {
         room,
         agentAuthorId: target.authorId,
+        // The tree the turn below runs in, so a file the context names is named
+        // by a path that opens from where the agent actually stands (DOR-1266).
+        // The same value reaches the runner as `agentPath` a few lines down.
+        agentPath: target.agentPath,
         entry,
         working: this.workingIn(room.id),
         // The cursor as it stood before the claim moved it. The stored row has
@@ -1817,6 +1821,7 @@ export class RoomTriggerDispatcher {
       const turnContext = buildRoomContext(this.deps, {
         room,
         agentAuthorId: authorId,
+        agentPath: input.agentPath,
         entry,
         working: this.workingIn(room.id),
         // NO AMBIENT WINDOW, and no cursor moved. A trigger replays what the

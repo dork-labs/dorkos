@@ -192,6 +192,25 @@ export interface RoomContextMember extends RoomContextAuthor {
 /** One room entry, flattened for the model. */
 export interface RoomContextEntry {
   /**
+   * This entry's own id — the `entryId` an agent needs to act on this message.
+   *
+   * **The one id a model cannot work out for itself.** A member is addressed by
+   * handle, so {@link RoomContextMember} deliberately carries no id; a message
+   * has no handle, and every verb that acts on one takes this opaque string. An
+   * agent that is not given it guesses, and what it guesses is the room's name
+   * (DOR-1263).
+   *
+   * Server-generated and opaque, which is what makes it a LABEL rather than
+   * somebody's words: a renderer prints it outside its untrusted fence,
+   * sanitized like every other label.
+   *
+   * **Required rather than optional, and that is the safety property** — the
+   * same one {@link RoomContextEntry.attachments} states. Every builder of a
+   * `RoomContextEntry` is in this repo, and an optional id would let a line
+   * render without one, which is exactly the state this field exists to remove.
+   */
+  id: string;
+  /**
    * The sanitized forum-topic label this entry was posted under, or `null` for
    * an entry with none (chats-as-channels spec §5.6, §9.2). Phase 1 folds every
    * Telegram forum topic into one room (D-6 Q1), so this is what keeps a folded
@@ -256,12 +275,16 @@ export interface RoomContextEntry {
    */
   arrivedDuringPrevTurn?: boolean;
   /**
-   * The files posted with this entry, as paths relative to the agent's own
+   * The files posted with this entry, as absolute paths inside the agent's own
    * working directory. Empty for an entry with none.
    *
-   * Relative, so this module stays pure: the path is a function of the entry id
-   * and the stored filename, identical for every agent, and never of a cwd this
-   * builder must not know.
+   * **Absolute, because a relative path is only openable if the reader knows
+   * what it is relative to.** The projection lands these files under the
+   * agent's working directory (ADR 260807-233816), and a live run measured what
+   * happens when the block does not say so: told
+   * `.dork/.temp/room-attachments/…`, the agent resolved it against the DorkOS
+   * home instead and got "File does not exist" (DOR-1266). Nothing new leaks —
+   * the agent's own cwd is already its cwd.
    *
    * **Required rather than optional, and that is the safety property.** Every
    * builder of a `RoomContextEntry` is in this repo, and an optional field here
@@ -485,8 +508,24 @@ export interface RoomContextData {
    */
   acknowledgments: RoomContextAcknowledgment[];
   /**
-   * The files posted with the message this turn is ANSWERING, as paths relative
-   * to the agent's own working directory. Empty when it carried none.
+   * The id of the message this turn is ANSWERING.
+   *
+   * Carried for the same reason {@link RoomContextData.triggerAttachments}
+   * below is: the triggering entry is deliberately not in
+   * {@link RoomContextData.pending} — it reaches the model as the turn's own
+   * content rather than as history — so everything DorkOS has to say about it
+   * has to ride here, since the prompt is that message byte for byte
+   * (ADR-0273).
+   *
+   * Without it the most ordinary thing an agent can be asked to do — "just
+   * acknowledge this" — has nothing to aim at: every verb that acts on a
+   * message takes an id, and the only message with no line of its own in the
+   * rendered block is the very one being answered (DOR-1263).
+   */
+  triggerEntryId: string;
+  /**
+   * The files posted with the message this turn is ANSWERING, as absolute paths
+   * inside the agent's own working directory. Empty when it carried none.
    *
    * Separate from every entry's own `attachments` because the triggering entry
    * is deliberately not in `pending`: it reaches the model as the turn's
@@ -713,6 +752,7 @@ export const RoomContextMemberSchema = RoomContextAuthorSchema.extend({
 
 /** Zod schema for {@link RoomContextEntry}. */
 export const RoomContextEntrySchema = z.object({
+  id: z.string(),
   authorHandle: z.string().nullable(),
   authorDisplayName: z.string(),
   authorIsPerson: z.boolean(),
@@ -761,6 +801,7 @@ export const RoomContextDataSchema = z.object({
   channelTailOmitted: z.number().int().nonnegative().optional(),
   ownRecent: z.array(RoomContextEntrySchema),
   acknowledgments: z.array(RoomContextAcknowledgmentSchema),
+  triggerEntryId: z.string(),
   triggerAttachments: z.array(z.object({ name: z.string(), path: z.string() })),
   addressing: z.object({
     responseMode: ResponseModeSchema,

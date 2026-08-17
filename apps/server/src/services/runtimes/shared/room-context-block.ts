@@ -20,7 +20,8 @@
  * ## Three regions, and the rule that divides them
  *
  * **The preamble holds LABELS only** — the room's name and topic, member
- * handles, who is working. Every one of them goes through `sanitizeIdentity`,
+ * handles, who is working, and the ids of the room and of the message being
+ * answered. Every one of them goes through `sanitizeIdentity`,
  * which removes every angle bracket and every control character rather than
  * matching tag spellings. That is what makes it complete: no spelling of a
  * closing tag survives having no `<` in it, however it is spaced, widened,
@@ -99,21 +100,45 @@ const NONCE_CHARS = 8;
 const TOPIC_MAX_LENGTH = 200;
 
 /**
+ * The projected half of an attachment path, at its longest.
+ *
+ * `.dork/.temp/room-attachments/` is 28 characters, two 26-character ULIDs and
+ * their separators take it to 82 before the filename, and
+ * `ROOM_ATTACHMENT_NAME_MAX` (255) plus its dash closes it at 338.
+ */
+const PROJECTED_ATTACHMENT_PATH_MAX = 338;
+
+/**
+ * The longest working directory any mainstream platform hands back: Linux's
+ * `PATH_MAX`. macOS caps at 1024 and Windows lower still, so this is the
+ * generous end of a real bound rather than a guess.
+ */
+const WORKING_DIRECTORY_MAX = 4096;
+
+/**
  * Cap on a rendered attachment path.
  *
  * **Sized so it can never actually truncate, and that is the whole point.** The
- * default {@link IDENTITY_MAX_LENGTH} is 80, and a projected path is already 82
- * characters BEFORE the filename — `.dork/.temp/room-attachments/` is 28, plus
- * two 26-character ULIDs and their separators. Sanitizing at the default would
+ * default {@link IDENTITY_MAX_LENGTH} is 80 and the projected path alone runs
+ * to {@link PROJECTED_ATTACHMENT_PATH_MAX}; sanitizing at the default would
  * have silently cut every path short, and a truncated path is the exact failure
- * ADR 260807-233816 forbids: the model is told to open a file that is not
- * there, and nothing anywhere reports it.
+ * ADR 260807-233816 forbids — the model is told to open a file that is not
+ * there, and nothing anywhere reports it. Since DOR-1266 the path is ABSOLUTE,
+ * so the worst case gained the agent's own working directory on the front.
  *
- * 338 is the real worst case — that prefix plus `ROOM_ATTACHMENT_NAME_MAX`
- * (255) and its separator — so this is a ceiling that exists to keep the line
- * bounded, never one the shortest real path approaches.
+ * This is a ceiling that keeps a line bounded, never one a real path
+ * approaches.
+ *
+ * **The residual is the collapse, not the cap.** {@link label} squeezes
+ * whitespace runs to one space, so a working directory containing a tab, a
+ * newline or two spaces in a row would render as a path that does not open.
+ * Sanitizing anyway is the right trade: the alternative is an unsanitized
+ * filesystem path in the region whose whole guarantee is that everything in it
+ * went through `sanitizeIdentity`, and a directory literally named
+ * `</room_context>` is legal on every POSIX filesystem. Every other component
+ * is server-chosen and already restricted to `[a-zA-Z0-9._-]`.
  */
-const ATTACHMENT_PATH_MAX_LENGTH = 338;
+const ATTACHMENT_PATH_MAX_LENGTH = WORKING_DIRECTORY_MAX + PROJECTED_ATTACHMENT_PATH_MAX;
 
 /** Prefix for a label that sanitized away to nothing — a name of only tag syntax. */
 const UNNAMEABLE = 'unnamed';
@@ -396,6 +421,29 @@ function body(text: string): string {
 }
 
 /**
+ * One message's own id, bracketed the way its line carries it (DOR-1263).
+ *
+ * **A LABEL, and one only the server can write.** Every verb an agent has in a
+ * room takes an opaque id, and until this rendered nowhere an agent asked to
+ * react to "this message" had nothing to name: a live eval watched a model
+ * answer "no reply needed, just ack this" with a text post because the tool it
+ * had could not be aimed, and an operator's own agent guessed the channel's
+ * NAME and was told `ROOM_NOT_FOUND`. So it sits beside `[topic: …]` in the
+ * part of the line DorkOS wrote, before the `: ` that starts what somebody
+ * typed — a member can put these characters in a message, but only after the
+ * separator, where it is plainly their words.
+ *
+ * Through {@link label} like every other label, which for a ULID is a no-op and
+ * is the point: the region is trusted because everything reaching it was
+ * sanitized, never because of where a value came from.
+ *
+ * @param entryId - The entry's id, as the store holds it.
+ */
+function idLabel(entryId: string): string {
+  return `[id: ${label(entryId)}]`;
+}
+
+/**
  * The clock face of an ISO timestamp, `HH:MM` in UTC.
  *
  * A model needs the ordering and the gaps, not the date, and every room
@@ -565,6 +613,11 @@ function entryLine(entry: RoomContextEntry): string {
     entry.kind === 'notice'
       ? ''
       : ` (${entry.authorIsPerson ? 'person' : 'agent'}${from}${addressNote(author)})`;
+  // On every line, notices included, because the whole point is that an agent
+  // never has to work out which message it is talking about (DOR-1263). One
+  // ULID a line is the cost, and it buys the difference between a tool that can
+  // be aimed and one that cannot.
+  const id = ` ${idLabel(entry.id)}`;
   const topic = entry.topicLabel ? ` [topic: ${label(entry.topicLabel, TOPIC_MAX_LENGTH)}]` : '';
   const mention = entry.mentionsMe ? ' [mentions you]' : '';
   // **A label, and one only the server can write** (RP8). It is the room-side
@@ -588,13 +641,17 @@ function entryLine(entry: RoomContextEntry): string {
   // No cap on the count: `config.uploads.maxFiles` already bounds it at write
   // time, and a second limit here would silently drop a path the projector
   // still wrote — the one disagreement this whole design forbids.
+  //
+  // The path arrives ABSOLUTE (DOR-1266), so `Read` on it works from wherever
+  // the model happens to think it is standing; {@link ATTACHMENT_PATH_MAX_LENGTH}
+  // is sized for that and still cannot truncate one.
   const attached =
     entry.attachments.length > 0
       ? ` [attached: ${entry.attachments
           .map((file) => label(file.path, ATTACHMENT_PATH_MAX_LENGTH))
           .join(', ')}]`
       : '';
-  return `[${clock(entry.at)}] ${who}${what}${topic}${mention}${steered}${attached}: ${body(entry.text)}`;
+  return `[${clock(entry.at)}] ${who}${what}${id}${topic}${mention}${steered}${attached}: ${body(entry.text)}`;
 }
 
 /**
@@ -669,6 +726,38 @@ function selfIdentity(self: RoomContextMember): string {
 }
 
 /**
+ * The one line that says what to name when acting on this room or this message
+ * (DOR-1263).
+ *
+ * **The ids belong in the labels region, and that is what they are.** They are
+ * strings DorkOS generated ABOUT the conversation, never anything typed inside
+ * it, so they render here — beside the room's name and the roster — sanitized
+ * like every other label. Nothing a member writes can put a second one of these
+ * lines in front of the model: everything reaching this region has been through
+ * {@link label}, which leaves no newline to break onto.
+ *
+ * **Runtime-neutral, so it names the FIELDS and not the tools.** This block is
+ * rendered for claude-code, codex and opencode alike, and only claude-code
+ * carries the in-session room tools — telling the other two here that they have
+ * a reaction verb would be a claim about somebody else's configuration
+ * (room-participation spec §10.2.1). So this says what the ids ARE; what to do
+ * with them is `ROOM_TOOLS_CONTEXT`'s job, on the runtime where it is true.
+ *
+ * The example spelling is built by {@link idLabel} rather than written out, so
+ * the promise made here and the label on every line below cannot drift apart.
+ *
+ * @param data - The server-assembled room context.
+ */
+function idsLine(data: RoomContextData): string {
+  return (
+    `Ids here: this room is ${label(data.room.id)}, the message you are answering is ` +
+    `${label(data.triggerEntryId)}, and every message shown below carries its own as ` +
+    `${idLabel('…')}. Use those wherever a roomId or an entryId is asked for — a room's ` +
+    `name is not its id.`
+  );
+}
+
+/**
  * The lines describing where the turn is happening and how this agent behaves.
  *
  * Every value interpolated here is a label. Nothing in this function may render
@@ -701,6 +790,10 @@ function preamble(data: RoomContextData, where: string): string[] {
   lines.push(
     `${identity} ${respondsSentence(data.addressing.responseMode, data.room.kind)}${addressed}`
   );
+  // Straight after the line that says this message is for you, because the next
+  // thing an agent decides is what to DO about it — and every way of doing
+  // something here takes an id.
+  lines.push(idsLine(data));
   // The COUNT of what this turn is answering, in the labels region, where a
   // number DorkOS computed belongs. Said here as well as inside the fence
   // because the two say different things to a model working through a long
@@ -813,7 +906,13 @@ function preamble(data: RoomContextData, where: string): string[] {
 function fenced(data: RoomContextData, nonce: string): string | null {
   const quoted: string[] = [];
   if (data.thread) {
-    quoted.push(`[the message this thread hangs off] ${body(data.thread.rootExcerpt)}`);
+    // Its id too, because this is the one entry a thread turn is most likely to
+    // need to name — a reply is aimed at the message the thread hangs off — and
+    // it is the only rendered message with no `entryLine` of its own.
+    quoted.push(
+      `[the message this thread hangs off] ${idLabel(data.thread.rootEntryId)} ` +
+        `${body(data.thread.rootExcerpt)}`
+    );
   }
   for (const entry of data.pending) quoted.push(entryLine(entry));
   // The rest of what this turn is ANSWERING, under its own nonced heading and
