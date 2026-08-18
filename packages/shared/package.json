@@ -173,6 +173,10 @@
       "types": "./src/session-stream.ts",
       "default": "./dist/session-stream.js"
     },
+    "./interaction-events": {
+      "types": "./src/interaction-events.ts",
+      "default": "./dist/interaction-events.js"
+    },
     "./stream-socket": {
       "types": "./src/stream-socket.ts",
       "default": "./dist/stream-socket.js"
