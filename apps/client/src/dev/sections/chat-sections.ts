@@ -206,6 +206,42 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     category: 'Tools',
     keywords: ['receipt', 'approval', 'allowed', 'denied', 'expired', 'record', 'transcript'],
   },
+  // AskShowcases — the card family every surface draws (DOR-1330)
+  {
+    id: 'ask-card',
+    title: 'Ask card',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['ask', 'prompt', 'approval', 'question', 'elicitation', 'answer', 'card'],
+  },
+  {
+    id: 'ask-countdown',
+    title: 'Ask countdown',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['countdown', 'timeout', 'time left', 'urgent', 'warning', 'auto-deny'],
+  },
+  {
+    id: 'ask-burst',
+    title: 'Ask burst',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['burst', 'batch', 'allow all', 'deny all', 'stack', 'several'],
+  },
+  {
+    id: 'ask-receipts',
+    title: 'Ask receipts',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['receipt', 'answered', 'expired', 'cancelled', 'already', 'no longer needed'],
+  },
+  {
+    id: 'ask-tray',
+    title: 'Ask tray',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['tray', 'list', 'waiting on you', 'nothing needs you', 'header', 'pill'],
+  },
   // ChipShowcases
   {
     id: 'touchchip-every-verb-live',
