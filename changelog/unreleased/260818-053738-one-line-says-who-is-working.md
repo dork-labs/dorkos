@@ -7,6 +7,7 @@ covers:
   - 'feat(client): P2.5 — one line above the composer on both surfaces, and the three it replaces are gone (DOR-1329)'
   - "test(client,server,e2e): P2.6 — the whole priority table, the new route's authority, and the two claims only a browser can make (DOR-1329)"
   - 'feat(client): P2.7 — every lane state and both peek shapes in the Dev Playground (DOR-1329)'
+  - 'chore(client,server,e2e,docs): P2.9 — the phase gate, and every reference points at the line that exists (DOR-1329)'
 ---
 
 ### Added
