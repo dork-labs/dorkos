@@ -13,6 +13,7 @@ import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-libra
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { useSessionStreamStore } from '@/layers/entities/session';
 import {
@@ -118,33 +119,39 @@ function Lifecycle({ initialEvents }: { initialEvents: SessionEvent[] }) {
     },
   } as unknown as Transport;
 
+  // The burst card answers through the shared mutation now, which reads the
+  // pending-prompt query — so the panel needs the client the app gives it.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
   return (
-    <TransportProvider transport={transport}>
-      <MessageProvider
-        value={{
-          sessionId: 'session-1',
-          isStreaming: false,
-          isLatestWidgetMessage: false,
-          activeToolCallId: active?.toolCallId ?? null,
-          onToolRef: undefined,
-          focusedOptionIndex: -1,
-          onToolDecided: undefined,
-          inputZoneToolCallId: active?.toolCallId ?? null,
-        }}
-      >
-        {assistant && <AssistantMessageContent message={assistant} />}
-      </MessageProvider>
-      {active && (
-        <InteractiveInputPanel
-          sessionId="session-1"
-          activeInteraction={active}
-          pendingApprovals={pending}
-          focusedOptionIndex={-1}
-          onToolRef={() => {}}
-          onToolDecided={() => {}}
-        />
-      )}
-    </TransportProvider>
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <MessageProvider
+          value={{
+            sessionId: 'session-1',
+            isStreaming: false,
+            isLatestWidgetMessage: false,
+            activeToolCallId: active?.toolCallId ?? null,
+            onToolRef: undefined,
+            focusedOptionIndex: -1,
+            onToolDecided: undefined,
+            inputZoneToolCallId: active?.toolCallId ?? null,
+          }}
+        >
+          {assistant && <AssistantMessageContent message={assistant} />}
+        </MessageProvider>
+        {active && (
+          <InteractiveInputPanel
+            sessionId="session-1"
+            activeInteraction={active}
+            pendingApprovals={pending}
+            focusedOptionIndex={-1}
+            onToolRef={() => {}}
+            onToolDecided={() => {}}
+          />
+        )}
+      </TransportProvider>
+    </QueryClientProvider>
   );
 }
 

@@ -76,7 +76,15 @@ function askUrgency(secondsLeft: number | null): AskUrgency {
 interface AskCardRootProps {
   /** The card's body — the parts below, in whatever order the prompt needs. */
   children: ReactNode;
-  /** Whether this card is the keyboard shortcut's current target. */
+  /**
+   * Whether this card is the keyboard shortcut's current target.
+   *
+   * Defaults to TRUE, and that default is the fix: the transcript draws a queue
+   * of prompts and dims the ones that are not next, but every other surface
+   * draws one card at a time — so an unset flag meant every tray and lane card
+   * rendered at 60% and read as disabled (DOR-1330 review). A surface with a
+   * queue passes `false` for the ones behind the front.
+   */
   isActive?: boolean;
   /** Whether it has been answered, so it is no longer dimmed as background. */
   isResolved?: boolean;
@@ -117,7 +125,7 @@ function typingInto(target: EventTarget | null): boolean {
  */
 function AskCardRoot({
   children,
-  isActive = false,
+  isActive = true,
   isResolved = false,
   onAllow,
   onDeny,

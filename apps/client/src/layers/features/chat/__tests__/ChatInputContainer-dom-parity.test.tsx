@@ -95,6 +95,12 @@ vi.mock('@/layers/features/ask', () => ({
     <div data-testid="question-prompt">{toolCallId}</div>
   ),
   AskStack: () => null,
+  useAnswerAsk: () => ({
+    answer: vi.fn(),
+    answerAll: vi.fn(),
+    isAnswering: false,
+    error: null,
+  }),
 }));
 
 vi.mock('@/layers/features/commands', () => ({ CommandPalette: () => null }));

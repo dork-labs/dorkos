@@ -22,6 +22,12 @@ vi.mock('@/layers/features/ask', () => ({
     <button data-testid="submit-answers" onClick={() => onDecided?.({ '0': 'Blue' })} />
   ),
   AskStack: () => null,
+  useAnswerAsk: () => ({
+    answer: vi.fn(),
+    answerAll: vi.fn(),
+    isAnswering: false,
+    error: null,
+  }),
 }));
 
 // Nothing is waiting on the fleet in these cases: the panel reads the shared
