@@ -12,7 +12,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PermissionMode } from '@dorkos/shared/types';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
-import { deriveLaneState, NO_ASKS, type LaneState } from '@/layers/features/conversation';
+import {
+  deriveLaneState,
+  NO_ASKS,
+  NO_PRESENCE,
+  type LaneState,
+} from '@/layers/features/conversation';
 import { useElapsedTime } from '@/layers/shared/model';
 import { isBypassPermissionMode, TIMING } from '@/layers/shared/lib';
 import { SESSION_CAPABILITIES } from '../config/session-capabilities';
@@ -121,7 +126,7 @@ export function useSessionLaneState(input: SessionLaneInput): LaneState {
     capabilities: SESSION_CAPABILITIES,
     asks: NO_ASKS,
     stalled: false,
-    presence: [],
+    presence: NO_PRESENCE,
     queueDepth: 0,
     turn: {
       status: input.status,

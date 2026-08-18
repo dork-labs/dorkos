@@ -437,7 +437,7 @@ export function ChatPanel({
           always 24px tall, so a turn starting or ending moves nothing that is
           already on screen — which the collapsing strip it replaces did on
           every turn. */}
-        <Conversation.LiveLane state={laneState} />
+        <Conversation.LiveLane state={laneState} scope="session" />
 
         <AnimatePresence>
           {showSuggestions && (

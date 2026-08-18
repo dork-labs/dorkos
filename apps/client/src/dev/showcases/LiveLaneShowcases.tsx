@@ -336,10 +336,36 @@ export function LiveLaneShowcase() {
       <ShowcaseLabel>
         Reduced motion — the dot stays and only its breathing goes. The branch is OFF, not shorter:
         every end state above reads statically, so a reader who asked for less motion loses nothing
-        but the movement. It follows the reader&apos;s own system setting rather than anything on
-        this page — turn &ldquo;Reduce motion&rdquo; on and every lane here changes at once. Which
-        branch a lane took is stamped on the element as data-lane-motion.
+        but the movement. In the app it follows the reader&apos;s own system setting; these two are
+        forced, which is the only way a bench can draw the branch at all.
       </ShowcaseLabel>
+      <ShowcaseDemo>
+        <LaneBox>
+          <Conversation.LiveLane
+            state={presence([claim('Meeting Notes', 64)])}
+            reducedMotionOverride
+          />
+        </LaneBox>
+        <LaneBox>
+          <Conversation.LiveLane state={turn()} reducedMotionOverride />
+        </LaneBox>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        The same two with motion on, for comparison — the working dot breathes and nothing else in
+        the lane moves
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <LaneBox>
+          <Conversation.LiveLane
+            state={presence([claim('Meeting Notes', 64)])}
+            reducedMotionOverride={false}
+          />
+        </LaneBox>
+        <LaneBox>
+          <Conversation.LiveLane state={turn()} reducedMotionOverride={false} />
+        </LaneBox>
+      </ShowcaseDemo>
     </PlaygroundSection>
   );
 }
@@ -351,7 +377,11 @@ const ONE_ROW: LivePeekRow[] = [
     author: AGENT_AUTHOR,
     state: 'working',
     since: new Date(Date.now() - 64_000).toISOString(),
-    replyingTo: { entryId: 'entry-1', excerpt: 'can you log today’s decisions?' },
+    replyingTo: {
+      entryId: 'entry-1',
+      excerpt: 'can you log today’s decisions?',
+      rowId: 'room-entry-1',
+    },
     sessionId: 'session-meeting-notes',
   },
 ];
@@ -364,7 +394,11 @@ const THREE_ROWS: LivePeekRow[] = [
     author: { ...AGENT_AUTHOR, id: 'release-bot', displayName: 'Release Bot', emoji: '🚢' },
     state: 'working_late',
     since: new Date(Date.now() - 740_000).toISOString(),
-    replyingTo: { entryId: 'entry-2', excerpt: 'can somebody check the deploy' },
+    replyingTo: {
+      entryId: 'entry-2',
+      excerpt: 'can somebody check the deploy',
+      rowId: 'room-entry-2',
+    },
     // Nothing bound: the link is ABSENT rather than disabled.
     sessionId: null,
   },

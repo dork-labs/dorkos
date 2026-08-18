@@ -16,6 +16,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
+  threadRootIdOf,
   useHaltRoom,
   useRoomPresenceClaims,
   useRoomSessions,
@@ -33,8 +34,15 @@ import {
   type LivePeekRow,
 } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
-import { authorsById, toMessageAuthor } from '../lib/room-timeline';
+import {
+  authorsById,
+  entryRowId,
+  threadPanelRowId,
+  threadRowId,
+  toMessageAuthor,
+} from '../lib/room-timeline';
 import { useRoomAgentDirectory } from '../model/agent-info-context';
+import { scrollToRow } from './RoomTimeline';
 
 /**
  * What to call an agent the roster does not hold.
@@ -70,13 +78,6 @@ export interface RoomLiveLaneProps {
   unavailable?: boolean;
   /** Ask the stream to try now. Omitted where this lane does not own the retry. */
   onRetry?: () => void;
-  /**
-   * Jump the timeline to an entry and flash it.
-   *
-   * Interim in P2: the room's list exposes `scrollToRow(rowId, { flash })` and
-   * `Conversation.Timeline`'s real handle replaces it in P4 (DOR-1331).
-   */
-  onScrollToRow?: (entryId: string) => void;
 }
 
 /**
@@ -97,7 +98,6 @@ export function RoomLiveLane({
   stalled,
   unavailable = false,
   onRetry,
-  onScrollToRow,
 }: RoomLiveLaneProps) {
   const navigate = useNavigate();
   const claims = useRoomPresenceClaims(room.id, scope);
@@ -158,20 +158,60 @@ export function RoomLiveLane({
     [entries]
   );
 
+  /**
+   * Which element on screen "replying to …" should take the reader to, or
+   * `null` when there is none.
+   *
+   * **Quotable is not the same as rendered**, which is what made the first
+   * version of this a dead control. A room's flow draws top-level entries only
+   * (`groupByThread` keeps replies out of it), the panel draws the open thread's
+   * rows under their own ids, and on a phone the room column is unmounted while
+   * a thread is open — so an entry this host can quote from `entries` may have
+   * no row anywhere. Three cases, each answered honestly:
+   *
+   * - **The thread panel's lane** aims inside the panel, where its own claims
+   *   are by construction (its scope is the open thread's replies).
+   * - **The room's lane** aims at the flow when the entry is top-level, and at
+   *   the "↳ N replies" row of its thread when it is not — which is the truest
+   *   place a room can take you for a reply it does not itself draw.
+   * - **Anything else** gets no link, and the peek shows the row without one.
+   */
+  const rowIdFor = useCallback(
+    (entryId: string): string | null => {
+      if (laneScope === 'thread') return threadPanelRowId(entryId);
+      const entry = entries.find((candidate) => candidate.id === entryId);
+      if (entry === undefined) return null;
+      // `?? null` because `threadRootIdOf` reads two OPTIONAL fields and can
+      // answer `undefined` in spite of its `string | null` signature.
+      const rootId = threadRootIdOf(entry) ?? null;
+      if (rootId === null) return entryRowId(entryId);
+      // A reply the room does not draw: offer its thread's own row instead, and
+      // only when that root is itself in the flow.
+      const root = entries.find((candidate) => candidate.id === rootId);
+      if (root === undefined || (threadRootIdOf(root) ?? null) !== null) return null;
+      return threadRowId(rootId);
+    },
+    [entries, laneScope]
+  );
+
   const peekRows = useMemo<LivePeekRow[]>(
     () =>
       claims.map((claim) => {
         const excerpt = excerptOf(claim.entryId);
+        const rowId = rowIdFor(claim.entryId);
         return {
           authorId: claim.authorId,
           author: toMessageAuthor(claim.authorId, authors, agents.faces),
           state: claim.state,
           since: claim.since,
-          replyingTo: excerpt === null ? null : { entryId: claim.entryId, excerpt },
+          // Both halves or neither: a link with nothing to say and a link with
+          // nowhere to go are the same broken promise.
+          replyingTo:
+            excerpt === null || rowId === null ? null : { entryId: claim.entryId, excerpt, rowId },
           sessionId: sessionByAuthor.get(claim.authorId) ?? null,
         };
       }),
-    [claims, authors, agents.faces, excerptOf, sessionByAuthor]
+    [claims, authors, agents.faces, excerptOf, rowIdFor, sessionByAuthor]
   );
 
   const faces = useMemo(() => {
@@ -206,7 +246,7 @@ export function RoomLiveLane({
       peek={
         <Conversation.LivePeek
           rows={peekRows}
-          onScrollToRow={onScrollToRow}
+          onScrollToRow={scrollToRow}
           onOpenSession={(sessionId) => {
             void navigate({ to: '/session', search: { session: sessionId } });
           }}

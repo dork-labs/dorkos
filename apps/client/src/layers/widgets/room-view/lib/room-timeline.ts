@@ -256,6 +256,19 @@ export function threadRowId(rootEntryId: string): string {
 }
 
 /**
+ * The DOM id of a message row inside the open THREAD PANEL.
+ *
+ * A namespace of its own, and it has to be one: a thread's root is drawn twice
+ * on a wide screen — once in the room's flow and once at the head of the panel —
+ * so reusing {@link entryRowId} would put the same id on two elements and
+ * `getElementById` would answer with whichever came first. The panel's lane
+ * resolves its own claims through this; the room's lane never does.
+ */
+export function threadPanelRowId(entryId: string): string {
+  return `thread-panel-entry-${entryId}`;
+}
+
+/**
  * The DOM id of a message row in the ROOM's own timeline.
  *
  * The fallback the reply row cannot be: a thread opened from the capsule's
