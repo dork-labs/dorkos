@@ -51,7 +51,7 @@ useChatSession processes event
   |  Adds ToolCallState with interactiveType to message
   |
   v
-MessageItem renders interactive component
+AssistantMessageContent renders interactive component
   |
   |  QuestionPrompt or ToolApproval
   |
@@ -181,7 +181,7 @@ export function handleQuestionPrompt(helpers, data, assistantId) {
 
 **4. The message UI renders `QuestionPrompt`**
 
-`QuestionPrompt` is rendered from `ui/message/AssistantMessageContent.tsx` (inline, when a tool-call part has `interactiveType === 'question'` and `questions`) and from `ui/input/InteractiveInputPanel.tsx` (the pinned input-zone variant). There is no `MessageItem` switch — `interactiveType` is matched at the part level:
+`QuestionPrompt` is rendered from `ui/message/AssistantMessageContent.tsx` (inline, when a tool-call part has `interactiveType === 'question'` and `questions`) and from `ui/input/InteractiveInputPanel.tsx` (the pinned input-zone variant). There is no row-level switch — `interactiveType` is matched at the part level:
 
 ```typescript
 // ui/message/AssistantMessageContent.tsx
@@ -374,10 +374,10 @@ case 'approval_required': {
 }
 ```
 
-**4. `MessageItem` renders `ToolApproval`**
+**4. `AssistantMessageContent` renders `ToolApproval`**
 
 ```typescript
-// MessageItem.tsx
+// ui/message/AssistantMessageContent.tsx
 if (tc.interactiveType === 'approval') {
   return <ToolApproval sessionId={sessionId} toolCallId={tc.toolCallId} toolName={tc.toolName} input={tc.input} />;
 }
@@ -418,7 +418,7 @@ await transport.batchDenyTool(sessionId, toolCallIds);
 
 After the user clicks Approve or Deny, the transport call resolves the server-side promise — but the server's `tool_result` event can take seconds for slow tools (e.g., Bash). Without an optimistic update, the `InferenceIndicator` would stay stuck on "Waiting for your approval" during that gap.
 
-The fix: `ToolApproval` receives an `onDecided` callback (threaded from `useChatSession` → `ChatPanel` → `MessageList` → `MessageItem` → `ToolApproval`). This calls `markToolCallResponded(toolCallId)`, which immediately sets the tool call part's status from `'pending'` to `'running'` in the message state:
+The fix: `ToolApproval` receives an `onDecided` callback (threaded from `useChatSession` → `ChatPanel` → `MessageList` → `SessionMessage` → `MessageContext` → `AssistantMessageContent` → `ToolApproval`). This calls `markToolCallResponded(toolCallId)`, which immediately sets the tool call part's status from `'pending'` to `'running'` in the message state:
 
 ```typescript
 // useChatSession.ts — markToolCallResponded
@@ -494,7 +494,7 @@ function handleElicitation(session, elicitationId, message, requestedSchema) {
 
 The stream event handler adds a tool call entry with `interactiveType: 'elicitation'` and stores the schema.
 
-**4. `MessageItem` renders `ElicitationPrompt`**
+**4. `AssistantMessageContent` renders `ElicitationPrompt`**
 
 `ElicitationPrompt.tsx` generates form fields dynamically from the `requestedSchema` (string inputs, number inputs, checkboxes, selects). On submit, it calls:
 
@@ -701,16 +701,18 @@ Create a component in `apps/client/src/layers/features/chat/ui/` that:
 
 Follow the patterns in `QuestionPrompt.tsx` and `ToolApproval.tsx`.
 
-### Step 7: Wire into `MessageItem`
+### Step 7: Wire into `AssistantMessageContent`
 
-Add a condition in `MessageItem.tsx` to render your component:
+A session row is `SessionMessage.tsx`, and it draws no tool cards itself: the row is the shared `Message.*` chrome (`features/conversation`), and everything inside it comes from the session's body renderer, `render-session-body.tsx`. That renderer splits by role only — `UserMessageContent` for what the reader typed, `AssistantMessageContent` for everything else — so an interactive tool is wired into `AssistantMessageContent`, one part at a time:
 
 ```typescript
-// apps/client/src/layers/features/chat/ui/MessageItem.tsx
-if (tc.interactiveType === 'my_new_type') {
-  return <MyNewInteractive key={tc.toolCallId} sessionId={sessionId} toolCallId={tc.toolCallId} /* ... */ />;
+// apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx
+if (toolPart.interactiveType === 'my_new_type') {
+  return <MyNewInteractive key={toolPart.toolCallId} sessionId={sessionId} toolCallId={toolPart.toolCallId} /* ... */ />;
 }
 ```
+
+The keyboard props your component may need — `activeToolCallId`, `onToolRef`, `focusedOptionIndex` — are not passed down as props. `SessionMessage` puts them on `MessageContext`, and `AssistantMessageContent` reads them with `useMessageContext()`.
 
 ## Agent UI Control
 

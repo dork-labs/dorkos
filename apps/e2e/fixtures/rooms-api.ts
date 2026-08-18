@@ -72,7 +72,7 @@ export interface SeededAgent {
  *
  * `body.notice` is what makes an entry the room speaking rather than somebody
  * in it — a notice is an ordinary row whose body says so, which is how the
- * cockpit tells them apart too (`RoomNoticeRow`). `authorId` is the only handle
+ * cockpit tells them apart too (`NoticeRow`). `authorId` is the only handle
  * on WHO said something: a reply carries no name on it, only the id its author
  * resolved to.
  */

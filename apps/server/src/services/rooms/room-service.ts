@@ -2497,7 +2497,7 @@ export class RoomService {
    * fields, and reaches readers on the same stream; what makes it one is
    * `body.moment`, which says what it marks and — the rule the whole feature
    * stands on — what real record it was read from. The feed draws it
-   * differently (`RoomMomentRow`); nothing else has to know.
+   * differently (`MomentRow`); nothing else has to know.
    *
    * **Two ways in, and they are not the same permission.**
    * - *DorkOS itself* (no `authorId`): written by the system author, and

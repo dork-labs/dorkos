@@ -298,15 +298,17 @@ ChatPanel
   ├── activeToolHandleRef (InteractiveToolHandle)
   │
   └── MessageList
-        └── MessageItem (receives activeToolCallId, onToolRef, focusedOptionIndex)
-              ├── ToolApproval (forwardRef → ToolApprovalHandle)
-              │     isActive={toolCallId === activeToolCallId}
-              │     ref={isActive ? approvalRefCallback : undefined}
-              │
-              └── QuestionPrompt (forwardRef → QuestionPromptHandle)
-                    isActive={toolCallId === activeToolCallId}
-                    ref={isActive ? questionRefCallback : undefined}
-                    focusedOptionIndex={isActive ? focusedOptionIndex : -1}
+        └── SessionMessage (receives activeToolCallId, onToolRef, focusedOptionIndex)
+              └── MessageContext (the three props, put on context for the body)
+                    └── AssistantMessageContent (reads them with useMessageContext)
+                          ├── ToolApproval (ref → ToolApprovalHandle)
+                          │     isActive={toolCallId === activeToolCallId}
+                          │     ref={isActive ? approvalRefCallback : undefined}
+                          │
+                          └── QuestionPrompt (ref → QuestionPromptHandle)
+                                isActive={toolCallId === activeToolCallId}
+                                ref={isActive ? questionRefCallback : undefined}
+                                focusedOptionIndex={isActive ? focusedOptionIndex : -1}
 ```
 
 ### `ChatPanel.tsx`
@@ -340,7 +342,7 @@ useInteractiveShortcuts({
 });
 ```
 
-### `MessageItem.tsx`
+### `SessionMessage.tsx`
 
 Threads three props from `ChatPanel` through `MessageList`:
 
@@ -348,7 +350,7 @@ Threads three props from `ChatPanel` through `MessageList`:
 - **`onToolRef`** -- Callback to register the imperative handle of the active component
 - **`focusedOptionIndex`** -- Which option is keyboard-focused in `QuestionPrompt`
 
-For each tool call part, `MessageItem` checks `part.toolCallId === activeToolCallId` and conditionally passes the `ref` callback. Only the active tool's ref is captured -- inactive tools do not register handles.
+It does not consume them. The row itself is the shared `Message.*` chrome, so it puts all three on `MessageContext` and lets the body renderer read them: `AssistantMessageContent` calls `useMessageContext()`, checks `part.toolCallId === activeToolCallId` for each tool call part, and conditionally passes the `ref` callback. Only the active tool's ref is captured -- inactive tools do not register handles.
 
 ### `ToolApproval.tsx`
 
@@ -453,7 +455,7 @@ When adding a new interactive tool (see `contributing/interactive-tools.md`), ex
 
 1. **Add a new type** to `activeInteraction.type` (currently `'approval' | 'question'`) in the `UseInteractiveShortcutsOptions` interface in `apps/client/src/layers/shared/model/use-interactive-shortcuts.ts`.
 2. **Add a new branch** in the `handler` function inside `useInteractiveShortcuts` for your type's key bindings.
-3. **Define a handle interface** for your component (e.g., `MyToolHandle`) and add it to the `InteractiveToolHandle` union in `MessageItem.tsx`.
+3. **Define a handle interface** for your component (e.g., `MyToolHandle`) and add it to the `InteractiveToolHandle` union in `ui/message/types.ts`.
 4. **Expose the handle** via `forwardRef` + `useImperativeHandle` in your component.
 5. **Wire callbacks** in `ChatPanel.tsx` that delegate from the shortcut hook to the imperative handle.
 6. **Render `Kbd` hints** in your component, conditioned on `isActive`.

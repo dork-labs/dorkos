@@ -562,7 +562,7 @@ export type RoomMomentSource = z.infer<typeof RoomMomentSourceSchema>;
  * {@link RoomEntryBodySchema} beside the words a person reads, so every path
  * that already carries a post carries this one — the history page, the stream,
  * a bridge, a thread reply — and nothing had to learn a new entry kind. What
- * changes is how the feed DRAWS it (`RoomMomentRow`).
+ * changes is how the feed DRAWS it (`MomentRow`).
  *
  * **`source` is what makes the type honest.** It is required, so the schema
  * itself refuses a moment nobody can trace; a detector with nothing to point at

@@ -67,7 +67,7 @@ export class RoomsPage {
    *
    * Scoped to the timeline rather than to the page, and that scope is load-
    * bearing now that a thread has a panel: the panel draws its root and every
-   * reply as ordinary {@link RoomEntryRow}s — deliberately, a thread is a
+   * reply as ordinary `RoomMessage` rows — deliberately, a thread is a
    * different place and not a different kind of message — so a page-wide match
    * counts the same conversation twice. "How many messages are in the room" is
    * a question about the room, and the panel is beside it.
