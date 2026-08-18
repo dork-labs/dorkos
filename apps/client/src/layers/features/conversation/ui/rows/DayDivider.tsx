@@ -1,7 +1,7 @@
 /**
  * Full-bleed day boundary in the message list.
  *
- * @module features/chat/ui/message/DayDivider
+ * @module features/conversation/ui/rows/DayDivider
  */
 
 interface DayDividerProps {
@@ -20,6 +20,7 @@ interface DayDividerProps {
 export function DayDivider({ label }: DayDividerProps) {
   return (
     <div
+      data-slot="day-divider"
       data-testid="day-divider"
       role="separator"
       aria-label={label}

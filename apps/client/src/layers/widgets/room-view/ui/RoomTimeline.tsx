@@ -5,12 +5,17 @@ import { useNow } from '@/layers/shared/model';
 import { Button, Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { isRoomMember, usePendingPosts } from '@/layers/entities/room';
-import { DayDivider, UnreadDivider } from '@/layers/features/chat';
-import { authorsById, entryRowId, groupByThread, toMessageAuthor } from '../lib/room-timeline';
+import { DayDivider, ThreadReplyRow, UnreadDivider } from '@/layers/features/conversation';
+import {
+  authorsById,
+  entryRowId,
+  groupByThread,
+  threadRowId,
+  toMessageAuthor,
+} from '../lib/room-timeline';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
 import { RoomEntryRow } from './RoomEntryRow';
 import { RoomPendingList } from './RoomPendingRow';
-import { RoomThreadReplyRow } from './RoomThreadReplyRow';
 
 interface RoomTimelineProps {
   /** The room on screen. Every entry's actions act on it. */
@@ -277,8 +282,8 @@ export function RoomTimeline({
                 rowId={entryRowId(entry.id)}
               />
               {replies && (
-                <RoomThreadReplyRow
-                  rootEntryId={entry.id}
+                <ThreadReplyRow
+                  id={threadRowId(entry.id)}
                   replies={replies}
                   lastReadSeq={lastReadSeq}
                   open={openThreadId === entry.id}

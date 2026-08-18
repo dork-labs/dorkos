@@ -8,7 +8,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 2 / 48
+**Tasks Completed:** 3 / 48
 
 ## Tasks Completed
 
@@ -30,6 +30,14 @@
   - Modified: `features/entry-actions/lib/entry-actions.ts` (`run-with` slot, excluded from `EntryActionId`, third in `ENTRY_ACTION_ORDER`), `ui/EntryActionBar.tsx` (`runWith` prop → the slot), `ui/EntryActionMenu.tsx` (doc: why the two menu-opening slots are not list items), `index.ts`; five chat suites' `vi.mock` paths
   - Design note: `run-with` is a bar SLOT like `react-more`, not an `EntryAction` command — it opens a menu rather than running, so `EntryAction`'s shape (and every existing assertion on it) is untouched. Its trigger keeps the tab stop it has today; every other capsule button stays roving. Reasons are in both files' TSDoc.
   - Seeded defect verified: making `barButtons` always emit the slot turned "draws nothing at all when it does not" red.
+
+- Task #1.4: Move the non-message rows and the one time formatter into the slice — worker: p1-builder
+  - Moved (git mv): `widgets/room-view/lib/entry-time.ts` → `features/conversation/lib/format-entry-time.ts`; `features/chat/ui/message/{DayDivider,UnreadDivider}.tsx` → `features/conversation/ui/rows/`; `widgets/room-view/ui/{RoomNoticeRow,RoomMomentRow,RoomThreadReplyRow}.tsx` → `features/conversation/ui/rows/{NoticeRow,MomentRow,ThreadReplyRow}.tsx`
+  - Created: `widgets/room-view/model/room-capabilities.ts` (`ROOM_CAPABILITIES` / `DM_CAPABILITIES`) — nominally task 1.5's, brought forward because `ThreadReplyRow` now gates on `capabilities.threads` and both the widget and the playground bench need the table to mount a Root
+  - Modified: `widgets/room-view/ui/RoomSurface.tsx` mounts `Conversation.Root` (surface from `room.kind`, `anchor="rail"`); `RoomTimeline.tsx` renders `ThreadReplyRow` with the host's `threadRowId`; both chat barrels; `MessageList.tsx`; the room-view barrel; `dev/showcases/RoomThreadShowcases.tsx` + `dev/sections/rooms-sections.ts` (the section's id and title follow the rename)
+  - Each row's root gained `data-slot` (`day-divider`, `unread-divider`, `notice-row`, `moment-row`, `thread-reply-row`); every `data-testid` is byte-identical to before
+  - Two rows lost a widget-level dependency they could not keep across the layer boundary: `MomentRow` takes its resolved `subject` + `subjectIdentity` as props (only the host can join a room's roster to the fleet — the rule `MessageAuthorAvatar` already states for its own destination), and `ThreadReplyRow` takes its DOM `id` from the host, which owns the id scheme. Markup and copy are unchanged, word for word.
+  - Three room test harnesses gained the `Conversation.Root` the widget now mounts (`RoomTimeline`, `RoomTimeline.mentions`, `room-agent-faces`). No assertion changed; a bench without a Root is testing a state the app never puts the component in.
 
 ## Files Modified/Created
 

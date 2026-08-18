@@ -6,7 +6,9 @@
  * `body.moment` to say what it marks and what it was read off. So this file
  * owns only what follows from a row being one — the calm band it draws in, the
  * identity it draws BESIDE the words, and the one mark the whole family shares.
- * `RoomEntryRow` still decides which of the three kinds of line an entry is.
+ * The host row still decides which of the three kinds of line an entry is, and
+ * resolves the identity: joining a room's roster to the fleet is the host's
+ * knowledge, not this row's.
  *
  * **Warm, and quiet about it.** The only colour on the row is the identity's
  * own, carried by the disc; the band itself is the same muted surface every
@@ -16,37 +18,49 @@
  * milestone that arrives in a feed a person is reading should not move the
  * words under their eyes.
  *
- * @module widgets/room-view/ui/RoomMomentRow
+ * @module features/conversation/ui/rows/MomentRow
  */
 import { icons } from '@dorkos/icons/registry';
 import type { RoomMoment } from '@dorkos/shared/room-schemas';
+import type { IdentityOrigin } from '@/layers/shared/lib';
 import { feedArticleProps, type FeedPosition } from '@/layers/shared/model';
 import type { MessageAuthor } from '@/layers/shared/model';
 import { IdentityHoverCard } from '@/layers/shared/ui';
 import type { RoomEntry } from '@/layers/entities/room';
-import { MessageAuthorAvatar } from '@/layers/features/conversation';
-import { formatAbsoluteTime, formatTime } from '../lib/entry-time';
-import { toMessageAuthor, type RosterAuthor } from '../lib/room-timeline';
-import { useAgentInfo, useRoomAgentFaces } from '../model/agent-info-context';
+import { formatAbsoluteTime, formatTime } from '../../lib/format-entry-time';
+import { MessageAuthorAvatar } from '../message/MessageAuthorAvatar';
 
 /** The one mark every moment carries — see `@dorkos/icons` for why there is only one. */
 const MomentMark = icons.moment;
 
-interface RoomMomentRowProps {
+/** What the identity card shows about a moment's subject beyond their face. */
+export interface MomentSubjectIdentity {
+  /** The verified handle, without its `@`, when the roster holds one. */
+  handle?: string;
+  /** Where they speak from, when it is not this machine. */
+  origin?: IdentityOrigin;
+  /** How that agent runs, when the fleet could say. Never invented. */
+  agent?: { runtime: string; model?: string };
+}
+
+interface MomentRowProps {
   /** The entry, whose `body.moment` made it one. */
   entry: RoomEntry;
   /** That moment, already read off the body by the row that dispatched here. */
   moment: RoomMoment;
-  /** Who WROTE it, resolved from the roster — DorkOS itself, or the agent that minted it. */
-  author: MessageAuthor;
   /**
-   * The room's whole roster, keyed by author id — how `body.subjectAuthorId`
-   * resolves to the identity the milestone is about.
+   * The identity the milestone is ABOUT, resolved by the host.
+   *
+   * A prop, never a lookup: `body.subjectAuthorId` resolves against the room's
+   * roster joined to the fleet, and only the host can reach both — the same
+   * rule {@link MessageAuthorAvatar} states for its own destination.
    */
-  authors: ReadonlyMap<string, RosterAuthor>;
+  subject: MessageAuthor;
+  /** The rest of what the subject's card shows, when the host resolved it. */
+  subjectIdentity?: MomentSubjectIdentity;
   /**
    * Where this row sits in the feed it is rendering inside, or omitted where it
-   * renders outside a feed entirely — see `RoomEntryRow`, which owns the rule.
+   * renders outside a feed entirely — see the host row, which owns the rule.
    */
   feedPosition?: FeedPosition;
   /** The DOM id to put on the row, when something has to be able to find it again. */
@@ -81,31 +95,20 @@ interface RoomMomentRowProps {
  * It is still an article of the feed, so Page Down lands on it like every
  * other line.
  */
-export function RoomMomentRow({
+export function MomentRow({
   entry,
   moment,
-  author,
-  authors,
+  subject,
+  subjectIdentity,
   feedPosition,
   rowId,
-}: RoomMomentRowProps) {
-  const subjectId = entry.body.subjectAuthorId ?? entry.authorId;
-  // The writer's own resolved author when the moment is about them, and a fresh
-  // resolve off the roster when it is about somebody else. One rule, so a
-  // subject the roster has forgotten degrades exactly as a departed member's
-  // old post does rather than disappearing.
-  const faces = useRoomAgentFaces();
-  const subject =
-    subjectId === entry.authorId ? author : toMessageAuthor(subjectId, authors, faces);
-  const subjectRef = authors.get(subjectId);
-  // How that agent runs, when the room's provider could find out — the same
-  // context every mention pill in this room reads.
-  const agent = useAgentInfo(subjectRef?.agentRef);
+}: MomentRowProps) {
   const time = formatTime(entry.createdAt);
 
   return (
     <div
       id={rowId}
+      data-slot="moment-row"
       data-testid="room-moment"
       data-moment={moment.kind}
       role="article"
@@ -118,14 +121,14 @@ export function RoomMomentRow({
           identity={{
             kind: subject.kind,
             displayName: subject.displayName,
-            handle: subjectRef?.handle ?? undefined,
+            handle: subjectIdentity?.handle,
             color: subject.color,
             emoji: subject.emoji,
             imageUrl: subject.imageUrl,
-            origin: subjectRef?.origin,
-            // A chip per fact the roster actually resolved, and nothing at all
+            origin: subjectIdentity?.origin,
+            // A chip per fact the host actually resolved, and nothing at all
             // for one it did not — never an invented runtime.
-            agent: agent && { runtime: agent.runtime, ...(agent.model && { model: agent.model }) },
+            agent: subjectIdentity?.agent,
           }}
         >
           {/* Named for the identity it draws, because this is the only place

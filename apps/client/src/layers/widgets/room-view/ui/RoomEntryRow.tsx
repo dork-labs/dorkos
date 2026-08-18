@@ -19,7 +19,13 @@ import {
 } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { profileMemberIdOf, type RoomEntry } from '@/layers/entities/room';
-import { messageItem } from '@/layers/features/conversation';
+import {
+  MomentRow,
+  NoticeRow,
+  formatAbsoluteTime,
+  formatTime,
+  messageItem,
+} from '@/layers/features/conversation';
 import {
   EntryActionMenu,
   EntryReactionRow,
@@ -29,17 +35,14 @@ import {
 } from '@/layers/features/entry-actions';
 import { entryRowArticleProps } from '../lib/entry-row-article';
 import { entrySummary } from '../lib/entry-summary';
-import { formatAbsoluteTime, formatTime } from '../lib/entry-time';
-import type { RosterAuthor } from '../lib/room-timeline';
-import { useAgentInfo } from '../model/agent-info-context';
+import { toMessageAuthor, type RosterAuthor } from '../lib/room-timeline';
+import { useAgentInfo, useRoomAgentFaces } from '../model/agent-info-context';
 import { useEntryReactions } from '../model/use-entry-reactions';
 import { useEntryRowKeys } from '../model/use-entry-row-keys';
 import { RoomEntryActions } from './RoomEntryActions';
 import { RoomEntryAttachments, attachmentsSummary } from './RoomEntryAttachments';
 import { RoomEntryBody } from './RoomEntryBody';
 import { RoomEntryAuthorLine, RoomEntryGutter } from './RoomEntryHeader';
-import { RoomMomentRow } from './RoomMomentRow';
-import { RoomNoticeRow } from './RoomNoticeRow';
 
 interface RoomEntryRowProps {
   /** The room this entry belongs to, which its actions act on. */
@@ -126,9 +129,9 @@ interface RoomEntryRowProps {
  * A `post` renders on the same grid session chat uses — identity gutter, then
  * the content column — so a room reads as the same surface with more people in
  * it. A `notice` is the room speaking about itself and renders as
- * {@link RoomNoticeRow}: a quiet full-width line with no author beside it and
+ * {@link NoticeRow}: a quiet full-width line with no author beside it and
  * no actions on it. A post carrying `body.moment` is a milestone and renders as
- * {@link RoomMomentRow} — a moment is a post, so nothing but the body says so.
+ * {@link MomentRow} — a moment is a post, so nothing but the body says so.
  *
  * `orphanedReply` adds one quiet line saying the row is answering something
  * out of view. Without it a reply whose thread head has scrolled out of the
@@ -219,6 +222,14 @@ export function RoomEntryRow({
   // the fleet could not name all resolve to `undefined`, and the gutter draws
   // plain art rather than a control that opens an empty profile.
   const authorAgent = useAgentInfo(authorRef?.agentRef);
+  // Who a MOMENT is about, resolved here because only the row can reach both
+  // the room's roster and the fleet — see `MomentRow`, which takes the answer
+  // as a prop for that reason. Computed for every row rather than inside the
+  // moment branch, because hooks may not hang off which kind of line this is.
+  const faces = useRoomAgentFaces();
+  const subjectId = entry.body.subjectAuthorId ?? entry.authorId;
+  const subjectRef = authors.get(subjectId);
+  const subjectAgent = useAgentInfo(subjectRef?.agentRef);
   const { open: openProfile } = useProfileDeepLink();
   const profileMemberId =
     authorRef === undefined ? undefined : profileMemberIdOf(authorRef, authorAgent?.memberId);
@@ -245,7 +256,7 @@ export function RoomEntryRow({
   });
 
   if (entry.kind === 'notice') {
-    return <RoomNoticeRow entry={entry} feedPosition={feedPosition} rowId={rowId} />;
+    return <NoticeRow entry={entry} feedPosition={feedPosition} rowId={rowId} />;
   }
 
   // A moment is a POST that marks something that really happened, so `kind`
@@ -255,11 +266,18 @@ export function RoomEntryRow({
   // log, at the same seq, in the same feed.
   if (entry.body.moment) {
     return (
-      <RoomMomentRow
+      <MomentRow
         entry={entry}
         moment={entry.body.moment}
-        author={author}
-        authors={authors}
+        subject={subjectId === entry.authorId ? author : toMessageAuthor(subjectId, authors, faces)}
+        subjectIdentity={{
+          handle: subjectRef?.handle ?? undefined,
+          origin: subjectRef?.origin,
+          agent: subjectAgent && {
+            runtime: subjectAgent.runtime,
+            ...(subjectAgent.model && { model: subjectAgent.model }),
+          },
+        }}
         feedPosition={feedPosition}
         rowId={rowId}
       />

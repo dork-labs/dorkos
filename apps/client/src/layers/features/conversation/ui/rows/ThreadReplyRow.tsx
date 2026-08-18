@@ -1,12 +1,21 @@
+/**
+ * The quiet line under a thread's root — the fourth kind of row a conversation
+ * can hold.
+ *
+ * @module features/conversation/ui/rows/ThreadReplyRow
+ */
 import { useState } from 'react';
 import { cn } from '@/layers/shared/lib';
 import { threadReplySummary, type RoomEntry } from '@/layers/entities/room';
-import { formatAbsoluteTime, formatTime } from '../lib/entry-time';
-import { threadRowId } from '../lib/room-timeline';
+import { useConversation } from '../../model/conversation-context';
+import { formatAbsoluteTime, formatTime } from '../../lib/format-entry-time';
 
-interface RoomThreadReplyRowProps {
-  /** The entry heading this thread — the row's identity, and what it opens. */
-  rootEntryId: string;
+interface ThreadReplyRowProps {
+  /**
+   * The DOM id to put on the row, so closing the panel can put the caret back
+   * on the line that opened it. Named by the host, which owns the id scheme.
+   */
+  id?: string;
   /** The replies hanging off one entry. Never empty — no replies, no row. */
   replies: RoomEntry[];
   /** The reader's read cursor, frozen at the room's open, or null for a non-member. */
@@ -41,13 +50,8 @@ interface RoomThreadReplyRowProps {
  * count: a ref seeded `null` at mount, so a row arriving with three replies
  * already on it is drawn at rest and only a genuine increment moves.
  */
-export function RoomThreadReplyRow({
-  rootEntryId,
-  replies,
-  lastReadSeq,
-  open,
-  onOpen,
-}: RoomThreadReplyRowProps) {
+export function ThreadReplyRow({ id, replies, lastReadSeq, open, onOpen }: ThreadReplyRowProps) {
+  const { capabilities } = useConversation();
   const { count, lastAt, unread } = threadReplySummary(replies, lastReadSeq);
   const time = formatTime(lastAt);
 
@@ -66,12 +70,20 @@ export function RoomThreadReplyRow({
   if (seen.count !== count) setSeen({ count, bumped: true });
   const bumped = seen.count === count && seen.bumped;
 
+  // A conversation with no threads has nothing for this line to summarise and
+  // nowhere for it to lead. The gate is the capability rather than the caller's
+  // discipline: a surface that gains a timeline before it gains threads would
+  // otherwise draw a row that opens a panel it does not have. Below the state
+  // above, because the hooks a row calls may not depend on what it draws.
+  if (!capabilities.threads) return null;
+
   return (
     <button
       type="button"
       // Addressable, so closing the panel can put the caret back on the row
-      // that opened it — see `threadRowId`.
-      id={threadRowId(rootEntryId)}
+      // that opened it — see the host's `threadRowId`.
+      id={id}
+      data-slot="thread-reply-row"
       data-testid="room-thread-replies"
       data-unread={unread > 0 ? '' : undefined}
       aria-expanded={open}

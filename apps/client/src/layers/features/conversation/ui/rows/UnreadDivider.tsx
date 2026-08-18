@@ -1,7 +1,7 @@
 /**
  * The "New messages" rule in the message list.
  *
- * @module features/chat/ui/message/UnreadDivider
+ * @module features/conversation/ui/rows/UnreadDivider
  */
 
 /** Label on the unread rule. Named so the row and its aria label can't drift. */
@@ -21,6 +21,7 @@ const UNREAD_LABEL = 'New messages';
 export function UnreadDivider() {
   return (
     <div
+      data-slot="unread-divider"
       data-testid="unread-divider"
       role="separator"
       aria-label={UNREAD_LABEL}

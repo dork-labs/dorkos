@@ -8,9 +8,6 @@ export { ChatPanel } from './ui/ChatPanel';
 // scripted onboarding conversation renders real message bubbles, the typing
 // indicator, the first-light arrival, and the composer without a live session).
 export { MessageItem } from './ui/message';
-// The two list-level rules, surfaced so the room view renders the same
-// separators session chat does (spec `rooms` §7).
-export { DayDivider, UnreadDivider } from './ui/message';
 export { resolveMessageAuthor } from './lib/resolve-message-author';
 export type { MessageAuthorAgent, MessageAuthorContext } from './lib/resolve-message-author';
 export { TypingDots } from './ui/primitives';

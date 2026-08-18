@@ -1,14 +1,15 @@
 /**
- * The room speaking about ITSELF — one quiet full-width line with a mark on it.
+ * The conversation speaking about ITSELF — one quiet full-width line with a
+ * mark on it.
  *
- * The other half of `RoomEntryRow`'s job, and the half that shares almost
- * nothing with it: a notice has no author beside it, no actions, and no thread,
- * so the grid, the toolbar and the reactions the row builds for a post are all
- * dead weight here. The row still decides WHICH of the two an entry is; this
- * module owns everything that follows from the answer being "notice", including
- * the table that tells sixteen codes apart at a glance.
+ * The other half of a message row's job, and the half that shares almost nothing
+ * with it: a notice has no author beside it, no actions, and no thread, so the
+ * grid, the toolbar and the reactions a post builds are all dead weight here.
+ * The host still decides WHICH kind of line an entry is; this module owns
+ * everything that follows from the answer being "notice", including the table
+ * that tells sixteen codes apart at a glance.
  *
- * @module widgets/room-view/ui/RoomNoticeRow
+ * @module features/conversation/ui/rows/NoticeRow
  */
 import {
   CircleSlash,
@@ -35,12 +36,12 @@ import { feedArticleProps, type FeedPosition } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import type { RoomEntry } from '@/layers/entities/room';
 
-interface RoomNoticeRowProps {
+interface NoticeRowProps {
   /** The notice to draw — its own words, and the code that chooses its mark. */
   entry: RoomEntry;
   /**
    * Where this row sits in the feed it is rendering inside, or omitted where it
-   * renders outside a feed entirely — see `RoomEntryRow`, which owns the rule.
+   * renders outside a feed entirely — see the host row, which owns the rule.
    */
   feedPosition?: FeedPosition;
   /** The DOM id to put on the row, when something has to be able to find it again. */
@@ -168,7 +169,7 @@ function noticeName(text: string): string {
  * into three words that say nothing. Naming it after its own text means the
  * worst case is hearing the line twice rather than never.
  */
-export function RoomNoticeRow({ entry, feedPosition, rowId }: RoomNoticeRowProps) {
+export function NoticeRow({ entry, feedPosition, rowId }: NoticeRowProps) {
   const { Icon, tone } = (entry.body.notice && NOTICE_STYLES[entry.body.notice]) ?? UNKNOWN_NOTICE;
 
   return (
@@ -178,6 +179,7 @@ export function RoomNoticeRow({ entry, feedPosition, rowId }: RoomNoticeRowProps
       // quietly become "the rows somebody remembered to pass an id to", and a
       // room's focus restore looks up entry ids, not entry kinds.
       id={rowId}
+      data-slot="notice-row"
       data-testid="room-notice"
       data-notice={entry.body.notice ?? 'unknown'}
       {...(feedPosition && { role: 'article', 'aria-label': noticeName(entry.body.text) })}

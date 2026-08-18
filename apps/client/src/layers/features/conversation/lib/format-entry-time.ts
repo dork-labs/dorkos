@@ -1,12 +1,12 @@
 /**
- * How a room writes the time on a line of its history.
+ * How a conversation writes the time on a line of its history.
  *
  * One module rather than a copy per row, because the two forms are a PAIR: the
  * short one is what a reader sees and the long one is what they get on hover or
  * from a screen reader, and a row that carried one without the other would show
  * a "9:45 AM" that nothing anywhere can date.
  *
- * @module widgets/room-view/lib/entry-time
+ * @module features/conversation/lib/format-entry-time
  */
 
 /**
@@ -15,7 +15,7 @@
  * `toLocaleTimeString` does not throw on an unparseable date — it renders
  * "Invalid Date" — so the guard has to be the parse, not a `try`.
  *
- * @param timestamp - An entry's ISO 8601 `createdAt`.
+ * @param timestamp - The row's ISO 8601 timestamp.
  */
 export function formatTime(timestamp: string): string {
   const ms = Date.parse(timestamp);
