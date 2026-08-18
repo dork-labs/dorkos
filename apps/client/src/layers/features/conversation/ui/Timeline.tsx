@@ -6,10 +6,11 @@
  * the pending rows drawn under the log, the scroller's own memory, and a room's
  * thread rows. Both of those files are gone.
  *
- * **What it owns, and what the host owns.** This owns the scroller, the
- * virtualizer, the feed semantics, the thumb, the two affordances for a reader
- * who has scrolled away, the rows waiting under the log, and the imperative
- * handle that takes somebody to a row. The HOST owns what a row looks like:
+ * **What it owns, and what the host owns.** This owns the scroller, the feed
+ * semantics, the rows waiting under the log, and the imperative handle that
+ * takes somebody to a row; the measurement contract, the landing, the edge
+ * hand-back, the thumb and the two scrolled-away affordances are each their own
+ * file beside it. The HOST owns what a row looks like:
  * `renderRow` is called for every row, so a session draws `SessionMessage` and
  * a channel draws `RoomMessage`, both of them built from the same `Message.*`
  * parts. That seam is deliberate — the two rows differ in what they KNOW (a
@@ -26,50 +27,23 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useLayoutEffect,
   useMemo,
   useRef,
-  useState,
   type ReactNode,
   type Ref,
 } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { AnimatePresence, motion } from 'motion/react';
-import { ArrowDown } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { FEED_ARTICLE_ATTR } from '@/layers/shared/model';
 import { Feed } from '@/layers/shared/ui';
 import type { PendingPost } from '@/layers/entities/room';
-import type { ConversationRow } from '../lib/row-kinds';
+import type { ConversationRow, ConversationRowRenderer } from '../lib/row-kinds';
 import { useConversation } from '../model/conversation-context';
+import { useFeedEdgeFocus } from '../model/use-feed-edge-focus';
+import { useTimelineLanding } from '../model/use-timeline-landing';
+import { useTimelineVirtualizer } from '../model/use-timeline-virtualizer';
 import { useTimelineScroll } from '../model/use-timeline-scroll';
 import { PendingRow } from './rows/PendingRow';
 import { ScrollThumb } from './ScrollThumb';
-
-/** What a row is told about where it is being drawn. */
-export interface ConversationRowContext {
-  /**
-   * Where this row sits in the list it was handed in.
-   *
-   * The host builds `rows` from its own richer row model, so this is how it
-   * reads the rest of that model back — `hostRows[ctx.index]` is the same row,
-   * by construction.
-   */
-  index: number;
-  /**
-   * Open this row's thread, or `undefined` when the conversation has none.
-   *
-   * Gated on `capabilities.threads` here rather than at every call site, so a
-   * surface without threads cannot grow a reply row by accident.
-   */
-  onOpenThread?: (rootId: string) => void;
-}
-
-/** Draws one row of a conversation. */
-export type ConversationRowRenderer = (
-  row: ConversationRow,
-  context: ConversationRowContext
-) => ReactNode;
+import { TimelineAffordances } from './TimelineAffordances';
 
 /** What a caller can make the timeline do. */
 export interface ConversationTimelineHandle {
@@ -103,8 +77,11 @@ export interface ConversationTimelineProps {
   /**
    * The conversation on screen — a session id or a room id.
    *
-   * Two things key on it: where the reader was standing last time this scroller
-   * existed, and when to open at the newest message instead.
+   * What keys on it: the landing, which runs once per conversation and re-arms
+   * when this changes, and the scroller's own "you asked for somewhere else"
+   * reset. Where the reader was STANDING is not kept here — that is
+   * {@link ConversationTimelineProps.resumeRow}, which the host holds, because
+   * on a phone this whole component is unmounted while a thread is open.
    */
   conversationId: string;
   /**
@@ -220,14 +197,16 @@ export interface ConversationTimelineProps {
  * **It is a feed** (WAI-ARIA `role="feed"`), which is what makes crossing a
  * long conversation bearable without a mouse: Page Down and Page Up step
  * message to message however much each one carries, and Ctrl+Home / Ctrl+End
- * leave for the controls around it. Every message is a named article that says
- * where it sits, so a screen reader can say "message 12 of 30, DorkBot" rather
- * than reading the history out as one wall of text.
+ * leave for the controls around it.
  *
  * Only the rows on screen exist in the DOM. Page Down at the edge of that
  * window would otherwise dead-end with the key swallowed and nothing rendered
- * to move to, so the feed hands the edge back (`onBeyondRendered`) and this
- * scrolls the next article into existence and lands the focus on it.
+ * to move to, so the feed hands the edge back (`onBeyondRendered`) and
+ * `use-feed-edge-focus` scrolls the next article into existence and lands the
+ * focus on it.
+ *
+ * Both of those depend on the HOST numbering its articles, and only one of the
+ * two shipped hosts does — see `use-feed-edge-focus`.
  *
  * @param props - The rows, how to draw one, and where to open.
  */
@@ -278,157 +257,28 @@ export function ConversationTimeline({
     [attachScroller]
   );
 
-  // Stable per key-space, NOT per render. `getMeasurementOptions` lists
-  // `getItemKey` among its memo deps and virtual-core's `memo` compares by
-  // reference, so a fresh arrow every render invalidates it every render —
-  // which clears `pendingMin` and forces `getMeasurements` to rebuild every row
-  // from index 0 on every scroll event and every streamed token.
-  //
-  // The dep MUST be `rows`, not a ref: identity has to change exactly when the
-  // key space can. `setOptions` detects reorders by comparing the PREVIOUS
-  // options' `getItemKey` against the next one at the `anchorTo: 'end'` edges;
-  // a ref-reading callback would answer with today's keys on both sides of that
-  // comparison and silently kill reorder detection.
-  const getItemKey = useCallback((index: number) => rows[index]?.id ?? index, [rows]);
+  const virtualizer = useTimelineVirtualizer(rows, scrollerRef);
 
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => scrollerRef.current,
-    estimateSize: () => 80,
-    overscan: 5,
-    // The virtualizer's key space MUST match the key React reconciles rows by
-    // (`rows[index].id` in the render below). Two things break on virtual-core's
-    // index default: the zero-guard in `measureElement` looks a row's last real
-    // height up in `itemSizeCache` BY KEY, so after any row shift — a day divider
-    // appearing, the unread rule moving — it would answer with a neighbour's
-    // height; and `elementsCache` is keyed the same way, so a row that merely
-    // changed position would stop being re-observed and never measure again.
-    getItemKey,
-    // Live measurement with a zero-guard cache fallback. Rows measure their
-    // real DOM height (the ResizeObserver entry when present, else the rect) —
-    // EXCEPT when the measurement comes back 0: a hidden scroll container
-    // (`display: none`, e.g. an Obsidian sidebar tab switched away) measures
-    // every row at 0, and letting those zeros poison the size cache collapses
-    // the total height and loses the scroll position. Answering with the last
-    // cached real height instead keeps the layout intact while hidden; live
-    // measurement resumes naturally on re-show. (Do NOT replace this with
-    // `useCachedMeasurements: true`: that flag makes the default measurer
-    // *always* answer from the cache, and since nothing ever seeds the cache,
-    // every row would freeze at the estimate.)
-    measureElement: (element, entry, instance) => {
-      const box = entry?.borderBoxSize?.[0];
-      const size = box ? Math.round(box.blockSize) : element.getBoundingClientRect().height;
-      if (size > 0) return size;
-      const index = instance.indexFromElement(element);
-      const key = instance.options.getItemKey(index);
-      return instance.itemSizeCache.get(key) ?? instance.options.estimateSize(index);
-    },
-    // Anchor the list to its end: when rows above change height the view stays
-    // put relative to the last item, and when a new row is appended while the
-    // reader is pinned near the bottom the list follows it. Together with the
-    // growing-last-item clamp in virtual-core 3.17, this keeps the conversation
-    // pinned to the newest tokens during streaming while leaving a reader who
-    // has scrolled up undisturbed. It is also what replaced the room's
-    // hand-written follow, which is why `use-timeline-scroll` no longer writes
-    // `scrollTop` on an arrival.
-    anchorTo: 'end',
-    followOnAppend: true,
-    scrollEndThreshold: 64,
+  // Where this conversation opens, and what it remembers — its own hook,
+  // because the decision has traps (wait for geometry, answer in rows not
+  // pixels) that have nothing to do with drawing a list.
+  const { landed, landedOn, reportTopRow } = useTimelineLanding({
+    conversationId,
+    rows,
+    virtualizer,
+    landOn,
+    landingReady,
+    ...(resumeRow === undefined ? {} : { resumeRow }),
+    ...(onTopRow === undefined ? {} : { onTopRow }),
   });
 
-  // Where a conversation lands when you open it, decided ONCE per conversation
-  // on the first render that has rows.
-  //
-  // A reader coming back from a thread panel — which UNMOUNTS this whole
-  // timeline on a phone — belongs where they were standing, so a restored
-  // position wins outright and this stands down.
-  //
-  // With `landOn: 'unread'` and a rule on screen, land on the rule: landing at
-  // the end makes the list pinned, which marks everything seen and overwrites
-  // the very cursor that drew the rule. Otherwise land on the newest row,
-  // exactly as every chat surface does. (anchorTo/followOnAppend only engage
-  // after the first mount.)
-  // TRAP: the virtualizer knows nothing on the first commit. Its scroll element
-  // is attached by its own layout effect and its rows are measured after that,
-  // so a `scrollToIndex` issued from the first commit is aimed at a list with no
-  // geometry — it lands at zero and the settle silently carries it there.
-  // Measured in a browser on a phone: asked for the row the reader was on,
-  // arrived at the oldest message of the loaded page. `measured` is the wait,
-  // and it is declared BEFORE the landing so the landing runs on the commit
-  // after it.
-  const [measured, setMeasured] = useState(false);
-  useLayoutEffect(() => {
-    setMeasured(true);
-  }, []);
-
-  const anchoredRef = useRef<string | null>(null);
-  const [landed, setLanded] = useState(false);
-  /**
-   * What the landing decided, published on the wrapper.
-   *
-   * A `data-` attribute rather than a log, because the question it answers —
-   * "did this conversation come back to the row the reader was on, or open at
-   * its newest message?" — is only answerable in a browser, and a browser test
-   * needs something to read. `null` until the landing has run.
-   */
-  const [landedOn, setLandedOn] = useState<string | null>(null);
-  useLayoutEffect(() => {
-    if (!measured || !landingReady || anchoredRef.current === conversationId) return;
-    if (rows.length === 0) return;
-    anchoredRef.current = conversationId;
-    // A reader coming back belongs on the row they were reading. Asked for by
-    // INDEX rather than by offset, because the virtualizer's total height is an
-    // estimate on the first commit and settles over the next few frames — see
-    // a remembered PIXEL cannot survive that, and this was measured: restored
-    // to 900px, the list settled from an estimated 16 000px to a measured
-    // 4 159px, and `anchorTo: 'end'` carried the offset down past zero.
-    setLanded(true);
-    const remembered = resumeRow?.();
-    if (remembered !== undefined) {
-      const index = rows.findIndex((row) => row.id === remembered);
-      if (index !== -1) {
-        setLandedOn('remembered');
-        virtualizer.scrollToIndex(index, { align: 'start' });
-        return;
-      }
-    }
-    const unreadIndex =
-      landOn === 'unread' ? rows.findIndex((row) => row.kind === 'unread-divider') : -1;
-    if (unreadIndex === -1) {
-      setLandedOn(remembered === undefined ? 'end' : 'end-row-gone');
-      virtualizer.scrollToEnd();
-      return;
-    }
-    setLandedOn('unread');
-    // One row of context above the rule, so the last already-seen message is
-    // still on screen. Landing the rule flush at the viewport top loses the
-    // "here is what you already read" edge that makes it legible.
-    virtualizer.scrollToIndex(Math.max(0, unreadIndex - 1), { align: 'start' });
-  }, [measured, landingReady, conversationId, rows, virtualizer, landOn, resumeRow]);
-
-  /**
-   * Tell the host which row is at the top, so a scroller that comes back can
-   * land on it.
-   *
-   * `undefined` while the reader is caught up at the bottom: a conversation
-   * left at its newest message opens at its newest message, and a remembered
-   * row already on screen would be a landing with nothing to do. Read off the
-   * ref rather than the state, because this runs inside the scroll handler and
-   * the state is one render behind it.
-   */
   const { atBottomRef } = scroll;
   const handleScroll = useCallback(() => {
     scroll.onScroll();
-    // The first VISIBLE row, not the first DRAWN one: the virtualizer keeps a
-    // few rows of overscan above the viewport, and remembering one of those
-    // put a returning reader five messages higher than they had been. Read off
-    // the virtual items rather than the DOM — a `getBoundingClientRect` per
-    // scroll event is exactly the cost virtualizing was for.
-    const top = scrollerRef.current?.scrollTop ?? 0;
-    const visible = virtualizer.getVirtualItems().find((item) => item.end > top);
-    const id = visible === undefined ? undefined : rows[visible.index]?.id;
-    onTopRow?.(atBottomRef.current ? undefined : id);
-  }, [scroll, virtualizer, rows, onTopRow, atBottomRef]);
+    // Read off the ref rather than the state, because this runs inside the
+    // scroll handler and the state is one render behind it.
+    reportTopRow(scrollerRef.current, atBottomRef.current);
+  }, [scroll, reportTopRow, atBottomRef]);
 
   // `isAtEnd()` is vacuously TRUE before the virtualizer has geometry: it
   // derives from `getMaxScrollOffset()`, which is 0 while `scrollElement` is
@@ -442,45 +292,7 @@ export function ConversationTimeline({
     if (landed && isAtEnd) onReachedBottom?.();
   }, [landed, isAtEnd, onReachedBottom]);
 
-  // Page Down at the edge of the rendered window. Only a few rows either side
-  // of the viewport exist in the DOM, so without this a reader crossing a long
-  // conversation stops dead at whatever the window happens to end on — message
-  // 9 of 30 — with the key swallowed and nothing to show for it. The feed asks
-  // for the next article, this scrolls it into existence, and the effect below
-  // lands the focus on it once it has rendered.
-  //
-  // Articles are the MESSAGE rows and nothing else — the day rule and the
-  // unread rule are separators between articles, and a host numbers over its
-  // messages for exactly that reason — so `aria-posinset` counts them in order.
-  const pendingFocusRef = useRef<number | null>(null);
-  const handleBeyondRendered = useCallback(
-    (direction: 'next' | 'previous', edge: HTMLElement) => {
-      const position = Number(edge.getAttribute('aria-posinset'));
-      const wanted = direction === 'next' ? position + 1 : position - 1;
-      if (!Number.isFinite(wanted) || wanted < 1) return;
-      let seen = 0;
-      const rowIndex = rows.findIndex((row) => row.kind === 'message' && ++seen === wanted);
-      if (rowIndex === -1) return;
-      pendingFocusRef.current = wanted;
-      virtualizer.scrollToIndex(rowIndex, { align: direction === 'next' ? 'end' : 'start' });
-    },
-    [rows, virtualizer]
-  );
-
-  // Focus what the scroll above went to fetch, on the first render that has it.
-  // Runs every render rather than on a dep, because the render that finally
-  // holds the row is caused by the virtualizer's own measurement rather than by
-  // anything in this component's props.
-  useEffect(() => {
-    const wanted = pendingFocusRef.current;
-    if (wanted === null) return;
-    const article = scrollerRef.current?.querySelector<HTMLElement>(
-      `[${FEED_ARTICLE_ATTR}][aria-posinset="${wanted}"]`
-    );
-    if (article === null || article === undefined) return;
-    pendingFocusRef.current = null;
-    article.focus();
-  });
+  const handleBeyondRendered = useFeedEdgeFocus(rows, virtualizer, scrollerRef);
 
   /**
    * Land the caret on a row once it exists.
@@ -527,11 +339,12 @@ export function ConversationTimeline({
     [capabilities.threads, onOpenThread]
   );
 
-  if (loading !== undefined) return <>{loading}</>;
+  if (loading != null) return <>{loading}</>;
   if (empty !== undefined && rows.length === 0 && pendingRows.length === 0) return <>{empty}</>;
 
   return (
     <div
+      data-slot="conversation-timeline"
       data-testid={testId}
       data-landed-on={landedOn ?? undefined}
       className={cn('relative min-h-0 flex-1', className)}
@@ -539,6 +352,7 @@ export function ConversationTimeline({
       <div
         ref={setScroller}
         onScroll={handleScroll}
+        data-slot="conversation-scroller"
         data-testid="conversation-scroller"
         className="chat-scroll-area h-full scrollbar-none overflow-y-auto"
         style={{ overflowAnchor: 'none' }}
@@ -652,43 +466,12 @@ export function ConversationTimeline({
 
       <ScrollThumb scrollRef={scrollerRef} />
 
-      {/* What a reader gets INSTEAD of being taken to the bottom by somebody
-          else's message. Both affordances hang off the scroller rather than the
-          list, so neither can move a row. */}
-      <AnimatePresence>
-        {scroll.hasNewRows && !scroll.isAtBottom && (
-          <motion.button
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            transition={{ duration: 0.2 }}
-            onClick={() => scroll.scrollToBottom({ behavior: 'smooth' })}
-            data-testid="conversation-new-messages"
-            className="bg-foreground text-background hover:bg-foreground/90 absolute bottom-4 left-1/2 z-10 -translate-x-1/2 cursor-pointer rounded-full px-3 py-1.5 text-xs font-medium shadow-sm transition-colors"
-            role="status"
-            aria-live="polite"
-          >
-            New messages
-          </motion.button>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {!scroll.isAtBottom && rows.length > 0 && (
-          <motion.button
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            transition={{ duration: 0.15 }}
-            onClick={() => scroll.scrollToBottom({ behavior: 'smooth' })}
-            data-testid="conversation-jump-to-latest"
-            className="bg-background absolute right-4 bottom-4 rounded-full border p-2 shadow-sm transition-shadow hover:shadow-md"
-            aria-label="Scroll to bottom"
-          >
-            <ArrowDown className="size-(--size-icon-md)" />
-          </motion.button>
-        )}
-      </AnimatePresence>
+      <TimelineAffordances
+        hasNewRows={scroll.hasNewRows}
+        isAtBottom={scroll.isAtBottom}
+        hasRows={rows.length > 0}
+        onJump={() => scroll.scrollToBottom({ behavior: 'smooth' })}
+      />
     </div>
   );
 }

@@ -47,15 +47,13 @@ export type {
 } from './model/lane-state';
 export type { LaneScope } from './ui/LiveLane';
 export type { LivePeekRow } from './ui/LivePeek';
-export type {
-  ConversationRowContext,
-  ConversationRowRenderer,
-  ConversationTimelineHandle,
-} from './ui/Timeline';
-// `LiveLaneProps`, `LivePeekProps` and `ConversationTimelineProps` stay inside
-// the slice: a host writes `<Conversation.Timeline …>` and TypeScript infers
-// them, so exporting the interfaces would be more things to keep in step for no
-// reader's benefit.
+export type { ConversationRowRenderer } from './lib/row-kinds';
+export type { ConversationTimelineHandle } from './ui/Timeline';
+// `LiveLaneProps`, `LivePeekProps`, `ConversationTimelineProps` and
+// `ConversationRowContext` stay inside the slice: a host writes
+// `<Conversation.Timeline …>` and names its renderer's parameters positionally,
+// so TypeScript infers all four — exporting them would be more things to keep in
+// step for no reader's benefit.
 
 // Where a session left off. The rule itself is drawn by the timeline, but the
 // CURSOR is a session cursor read over the transport, so the host resolves it

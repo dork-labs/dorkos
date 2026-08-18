@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
 import { ChevronLeft, X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomWithRoster } from '@/layers/entities/room';
 import {
   isRoomMember,
@@ -24,6 +23,7 @@ import { useThreadArrivals } from '../model/use-thread-arrivals';
 import { ChannelComposer } from './ChannelComposer';
 import { RoomLiveLane } from './RoomLiveLane';
 import { RoomMessage } from './RoomMessage';
+import { ThreadNotice, type ThreadNoticeKind } from './ThreadNotice';
 
 interface RoomThreadPanelProps {
   /** The room the thread lives in. */
@@ -265,44 +265,7 @@ export function RoomThreadPanel({
   const renderRow = useCallback<ConversationRowRenderer>(
     (row) => {
       if (row.kind === 'notice') {
-        if (row.id === 'thread-error') {
-          // Said out loud rather than left as a skeleton that never resolves.
-          // Same words as the room's own failure, because it is the same read
-          // that failed and a reader should not have to work out whether two
-          // different sentences mean two different problems.
-          return (
-            <div
-              data-testid="room-thread-error"
-              className="text-muted-foreground flex flex-col items-center gap-2 px-[var(--msg-padding-x)] py-6 text-center text-sm"
-            >
-              <p className="text-foreground font-medium">Couldn&rsquo;t load this thread</p>
-              <p className="max-w-sm text-xs">
-                Nothing was lost — a room keeps everything that was said. Reload to try again.
-              </p>
-            </div>
-          );
-        }
-        if (row.id === 'thread-waiting') {
-          // Still arriving. A thread whose root has not loaded YET is not a
-          // thread whose root is gone, and saying the second while the first is
-          // true flashes a small lie on every deep link.
-          return (
-            <div className="flex flex-col gap-2 px-[var(--msg-padding-x)]">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="h-3 w-full max-w-sm" />
-            </div>
-          );
-        }
-        // The orphaned thread (design record §4). Its replies are real and stay;
-        // only the message they answer is out of the loaded history.
-        return (
-          <p
-            data-testid="room-thread-orphan"
-            className="text-muted-foreground border-b px-[var(--msg-padding-x)] pb-3 text-xs italic"
-          >
-            The start of this thread is gone. What was said after it is still here.
-          </p>
-        );
+        return <ThreadNotice kind={row.id as ThreadNoticeKind} />;
       }
       if (row.kind !== 'message') return null;
       const entry = row.payload as RoomEntry;

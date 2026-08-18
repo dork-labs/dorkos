@@ -87,3 +87,28 @@ export type ConversationRow =
       /** When the newest reply landed, ISO 8601. */
       lastAt: string;
     };
+
+/** What a row is told about where it is being drawn. */
+export interface ConversationRowContext {
+  /**
+   * Where this row sits in the list it was handed in.
+   *
+   * The host builds `rows` from its own richer row model, so this is how it
+   * reads the rest of that model back — `hostRows[ctx.index]` is the same row,
+   * by construction.
+   */
+  index: number;
+  /**
+   * Open this row's thread, or `undefined` when the conversation has none.
+   *
+   * Gated on `capabilities.threads` here rather than at every call site, so a
+   * surface without threads cannot grow a reply row by accident.
+   */
+  onOpenThread?: (rootId: string) => void;
+}
+
+/** Draws one row of a conversation. */
+export type ConversationRowRenderer = (
+  row: ConversationRow,
+  context: ConversationRowContext
+) => ReactNode;

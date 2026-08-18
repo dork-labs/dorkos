@@ -40,8 +40,8 @@ vi.mock('@tanstack/react-virtual', () => ({
 import type { PendingPost } from '@/layers/entities/room';
 import { Conversation } from '..';
 import type { ConversationCapabilities } from '../model/capabilities';
-import type { ConversationRow } from '../lib/row-kinds';
-import type { ConversationRowRenderer, ConversationTimelineHandle } from '../ui/Timeline';
+import type { ConversationRow, ConversationRowRenderer } from '../lib/row-kinds';
+import type { ConversationTimelineHandle } from '../ui/Timeline';
 
 /**
  * A capability table declared here rather than imported from a host.
@@ -155,6 +155,33 @@ describe('Conversation.Timeline', () => {
 
     expect(screen.getByTestId('row-entry-1')).toHaveAttribute('data-index', '0');
     expect(screen.getByTestId('row-entry-2')).toHaveAttribute('data-index', '1');
+  });
+
+  describe('where it opens', () => {
+    /** The landing's own answer, which only the wrapper publishes. */
+    function landedOn(props: Partial<Parameters<typeof Conversation.Timeline>[0]> = {}) {
+      mount({ 'data-testid': 'timeline', ...props });
+      return screen.getByTestId('timeline').getAttribute('data-landed-on');
+    }
+
+    it('opens at the newest message when there is nothing to come back to', () => {
+      expect(landedOn()).toBe('end');
+    });
+
+    it('comes back to the row the reader was on', () => {
+      // **Seeded defect:** ignore `resumeRow` in the landing → red. This is the
+      // phone thread-return fix: the panel is a full-screen push that unmounts
+      // the whole timeline, so the row has to be asked for at landing time and
+      // the host is the only thing that survives to answer.
+      expect(landedOn({ resumeRow: () => 'entry-2' })).toBe('remembered');
+    });
+
+    it('says so when the remembered row is no longer in the loaded page', () => {
+      // Distinct from `end` on purpose: the reader DID have a position and it
+      // could not be honoured, which is a different event from never having had
+      // one — and the browser suites tell the two apart by this word alone.
+      expect(landedOn({ resumeRow: () => 'entry-gone' })).toBe('end-row-gone');
+    });
   });
 
   it('names the feed after the conversation it is drawing', () => {
