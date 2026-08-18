@@ -5,6 +5,7 @@ import { emojiLabel } from '../lib/emoji-catalog';
 import { ENTRY_ACTION_ORDER, type EntryAction, type EntryActionSlot } from '../lib/entry-actions';
 import { useRovingButtons, type RovingGroupHandle } from '../model/use-roving-buttons';
 import { EntryReactionPicker } from './EntryReactionPicker';
+import { EntryRunWithMenu, type EntryRunWith } from './EntryRunWithMenu';
 
 /**
  * What the message row can ask the toolbar to do.
@@ -27,10 +28,15 @@ export interface EntryActionBarReactions {
 }
 
 interface EntryActionBarProps {
-  /** What this message offers, in order. Never rendered when empty. */
+  /** What this message offers, in order. */
   actions: EntryAction[];
   /** The quick row and its picker. Omitted where reactions do not belong. */
   reactions?: EntryActionBarReactions;
+  /**
+   * What "run this again, elsewhere" would re-run. Omitted where the
+   * conversation does not offer it (`capabilities.runWith`).
+   */
+  runWith?: EntryRunWith;
   /** Hand focus back to the message — the way out, bound to Escape. */
   onExit: () => void;
   /** The toolbar's own look, supplied by the row so anchoring stays with layout. */
@@ -41,6 +47,7 @@ interface EntryActionBarProps {
 type BarButton =
   | { kind: 'quick'; slot: EntryActionSlot; emoji: string; mine: boolean }
   | { kind: 'picker'; slot: EntryActionSlot }
+  | { kind: 'run-with'; slot: EntryActionSlot; runWith: EntryRunWith }
   | { kind: 'command'; slot: EntryActionSlot; action: EntryAction };
 
 /**
@@ -50,7 +57,11 @@ type BarButton =
  * capsule's order — reactions leftmost, then reply / copy / mention — has one
  * source. A slot with nothing to put in it simply contributes nothing.
  */
-function barButtons(actions: EntryAction[], reactions?: EntryActionBarReactions): BarButton[] {
+function barButtons(
+  actions: EntryAction[],
+  reactions?: EntryActionBarReactions,
+  runWith?: EntryRunWith
+): BarButton[] {
   return ENTRY_ACTION_ORDER.flatMap<BarButton>((slot) => {
     if (slot === 'react') {
       if (!reactions) return [];
@@ -62,6 +73,7 @@ function barButtons(actions: EntryAction[], reactions?: EntryActionBarReactions)
       }));
     }
     if (slot === 'react-more') return reactions ? [{ kind: 'picker' as const, slot }] : [];
+    if (slot === 'run-with') return runWith ? [{ kind: 'run-with' as const, slot, runWith }] : [];
     const action = actions.find((candidate) => candidate.id === slot);
     return action ? [{ kind: 'command' as const, slot, action }] : [];
   });
@@ -92,6 +104,10 @@ function barButtons(actions: EntryAction[], reactions?: EntryActionBarReactions)
  * stops of its own — a link renders as a button — which is the same in session
  * chat and not this surface's to change.
  *
+ * The one exception is `run-with`, which keeps the tab stop it has always had —
+ * see {@link EntryRunWithMenu}, which explains why taking it away would take the
+ * action away from the keyboard entirely on the only surface that offers it.
+ *
  * The alternative — making the buttons tabbable only while the row has focus —
  * reads like it would work and does nothing: focusing the row makes its buttons
  * tabbable in the same tick, so the very next Tab lands on the first one anyway
@@ -99,8 +115,8 @@ function barButtons(actions: EntryAction[], reactions?: EntryActionBarReactions)
  * order has to be closed for the count to change, which is what `-1` is doing.
  */
 export const EntryActionBar = forwardRef<EntryActionBarHandle, EntryActionBarProps>(
-  function EntryActionBar({ actions, reactions, onExit, className }, ref) {
-    const buttons = barButtons(actions, reactions);
+  function EntryActionBar({ actions, reactions, runWith, onExit, className }, ref) {
+    const buttons = barButtons(actions, reactions, runWith);
     const { register, handleKeyDown } = useRovingButtons(buttons.length, onExit, ref);
 
     if (buttons.length === 0) return null;
@@ -121,6 +137,18 @@ export const EntryActionBar = forwardRef<EntryActionBarHandle, EntryActionBarPro
           // its left edge.
           const divider =
             button.kind === 'command' && index > 0 && buttons[index - 1]!.kind !== 'command';
+
+          if (button.kind === 'run-with') {
+            return (
+              <EntryRunWithMenu
+                key="run-with"
+                prompt={button.runWith.prompt}
+                sessionId={button.runWith.sessionId}
+                triggerRef={register(index)}
+                onTriggerKeyDown={onKeyDown}
+              />
+            );
+          }
 
           if (button.kind === 'picker') {
             return (

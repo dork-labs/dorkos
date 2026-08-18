@@ -97,10 +97,10 @@ vi.mock('../QuestionPrompt', () => ({
   QuestionPrompt: () => <div data-testid="question-prompt">Question prompt</div>,
 }));
 
-// Mock RunWithMenu — router + session/runtime queries, out of scope for this
-// list-rendering suite (RunWithMenu has its own dedicated test).
-vi.mock('../ui/message/RunWithMenu', () => ({
-  RunWithMenu: () => <div data-testid="run-with-menu" />,
+// Mock EntryRunWithMenu — router + session/runtime queries, out of scope for this
+// list-rendering suite (EntryRunWithMenu has its own dedicated test).
+vi.mock('@/layers/features/entry-actions/ui/EntryRunWithMenu', () => ({
+  EntryRunWithMenu: () => <div data-testid="run-with-menu" />,
 }));
 
 // Mock ScrollThumb to avoid scroll measurement in unit tests

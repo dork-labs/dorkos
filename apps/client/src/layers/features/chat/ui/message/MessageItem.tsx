@@ -6,10 +6,10 @@ import type { FeedPosition, MessageAuthor } from '@/layers/shared/model';
 import { cn, getPlatform } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { messageItem, MessageAuthorAvatar } from '@/layers/features/conversation';
+import { EntryRunWithMenu } from '@/layers/features/entry-actions';
 import { MessageProvider } from './MessageContext';
 import { UserMessageContent } from './UserMessageContent';
 import { AssistantMessageContent } from './AssistantMessageContent';
-import { RunWithMenu } from './RunWithMenu';
 import type { InteractiveToolHandle } from './types';
 
 interface MessageItemProps {
@@ -214,11 +214,7 @@ export function MessageItem({
         </div>
         {showRunWith && (
           <div className={styles.actions()}>
-            <RunWithMenu
-              prompt={message.content}
-              sessionId={sessionId}
-              className="hover:bg-muted size-6 justify-center rounded"
-            />
+            <EntryRunWithMenu prompt={message.content} sessionId={sessionId} />
           </div>
         )}
       </motion.div>

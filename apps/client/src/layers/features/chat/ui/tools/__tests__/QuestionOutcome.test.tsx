@@ -14,10 +14,10 @@ vi.mock('streamdown', () => ({
   ),
 }));
 
-// RunWithMenu depends on the router and session queries; this suite is about
+// EntryRunWithMenu depends on the router and session queries; this suite is about
 // one tool part's rendering, and provides neither.
-vi.mock('../../message/RunWithMenu', () => ({
-  RunWithMenu: () => <div data-testid="run-with-menu" />,
+vi.mock('@/layers/features/entry-actions/ui/EntryRunWithMenu', () => ({
+  EntryRunWithMenu: () => <div data-testid="run-with-menu" />,
 }));
 
 afterEach(cleanup);

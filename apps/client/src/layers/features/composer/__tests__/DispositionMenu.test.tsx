@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 // Render the menu's parts inline rather than through the real Radix/Drawer
 // portal, so the rows are always in the tree and the "which rows exist" question
 // — the whole point of hidden-not-disabled — is answerable without opening
-// anything. (Same approach as RunWithMenu's test.)
+// anything. (Same approach as EntryRunWithMenu's test.)
 vi.mock('@/layers/shared/ui', () => ({
   ResponsiveDropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ResponsiveDropdownMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,

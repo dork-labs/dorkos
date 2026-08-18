@@ -118,6 +118,11 @@ function DrawerReactionRow({ quick, mine, onToggle, disabled }: EntryActionMenuR
  * differently rather than differently offered**: the same emoji the capsule
  * holds, across the top of the drawer as a row of taps rather than as six list
  * rows — and only on touch, because a pointer already has the capsule.
+ *
+ * The two menu-opening slots (`react-more`, `run-with`) are not list items
+ * here, for one reason each: the picker has the drawer's own reaction row
+ * instead, and a menu that opens a second menu is a shape neither the
+ * right-click menu nor the touch drawer has anywhere to put.
  */
 export function EntryActionMenu({
   actions,

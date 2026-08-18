@@ -13,9 +13,15 @@
  * Only Ready runtimes launch directly; a not-yet-connected target opens its
  * Connect surface first, so a switch is never a dead end.
  *
- * @module features/chat/ui/message/RunWithMenu
+ * **It lives here because there is one action surface.** It used to be a
+ * session-only control hung directly in the row's toolbar slot while rooms had
+ * a whole roving, right-clickable, long-pressable capsule beside it — two hover
+ * systems for one idea. This is the capsule's `run-with` slot, offered when
+ * `capabilities.runWith` says the conversation has it.
+ *
+ * @module features/entry-actions/ui/EntryRunWithMenu
  */
-import { useState } from 'react';
+import { useState, type KeyboardEvent, type Ref } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Shuffle } from 'lucide-react';
 import { useSessions } from '@/layers/entities/session';
@@ -35,24 +41,45 @@ import {
   ResponsiveDropdownMenuItem,
   ResponsiveDropdownMenuLabel,
 } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
 
-interface RunWithMenuProps {
+/** What "run this again, elsewhere" needs to know. */
+export interface EntryRunWith {
   /** The prompt text to re-run — seeded into the fresh session's composer. */
   prompt: string;
   /** The current session id — resolves the same cwd and the runtime to exclude. */
   sessionId: string;
-  /** Extra classes for the trigger button (positioning / hover reveal). */
-  className?: string;
+}
+
+interface EntryRunWithMenuProps extends EntryRunWith {
+  /** Registers the trigger with the toolbar's roving sequence. */
+  triggerRef?: Ref<HTMLButtonElement>;
+  /** The toolbar's own arrow-key handling, so the trigger stays in the sequence. */
+  onTriggerKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }
 
 /** Setup-dialog state: closed, or open scoped to one runtime's Connect flow. */
 type SetupDialogState = { open: boolean; runtime?: string };
 
 /**
- * Trigger + menu that re-runs `prompt` into a fresh session on another runtime.
+ * The capsule's `run-with` button, and the menu it opens.
+ *
+ * **It is a tab stop, and it is the one button in the capsule that is.** Every
+ * other action is `tabIndex={-1}` and reached from the message with an arrow
+ * key, which is what keeps a room one Tab per message
+ * (`room-entry-actions.spec.ts`). This one keeps the tab order it has always
+ * had, because the conversation that offers it — a session transcript — has no
+ * other action in the capsule and no arrow-key path into one: making it rove
+ * would take Run with away from the keyboard entirely. The rule is about the
+ * ACTION, not about which surface is drawing it; it still registers with the
+ * roving sequence, so a conversation that one day offers run-with alongside
+ * reply and copy walks it with arrows like everything else.
  */
-export function RunWithMenu({ prompt, sessionId, className }: RunWithMenuProps) {
+export function EntryRunWithMenu({
+  prompt,
+  sessionId,
+  triggerRef,
+  onTriggerKeyDown,
+}: EntryRunWithMenuProps) {
   const navigate = useNavigate();
   const { sessions } = useSessions();
   const { data: capabilityMap } = useRuntimeCapabilities();
@@ -98,12 +125,12 @@ export function RunWithMenu({ prompt, sessionId, className }: RunWithMenuProps) 
       <ResponsiveDropdownMenu>
         <ResponsiveDropdownMenuTrigger asChild>
           <button
+            ref={triggerRef}
             type="button"
+            data-entry-action="run-with"
             aria-label="Run this prompt with another runtime"
-            className={cn(
-              'text-muted-foreground/60 hover:text-foreground inline-flex items-center transition-colors duration-150',
-              className
-            )}
+            onKeyDown={onTriggerKeyDown}
+            className="text-muted-foreground/60 hover:text-foreground hover:bg-muted inline-flex size-6 items-center justify-center rounded transition-colors duration-150"
           >
             <Shuffle className="size-3.5" />
           </button>

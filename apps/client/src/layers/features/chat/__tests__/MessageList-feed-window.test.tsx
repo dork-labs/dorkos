@@ -38,8 +38,8 @@ vi.mock('streamdown', () => ({
     <div data-testid="streamdown">{children}</div>
   ),
 }));
-vi.mock('../ui/message/RunWithMenu', () => ({
-  RunWithMenu: () => <div data-testid="run-with-menu" />,
+vi.mock('@/layers/features/entry-actions/ui/EntryRunWithMenu', () => ({
+  EntryRunWithMenu: () => <div data-testid="run-with-menu" />,
 }));
 vi.mock('../ui/ScrollThumb', () => ({ ScrollThumb: () => null }));
 vi.mock('@/layers/entities/agent/model/use-current-agent', () => ({

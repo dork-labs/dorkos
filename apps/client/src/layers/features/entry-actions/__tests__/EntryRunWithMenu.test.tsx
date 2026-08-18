@@ -126,7 +126,10 @@ afterEach(() => {
 });
 
 // Import after mocks
-import { RunWithMenu } from '../ui/message/RunWithMenu';
+import { Reply } from 'lucide-react';
+import { EntryActionBar } from '../ui/EntryActionBar';
+import type { EntryAction } from '../lib/entry-actions';
+import { EntryRunWithMenu } from '../ui/EntryRunWithMenu';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -189,7 +192,7 @@ const PROMPT = 'Refactor the auth module';
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('RunWithMenu', () => {
+describe('EntryRunWithMenu', () => {
   it('offers the sibling runtimes other than the current one', () => {
     mockSessions.mockReturnValue({ sessions: [CLAUDE_SESSION] });
     mockCapabilities.mockReturnValue({ data: makeCaps('claude-code', 'codex', 'opencode') });
@@ -197,7 +200,7 @@ describe('RunWithMenu', () => {
       data: requirementsFor(['claude-code', 'codex', 'opencode']),
     });
 
-    render(<RunWithMenu prompt={PROMPT} sessionId="sess-claude" />);
+    render(<EntryRunWithMenu prompt={PROMPT} sessionId="sess-claude" />);
 
     const items = screen.getAllByTestId('dropdown-item').map((el) => el.textContent);
     expect(items).toContain('Codex');
@@ -214,7 +217,7 @@ describe('RunWithMenu', () => {
     });
     const user = userEvent.setup();
 
-    render(<RunWithMenu prompt={PROMPT} sessionId="sess-claude" />);
+    render(<EntryRunWithMenu prompt={PROMPT} sessionId="sess-claude" />);
 
     const codex = screen.getAllByTestId('dropdown-item').find((el) => el.textContent === 'Codex')!;
     await user.click(codex);
@@ -245,7 +248,7 @@ describe('RunWithMenu', () => {
     });
     const user = userEvent.setup();
 
-    render(<RunWithMenu prompt={PROMPT} sessionId="sess-claude" />);
+    render(<EntryRunWithMenu prompt={PROMPT} sessionId="sess-claude" />);
 
     const codex = screen.getAllByTestId('dropdown-item').find((el) => el.textContent === 'Codex')!;
     expect(codex).toHaveAttribute('data-description', 'Connect');
@@ -265,7 +268,7 @@ describe('RunWithMenu', () => {
     });
     const user = userEvent.setup();
 
-    render(<RunWithMenu prompt={PROMPT} sessionId="sess-claude" />);
+    render(<EntryRunWithMenu prompt={PROMPT} sessionId="sess-claude" />);
 
     const codex = screen.getAllByTestId('dropdown-item').find((el) => el.textContent === 'Codex')!;
     await user.click(codex);
@@ -296,7 +299,7 @@ describe('RunWithMenu', () => {
     mockRequirements.mockReturnValue({ data: requirementsFor(['claude-code', 'opencode']) });
     const user = userEvent.setup();
 
-    render(<RunWithMenu prompt={PROMPT} sessionId="sess-claude" />);
+    render(<EntryRunWithMenu prompt={PROMPT} sessionId="sess-claude" />);
 
     const opencode = screen
       .getAllByTestId('dropdown-item')
@@ -308,5 +311,70 @@ describe('RunWithMenu', () => {
     expect(sessions[0]).toEqual(CLAUDE_SESSION);
     const arg = navigate.mock.calls[0][0] as { search: { session: string } };
     expect(arg.search.session).not.toBe('sess-claude');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The capsule's own gating. There is ONE hover-action surface now, and what it
+// holds comes from the conversation's capabilities — so the question these
+// answer is "does the bar draw run-with only when it was given one?", asserted
+// against the real trigger rather than a stand-in.
+// ---------------------------------------------------------------------------
+
+/** The real run-with trigger inside a rendered capsule, or `null`. */
+function runWithTrigger(): HTMLElement | null {
+  return document.querySelector('[data-entry-action="run-with"]');
+}
+
+/** A command that does nothing, for asserting where run-with sits beside one. */
+function command(id: 'reply' | 'copy', label: string): EntryAction {
+  return { id, label, icon: Reply, run: () => {} };
+}
+
+describe('EntryActionBar — the run-with slot', () => {
+  it('draws the trigger when the conversation offers run-with', () => {
+    mockSessions.mockReturnValue({ sessions: [CLAUDE_SESSION] });
+    mockCapabilities.mockReturnValue({ data: makeCaps('claude-code', 'codex') });
+    mockRequirements.mockReturnValue({ data: requirementsFor(['claude-code', 'codex']) });
+
+    render(
+      <EntryActionBar
+        actions={[]}
+        runWith={{ prompt: PROMPT, sessionId: 'sess-claude' }}
+        onExit={() => {}}
+      />
+    );
+
+    expect(runWithTrigger()).not.toBeNull();
+  });
+
+  it('draws nothing at all when it does not', () => {
+    // `capabilities.runWith: false` reaches the bar as an absent prop, and a
+    // capsule with nothing in it renders no toolbar rather than an empty one.
+    render(<EntryActionBar actions={[]} onExit={() => {}} />);
+
+    expect(runWithTrigger()).toBeNull();
+    expect(screen.queryByTestId('entry-actions')).toBeNull();
+  });
+
+  it('sits ahead of the commands, so nothing a finger already knows moves', () => {
+    mockSessions.mockReturnValue({ sessions: [CLAUDE_SESSION] });
+    mockCapabilities.mockReturnValue({ data: makeCaps('claude-code', 'codex') });
+    mockRequirements.mockReturnValue({ data: requirementsFor(['claude-code', 'codex']) });
+
+    render(
+      <EntryActionBar
+        actions={[command('reply', 'Reply in thread'), command('copy', 'Copy text')]}
+        runWith={{ prompt: PROMPT, sessionId: 'sess-claude' }}
+        onExit={() => {}}
+      />
+    );
+
+    const drawn = [...screen.getByTestId('entry-actions').querySelectorAll('[data-entry-action]')];
+    expect(drawn.map((el) => el.getAttribute('data-entry-action'))).toEqual([
+      'run-with',
+      'reply',
+      'copy',
+    ]);
   });
 });
