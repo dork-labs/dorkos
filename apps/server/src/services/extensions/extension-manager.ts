@@ -28,6 +28,7 @@ import { logConfigWrite } from '../core/operator/config-write.js';
 import type { ExtensionTemplate } from './extension-templates.js';
 import {
   toPublic,
+  toRecordError,
   type CreateExtensionResult,
   type ReloadExtensionResult,
   type TestExtensionResult,
@@ -59,11 +60,7 @@ function applyCompileResult(
 ): boolean {
   if ('error' in result) {
     record.status = 'compile_error';
-    record.error = {
-      code: result.error.code,
-      message: result.error.message,
-      details: result.error.errors.map((e) => e.text).join('\n'),
-    };
+    record.error = toRecordError(result.error);
     record.sourceHash = result.sourceHash;
     record.bundleReady = false;
     return false;
@@ -507,9 +504,15 @@ export class ExtensionManager {
    * A cwd that is already the current one changes nothing, so it re-scans
    * nothing: the cockpit announces its working directory once per page load
    * (`POST /api/extensions/cwd-changed`), and that is almost always the
-   * directory the server booted with. The second discovery pass could only ever
-   * produce what the first one did — and it re-printed the first one's warnings
-   * with it (DOR-1336).
+   * directory the server booted with. That second discovery pass existed to
+   * answer a question nobody asked, and re-printed the first pass's warnings
+   * doing it (DOR-1336).
+   *
+   * The trade, stated plainly: opening a page no longer re-scans the extensions
+   * directories, so an extension folder dropped in by hand while the server runs
+   * shows up when something asks for a scan — the Reload button
+   * (`POST /api/extensions/reload`), the `reload_extensions` tool, or an actual
+   * change of working directory — rather than on the next page load.
    *
    * @param newCwd - The working directory now in effect, or `null` for none.
    */

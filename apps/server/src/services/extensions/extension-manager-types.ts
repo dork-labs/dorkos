@@ -27,6 +27,26 @@ export interface ActiveServerExtension {
   sourceKey: string;
 }
 
+/**
+ * Turn a compiler failure into the `error` a discovery record carries, so the
+ * cockpit is told the same thing whichever compile produced it — the client
+ * bundle's (`ExtensionManager`'s `applyCompileResult`) or the server entry's
+ * ({@link ExtensionServerLifecycle.initialize}).
+ *
+ * @param error - The compiler's structured failure.
+ */
+export function toRecordError(error: {
+  code: string;
+  message: string;
+  errors: Array<{ text: string }>;
+}): NonNullable<ExtensionRecord['error']> {
+  return {
+    code: error.code,
+    message: error.message,
+    details: error.errors.map((e) => e.text).join('\n'),
+  };
+}
+
 /** Result of creating a new extension. */
 export interface CreateExtensionResult {
   id: string;

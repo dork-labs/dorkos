@@ -400,6 +400,80 @@ describe('ExtensionManager — server lifecycle', () => {
         );
       });
 
+      /**
+       * "The old version keeps serving" is the normal outcome of a failed
+       * recompile now that the compile happens before the teardown, so the
+       * cockpit has to say so — otherwise the extension reads as `compiled`,
+       * `bundleReady`, healthy, while the code it is running is the previous one
+       * (DOR-1336 review).
+       */
+      it('marks the record broken when a recompile fails, and keeps the old instance serving', async () => {
+        const record = makeRecord('stale-srv', {
+          status: 'compiled',
+          hasServerEntry: true,
+          serverEntryPath: '/fake/extensions/stale-srv/server.ts',
+        });
+        mockConfigGet.mockReturnValue({
+          enabled: ['stale-srv'],
+          disabled: [],
+          approvedToRun: ['stale-srv'],
+        });
+        mockDiscover.mockResolvedValue([record]);
+        mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+        mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash' });
+
+        await manager.initialize(null);
+        const router = manager.getServerRouter('stale-srv');
+        expect(router).not.toBeNull();
+
+        // Somebody saved a typo into server.ts.
+        mockCompileServer.mockResolvedValue({
+          error: {
+            code: 'compilation_failed',
+            message: 'Server Compilation failed for stale-srv',
+            errors: [{ text: 'Unexpected token' }],
+          },
+          sourceHash: 'brokenhash',
+        });
+        const result = await manager.initializeServer('stale-srv');
+
+        expect(result).toEqual({ ok: false, error: 'Server Compilation failed for stale-srv' });
+        // The working version is still mounted rather than torn down.
+        expect(manager.getServerRouter('stale-srv')).toBe(router);
+        expect(mockScheduledCleanup).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('the version already running keeps serving')
+        );
+        // And the cockpit is told, rather than being shown a healthy record.
+        expect(manager.listPublic()[0]).toMatchObject({
+          id: 'stale-srv',
+          status: 'compile_error',
+          error: {
+            code: 'compilation_failed',
+            message: 'Server Compilation failed for stale-srv',
+            details: 'Unexpected token',
+          },
+        });
+
+        // Asking again re-attempts rather than being turned away as "not
+        // enabled" by the mark this failure just wrote — the fix has to be able
+        // to land without a full reload.
+        expect(await manager.initializeServer('stale-srv')).toEqual({
+          ok: false,
+          error: 'Server Compilation failed for stale-srv',
+        });
+
+        // And when the typo is fixed, the next attempt takes over and clears it.
+        mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'fixedhash' });
+        expect(await manager.initializeServer('stale-srv')).toEqual({ ok: true });
+        expect(manager.getServerRouter('stale-srv')).not.toBe(router);
+        expect(manager.listPublic()[0]).toMatchObject({
+          id: 'stale-srv',
+          status: 'compiled',
+        });
+        expect(manager.listPublic()[0].error).toBeUndefined();
+      });
+
       it('restarts an extension whose reload the operator asked for', async () => {
         const record = makeRecord('reload-ext', {
           status: 'compiled',
