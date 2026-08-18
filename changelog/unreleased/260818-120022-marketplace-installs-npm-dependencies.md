@@ -1,6 +1,12 @@
+---
+covers:
+  - "feat(server,client,shared): marketplace installs a package's npm dependencies, and the preview says so first (DOR-1341)"
+  - 'feat(cli): `dorkos install` names the npm libraries it will download before you approve (DOR-1341)'
+---
+
 ### Added
 
-- Packages that need npm libraries now get them installed for you. When you install something from the Marketplace, DorkOS lists the libraries it will download before you approve, then fetches them as part of the install — no more running `npm install` by hand to make a plugin work (DOR-1341).
+- Packages that need npm libraries now get them installed for you. When you install something from the Marketplace, DorkOS lists the libraries it will download before you approve — in the cockpit dialog and in the terminal — then fetches them as part of the install. No more running `npm install` by hand to make a plugin work (DOR-1341).
 
 ### Fixed
 

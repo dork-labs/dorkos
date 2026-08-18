@@ -210,7 +210,7 @@ A package may ship runtime code that imports from npm — the `/flow` plugin's `
 - **It runs on the staged tree, never on the activated one.** The `node_modules` it creates is activated by the same atomic `atomicMove` as the package files, so a rolled-back install leaves neither behind and a reinstall's previous `node_modules` is restored with everything else.
 - **A dependency problem warns; it does not fail the install.** No `npm` on the machine, a non-zero exit, a timeout, an offline registry — each comes back as one sentence on `InstallResult.warnings` naming the exact command to run by hand (`Run \`npm install --omit=dev\` in <installPath>`), which the install toast shows. Failing would roll back a package whose own commands, skills and docs work fine. Only the package **root**'s `package.json` is read — nested workspaces are deliberately not chased.
 
-The permission preview reports the same `dependencies` map as `npmDependencies: { name, range }[]` (section 6), so the install dialog names every library before the person approves a network fetch. `node_modules` stays out of `fileChanges` as it always has.
+The permission preview reports the same `dependencies` map as `npmDependencies: { name, range }[]` (section 6), and **both** consent surfaces name every library before the person approves the network fetch: the cockpit's install dialog (`features/marketplace/lib/format-permissions.ts`) and `dorkos install`'s terminal preview (`packages/cli/src/lib/preview-render.ts`). `node_modules` stays out of `fileChanges` as it always has.
 
 A new flow gets none of this for free — the call lives in each flow's `stage`, not in `runTransaction` (`services/shapes/fork.ts` shares the engine and must not npm-install). Step 2 of section 9 is where to add it.
 

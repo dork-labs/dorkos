@@ -24,6 +24,7 @@ const PREVIEW_BODY = {
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    npmDependencies: [],
     schedules: [],
     secrets: [],
     externalHosts: [],
