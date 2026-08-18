@@ -25,6 +25,7 @@ import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
 import { ApprovalPrompt, QuestionPrompt } from '@/layers/features/ask';
 import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
+import { MentionPalette, type MentionRow } from '@/layers/features/mentions';
 import { TransportProvider } from '@/layers/shared/model';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -185,7 +186,47 @@ function ComposerDemo({
   );
 }
 
-/** The mention picker overlay, anchored under a room composer that has typed `@`. */
+/**
+ * A roster's worth of `@` rows: People first, then Agents, one flat list whose
+ * indices the keyboard walks straight through — the order `ROOM_SECTION_ORDER`
+ * gives a room composer. The last row is the deliberately unselectable case: a
+ * member the server has no `@name` for.
+ */
+const SAMPLE_MENTION_ROWS: MentionRow[] = [
+  { section: 'people', authorId: 'ana', label: 'Ana Ruiz', handle: 'ana', disabled: false },
+  {
+    section: 'people',
+    authorId: 'aurora',
+    label: 'Aurora Vance',
+    handle: 'aurora',
+    disabled: false,
+  },
+  {
+    section: 'agents',
+    authorId: 'audit-bot',
+    label: 'Audit Bot',
+    handle: 'audit-bot',
+    emoji: '🔍',
+    disabled: false,
+  },
+  {
+    section: 'agents',
+    authorId: 'august',
+    label: 'August',
+    emoji: '📓',
+    disabled: true,
+    disabledReason: 'No @name',
+  },
+];
+
+/**
+ * The mention picker overlay, anchored under a room composer that has typed `@`.
+ *
+ * Draws the REAL `MentionPalette` — the same component `ChannelComposer` hands
+ * this slot. A file palette under a label reading "Mentions" would be the
+ * no-replicas failure one step sideways: a real component, just not the one the
+ * section claims to be showing.
+ */
 function MentionPickerDemo() {
   const [value, setValue] = useState('Loop in @au');
   const target = buildRoomTarget();
@@ -201,6 +242,41 @@ function MentionPickerDemo() {
             onChange={setValue}
             onSubmit={() => {}}
             mentionPicker={
+              <MentionPalette rows={SAMPLE_MENTION_ROWS} selectedIndex={1} onSelect={() => {}} />
+            }
+            input={{ placeholder: target.placeholder, isStreaming: false }}
+          />
+        </Conversation.Root>
+      </ShowcaseDemo>
+    </div>
+  );
+}
+
+/**
+ * The file picker over a SESSION composer, in the `overlays` slot.
+ *
+ * The counterpart to the demo above, and the reason the two slots are separate:
+ * a session declares `mentions: false`, so its `@` reaches for a file in the
+ * working directory rather than a person, and `SessionComposer` puts the real
+ * `FilePalette` in `overlays` — which the card draws for every surface —
+ * instead of `mentionPicker`, which the card draws only where the capability
+ * says so.
+ */
+function FilePickerDemo() {
+  const [value, setValue] = useState('Have a look at @types');
+  const target = buildSessionTarget();
+  return (
+    <div>
+      <ShowcaseLabel>
+        Files — the same `@` on a session, which has no mentions and reaches for a file instead
+      </ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES} target={target}>
+          <Conversation.Composer
+            value={value}
+            onChange={setValue}
+            onSubmit={() => {}}
+            overlays={
               <FilePalette
                 filteredFiles={SAMPLE_FILE_ENTRIES}
                 selectedIndex={0}
@@ -308,6 +384,7 @@ export function ComposerShowcases() {
       <AttachmentsDemo surface="room" capabilities={ROOM_CAPABILITIES} target={roomIdle} />
 
       <MentionPickerDemo />
+      <FilePickerDemo />
 
       <ComposerDemo
         label="Queue depth — session (a room has no queue method, so it draws no queue chrome at all)"

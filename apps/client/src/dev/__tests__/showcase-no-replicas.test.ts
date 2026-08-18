@@ -161,4 +161,21 @@ describe('the Composer showcase renders the real components', () => {
     const demo = functionBody('ComposerDemo');
     expect(demo).toContain('<QueuePanel');
   });
+
+  it('draws the mentions demo with the real MentionPalette, not the file palette', () => {
+    // The failure this catches is one step sideways from a replica: a REAL
+    // component under a label promising a different one. It shipped — the
+    // "Mentions — the `@` picker" demo handed `mentionPicker` a `FilePalette`,
+    // so a listbox of file paths rendered under a draft reading `Loop in @au`,
+    // while the shipped consumer (`ChannelComposer`) passes `MentionPalette`.
+    // A render test cannot see it: both palettes render fine.
+    const demo = functionBody('MentionPickerDemo');
+    expect(demo, 'the mentions demo no longer draws the real MentionPalette').toContain(
+      '<MentionPalette'
+    );
+    expect(demo, 'the mentions demo draws a FilePalette under a mentions label').not.toContain(
+      '<FilePalette'
+    );
+    expect(source).toMatch(/import \{ MentionPalette.*\} from '@\/layers\/features\/mentions'/);
+  });
 });
