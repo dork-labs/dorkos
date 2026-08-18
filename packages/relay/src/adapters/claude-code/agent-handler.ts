@@ -21,7 +21,12 @@ import type {
 } from '../../types.js';
 import { extractPayloadContent, extractSenderIdentity } from '../../lib/payload-utils.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
-import type { AgentRuntimeLike, AgentSessionStoreLike } from './types.js';
+import type {
+  AgentRuntimeLike,
+  AgentSessionStoreLike,
+  ExecutionSettingsResolver,
+  TurnExecutionSettings,
+} from './types.js';
 import {
   publishAgentResult,
   publishDispatchProgress,
@@ -33,6 +38,8 @@ export interface AgentHandlerDeps {
   agentManager: AgentRuntimeLike;
   traceStore: TraceStoreLike;
   agentSessionStore?: AgentSessionStoreLike;
+  /** What model and effort this turn runs on — see {@link ExecutionSettingsResolver}. */
+  resolveExecutionSettings?: ExecutionSettingsResolver;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -198,10 +205,19 @@ export async function handleAgentMessage(
   // prompting mode — absence is not consent (DOR-604). The in-process readers
   // that used to default to 'acceptEdits' were the bug and are gone.
   const effectivePermissionMode: PermissionMode = bindingPerms?.permissionMode ?? 'default';
+
+  // What this turn runs on. Asked BEFORE `ensureSession`, because that call is
+  // the only one that can answer it: the claude-code runtime reads
+  // `session.model` when it launches a query, and that field is written once,
+  // when the session record is created. A model handed over afterwards reaches
+  // nothing (see `messaging/launch-resolver.ts`).
+  const executionSettings = await resolveTurnSettings(deps, ccaSessionKey, effectiveCwd, log);
+
   log.debug?.(
     `[CCA] handleAgentMessage agentId=${agentId} ccaSessionKey=${ccaSessionKey}, ` +
       `payloadCwd=${payloadCwd ?? '(none)'}, context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +
-      `resolvedCwd=${effectiveCwd ?? '(deferred to session)'}, permissionMode=${effectivePermissionMode}`
+      `resolvedCwd=${effectiveCwd ?? '(deferred to session)'}, permissionMode=${effectivePermissionMode}, ` +
+      `model=${executionSettings.model ?? '(runtime default)'}`
   );
 
   // Only mark hasStarted when we have a real SDK session ID from the persistent
@@ -212,6 +228,7 @@ export async function handleAgentMessage(
     permissionMode: effectivePermissionMode,
     hasStarted: !!persistedSdkSessionId,
     ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+    ...executionSettings,
   });
   deps.traceStore.updateSpan(envelope.id, { status: 'delivered', deliveredAt: Date.now() });
 
@@ -251,6 +268,11 @@ export async function handleAgentMessage(
     permissionMode: effectivePermissionMode,
     ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
     ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
+    // Sent again, for the same reason the permission mode and the cwd are: the
+    // runtime contract resolves a turn as per-send override → persisted → its
+    // own default, and a runtime whose sessions are not held in memory sees
+    // this call and not the one above.
+    ...executionSettings,
   });
 
   let eventCount = 0,
@@ -436,6 +458,43 @@ export async function handleAgentMessage(
 }
 
 // === Private: pure helpers ===
+
+/**
+ * Ask the host what this turn should run on, and never let the answer stop it.
+ *
+ * Three ways to get nothing, and all three mean the same thing — no preference,
+ * so the runtime picks, which is what every relay turn did before this existed:
+ * a host that wired no resolver, an agent whose directory is unknown, and a
+ * lookup that threw. The last one is the reason this is a function rather than
+ * an inline `await`: reading a manifest or a settings row can fail for reasons
+ * that have nothing to do with the message, and a dropped agent-to-agent
+ * message is a far worse outcome than a turn on the default model.
+ *
+ * @param deps - The handler's dependencies; the resolver is optional on them.
+ * @param sessionId - The key this turn runs under (`ccaSessionKey`).
+ * @param agentDirectory - Where the turn runs, which is where its manifest is.
+ * @param log - Where a failed lookup is reported.
+ */
+async function resolveTurnSettings(
+  deps: AgentHandlerDeps,
+  sessionId: string,
+  agentDirectory: string | undefined,
+  log: NonNullable<AgentHandlerDeps['logger']> | Console
+): Promise<TurnExecutionSettings> {
+  if (!deps.resolveExecutionSettings) return {};
+  try {
+    return await deps.resolveExecutionSettings({
+      sessionId,
+      ...(agentDirectory ? { agentDirectory } : {}),
+    });
+  } catch (err) {
+    log.warn(
+      `[CCA] could not resolve execution settings for ${sessionId}; running on the runtime default`,
+      err
+    );
+    return {};
+  }
+}
 
 /**
  * Extract agent ID from a `relay.agent.*` subject.

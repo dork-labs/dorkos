@@ -31,6 +31,7 @@ import type {
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
 import { AdapterNotRegisteredError } from './adapter-manager.js';
+import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
 
 /** Dependencies for constructing runtime adapters. */
 export interface AdapterFactoryDeps {
@@ -97,6 +98,15 @@ export async function createAdapter(
         traceStore: deps.traceStore,
         taskStore: deps.taskStore,
         agentSessionStore: deps.agentSessionStore,
+        // What the turn runs on. Keyed off the runtime this adapter was handed
+        // rather than off the literal above, with the same `?? 'claude-code'`
+        // the registration uses (`type` is optional on `AgentRuntimeLike`, and
+        // `adapter-manager.ts` files a runtime that declares none under that
+        // key). So a runtime whose model defaults live in another `runtimes.*`
+        // section resolves against its own section rather than Claude Code's.
+        resolveExecutionSettings: createTurnExecutionSettingsResolver(
+          agentManager.type ?? 'claude-code'
+        ),
         logger,
       });
     }

@@ -69,6 +69,7 @@ export {
 export type { TriggerTurnDeps, TriggerTurnOpts, TriggerTurnResult } from './trigger-turn.js';
 export {
   resolveSessionDefaults,
+  resolveUnattendedSessionDefaults,
   readAgentExecutionDefaults,
   describeExecutionDefaults,
   type AgentExecutionDefaults,

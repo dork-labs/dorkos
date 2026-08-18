@@ -303,6 +303,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             agentManager: this.deps.agentManager,
             traceStore: this.deps.traceStore,
             agentSessionStore: this.deps.agentSessionStore,
+            resolveExecutionSettings: this.deps.resolveExecutionSettings,
             logger: this.deps.logger,
           },
           this.relay

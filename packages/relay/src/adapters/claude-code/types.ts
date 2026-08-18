@@ -8,7 +8,46 @@
  * @module relay/adapters/claude-code-types
  */
 
-import type { PermissionMode, StreamEvent } from '@dorkos/shared/types';
+import type { PermissionMode, SessionSettings, StreamEvent } from '@dorkos/shared/types';
+
+/**
+ * What a relay-triggered turn runs with, beyond its permission mode.
+ *
+ * Permissions are deliberately absent. The relay resolves its own mode from the
+ * binding that carried the message — and treats an absent one as `'default'`
+ * rather than as consent (DOR-604) — so an execution setting that could also
+ * carry a permission mode would be a second answer to a question that already
+ * has one.
+ */
+export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'>;
+
+/**
+ * What model, effort and fast-mode a relay-triggered turn should start with.
+ *
+ * The adapter cannot answer this itself: the ladder is an agent's manifest, then
+ * the server's per-runtime default, and both live host-side (the server's
+ * `resolveSessionDefaults`, which is also what a room turn resolves through).
+ * So it is a seam — a host that wires one gets an agent answering on the model
+ * it was pinned to, and a host that wires none behaves exactly as before, with
+ * the runtime picking.
+ *
+ * **A session that already has settings keeps them.** The resolver is asked with
+ * the key the turn is about to run under, which is the persisted SDK session id
+ * once one exists, so a host can find the row a person's own choice was stored
+ * in and answer with that instead of the manifest.
+ *
+ * Tolerant by contract: the adapter treats a rejection as "no preference" and
+ * runs the turn anyway. A settings problem must never drop somebody's message.
+ *
+ * @param opts.sessionId - The session key this turn runs under (`ccaSessionKey`).
+ * @param opts.agentDirectory - The addressed agent's project directory, the one
+ *   holding `.dork/agent.json`. Absent when nothing resolved an agent for this
+ *   subject, and the manifest tier then has nothing to read.
+ */
+export type ExecutionSettingsResolver = (opts: {
+  sessionId: string;
+  agentDirectory?: string;
+}) => Promise<TurnExecutionSettings>;
 
 /**
  * Minimal interface for agent session management.
@@ -39,12 +78,20 @@ export interface AgentRuntimeLike {
 
   ensureSession(
     sessionId: string,
-    opts: { permissionMode: PermissionMode; cwd?: string; hasStarted?: boolean }
+    opts: TurnExecutionSettings & {
+      permissionMode: PermissionMode;
+      cwd?: string;
+      hasStarted?: boolean;
+    }
   ): void;
   sendMessage(
     sessionId: string,
     content: string,
-    opts?: { permissionMode?: PermissionMode; cwd?: string; systemPromptAppend?: string }
+    opts?: TurnExecutionSettings & {
+      permissionMode?: PermissionMode;
+      cwd?: string;
+      systemPromptAppend?: string;
+    }
   ): AsyncGenerator<StreamEvent>;
   /**
    * Get the SDK-assigned session UUID for a given session key.
@@ -123,6 +170,12 @@ export interface ClaudeCodeAdapterDeps {
    * is used as the session ID (original behavior).
    */
   agentSessionStore?: AgentSessionStoreLike;
+  /**
+   * What model and effort an agent-addressed turn starts with — see
+   * {@link ExecutionSettingsResolver}. Absent means no preference at all, which
+   * is what every host did before this existed.
+   */
+  resolveExecutionSettings?: ExecutionSettingsResolver;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
