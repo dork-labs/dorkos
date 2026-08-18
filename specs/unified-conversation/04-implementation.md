@@ -167,7 +167,8 @@ Two independent reviews — spec compliance, then adversarial per `REVIEW.md` �
   - Screenshots (session scratchpad): `p2-quiet-room.png`, `p2-lane-working.png`, `p2-peek-open.png`, `p2-session-lane.png`, `p2-lane-stalled.png`.
   - **Verification ladder:** `pnpm format:check` exit 0 · `pnpm --filter @dorkos/client typecheck` clean · `@dorkos/server typecheck` clean · client `lint` 0 errors / 118 warnings (P1's count) · server `lint` 0 errors / 48 warnings · `pnpm verify` **exit 0**, 29/29 turbo tasks, 940 files / 11 656 tests. The first `pnpm verify` run failed one unrelated case (`McpAppFrame` "renders a strict-sandbox iframe") which passes in isolation and passed on the re-run — a flake in a suite this phase never touched.
   - **knip: no new orphan, and the totals fell.** Unused exports 557 → 556, unused exported types 588 → 586, duplicate exports 2 → 2. Three items this phase introduced were fixed rather than accepted: `formatTokens` (exported with no reader outside its module), and `LiveLaneProps` / `LivePeekProps` (barrel types a host never names — TypeScript infers them from `<Conversation.LiveLane>`).
-  - Servers stopped afterwards.
+  - Servers stopped afterwards; ports 4268 and 4418 answer nothing and `pgrep -f DOR-1329` is empty.
+  - **`origin/DOR-1328` gained two commits while this phase ran** (a merge of `origin/main`, and the spec landing through PR #1090). Merged in, never rebased, at the end of the phase — which is also what took `specs/manifest.json` back to `origin/main`'s reading of an unrelated spec's status.
 
 ## Files Modified/Created
 
