@@ -42,6 +42,7 @@ export type {
   LaneTurn,
 } from './model/lane-state';
 export type { LaneScope, LiveLaneProps } from './ui/LiveLane';
+export type { LivePeekProps, LivePeekRow } from './ui/LivePeek';
 export { messageItem, toolStatus } from './ui/message/message-variants';
 export { MessageAuthorAvatar } from './ui/message/MessageAuthorAvatar';
 export { formatTime } from './lib/format-entry-time';
@@ -59,6 +60,7 @@ export { attachmentsSummary } from './ui/message/MessageAttachments';
 
 import { ConversationRoot } from './ui/ConversationRoot';
 import { LiveLane } from './ui/LiveLane';
+import { LivePeek } from './ui/LivePeek';
 import { MessageActions } from './ui/message/MessageActions';
 import { MessageAttachments } from './ui/message/MessageAttachments';
 import { MessageAuthor } from './ui/message/MessageAuthor';
@@ -81,6 +83,7 @@ import { MessageRoot } from './ui/message/MessageRoot';
 export const Conversation = {
   Root: ConversationRoot,
   LiveLane,
+  LivePeek,
 };
 
 /**

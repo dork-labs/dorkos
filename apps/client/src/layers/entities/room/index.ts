@@ -21,6 +21,7 @@ export type { RoomStreamState } from './model/use-room-stream';
 export {
   useRoomPresence,
   useRoomPresenceAuthorIds,
+  useRoomPresenceClaims,
   useRoomPresenceEverywhere,
   useRoomPresenceStore,
   PRESENCE_TICK_MS,
@@ -29,6 +30,7 @@ export type {
   PresenceScope,
   RoomPresenceAuthor,
   RoomPresenceClaim,
+  RoomPresenceClaimRow,
 } from './model/use-room-presence';
 export { useRoomWorking, useRoomWorkingStore, useOpenRoomWorking } from './model/use-room-working';
 export { usePostToRoom } from './model/use-post-to-room';

@@ -186,6 +186,7 @@ function MemberRowDemo({ member, ...props }: MemberRowDemoProps) {
 /** A live claim, as the room's stream would report one three minutes in. */
 const WORKING: RoomPresenceAuthor = {
   authorId: MEMBER.pm.authorId,
+  entryId: 'entry-brief',
   state: 'working',
   since: minutesBeforeNow(3),
   elapsedMs: 3 * 60_000,
