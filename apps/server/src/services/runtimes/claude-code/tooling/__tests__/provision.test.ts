@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -9,6 +9,7 @@ import {
   resolveProvisionedClaudePath,
   resolveClaudeProvisionDir,
   claudePlatformPackages,
+  CLAUDE_SDK_VERSION,
 } from '../provision.js';
 
 // MOCK the spawned installer — never run a real npm install in CI.
@@ -174,5 +175,85 @@ describe('provisionClaudeCode', () => {
 
     vi.mocked(existsSync).mockReturnValue(false);
     expect(resolveProvisionedClaudePath()).toBeNull();
+  });
+});
+
+/**
+ * Which of the two Linux binary packages an install picks.
+ *
+ * `claudePlatformPackages()[0]` is the ONLY package `runProvisionClaudeCode`
+ * installs, and on Linux the choice between the glibc and musl builds is made by
+ * a libc guess. A wrong guess installs cleanly and then refuses to run — the
+ * quietest possible failure — so both directions are pinned here (review of
+ * DOR-1334).
+ */
+describe('claudePlatformPackages — the Linux libc choice', () => {
+  const realPlatform = process.platform;
+  const realArch = process.arch;
+  const realReport = process.report;
+
+  /** Pretend to be linux/x64 with the given diagnostic report. */
+  function stubLinuxHost(report: unknown): void {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    Object.defineProperty(process, 'arch', { value: 'x64', configurable: true });
+    Object.defineProperty(process, 'report', { value: report, configurable: true });
+  }
+
+  /** A Node diagnostic report that does, or does not, name a glibc runtime. */
+  function reportWith(glibcVersionRuntime?: string): unknown {
+    return {
+      getReport: () => ({ header: glibcVersionRuntime ? { glibcVersionRuntime } : {} }),
+    };
+  }
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+    Object.defineProperty(process, 'arch', { value: realArch, configurable: true });
+    Object.defineProperty(process, 'report', { value: realReport, configurable: true });
+  });
+
+  it('installs the musl build first on a musl host (no glibc runtime in the report)', () => {
+    stubLinuxHost(reportWith(undefined));
+
+    const [first, second] = claudePlatformPackages();
+
+    expect(first).toBe('@anthropic-ai/claude-agent-sdk-linux-x64-musl');
+    // The other build stays on the list: resolution still checks both names, so
+    // a host that already has the glibc one installed is not made unresolvable.
+    expect(second).toBe('@anthropic-ai/claude-agent-sdk-linux-x64');
+  });
+
+  it('installs the glibc build first on a glibc host', () => {
+    stubLinuxHost(reportWith('2.39'));
+
+    const [first, second] = claudePlatformPackages();
+
+    expect(first).toBe('@anthropic-ai/claude-agent-sdk-linux-x64');
+    expect(second).toBe('@anthropic-ai/claude-agent-sdk-linux-x64-musl');
+  });
+
+  it('falls back to the glibc build when there is no diagnostic report to read', () => {
+    stubLinuxHost(undefined);
+
+    expect(claudePlatformPackages()[0]).toBe('@anthropic-ai/claude-agent-sdk-linux-x64');
+  });
+
+  // The endpoint's actual behaviour, not just the list's: the spec handed to
+  // `npm install` is the FIRST candidate, so the libc choice reaches the wire.
+  it('installs the musl package on a musl host, end to end', async () => {
+    stubLinuxHost(reportWith(undefined));
+    vi.mocked(existsSync).mockReturnValue(true);
+    armSpawn();
+
+    const resultP = provisionClaudeCode();
+    await flush();
+    child.emit('exit', 0);
+    await resultP;
+
+    expect(vi.mocked(spawn).mock.calls[0][1]).toEqual(
+      expect.arrayContaining([
+        `@anthropic-ai/claude-agent-sdk-linux-x64-musl@${CLAUDE_SDK_VERSION}`,
+      ])
+    );
   });
 });

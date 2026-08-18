@@ -52,13 +52,19 @@ const CLAUDE_BIN = process.platform === 'win32' ? 'claude.exe' : 'claude';
  * on a musl host the field is simply absent. Cheaper and more reliable than
  * shelling out to `ldd --version`, and it decides which of the two Linux binary
  * packages is worth installing — the wrong one installs fine and then refuses to
- * run.
+ * run, which is a failure mode nobody enjoys diagnosing.
+ *
+ * A host with NO diagnostic report at all cannot be told apart either way, so it
+ * is treated as glibc: that is what the great majority of Linux hosts are, and
+ * `resolveProvisionedClaudePath` still checks both package names afterwards, so
+ * a wrong guess here costs an install, never a permanently unusable rung.
  */
 function isMuslLinux(): boolean {
   const report = process.report?.getReport() as
     | { header?: { glibcVersionRuntime?: string } }
     | undefined;
-  return report?.header?.glibcVersionRuntime === undefined;
+  if (!report) return false;
+  return report.header?.glibcVersionRuntime === undefined;
 }
 
 /**
