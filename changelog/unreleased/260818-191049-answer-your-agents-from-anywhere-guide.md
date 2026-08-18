@@ -5,6 +5,8 @@ covers:
   - 'chore(changelog): drop the two auto-generated P5 fragments, folded into one phase fragment later (DOR-1332)'
   - 'docs(contributing,client): the live lane, the Conversation compound, and answering an Ask from anywhere (DOR-1332)'
   - 'docs(specs,decisions): close out unified-conversation — 04-implementation.md, manifest to implemented, three ADRs accepted (DOR-1332)'
+  - "fix(client): the Composer showcase's idle and typing demos stop drawing the queue panel (DOR-1332)"
+  - 'docs(changelog): one fragment for phase 5, covering every P5 commit (DOR-1332)'
 ---
 
 ### Added
