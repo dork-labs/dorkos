@@ -1,7 +1,7 @@
 /**
  * Every state the live lane can be in, in one place.
  *
- * Ten states share one line, and which one wins is a priority stack — so a
+ * Nine states share one line, and which one wins is a priority stack — so a
  * regression in the stack is exactly the kind of thing that hides until
  * somebody happens to hit the fourth-most-likely case. Drawn all at once, it is
  * one glance.
@@ -23,7 +23,8 @@ import {
   type LivePeekRow,
 } from '@/layers/features/conversation';
 import type { ConversationCapabilities } from '@/layers/features/conversation';
-import { InteractionAsk } from '@/layers/features/ask';
+import { AskCard, AskReceiptLine, InteractionAsk } from '@/layers/features/ask';
+import type { AskReceipt } from '@/layers/entities/attention';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -111,10 +112,15 @@ function turn(overrides: Partial<LaneTurn> = {}): LaneState {
 }
 
 /**
- * The Ask rung's fixture — a real `InteractionPendingEvent`, pinned against a
- * frozen clock so the countdown does not flap while the page is open.
+ * The Ask rung's fixture clock — read once, at module load, never per render
+ * (`Date.now()` during render is impure, `react-hooks/purity`).
+ *
+ * A wall-clock reading rather than a written-out date, for the reason
+ * `AsksShowcases` spells out at its own `NOW`: the card's deadline is
+ * `startedAt + timeoutMs`, so a date pinned in the source is a deadline in the
+ * past and the grown card reads "expired" instead of counting.
  */
-const NOW_ASK = Date.parse('2026-08-18T10:00:00.000Z');
+const NOW_ASK = Date.now();
 
 const PENDING_ASK: LaneAsk = {
   sessionId: 'session-1',
@@ -133,6 +139,35 @@ const PENDING_ASK: LaneAsk = {
 
 /** The line the lane draws for it. */
 const ASK_HEADLINE = 'Meeting Notes wants to run "pnpm verify"';
+
+/**
+ * The three endings the lane's own card can settle into.
+ *
+ * The real `AskReceiptLine` inside a real resolved `AskCard.Root` — the exact
+ * pair `InteractionAsk` renders once `useAskReceipt` answers, so this bench
+ * cannot drift from the card the lane actually opens. (The transcript's
+ * one-line `AskReceipt` is a different component for a different place, and is
+ * benched on the Asks section beside the prompts it records.)
+ */
+const LANE_RECEIPTS: readonly [string, AskReceipt][] = [
+  [
+    'Answered here',
+    {
+      outcome: 'answered',
+      resolvedAt: new Date(NOW_ASK).toISOString(),
+      byThisWindow: true,
+      decision: 'allowed',
+    },
+  ],
+  [
+    'Answered in another window',
+    { outcome: 'answered', resolvedAt: new Date(NOW_ASK).toISOString(), byThisWindow: false },
+  ],
+  [
+    'Answered by the clock',
+    { outcome: 'expired', resolvedAt: new Date(NOW_ASK).toISOString(), byThisWindow: false },
+  ],
+];
 
 /** The lane's composer footprint, so each state is seen where it lives. */
 function LaneBox({ children }: { children: React.ReactNode }) {
@@ -249,7 +284,8 @@ export function LiveLaneShowcase() {
 
       <ShowcaseLabel>
         An Ask — amber, and never amber alone: the word Answer carries the same fact. Pressing it
-        grows the lane into the card, over the composer rather than inside the lane.
+        opens the card over the composer — a popover on a desktop, a bottom sheet on a phone — so
+        the lane itself stays the one reserved line it always is.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <LaneBox>
@@ -270,6 +306,26 @@ export function LiveLaneShowcase() {
             askCard={<InteractionAsk ask={PENDING_ASK} agentName="Meeting Notes" />}
           />
         </LaneBox>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        The receipts — what the card the lane opened settles into once the prompt has ended. The
+        answer can arrive from here, from another window, or from the clock, and every one of the
+        three says so before the card leaves. A card that simply vanished would leave a reader
+        wondering whether they answered it.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        {LANE_RECEIPTS.map(([label, receipt]) => (
+          <LaneBox key={label}>
+            <div className="px-2">
+              <p className="text-muted-foreground mb-1 text-xs">{label}</p>
+              <AskCard.Root isResolved>
+                <AskCard.Headline className="mb-2">{ASK_HEADLINE}</AskCard.Headline>
+                <AskReceiptLine receipt={receipt} />
+              </AskCard.Root>
+            </div>
+          </LaneBox>
+        ))}
       </ShowcaseDemo>
 
       <ShowcaseLabel>A turn parked on you, with no prompt object in hand</ShowcaseLabel>
