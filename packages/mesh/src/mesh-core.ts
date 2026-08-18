@@ -371,6 +371,18 @@ export class MeshCore {
     return agentMgmt.getSubjectByPath(this.agentDeps, projectPath);
   }
 
+  /**
+   * Resolve an agent's canonical Relay subject by id.
+   *
+   * The by-id twin of {@link getSubjectByPath}, built from the same un-stripped
+   * registry entry, so it equals the `relaySubject` {@link inspect} reports.
+   * Use it (never a subject rebuilt from `get()`'s namespace-stripped manifest)
+   * wherever the subject is an address a caller will publish to.
+   */
+  getSubject(agentId: string): string | undefined {
+    return agentMgmt.getSubject(this.agentDeps, agentId);
+  }
+
   /** Get the project path for a registered agent. */
   getProjectPath(agentId: string): string | undefined {
     return agentMgmt.getProjectPath(this.agentDeps, agentId);

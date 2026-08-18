@@ -99,6 +99,45 @@ describe('sender identity resolves the registered namespace (M6 regression)', ()
   });
 });
 
+describe('getSubject: the same address, resolved by agent id (DOR-1337)', () => {
+  it('matches inspect().relaySubject for a nested agent, not the basename shape', async () => {
+    const base = await makeTempDir();
+    mesh = new MeshCore({ db, relayCore: relay, defaultScanRoot: base });
+
+    const agentDir = path.join(base, 'teams', 'alpha', 'agent-a');
+    await fs.mkdir(agentDir, { recursive: true });
+    const manifest = await mesh.registerByPath(agentDir, {
+      name: 'agent-a',
+      runtime: 'claude-code',
+    });
+
+    expect(mesh.getSubject(manifest.id)).toBe(mesh.inspect(manifest.id)!.relaySubject);
+    expect(mesh.getSubject(manifest.id)).toBe(`relay.agent.teams.${manifest.id}`);
+    expect(mesh.getSubject(manifest.id)).toBe(mesh.getSubjectByPath(agentDir)!.subject);
+  });
+
+  it('carries an explicit manifest namespace', async () => {
+    const base = await makeTempDir();
+    mesh = new MeshCore({ db, relayCore: relay, defaultScanRoot: base });
+
+    const agentDir = path.join(base, 'other', 'agent-b');
+    await fs.mkdir(agentDir, { recursive: true });
+    const manifest = await mesh.registerByPath(agentDir, {
+      name: 'agent-b',
+      runtime: 'claude-code',
+      namespace: 'custom-ns',
+    });
+
+    expect(mesh.getSubject(manifest.id)).toBe(`relay.agent.custom-ns.${manifest.id}`);
+  });
+
+  it('returns undefined for an id nobody registered', async () => {
+    const base = await makeTempDir();
+    mesh = new MeshCore({ db, relayCore: relay, defaultScanRoot: base });
+    expect(mesh.getSubject('01JQNOTANAGENTID000000000')).toBeUndefined();
+  });
+});
+
 describe('system agent (DorkBot) access through real AccessControl', () => {
   it('DorkBot <-> project agents allowed both ways; cross-namespace peers denied', async () => {
     const base = await makeTempDir();

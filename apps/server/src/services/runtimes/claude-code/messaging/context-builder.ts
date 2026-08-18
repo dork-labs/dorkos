@@ -52,12 +52,32 @@ const T = IN_SESSION_TOOL_PREFIX;
  *
  * Deferral IS switchable — `createSdkMcpServer` takes `alwaysLoad`, and so does
  * `tool()`'s fifth argument (verified against the real factory, not the type
- * declarations). DorkOS uses it for five tools and declines it for the other 78:
+ * declarations). DorkOS uses it for five tools on every session, six more on a
+ * session that IS a registered mesh agent, and declines it for the rest:
  * eighty-odd schemas on every turn's prompt is a worse trade than one search. So
  * this block still teaches the search, because for most of the surface it is still
- * the way in. See `mcp-tools/tool-exposure.ts` for which five and why.
+ * the way in. See `mcp-tools/tool-exposure.ts` for which and why.
+ *
+ * WHICH of the two sentences this renders is not cosmetic. The prompt claiming a
+ * tool is loaded when it is deferred spends the turn it was written to save. The
+ * flag is therefore decided by `loadsAgentToAgentTools` — the same function
+ * `mcp-tools/index.ts` decides exposure with — over the same input, the
+ * SESSION'S cwd rather than the turn's (see the call site in
+ * `launch-resolver.ts` for why the difference matters) (DOR-1337 / F8).
+ *
+ * @param agentToAgentToolsPreloaded - True when the six agent-to-agent tools ride
+ *   this session's turn-1 prompt.
  */
-const DORKOS_TOOLS_CONTEXT = `<dorkos_tools>
+function dorkosToolsContext(agentToAgentToolsPreloaded: boolean): string {
+  const preloaded = agentToAgentToolsPreloaded
+    ? `The room tools, ${T}list_capabilities, and — because you are a registered agent —
+${T}mesh_list, ${T}mesh_inspect, ${T}relay_send, ${T}relay_send_async,
+${T}relay_send_and_wait and ${T}relay_inbox are already in your tool list. Call any of
+them straight away, with no lookup step.`
+    : `The room tools and ${T}list_capabilities are already in your tool list — call them
+straight away, with no lookup step.`;
+
+  return `<dorkos_tools>
 In the tool blocks below — the ones whose tags end in _tools — every DorkOS tool is
 written the only way you can call it: in full, starting ${T}. Copy the whole
 string. Dropping that start does not give you a shorter alias for the same tool; it
@@ -66,8 +86,7 @@ available". Prose elsewhere may instead describe a tool by the END of its name,
 because other runtimes reach these same tools under a different prefix; on THIS
 runtime the prefix is always ${T}.
 
-The room tools and ${T}list_capabilities are already in your tool list — call them
-straight away, with no lookup step.
+${preloaded}
 
 Any OTHER tool you do not see there is deferred, not missing. Load it by its full
 name and then call it:
@@ -79,9 +98,42 @@ catalog of what you can do on this machine — settings, agents, connectors, the
 marketplace — with each entry's id and input schema. Ask it before concluding that
 something cannot be done here.
 </dorkos_tools>`;
+}
 
-const RELAY_TOOLS_CONTEXT = `<relay_tools>
+/**
+ * Build the `<relay_tools>` block's text.
+ *
+ * Two things in here are load-bearing enough to be worth naming.
+ *
+ * **The subject shape.** An agent inbox is `relay.agent.{namespace}.{agentId}`,
+ * and every allow/deny rule Mesh writes is matched against that shape. This block
+ * used to teach the two-segment `relay.agent.{agentId}` in the hierarchy and in
+ * all four workflows, so an agent following its own documentation addressed a
+ * subject no allow rule could match, fell through to the blanket cross-namespace
+ * deny, and was refused — with the operator's grant sitting there, correct and
+ * unmatched (DOR-1337 / F5). The rule the prose now states is: take the address
+ * from `relaySubject`, never assemble one.
+ *
+ * **Whether the tools are already loaded.** `agentToAgentToolsPreloaded` mirrors
+ * the exposure decision in `mcp-tools/tool-exposure.ts` exactly. Saying "already
+ * in your tool list" to a session whose tools are in fact deferred would cost the
+ * turn it is meant to save, so the two must be computed from the same fact.
+ *
+ * @param agentToAgentToolsPreloaded - True when this session's six agent-to-agent
+ *   tools ride the turn-1 prompt (a registered agent, Relay on).
+ */
+function relayToolsContext(agentToAgentToolsPreloaded: boolean): string {
+  const loadingNote = agentToAgentToolsPreloaded
+    ? `${T}mesh_list, ${T}mesh_inspect, ${T}relay_send, ${T}relay_send_async,
+${T}relay_send_and_wait and ${T}relay_inbox are already in your tool list — no ToolSearch
+step before you use them.`
+    : `Load these tools with ToolSearch by their full names before the first use in a turn,
+e.g. ToolSearch(query="select:${T}relay_send_and_wait").`;
+
+  return `<relay_tools>
 DorkOS Relay is a pub/sub message bus for inter-agent communication.
+
+${loadingNote}
 
 Trust model: your sender identity is injected by the server on every send — there
 is NO "from" parameter and you cannot send as another agent. Inboxes are private
@@ -98,7 +150,13 @@ to inspect namespaces and rules — its openMesh field tells you whether that
 mesh-wide switch is already on.
 
 Subject hierarchy:
-  relay.agent.{agentId}                — activate a specific agent session
+  relay.agent.{namespace}.{agentId}    — an agent's inbox; take it from the relaySubject
+                                         field of ${T}mesh_list / ${T}mesh_inspect rather
+                                         than building it by hand. A bare
+                                         relay.agent.{agentId} is rewritten to the real
+                                         address when that id is a registered agent; any
+                                         other subject you assemble may match no access
+                                         rule and come back ACCESS_DENIED.
   relay.inbox.query.{UUID}             — ephemeral inbox for ${T}relay_send_and_wait (auto-managed)
   relay.inbox.dispatch.{UUID}          — ephemeral inbox for ${T}relay_send_async (auto-expires after ~35 min)
   relay.inbox.{agentId}                — persistent agent reply inbox
@@ -106,32 +164,40 @@ Subject hierarchy:
   relay.system.console                 — system broadcast channel
   relay.system.tasks.{scheduleId}      — Tasks scheduler events
 
+Every workflow below starts the same way: ${T}mesh_list() lists the agents on this
+machine, and each entry's relaySubject IS the address you send to. Copy that string
+into to_subject / subject verbatim.
+
 Workflow: Query another agent — SHORT tasks (≤10 min, PREFERRED)
-1. ${T}mesh_list() to find available agents and their agent IDs
-2. ${T}relay_send_and_wait(to_subject="relay.agent.{theirAgentId}", payload={task}, timeout_ms=600000)
+1. ${T}mesh_list() to find the agent and read its relaySubject
+2. ${T}relay_send_and_wait(to_subject=<their relaySubject>, payload={task}, timeout_ms=600000)
    → Blocks until reply (max 10 min / 600 000 ms)
    → Returns: { reply, from, replyMessageId, sentMessageId, progress: ProgressEvent[] }
    → progress[] contains intermediate steps: { type: "progress", step, step_type, text, done: false }
+   → A failed turn comes back as an error with code AGENT_ERROR instead, carrying
+     partialText — treat that as "they crashed", never as an empty answer
 
 Workflow: Dispatch to another agent — LONG tasks (>10 min)
-1. ${T}relay_send_async(to_subject="relay.agent.{theirAgentId}", payload={task})
+1. ${T}relay_send_async(to_subject=<their relaySubject>, payload={task})
    → Returns IMMEDIATELY: { messageId, inboxSubject: "relay.inbox.dispatch.{UUID}" }
 2. Poll: ${T}relay_inbox(endpoint_subject=inboxSubject, ack=true) — defaults to pending (unread) messages
    → Returns messages[]: each { id, subject, status, createdAt, sender, payload }
    → payload is a progress event { type: "progress", step, step_type: "message"|"tool_result", text, done: false }
      or the final result { type: "agent_result", text, done: true }
+   → a final result may also carry error: "…". That means their turn FAILED; text is
+     only what they managed before it did. Check for error before using text as an answer
    → ack=true DELETES each returned message's content for good, so each poll only returns
      new messages — take what you need from the response, it will not be there next time
 3. When a payload with done:true is received: ${T}relay_unregister_endpoint(subject=inboxSubject)
 
 Workflow: Fire-and-forget (no reply needed)
-1. ${T}relay_send(subject="relay.agent.{theirAgentId}", payload={task})
+1. ${T}relay_send(subject=<their relaySubject>, payload={task})
    → { messageId, deliveredTo, queued } — queued:true means no live consumer yet (buffered/dead-lettered)
    → Rejected sends (e.g. rate-limited) return an error with code REJECTED — the message was NOT delivered
 
 Workflow: Manual poll (fallback)
 1. ${T}relay_register_endpoint(subject="relay.inbox.{myAgentId}")
-2. ${T}relay_send(subject="relay.agent.{theirAgentId}", payload={task}, replyTo="relay.inbox.{myAgentId}")
+2. ${T}relay_send(subject=<their relaySubject>, payload={task}, replyTo="relay.inbox.{myAgentId}")
 3. ${T}relay_inbox(endpoint_subject="relay.inbox.{myAgentId}", ack=true)
    → messages[].payload carries each reply; ack=true deletes them for good once returned
 
@@ -173,9 +239,11 @@ server restarts. A subject differing from an existing endpoint only by letter ca
 
 Error codes: RELAY_DISABLED, ACCESS_DENIED, ENDPOINT_ACCESS_DENIED (not your endpoint),
              RESERVED_SUBJECT, INVALID_SUBJECT, ENDPOINT_NOT_FOUND (no such endpoint —
-             cleanup is idempotent, do not retry), TIMEOUT, QUERY_FAILED, REJECTED,
-             DISPATCH_FAILED, UNREGISTER_FAILED
+             cleanup is idempotent, do not retry), TIMEOUT, AGENT_ERROR (their turn
+             failed — partialText is what they got through, not an answer),
+             QUERY_FAILED, REJECTED, DISPATCH_FAILED, UNREGISTER_FAILED
 </relay_tools>`;
+}
 
 const MESH_TOOLS_CONTEXT = `<mesh_tools>
 DorkOS Mesh is a local agent registry for discovering and communicating with AI agents on this machine.
@@ -185,14 +253,16 @@ Agent lifecycle:
 2. ${T}mesh_register(path, name, runtime, capabilities) — register a candidate as a known agent
 3. ${T}mesh_inspect(agentId) — get full manifest, health status, and relay endpoint
 4. ${T}mesh_status() — aggregate overview: total, active, stale agent counts
-5. ${T}mesh_list(runtime?, capability?) — filter agents by runtime or capability
+5. ${T}mesh_list(runtime?, capability?) — filter agents by runtime or capability; every entry
+   carries relaySubject, the exact address to send that agent a message
 6. ${T}mesh_deny(path, reason) — exclude a path from future discovery
 7. ${T}mesh_unregister(agentId) — remove an agent from the registry
 8. ${T}mesh_query_topology(namespace?) — view agent network from a namespace perspective
 
 Workflows:
 - Find agents: ${T}mesh_list() then ${T}mesh_inspect(agentId) for details
-- Contact another agent: ${T}mesh_inspect(agentId) to get their relay endpoint, then ${T}relay_send
+- Contact another agent: take their relaySubject from ${T}mesh_list (or ${T}mesh_inspect) and
+  send to that exact string — it is the one address every access rule is written against
 - Register this project: ${T}mesh_register(path=cwd, name="project-name", runtime="claude-code")
 
 Runtimes: claude-code | cursor | codex | other
@@ -395,8 +465,15 @@ function buildMarketplaceToolsBlock(): string {
  *
  * When `toolConfig` is provided, uses the pre-resolved config (agent-aware).
  * Otherwise falls back to global feature flag + config toggle checks.
+ *
+ * @param toolConfig - Pre-resolved tool config, when the caller has one.
+ * @param agentToAgentToolsPreloaded - Whether this session's six agent-to-agent
+ *   tools already ride the prompt; see {@link relayToolsContext}.
  */
-function buildRelayToolsBlock(toolConfig?: ResolvedToolConfig): string {
+function buildRelayToolsBlock(
+  toolConfig?: ResolvedToolConfig,
+  agentToAgentToolsPreloaded = false
+): string {
   if (toolConfig) {
     if (!toolConfig.relay) return '';
   } else {
@@ -404,7 +481,7 @@ function buildRelayToolsBlock(toolConfig?: ResolvedToolConfig): string {
     const config = configManager.get('agentContext');
     if (config?.relayTools === false) return '';
   }
-  return RELAY_TOOLS_CONTEXT;
+  return relayToolsContext(agentToAgentToolsPreloaded);
 }
 
 /**
@@ -580,13 +657,21 @@ async function buildPeerAgentsBlock(
  *
  * @param cwd - Working directory for the session
  * @param toolConfig - Optional resolved tool config for agent-aware block gating
+ * @param options - Per-session facts the prose has to agree with. `agentSession`
+ *   is `loadsAgentToAgentTools`'s answer for THIS session — the same function
+ *   and the same input `mcp-tools/index.ts` decides exposure with — so the
+ *   prompt's "already in your tool list" is true whenever it says so
+ *   (DOR-1337 / F8). Callers must not compute it themselves.
  */
 export async function buildSystemPromptAppend(
   cwd: string,
-  toolConfig?: ResolvedToolConfig
+  toolConfig?: ResolvedToolConfig,
+  options: { agentSession?: boolean } = {}
 ): Promise<string> {
+  const agentSession = options.agentSession ?? false;
+
   // Static tool context blocks (synchronous — config checks only, content never changes)
-  const relayBlock = buildRelayToolsBlock(toolConfig);
+  const relayBlock = buildRelayToolsBlock(toolConfig, agentSession);
   const meshBlock = buildMeshToolsBlock(toolConfig);
   const adapterBlock = buildAdapterToolsBlock(toolConfig);
   const tasksBlock = buildTasksToolsBlock(toolConfig);
@@ -603,7 +688,7 @@ export async function buildSystemPromptAppend(
     // 1. Static tool documentation — fully cacheable, never changes.
     //    The naming rule comes first, because every block after it is written in
     //    the long form it explains (DOR-1292).
-    DORKOS_TOOLS_CONTEXT,
+    dorkosToolsContext(agentSession),
     relayBlock,
     meshBlock,
     adapterBlock,
@@ -762,7 +847,8 @@ export {
   buildPeerAgentsBlock as _buildPeerAgentsBlock,
   buildRelayConnectionsBlock as _buildRelayConnectionsBlock,
   buildUiToolsBlock as _buildUiToolsBlock,
-  RELAY_TOOLS_CONTEXT as _RELAY_TOOLS_CONTEXT,
+  relayToolsContext as _relayToolsContext,
+  dorkosToolsContext as _dorkosToolsContext,
   MESH_TOOLS_CONTEXT as _MESH_TOOLS_CONTEXT,
   ADAPTER_TOOLS_CONTEXT as _ADAPTER_TOOLS_CONTEXT,
   TASKS_TOOLS_CONTEXT as _TASKS_TOOLS_CONTEXT,
