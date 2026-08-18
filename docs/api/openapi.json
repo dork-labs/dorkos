@@ -396,6 +396,9 @@
               "remainingMs": {
                 "type": "number"
               },
+              "timeoutMs": {
+                "type": "number"
+              },
               "questions": {
                 "type": "array",
                 "items": {
@@ -427,6 +430,9 @@
                 "type": "number"
               },
               "remainingMs": {
+                "type": "number"
+              },
+              "timeoutMs": {
                 "type": "number"
               },
               "serverName": {

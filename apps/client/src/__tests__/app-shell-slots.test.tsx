@@ -159,6 +159,7 @@ vi.mock('@/layers/entities/attention', () => ({
   // pill both read these now.
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
   useSettlingAsks: () => [],
+  useAskAgentNames: () => ({}),
   usePendingApprovals: () => ({
     approvals: mockPendingApprovals,
     isLoading: false,

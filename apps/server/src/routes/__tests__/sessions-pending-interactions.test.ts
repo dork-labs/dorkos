@@ -12,10 +12,18 @@
  *   endpoints reachable from everywhere, and DOR-609's lesson is that _who
  *   acted_ is not _who may_.
  *
- * The eighteen authority cases are written out rather than reduced to one loop
+ * The thirty authority cases are written out rather than reduced to one loop
  * over a table with one assertion in it, because each row is a different
  * sentence about the same rule and a reader has to be able to see which one
- * broke.
+ * broke: five callers × six routes.
+ *
+ * **The mount is the router behind stand-ins for the two middlewares that sit in
+ * front of it**, not `createApp()`. `sessionGate` and the agent-identity
+ * resolver both write onto `res.locals`, and a case has to present exactly one
+ * credential — a real gate under login-on refuses every request before the
+ * route is reached, which would make the interesting rows unreachable. The raw
+ * `X-DorkOS-Agent` header is NOT stubbed: `readCallerAuthority` reads it
+ * directly, which is the whole point of the unresolved-token row.
  *
  * Seeded defects, each run and each red before the fix:
  *
@@ -261,6 +269,31 @@ describe('who may answer a prompt', () => {
         expect(fakeRuntime.approveTool).not.toHaveBeenCalled();
         expect(fakeRuntime.submitAnswers).not.toHaveBeenCalled();
         expect(fakeRuntime.submitElicitation).not.toHaveBeenCalled();
+      });
+
+      it('refuses whoever is holding the approval token, because that is the requester', async () => {
+        // The other half of "the requester never answers": an approval token is
+        // the retry secret, and only the caller that ASKED holds one.
+        const res = await request(buildApp())
+          .post(`/api/sessions/${SESSION_ID}/${route.path}`)
+          .set('X-DorkOS-Approval', 'a-retry-secret')
+          .send(route.body);
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+      });
+
+      it('answers 401 under login-on when nothing proved who is calling', async () => {
+        // `sessionGate` normally refuses this before the route sees it; the
+        // route checks again so the guarantee belongs to the endpoint rather
+        // than to the middleware order.
+        loginEnabled = true;
+        const res = await request(buildApp())
+          .post(`/api/sessions/${SESSION_ID}/${route.path}`)
+          .send(route.body);
+
+        expect(res.status).toBe(401);
+        expect(res.body.code).toBe('AUTH_REQUIRED');
       });
 
       it('refuses a per-user API key while login is on', async () => {

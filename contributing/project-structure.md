@@ -75,7 +75,7 @@ src/
 │   │   │   │   ├── message/  # AssistantMessageContent, StreamingText, ThinkingBlock, SubagentBlock
 │   │   │   │   ├── status/   # ChatStatusSection, AgentIdentityChip, terminal-reason chip
 │   │   │   │   ├── tasks/    # TaskListPanel, TaskDetail, AgentRunner, BackgroundTaskBar
-│   │   │   │   └── tools/    # ToolCallCard, ToolApproval, QuestionPrompt, ElicitationPrompt
+│   │   │   │   └── tools/    # ToolCallCard (the prompts live in features/ask)
 │   │   │   ├── model/
 │   │   │   │   └── stream/   # StreamManager, stream-event-handler, classify-transport-error
 │   │   │   ├── api/

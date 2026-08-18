@@ -23,8 +23,14 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 
-/** The instant every fixture below is measured against. */
-const NOW = Date.now();
+/**
+ * The instant every fixture below is measured against.
+ *
+ * FROZEN, like the lane's own fixtures: with a live `Date.now()` the urgent
+ * demo reads "expired" forty-five seconds after the page is opened, and a
+ * showcase that cannot show what it claims is worse than none.
+ */
+const NOW = Date.parse('2026-08-18T10:00:00.000Z');
 
 /** One prompt, from an agent in `/projects/meeting-notes`. */
 function ask(

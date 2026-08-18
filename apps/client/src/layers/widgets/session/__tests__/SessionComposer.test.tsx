@@ -45,6 +45,12 @@ vi.mock('@/layers/features/ask', () => ({
     <div data-testid="question-prompt">QuestionPrompt-{toolCallId}</div>
   )),
   AskStack: () => null,
+  useAnswerAsk: () => ({
+    answer: vi.fn(),
+    answerAll: vi.fn(),
+    isAnswering: false,
+    error: null,
+  }),
   groupAsks: () => [],
 }));
 

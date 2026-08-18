@@ -1,19 +1,18 @@
 /**
  * The prompt that takes the session's composer while it waits for an answer.
  *
- * `Conversation.Composer`'s `asks` slot, filled by the one surface that has one:
- * a session's inline prompt REPLACES the box, because there is nothing to type
- * into while the agent is parked on a question. A channel draws its Asks in the
- * lane instead — one card, in the place the work is happening (§4.1's dedupe
- * rule).
+ * `Conversation.Composer`'s `asks` slot, filled by the one surface that has
+ * one: a session's inline prompt REPLACES the box, because there is nothing to
+ * type into while the agent is parked on a question. A channel draws its Asks
+ * in the lane instead — one card, in the place the work is happening (§4.1's
+ * dedupe rule).
  *
  * @module widgets/session/ui/SessionAsks
  */
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
-import { ApprovalPrompt, AskStack, QuestionPrompt } from '@/layers/features/ask';
-import { useTransport } from '@/layers/shared/model';
+import { ApprovalPrompt, AskStack, QuestionPrompt, useAnswerAsk } from '@/layers/features/ask';
 import { getToolLabel } from '@/layers/shared/lib';
 import type { InteractiveToolHandle } from '@/layers/features/chat';
 
@@ -36,7 +35,7 @@ interface SessionAsksProps {
   onToolRef: (handle: InteractiveToolHandle | null) => void;
   onToolDecided: (toolCallId: string, answers?: Record<string, string>) => void;
   /**
-   * How many messages are still queued behind this card. This panel replaces
+   * How many messages are still queued behind this card. This prompt replaces
    * the whole composer, queue panel included, so without a mark here the person
    * sees their queued messages disappear at the one moment that looks like
    * loss. They are safe; this says so and nothing more.
@@ -68,22 +67,37 @@ export function SessionAsks({
 
   // The burst form, in place of the batch bar it replaced: two or more
   // approvals queued in this session read as one decision and are answered
-  // once. Behaviour is the bar's, verbatim — the same two transport calls over
-  // the same ids — and only the chrome changed.
-  const transport = useTransport();
-  const [answeringAll, setAnsweringAll] = useState(false);
-  const answerAll = async (allow: boolean) => {
-    if (answeringAll) return;
-    setAnsweringAll(true);
-    try {
-      const ids = pendingApprovals.map((call) => call.toolCallId);
-      await (allow ? transport.batchApprove(sessionId, ids) : transport.batchDeny(sessionId, ids));
-    } catch (err) {
-      console.error('Answering the whole burst failed:', err);
-    } finally {
-      setAnsweringAll(false);
-    }
-  };
+  // once.
+  //
+  // Through the SHARED mutation, not a second copy of the two transport calls:
+  // this used to swallow a refusal into `console.error`, so an answer the
+  // server rejected looked exactly like one it took. `useAnswerAsk` writes the
+  // receipts, takes them back when the server says no, and hands back the
+  // sentence to show.
+  const { answerAll, isAnswering, error } = useAnswerAsk();
+  const burst = useMemo(
+    () =>
+      pendingApprovals.map((call) => ({
+        sessionId,
+        // The panel holds tool calls, not fleet envelopes; only the ids reach
+        // the transport, and the directory is the session's own.
+        cwd: '',
+        interaction: {
+          type: 'approval' as const,
+          id: call.toolCallId,
+          // Zero rather than a clock read: only the ids reach the transport
+          // from here, and a `Date.now()` in a render body is an unstable value
+          // the rules of React are right to object to. The burst card in the
+          // TRAY draws from real envelopes and has real times.
+          startedAt: call.approvalStartedAt ?? 0,
+          remainingMs: call.timeoutMs ?? 0,
+          toolName: call.toolName,
+          input: call.input ?? '',
+          hasSuggestions: call.approvalHasSuggestions ?? false,
+        },
+      })),
+    [pendingApprovals, sessionId]
+  );
 
   return (
     <>
@@ -95,9 +109,10 @@ export function SessionAsks({
             id: call.toolCallId,
             line: getToolLabel(call.toolName, call.input ?? ''),
           }))}
-          onAllowAll={() => void answerAll(true)}
-          onDenyAll={() => void answerAll(false)}
-          isAnswering={answeringAll}
+          onAllowAll={() => void answerAll(burst, 'allow')}
+          onDenyAll={() => void answerAll(burst, 'deny')}
+          isAnswering={isAnswering}
+          error={error}
         />
       )}
       <AnimatePresence mode="wait" initial={false}>

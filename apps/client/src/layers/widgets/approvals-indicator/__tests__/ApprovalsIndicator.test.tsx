@@ -431,4 +431,70 @@ describe('ApprovalsIndicator', () => {
 
     expect(await screen.findByTestId('approvals-indicator')).toBeInTheDocument();
   });
+
+  it('names an agent’s prompt as a question, never as an approval request', async () => {
+    // Two different objects are counted by one pill, and a question is not a
+    // permission request. Seeded defect: restore the old single sentence and
+    // this reads "1 request needs your approval" over a question.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listPendingInteractions: vi.fn().mockResolvedValue({
+        interactions: [
+          {
+            sessionId: 'session-1',
+            cwd: '/projects/meeting-notes',
+            interaction: {
+              type: 'question',
+              id: 'q-1',
+              startedAt: Date.now(),
+              remainingMs: 600_000,
+              timeoutMs: 600_000,
+              questions: [],
+            },
+          },
+        ],
+      }),
+    });
+
+    const marker = await screen.findByTestId('approvals-indicator');
+    expect(marker).toHaveAccessibleName(/1 agent is waiting on your answer/i);
+    expect(marker).not.toHaveAccessibleName(/approval/i);
+  });
+
+  it('counts a waiting prompt beside the approvals, and calls the agent by name', async () => {
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listPendingInteractions: vi.fn().mockResolvedValue({
+        interactions: [
+          {
+            sessionId: 'session-1',
+            cwd: '/projects/meeting-notes',
+            interaction: {
+              type: 'approval',
+              id: 'tc-1',
+              startedAt: Date.now(),
+              remainingMs: 600_000,
+              timeoutMs: 600_000,
+              toolName: 'Write',
+              displayName: 'Write',
+              description: '/projects/meeting-notes/standup.md',
+              input: JSON.stringify({ file_path: '/projects/meeting-notes/standup.md' }),
+              hasSuggestions: false,
+            },
+          },
+        ],
+      }),
+    });
+
+    const marker = await screen.findByTestId('approvals-indicator');
+    expect(marker).toHaveTextContent('1');
+    await userEvent.click(marker);
+
+    // The file is named, which is the whole point of the card — and the agent is
+    // named from its directory when the roster holds nothing better.
+    expect(await screen.findByText(/wants to write standup\.md/i)).toBeInTheDocument();
+    expect(screen.getByText('/projects/meeting-notes/standup.md')).toBeInTheDocument();
+    // The tray is never the session, so it owes a way into it.
+    expect(screen.getByRole('button', { name: 'Open session' })).toBeInTheDocument();
+  });
 });

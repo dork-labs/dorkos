@@ -9,7 +9,7 @@
  *
  * @module features/ask/ui/InteractionAsk
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import { useAskReceipt } from '@/layers/entities/attention';
 import { useNow } from '@/layers/shared/model';
@@ -43,7 +43,7 @@ const TICK_MS = 1000;
  *
  * It never steals focus: it arrives with the message-entrance grammar and sits
  * there. `A` and `D` answer it only while focus is inside the card, and the only
- * thing that puts focus there is a person pressing `⌘⇧A` or clicking it.
+ * thing that puts focus there is a person pressing `⌘⇧Y` or clicking it.
  *
  * When the prompt is answered — here, in another window, or by the clock — the
  * actions are removed in the same commit the receipt appears. The design rule is
@@ -58,6 +58,8 @@ export function InteractionAsk({
   className,
 }: InteractionAskProps) {
   const now = useNow(TICK_MS);
+  // Fixed at mount, so the legacy fallback below cannot drift with the tick.
+  const [mountedAt] = useState(() => Date.now());
   const receipt = useAskReceipt(ask.interaction.id);
   const { answer, isAnswering, error } = useAnswerAsk();
   const cardRef = useRef<HTMLDivElement>(null);
@@ -67,13 +69,28 @@ export function InteractionAsk({
   }, [autoFocus]);
 
   const { interaction } = ask;
-  // Only a permission prompt declares its own budget; a question and an
-  // elicitation ride the server-wide one, and `remainingMs` at the moment the
-  // prompt was listed is what stands in for it. Either way the countdown is
-  // local from here — the wire carries no ticking number.
-  const budgetMs = interaction.type === 'approval' ? interaction.timeoutMs : undefined;
-  const deadline = interaction.startedAt + (budgetMs ?? interaction.remainingMs);
+  // **Anchored to the START, not to what was left when this arrived.**
+  // `remainingMs` is the budget minus the time already spent, so
+  // `startedAt + remainingMs` lands in the past for anything more than half way
+  // through — a question listed six minutes into its ten was born expired
+  // (DOR-1330 review). The server now stamps `timeoutMs` on every kind for
+  // exactly this; a DTO recorded before it existed falls back to counting from
+  // NOW, which is the only honest reading of a bare remainder.
+  const budgetMs = interaction.timeoutMs;
+  const deadline =
+    budgetMs === undefined ? mountedAt + interaction.remainingMs : interaction.startedAt + budgetMs;
   const secondsLeft = Math.max(0, Math.ceil((deadline - now) / 1000));
+
+  // What the prompt itself said, when it said anything. The inline card in the
+  // transcript has always shown this; a fleet-wide card that showed only the
+  // headline asked a person to approve a file it would not name.
+  const detail =
+    interaction.type === 'approval'
+      ? (interaction.description ?? interaction.blockedPath)
+      : interaction.type === 'elicitation'
+        ? interaction.message
+        : undefined;
+  const reason = interaction.type === 'approval' ? interaction.decisionReason : undefined;
 
   return (
     <AskCard.Root
@@ -94,6 +111,13 @@ export function InteractionAsk({
           {askHeadline(ask, agentName)}
         </AskCard.Headline>
       </div>
+
+      {(detail !== undefined || reason !== undefined) && (
+        <AskCard.Detail className="mt-1 pl-8">
+          {detail !== undefined && <p className="truncate font-mono">{detail}</p>}
+          {reason !== undefined && <p>{reason}</p>}
+        </AskCard.Detail>
+      )}
 
       {receipt === undefined && (
         <div className="mt-2">

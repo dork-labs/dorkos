@@ -168,6 +168,73 @@ describe('the Ask card', () => {
   });
 });
 
+describe('what the card says', () => {
+  it('shows what the prompt itself said, not only the headline', () => {
+    // The inline card in the transcript has always drawn these; a fleet-wide
+    // card that showed only the headline asked a person to approve a file it
+    // would not name.
+    wrap(
+      <InteractionAsk
+        ask={ask('tc-detail', {
+          interaction: {
+            displayName: 'Write',
+            toolName: 'Write',
+            description: '/tmp/p3-review.md',
+            decisionReason: 'Path is outside allowed working directories',
+          },
+        })}
+        agentName="Meeting Notes"
+      />
+    );
+
+    expect(screen.getByText('/tmp/p3-review.md')).toBeDefined();
+    expect(screen.getByText('Path is outside allowed working directories')).toBeDefined();
+  });
+
+  it('counts down from when the prompt STARTED, not from what was left when it arrived', () => {
+    // `remainingMs` is the budget minus the time already spent. Anchoring to it
+    // makes a prompt six minutes into its ten read as four minutes of budget —
+    // and anything past half way is born expired. Seeded defect: anchor to
+    // `startedAt + remainingMs` and this reads "expired".
+    wrap(
+      <InteractionAsk
+        ask={ask('tc-clock', {
+          interaction: {
+            startedAt: NOW - 6 * 60_000,
+            remainingMs: 4 * 60_000,
+            timeoutMs: 10 * 60_000,
+          },
+        })}
+        agentName="Meeting Notes"
+      />
+    );
+
+    expect(screen.getByText('4 min left')).toBeDefined();
+  });
+
+  it('counts a question down too, which had no budget on the wire at all', () => {
+    wrap(
+      <InteractionAsk
+        ask={{
+          sessionId: 'session-1',
+          cwd: '/projects/meeting-notes',
+          interaction: {
+            type: 'question',
+            id: 'q-clock',
+            startedAt: NOW - 6 * 60_000,
+            remainingMs: 4 * 60_000,
+            timeoutMs: 10 * 60_000,
+            questions: [],
+          },
+        }}
+        agentName="Meeting Notes"
+      />
+    );
+
+    expect(screen.getByText('4 min left')).toBeDefined();
+  });
+});
+
 describe('a burst', () => {
   it('collapses one agent’s same-tool prompts into one card with Allow all', async () => {
     wrap(<AskList asks={[ask('tc-1'), ask('tc-2'), ask('tc-3')]} />);

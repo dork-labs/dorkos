@@ -1195,6 +1195,18 @@ export const PendingInteractionDTOSchema = z
       id: z.string(),
       startedAt: z.number(),
       remainingMs: z.number(),
+      /**
+       * The full budget this ask was given — the same field the approval member
+       * carries, and stamped by the same selector, so a card can anchor its
+       * countdown to `startedAt + timeoutMs` whatever kind it is drawing.
+       *
+       * Without it a client can only work from `remainingMs`, which is the
+       * budget MINUS the time already spent — so a question listed six minutes
+       * in reads as four minutes of budget and is born nearly expired
+       * (DOR-1330). Optional because a replay recorded before this field
+       * existed must still parse.
+       */
+      timeoutMs: z.number().optional(),
       questions: z.array(QuestionItemSchema),
     }),
     z.object({
@@ -1202,6 +1214,8 @@ export const PendingInteractionDTOSchema = z
       id: z.string(),
       startedAt: z.number(),
       remainingMs: z.number(),
+      /** The full budget this ask was given; see the question member above. */
+      timeoutMs: z.number().optional(),
       serverName: z.string(),
       message: z.string(),
       mode: ElicitationModeSchema.optional(),

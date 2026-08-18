@@ -155,15 +155,15 @@ export const SHORTCUTS = {
   DENY_TOOL: { id: 'deny-tool', key: 'esc', label: 'Deny tool', group: 'chat' },
   TOGGLE_OPTION: { id: 'toggle-option', key: '1-9', label: 'Toggle option', group: 'chat' },
   SUBMIT_ANSWER: { id: 'submit-answer', key: 'enter', label: 'Submit answer', group: 'chat' },
-  // The SAME chord as `AGENT_PROFILE`, and deliberately so — see
-  // `features/ask/model/use-ask-shortcut`. While something is actually waiting
-  // on a person, "A" means Answer and this wins; the rest of the time the key is
-  // untouched and the Profile opens exactly as it always has. Both are listed
-  // because the panel is a promise about what a key does, and the honest answer
-  // here has two halves.
+  // Its own chord, and NOT `mod+shift+a`: that one has opened the Profile since
+  // that panel shipped, and a key whose meaning depends on whether something
+  // happens to be waiting is a promise the `?` panel cannot make — it would have
+  // to list one combo with two labels, and a reader who pressed it would learn
+  // which one they got by watching the screen. `y` for "yes / your answer",
+  // verified free in this registry and unbound in Chrome, Firefox and Safari.
   ANSWER_NEXT_ASK: {
     id: 'answer-next-ask',
-    key: 'mod+shift+a',
+    key: 'mod+shift+y',
     label: 'Answer the next thing waiting on you',
     group: 'chat',
   },

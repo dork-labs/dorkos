@@ -548,4 +548,62 @@ describe('RoomLiveLane', () => {
     expect(document.activeElement).not.toBe(document.body);
     expect(document.activeElement).toBe(document.querySelector('[data-slot="live-lane"]'));
   });
+
+  it('draws only THIS room’s prompt, never one raised in another room', async () => {
+    // The `roomId` filter is the whole reason the event carries a room. Seeded
+    // defect: filter with `() => true` and the lane names the other room's
+    // prompt, which is a card offering to answer for a conversation the reader
+    // is not looking at.
+    const transport = createMockTransport();
+    vi.mocked(transport.listPendingInteractions).mockResolvedValue({
+      interactions: [
+        {
+          sessionId: 'session-elsewhere',
+          cwd: '/projects/elsewhere',
+          roomId: 'some-other-room',
+          interaction: {
+            type: 'approval',
+            id: 'tc-elsewhere',
+            startedAt: Date.parse(STARTED),
+            remainingMs: 600_000,
+            timeoutMs: 600_000,
+            toolName: 'Edit',
+            displayName: 'Edit elsewhere.md',
+            input: '{}',
+            hasSuggestions: false,
+          },
+        },
+        {
+          sessionId: 'session-here',
+          cwd: '/projects/here',
+          roomId: ROOM,
+          roomAuthorId: 'kai',
+          interaction: {
+            type: 'approval',
+            id: 'tc-here',
+            startedAt: Date.parse(STARTED),
+            remainingMs: 600_000,
+            timeoutMs: 600_000,
+            toolName: 'Edit',
+            displayName: 'Edit here.md',
+            input: '{}',
+            hasSuggestions: false,
+          },
+        },
+      ],
+    });
+
+    renderLane({}, transport);
+    // This suite runs on fake timers, so the query is flushed by hand rather
+    // than by a poller that would never tick.
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+
+    const lane = screen.getByTestId('lane-ask');
+    expect(lane.textContent).toContain('here.md');
+    expect(lane.textContent).not.toContain('elsewhere.md');
+    // And it is named from the room's own roster, not from a directory.
+    expect(lane.textContent).toContain('Kai');
+  });
 });

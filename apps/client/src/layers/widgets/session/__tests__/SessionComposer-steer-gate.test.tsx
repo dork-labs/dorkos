@@ -55,6 +55,12 @@ vi.mock('@/layers/features/ask', () => ({
   ApprovalPrompt: () => null,
   QuestionPrompt: () => null,
   AskStack: () => null,
+  useAnswerAsk: () => ({
+    answer: vi.fn(),
+    answerAll: vi.fn(),
+    isAnswering: false,
+    error: null,
+  }),
   groupAsks: () => [],
 }));
 vi.mock('@/layers/features/commands', () => ({ CommandPalette: () => null }));

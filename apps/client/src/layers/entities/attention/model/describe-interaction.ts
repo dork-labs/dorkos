@@ -18,19 +18,22 @@ import type { PendingInteractionDTO } from '@dorkos/shared/types';
 import { getToolLabel } from '@/layers/shared/lib';
 
 /**
- * The tool's own label when it says more than the tool's name, else nothing.
+ * A label that says more than the tool's own name, or nothing.
  *
- * `getToolLabel` is the transcript's own phrasing — "Edit standup.md", "Run
- * 'npm test'" — and it falls back to echoing the tool name when the input tells
- * it nothing. That fallback is exactly the case the headline has a different
- * sentence for, so it has to be distinguishable from a real answer.
+ * The test is the same for both sources and that is the point. `getToolLabel`
+ * is the transcript's own phrasing — "Edit standup.md", "Run 'npm test'" — and
+ * it falls back to echoing the tool name when the input tells it nothing. **The
+ * SDK's `displayName` does exactly the same thing**: for a `Write` it is the
+ * bare word "Write", which produced "dorkbot wants to write" with no file in it
+ * on every fleet-wide card (DOR-1330 review). So a candidate that merely
+ * repeats the tool name is treated as absent, and the next rung runs.
  *
+ * @param candidate - The label to weigh, when there is one.
  * @param toolName - The tool being asked about.
- * @param input - Its arguments, as the prompt carried them.
  */
-function informativeToolLabel(toolName: string, input: string): string | undefined {
-  const label = getToolLabel(toolName, input);
-  return label === toolName ? undefined : label;
+function informative(candidate: string | undefined, toolName: string): string | undefined {
+  if (candidate === undefined) return undefined;
+  return candidate.trim().toLowerCase() === toolName.trim().toLowerCase() ? undefined : candidate;
 }
 
 /**
@@ -69,7 +72,8 @@ export function describeInteraction(interaction: PendingInteractionDTO): string 
     return `needs something from ${interaction.serverName}`;
   }
   const action =
-    interaction.displayName ?? informativeToolLabel(interaction.toolName, interaction.input);
+    informative(interaction.displayName, interaction.toolName) ??
+    informative(getToolLabel(interaction.toolName, interaction.input), interaction.toolName);
   if (action !== undefined) return `wants to ${lowerFirst(action)}`;
   if (interaction.blockedPath !== undefined) {
     return `needs your OK for ${basename(interaction.blockedPath)}`;

@@ -31,8 +31,10 @@ export {
 // Exported because `features/ask` builds the card's headline from it, and one
 // phrasing is the point.
 export { describeInteraction, agentNameFromCwd } from './model/describe-interaction';
+export { useAskAgentNames } from './model/use-ask-agent-names';
 export {
   recordAskReceipt,
+  forgetAskReceipt,
   useAskReceipt,
   settleAsk,
   useSettlingAsks,

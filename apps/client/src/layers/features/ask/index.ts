@@ -30,6 +30,7 @@ export type { QuestionPromptHandle } from './ui/QuestionPrompt';
 export { ElicitationPrompt } from './ui/ElicitationPrompt';
 export { AskReceipt } from './ui/AskReceipt';
 export { AskReceiptRow } from './ui/AskReceiptRow';
+export { useAnswerAsk } from './model/use-answer-ask';
 export { useAskShortcut } from './model/use-ask-shortcut';
 export { useAskTrayRequest } from './model/ask-tray-store';
 export { askExitTransition } from './model/ask-exit-transition';

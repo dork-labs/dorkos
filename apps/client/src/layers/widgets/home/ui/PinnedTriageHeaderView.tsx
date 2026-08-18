@@ -148,6 +148,12 @@ export interface PinnedTriageHeaderViewProps {
   approvals: PendingApproval[];
   /** Prompts agents are parked on — the other half of "waiting on you". */
   asks: readonly InteractionPendingEvent[];
+  /** Answered prompts still on screen saying so, so the group outlives the last answer. */
+  settlingAsks: readonly InteractionPendingEvent[];
+  /** Session id → what to call its agent, joined from the roster by the host. */
+  askAgentNames: Readonly<Record<string, string>>;
+  /** Where "Open session" goes. */
+  onOpenSession: (sessionId: string) => void;
   /**
    * True when the approval list could not be read at all.
    *
@@ -233,6 +239,9 @@ export interface PinnedTriageHeaderViewProps {
 export function PinnedTriageHeaderView({
   approvals,
   asks,
+  settlingAsks,
+  askAgentNames,
+  onOpenSession,
   approvalsUnavailable,
   onRetryApprovals,
   attentionItems,
@@ -248,7 +257,12 @@ export function PinnedTriageHeaderView({
   const scrollerRef = useRef<HTMLDivElement>(null);
   const overflow = useScrollOverflow(scrollerRef);
 
-  const showsWaiting = approvals.length > 0 || asks.length > 0 || approvalsUnavailable;
+  // `settlingAsks` keeps the group open for the second an answered card is
+  // still saying how it ended. Without it, answering the LAST prompt unmounts
+  // the group around its own receipt, which is the disappearance the design
+  // rules out — the same guard the header pill runs.
+  const showsWaiting =
+    approvals.length > 0 || asks.length > 0 || settlingAsks.length > 0 || approvalsUnavailable;
   const showsAttention = attentionItems.length > 0;
   const occupied = showsWaiting || showsAttention || presence?.occupied === true;
   const summary = triageSummary({
@@ -350,7 +364,16 @@ export function PinnedTriageHeaderView({
                 <TriageGroup title="Waiting On You">
                   {/* Asks first: their window is ten minutes and a capability
                       approval's is two hours, so this IS time-left order. */}
-                  {asks.length > 0 && <AskList asks={asks} />}
+                  {(asks.length > 0 || settlingAsks.length > 0) && (
+                    <AskList
+                      asks={asks}
+                      agentNames={askAgentNames}
+                      onOpenSession={onOpenSession}
+                      emptyState={
+                        <p className="text-muted-foreground text-xs">Nothing needs you</p>
+                      }
+                    />
+                  )}
                   {approvals.length > 0 && <ApprovalList approvals={approvals} />}
                   {approvals.length === 0 && approvalsUnavailable && (
                     <ApprovalsUnavailable onRetry={onRetryApprovals} />

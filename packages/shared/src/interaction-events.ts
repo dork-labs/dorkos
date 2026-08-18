@@ -21,6 +21,14 @@
  *   and again when the list is read, and the client ticks locally from
  *   `startedAt + timeoutMs`. Two events per parked turn is the whole budget.
  *
+ * **Two things called `InteractionResolvedEvent` now exist, deliberately.** The
+ * one here is the FLEET-wide announcement — a session id, an interaction id and
+ * an outcome, addressed to every window. `session-stream.ts` exports another
+ * under the same name: the seq'd event inside ONE session's own stream, which
+ * carries the resolution, the kind and the timestamps the transcript's receipt
+ * is built from. The names come from the spec and each is right in its own
+ * module; nothing imports both, and a file that needed to would alias one.
+ *
  * @module shared/interaction-events
  */
 import { z } from 'zod';

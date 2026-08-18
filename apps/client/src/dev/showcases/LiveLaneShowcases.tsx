@@ -23,6 +23,7 @@ import {
   type LivePeekRow,
 } from '@/layers/features/conversation';
 import type { ConversationCapabilities } from '@/layers/features/conversation';
+import { InteractionAsk } from '@/layers/features/ask';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -255,6 +256,9 @@ export function LiveLaneShowcase() {
         <LaneBox>
           <Conversation.LiveLane
             state={{ kind: 'ask', ask: PENDING_ASK, count: 1, headline: ASK_HEADLINE }}
+            // The card the lane grows into, which the host supplies in the app.
+            // Without it, pressing Answer opened an empty panel here.
+            askCard={<InteractionAsk ask={PENDING_ASK} agentName="Meeting Notes" />}
           />
         </LaneBox>
       </ShowcaseDemo>
@@ -264,6 +268,7 @@ export function LiveLaneShowcase() {
         <LaneBox>
           <Conversation.LiveLane
             state={{ kind: 'ask', ask: PENDING_ASK, count: 3, headline: ASK_HEADLINE }}
+            askCard={<InteractionAsk ask={PENDING_ASK} agentName="Meeting Notes" />}
           />
         </LaneBox>
       </ShowcaseDemo>

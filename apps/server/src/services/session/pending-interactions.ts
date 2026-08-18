@@ -76,7 +76,14 @@ export function listPendingInteractions(
     const budgetMs = dto.timeoutMs ?? SESSIONS.INTERACTION_TIMEOUT_MS;
     const remainingMs = Math.max(0, budgetMs - (now - pending.startedAt));
     if (remainingMs <= 0) continue;
-    out.push({ ...dto, remainingMs });
+    // The budget ships WITH the remainder, for every kind. A client that has
+    // only `remainingMs` cannot anchor a countdown: it is the budget minus the
+    // time already spent, so a prompt listed six minutes into its ten reads as
+    // a four-minute ask and runs out early (DOR-1330). Only the approval member
+    // declared one before, so a question and an elicitation now inherit the
+    // server-wide default here — the same number this line measured against, so
+    // the two can never disagree.
+    out.push({ ...dto, timeoutMs: budgetMs, remainingMs });
   }
   return out;
 }
