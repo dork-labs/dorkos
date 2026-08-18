@@ -14,7 +14,8 @@ Build tooling: `electron-vite` (main/preload/renderer) + `electron-builder` (pac
 apps/desktop/
 ├── src/main/            # main process — see the module map below
 ├── src/preload/         # contextBridge → window.electronAPI
-├── src/shared/          # constants both main and the build config read (tray-images.ts)
+├── src/shared/          # constants main, the build config and the smoke all read
+│                        #   (tray-images.ts, boot-timeouts.ts, login-shell-path.ts)
 ├── src/server-entry.ts  # the server child's entry (imports @dorkos/server for its side effect)
 ├── build/               # buildResources: icons, entitlements, tray images (see build/README.md)
 ├── scripts/
@@ -33,17 +34,20 @@ One job per module. `index.ts` is wiring and ordering **only** — every policy 
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `index.ts`                 | The single-instance lock, deep-link registration, the IPC handlers, the ordered `ready` sequence, `window-all-closed`, `activate`. Holds no policy of its own.             |
 | `window-manager.ts`        | What a window **is**: web preferences, the `will-navigate` / `setWindowOpenHandler` link policy, and building a second cockpit window.                                     |
-| `window-state.ts`          | Where a window **sits**: geometry load/validate/persist (`userData/window-state.json`), plus the display-change rescue. Primary window only — see the scoping table in §6. |
+| `window-state.ts`          | Where a window **sits**: geometry load/validate/persist (`userData/window-state.json`), plus the display-change rescue. Primary window only — see the scoping table in §5. |
 | `menu.ts`                  | The platform-branched application menu, and the macOS Dock menu.                                                                                                           |
 | `about.ts`                 | The macOS About panel.                                                                                                                                                     |
 | `navigation.ts`            | `dorkos://` parsing, renderer-readiness tracking, and the single pending-navigation slot.                                                                                  |
-| `tray.ts`                  | The menu-bar / notification-area presence and its activity summary. `hasTray()` is what makes background running safe (§6).                                                |
+| `tray.ts`                  | The menu-bar / notification-area presence and its activity summary. `hasTray()` is what makes background running safe (§5).                                                |
 | `background-notice.ts`     | The one-time "DorkOS is still running" dialog, ledgered in `userData/shell-notices.json`.                                                                                  |
 | `quit-guard.ts`            | `before-quit` — the single funnel every exit reaches. Owns `isQuitting()`.                                                                                                 |
 | `close-tab.ts`             | `Cmd/Ctrl+W`'s main-process half: the subscribe / ask / ack protocol with the renderer.                                                                                    |
 | `agent-activity.ts`        | Subscribes the **main process** to the server's `GET /api/events` and counts agents mid-run.                                                                               |
 | `auto-updater.ts`          | The electron-updater lifecycle, the in-app update card's IPC, and the two update-restart states.                                                                           |
 | `server-port.ts`           | **Which port** to ask for: the pin-vs-default asymmetry, the upward scan, `PortUnavailableError` (§2).                                                                     |
+| `server-cwd.ts`            | **Which directory** the packaged server works in: `server.cwd`, clamped into the boundary and checked to exist (§3.4).                                                     |
+| `shell-path.ts`            | **Which PATH** the server child gets: the one-shot login-shell probe that undoes launchd's four-directory PATH (§3.4).                                                     |
+| `user-config.ts`           | Reads `config.json` off disk for the two modules above, before the server (and its config manager) exists.                                                                 |
 | `dork-home.ts`             | Which data directory the child will open, so anything main reads _before_ the server starts (the pinned port in `config.json`) agrees with what the child then writes.     |
 | `server-spawn.ts`          | **How** to start a server child (§2).                                                                                                                                      |
 | `server-process.ts`        | **Supervises** the child (§2).                                                                                                                                             |
@@ -105,7 +109,7 @@ That bundle carries two gates, both of which fail the build (DOR-536):
 
 The same warning gate now guards `packages/cli/scripts/build.ts` — same module graph, same external list, and it's the launch-critical surface. Keep the two copies in step.
 
-Both gates stop at resolution and never _evaluate_ the bundle — evaluating it would boot the server (port + `~/.dork`) and `dlopen` the native modules, which after a `rebuild-natives.ts` run would wedge the build under system Node. The packaged runtime is exercised for real by `scripts/smoke-packaged.ts` (§5) instead.
+Both gates stop at resolution and never _evaluate_ the bundle — evaluating it would boot the server (port + `~/.dork`) and `dlopen` the native modules, which after a `rebuild-natives.ts` run would wedge the build under system Node. The packaged runtime is exercised for real by `scripts/smoke-packaged.ts` (§4) instead.
 
 ### The window loads from localhost, not file://
 
@@ -117,7 +121,7 @@ A Mach-O binary cannot be `dlopen`ed/executed from inside `app.asar`. So `electr
 
 - `better-sqlite3` and `node-pty` (native `.node` addons),
 - `dist/renderer/**` (`express.static` can't range-read from inside asar),
-- `@anthropic-ai/claude-agent-sdk/**` plus **both** per-platform binary packages, `…-darwin-arm64/**` and `…-win32-x64/**` (the `claude` / `claude.exe` executable — see §3). Each packaged target needs its own glob here _and_ its own os/cpu-guarded entry in `package.json`'s `optionalDependencies`. Miss either half and that target packages green and ships with no runnable Claude Code, a failure that appears only on the platform you missed,
+- **three** families of per-platform binary package, each with `…-darwin-arm64/**` and `…-win32-x64/**` globs: `@anthropic-ai/claude-agent-sdk-*` (the `claude` executable), `@openai/codex-*` (the vendored Codex CLI) and `@esbuild/*` (the compiler the extension host runs). `@anthropic-ai/claude-agent-sdk/**` itself is unpacked too. See §3,
 - `core-extensions/**` (staged into `DORK_HOME` via `fs.cp`).
 
 Unpacking is the **only** way to put a file outside the asar. Do not add a second copy via `extraResources`: the server bundle resolves `node_modules` by walking up from `app.asar/dist/server/`, so it reaches `app.asar/node_modules/<pkg>` (asar-redirected to the unpacked copy) before it could ever see `resources/node_modules/<pkg>`. A duplicate there is unreachable weight that only surfaces the day the two copies carry different ABIs and someone debugs a `NODE_MODULE_VERSION` error against a binary they didn't know existed. One such copy of `better-sqlite3` was carried from the first desktop commit until DOR-536 removed it.
@@ -143,21 +147,54 @@ If `pnpm --filter @dorkos/desktop pack` or `dist` has run on this machine (both 
 
 **Fix:** `pnpm rebuild better-sqlite3 node-pty` from the repo root. Re-run it any time you package the desktop app locally — packaging re-poisons the shared binaries.
 
-## 3. Bundling Claude Code
+## 3. Bundling the tools the app runs on
 
-The default (and only bundled) runtime is claude-code. The Agent SDK ships the actual `claude` executable as a **per-platform optional dependency** (`@anthropic-ai/claude-agent-sdk-<platform>-<arch>`), not inside the main SDK package. To make it available in the packaged app:
+### 3.1 The pattern, once
 
-1. `apps/desktop/package.json` declares `@anthropic-ai/claude-agent-sdk-darwin-arm64` as an os/cpu-guarded `optionalDependency` (so pnpm links it at the desktop top-level and electron-builder collects it). **Keep it version-locked to `@anthropic-ai/claude-agent-sdk`** — a lone SDK bump silently ships a skewed binary.
-2. `electron-builder.yml` `asarUnpack`s it (native binary → real file on disk).
-3. `src/main/server-spawn.ts` resolves the unpacked path in packaged mode and passes it to the server via `DORKOS_CLAUDE_CLI_PATH`; `sdk-utils.ts` honors that env override first, then falls back to the SDK's own bundled→PATH resolution (dev + npm CLI are unchanged — the env var is unset there).
+Three separate things the packaged app needs are published the same way: as a **per-platform package holding one executable**, hung off a parent package as an _optional_ dependency. pnpm nests those, and **electron-builder's production-tree copier does not reach a nested optional dependency** — so declaring the parent is not enough. Every one of them needs all three of:
 
-This adds ~213 MB to the DMG (the binary itself). That is inherent to "runs Claude Code out of the box"; the arch-guard keeps it to the one target arch.
+1. an os/cpu-guarded entry in `apps/desktop/package.json`'s `optionalDependencies`, which is what puts it at the desktop package's own top level where the copier finds it,
+2. an `asarUnpack` glob in `electron-builder.yml`, because an executable cannot run from inside `app.asar`,
+3. a version pinned to whatever it carries the executable **for**.
 
-## 4. Runtime resilience (optional runtimes)
+`scripts/build-server.ts` enforces (3) on every build (`assertPlatformBinariesLocked`) — a skewed pin installs cleanly, packages green, and only shows up in an installed app.
 
-Only claude-code is bundled. Codex/OpenCode are config-gated (`runtimes.codex.enabled` etc.) and their SDK constructors **throw synchronously** when their CLI binary isn't present — the norm on a desktop install. `apps/server/src/index.ts` wraps each optional runtime's construct-through-register in `registerOptionalRuntime` (in `runtime-registry.ts`), which logs a warning and continues. A missing optional-runtime CLI must **never** take down the server; if you add a runtime, route it through the same helper.
+| Package                                 | Carries                       | Locked to                        | Reached at runtime via                            |
+| --------------------------------------- | ----------------------------- | -------------------------------- | ------------------------------------------------- |
+| `@anthropic-ai/claude-agent-sdk-<plat>` | `claude` / `claude.exe`       | `@anthropic-ai/claude-agent-sdk` | `DORKOS_CLAUDE_CLI_PATH` from `server-spawn.ts`   |
+| `@openai/codex-<plat>` (an npm alias)   | `vendor/<triple>/bin/codex`   | `@openai/codex`                  | `@openai/codex-sdk`'s own `require.resolve` chain |
+| `@esbuild/<plat>`                       | `bin/esbuild` / `esbuild.exe` | the resolved `esbuild` version   | `ESBUILD_BINARY_PATH` from `server-spawn.ts`      |
 
-## 5. Running & testing locally
+Only two of the three were wired before DOR-1335. The shipped 0.61.0 Mac app therefore had **no Codex runtime at all** (the SDK threw `Unable to locate Codex CLI binaries` at construction and `registerOptionalRuntime` swallowed it) and **failed to compile its own bundled marketplace extension on every boot** (`The package "@esbuild/darwin-arm64" could not be found`).
+
+The Claude binary adds ~213 MB to the DMG and the Codex one ~257 MB. That is inherent to "runs your coding agents out of the box"; the os/cpu guards keep each to the one target arch.
+
+### 3.2 Why two of them are handed an explicit path
+
+`require.resolve` inside a packaged app answers with an `…/app.asar/…` path even for an unpacked file — Electron's asar layer makes the file _readable_ there, not _spawnable_. Measured against the shipped app:
+
+```text
+require.resolve('@esbuild/darwin-arm64/bin/esbuild')
+  → …/app.asar/node_modules/@esbuild/darwin-arm64/bin/esbuild
+spawnSync(that path)      → ENOTDIR
+execFileSync(that path)   → works        ← Electron patches execFile/execFileSync, NOT spawn/spawnSync
+```
+
+So anything that **spawns** its binary needs the real `app.asar.unpacked` path, and `server-spawn.ts` computes it and hands it over in the environment. esbuild spawns (`ESBUILD_BINARY_PATH`); the Claude SDK does too (`DORKOS_CLAUDE_CLI_PATH`). Codex is resolved server-side instead, through the runtime's own binary ladder, which remaps `app.asar` → `app.asar.unpacked` itself.
+
+### 3.3 Runtime resilience (optional runtimes)
+
+Only claude-code and codex ship a binary. OpenCode is provisioned on demand. Optional runtimes' SDK constructors can **throw synchronously** when their CLI isn't present, so `apps/server/src/index.ts` wraps each optional runtime's construct-through-register in `registerOptionalRuntime` (in `runtime-registry.ts`), which logs a warning and continues. A missing optional-runtime CLI must **never** take down the server; if you add a runtime, route it through the same helper.
+
+### 3.4 A launched-from-Finder app knows nothing about your machine
+
+Two things the app cannot inherit, and has to work out for itself before it forks the server:
+
+**PATH.** launchd starts a double-clicked app with `PATH=/usr/bin:/bin:/usr/sbin:/sbin` and nothing else — not `~/.local/bin`, not `/opt/homebrew/bin`, not any `~/.nvm/versions/…`. Every `which <binary>` rung in the server therefore failed in the Mac app for anything not bundled, while the same DorkOS started from a terminal found everything. `src/main/shell-path.ts` asks the user's own shell (`$SHELL -ilc …`, once per process, 5 s bound, SIGKILL on timeout, fall back to the inherited PATH and say so) and puts the answer in front of the inherited one. `-i` is load-bearing: plenty of people export PATH from `~/.zshrc`. The shell's stdout carries the user's rc-file noise too, so the value is wrapped in `LOGIN_SHELL_PATH_MARKER` (`src/shared/login-shell-path.ts`) and parsed out of it. Skipped in dev and on Windows.
+
+**Working directory.** `process.cwd()` for a Finder launch is `/`, and the server's own fallback derives a directory from its bundle location — `…/DorkOS.app/Contents/Resources`, outside the `$HOME` boundary. So `GET /api/directory/default` handed the client a path its own boundary check refused, and every boot logged `runtime listing degraded … Access denied: path outside directory boundary`. `src/main/server-cwd.ts` decides instead: `server.cwd` from `config.json` when it is inside the boundary **and exists**, else the boundary root (home, unless `server.boundary` widened it), mirroring the CLI's clamp. The answer goes down as `DORKOS_DEFAULT_CWD` _and_ as `utilityProcess.fork`'s `cwd`. The "and exists" half is not defensive padding: a stale pin would make the fork itself fail, which is an app that does not start at all.
+
+## 4. Running & testing locally
 
 ```bash
 pnpm --filter @dorkos/desktop dev        # electron-vite dev; server child via tsx
@@ -197,7 +234,7 @@ In CI this is `.github/workflows/desktop-smoke.yml` — a single macOS job (unsi
 
 One thing that surprises people: an **unsigned** build cannot launch as packaged. `hardenedRuntime: true` turns on library validation, and electron-builder ad-hoc-signs each binary separately, so the loader rejects the app's own Electron Framework with _"…different Team IDs"_. The smoke re-signs ad-hoc in one pass when (and only when) it finds an ad-hoc signature — a real Developer ID signature is never touched.
 
-## 6. The window & app lifecycle
+## 5. The window & app lifecycle
 
 ### Closing the window does not quit (DOR-538)
 
@@ -307,7 +344,7 @@ Electron's own `autoUpdater` emits `before-quit-for-update` as the install-quit 
 
 Windows are created with `show: false` and a `backgroundColor` matching the cockpit's own, then revealed on `ready-to-show` (with a 4-second fallback, because a window that never appears is far worse than a flash). `maximize()` has to happen in that reveal, not at construction — a hidden window maximized at construction opens un-maximized on macOS.
 
-## 7. ⚠️ Runtime-QA gotcha: a "hung" packaged launch is almost always Gatekeeper
+## 6. ⚠️ Runtime-QA gotcha: a "hung" packaged launch is almost always Gatekeeper
 
 **Read this before spending an hour concluding a build is broken.** When you launch a freshly-downloaded (quarantined) **notarized** build from the terminal and it appears to hang, it is almost certainly the macOS Gatekeeper first-launch consent dialog — _"'DorkOS.app' is an app downloaded from the Internet. Are you sure you want to open it? Apple checked it for malicious software and none was detected."_ — which **blocks the launch until a human clicks Open**. Headless, that is indistinguishable from a crash/hang:
 
@@ -328,7 +365,7 @@ It is **not** a code or signing defect (the dialog literally confirms notarizati
 
 After clearing, a healthy launch shows Electron helpers within ~1s, a listening server port, and `[RuntimeCache] warm-up populated model cache { count: N }` in the log. (Verified end-to-end 2026-07-12; this exact confusion cost hours before it was root-caused.)
 
-## 8. Signing, notarization & releasing
+## 7. Signing, notarization & releasing
 
 **The desktop build rides the unified product release.** There is no separate desktop tag scheme — the `.github/workflows/desktop-release.yml` workflow triggers on the `v*` product tags that `/system:release` creates. When that command bumps `VERSION` (and `apps/desktop/package.json` alongside it), tags `vX.Y.Z`, and pushes, the workflow builds the macOS app and **attaches** the `.dmg` + `.zip` + `latest-mac.yml` to the GitHub Release the command already created. It does not create its own release or rewrite the notes. To release the desktop app you just run `/system:release` — do **not** push a standalone tag. (For a manual/verification build without publishing, use the workflow's `workflow_dispatch` with `dry_run`.)
 
@@ -343,4 +380,4 @@ Gotchas worth knowing (details vary by machine; the setup itself lives with the 
 - **The auto-update `.zip` must be published alongside the `.dmg`** — Squirrel.Mac (electron-updater) can only install updates from the zip; a dmg-only release 404s every update check.
 - **App Store is deliberately not a target.** The app spawns shells and agent CLIs and writes across the filesystem — none of which fits the App Sandbox. It ships as a Developer-ID-signed, notarized direct download (like VS Code, Docker Desktop, iTerm). See the maintainer's notes / DOR-230 for the rationale.
 
-Verify a packaged build actually launches and runs a session (§7) before treating a release as good — static checks and unit tests pass long before the packaged runtime is exercised. `desktop-smoke.yml` (§5) covers the "does it boot and serve" half automatically; running a real session in the packaged app is still a human step.
+Verify a packaged build actually launches and runs a session (§6) before treating a release as good — static checks and unit tests pass long before the packaged runtime is exercised. `desktop-smoke.yml` (§4) covers the "does it boot and serve" half automatically; running a real session in the packaged app is still a human step.
