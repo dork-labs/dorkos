@@ -10,7 +10,7 @@
 **Status:** Complete
 **Tasks Completed:** 48 / 48
 
-**Pull requests, by phase:** P1 `#1091` · P2 `#1092` · P3 `#1093` · P4 `#1102` (open at review as this session closes) · P5 (DOR-1332) — no PR opened by this session; see "What is not done" below for what a reviewer still owes it.
+**Pull requests, by phase:** P1 `#1091` · P2 `#1092` · P3 `#1093` · P4 `#1102` · P5 `#1108`.
 
 ## Tasks Completed
 
@@ -734,7 +734,7 @@ Orchestration model (operator override of the per-task batching in `executing-sp
 | P2 (DOR-1329) | `deriveLaneState` and `Conversation.LiveLane`; the `GET /api/rooms/:id/sessions` route and `LivePeek`; both surfaces mounted on the lane; `ChatStatusStrip`, `RoomPresenceLine` and `RoomStalledNotice` deleted                                                   | `#1092`                            |
 | P3 (DOR-1330) | The interaction-events wire (`interaction_pending`/`interaction_resolved`); the projector's interaction seam; the fleet-wide pending-interactions route and store; `features/ask` (the Ask card family); the Ask live on five surfaces plus the lane's amber rung | `#1093`                            |
 | P4 (DOR-1331) | `Conversation.Timeline` (one virtualized list); the two `ConversationTarget` adapters; `Conversation.Composer` + `Conversation.Footer`; `MessageList`, `RoomTimeline` and both old composers deleted                                                              | `#1102` (open at review as P5 ran) |
-| P5 (DOR-1332) | The Dev Playground's Conversation page, five sections, restructured from the P1–P4 showcases; the docs the whole programme owed; this record finalized; the manifest promoted to `implemented`; the three draft ADRs confirmed and accepted                       | not opened by this session         |
+| P5 (DOR-1332) | The Dev Playground's Conversation page, five sections, restructured from the P1–P4 showcases; the docs the whole programme owed; this record finalized; the manifest promoted to `implemented`; the three draft ADRs confirmed and accepted                       | `#1108`                            |
 
 ## What Was Deliberately Not Done
 
@@ -780,4 +780,3 @@ In Linear-ready form — one bullet each, owner named where the record above alr
 - **The timeline's prop is `renderRow`, not the spec's `renderBody`** (P4 Known Issue 20). The spec's shape would need `SessionMessage` and `RoomMessage`'s surface knowledge lifted into props, undoing P1's own seam. Owner: whoever revisits `ConversationBodyRenderer`, if anybody does — otherwise the spec is what is wrong, not the code.
 - **`ConversationTarget` has no mention port** (P4 Known Issue 21), so `capabilities.mentions` is the only fact about the `@` picker in the neutral tree and the picker itself rides the host's slot. The consequence to watch is a third surface wanting mentions and finding nothing shared to reuse. Owner: whoever adds that surface.
 - **No unit test can see a virtualization bug** (P4 Known Issue 23): `@tanstack/react-virtual` is mocked globally in `test-setup.ts`, without which the room and chat suites could assert nothing. The nets that do see them are named in the issue, both in `apps/e2e`. Owner: a testing-infrastructure pass, not a feature phase — and not worth opening until a virtualization regression actually escapes.
-- **The fifth PR number is owed.** The "What Shipped, By Phase" table reads "not opened by this session" for P5 because no PR existed while it ran. Whoever opens it fills that cell in, which is the last edit this record needs.
