@@ -189,8 +189,8 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     keywords: ['pending', 'sending', 'failed', 'retry', 'discard', 'optimistic', 'offline', 'send'],
   },
   {
-    id: 'roomentryattachments',
-    title: 'RoomEntryAttachments',
+    id: 'message-attachments',
+    title: 'Message.Attachments',
     page: 'rooms',
     category: 'Delivery',
     keywords: ['attachment', 'file', 'image', 'thumbnail', 'download', 'chip', 'upload'],

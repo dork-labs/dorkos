@@ -20,8 +20,10 @@ import {
 import { cn } from '@/layers/shared/lib';
 import { profileMemberIdOf, type RoomEntry } from '@/layers/entities/room';
 import {
+  Message,
   MomentRow,
   NoticeRow,
+  attachmentsSummary,
   formatAbsoluteTime,
   formatTime,
   messageItem,
@@ -40,7 +42,6 @@ import { useAgentInfo, useRoomAgentFaces } from '../model/agent-info-context';
 import { useEntryReactions } from '../model/use-entry-reactions';
 import { useEntryRowKeys } from '../model/use-entry-row-keys';
 import { RoomEntryActions } from './RoomEntryActions';
-import { RoomEntryAttachments, attachmentsSummary } from './RoomEntryAttachments';
 import { RoomEntryBody } from './RoomEntryBody';
 import { RoomEntryAuthorLine, RoomEntryGutter } from './RoomEntryHeader';
 
@@ -383,7 +384,7 @@ export function RoomEntryRow({
           {/* The files that came with the message, under the words and above
               the pills. An entry with none — including every entry written
               before rooms carried files at all — renders nothing here. */}
-          <RoomEntryAttachments attachments={entry.attachments ?? []} />
+          <Message.Attachments items={entry.attachments ?? []} />
           {/* The pills, under the words they are about. A message with no
               reactions renders nothing here at all — no rail, no ghost — which
               is what keeps a quiet room quiet (design record §2, behaviour 4). */}

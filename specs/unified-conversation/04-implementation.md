@@ -8,7 +8,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 3 / 48
+**Tasks Completed:** 4 / 48
 
 ## Tasks Completed
 
@@ -39,7 +39,13 @@
   - Two rows lost a widget-level dependency they could not keep across the layer boundary: `MomentRow` takes its resolved `subject` + `subjectIdentity` as props (only the host can join a room's roster to the fleet — the rule `MessageAuthorAvatar` already states for its own destination), and `ThreadReplyRow` takes its DOM `id` from the host, which owns the id scheme. Markup and copy are unchanged, word for word.
   - Three room test harnesses gained the `Conversation.Root` the widget now mounts (`RoomTimeline`, `RoomTimeline.mentions`, `room-agent-faces`). No assertion changed; a bench without a Root is testing a state the app never puts the component in.
 
-## Files Modified/Created
+- Task #1.2: Build the Message.\* parts as the one row — worker: p1-builder
+  - Created: `features/conversation/ui/message/{MessageRoot,MessageGutter,MessageAuthor,MessageBody,MessageReactions,MessageActions}.tsx`; moved `widgets/room-view/ui/RoomEntryAttachments.tsx` → `ui/message/MessageAttachments.tsx` (+ its test)
+  - Exported as `Message = { Root, Gutter, Author, Body, Content, Attachments, Reactions, Actions }`
+  - **Eight parts, not seven.** `Message.Body` is the content COLUMN (`data-slot="message-body"`) and `Message.Content` is the words inside it (`data-slot="message-content"`). Both rows already drew exactly these two elements, and `apps/e2e/tests/rooms/room-entry-actions.spec.ts:186` measures the capsule against `[data-slot="message-content"]`'s **parent** — so collapsing them would either break that shipped test or leave the capsule nothing to straddle. All seven slots the spec names exist.
+  - Capability gates, no surface checks: `Message.Reactions` returns `null` unless `capabilities.reactions`; `Message.Actions` passes the quick row only under `reactions` and the run-with slot only under `runWith`. `grep -rn "surface ===" features/conversation/ui/` is empty.
+  - Anchor, not surface, decides the capsule's holder: a small `cva` (`corner` → `contents`, `rail` → the sticky band moved from `RoomEntryActions`).
+  - One behaviour unified rather than preserved twice: the `showTimestamps` preference now governs the continuation gutter on BOTH surfaces (a room ignored it before). It defaults to `false`, so nothing changes for a reader who has not turned it on. The session's gutter and author line also gained `<time dateTime title>` semantics the room already had.
 
 **Source files:**
 

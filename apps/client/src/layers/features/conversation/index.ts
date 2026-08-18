@@ -44,7 +44,23 @@ export { MomentRow } from './ui/rows/MomentRow';
 export type { MomentSubjectIdentity } from './ui/rows/MomentRow';
 export { ThreadReplyRow } from './ui/rows/ThreadReplyRow';
 
+export { attachmentsSummary } from './ui/message/MessageAttachments';
+export type { MessageActionsProps } from './ui/message/MessageActions';
+export type { MessageAttachmentsProps } from './ui/message/MessageAttachments';
+export type { MessageAuthorProps } from './ui/message/MessageAuthor';
+export type { MessageBodyProps, MessageContentProps } from './ui/message/MessageBody';
+export type { MessageGutterProps } from './ui/message/MessageGutter';
+export type { MessageReactionsProps } from './ui/message/MessageReactions';
+export type { MessageRootProps } from './ui/message/MessageRoot';
+
 import { ConversationRoot } from './ui/ConversationRoot';
+import { MessageActions } from './ui/message/MessageActions';
+import { MessageAttachments } from './ui/message/MessageAttachments';
+import { MessageAuthor } from './ui/message/MessageAuthor';
+import { MessageBody, MessageContent } from './ui/message/MessageBody';
+import { MessageGutter } from './ui/message/MessageGutter';
+import { MessageReactions } from './ui/message/MessageReactions';
+import { MessageRoot } from './ui/message/MessageRoot';
 
 /**
  * The conversation compound, as a host composes it.
@@ -57,4 +73,30 @@ import { ConversationRoot } from './ui/ConversationRoot';
  */
 export const Conversation = {
   Root: ConversationRoot,
+};
+
+/**
+ * The one message row, as its parts.
+ *
+ * A host composes these and supplies the two things only it can: who wrote the
+ * message, and how to draw what they said. Everything else — the grid, the
+ * grouping rhythm, the identity line, the hover capsule, the pills, the
+ * right-click menu, the long-press drawer — is the same code on every surface.
+ *
+ * `Content` is the eighth part beside the seven the spec names, and it exists
+ * because the row genuinely draws two boxes: the BODY column, whose top edge is
+ * where the hover capsule is measured against, and the CONTENT inside it, which
+ * is the only element a description can honestly point at. Both rows this
+ * replaced already drew exactly these two, and a shipped browser test measures
+ * one against the other.
+ */
+export const Message = {
+  Root: MessageRoot,
+  Gutter: MessageGutter,
+  Author: MessageAuthor,
+  Body: MessageBody,
+  Content: MessageContent,
+  Attachments: MessageAttachments,
+  Reactions: MessageReactions,
+  Actions: MessageActions,
 };

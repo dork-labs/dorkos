@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { RoomAttachment } from '@dorkos/shared/room-schemas';
-import { RoomEntryAttachments, attachmentsSummary } from '../ui/RoomEntryAttachments';
+import { MessageAttachments, attachmentsSummary } from '../ui/message/MessageAttachments';
 
 afterEach(cleanup);
 
@@ -20,9 +20,9 @@ function attachment(overrides: Partial<RoomAttachment> = {}): RoomAttachment {
   };
 }
 
-describe('RoomEntryAttachments — a verified image', () => {
+describe('MessageAttachments — a verified image', () => {
   it('draws a thumbnail named after the file, linked to the file', () => {
-    render(<RoomEntryAttachments attachments={[attachment()]} />);
+    render(<MessageAttachments items={[attachment()]} />);
 
     const image = screen.getByRole('img', { name: 'screenshot.png' });
     expect(image).toHaveAttribute('src', '/api/rooms/room-1/attachments/att-1');
@@ -36,8 +36,8 @@ describe('RoomEntryAttachments — a verified image', () => {
     // remote store would hand back an absolute https URL with no change here,
     // so a renderer that rebuilt it from ids would break the day that lands.
     render(
-      <RoomEntryAttachments
-        attachments={[attachment({ url: 'https://files.example.com/att-1/screenshot.png' })]}
+      <MessageAttachments
+        items={[attachment({ url: 'https://files.example.com/att-1/screenshot.png' })]}
       />
     );
 
@@ -48,7 +48,7 @@ describe('RoomEntryAttachments — a verified image', () => {
   });
 });
 
-describe('RoomEntryAttachments — everything else', () => {
+describe('MessageAttachments — everything else', () => {
   it('draws a download chip, and no image, for a file the bytes were not verified for', () => {
     // THE SAFETY PROPERTY, and the whole reason this module exists. The fixture
     // is a `.png` whose declared type says image and whose `preview` is null:
@@ -58,8 +58,8 @@ describe('RoomEntryAttachments — everything else', () => {
     // into an `<img src>` on the cockpit's own origin — this assertion is what
     // turns red the moment that happens.
     render(
-      <RoomEntryAttachments
-        attachments={[
+      <MessageAttachments
+        items={[
           attachment({ name: 'notes.pdf', mimeType: 'image/png', preview: null, size: 1536 }),
         ]}
       />
@@ -73,8 +73,8 @@ describe('RoomEntryAttachments — everything else', () => {
 
   it('says how big the file is, in units a person reads', () => {
     render(
-      <RoomEntryAttachments
-        attachments={[
+      <MessageAttachments
+        items={[
           attachment({ id: 'a', name: 'a.bin', preview: null, size: 812 }),
           attachment({ id: 'b', name: 'b.bin', preview: null, size: 1536 }),
           attachment({ id: 'c', name: 'c.bin', preview: null, size: 5 * 1024 * 1024 }),
@@ -88,25 +88,25 @@ describe('RoomEntryAttachments — everything else', () => {
   });
 });
 
-describe('RoomEntryAttachments — an entry with no files', () => {
+describe('MessageAttachments — an entry with no files', () => {
   it('renders nothing for an entry that predates the field', () => {
     // No rail, no ghost — the same silence `EntryReactionRow` keeps for a
     // message nobody reacted to.
-    const { container } = render(<RoomEntryAttachments attachments={[]} />);
+    const { container } = render(<MessageAttachments items={[]} />);
 
     expect(container).toBeEmptyDOMElement();
     expect(screen.queryByTestId('room-entry-attachments')).not.toBeInTheDocument();
   });
 });
 
-describe('RoomEntryAttachments — several files', () => {
+describe('MessageAttachments — several files', () => {
   it('draws them in the order the entry carries them', () => {
     // Posted order is the order the author chose, and it is the order the
     // server stores. Re-sorting here would disagree with what they saw in the
     // composer's chip bar a second earlier.
     render(
-      <RoomEntryAttachments
-        attachments={[
+      <MessageAttachments
+        items={[
           attachment({ id: 'a', name: 'first.png' }),
           attachment({ id: 'b', name: 'second.pdf', preview: null }),
           attachment({ id: 'c', name: 'third.png' }),

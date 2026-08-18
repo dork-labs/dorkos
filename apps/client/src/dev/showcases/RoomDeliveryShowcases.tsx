@@ -19,7 +19,8 @@ import { useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomAttachment, RoomMoment, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import type { PendingPost, RoomEntry } from '@/layers/entities/room';
-import { RoomEntryAttachments, RoomEntryRow, RoomPendingRow } from '@/layers/widgets/room-view';
+import { Message } from '@/layers/features/conversation';
+import { RoomEntryRow, RoomPendingRow } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -356,13 +357,13 @@ const TINY_PNG =
 function AttachmentsSection() {
   return (
     <PlaygroundSection
-      title="RoomEntryAttachments"
+      title="Message.Attachments"
       description="What a file looks like once it is part of the conversation. Two branches, and which one draws is decided by the SERVER: an image renders inline only when the bytes themselves were checked, and everything else — including a file merely NAMED .png — is a chip you download. Read these together and check that (a) a thumbnail sits under the words without pushing the reaction pills off the bottom of a short message, (b) a chip stays readable when the filename is long enough to truncate, and (c) several files wrap rather than scroll."
     >
       <ShowcaseLabel>Verified image — the only case that renders inline</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomEntryAttachments
-          attachments={[
+        <Message.Attachments
+          items={[
             attachment({
               id: 'att-image',
               name: 'build-graph.png',
@@ -377,8 +378,8 @@ function AttachmentsSection() {
 
       <ShowcaseLabel>Everything else — a chip you can download</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomEntryAttachments
-          attachments={[
+        <Message.Attachments
+          items={[
             attachment({ id: 'att-log', name: 'server.log', mimeType: 'text/plain', size: 812 }),
           ]}
         />
@@ -386,8 +387,8 @@ function AttachmentsSection() {
 
       <ShowcaseLabel>Several at once, one of them named to look like an image</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomEntryAttachments
-          attachments={[
+        <Message.Attachments
+          items={[
             attachment({
               id: 'att-shot',
               name: 'screenshot.png',

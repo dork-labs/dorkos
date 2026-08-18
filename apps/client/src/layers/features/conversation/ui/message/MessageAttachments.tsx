@@ -1,10 +1,10 @@
 /**
- * The files posted with a room entry — thumbnails for the ones the server
- * verified, chips for everything else.
+ * `Message.Attachments` — the files posted with a message: thumbnails for the
+ * ones the server verified, chips for everything else.
  *
- * Its own module beside {@link RoomEntryBody} for the reason the design record
- * gives: `RoomEntryRow` was split into parts that can each be owned alone, and
- * attachment rendering is not allowed to grow it back.
+ * Its own part for the reason the room's design record gives: the row was split
+ * into pieces that can each be owned alone, and attachment rendering is not
+ * allowed to grow it back.
  *
  * **The one rule this module exists to hold: the decision to render an `<img>`
  * comes from `preview`, and never from `mimeType`.** `preview` is non-null only
@@ -15,14 +15,15 @@
  * exactly the case the server's own tests pin (a `.png` full of GIF bytes
  * stores with `preview: null`), so both layers are describing one attack.
  *
- * @module widgets/room-view/ui/RoomEntryAttachments
+ * @module features/conversation/ui/message/MessageAttachments
  */
 import { File as FileIcon } from 'lucide-react';
 import type { RoomAttachment } from '@dorkos/shared/room-schemas';
 
-interface RoomEntryAttachmentsProps {
-  /** The entry's files, in the order they were posted. */
-  attachments: RoomAttachment[];
+/** What the attachment block draws. */
+export interface MessageAttachmentsProps {
+  /** The message's files, in the order they were posted. */
+  items: readonly RoomAttachment[];
 }
 
 /** Size units, smallest first — each one 1024 of the last. */
@@ -51,15 +52,15 @@ function formatSize(bytes: number): string {
  * What the row's accessible description says about the files, or `null` when
  * there are none.
  *
- * The block below is a sibling of the message body, so a description pointed at
- * the body alone says nothing about the files hanging under it — a screen reader
- * would hear the words and never learn a file came with them. `RoomEntryRow`
- * folds this line into the one summary it already writes rather than adding a
- * second `aria-describedby`, so a reader still hears one description per row.
+ * The block below is a sibling of the message's words, so a description pointed
+ * at them alone says nothing about the files hanging under them — a screen
+ * reader would hear the words and never learn a file came with them. The host
+ * row folds this line into the one summary it already writes rather than adding
+ * a second `aria-describedby`, so a reader still hears one description per row.
  *
  * @param attachments - The entry's files, in posted order.
  */
-export function attachmentsSummary(attachments: RoomAttachment[]): string | null {
+export function attachmentsSummary(attachments: readonly RoomAttachment[]): string | null {
   if (attachments.length === 0) return null;
   const names = attachments.map((attachment) => attachment.name).join(', ');
   return `${attachments.length} ${attachments.length === 1 ? 'file' : 'files'}: ${names}`;
@@ -124,12 +125,16 @@ function AttachmentItem({ attachment }: { attachment: RoomAttachment }) {
  * `EntryReactionRow` renders nothing for a message nobody reacted to, and the
  * same way an entry written before rooms carried files renders today.
  */
-export function RoomEntryAttachments({ attachments }: RoomEntryAttachmentsProps) {
-  if (attachments.length === 0) return null;
+export function MessageAttachments({ items }: MessageAttachmentsProps) {
+  if (items.length === 0) return null;
 
   return (
-    <div data-testid="room-entry-attachments" className="mt-1 flex flex-wrap gap-2">
-      {attachments.map((attachment) => (
+    <div
+      data-slot="message-attachments"
+      data-testid="room-entry-attachments"
+      className="mt-1 flex flex-wrap gap-2"
+    >
+      {items.map((attachment) => (
         <AttachmentItem key={attachment.id} attachment={attachment} />
       ))}
     </div>
