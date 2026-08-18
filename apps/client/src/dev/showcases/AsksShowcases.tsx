@@ -5,14 +5,17 @@
  * `AskShowcases.tsx` (the card's three kinds, its countdown, a burst, five
  * receipt endings and the tray), the inline transcript prompt and its receipt
  * (`ToolShowcases.tsx`'s former "ApprovalPrompt" section and
- * `AskReceiptShowcases.tsx`), and the capability-approval card — cross-listed
- * here from **Subsystems** rather than duplicated, per the
- * `maintaining-dev-playground` skill's borrow pattern (DOR-1332, P5).
+ * `AskReceiptShowcases.tsx`) (DOR-1332, P5).
+ *
+ * The capability-approval card is a near relative rather than part of this
+ * family — it answers "may this agent do X at all" — and **Subsystems** owns
+ * its entry. `ConversationPage` borrows it by rendering it at page level, the
+ * shape `IdentityPage` established for the skill's borrow pattern; it is not
+ * nested inside this section.
  *
  * **These are the REAL components.** Every card below is `InteractionAsk`,
- * `AskStack`, `ApprovalPrompt`, `AskReceipt` or the cross-listed
- * `ApprovalCardShowcase` over fixture data, so a recreation cannot drift from
- * what a person actually answers.
+ * `AskStack`, `ApprovalPrompt` or `AskReceipt` over fixture data, so a
+ * recreation cannot drift from what a person actually answers.
  *
  * @module dev/showcases/AsksShowcases
  */
@@ -34,7 +37,6 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { MOCK_SESSION_ID, TOOL_CALL_APPROVAL } from '../mock-chat-data';
 import { createPlaygroundTransport } from '../playground-transport';
-import { ApprovalCardShowcase } from './ApprovalsShowcases';
 
 const playgroundTransport = createPlaygroundTransport();
 
@@ -461,7 +463,7 @@ export function AsksShowcase() {
   return (
     <PlaygroundSection
       title="Asks"
-      description="Everything an agent parks the cockpit on, in one place. One prompt draws on five surfaces — the composer's takeover, the Live lane, the header tray, the home triage header, and the session transcript itself — so a regression here is a regression everywhere at once. The capability-approval card below answers a different question (may this agent do X at all) and is cross-listed from Subsystems rather than duplicated."
+      description="Everything an agent parks the cockpit on, in one place. One prompt draws on five surfaces — the composer's takeover, the Live lane, the header tray, the home triage header, and the session transcript itself — so a regression here is a regression everywhere at once. The capability-approval card at the foot of this page answers a different question (may this agent do X at all) and is cross-listed from Subsystems rather than duplicated."
     >
       <AskKinds />
       <AskCountdown />
@@ -470,8 +472,6 @@ export function AsksShowcase() {
       <AskTray />
       <InlineApprovalPrompt />
       <TranscriptReceipt />
-      <Subhead>Capability approval — borrowed from Subsystems, not duplicated</Subhead>
-      <ApprovalCardShowcase />
     </PlaygroundSection>
   );
 }

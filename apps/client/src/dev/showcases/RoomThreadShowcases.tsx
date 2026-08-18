@@ -339,7 +339,7 @@ function ThreadArrivalShowcase() {
   return (
     <PlaygroundSection
       title="Thread arrival animations"
-      description="Three one-shot motions live in this panel (design record §5.3–5.5), all keyed by `useThreadArrivals` so they play once per reply and never replay on an unrelated re-render: the connector drawing downward, an ordinary reply bouncing in, and an agent's reply settling upward out of the presence line it just occupied. `ThreadReplyRow`'s own count-flip is benched separately above, on the row itself."
+      description="Three one-shot motions live in this panel (design record §5.3–5.5), all keyed by `useThreadArrivals` so they play once per reply and never replay on an unrelated re-render: the connector drawing downward, an ordinary reply bouncing in, and an agent's reply settling upward out of the live lane it just occupied. `ThreadReplyRow`'s own count-flip is benched separately above, on the row itself."
     >
       <ShowcaseLabel>
         &quot;Ordinary reply&quot; plays the connector draw and the drop-in. The two-step Kai

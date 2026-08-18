@@ -44,8 +44,8 @@ import {
 /**
  * Frozen at module load, not read per render: `Date.now()` during render is
  * impure (`react-hooks/purity`), and a pending row whose "sent" moment shifts
- * on every re-render is harder to read anyway. Same shape as `AskShowcases`'s
- * own frozen `NOW`.
+ * on every re-render is harder to read anyway. Same shape as
+ * `AsksShowcases.tsx`'s own `NOW`.
  */
 const PENDING_AT = Date.now();
 

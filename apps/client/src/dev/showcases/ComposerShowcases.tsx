@@ -135,6 +135,7 @@ function ComposerDemo({
   target,
   asks,
   note,
+  initialValue = '',
   showQueueItems = false,
 }: {
   label: string;
@@ -144,6 +145,12 @@ function ComposerDemo({
   asks?: ReactNode;
   note?: string;
   /**
+   * What the field starts with. A demo labelled "Typing" that starts empty is
+   * pixel-identical to the "Idle" one above it, which makes the label a claim
+   * the demo does not support.
+   */
+  initialValue?: string;
+  /**
    * Draw the queue panel with its sample items. Distinct from `target.queue`
    * existing: every session target carries the method (that presence is what
    * the capability gate reads), but only the "Queue depth" demo should
@@ -152,7 +159,7 @@ function ComposerDemo({
    */
   showQueueItems?: boolean;
 }) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(initialValue);
   return (
     <div>
       <ShowcaseLabel>{label}</ShowcaseLabel>
@@ -372,12 +379,14 @@ export function ComposerShowcases() {
         surface="session"
         capabilities={SESSION_CAPABILITIES}
         target={sessionTyping}
+        initialValue="Can you check why the deploy is stuck?"
       />
       <ComposerDemo
         label="Typing — room"
         surface="room"
         capabilities={ROOM_CAPABILITIES}
         target={roomTyping}
+        initialValue="Looks like the migration step timed out waiting on a lock."
       />
 
       <AttachmentsDemo surface="session" capabilities={SESSION_CAPABILITIES} target={sessionIdle} />

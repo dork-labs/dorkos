@@ -305,7 +305,7 @@ because answering a prompt is a distinct event from the lane's own presence chat
 
 **Motion:** the lane crossfades between states in 150–200ms, keyed on the state's discriminant
 plus its label (`turn-streaming:${verbKey}` for a changing verb, so it animates only on a real
-change) — see the Animation Catalog below. Reduced motion swaps instantly, no crossfade.
+change) — see the Animation Catalog above. Reduced motion swaps instantly, no crossfade.
 
 ### Scroll Overlays
 

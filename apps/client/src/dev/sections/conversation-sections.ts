@@ -29,8 +29,8 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
   },
   // MessageShowcases
   {
-    id: 'message-matrix',
-    title: 'Message.* matrix',
+    id: 'message-row',
+    title: 'Message row',
     page: 'conversation',
     category: 'Messages',
     keywords: [
@@ -234,8 +234,9 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
   },
   // AsksShowcases — the whole card family in one section (DOR-1332, P5):
   // AskCard.* in three kinds, AskStack, AskList, the countdown, five receipt
-  // lines, the inline ApprovalPrompt, the transcript AskReceipt, and the
-  // capability-approval card cross-listed from Subsystems.
+  // lines, the inline ApprovalPrompt and the transcript AskReceipt. The
+  // capability-approval card is cross-listed onto the PAGE (see
+  // CONVERSATION_CROSS_LISTED), not folded into this entry.
   {
     id: 'asks',
     title: 'Asks',
