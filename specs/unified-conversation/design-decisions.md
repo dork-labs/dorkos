@@ -99,6 +99,8 @@ The accepted cost is A's own: one blank 22px line in a quiet room. Recorded as a
 
 **What A inherits from B:** the growth-in-place gesture and the hand-off. The lane's content is a single morphing container, so clicking presence content grows it into the peek rather than popping a detached menu, and when the reply lands the lane's content fades over 160ms while the reply rises — the indicator visibly becomes the answer.
 
+**Amended in P3 (DOR-1330), and the amendment is a trade rather than a slip.** Both things the lane opens — the peek and the Ask card — are drawn in a popover anchored to the lane, not grown inside it. The lane is exactly 24px so that nothing it shows can move the conversation, and a card that grew inside it would break that promise on every prompt; a popover also becomes a bottom sheet on a phone through one implementation, and closes on Escape with the caret handed back. What is lost is the growth gesture this paragraph asks for. If a later phase wants it back, the honest shape is an overlay anchored to the lane animating its own height from 24px, not a lane that grows.
+
 ---
 
 ## 5. Every state the line can be in

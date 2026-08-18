@@ -1,7 +1,7 @@
 # Implementation Summary: Unified conversation surfaces — one tree, approvals anywhere, a live lane
 
 **Created:** 2026-08-18
-**Last Updated:** 2026-08-18 (session 4 — P3, the Ask)
+**Last Updated:** 2026-08-18 (session 5 — P3 review fixes)
 **Spec:** specs/unified-conversation/02-specification.md
 **Tracker:** DOR-1327 (umbrella) — phases DOR-1328 (P1) · DOR-1329 (P2) · DOR-1330 (P3) · DOR-1331 (P4) · DOR-1332 (P5)
 
@@ -256,6 +256,59 @@ Two independent reviews — spec compliance, then adversarial per `REVIEW.md`, t
   - **knip: totals fell.** Unused exports 556 → 555, unused exported types 586 → 585, duplicates 2 → 2. Eleven barrel exports and four types this phase introduced were trimmed rather than accepted: the `AskCard.*` parts are reached through the namespace, and `askHeadline`, `groupAsks`, `useAnswerAsk`, `requestAskTray` and friends have no reader outside the slice.
   - Servers stopped afterwards; 4277 and 4427 answer nothing, `pgrep -f DOR-1330` is empty, `~/.dork-verify-p3` removed.
 
+### Session 5 - 2026-08-18 (P3 review fixes, DOR-1330)
+
+**Workers:** `p3-builder` (resumed)
+
+Two independent reviews — spec compliance, then adversarial, the second driving
+four real prompts through DorkBot, curling all six routes as an agent, forging
+ids, pressing Stop mid-prompt and watching two windows. The server spine came
+back exact. Nine blocking items and eight nits, all fixed:
+
+- **The fleet card never said WHAT it was approving.** Two causes, one symptom.
+  The SDK's `displayName` for a `Write` is the bare word "Write", so the label
+  ladder took it and the headline read "wants to write" with no file in it — the
+  same `label === toolName` test the tool label already got now applies to it.
+  And `InteractionAsk` drew no `AskCard.Detail` at all, so the `description`,
+  the `blockedPath` and the `decisionReason` the inline transcript card has
+  always shown were invisible on every fleet surface. Both fixed and tested
+  against the real payload shape.
+- **The countdown was wrong for every listed question and elicitation.** It
+  anchored to `startedAt + remainingMs`, and `remainingMs` is the budget MINUS
+  the time already spent — so anything past half way was born expired. The fix
+  is the honest one the spec asks for: `timeoutMs` now rides every kind of DTO,
+  stamped by the one selector that measures the remainder, and the card anchors
+  to `startedAt + timeoutMs`. The tray sorts by that deadline too.
+- **A refused answer stranded the card.** The optimistic receipt was written
+  before `run()` and nothing took it back, so a 403 left "You allowed this" over
+  a request still waiting, with no buttons. `forgetAskReceipt` drops the receipt
+  and the settling hold together.
+- **The two trays did not join the roster and offered no way into the session.**
+  One shared hook (`useAskAgentNames`), both surfaces pass it and `onOpenSession`.
+- **Home triage tore its own receipt away** (no settling term in `showsWaiting`),
+  and the **header pill printed "0 waiting on you"** for the second it stayed up
+  saying so. Both fixed and tested.
+- **The pill called every prompt an approval request.** A question is not one;
+  the accessible name and the panel summary now depend on what is queued.
+- **The room lane's `roomId` filter was untested** — `filter(() => true)` left
+  23/23 green. Two rooms' prompts now go in and only one comes out.
+- **The chord moved to `⌘⇧Y`** (item 15) and is PROVED in the shortcuts gate.
+- **The changelog's privacy claim was not implemented** (item 23), and its prose
+  lost two em dashes and glossed "API keys".
+- Nits: the lane showcase's Answer opened an empty panel and its clock was live;
+  `AskCard.Root` defaulted to inactive and dimmed every tray card; the burst card
+  re-implemented answering with raw transport calls and swallowed refusals into
+  `console.error`; the session drew one prompt three times; the store's docstring
+  contradicted its own import; `InteractionResolvedEvent`'s name collision is now
+  stated; two guides still named `ToolApproval`; `AGENTS.md`'s subpath count was
+  stale; the e2e manifest gained an `ask-anywhere` row.
+
+**Verification:** `pnpm verify` exit 0 · client 944 files / 11 702 tests · server
+720 / 12 002 · `pnpm format:check` clean on all tracked files · `docs:export-api`
+
+- `generate:api-docs` no diff · the browser check re-run for the two visible
+  fixes (see the screenshots below).
+
 ## Files Modified/Created
 
 108 files against `spec/unified-conversation`, by area. Client paths are relative to `apps/client/src/`.
@@ -316,7 +369,7 @@ Two independent reviews — spec compliance, then adversarial per `REVIEW.md`, t
 
 **Fixture-only edits (5 files):** the four presence fixtures that gained `entryId`, and the tool-label fixtures that named a file this phase deleted
 
-### P3 (DOR-1330) — 63 files
+### P3 (DOR-1330) — 138 files against `DOR-1329`
 
 **The wire (2 files):** `packages/shared/src/interaction-events.ts` (new), `packages/shared/package.json` (the subpath), `packages/shared/src/transport.ts` (`listPendingInteractions`)
 
@@ -367,19 +420,92 @@ Five things this phase decided rather than finished.
 
 12. **The popover-reset invariant is now load-bearing, and P3/P4 must keep it.** `Conversation.LiveLane` closes its own peek when `offersPeek` falls, at render time, and reports the close to its host in an effect. A future rung that can also open a popover (P3's Ask card is the obvious one) needs the same treatment or it will inherit the same bug. Pinned by `features/conversation/__tests__/LiveLane.test.tsx` — "closes the peek when its trigger stops existing, and tells the host" and "hands the caret back rather than dropping it on the document".
 13. **P4 follow-up — the session lane's `stalled` and `queued` rungs are hard-coded.** `apps/client/src/layers/features/chat/model/use-session-lane-state.ts:123-125` passes `stalled: false` and `queueDepth: 0`. `stalled` wants `syncConnectionState` (available on the same hook that feeds the lane, `use-chat-session.ts`) once P4 decides whether the lane or `ChatStatusSection` owns the connection; `queued` wants `ConversationTarget.queueDepth`, which P4 introduces. The rungs themselves are built and tested — only the session's inputs are constants.
-14. **`GET /api/rooms/:id/sessions` now checks visibility before the person gate**, which is the order §5.3.3 writes and the OPPOSITE of `POST /:id/attachments` (that one refuses an agent before multer reads a byte, which is a different concern). The reason is in the route's own TSDoc: with the person gate first, an outsider learned 403 (this room exists) where a person learned 404, which is a difference in answers where there should be none. **The unresolved-header divergence in item 9 above still stands** and is P3's to reconcile.
+14. **`GET /api/rooms/:id/sessions` now checks visibility before the person gate**, which is the order §5.3.3 writes and the OPPOSITE of `POST /:id/attachments` (that one refuses an agent before multer reads a byte, which is a different concern). The reason is in the route's own TSDoc: with the person gate first, an outsider learned 403 (this room exists) where a person learned 404, which is a difference in answers where there should be none. **The unresolved-header divergence in item 9 above still stands**; P3 decided it — see item 19.
 
 ### P3 (DOR-1330)
 
-Seven things this phase decided rather than finished.
+Ten things this phase decided rather than finished. Numbered from 15 because P2
+owns 12–14 above.
 
-12. **`⌘⇧A` is shared with the Profile, and which one you get depends on whether anything is waiting.** The spec assigns the chord to the Ask; `SHORTCUTS.AGENT_PROFILE` has owned it since the profile panel shipped. `useAskShortcut` registers a capture-phase listener ONLY while at least one prompt is pending, so the Ask wins exactly when "A" unambiguously means Answer and the key is untouched otherwise. Both entries are in the registry and the panel lists both. **If a reviewer prefers one meaning per chord, the change is one `key` in `SHORTCUTS.ANSWER_NEXT_ASK` and one line in the hook.**
-13. **The header tray names an agent by its directory, not its roster name.** The card in the room lane says "DorkBot" (the room joins its own roster); the same card in the tray says "dorkbot", because the pill has no roster join wired and falls back to the basename of `cwd`. `AskList` already takes `agentNames`; the indicator does not build one. It is the documented fallback rather than a defect, and it is one map away from being right — **P4 or a follow-up should build it from the fleet session list**, which is the join `derive-attention-signals` already makes.
-14. **`GET /api/rooms/:id/sessions` and the answer routes disagree about an unresolved agent header, and that is now deliberate.** P2 raised it (issue 9): `resolveCaller` treats a token it cannot verify as "no agent presented", so that route answers 200 to `curl -H 'X-DorkOS-Agent: garbage'`. `requirePersonToAnswer` refuses it, because `readCallerAuthority` reports the RAW header. The two gates are answering different questions — one is "may this caller see where work runs", the other is "may this caller decide something irreversible" — and the stricter answer belongs on the stricter question. Aligning the room route would be a change to every room route's caller model, which is a rooms-domain decision with its own review.
-15. **The browser suite covers the fleet half of the Ask, not the room half.** `ask-anywhere.ts` parks a session, leaves for `/tasks`, answers there and watches the agent carry on. A room-bound prompt appearing on that room's lane needs a room, an agent bound into it and a turn dispatched by the room runner, none of which the mock leg seeds — so that half is unit-tested (`RoomLiveLane` filters on `roomId`), server-tested (`session-list-broadcaster-asks`) and was walked by hand in a browser against a real room for the acceptance check above.
-16. **The "never steals a keystroke" promise is browser-verified by hand, not by the mock leg.** The session that raises a prompt replaces its composer with the prompt while it waits, so there is nothing to type into there; the room's composer stays, and rooms are not seeded on that leg. The unit suite pins the rule against `document.body`, the e2e pins that a focused card genuinely answers, and the acceptance check above typed into a real room composer with a real prompt live.
-17. **`resolvedBy` is never populated.** The broadcaster has no HTTP caller to name, so "Already allowed by Dorian at 2:01" is unreachable on a single-identity install and every cross-window receipt reads "Already answered at 2:01". The schema keeps the field because a bridged approver is exactly what it is for; wiring it means carrying the deciding caller from the route into the resolution, which is a change to `resolveInteraction`'s signature and belongs with the bridged-approver work.
-18. **The session's inline prompt and the fleet-wide card are two renderings of one object, and the transcript keeps its own.** `AssistantMessageContent` still renders `ApprovalPrompt` / `QuestionPrompt` / `ElicitationPrompt` from the per-session store; the lane, the tray, the sidebar and home render `InteractionAsk` from the fleet-wide one. That is the dedupe rule §4.1 states, and it is why an attached session shows one card in the transcript and one entry in the tray rather than two of either. **P4's timeline work should not "unify" these into one component** without re-reading that section: the transcript's question form is a form, and the tray's is a summary.
+15. **`⌘⇧Y`, not `⌘⇧A`, and the spec says `⌘⇧A`.** `SHORTCUTS.AGENT_PROFILE` has
+    owned that chord since the profile panel shipped. Sharing it by condition —
+    Answer while something waits, Profile otherwise — was built and then
+    rejected in review: the `?` panel would list one combo with two labels, the
+    Profile became unreachable by keyboard exactly while an agent was parked,
+    and a reader learned which meaning they got by watching the screen. `Y` is
+    free in the registry and unbound in Chrome, Firefox and Safari, the listener
+    installs unconditionally, and the shortcuts gate PROVES it with a real
+    keystroke rather than declaring it.
+16. **The lane's Ask grows into a POPOVER, where §5.5 writes "height + opacity,
+    300 ms, no detached menu".** Deliberate, and the reason is the promise one
+    section earlier: the lane is exactly 24 px so that nothing it ever shows can
+    move the conversation, and a card that grew inside it would break that on
+    every prompt. It reuses the peek's own `ResponsivePopover`, so the two
+    things the lane can open behave identically, become a bottom sheet on a
+    phone through one implementation, and close on Escape with the caret handed
+    back. **What is lost is the growth gesture**, which the design record asks
+    for by name; if a future phase wants it, the honest shape is an overlay
+    anchored to the lane that animates height from 24 px, not a lane that grows.
+17. **The session surface does not draw the lane's Ask rung.** It already shows
+    every prompt twice — the live card in the input zone, where a person answers
+    it, and the receipt row in the transcript where it was asked — and a third
+    line six pixels above the first was noise that also pushed the elapsed and
+    token reading this lane exists for. `ChatPanel` passes `NO_ASKS`. The rung is
+    live on the room lane, which has no inline card, and the header tray covers
+    this session from every other route. **P4 owns revisiting it** when the
+    composer host lands and the input zone's card may move.
+18. **The header tray and home triage now join the roster; the SIDEBAR row still
+    does not.** `useAskAgentNames` gives both trays the agent's real name and
+    "Open session". `derive-attention-signals` names the agent from the session
+    list it already reads, which is a different join and was already correct.
+19. **`GET /api/rooms/:id/sessions` and the answer routes disagree about an
+    unresolved agent header, and the divergence is now decided rather than
+    noted.** P2 raised it (issue 9): `resolveCaller` treats a token it cannot
+    verify as "no agent presented", so that route answers 200 to
+    `curl -H 'X-DorkOS-Agent: garbage'`; `requirePersonToAnswer` refuses it,
+    because `readCallerAuthority` reports the RAW header. **P3's rule is the one
+    that should win long-term**: a header that did not resolve still means a
+    machine is calling, and "may this caller decide something irreversible" is
+    not a question to answer leniently. Aligning the room route means changing
+    every room route's caller model, which is a rooms-domain decision with its
+    own review — filed as the follow-up, not done here.
+20. **The browser suite covers the fleet half of the Ask, not the room half.**
+    `ask-anywhere.ts` parks a session, leaves for `/tasks`, answers there and
+    watches the agent carry on. A room-bound prompt on a room's lane needs a
+    room, an agent bound into it and a turn dispatched by the room runner, none
+    of which the mock leg seeds. The filter is unit-tested (`RoomLiveLane` —
+    two rooms in, one room named), the join is server-tested
+    (`session-list-broadcaster-asks`), and the path was walked against a real
+    room for the acceptance check. The manifest row says the same.
+21. **"Never steals a keystroke" is browser-verified by hand, not by the mock
+    leg.** The session that raises a prompt replaces its composer with it, so
+    there is nothing to type into there; the room's composer stays, and rooms
+    are not seeded on that leg. The unit suite pins the rule against
+    `document.body`, the e2e pins that a focused card genuinely answers, and the
+    acceptance check typed into a real room composer with a real prompt live.
+22. **`resolvedBy` is never populated.** The broadcaster has no HTTP caller to
+    name, so "Already allowed by Dorian at 2:01" is unreachable on a
+    single-identity install and every cross-window receipt reads "Already
+    answered at 2:01". The schema keeps the field because a bridged approver is
+    what it is for; wiring it means carrying the deciding caller from the route
+    into the resolution, which belongs with the bridged-approver work.
+23. **Nobody checks who may SEE a prompt, and the changelog now says so.** The
+    detail rides the per-caller global stream and the list route, both of which
+    answer this cockpit's operator — the person who can answer. That is true and
+    sufficient on a single-identity install (ADR 260727-184933 D6), and it is
+    NOT the same claim as "only eligible approvers see the detail", which is
+    what the fragment said before review. A bridged approver's entitlement is
+    still `mayApprove`'s, untouched and unwidened. **The follow-up, if DorkOS
+    ever has more than one person: the list route and the fan-out both need a
+    per-caller filter**, which is a change to `eventFanOut`'s addressing model.
+24. **Task 3.9's `collectDurableEvents` case is not written, and the substitute
+    is named.** The spec asks for an SSE-integration proof that
+    `interaction_pending` reaches the global fan-out before the per-session
+    event reaches a late subscriber. `session-list-broadcaster-asks.test.ts`
+    makes exactly that claim one layer down — it asserts, inside the broadcast
+    itself, that the session's own replay buffer does not yet hold the event —
+    which is the same ordering without standing up two live streams. The
+    projector-level ordering case pins the other half.
 
 ## Implementation Notes
 

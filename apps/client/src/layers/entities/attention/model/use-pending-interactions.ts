@@ -2,9 +2,16 @@
  * Every prompt anywhere in the fleet that is waiting on a person.
  *
  * The twin of {@link usePendingApprovals} next door, and it lives here for the
- * same reason: the attention entity's whole job is "what needs me", and an
- * entity may not read a sibling entity's model. A store in `entities/session`
- * would have made the one consumer that matters illegal.
+ * same reason: the attention entity's whole job is "what needs me", and its
+ * derivation must be able to read this list. Putting the store in
+ * `entities/session` would have inverted that — the entity that answers "what
+ * needs me" would depend on the one that answers "what is this session doing",
+ * which is the wrong way round for every consumer.
+ *
+ * It does read `entities/session`'s stream store, for the one thing that store
+ * is fresher about (see the dedupe rule below). That direction is the one the
+ * layering allows here and the one `use-attention-signals.ts` beside it already
+ * takes.
  *
  * @module entities/attention/model/use-pending-interactions
  */

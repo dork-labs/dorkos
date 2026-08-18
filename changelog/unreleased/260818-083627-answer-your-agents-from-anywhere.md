@@ -23,10 +23,10 @@ covers:
 ### Changed
 
 - Answer a question once and it is answered everywhere. Every copy of it turns into a line saying what happened: what you chose, or who answered it first and when, or that it is no longer needed (DOR-1330)
-- The question still has ten minutes. If nobody answers in that time it is refused for you and the agent carries on without it, exactly as before — so the point of showing it everywhere is that you get to it in time (DOR-1330)
+- The question still has ten minutes. If nobody answers in that time it is refused for you and the agent carries on without it, exactly as before. Showing it everywhere is how you get to it in time (DOR-1330)
 - A question that arrives while you are typing never takes the cursor, and `A` is still just the letter A in your message (DOR-1330)
 
 ### Security
 
-- An agent can never answer a question, including its own. Anything calling DorkOS as an agent is refused, and with Require login turned on so is anything holding one of your API keys — only a person signed in on this machine can answer (DOR-1330)
-- In a channel, the details of a request only reach people who are allowed to answer it. Everyone else sees the same short note the channel has always shown, with no file name, no command and no countdown (DOR-1330)
+- An agent can never answer a question, including its own. Anything calling DorkOS as an agent is refused. With Require login turned on, so is anything holding one of your API keys, which is the kind of password a program uses instead of signing in. Only a person signed in on this machine can answer (DOR-1330)
+- A channel still shows only a short note when an agent is waiting, with no file name, no command and no countdown. The question itself, with all of its detail, goes to this copy of DorkOS, where you are the person who can answer it (DOR-1330)

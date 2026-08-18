@@ -306,7 +306,7 @@ ChatPanel
         └── SessionMessage (receives activeToolCallId, onToolRef, focusedOptionIndex)
               └── MessageContext (the three props, put on context for the body)
                     └── AssistantMessageContent (reads them with useMessageContext)
-                          ├── ToolApproval (ref → ToolApprovalHandle)
+                          ├── ApprovalPrompt (ref → ApprovalPromptHandle)
                           │     isActive={toolCallId === activeToolCallId}
                           │     ref={isActive ? approvalRefCallback : undefined}
                           │
@@ -357,12 +357,12 @@ Threads three props from `ChatPanel` through `MessageList`:
 
 It does not consume them. The row itself is the shared `Message.*` chrome, so it puts all three on `MessageContext` and lets the body renderer read them: `AssistantMessageContent` calls `useMessageContext()`, checks `part.toolCallId === activeToolCallId` for each tool call part, and conditionally passes the `ref` callback. Only the active tool's ref is captured -- inactive tools do not register handles.
 
-### `ToolApproval.tsx`
+### `ApprovalPrompt.tsx`
 
-Exposes `ToolApprovalHandle` via `forwardRef` + `useImperativeHandle`:
+Exposes `ApprovalPromptHandle` via `forwardRef` + `useImperativeHandle`:
 
 ```typescript
-export interface ToolApprovalHandle {
+export interface ApprovalPromptHandle {
   approve: () => void;
   deny: () => void;
 }

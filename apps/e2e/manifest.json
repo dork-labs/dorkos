@@ -938,6 +938,26 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "ask-anywhere": {
+      "specFile": "tests/conversation/ask-anywhere.ts",
+      "feature": "chat",
+      "description": "A prompt raised in one session, answered from a route that is not it (DOR-1330): the header pill counts it on /tasks, the card there names what is being asked, answering there makes the agent stream the branch only an approval could produce, and A answers the card the reader is standing on. Registered by chat-mock.spec.ts under the shared-server lock interactive-prompts.ts documents.",
+      "lastRun": "2026-08-18T09:00:00.000Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/client/src/layers/features/ask/ui/InteractionAsk.tsx",
+        "apps/client/src/layers/features/ask/ui/AskList.tsx",
+        "apps/client/src/layers/entities/attention/model/use-pending-interactions.ts",
+        "apps/client/src/layers/widgets/approvals-indicator/ui/ApprovalsIndicator.tsx",
+        "apps/server/src/routes/sessions.ts",
+        "apps/server/src/services/session/session-list-broadcaster.ts"
+      ],
+      "lastModified": "2026-08-18",
+      "explorationNotes": "The room leg is deliberately absent: a prompt on a ROOM lane needs a room, an agent bound into it and a turn dispatched by the room runner, and this leg seeds none of those (its fixture is one agent directory and a chat session). The filter is unit-tested in RoomLiveLane.test.tsx, the roomId join is server-tested in session-list-broadcaster-asks, and the whole path was walked against a real room for the phase acceptance check."
     }
   },
   "runHistory": [
