@@ -7,6 +7,7 @@ covers:
   - 'refactor(client): P1.5 — both surfaces draw the same row, and the two old ones are gone (DOR-1328)'
   - 'feat(client): P1.7 — the Message.* matrix on the Dev Playground (DOR-1328)'
   - 'fix(client): P1.9 — the surface scan reads its sources through Vite, and DM capabilities stop being a second name (DOR-1328)'
+  - 'refactor(client): P1.9 — one spelling of Conversation.Root, and no barrel export without a reader (DOR-1328)'
 ---
 
 ### Changed

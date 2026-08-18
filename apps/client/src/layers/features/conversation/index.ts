@@ -34,8 +34,6 @@ export type { BodyRenderContext, ConversationBodyRenderer } from './model/body-r
 export type { ConversationRow } from './lib/row-kinds';
 export { messageItem, toolStatus } from './ui/message/message-variants';
 export { MessageAuthorAvatar } from './ui/message/MessageAuthorAvatar';
-export type { MessageAuthorAvatarProps } from './ui/message/MessageAuthorAvatar';
-export type { MessagePosition } from './ui/message/message-styles-context';
 export { formatTime } from './lib/format-entry-time';
 export { DayDivider } from './ui/rows/DayDivider';
 export { UnreadDivider } from './ui/rows/UnreadDivider';
@@ -45,13 +43,9 @@ export type { MomentSubjectIdentity } from './ui/rows/MomentRow';
 export { ThreadReplyRow } from './ui/rows/ThreadReplyRow';
 
 export { attachmentsSummary } from './ui/message/MessageAttachments';
-export type { MessageActionsProps } from './ui/message/MessageActions';
-export type { MessageAttachmentsProps } from './ui/message/MessageAttachments';
-export type { MessageAuthorProps } from './ui/message/MessageAuthor';
-export type { MessageBodyProps, MessageContentProps } from './ui/message/MessageBody';
-export type { MessageGutterProps } from './ui/message/MessageGutter';
-export type { MessageReactionsProps } from './ui/message/MessageReactions';
-export type { MessageRootProps } from './ui/message/MessageRoot';
+// The parts' own prop types are not re-exported: a host writes `<Message.Root>`
+// and TypeScript infers them. Exporting nine interfaces nothing names would be
+// nine more things to keep in step for no reader's benefit.
 
 import { ConversationRoot } from './ui/ConversationRoot';
 import { MessageActions } from './ui/message/MessageActions';
