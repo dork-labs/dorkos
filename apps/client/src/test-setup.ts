@@ -265,3 +265,42 @@ vi.mock('motion/react', () => ({
     return { stop: () => {} };
   },
 }));
+
+/**
+ * The virtualizer, stood in for everywhere.
+ *
+ * **jsdom has no layout, so a real one draws nothing at all.** TanStack Virtual
+ * derives its visible window from the scroll element's `clientHeight`, which
+ * jsdom reports as 0 for every element there has ever been — so
+ * `getVirtualItems()` answers with an empty range and a mounted conversation
+ * renders a correctly-sized empty box. Every assertion about what a list shows
+ * would then be vacuous, and the ones that survived would be asserting the
+ * absence of rows for the wrong reason.
+ *
+ * The stand-in draws every row at a fixed height. That is exactly the shape the
+ * room's list had before `Conversation.Timeline` virtualized it, so the room and
+ * chat suites test what they always tested: WHICH rows are drawn, in what order,
+ * with what on them. Whether virtualization itself keeps a long channel smooth
+ * is a browser question, and `apps/e2e` is where it is asked.
+ *
+ * Global rather than per-suite for the same reason `motion/react` is above: it
+ * is a fact about the environment, not about any one test, and forty suites
+ * repeating it would drift.
+ */
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_unused, index) => ({
+        key: `virtual-${index}`,
+        index,
+        start: index * 80,
+        size: 80,
+      })),
+    getTotalSize: () => count * 80,
+    measureElement: vi.fn(),
+    scrollToEnd: vi.fn(),
+    scrollToIndex: vi.fn(),
+    scrollToOffset: vi.fn(),
+    isAtEnd: () => true,
+  }),
+}));

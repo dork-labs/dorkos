@@ -1,11 +1,21 @@
 // @vitest-environment jsdom
+import type React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createRef } from 'react';
-import { render, screen, cleanup } from '@testing-library/react';
+import { screen, cleanup } from '@testing-library/react';
+import { createReadCursorHarness, renderWithTransport } from './session-transcript-test-helpers';
 
 import { useAgentBirthStore } from '@/layers/shared/model';
-import { ChatMessageArea } from '../ui/ChatMessageArea';
-import type { MessageListHandle } from '../ui/MessageList';
+import { SessionTranscript } from '../ui/SessionTranscript';
+
+// Author identity comes from the working directory's agent and the session's
+// runtime, both transport-backed caches. Mocked at their source modules (not at
+// the entity barrels) so everything else those barrels export stays real.
+vi.mock('@/layers/entities/agent/model/use-current-agent', () => ({
+  useCurrentAgent: () => ({ data: null }),
+}));
+vi.mock('@/layers/entities/session/model/use-session-runtime', () => ({
+  useSessionRuntime: () => 'claude-code',
+}));
 
 const RECORD = {
   name: 'aurora',
@@ -17,7 +27,7 @@ const RECORD = {
   kickoffMessage: '<dork-kickoff>hi</dork-kickoff>',
 };
 
-/** Minimal props for an empty-session ChatMessageArea. */
+/** Minimal props for an empty-session SessionTranscript. */
 function props(sessionId: string) {
   return {
     messages: [],
@@ -25,21 +35,24 @@ function props(sessionId: string) {
     isLoadingHistory: false,
     hydrated: true,
     isTextStreaming: false,
-    isAtBottom: true,
-    hasNewMessages: false,
-    scrollToBottom: vi.fn(),
-    onScrollStateChange: vi.fn(),
     activeToolCallId: null,
     onToolRef: vi.fn(),
     focusedOptionIndex: -1,
     onToolDecided: vi.fn(),
     onRetry: vi.fn(),
     inputZoneToolCallId: null,
-    messageListRef: createRef<MessageListHandle>(),
   };
 }
 
-describe('ChatMessageArea — greeting-failed empty state (M4)', () => {
+/** The transcript reads its unread cursor over the transport, so it needs one. */
+const readState = createReadCursorHarness();
+
+/** Render inside that transport and the conversation every row reads. */
+function render(ui: React.ReactElement) {
+  return renderWithTransport(ui, readState.transport);
+}
+
+describe('SessionTranscript — greeting-failed empty state (M4)', () => {
   beforeEach(() => {
     useAgentBirthStore.setState({ records: {} });
   });
@@ -49,7 +62,7 @@ describe('ChatMessageArea — greeting-failed empty state (M4)', () => {
     useAgentBirthStore.getState().register('s1', RECORD);
     useAgentBirthStore.getState().markGreetingFailed('s1');
 
-    render(<ChatMessageArea {...props('s1')} />);
+    render(<SessionTranscript {...props('s1')} />);
 
     const line = screen.getByTestId('greeting-failed-empty');
     expect(line).toHaveTextContent('Aurora couldn’t say hello just now');
@@ -61,7 +74,7 @@ describe('ChatMessageArea — greeting-failed empty state (M4)', () => {
   });
 
   it('shows the generic empty copy for a normal session (no birth record)', () => {
-    render(<ChatMessageArea {...props('ordinary')} />);
+    render(<SessionTranscript {...props('ordinary')} />);
     expect(screen.getByText('Start a conversation')).toBeInTheDocument();
     expect(screen.queryByTestId('greeting-failed-empty')).toBeNull();
   });
@@ -71,7 +84,7 @@ describe('ChatMessageArea — greeting-failed empty state (M4)', () => {
     // the failure line both wait for the birth-store latches, so the neutral
     // empty copy holds in this pre-fire window.
     useAgentBirthStore.getState().register('s1', RECORD);
-    render(<ChatMessageArea {...props('s1')} />);
+    render(<SessionTranscript {...props('s1')} />);
     expect(screen.getByText('Start a conversation')).toBeInTheDocument();
     expect(screen.queryByTestId('greeting-failed-empty')).toBeNull();
     expect(screen.queryByTestId('first-light')).toBeNull();

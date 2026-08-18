@@ -734,9 +734,11 @@ describe('ChannelsPage — a thread reply still clears the badge', () => {
     // The room's flow holds the root and nothing else...
     await screen.findByText('the message it hangs off');
     const timeline = screen.getByTestId('room-timeline');
-    const flow = Array.from(timeline.children).filter(
-      (child) => child.getAttribute('data-testid') === 'room-entry'
-    );
+    // Read by descent rather than by direct children: the timeline is
+    // virtualized now, so each row sits inside the box the virtualizer
+    // positions it with. The claim — the flow holds the root and nothing else —
+    // is the same one.
+    const flow = timeline.querySelectorAll('[data-testid="room-entry"]');
     expect(flow).toHaveLength(1);
 
     // ...and the reply itself is in the panel, which is not open yet — the row

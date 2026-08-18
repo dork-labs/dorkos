@@ -7,7 +7,7 @@
  * `features/conversation`'s `deriveLaneState`, which every surface now shares —
  * this is the session's own inputs on their way into it.
  *
- * @module features/chat/model/use-session-lane-state
+ * @module widgets/session/model/use-session-lane-state
  */
 import { useEffect, useRef, useState } from 'react';
 import type { PermissionMode } from '@dorkos/shared/types';
@@ -21,8 +21,11 @@ import {
 } from '@/layers/features/conversation';
 import { useElapsedTime } from '@/layers/shared/model';
 import { isBypassPermissionMode, TIMING } from '@/layers/shared/lib';
-import { SESSION_CAPABILITIES } from '../config/session-capabilities';
-import type { OperationProgressState, SystemStatusState } from './chat-types';
+import type {
+  OperationProgressState,
+  SystemStatusState,
+} from '@/layers/shared/model/chat-message-types';
+import { SESSION_CAPABILITIES } from './session-capabilities';
 
 /** Everything the session hands the lane. */
 export interface SessionLaneInput {

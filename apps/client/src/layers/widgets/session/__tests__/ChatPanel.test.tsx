@@ -50,7 +50,7 @@ vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
 // Mock useChatSession — status is controllable so the suggestion-chip idle gate
 // can be exercised.
 let mockChatStatus = 'idle';
-vi.mock('../model/use-chat-session', () => ({
+vi.mock('@/layers/features/chat/model/use-chat-session', () => ({
   useChatSession: () => ({
     messages: [],
     input: '',
@@ -84,7 +84,7 @@ vi.mock('@/layers/entities/command/model/use-commands', () => ({
 }));
 
 // Mock useTaskState
-vi.mock('../model/use-task-state', () => ({
+vi.mock('@/layers/features/chat/model/use-task-state', () => ({
   useTaskState: () => ({
     tasks: [],
     taskMap: new Map(),
@@ -97,7 +97,7 @@ vi.mock('../model/use-task-state', () => ({
 }));
 
 // Mock useFileUpload — avoids TransportProvider requirement
-vi.mock('../model/use-file-upload', () => ({
+vi.mock('@/layers/features/chat/model/use-file-upload', () => ({
   useFileUpload: () => ({
     pendingFiles: [],
     addFiles: vi.fn(),
@@ -200,8 +200,8 @@ vi.mock('@/layers/features/composer', async (importActual) => {
   };
 });
 
-vi.mock('../ui/MessageList', () => ({
-  MessageList: vi.fn(() => <div data-testid="message-list">MessageList</div>),
+vi.mock('../ui/SessionTranscript', () => ({
+  SessionTranscript: vi.fn(() => <div data-testid="message-list">SessionTranscript</div>),
 }));
 
 vi.mock('@/layers/features/status', async (importOriginal) => ({
@@ -216,7 +216,7 @@ vi.mock('@/layers/features/status', async (importOriginal) => ({
   useStatusBarPins: () => ({ pins: [], toggle: vi.fn(), reset: vi.fn() }),
 }));
 
-vi.mock('../ui/tasks/TaskListPanel', () => ({
+vi.mock('@/layers/features/chat/ui/tasks/TaskListPanel', () => ({
   TaskListPanel: vi.fn(() => null),
 }));
 

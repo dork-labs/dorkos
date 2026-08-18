@@ -1,20 +1,24 @@
+/**
+ * The session's conversation, whole: transcript, live lane, composer and the
+ * panels around them.
+ *
+ * The host every session mounts — the `/session` route, the Obsidian embed and
+ * the dev simulator alike. It is a WIDGET because a conversation host composes
+ * features (`features/chat`'s model, `features/conversation`'s compound) and
+ * only a widget may; P4 moved it up here from `features/chat`, which is what
+ * let the capability table and the body renderer come with it.
+ *
+ * @module widgets/session/ui/ChatPanel
+ */
 import { useRef, useMemo, useCallback, useEffect } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useChatSession } from '../model/use-chat-session';
-import { useCommands } from '@/layers/entities/command';
-import { useTaskState } from '../model/use-task-state';
-import { useToolShortcuts } from '../model/use-tool-shortcuts';
-import { useScrollOverlay } from '../model/view/use-scroll-overlay';
-import { useInputAutocomplete } from '../model/use-input-autocomplete';
-import { buildPaletteCommands, compactComposerGate } from '../model/build-palette-commands';
-import { useChatStatusSync } from '../model/use-chat-status-sync';
-import { useLaunchPrompt } from '../model/launch/use-launch-prompt';
-import { useDorkBotSeed } from '../model/launch/use-dorkbot-seed';
-import { useRuntimeChip } from '@/layers/features/status';
-import { useFileUpload } from '../model/use-file-upload';
-import { buildFileEntries } from '../lib/build-file-entries';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import type { TaskUpdateEvent } from '@dorkos/shared/types';
+import { useAppStore, useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
+import { playNotificationSound } from '@/layers/shared/lib';
+import { PromptSuggestionChips } from '@/layers/shared/ui';
+import { useCommands } from '@/layers/entities/command';
 import {
   useSessionId,
   useSessionStatus,
@@ -24,27 +28,37 @@ import {
 } from '@/layers/entities/session';
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { usePendingInteractions } from '@/layers/entities/attention';
-import { InteractionAsk } from '@/layers/features/ask';
-import { useAppStore, useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
-import { playNotificationSound } from '@/layers/shared/lib';
-import { resolveTransportRetryText } from '../lib/resolve-retry-text';
-import type { MessageListHandle } from './MessageList';
-import type { ComposerInputHandle } from '@/layers/features/composer';
-import { Conversation } from '@/layers/features/conversation';
-import { SESSION_CAPABILITIES } from '../config/session-capabilities';
-import { ChatMessageArea } from './ChatMessageArea';
-import { BirthCertificate } from './BirthCertificate';
-import { ChatInputContainer } from './input/ChatInputContainer';
-import { TaskListPanel } from './tasks/TaskListPanel';
-import { CelebrationOverlay } from './CelebrationOverlay';
+import { useRuntimeChip } from '@/layers/features/status';
 import { useFiles } from '@/layers/features/files';
-import { useCelebrations } from '../model/use-celebrations';
-import { ErrorMessageBlock } from './message/ErrorMessageBlock';
+import { InteractionAsk } from '@/layers/features/ask';
+import { Conversation } from '@/layers/features/conversation';
+import type { ComposerInputHandle } from '@/layers/features/composer';
+import {
+  BirthCertificate,
+  CelebrationOverlay,
+  ChatInputContainer,
+  ErrorMessageBlock,
+  TaskListPanel,
+  TerminalReasonChip,
+  TurnFailedNotice,
+  buildFileEntries,
+  buildPaletteCommands,
+  compactComposerGate,
+  resolveTransportRetryText,
+  shouldShowTurnFailedNotice,
+  useChatSession,
+  useChatStatusSync,
+  useCelebrations,
+  useDorkBotSeed,
+  useFileUpload,
+  useInputAutocomplete,
+  useLaunchPrompt,
+  useTaskState,
+  useToolShortcuts,
+} from '@/layers/features/chat';
+import { SESSION_CAPABILITIES } from '../model/session-capabilities';
 import { useSessionLaneState } from '../model/use-session-lane-state';
-import { TerminalReasonChip, TurnFailedNotice } from './status';
-import { shouldShowTurnFailedNotice } from '../model/stream/turn-failure';
-import { PromptSuggestionChips } from '@/layers/shared/ui';
-import type { TaskUpdateEvent } from '@dorkos/shared/types';
+import { SessionTranscript } from './SessionTranscript';
 
 interface ChatPanelProps {
   sessionId: string | null;
@@ -93,7 +107,6 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [, setSessionId] = useSessionId();
   const queryClient = useQueryClient();
-  const messageListRef = useRef<MessageListHandle>(null);
   const chatInputRef = useRef<ComposerInputHandle>(null);
   const taskState = useTaskState(sessionId);
   // What this session is doing right now, from the same fleet-wide status
@@ -257,10 +270,6 @@ export function ChatPanel({
   const { permissionMode } = useSessionStatus(sessionId, sessionStatus, status === 'streaming');
 
   const { handleToolRef, focusedOptionIndex } = useToolShortcuts(activeInteraction);
-  const { isAtBottom, hasNewMessages, scrollToBottom, handleScrollStateChange } = useScrollOverlay(
-    messages,
-    messageListRef
-  );
 
   useChatStatusSync(status, isWaitingForUser, taskState.activeForm, isTextStreaming);
 
@@ -423,23 +432,18 @@ export function ChatPanel({
       <div data-testid="chat-panel" className="flex h-full w-full flex-col">
         <BirthCertificate sessionId={sessionId} />
 
-        <ChatMessageArea
+        <SessionTranscript
           messages={messages}
           sessionId={sessionId!}
           isLoadingHistory={isLoadingHistory}
           hydrated={hydrated}
           isTextStreaming={isTextStreaming}
-          isAtBottom={isAtBottom}
-          hasNewMessages={hasNewMessages}
-          scrollToBottom={scrollToBottom}
-          onScrollStateChange={handleScrollStateChange}
           activeToolCallId={activeInteraction?.toolCallId ?? null}
           onToolRef={handleToolRef}
           focusedOptionIndex={focusedOptionIndex}
           onToolDecided={markToolCallResponded}
           onRetry={handleRetry}
           inputZoneToolCallId={activeInteraction?.toolCallId ?? null}
-          messageListRef={messageListRef}
           runtimeLabel={runtimeAuthLabel}
         />
 

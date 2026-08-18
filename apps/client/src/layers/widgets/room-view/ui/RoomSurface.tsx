@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Skeleton } from '@/layers/shared/ui';
 import { useIsMobile, useVisualViewportBottomInset } from '@/layers/shared/model';
@@ -9,22 +9,21 @@ import {
   useRoomOpenThread,
   useRoomOpenThreadStore,
   useRoomStream,
-  usePendingPosts,
   roomDisplayTitle,
   threadRootIdOf,
 } from '@/layers/entities/room';
-import { Conversation } from '@/layers/features/conversation';
+import type { ConversationTimelineHandle } from '@/layers/features/conversation';
 import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
+import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
 import { useRestoreThreadFocus } from '../model/use-restore-thread-focus';
-import { useStickToBottom } from '../model/use-stick-to-bottom';
 import { useThreadUrlSync, type ThreadRoute } from '../model/use-thread-url-sync';
 import { RoomComposer } from './RoomComposer';
+import { RoomFlow, RoomHistorySkeleton } from './RoomFlow';
 import { RoomHeader } from './RoomHeader';
 import { RoomLiveLane } from './RoomLiveLane';
 import { RoomThreadPanel } from './RoomThreadPanel';
-import { RoomTimeline, RoomTimelineSkeleton } from './RoomTimeline';
 
 /** What {@link RoomSurface} needs to draw a room. */
 export interface RoomSurfaceProps {
@@ -39,7 +38,7 @@ export interface RoomSurfaceProps {
    *
    * **Outside the scroller, deliberately.** The home surface's pinned triage
    * header changes height as approvals are answered, and a height change INSIDE
-   * the scrolling element moves `scrollHeight` under `useStickToBottom` — which
+   * the scrolling element moves `scrollHeight` under `useTimelineScroll` — which
    * reads the distance from the bottom to decide whether the reader is still
    * following the room. A header that grows inside it therefore un-pins a
    * reader who never scrolled. Here it is a flex sibling: it takes its own
@@ -187,12 +186,12 @@ export function RoomSurface({
   const frozenReadSeq = useFrozenReadCursor(roomId, lastReadSeq);
   useMarkRoomRead(room, entries);
 
-  const newestEntryId = entries.length > 0 ? entries[entries.length - 1]!.id : null;
-  // The timeline draws these under the log and reads them for itself; the pin
-  // needs them too, because they are what the tail of the room actually is
-  // between pressing Enter and the echo landing (DOR-799).
-  const pendingPosts = usePendingPosts(roomId, null);
-  const { scrollRef, onScroll } = useStickToBottom(roomId, newestEntryId, pendingPosts);
+  // The timeline's own handle, so the lane's peek can take a reader to a row —
+  // including one virtualization has left out of the document.
+  const timelineRef = useRef<ConversationTimelineHandle>(null);
+  const scrollToRow = useCallback((domId: string) => {
+    timelineRef.current?.scrollToRow(domId);
+  }, []);
 
   // The open thread's replies, so the room's presence line can hand exactly
   // those claims to the panel and keep the rest. `undefined` — no thread open —
@@ -212,7 +211,7 @@ export function RoomSurface({
           <Skeleton className="size-7 rounded-full" />
           <Skeleton className="h-4 w-40" />
         </div>
-        <RoomTimelineSkeleton />
+        <RoomHistorySkeleton />
       </div>
     );
   }
@@ -261,23 +260,22 @@ export function RoomSurface({
           neither — see `RoomSurfaceProps.aboveTimeline` for why that placement
           is the whole point. */}
       {aboveTimeline}
-      <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
-        <RoomTimeline
-          roomId={room.id}
-          roomName={roomDisplayTitle(room)}
-          viewerAuthorId={room.viewerAuthorId}
-          entries={entries}
-          members={room.members}
-          lastReadSeq={frozenReadSeq}
-          reactionFrequents={room.reactionFrequents}
-          streamStalled={stream.stalled}
-          isLoading={entriesQuery.isLoading}
-          error={entriesQuery.error}
-          onAddAgents={() => setDetailsFocus('add')}
-          openThreadId={openThreadId}
-          onOpenThread={onOpenThread}
-        />
-      </div>
+      <RoomFlow
+        ref={timelineRef}
+        roomId={room.id}
+        roomName={roomDisplayTitle(room)}
+        viewerAuthorId={room.viewerAuthorId}
+        entries={entries}
+        members={room.members}
+        lastReadSeq={frozenReadSeq}
+        reactionFrequents={room.reactionFrequents}
+        streamStalled={stream.stalled}
+        isLoading={entriesQuery.isLoading}
+        error={entriesQuery.error}
+        onAddAgents={() => setDetailsFocus('add')}
+        openThreadId={openThreadId}
+        onOpenThread={onOpenThread}
+      />
       {/* The host's chrome for the composer — see `RoomSurfaceProps.aboveComposer`. */}
       {aboveComposer}
       {/* The one reserved line, ABOVE the composer and outside the scroller.
@@ -300,6 +298,7 @@ export function RoomSurface({
         stalled={stream.stalled}
         unavailable={stream.unavailable}
         onRetry={stream.retry}
+        onScrollToRow={scrollToRow}
       />
       {/* Keyed on the room so opening a conversation gives you a composer that
           is focused and freshly sized for that room's draft. Switching to an

@@ -36,7 +36,7 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
-import { RoomTimeline } from '../ui/RoomTimeline';
+import { RoomFlow } from '../ui/RoomFlow';
 
 // A mention pill now reads route state to build its profile link
 // (`useProfileDeepLink`), and these tests mount it with no router. The link's
@@ -145,7 +145,7 @@ function renderTimeline(overrides: Partial<Transport>) {
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
   render(
-    <RoomTimeline
+    <RoomFlow
       roomId="room-1"
       roomName="general"
       viewerAuthorId="ana"

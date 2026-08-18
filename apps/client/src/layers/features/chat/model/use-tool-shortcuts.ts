@@ -18,7 +18,7 @@ interface UseToolShortcutsReturn {
  * Wire keyboard shortcuts to the active interactive tool card (approval or question prompt).
  *
  * Extracts shortcut plumbing out of ChatPanel so the component only needs to pass
- * `handleToolRef` and `focusedOptionIndex` down to MessageList.
+ * `handleToolRef` and `focusedOptionIndex` down to the transcript.
  */
 export function useToolShortcuts(
   activeInteraction: ActiveInteraction | null

@@ -8,7 +8,7 @@
  * the real stream store; the store's own `setHistoryMessages` performs the
  * turn-end reconcile exactly as `use-turn-end-reconcile` does once the history
  * reload lands; `selectRenderedMessages` projects it; `buildListRows` derives
- * the React keys; and the rows are keyed by them the way `MessageList` keys its
+ * the React keys; and the rows are keyed by them the way `SessionTranscript` keys its
  * virtual rows. That chain is the bug: the running turn renders under a
  * synthetic id, history hands back the real one, and React tears the row down
  * mid-read. The only thing left out is the virtualizer itself, which measures
@@ -28,7 +28,27 @@ import { selectRenderedMessages } from '../model/stream/derive-rendered-state';
 import { SessionMessage } from '../ui/message';
 import { useTrayExpansionStore } from '../model/view/use-tray-expansion';
 import { Conversation } from '@/layers/features/conversation';
-import { SESSION_CAPABILITIES } from '../config/session-capabilities';
+import type { ConversationCapabilities } from '@/layers/features/conversation';
+
+/**
+ * The session's capability table, declared here rather than imported.
+ *
+ * `SESSION_CAPABILITIES` moved to `widgets/session/model` with its host in P4,
+ * and a feature may not import a widget's model — ESLint refuses it. The
+ * shipped table is exercised where it is mounted (`widgets/session`); what this
+ * suite needs is a conversation for the row to read, and that is data.
+ */
+const SESSION_CAPABILITIES: ConversationCapabilities = {
+  reactions: false,
+  threads: false,
+  runWith: true,
+  attachments: true,
+  toolCards: true,
+  mentions: false,
+  presence: false,
+  turnStatus: true,
+  asks: true,
+};
 
 const SESSION_ID = 'session-under-test';
 const NOW = Date.parse('2026-08-01T12:00:00Z');
@@ -75,7 +95,7 @@ function settledHistory(): HistoryMessage[] {
 }
 
 /**
- * The transcript, rendered the way `MessageList` renders it: rows built by
+ * The transcript, rendered the way `SessionTranscript` renders it: rows built by
  * `buildListRows`, each keyed by the key that function produced.
  *
  * The key is also written to the DOM so the test can SEE the swap happen —

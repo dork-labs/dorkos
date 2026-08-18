@@ -14,9 +14,9 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   return { ...actual, useEventSubscription: () => {} };
 });
 
-import { MessageList } from '../ui/MessageList';
-import type { ChatMessage } from '../model/use-chat-session';
-import { createReadCursorHarness, renderWithTransport } from './message-list-test-helpers';
+import { SessionTranscript } from '../ui/SessionTranscript';
+import type { ChatMessage } from '@/layers/shared/model';
+import { createReadCursorHarness, renderWithTransport } from './session-transcript-test-helpers';
 
 /** The read-cursor route, which answers "never read" for every session here. */
 const readState = createReadCursorHarness();
@@ -46,7 +46,7 @@ const { captured } = vi.hoisted(() => ({ captured: [] as unknown[] }));
 // Stand in for SessionMessage to read the props it receives. The dividers stay
 // real — they are what shifts the row indices this suite is about, and they
 // come from `features/conversation`, which is not mocked here.
-vi.mock('../ui/message', () => ({
+vi.mock('@/layers/features/chat/ui/message', () => ({
   SessionMessage: (props: unknown) => {
     captured.push(props);
     return <div data-testid="message-item" />;
@@ -106,13 +106,13 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-describe('MessageList message-index rules', () => {
+describe('SessionTranscript message-index rules', () => {
   it('keys the widget-fence supersede rule to the message index, not the row index', () => {
     const messages = [
       messageOnDay('1', 1, 'older board'),
       messageOnDay('2', 0, `newest board:\n${FENCE}`),
     ];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
 
     // The fence lives at MESSAGE index 1, which sits at ROW index 3 (two day
     // dividers precede it). Reading row indices would mark the older message
@@ -124,11 +124,14 @@ describe('MessageList message-index rules', () => {
 
   it('fires the entry animation only for messages appended after the history snapshot', () => {
     const history = [messageOnDay('1', 1, 'first'), messageOnDay('2', 0, 'second')];
-    const { rerender } = render(<MessageList sessionId="test-session" messages={history} />);
+    const { rerender } = render(<SessionTranscript sessionId="test-session" messages={history} />);
 
     captured.length = 0;
     rerender(
-      <MessageList sessionId="test-session" messages={[...history, messageOnDay('3', 0, 'live')]} />
+      <SessionTranscript
+        sessionId="test-session"
+        messages={[...history, messageOnDay('3', 0, 'live')]}
+      />
     );
 
     // History count is 2. Message index 1 sits at row index 3, so a row-index

@@ -172,10 +172,28 @@ export interface ConversationTimelineProps {
    * behind that answer. Reading at the bottom is what marks a session read.
    */
   onReachedBottom?: () => void;
+  /**
+   * True while the history behind these rows is still arriving.
+   *
+   * The ONLY wait a conversation has, which is why it is the only thing that
+   * sets `aria-busy`. Distinct from {@link ConversationTimelineProps.loading},
+   * which replaces the list outright: a thread deep-linked before its room has
+   * loaded draws what it has and says it is still waiting.
+   */
+  busy?: boolean;
   /** Extra classes for the scroller. */
   className?: string;
-  /** Test hook for the element wrapping the scroller. */
+  /**
+   * Test hook for the element wrapping the scroller.
+   *
+   * Two hooks rather than one because the shipped browser suites address both
+   * boxes and mean different things by them: one page object reads the SCROLLER
+   * by walking up from the feed, and another reads the wrapper the affordances
+   * hang off. Renaming either would be a rename with no reader.
+   */
   'data-testid'?: string;
+  /** Test hook for the feed itself, which is the scroller's only child. */
+  feedTestId?: string;
   /** The imperative handle. */
   ref?: Ref<ConversationTimelineHandle>;
 }
@@ -213,8 +231,10 @@ export function ConversationTimeline({
   transcriptAnnouncement,
   approvalAnnouncement,
   onReachedBottom,
+  busy,
   className,
   'data-testid': testId,
+  feedTestId,
   ref,
 }: ConversationTimelineProps) {
   const { capabilities } = useConversation();
@@ -457,7 +477,12 @@ export function ConversationTimeline({
         className="chat-scroll-area h-full scrollbar-none overflow-y-auto"
         style={{ overflowAnchor: 'none' }}
       >
-        <Feed label={label} data-testid="conversation-feed" onBeyondRendered={handleBeyondRendered}>
+        <Feed
+          label={label}
+          busy={busy}
+          data-testid={feedTestId}
+          onBeyondRendered={handleBeyondRendered}
+        >
           <div
             style={{
               height: virtualizer.getTotalSize(),

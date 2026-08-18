@@ -24,7 +24,7 @@ import {
 } from '../mock-chat-data';
 import type { MessageGrouping } from '@/layers/features/chat/model/chat-types';
 import type { MessageAuthor } from '@/layers/shared/model';
-import { SESSION_CAPABILITIES } from '@/layers/features/chat';
+import { SESSION_CAPABILITIES } from '@/layers/widgets/session';
 
 /** Stand-in participants for the identity gutter. */
 const HUMAN_AUTHOR: MessageAuthor = { kind: 'human', id: 'human', displayName: 'You' };

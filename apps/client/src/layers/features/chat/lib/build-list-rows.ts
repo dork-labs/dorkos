@@ -1,5 +1,5 @@
 /**
- * Derive the message list's row model — messages, day dividers, and the unread
+ * Derive the session transcript's row model — messages, day dividers, and the unread
  * rule — from a transcript.
  *
  * The layout rules themselves (author grouping, the 5-minute gap, day
@@ -18,7 +18,7 @@ import type { ChatMessage, MessageAuthor, MessageGrouping } from '@/layers/share
 export { GROUP_GAP_MS };
 
 /** A rendered message, with the author and grouping the row needs. */
-export interface MessageListRow {
+export interface TranscriptMessageRow {
   kind: 'message';
   /** React key. Stable across renders for the same message. */
   key: string;
@@ -41,8 +41,8 @@ export interface MessageListRow {
 // prevent.
 export type { DayDividerRow, UnreadDividerRow };
 
-/** A row in the virtualized message list. */
-export type ListRow = MessageListRow | DayDividerRow | UnreadDividerRow;
+/** A row in the session's transcript. */
+export type ListRow = TranscriptMessageRow | DayDividerRow | UnreadDividerRow;
 
 /** Inputs {@link buildListRows} needs from its caller. */
 export interface BuildListRowsOptions {

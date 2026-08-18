@@ -142,7 +142,7 @@ function SummaryGroup({
  *
  * **On the virtualizer.** The strip changes height three times in a turn's life:
  * when the first chip arrives, when the row collapses into the summary line, and
- * when the tray opens. Nothing here tells `MessageList` about any of it, and
+ * when the tray opens. Nothing here tells the transcript about any of it, and
  * nothing needs to: every virtual row is handed to `virtualizer.measureElement`,
  * which observes the row with a `ResizeObserver`, so a height change anywhere
  * inside it is re-measured on its own (`@tanstack/virtual-core`, `measureElement`

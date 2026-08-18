@@ -6,17 +6,19 @@
  * other, and `features/conversation` imports neither: the chrome is shared, the
  * content stays typed at its own end.
  *
- * It lives beside the components it calls rather than in `widgets/session`,
- * which is where the composer host will own it from P4. The renderer is invoked
- * by the ROW, deep inside this feature, and a feature may not import a widget —
- * so putting it one layer up today would mean threading a function through
- * `ChatPanel`, `ChatMessageArea` and `MessageList` purely to satisfy a path,
- * and P4 deletes all three of those hops.
+ * **It stays in `features/chat`, and P4 verified that it has to.** The spec
+ * (§2.6) and P1's own record put it in `widgets/session` once the host moved up
+ * there. The host DID move — `ChatPanel` and the transcript are widgets now —
+ * but the ROW that calls this renderer cannot follow them: the onboarding
+ * narration renders real `SessionMessage` rows for its scripted lines
+ * (`features/onboarding/ui/OnboardingConversation.tsx:378`), and a feature may
+ * not import a widget. So the row stays a feature export, and its renderer stays
+ * beside it. `SESSION_CAPABILITIES` had no such consumer and did move.
  *
  * @module features/chat/ui/render-session-body
  */
+import type { ChatMessage } from '@/layers/shared/model';
 import type { ConversationBodyRenderer } from '@/layers/features/conversation';
-import type { ChatMessage } from '../model/use-chat-session';
 import { AssistantMessageContent } from './message/AssistantMessageContent';
 import { UserMessageContent } from './message/UserMessageContent';
 

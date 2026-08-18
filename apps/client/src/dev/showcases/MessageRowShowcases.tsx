@@ -15,7 +15,7 @@ import {
   UnreadDivider,
   type ConversationCapabilities,
 } from '@/layers/features/conversation';
-import { SESSION_CAPABILITIES } from '@/layers/features/chat';
+import { SESSION_CAPABILITIES } from '@/layers/widgets/session';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import type { MessageGrouping } from '@/layers/shared/model';
 import { PlaygroundSection } from '../PlaygroundSection';

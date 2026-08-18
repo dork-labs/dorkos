@@ -38,16 +38,22 @@ export type ConversationRow =
       kind: 'day-divider';
       /** Stable key for the boundary. */
       id: string;
-      /** The day it opens, ISO 8601. */
-      at: string;
+      /**
+       * What the divider's chip says — "Today", "Yesterday", "Monday, July 21".
+       *
+       * The label rather than the day itself, because the label is what the two
+       * producers can honestly hand over: `buildTimelineRows` phrases it once,
+       * against the "now" it was given, so both surfaces say the same words on
+       * the same day. Asking for a timestamp and re-phrasing it here would be a
+       * second copy of that rule.
+       */
+      label: string;
     }
   | {
       /** The rule marking where the reader left off. */
       kind: 'unread-divider';
       /** Stable key for the rule. */
       id: string;
-      /** How many rows arrived after it. */
-      count: number;
     }
   | {
       /** The conversation speaking about itself. */

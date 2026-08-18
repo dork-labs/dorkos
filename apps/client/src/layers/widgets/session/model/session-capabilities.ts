@@ -7,15 +7,12 @@
  * is in a session reads one of these booleans instead. When a session gains
  * reactions, one boolean moves and no component changes.
  *
- * It lives here rather than in `widgets/session` — where the spec puts it, and
- * where it belongs once P4's composer host lands there — because the session's
- * conversation is hosted by THIS feature today. `ChatPanel` is what the route,
- * the Obsidian embed and the dev simulator all mount, `MessageList` and the row
- * are here, and their tests are too; a feature may not import a widget's model,
- * so the widget path would leave every one of them unable to say what its own
- * conversation can do.
+ * It sits beside the host that publishes it, which is where the spec puts it.
+ * P1 through P3 kept it in `features/chat` because the session's conversation
+ * was hosted by that feature and a feature may not import a widget's model;
+ * P4's move of `ChatPanel` up here is what freed it.
  *
- * @module features/chat/config/session-capabilities
+ * @module widgets/session/model/session-capabilities
  */
 import type { ConversationCapabilities } from '@/layers/features/conversation';
 

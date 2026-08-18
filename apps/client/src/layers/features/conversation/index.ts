@@ -59,10 +59,11 @@ export type {
 // them, so exporting the interfaces would be more things to keep in step for no
 // reader's benefit.
 
-// The scroller's two moved pieces. Exported while `features/chat`'s retiring
-// `MessageList` still draws them; task 4.3 deletes that list, and both become
-// internal to `Conversation.Timeline`.
-export { ScrollThumb } from './ui/ScrollThumb';
+// Where a session left off. The rule itself is drawn by the timeline, but the
+// CURSOR is a session cursor read over the transport, so the host resolves it
+// and hands the placement down — a room's own rule comes from its roster
+// instead. `ScrollThumb` is not exported beside it: it is drawn by the timeline
+// and by nothing else.
 export { useUnreadCursor } from './model/use-unread-cursor';
 export { messageItem, toolStatus } from './ui/message/message-variants';
 export { MessageAuthorAvatar } from './ui/message/MessageAuthorAvatar';

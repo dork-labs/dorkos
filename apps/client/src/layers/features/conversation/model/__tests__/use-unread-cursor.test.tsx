@@ -394,7 +394,7 @@ describe('useUnreadCursor', () => {
   });
 
   it('never writes one session position onto another session, mid-flight', async () => {
-    // The reproduction: `MessageList` is not remounted when the operator
+    // The reproduction: the transcript is not remounted when the operator
     // switches conversation, so a write still in flight for session A outlives
     // the view of A. With a queue that carried only a number, the drain picked
     // up B's position and wrote it to A — silently marking a conversation

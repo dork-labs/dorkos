@@ -1,5 +1,5 @@
 /**
- * Per-session "where I left off" cursor for the message list's unread rule.
+ * Per-session "where I left off" cursor for the timeline's unread rule.
  *
  * The cursor lives on the server (`read_cursors`, `thread_kind: 'session'` —
  * team-room-home §D4, ADR 260808-140956), which is what makes the rule agree on
@@ -205,7 +205,7 @@ function isSessionCursorMoved(payload: unknown): payload is SessionCursorMoved {
  *
  * That protection is only half the job, and the other half is the caller's:
  * whatever decides "pinned to the bottom" must not answer yes before the list
- * has real scroll geometry. `MessageList` gates its `markSeen` call on a
+ * has real scroll geometry. The timeline gates its `markSeen` call on a
  * measured commit for exactly this reason — see the `measured` flag there. Open
  * a session with unread messages, scroll nowhere, and the cursor must still hold
  * the position it held when the view opened.
@@ -243,7 +243,7 @@ export function useUnreadCursor(
    * The position waiting to be written, WITH the session it belongs to.
    *
    * The session is part of the value rather than of the writer, because the two
-   * can disagree: `MessageList` is not remounted when the operator switches
+   * can disagree: The transcript is not remounted when the operator switches
    * conversation (there is no `key={sessionId}`), so a write still in flight for
    * one session outlives the view of it. Queueing a bare number let the drain
    * loop pick up the NEXT session's position and write it onto the previous

@@ -14,10 +14,10 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   return { ...actual, useEventSubscription: () => {} };
 });
 
-import { MessageList } from '../ui/MessageList';
-import type { ChatMessage } from '../model/use-chat-session';
+import { SessionTranscript } from '../ui/SessionTranscript';
+import type { ChatMessage } from '@/layers/shared/model';
 import { useAppStore } from '@/layers/shared/model';
-import { createReadCursorHarness, renderWithTransport } from './message-list-test-helpers';
+import { createReadCursorHarness, renderWithTransport } from './session-transcript-test-helpers';
 
 /** The read-cursor route, which answers "never read" for every session here. */
 const readState = createReadCursorHarness();
@@ -108,14 +108,14 @@ function focusedPosition(): number | null {
 
 describe('crossing a transcript wider than its window', () => {
   it('renders only a window of the conversation', () => {
-    render(<MessageList sessionId="s" messages={MESSAGES} />);
+    render(<SessionTranscript sessionId="s" messages={MESSAGES} />);
     const articles = screen.getAllByRole('article');
     expect(articles.length).toBeLessThan(MESSAGES.length);
     expect(articles[0].getAttribute('aria-setsize')).toBe('30');
   });
 
   it('reaches the last message with Page Down, through the edge of the window', () => {
-    render(<MessageList sessionId="s" messages={MESSAGES} />);
+    render(<SessionTranscript sessionId="s" messages={MESSAGES} />);
     const feed = screen.getByRole('feed');
 
     // Start at the top: Page Up out of the window the list opened on, which is
@@ -136,7 +136,7 @@ describe('crossing a transcript wider than its window', () => {
   });
 
   it('stops at the ends rather than wrapping', () => {
-    render(<MessageList sessionId="s" messages={MESSAGES} />);
+    render(<SessionTranscript sessionId="s" messages={MESSAGES} />);
     const feed = screen.getByRole('feed');
     screen.getAllByRole('article')[0].focus();
     for (let i = 0; i < 40; i++) fireEvent.keyDown(feed, { key: 'PageUp' });

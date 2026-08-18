@@ -11,7 +11,7 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { authorColor } from '@/layers/entities/room';
 import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
-import { RoomTimeline } from '../ui/RoomTimeline';
+import { RoomFlow } from '../ui/RoomFlow';
 import { unreadPlacement } from '@/layers/shared/lib';
 import { toMessageAuthor, authorsById, groupByThread } from '../lib/room-timeline';
 
@@ -125,9 +125,9 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 }
 
 /** The timeline with everything it needs supplied, so a test names only what it is about. */
-function FeedHarness(overrides: Partial<Parameters<typeof RoomTimeline>[0]> = {}) {
+function FeedHarness(overrides: Partial<Parameters<typeof RoomFlow>[0]> = {}) {
   return (
-    <RoomTimeline
+    <RoomFlow
       roomId="room-1"
       roomName="general"
       viewerAuthorId="reader"
@@ -144,11 +144,11 @@ function FeedHarness(overrides: Partial<Parameters<typeof RoomTimeline>[0]> = {}
   );
 }
 
-function renderTimeline(overrides: Partial<Parameters<typeof RoomTimeline>[0]> = {}) {
+function renderTimeline(overrides: Partial<Parameters<typeof RoomFlow>[0]> = {}) {
   return render(<FeedHarness {...overrides} />, { wrapper: Wrapper });
 }
 
-describe('RoomTimeline', () => {
+describe('RoomFlow', () => {
   it('shows a loading state before any history arrives', () => {
     renderTimeline({ isLoading: true });
     expect(screen.getByTestId('room-timeline-loading')).toBeInTheDocument();
@@ -274,7 +274,7 @@ describe('RoomTimeline', () => {
  * — the inline gathering was retired for the side panel (design record §3) —
  * so what it owes each thread root is one quiet, honest row.
  */
-describe('RoomTimeline — thread reply rows', () => {
+describe('RoomFlow — thread reply rows', () => {
   /** A reply to `entry-<parentSeq>`, at depth one. */
   function reply(seq: number, parentSeq: number, overrides: Partial<RoomEntry> = {}): RoomEntry {
     return entry(seq, {
@@ -459,9 +459,13 @@ describe('RoomTimeline — thread reply rows', () => {
       lastReadSeq: 1,
     });
 
+    // Not a direct-child selector: the timeline is virtualized now, so every
+    // row sits inside the positioning box the virtualizer measures it by. What
+    // is being asserted — which rows the flow holds, in what order — is
+    // unchanged; only how deep they sit is.
     const rows = Array.from(
       container.querySelectorAll(
-        '[data-testid="room-timeline"] > [data-testid="unread-divider"], [data-testid="room-timeline"] > [data-testid="room-entry"]'
+        '[data-testid="room-timeline"] [data-testid="unread-divider"], [data-testid="room-timeline"] [data-testid="room-entry"]'
       )
     );
     expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
@@ -566,7 +570,7 @@ describe('groupByThread', () => {
   });
 });
 
-describe('RoomTimeline as a feed', () => {
+describe('RoomFlow as a feed', () => {
   /** Three messages from two people, so there are articles to move between. */
   const THREE = [
     entry(1),

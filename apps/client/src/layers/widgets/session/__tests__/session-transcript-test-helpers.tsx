@@ -1,6 +1,6 @@
 /**
- * What every `MessageList` suite needs before it can mount one: the transport
- * its read cursor is held in (team-room-home §D4).
+ * What every `SessionTranscript` suite needs before it can mount one: the
+ * transport its read cursor is held in (team-room-home §D4).
  *
  * The unread rule is server state now, so the list does not render outside a
  * `TransportProvider` at all — including in the suites that have nothing to say
@@ -8,7 +8,7 @@
  * about, and so the one that DOES assert on the cursor drives it through the
  * same harness.
  *
- * @module features/chat/__tests__/message-list-test-helpers
+ * @module widgets/session/__tests__/session-transcript-test-helpers
  */
 import React from 'react';
 import { vi } from 'vitest';
@@ -16,9 +16,9 @@ import { render, type RenderOptions, type RenderResult } from '@testing-library/
 import type { ReadCursor } from '@dorkos/shared/read-cursor-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
 import { Conversation } from '@/layers/features/conversation';
-import { SESSION_CAPABILITIES } from '../config/session-capabilities';
+import { SESSION_CAPABILITIES } from '../model/session-capabilities';
 
 /** The author id every cursor in these suites belongs to. */
 const HARNESS_USER_ID = 'author-me';
@@ -94,14 +94,18 @@ export function renderWithTransport(
   return render(ui, {
     ...options,
     wrapper: ({ children }: { children: React.ReactNode }) => (
-      <TransportProvider transport={transport}>
-        {/* The conversation a session page mounts around its transcript. Every
+      // The cursor is read over the transport and MOVED by a broadcast from the
+      // same person's other windows, so a transcript needs both.
+      <EventStreamProvider>
+        <TransportProvider transport={transport}>
+          {/* The conversation a session page mounts around its transcript. Every
             row reads what its conversation can do, so a bench without one is
             testing a component in a state the app never puts it in. */}
-        <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
-          {children}
-        </Conversation.Root>
-      </TransportProvider>
+          <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
+            {children}
+          </Conversation.Root>
+        </TransportProvider>
+      </EventStreamProvider>
     ),
   });
 }

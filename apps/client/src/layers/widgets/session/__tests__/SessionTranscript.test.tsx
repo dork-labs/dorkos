@@ -21,14 +21,14 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   };
 });
 
-import { MessageList, findLastWidgetFenceIndex, type MessageListHandle } from '../ui/MessageList';
-import type { ChatMessage } from '../model/use-chat-session';
+import { SessionTranscript, findLastWidgetFenceIndex } from '../ui/SessionTranscript';
+import type { ChatMessage } from '@/layers/shared/model';
 import { useAppStore } from '@/layers/shared/model';
 import {
   createReadCursorHarness,
   renderWithTransport,
   sessionCursor as cursor,
-} from './message-list-test-helpers';
+} from './session-transcript-test-helpers';
 
 /** The read-cursor route, as this suite answers for it. */
 const readState = createReadCursorHarness();
@@ -86,14 +86,14 @@ vi.mock('streamdown', () => ({
 }));
 
 // Mock ToolApproval to avoid needing TransportProvider in unit tests
-vi.mock('../ToolApproval', () => ({
+vi.mock('@/layers/features/chat/ui/tools/ToolApproval', () => ({
   ToolApproval: ({ toolName }: { toolName: string }) => (
     <div data-testid="tool-approval">{toolName}</div>
   ),
 }));
 
 // Mock QuestionPrompt to avoid needing TransportProvider in unit tests
-vi.mock('../QuestionPrompt', () => ({
+vi.mock('@/layers/features/chat/ui/message/QuestionPrompt', () => ({
   QuestionPrompt: () => <div data-testid="question-prompt">Question prompt</div>,
 }));
 
@@ -158,7 +158,7 @@ function isAtEndTrueOnlyOnFirstCommit(): void {
 // it lives now — `lib/__tests__/build-list-rows.test.ts`. What matters here is
 // that the list virtualizes ROWS: dividers are real rows with their own heights,
 // not decoration inside a message.
-describe('MessageList rows', () => {
+describe('SessionTranscript rows', () => {
   /** A message at a given local time, `hoursAgo` whole days back from now. */
   function messageOnDay(id: string, daysAgo: number, text: string): ChatMessage {
     const now = new Date();
@@ -174,7 +174,7 @@ describe('MessageList rows', () => {
 
   it('renders a day divider row at each calendar boundary', () => {
     const messages = [messageOnDay('1', 1, 'Yesterday work'), messageOnDay('2', 0, 'Today work')];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
     expect(screen.getAllByTestId('day-divider')).toHaveLength(2);
     expect(screen.getByText('Yesterday')).toBeDefined();
     expect(screen.getByText('Today')).toBeDefined();
@@ -189,7 +189,7 @@ describe('MessageList rows', () => {
     // row keeps its first height forever, and the transcript scrolls to the
     // wrong place.
     const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
 
     const measured = mockMeasureElement.mock.calls
       .map(([node]) => node as HTMLElement | null)
@@ -202,7 +202,9 @@ describe('MessageList rows', () => {
 
   it('counts dividers as virtualized rows alongside the messages', () => {
     const messages = [messageOnDay('1', 1, 'Yesterday work'), messageOnDay('2', 0, 'Today work')];
-    const { container } = render(<MessageList sessionId="test-session" messages={messages} />);
+    const { container } = render(
+      <SessionTranscript sessionId="test-session" messages={messages} />
+    );
     // 2 messages + 2 day dividers, each an independently measured row.
     expect(container.querySelectorAll('[data-index]')).toHaveLength(4);
   });
@@ -211,21 +213,21 @@ describe('MessageList rows', () => {
     const messages: ChatMessage[] = [
       { id: '1', role: 'user', content: 'A', parts: [{ type: 'text', text: 'A' }], timestamp: '' },
     ];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
     expect(screen.queryByTestId('day-divider')).toBeNull();
   });
 
   it('renders the unread rule after the stored cursor', async () => {
     readState.storedCursor = cursor('test-session', 1);
     const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
     expect(await screen.findByTestId('unread-divider')).toBeDefined();
     expect(screen.getByText('New messages')).toBeDefined();
   });
 
   it('renders no unread rule for a session with no stored cursor', async () => {
     const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
     // Waited out through the write the pinned list makes, so the absence is
     // observed after the cursor has landed rather than before it arrives.
     await waitFor(() => expect(readState.written).toEqual([2]));
@@ -235,7 +237,7 @@ describe('MessageList rows', () => {
   it('renders no unread rule when the cursor already counts every message', async () => {
     readState.storedCursor = cursor('test-session', 2);
     const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
     await waitFor(() => expect(mockScrollToEnd).toHaveBeenCalled());
     expect(screen.queryByTestId('unread-divider')).toBeNull();
   });
@@ -244,7 +246,7 @@ describe('MessageList rows', () => {
     readState.storedCursor = cursor('cross-device-session', 1);
     isAtEndTrueOnlyOnFirstCommit();
     const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
-    render(<MessageList sessionId="cross-device-session" messages={messages} />);
+    render(<SessionTranscript sessionId="cross-device-session" messages={messages} />);
     expect(await screen.findByTestId('unread-divider')).toBeDefined();
 
     // The other screen read to the end. The cursor rides the broadcast, so this
@@ -263,7 +265,7 @@ describe('MessageList rows', () => {
 
   it('records the whole transcript as seen while pinned to the bottom', async () => {
     const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
     // Through the API, and nothing left in this browser: the watermark that
     // used to live here is what made two devices disagree.
     await waitFor(() => expect(readState.written).toEqual([2]));
@@ -274,7 +276,7 @@ describe('MessageList rows', () => {
     readState.storedCursor = cursor('anchor-session', 1);
     isAtEndTrueOnlyOnFirstCommit();
     const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
-    render(<MessageList sessionId="anchor-session" messages={messages} />);
+    render(<SessionTranscript sessionId="anchor-session" messages={messages} />);
     // Rows: day-divider, message, unread-divider, message — the rule is row 2,
     // so the list lands on row 1 and the seen message stays visible above it.
     await waitFor(() => expect(mockScrollToIndex).toHaveBeenCalledWith(1, { align: 'start' }));
@@ -287,19 +289,22 @@ describe('MessageList rows', () => {
 
   it('lands on the newest message when there is no unread rule', async () => {
     const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
     await waitFor(() => expect(mockScrollToEnd).toHaveBeenCalled());
     expect(mockScrollToIndex).not.toHaveBeenCalled();
   });
 
   it('anchors once per session, not again as messages stream in', async () => {
     const messages = [messageOnDay('1', 0, 'A')];
-    const { rerender } = render(<MessageList sessionId="test-session" messages={messages} />);
+    const { rerender } = render(<SessionTranscript sessionId="test-session" messages={messages} />);
     await waitFor(() => expect(mockScrollToEnd).toHaveBeenCalled());
     mockScrollToEnd.mockClear();
     mockScrollToIndex.mockClear();
     rerender(
-      <MessageList sessionId="test-session" messages={[...messages, messageOnDay('2', 0, 'B')]} />
+      <SessionTranscript
+        sessionId="test-session"
+        messages={[...messages, messageOnDay('2', 0, 'B')]}
+      />
     );
     expect(mockScrollToEnd).not.toHaveBeenCalled();
     expect(mockScrollToIndex).not.toHaveBeenCalled();
@@ -309,7 +314,7 @@ describe('MessageList rows', () => {
     readState.storedCursor = cursor('unmeasured-session', 1);
     isAtEndTrueOnlyOnFirstCommit();
     const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
-    render(<MessageList sessionId="unmeasured-session" messages={messages} />);
+    render(<SessionTranscript sessionId="unmeasured-session" messages={messages} />);
     expect(await screen.findByTestId('unread-divider')).toBeDefined();
     expect(readState.written).toEqual([]);
     expect(screen.getByTestId('unread-divider')).toBeDefined();
@@ -342,9 +347,9 @@ describe('findLastWidgetFenceIndex (fence-based supersede, DOR-302)', () => {
   });
 });
 
-describe('MessageList', () => {
+describe('SessionTranscript', () => {
   it('renders empty list without error', () => {
-    const { container } = render(<MessageList sessionId="test-session" messages={[]} />);
+    const { container } = render(<SessionTranscript sessionId="test-session" messages={[]} />);
     expect(container).toBeDefined();
   });
 
@@ -358,7 +363,7 @@ describe('MessageList', () => {
         timestamp: new Date().toISOString(),
       },
     ];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
     expect(screen.getByText('Hello world')).toBeDefined();
   });
 
@@ -372,7 +377,7 @@ describe('MessageList', () => {
         timestamp: new Date().toISOString(),
       },
     ];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
     expect(screen.getByText('Hi there, how can I help?')).toBeDefined();
   });
 
@@ -393,7 +398,7 @@ describe('MessageList', () => {
         timestamp: new Date().toISOString(),
       },
     ];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
     expect(screen.getByText('Hello')).toBeDefined();
     expect(screen.getByText('Hi there')).toBeDefined();
   });
@@ -420,7 +425,7 @@ describe('MessageList', () => {
         timestamp: new Date().toISOString(),
       },
     ];
-    render(<MessageList sessionId="test-session" messages={messages} />);
+    render(<SessionTranscript sessionId="test-session" messages={messages} />);
     expect(screen.getByText('Read ...')).toBeDefined();
   });
 
@@ -434,12 +439,20 @@ describe('MessageList', () => {
         timestamp: new Date().toISOString(),
       },
     ];
-    const { container } = render(<MessageList sessionId="test-session" messages={messages} />);
+    const { container } = render(
+      <SessionTranscript sessionId="test-session" messages={messages} />
+    );
     const scrollContainer = container.querySelector('.overflow-y-auto');
     expect(scrollContainer).not.toBeNull();
   });
 
-  it('scroll container does not have flex-1 class', () => {
+  // Was "the scroll container does not have flex-1". It does now, and that is
+  // the merge rather than a regression: the transcript IS the flex child of the
+  // session column since `ChatMessageArea` folded into it, so it takes the
+  // remaining height itself instead of a wrapper doing it one level up. What the
+  // case was protecting — the box is height-BOUNDED, so the scroller inside it
+  // has something to overflow — is what it asserts now.
+  it('is bounded by its column, so the scroller inside it has something to overflow', () => {
     const messages: ChatMessage[] = [
       {
         id: '1',
@@ -449,9 +462,13 @@ describe('MessageList', () => {
         timestamp: new Date().toISOString(),
       },
     ];
-    render(<MessageList sessionId="test-session" messages={messages} />);
-    const scrollContainer = screen.getByTestId('message-list');
-    expect(scrollContainer.classList.contains('flex-1')).toBe(false);
+    const { container } = render(
+      <SessionTranscript sessionId="test-session" messages={messages} />
+    );
+    const box = screen.getByTestId('message-list');
+    expect(box.classList.contains('min-h-0')).toBe(true);
+    const scroller = container.querySelector('.chat-scroll-area')!;
+    expect(scroller.classList.contains('overflow-y-auto')).toBe(true);
   });
 
   it('does not render scroll-to-bottom button', () => {
@@ -464,50 +481,19 @@ describe('MessageList', () => {
         timestamp: new Date().toISOString(),
       },
     ];
-    const { container } = render(<MessageList sessionId="test-session" messages={messages} />);
+    const { container } = render(
+      <SessionTranscript sessionId="test-session" messages={messages} />
+    );
     const button = container.querySelector('button[aria-label="Scroll to bottom"]');
     expect(button).toBeNull();
   });
 
-  it('accepts onScrollStateChange callback prop', () => {
-    const handleScrollState = vi.fn();
-    const messages: ChatMessage[] = [
-      {
-        id: '1',
-        role: 'user',
-        content: 'Test',
-        parts: [{ type: 'text', text: 'Test' }],
-        timestamp: new Date().toISOString(),
-      },
-    ];
-    const { container } = render(
-      <MessageList
-        sessionId="test-session"
-        messages={messages}
-        onScrollStateChange={handleScrollState}
-      />
-    );
-    expect(container).toBeDefined();
-  });
-
-  it('exposes scrollToBottom via imperative handle', () => {
-    const ref = React.createRef<MessageListHandle>();
-    const messages: ChatMessage[] = [
-      {
-        id: '1',
-        role: 'user',
-        content: 'Test',
-        parts: [{ type: 'text', text: 'Test' }],
-        timestamp: new Date().toISOString(),
-      },
-    ];
-    render(<MessageList ref={ref} sessionId="test-session" messages={messages} />);
-    // Ignore the initial land-at-bottom call; assert the handle itself fires.
-    mockScrollToEnd.mockClear();
-    ref.current?.scrollToBottom();
-    expect(mockScrollToEnd).toHaveBeenCalled();
-  });
-
+  // Two cases retired with the merge, not lost: `onScrollStateChange` and the
+  // `scrollToBottom` handle were how `ChatPanel` drove the jump-to-latest
+  // affordance from outside the list. `Conversation.Timeline` draws both
+  // affordances itself, so the scroll state has no consumer outside it and the
+  // props are gone. What they were protecting — the pill and the button appear
+  // only for a reader who has scrolled away — is `use-timeline-scroll.test.ts`.
   it('scroll container has overflow-anchor none', () => {
     const messages: ChatMessage[] = [
       {
@@ -518,30 +504,10 @@ describe('MessageList', () => {
         timestamp: new Date().toISOString(),
       },
     ];
-    const { container } = render(<MessageList sessionId="test-session" messages={messages} />);
+    const { container } = render(
+      <SessionTranscript sessionId="test-session" messages={messages} />
+    );
     const scrollContainer = container.querySelector('.chat-scroll-area') as HTMLElement;
     expect(scrollContainer.style.overflowAnchor).toBe('none');
-  });
-
-  it('fires onScrollStateChange when isAtBottom changes', () => {
-    const onScrollStateChange = vi.fn();
-    const messages: ChatMessage[] = [
-      {
-        id: '1',
-        role: 'user',
-        content: 'Test',
-        parts: [{ type: 'text', text: 'Test' }],
-        timestamp: new Date().toISOString(),
-      },
-    ];
-    render(
-      <MessageList
-        sessionId="test-session"
-        messages={messages}
-        onScrollStateChange={onScrollStateChange}
-      />
-    );
-    // The initial render with isAtBottom=true from the mock should trigger the effect
-    expect(onScrollStateChange).toHaveBeenCalledWith(expect.objectContaining({ isAtBottom: true }));
   });
 });

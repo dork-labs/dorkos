@@ -14,10 +14,10 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   return { ...actual, useEventSubscription: () => {} };
 });
 
-import { MessageList } from '../ui/MessageList';
-import type { ChatMessage } from '../model/use-chat-session';
+import { SessionTranscript } from '../ui/SessionTranscript';
+import type { ChatMessage } from '@/layers/shared/model';
 import { useAppStore } from '@/layers/shared/model';
-import { createReadCursorHarness, renderWithTransport } from './message-list-test-helpers';
+import { createReadCursorHarness, renderWithTransport } from './session-transcript-test-helpers';
 
 /** The read-cursor route, which answers "never read" for every session here. */
 const readState = createReadCursorHarness();
@@ -100,14 +100,14 @@ const conversation = [
 
 describe('the transcript is a feed', () => {
   it('wraps the history in a named feed', () => {
-    render(<MessageList sessionId="s" messages={conversation} />);
+    render(<SessionTranscript sessionId="s" messages={conversation} />);
     const feed = screen.getByRole('feed');
     expect(feed.getAttribute('aria-label')).toBe('Conversation');
     expect(feed.getAttribute('aria-busy')).toBe('false');
   });
 
   it('makes every message an article that says where it sits', () => {
-    render(<MessageList sessionId="s" messages={conversation} />);
+    render(<SessionTranscript sessionId="s" messages={conversation} />);
     const articles = screen.getAllByRole('article');
     expect(articles).toHaveLength(3);
     expect(articles.map((a) => a.getAttribute('aria-posinset'))).toEqual(['1', '2', '3']);
@@ -117,7 +117,7 @@ describe('the transcript is a feed', () => {
   });
 
   it('names each article from the author line already on screen', () => {
-    render(<MessageList sessionId="s" messages={conversation} />);
+    render(<SessionTranscript sessionId="s" messages={conversation} />);
     const [first] = screen.getAllByRole('article');
     const labelledBy = first.getAttribute('aria-labelledby');
     expect(labelledBy).not.toBeNull();
@@ -130,14 +130,14 @@ describe('the transcript is a feed', () => {
 
   it('names a continuation row directly, since it has no author line', () => {
     const run = [message('1', 'user', 'One', 10), message('2', 'user', 'Two', 10)];
-    render(<MessageList sessionId="s" messages={run} />);
+    render(<SessionTranscript sessionId="s" messages={run} />);
     const [, second] = screen.getAllByRole('article');
     expect(second.getAttribute('aria-labelledby')).toBeNull();
     expect(second.getAttribute('aria-label')).toContain('You');
   });
 
   it('moves a message at a time on Page Down and back on Page Up', () => {
-    render(<MessageList sessionId="s" messages={conversation} />);
+    render(<SessionTranscript sessionId="s" messages={conversation} />);
     const feed = screen.getByRole('feed');
     const articles = screen.getAllByRole('article');
 
@@ -153,7 +153,7 @@ describe('the transcript is a feed', () => {
     render(
       <div>
         <button type="button">Back</button>
-        <MessageList sessionId="s" messages={conversation} />
+        <SessionTranscript sessionId="s" messages={conversation} />
         <button type="button">Send</button>
       </div>
     );
@@ -167,7 +167,7 @@ describe('the transcript is a feed', () => {
 
 describe('the turn in flight', () => {
   it('keeps a live region that says nothing about a finished conversation', () => {
-    render(<MessageList sessionId="s" messages={conversation} />);
+    render(<SessionTranscript sessionId="s" messages={conversation} />);
     const log = screen.getByRole('log');
     expect(log.getAttribute('aria-live')).toBe('polite');
     expect(log.textContent).toBe('');
@@ -180,20 +180,24 @@ describe('the turn in flight', () => {
       message('answer', 'assistant', text, 0),
     ];
     const { rerender } = render(
-      <MessageList sessionId="s" messages={streaming('Look')} isTextStreaming />
+      <SessionTranscript sessionId="s" messages={streaming('Look')} isTextStreaming />
     );
     const log = screen.getByRole('log');
     expect(log.textContent).toBe('');
 
     rerender(
-      <MessageList sessionId="s" messages={streaming('Looking now. And the')} isTextStreaming />
+      <SessionTranscript
+        sessionId="s"
+        messages={streaming('Looking now. And the')}
+        isTextStreaming
+      />
     );
     expect(said(log)).toBe('Looking now.');
 
     // The words stop moving — which is what "settled" means here, since the
     // streaming flag drops on every pause mid-answer too.
     rerender(
-      <MessageList sessionId="s" messages={streaming('Looking now. And the answer is 4')} />
+      <SessionTranscript sessionId="s" messages={streaming('Looking now. And the answer is 4')} />
     );
     act(() => {
       vi.advanceTimersByTime(1600);
@@ -206,7 +210,7 @@ describe('the turn in flight', () => {
 
   it('stays silent when a finished transcript is merely opened', () => {
     render(
-      <MessageList
+      <SessionTranscript
         sessionId="s"
         messages={[conversation[0], message('answer', 'assistant', 'All done here.', 1)]}
       />

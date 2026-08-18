@@ -71,20 +71,20 @@ vi.mock('@/layers/entities/config/model/use-config', () => ({
 vi.mock('@/layers/entities/command/model/use-commands', () => ({
   useCommands: () => ({ data: { commands: [] } }),
 }));
-vi.mock('../ui/MessageList', () => ({
-  MessageList: vi.fn(() => <div data-testid="message-list" />),
+vi.mock('../ui/SessionTranscript', () => ({
+  SessionTranscript: vi.fn(() => <div data-testid="message-list" />),
 }));
-vi.mock('../ui/ChatMessageArea', () => ({
-  ChatMessageArea: () => <div data-testid="chat-message-area" />,
+vi.mock('../ui/SessionTranscript', () => ({
+  SessionTranscript: () => <div data-testid="chat-message-area" />,
 }));
-vi.mock('../ui/tasks/TaskListPanel', () => ({ TaskListPanel: () => null }));
-vi.mock('../ui/CelebrationOverlay', () => ({ CelebrationOverlay: () => null }));
+vi.mock('@/layers/features/chat/ui/tasks/TaskListPanel', () => ({ TaskListPanel: () => null }));
+vi.mock('@/layers/features/chat/ui/CelebrationOverlay', () => ({ CelebrationOverlay: () => null }));
 vi.mock('@/layers/features/status', () => ({
   useRuntimeChip: () => ({ runtime: null }),
   TurnFailedNotice: () => null,
   TerminalReasonChip: () => null,
 }));
-vi.mock('../ui/status', () => ({
+vi.mock('@/layers/features/chat/ui/status', () => ({
   TurnFailedNotice: () => null,
   TerminalReasonChip: () => null,
 }));
@@ -92,7 +92,7 @@ vi.mock('../ui/status', () => ({
 // The composer, reduced to the two things this test needs: a way to put text in
 // and a way to send it. `handleSubmit` is the panel's own — the same callback
 // Enter reaches — so the send path under test is untouched.
-vi.mock('../ui/input/ChatInputContainer', () => ({
+vi.mock('@/layers/features/chat/ui/input/ChatInputContainer', () => ({
   ChatInputContainer: ({
     input,
     setInput,
@@ -120,8 +120,8 @@ import {
   useSessionStreamStore,
   resetSessionStreamBinding,
 } from '@/layers/entities/session';
-import { __resetDorkBotSeedsForTest } from '../model/launch/use-dorkbot-seed';
-import { __resetLaunchPromptsForTest } from '../model/launch/use-launch-prompt';
+import { __resetDorkBotSeedsForTest } from '@/layers/features/chat/model/launch/use-dorkbot-seed';
+import { __resetLaunchPromptsForTest } from '@/layers/features/chat/model/launch/use-launch-prompt';
 
 function renderPanel(transport: Transport, launchSeed?: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
