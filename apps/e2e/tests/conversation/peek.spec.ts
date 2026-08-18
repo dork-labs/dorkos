@@ -94,14 +94,10 @@ test.describe('Conversation — the peek behind the live lane', () => {
     // the click above. On a busy CI runner that is a few seconds, not zero, so
     // the row is asserted to read twenty-something up to fifty-something
     // seconds rather than the literal `20s` (which failed the merge queue once).
-    //
-    // No trailing `\b`: the row's text runs the elapsed reading straight into
-    // the "Replying to …" line below it (`20sReplying`), and a word boundary
-    // needs a NON-word character after the `s` — so the anchored form could
-    // never match a row that had a link on it. `(?![a-z])` asks the same
-    // question the boundary was meant to ask: the seconds are their own word,
-    // not the front of `20something`.
-    await expect(rows.nth(1)).toContainText(/\b[2-5]\ds(?![a-z])/u);
+    // The row's text has no space between the clock and the next label
+    // (`working·24sReplying to`), so no word boundary follows the `s`; anchor
+    // on the separator before it instead.
+    await expect(rows.nth(1)).toContainText(/·\s*[2-5]\ds/);
 
     // No per-row Stop with two agents working, and one footer action that says
     // exactly what it will do. A button never stops work you did not mean to.
