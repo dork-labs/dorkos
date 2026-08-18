@@ -407,9 +407,13 @@ describe('ExtensionManager — server lifecycle', () => {
        * `bundleReady`, healthy, while the code it is running is the previous one
        * (DOR-1336 review).
        */
-      it('marks the record broken when a recompile fails, and keeps the old instance serving', async () => {
+      it('reports a failed recompile without taking the client bundle down with it', async () => {
+        // A fully healthy extension: client bundle compiled and servable, server
+        // half running. Only the server half is about to break.
         const record = makeRecord('stale-srv', {
           status: 'compiled',
+          bundleReady: true,
+          sourceHash: 'clienthash',
           hasServerEntry: true,
           serverEntryPath: '/fake/extensions/stale-srv/server.ts',
         });
@@ -444,20 +448,28 @@ describe('ExtensionManager — server lifecycle', () => {
         expect(logger.warn).toHaveBeenCalledWith(
           expect.stringContaining('the version already running keeps serving')
         );
-        // And the cockpit is told, rather than being shown a healthy record.
+        // The cockpit is told — through `serverError`, which is about the server
+        // half only.
         expect(manager.listPublic()[0]).toMatchObject({
           id: 'stale-srv',
-          status: 'compile_error',
-          error: {
+          serverError: {
             code: 'compilation_failed',
             message: 'Server Compilation failed for stale-srv',
             details: 'Unexpected token',
           },
         });
+        // ...and NOT through `status`, which is the single field the client
+        // bundle hangs off: `readBundle` refuses anything but `compiled`/`active`
+        // and the client loader only loads `compiled`. A server-side failure must
+        // not take the extension's UI off the screen in the next tab
+        // (DOR-1336 review round 2).
+        expect(manager.listPublic()[0]).toMatchObject({ status: 'compiled', bundleReady: true });
+        expect(manager.listPublic()[0].error).toBeUndefined();
+        mockReadBundle.mockResolvedValue('the client bundle');
+        expect(await manager.readBundle('stale-srv')).toBe('the client bundle');
 
-        // Asking again re-attempts rather than being turned away as "not
-        // enabled" by the mark this failure just wrote — the fix has to be able
-        // to land without a full reload.
+        // Asking again re-attempts rather than being turned away, so the fix can
+        // land without a full reload.
         expect(await manager.initializeServer('stale-srv')).toEqual({
           ok: false,
           error: 'Server Compilation failed for stale-srv',
@@ -467,11 +479,8 @@ describe('ExtensionManager — server lifecycle', () => {
         mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'fixedhash' });
         expect(await manager.initializeServer('stale-srv')).toEqual({ ok: true });
         expect(manager.getServerRouter('stale-srv')).not.toBe(router);
-        expect(manager.listPublic()[0]).toMatchObject({
-          id: 'stale-srv',
-          status: 'compiled',
-        });
-        expect(manager.listPublic()[0].error).toBeUndefined();
+        expect(manager.listPublic()[0]).toMatchObject({ id: 'stale-srv', status: 'compiled' });
+        expect(manager.listPublic()[0].serverError).toBeUndefined();
       });
 
       it('restarts an extension whose reload the operator asked for', async () => {

@@ -122,6 +122,7 @@ export function toPublic(
     scope: record.scope,
     origin: record.origin,
     error: record.error,
+    serverError: record.serverError,
     bundleReady: record.bundleReady,
     hasServerEntry: record.hasServerEntry,
     hasDataProxy: record.hasDataProxy,

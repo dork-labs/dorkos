@@ -112,9 +112,10 @@ export class ExtensionServerLifecycle {
    * whether to tear anything down. A compile failure therefore leaves the
    * running instance serving its old code rather than killing it, which is the
    * better of the two: a typo saved into an extension's `server.ts` no longer
-   * takes the working version down with it. The record is marked
-   * `compile_error` when that happens, so "the old version is still serving" is
-   * something the cockpit shows rather than something it hides.
+   * takes the working version down with it. The record's `serverError` records
+   * that, so "the old version is still serving" is something the cockpit shows
+   * rather than something it hides — while `status` stays as it was, leaving the
+   * extension's own client bundle loadable.
    *
    * @param id - Extension identifier
    * @param record - The extension's discovery record
@@ -123,16 +124,7 @@ export class ExtensionServerLifecycle {
   async initialize(id: string, record: ExtensionRecord): Promise<{ ok: boolean; error?: string }> {
     const active = this.serverExtensions.get(id);
     const hasServerCapability = record.hasServerEntry || record.hasDataProxy;
-    // `compile_error` is admitted only while a previous version of this same
-    // extension is still mounted, because that mark is one this method wrote
-    // about a failed recompile (below) — refusing it would strand the extension
-    // on its old code until a full reload, with a fixed `server.ts` sitting on
-    // disk. Every other way into `compile_error` (a client bundle that never
-    // built) has nothing mounted and stays out.
-    const runnable =
-      ['enabled', 'compiled', 'active'].includes(record.status) ||
-      (record.status === 'compile_error' && active !== undefined);
-    if (!hasServerCapability || !runnable) {
+    if (!hasServerCapability || !['enabled', 'compiled', 'active'].includes(record.status)) {
       return { ok: false, error: 'Extension has no server entry or is not enabled' };
     }
 
@@ -179,9 +171,14 @@ export class ExtensionServerLifecycle {
       // not read as healthy in the cockpit (DOR-1336 review). Nothing is marked
       // when there was nothing running: that failure is the caller's to report,
       // and the client bundle it may still have is not in question.
+      //
+      // `serverError`, NOT `status`/`error`: `status` is one field for the whole
+      // extension and it is what `ExtensionManager.readBundle` and the client
+      // loader gate the CLIENT bundle on, so writing `compile_error` here would
+      // pull a working UI off the screen in every new tab over a server-side
+      // failure (DOR-1336 review round 2).
       if (active) {
-        record.status = 'compile_error';
-        record.error = toRecordError(compiled.error);
+        record.serverError = toRecordError(compiled.error);
         logger.warn(
           `[Extensions] ${id} failed to compile, so the version already running keeps serving ` +
             `until this is fixed: ${compiled.error.message}`
@@ -243,12 +240,8 @@ export class ExtensionServerLifecycle {
       });
 
       // A fixed `server.ts` took over, so the failure mark this method wrote
-      // above no longer describes anything. Clearing it here is what closes the
-      // edit-fix loop without a full reload.
-      if (record.status === 'compile_error') {
-        record.status = 'compiled';
-        record.error = undefined;
-      }
+      // above no longer describes anything.
+      record.serverError = undefined;
 
       logger.info(`[Extensions] Server initialized for ${id}`);
       return { ok: true };
