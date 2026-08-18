@@ -62,7 +62,7 @@ function useToolCallVisibility(status: string, autoHide: boolean, hasFailedHook:
  *
  * @param props - The tool call, and whether this reader hides finished ones.
  */
-export function AutoHideToolCall({
+function AutoHideToolCall({
   part,
   autoHide,
   expandToolCalls,

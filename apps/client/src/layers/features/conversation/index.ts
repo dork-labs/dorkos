@@ -52,7 +52,6 @@ export type {
   ConversationRowRenderer,
   ConversationTimelineHandle,
 } from './ui/Timeline';
-export type { ConversationComposerInputProps } from './ui/ComposerHost';
 // `LiveLaneProps`, `LivePeekProps` and `ConversationTimelineProps` stay inside
 // the slice: a host writes `<Conversation.Timeline …>` and TypeScript infers
 // them, so exporting the interfaces would be more things to keep in step for no

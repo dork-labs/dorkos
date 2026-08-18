@@ -14,7 +14,7 @@
 export { resolveMessageAuthor } from './lib/resolve-message-author';
 export type { MessageAuthorAgent, MessageAuthorContext } from './lib/resolve-message-author';
 export { buildListRows } from './lib/build-list-rows';
-export type { ListRow, TranscriptMessageRow } from './lib/build-list-rows';
+export type { ListRow } from './lib/build-list-rows';
 export { buildFileEntries } from './lib/build-file-entries';
 export { resolveTransportRetryText } from './lib/resolve-retry-text';
 
@@ -23,13 +23,11 @@ export { BirthCertificate } from './ui/BirthCertificate';
 export { CelebrationOverlay } from './ui/CelebrationOverlay';
 export { FirstLight } from './ui/FirstLight';
 export { TypingDots } from './ui/primitives';
-export { MessageProvider } from './ui/message/MessageContext';
 // The transcript's ROW, and its renderer's blocks. The row is a feature export
 // rather than the host widget's own because `features/onboarding` renders real
 // session rows for its scripted narration — see `render-session-body.tsx`.
 export { ErrorMessageBlock, SessionMessage, StagedContextNote } from './ui/message';
 export type { InteractiveToolHandle } from './ui/message';
-export { renderSessionBody } from './ui/render-session-body';
 export { TaskListPanel } from './ui/tasks/TaskListPanel';
 export { BackgroundTaskBar } from './ui/tasks/BackgroundTaskBar';
 export { QueuePanel } from './ui/input/QueuePanel';
@@ -37,11 +35,7 @@ export { StopConfirmDialog } from './ui/input/StopConfirmDialog';
 export { AnimatedPlaceholder } from './ui/input/AnimatedPlaceholder';
 export { ChatStatusSection } from './ui/status';
 export { default as placeholderHints } from './config/placeholder-hints.json';
-export type {
-  FileUploadProps,
-  InteractionProps,
-  SyncPresenceProps,
-} from './ui/input/composer-slots';
+export type { InteractionProps, SyncPresenceProps } from './ui/input/composer-slots';
 export { TerminalReasonChip, TurnFailedNotice } from './ui/status';
 
 export { useChatSession } from './model/use-chat-session';

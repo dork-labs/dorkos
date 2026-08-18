@@ -20,7 +20,7 @@ import { Conversation } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES, SessionComposer, useSessionTarget } from '@/layers/widgets/session';
 
 /** The staged files, in the shape a host's `useFileUpload` reports them. */
-export interface BenchFileUpload {
+interface BenchFileUpload {
   /** Files staged against the draft. */
   pendingFiles: PendingFile[];
   /** Stage more. */

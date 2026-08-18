@@ -54,7 +54,7 @@ import {
  * Generic on purpose: a session's chat has no title of its own on screen, and
  * inventing one would name the feed after something the reader cannot see.
  */
-export const TRANSCRIPT_FEED_LABEL = 'Conversation';
+const TRANSCRIPT_FEED_LABEL = 'Conversation';
 
 /**
  * Stable empty part list. A fresh `[]` per render would re-run the approval
