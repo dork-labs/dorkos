@@ -16,6 +16,15 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
 const TALL_MESSAGE = Array.from({ length: 80 }, (_, i) => `paragraph ${i}`).join('\n\n');
 
 /**
+ * How many ordinary messages sit above the tall one.
+ *
+ * Enough that the virtualizer's drawn window starts below the top of the
+ * scroller — see the comment at the call site for why a zero offset is the one
+ * case this test must not measure.
+ */
+const FILLER_BEFORE_TALL = 30;
+
+/**
  * The action surface every message carries: the toolbar, the right-click menu,
  * the touch drawer, and the reply that comes out of all three.
  *
@@ -252,12 +261,30 @@ test.describe('Rooms — every message gets a menu', () => {
     // screen for exactly this message. Ours is `sticky` inside the row.
     const slug = `e2e-actions-tall-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug, slug);
-    await roomsApi.postEntries(room.id, [TALL_MESSAGE]);
+    // Filler BEFORE the tall one, and it is the point of the test rather than
+    // scenery. The list is virtualized: the drawn window is one box offset from
+    // the top of the scroller, and with a single entry that offset is 0 — the
+    // one value at which a broken offset (a `transform`, which kills `sticky`
+    // for everything inside it) is indistinguishable from a working one. Thirty
+    // entries put the tall message far enough down that the window it is drawn
+    // in has a real offset, so the assertion below can tell them apart.
+    await roomsApi.postEntries(room.id, [
+      ...Array.from({ length: FILLER_BEFORE_TALL }, (_, i) => `filler ${i}`),
+      TALL_MESSAGE,
+    ]);
 
     await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(roomsPage.entries.last()).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
-    const entry = roomsPage.entries.first();
+    const entry = roomsPage.entries.last();
+    // The drawn window really is offset — otherwise this test is back to
+    // measuring the only case that cannot fail.
+    const windowTop = await page.evaluate(() => {
+      const row = document.querySelector('[data-index]');
+      const box = row?.parentElement;
+      return box === null || box === undefined ? 0 : Number.parseFloat(getComputedStyle(box).top);
+    });
+    expect(windowTop).toBeGreaterThan(0);
     const toolbar = roomsPage.actionsIn(entry);
 
     // The room opens at its newest, which for a single tall message means its

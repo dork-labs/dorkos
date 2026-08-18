@@ -557,24 +557,34 @@ export function ConversationTimeline({
             }}
           >
             {/*
-              ONE transformed box holding the drawn window, rather than a
-              transform on every row — and the difference is not cosmetic. A
-              per-row `position: absolute` makes each row its own containing
-              block, which is what a message's sticky action rail is measured
-              against: on a message taller than the window the bar stopped
-              riding the viewport edge and sat at the row's own top instead
+              ONE box holding the drawn window, rather than a position on every
+              row — and the difference is not cosmetic. A per-row
+              `position: absolute` makes each row its own containing block,
+              which is what a message's sticky action rail is measured against:
+              on a message taller than the window the bar stopped riding the
+              viewport edge and sat at the row's own top instead
               (`room-entry-actions.spec.ts` measured it 66px low). It also made
               a row's reply line stop being its DOM sibling. One box moves the
               whole window and leaves the rows in ordinary flow, where both of
               those are true again.
+
+              And the box moves by `top`, NOT by `transform` — a transform on
+              an ancestor is itself a containing block for `position: fixed`
+              AND the reference `position: sticky` clamps against, so the rail
+              inside it stopped sticking the moment the window's offset went
+              non-zero. Measured in Chromium on a 1528px message: with
+              `translateY` the capsule sat 125px BELOW the scrollport; with the
+              identical offset written as `top` it sat at +4px, which is what
+              `sticky top-1` asks for. `room-entry-actions.spec.ts` posts filler
+              entries before the tall one so the offset under test is non-zero,
+              which is the only offset where the two differ.
             */}
             <div
               style={{
                 position: 'absolute',
-                top: 0,
+                top: virtualizer.getVirtualItems()[0]?.start ?? 0,
                 left: 0,
                 width: '100%',
-                transform: `translateY(${virtualizer.getVirtualItems()[0]?.start ?? 0}px)`,
               }}
             >
               {virtualizer.getVirtualItems().map((virtualRow) => (
