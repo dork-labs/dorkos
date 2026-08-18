@@ -207,60 +207,73 @@ describe('managed-agent namespace stability (real MeshCore + RelayCore)', () => 
     const outsider = path.join(home, '.dork', 'legacy-agent');
     await fs.mkdir(outsider, { recursive: true });
     await mesh.registerByPath(outsider, { name: 'legacy', runtime: 'claude-code' }, 'test', home);
+    expect(rulesNaming('dork')).toHaveLength(2);
 
-    await mesh.reconcileOnStartup();
+    // Through `syncFromDisk`, NOT a reconcile: the flip is what has to leave
+    // the sibling's rules alone, and a reconcile's discovery pass would
+    // re-register the sibling and re-assert rules a missing guard had just
+    // deleted — hiding exactly the bug this test is for.
+    expect(await mesh.syncFromDisk(dir)).toBe('synced');
 
     expect(registry.getByPath(dir)?.namespace).toBe('alpha');
     expect(registry.getByPath(outsider)?.namespace).toBe('dork');
-
-    expect(rulesNaming('dork').length).toBeGreaterThan(0);
+    // Same-namespace allow and catch-all deny, both still standing.
+    expect(rulesNaming('dork')).toHaveLength(2);
   });
 
-  it('sweeps away rules an older version orphaned, and leaves live and user-configured ones alone', async () => {
+  it('keeps the deny rule of an agent whose registry row a DB wipe took', async () => {
     mesh = bootMesh();
-    const dir = await scaffoldManagedAgent('alpha');
-    await mesh.syncFromDisk(dir);
+    // A project agent, outside the agents home dir — so the reconciler's
+    // rebuild-from-files walk cannot find it again once the row that recorded
+    // its scan root is gone (ADR-0043 bounds that walk to the agents home dir
+    // plus recorded roots).
+    const projectDir = path.join(home, 'code', 'myproj', 'agent');
+    await fs.mkdir(projectDir, { recursive: true });
+    const agent = await mesh.registerByPath(
+      projectDir,
+      { name: 'proj-agent', runtime: 'claude-code' },
+      'test',
+      path.join(home, 'code')
+    );
+    expect(rulesNaming('myproj')).toHaveLength(2);
 
-    // What an install that already flipped in an earlier version is carrying:
-    // a whole namespace's default rules with no agent behind them.
-    relay.addAccessRule({
-      from: 'relay.agent.dork.*',
-      to: 'relay.agent.dork.*',
-      action: 'allow',
-      priority: 100,
-    });
-    relay.addAccessRule({
-      from: 'relay.agent.dork.*',
+    // `rm dork.db` — the supported recovery (ADR-0043). The manifest, the
+    // endpoint and the mailbox all survive it; only the derived cache is gone.
+    new AgentRegistry(db).remove(agent.id);
+    expect(mesh.agentRegistry.get(agent.id)).toBeUndefined();
+
+    await mesh.reconcileOnStartup();
+
+    // Nothing about a missing row says the agent is gone, and the catch-all
+    // deny is ADR-0033's secure default: Relay allows whatever no rule matches,
+    // so removing it would deliver what it was written to refuse. Reconcile
+    // touches no rule it did not just watch an agent leave behind.
+    expect(rulesNaming('myproj')).toHaveLength(2);
+    expect(rulesNaming('myproj')).toContainEqual({
+      from: 'relay.agent.myproj.*',
       to: 'relay.agent.>',
       action: 'deny',
       priority: 10,
     });
-    relay.addAccessRule({
-      from: 'relay.agent.>',
-      to: 'relay.agent.dork.*',
-      action: 'allow',
-      priority: 200,
-    });
-    // A grant the person configured themselves, naming a namespace with no
-    // agents in it. Theirs to keep: the Mesh rule store owns it, not Relay.
+  });
+
+  it('leaves a rule naming a namespace with no agents alone, pass after pass', async () => {
+    mesh = bootMesh();
+    await mesh.syncFromDisk(await scaffoldManagedAgent('alpha'));
+    // A grant the person configured themselves, pointing at a namespace whose
+    // agents are not registered here. Theirs to keep: the Mesh rule store owns
+    // it, and a reconcile pass is not an opinion about it.
     relay.addAccessRule({
       from: 'relay.agent.alpha.*',
-      to: 'relay.agent.dork.*',
+      to: 'relay.agent.archive.*',
       action: 'allow',
       priority: 50,
     });
 
     await mesh.reconcileOnStartup();
+    await mesh.reconcileOnStartup();
 
-    expect(rulesNaming('dork')).toEqual([
-      {
-        from: 'relay.agent.alpha.*',
-        to: 'relay.agent.dork.*',
-        action: 'allow',
-        priority: 50,
-      },
-    ]);
-    // The live namespace keeps its own rules.
+    expect(rulesNaming('archive')).toHaveLength(1);
     expect(rulesNaming('alpha').some((r) => r.to === 'relay.agent.alpha.*')).toBe(true);
   });
 });

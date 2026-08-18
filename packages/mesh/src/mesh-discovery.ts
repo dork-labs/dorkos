@@ -253,7 +253,10 @@ function announceAdoption(manifest: AgentManifest, projectPath: string, deps: Di
  * @param deps - Discovery dependencies
  * @param overrides - Optional manifest field overrides
  * @param approver - Identifier of the entity approving registration (default: "mesh")
- * @param scanRoot - Root directory for namespace derivation (default: deps.defaultScanRoot)
+ * @param scanRoot - Root directory for namespace derivation. Ignored for an agent
+ *   under the managed agents home dir, whose namespace always derives from that
+ *   directory (see {@link managedScanRoot}); otherwise defaults to
+ *   `deps.defaultScanRoot`.
  * @returns The created AgentManifest
  */
 export async function register(
@@ -300,7 +303,10 @@ export async function register(
  * @param partial - Manifest fields to set (name, runtime are required)
  * @param deps - Discovery dependencies
  * @param approver - Identifier of the entity approving registration (default: "mesh")
- * @param scanRoot - Root directory for namespace derivation (default: deps.defaultScanRoot)
+ * @param scanRoot - Root directory for namespace derivation. Ignored for an agent
+ *   under the managed agents home dir, whose namespace always derives from that
+ *   directory (see {@link managedScanRoot}); otherwise defaults to
+ *   `deps.defaultScanRoot`.
  * @returns The created AgentManifest
  */
 export async function registerByPath(
