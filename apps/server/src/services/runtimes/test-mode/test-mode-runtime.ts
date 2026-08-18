@@ -481,13 +481,16 @@ export class TestModeRuntime implements AgentRuntime {
    *   the pairing DOR-1268 shipped and nothing above the unit layer could stage.
    *   The steered content SURFACES via the dispatcher's `turn_input` carrier, not
    *   here — a runtime never mints that event (it rides the open turn's stream).
-   * - `'stage'` needs no open turn, but it does need somewhere to append: the
-   *   words go onto the held process and the next scripted answer repeats them,
-   *   so a browser can see that the stage LANDED rather than that a receipt was
-   *   emitted. With no process held there is no transcript to reach, and the
-   *   server folds the words into the next dispatch instead — the route
-   *   {@link canStageSession} keeps it on, so this refusal is only reached by a
-   *   caller that ignored the answer.
+   * - `'stage'` needs no open turn, and it asks exactly the question
+   *   {@link canStageSession} answers, so the two can never disagree: a session
+   *   that WOULD run its next turn on a held process is staged onto — warming it
+   *   first if it holds none yet, which is what claude-code's own native stage
+   *   does (`PersistentDispatch.stage` launches the pump before appending). The
+   *   words go onto that process and the next scripted answer repeats them, so a
+   *   browser can see the stage LANDED rather than that a receipt was emitted.
+   *   A session that would NOT is refused as `unsupported`, which is the only
+   *   refusal the server is allowed to fold — anything else would put a person's
+   *   staged words on the queue, where they provoke a reply.
    *
    * Never throws for an ordinary refusal, per the `deliverIntoTurn` contract.
    *
@@ -500,14 +503,25 @@ export class TestModeRuntime implements AgentRuntime {
     content: string,
     opts: DeliverIntoTurnOpts
   ): Promise<RuntimeDeliveryResult> {
-    if (!heldProcesses.holds(sessionId)) {
-      return { delivered: false, reason: 'no-open-turn' };
-    }
-    if (opts.mode === 'steer') {
-      if (!interactionGate.isOpen(sessionId)) return { delivered: false, reason: 'no-open-turn' };
+    if (opts.mode === 'stage') {
+      // One question, asked the way `canStageSession` asks it. Gating on `holds`
+      // instead diverged from that answer in two states this really reaches —
+      // opted in before the first turn, and opted in after a reap — and the
+      // server, told the session was stageable, would have queued the words
+      // rather than folding them (see `ensureHeld`).
+      if (!heldProcesses.ensureHeld(sessionId)) {
+        return { delivered: false, reason: 'unsupported' };
+      }
+      heldProcesses.stage(sessionId, content);
       return { delivered: true };
     }
-    heldProcesses.stage(sessionId, content);
+    // A steer needs the process AND a turn already running on it. `holds` rather
+    // than `willHold` on purpose: a turn cannot be open on a session that holds
+    // nothing (every turn on the held path begins by taking the process), so this
+    // only ever refuses a session with no live turn to join.
+    if (!heldProcesses.holds(sessionId) || !interactionGate.isOpen(sessionId)) {
+      return { delivered: false, reason: 'no-open-turn' };
+    }
     return { delivered: true };
   }
 
@@ -536,6 +550,10 @@ export class TestModeRuntime implements AgentRuntime {
    * so a session that will not run its next turn on one has nothing to append
    * to. `false` is not a refusal — the server folds the words into the next
    * dispatch and the person still sees "Added context for the next reply".
+   *
+   * {@link deliverIntoTurn}'s stage branch asks this SAME question rather than
+   * "is a process held right now", so the two cannot disagree — the divergence
+   * that would otherwise queue a staged message instead of folding it.
    */
   canStageSession(sessionId: string): boolean {
     return heldProcesses.willHold(sessionId);

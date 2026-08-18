@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import { getBoundary, validateBoundary } from '../lib/boundary.js';
 import { localDialHost } from '../lib/local-dial-host.js';
@@ -107,6 +108,50 @@ const heldProcessSchema = z.object({
 });
 
 /**
+ * Resolve the runtime that owns `sessionId`, and refuse unless it is a
+ * TestModeRuntime — the one adapter whose held process these controls speak for.
+ *
+ * All three held-process routes go through here, so the opt-in, the read and the
+ * reap can never disagree about which runtime they are talking to. Without the
+ * check, `POST /persistent` would happily write an opt-in for a session bound to
+ * a runtime that reads a different switch entirely (this server registers a
+ * claude-code-typed alias, and `?runtime=` can bind a session to `test-mode-b`),
+ * and the failure would surface much later as an affordance that never appeared.
+ *
+ * The class is imported DYNAMICALLY, the same way `POST /reset` imports it:
+ * `app.ts` imports this router statically, so a static class import here would
+ * pull TestModeRuntime into the production module graph and defeat the env-var
+ * gating in `index.ts`.
+ *
+ * @param sessionId - The session the caller named.
+ * @returns The owning runtime, or the status and message to answer with.
+ */
+async function resolveTestModeRuntime(
+  sessionId: string
+): Promise<{ runtime: AgentRuntime } | { status: number; error: string }> {
+  let runtime: AgentRuntime;
+  try {
+    runtime = await runtimeRegistry.resolveForSession(sessionId);
+  } catch (err) {
+    return {
+      status: 500,
+      error: err instanceof Error ? err.message : 'could not resolve the session runtime',
+    };
+  }
+  const { TestModeRuntime } = await import('../services/runtimes/test-mode/test-mode-runtime.js');
+  if (!(runtime instanceof TestModeRuntime)) {
+    return {
+      status: 400,
+      error:
+        `Session ${sessionId} is bound to '${runtime.type}', which is not a test-mode runtime. ` +
+        `The held-process controls only speak for test-mode's scripted process; a real runtime's ` +
+        `persistent session is the operator's own setting.`,
+    };
+  }
+  return { runtime };
+}
+
+/**
  * `POST /api/test/persistent` — put ONE session on the held-process path, or
  * take it off (DOR-1326).
  *
@@ -127,8 +172,13 @@ const heldProcessSchema = z.object({
  * Turning it OFF does not cool a session that is already holding a process,
  * mirroring claude-code (ADR `260812-134510`). `POST /api/test/reap` is how a
  * process is given back.
+ *
+ * Refuses a session bound to a runtime that is not test-mode, rather than
+ * writing an opt-in nothing will ever read: this server registers a
+ * claude-code-typed alias and could register more, and a silent no-op here would
+ * surface as a spec whose Steer row never appears, with nothing to point at.
  */
-testControlRouter.post('/persistent', (req, res) => {
+testControlRouter.post('/persistent', async (req, res) => {
   const result = heldProcessSchema.safeParse(req.body);
   if (!result.success) {
     return res
@@ -136,6 +186,8 @@ testControlRouter.post('/persistent', (req, res) => {
       .json({ error: 'Validation failed', details: z.flattenError(result.error) });
   }
   const { sessionId, enabled } = result.data;
+  const runtime = await resolveTestModeRuntime(sessionId);
+  if ('error' in runtime) return res.status(runtime.status).json({ error: runtime.error });
   heldProcesses.setEnabled(sessionId, enabled);
   res.json({ ok: true, sessionId, enabled });
 });
@@ -161,14 +213,9 @@ testControlRouter.get('/persistent', async (req, res) => {
       .json({ error: 'Validation failed', details: z.flattenError(result.error) });
   }
   const { sessionId } = result.data;
-  let runtime;
-  try {
-    runtime = await runtimeRegistry.resolveForSession(sessionId);
-  } catch (err) {
-    return res.status(500).json({
-      error: err instanceof Error ? err.message : 'could not resolve the session runtime',
-    });
-  }
+  const resolved = await resolveTestModeRuntime(sessionId);
+  if ('error' in resolved) return res.status(resolved.status).json({ error: resolved.error });
+  const { runtime } = resolved;
   res.json({
     enabled: heldProcesses.isEnabled(sessionId),
     warmth: runtime.getSessionWarmth?.(sessionId) ?? 'cold',
@@ -195,14 +242,9 @@ testControlRouter.post('/reap', async (req, res) => {
       .json({ error: 'Validation failed', details: z.flattenError(result.error) });
   }
   const { sessionId } = result.data;
-  try {
-    const runtime = await runtimeRegistry.resolveForSession(sessionId);
-    await runtime.reapSession?.(sessionId);
-  } catch (err) {
-    return res.status(500).json({
-      error: err instanceof Error ? err.message : 'could not resolve the session runtime',
-    });
-  }
+  const resolved = await resolveTestModeRuntime(sessionId);
+  if ('error' in resolved) return res.status(resolved.status).json({ error: resolved.error });
+  await resolved.runtime.reapSession?.(sessionId);
   res.json({ ok: true });
 });
 

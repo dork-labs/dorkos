@@ -33,15 +33,17 @@
  * the capability constant, and `tests/chat/held-process.ts` drives both sides
  * of it.
  *
- * **The composer gates on two of them, and on a per-session answer beside
- * them.** `ChatInputContainer` reads `supportsSteer` and
- * `supportsContextStaging` off the session's runtime and the session's own
- * `steerable` status, and shows the Steer and Add context rows only when both
- * halves say yes — the "hidden, not disabled" rule, live since PR #1041 and
- * DOR-1268. `supportsToolApproval` and `supportsPersistentSession` are still
- * read nowhere in the shipping composer. So the affordance claim now HAS
- * something behind it, and it is asserted where the sessions that differ can be
- * staged: `tests/chat/held-process.ts`, not here.
+ * **The composer gates on two of them, and the two gates are not the same
+ * shape.** `ChatInputContainer` shows **Steer** only when BOTH halves say yes —
+ * the runtime's `supportsSteer` and the session's own `steerable` status — which
+ * is the "hidden, not disabled" rule, live since PR #1041 and DOR-1268. **Add
+ * context** asks only the static `supportsContextStaging`, deliberately: a
+ * session that cannot be staged onto natively still gets the words, folded into
+ * its next reply, so hiding the row would remove an affordance that works
+ * (DOR-1307). `supportsToolApproval` and `supportsPersistentSession` are read
+ * nowhere in the shipping composer. So the affordance claim now HAS something
+ * behind it, and it is asserted where the sessions that differ can be staged:
+ * `tests/chat/held-process.ts`, not here.
  *
  * ## What IS real, and is what this asserts
  *

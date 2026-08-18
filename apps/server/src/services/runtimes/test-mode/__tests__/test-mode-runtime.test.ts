@@ -332,15 +332,42 @@ describe('TestModeRuntime — deliverIntoTurn (the honest steer/stage receipt, t
     expect(result).toEqual({ delivered: true });
   });
 
-  // Only reachable by a caller that ignored `canStageSession`; the server folds
-  // the words into the next dispatch instead of asking (DOR-1307).
-  it('refuses a stage on a session holding no process, rather than pretending to keep it', async () => {
+  // The state the fake used to get wrong, and it is reachable two ways: opted in
+  // before the first turn (here), and opted in after a reap. `canStageSession`
+  // says yes in both, so the server takes the NATIVE route — and a refusal that
+  // is not `unsupported` cannot be folded, so the person's words would have been
+  // queued as an ordinary message that provokes a reply. Claude-code warms and
+  // appends here; so does this now.
+  it('warms an opted-in session that has not run a turn, and stages onto it', async () => {
     const runtime = new TestModeRuntime();
+    heldProcesses.setEnabled(SESSION_A, true);
+    expect(runtime.canStageSession(SESSION_A)).toBe(true);
+    expect(runtime.getSessionWarmth(SESSION_A)).toBe('cold');
+
     const result = await runtime.deliverIntoTurn(SESSION_A, 'attach this', {
       mode: 'stage',
       messageId: 'stage-2',
     });
-    expect(result).toEqual({ delivered: false, reason: 'no-open-turn' });
+
+    expect(result).toEqual({ delivered: true });
+    // Warmed by the stage, exactly as the pump warms a cold session to reach a
+    // transcript — and the answer `canStageSession` gave is now true of the
+    // session as well as of its next turn.
+    expect(runtime.getSessionWarmth(SESSION_A)).toBe('warm');
+  });
+
+  // Only reachable by a caller that ignored `canStageSession`. `unsupported` is
+  // the one refusal `deliverStage` folds, so this is what keeps a staged message
+  // off the queue (DOR-1307).
+  it('refuses a stage on a session that would never hold a process, as unsupported', async () => {
+    const runtime = new TestModeRuntime();
+    const result = await runtime.deliverIntoTurn(SESSION_A, 'attach this', {
+      mode: 'stage',
+      messageId: 'stage-3',
+    });
+    expect(result).toEqual({ delivered: false, reason: 'unsupported' });
+    // And it warmed nothing on the way to saying no.
+    expect(runtime.getSessionWarmth(SESSION_A)).toBe('cold');
   });
 });
 

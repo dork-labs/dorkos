@@ -207,7 +207,12 @@ Worth knowing before you assume a behaviour is tested.
   projects — then `GET /api/test/persistent?sessionId=` reads its warmth and
   `POST /api/test/reap` gives the process back. The `warm-echo` scenario names
   the path in its own answer, so an assertion cannot pass on the wrong one. See
-  `tests/chat/held-process.ts`. What is still NOT drivable here: the real
+  `tests/chat/held-process.ts`. **And `POST /api/test/reset` clears every opt-in
+  and every held process server-wide**, exactly as it clears scenarios and
+  projectors — so a neighbouring project's reset landing mid-test would cool
+  your session and un-offer its Steer row. That is why these controls are only
+  safe from `chat-mock.spec.ts`'s own sequential worker, the same lock the
+  scenario controls ride. What is still NOT drivable here: the real
   claude-code pump (a spec that flips `runtimes.claudeCode.persistentSession`
   spends model tokens per run and cannot go in CI), so timing, crash recovery and
   the twelve-slot ceiling stay unit- and self-test territory.

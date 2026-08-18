@@ -1,10 +1,12 @@
 /**
  * The persistent path, driven through a browser for free (DOR-1326).
  *
- * Backs four rows of `meta/chat-capabilities.md`:
+ * Backs five rows of `meta/chat-capabilities.md`:
  *
  * - **L-11** — an agent that stays running, so the second reply comes from the
  *   same process.
+ * - **C-09a** — a chat that cannot cut in is not offered the choice, and an API
+ *   steer says why instead of going quiet.
  * - **C-09b** — a steer INTO a live turn: it reaches the running agent, renders
  *   inline where the person sent it, and opens no second turn.
  * - **C-11** — Add context: the words reach the agent without provoking a reply,
@@ -303,8 +305,10 @@ export function registerHeldProcessTests(deps: HeldProcessDeps): void {
       await expect(chatPage.input).toBeEnabled({ timeout: SERVER_ROUND_TRIP_MS });
       await expect(replies(page)).toHaveCount(1);
     });
+  });
 
-    test('a chat that cannot cut in is not offered the choice, and an API steer says why', async ({
+  test.describe('asking to steer where a cut-in cannot happen (C-09a)', () => {
+    test('the choice is not offered, and an API steer says why instead of going quiet', async ({
       page,
       request,
     }) => {
@@ -349,6 +353,52 @@ export function registerHeldProcessTests(deps: HeldProcessDeps): void {
   });
 
   test.describe('adding context without provoking a reply (C-11)', () => {
+    test('on a chat with a warm agent but no turn yet, the words wait for the agent — they do not become a message', async ({
+      page,
+      request,
+    }) => {
+      // The state the fake used to get wrong, and the one the pump reaches every
+      // time an operator turns the experiment on and adds context before saying
+      // anything (DOR-1318 saw it live). The session WOULD run its next turn on
+      // a held process, so `canStageSession` says yes and the server takes the
+      // native route — and a runtime that refused there with anything but
+      // `unsupported` would have its words QUEUED as an ordinary message that
+      // provokes a reply, which is the one thing Add context promises never to do.
+      const { chatPage, sessionId } = await openSession(page, request, {
+        scenario: 'warm-echo',
+        held: true,
+      });
+      expect(await heldState(request, sessionId)).toMatchObject({
+        warmth: 'cold',
+        stageable: true,
+      });
+
+      const staged = await request.post(`${apiUrl}/api/sessions/${sessionId}/messages`, {
+        data: { content: 'mind the rate limit', cwd: agentDir(), disposition: 'stage' },
+      });
+      expect(staged.status()).toBe(202);
+      const body = (await staged.json()) as {
+        outcome: { requested: string; applied: string; degradedBecause?: string };
+      };
+      // `applied: 'stage'` — it reached the agent. `applied: 'queue'` here is the
+      // regression, and `degradedBecause` naming a fold would mean the words took
+      // the long way round on a session that could have taken them directly.
+      expect(body.outcome).toMatchObject({ requested: 'stage', applied: 'stage' });
+      expect(body.outcome.degradedBecause).toBeUndefined();
+
+      // The stage WARMED the session to reach a transcript, exactly as the pump
+      // does — and it started no turn, so the transcript still has no reply in it.
+      expect((await heldState(request, sessionId)).warmth).toBe('warm');
+      await expect(replies(page)).toHaveCount(0);
+
+      // And the words are there when the agent next speaks.
+      await chatPage.sendAndLand('what now');
+      await expect(transcript(page)).toContainText('staged-native: mind the rate limit', {
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+      await releaseStep(request, sessionId);
+    });
+
     test('on a warm chat the words reach the agent itself, and the next reply has them', async ({
       page,
       request,

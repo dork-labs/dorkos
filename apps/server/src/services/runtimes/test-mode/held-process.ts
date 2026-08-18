@@ -199,6 +199,39 @@ class HeldProcessRegistry {
   }
 
   /**
+   * Make sure this session holds a process, booting one if it opted in and
+   * holds none yet — the warm-on-demand half of a native stage.
+   *
+   * **A stage may have to WARM a cold session, and that is not an optimisation.**
+   * The words have to reach a transcript, and a session that has not run a turn
+   * has none live — so claude-code's `PersistentDispatch.stage` launches the
+   * pump before appending (`persistent-dispatch.ts`), gated on the same opt-in
+   * that decides whether its next turn would run on a held process. Without this
+   * the fake diverged from the pump in two states it genuinely reaches — opted
+   * in before the first turn, and opted in after a reap — where
+   * {@link willHold} answers `true` while {@link holds} answers `false`. There
+   * the server would take the native route on the strength of
+   * `canStageSession`, get a refusal it is not allowed to fold, and QUEUE the
+   * words as an ordinary message that provokes a reply: the one outcome
+   * Add context promises never to produce.
+   *
+   * The booted process has served no turns, so the next one still reports
+   * `HELD-PROCESS-TURN-1` — the honest reading, since it is the turn that first
+   * runs on it.
+   *
+   * @param sessionId - The session being staged onto.
+   * @returns Whether the session holds a process now. `false` only for a
+   *   session that never opted in, which has no path onto the held path at all.
+   */
+  ensureHeld(sessionId: string): boolean {
+    if (!this.willHold(sessionId)) return false;
+    if (!this.processes.has(sessionId)) {
+      this.processes.set(sessionId, { turnsServed: 0, turn: undefined, staged: [] });
+    }
+    return true;
+  }
+
+  /**
    * Put words in front of the held process without provoking a turn — the
    * scripted native stage.
    *

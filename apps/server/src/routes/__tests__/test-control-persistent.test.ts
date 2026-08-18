@@ -25,6 +25,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { testControlRouter } from '../test-control.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { heldProcesses } from '../../services/runtimes/test-mode/held-process.js';
@@ -32,6 +33,8 @@ import { TestModeRuntime } from '../../services/runtimes/test-mode/test-mode-run
 
 const SESSION = 'aaaaaaa1-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const NEIGHBOUR = 'bbbbbbb1-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+/** A session owned by a runtime these controls do not speak for. */
+const FOREIGN = 'ccccccc1-cccc-4ccc-8ccc-cccccccccccc';
 
 describe('the held-process controls', () => {
   let app: express.Express;
@@ -105,6 +108,31 @@ describe('the held-process controls', () => {
     // Cold again, without a test having to wait out an idle window nothing can
     // hurry — and still on the path, so the next message boots a fresh process.
     expect(await readState(SESSION)).toMatchObject({ warmth: 'cold', steerable: true });
+  });
+
+  it('refuses to opt in a session bound to a runtime that is not test-mode', async () => {
+    // This server registers a claude-code-typed alias, and `?runtime=` can bind
+    // a session to another instance entirely — so an opt-in written for a
+    // session some OTHER adapter owns would sit there unread, and the failure
+    // would surface much later as a Steer row that never appeared.
+    runtimeRegistry.register(new FakeAgentRuntime('not-test-mode'));
+    await runtimeRegistry.persistSessionRuntime(FOREIGN, 'not-test-mode');
+
+    const res = await request(app)
+      .post('/api/test/persistent')
+      .send({ sessionId: FOREIGN, enabled: true });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('not-test-mode');
+    expect(heldProcesses.isEnabled(FOREIGN)).toBe(false);
+    // The read and the reap refuse it on the same terms, so the three controls
+    // can never disagree about which runtime they are speaking for.
+    expect(
+      (await request(app).get('/api/test/persistent').query({ sessionId: FOREIGN })).status
+    ).toBe(400);
+    expect((await request(app).post('/api/test/reap').send({ sessionId: FOREIGN })).status).toBe(
+      400
+    );
   });
 
   it('refuses a request that names no session', async () => {
