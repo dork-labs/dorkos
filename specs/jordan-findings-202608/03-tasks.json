@@ -22,8 +22,13 @@
           "slug": "server-claude-probe-and-codex-registration",
           "issue": "DOR-1334",
           "title": "Server: Claude probe honors DORKOS_CLAUDE_CLI_PATH; asar-safe bundled resolution; probe errors logged; POST /runtimes/claude-code/provision; lazy ladder-driven Codex client; config.workingDirectory = DEFAULT_CWD",
-          "spec": "§A / A1",
-          "findings": ["F2", "F3", "F4", "F9"],
+          "spec": "\u00a7A / A1",
+          "findings": [
+            "F2",
+            "F3",
+            "F4",
+            "F9"
+          ],
           "dependsOn": [],
           "owns": [
             "apps/server/src/services/runtimes/claude-code/tooling/claude-cli-auth.ts",
@@ -41,17 +46,24 @@
             "docs/api/openapi.json (regen if routes changed)",
             "changelog/unreleased/<id>-mac-app-claude-code-detected.md"
           ],
-          "done": "Unit: env-first resolver; asar→unpacked remap with a disk fixture; probe failure logged; provision route streams and the provisioned rung resolves; CodexRuntime registers with no binary and reports missing; a turn without a binary fails with the named error. Browser: dev cockpit runtime cards show honest states; provision button path exercised (mock npm or real). Adversarial review passed.",
-          "status": "in_progress"
+          "done": "Unit: env-first resolver; asar\u2192unpacked remap with a disk fixture; probe failure logged; provision route streams and the provisioned rung resolves; CodexRuntime registers with no binary and reports missing; a turn without a binary fails with the named error. Browser: dev cockpit runtime cards show honest states; provision button path exercised (mock npm or real). Adversarial review passed.",
+          "status": "done",
+          "pr": "#1096 (e26be3b8e)"
         },
         {
           "id": "1.2",
           "slug": "desktop-path-cwd-platform-binaries-smoke",
           "issue": "DOR-1335",
           "title": "Desktop: login-shell PATH for the server child; DORKOS_DEFAULT_CWD + fork cwd from config/home; package @openai/codex-* and @esbuild/* platform binaries (asarUnpack); smoke-packaged asserts requirements/default-dir/sessions/extension compile",
-          "spec": "§A / A2",
-          "findings": ["F9", "F10", "F11"],
-          "dependsOn": ["1.1 (for the smoke to go fully green; branch may base on 1.1's branch)"],
+          "spec": "\u00a7A / A2",
+          "findings": [
+            "F9",
+            "F10",
+            "F11"
+          ],
+          "dependsOn": [
+            "1.1 (for the smoke to go fully green; branch may base on 1.1's branch)"
+          ],
           "owns": [
             "apps/desktop/src/main/server-spawn.ts",
             "apps/desktop/src/main/shell-path.ts (new)",
@@ -67,15 +79,18 @@
             "changelog/unreleased/<id>-mac-app-finds-your-tools.md"
           ],
           "done": "CI Desktop Smoke green with the new assertions (Claude Code CLI satisfied from the bundled binary on a runner with no claude on PATH; codex satisfied; default dir inside home; no session warnings; no marketplace compile failure). Unit tests for shell PATH resolution and cwd/boundary clamp. Adversarial review passed.",
-          "status": "in_progress"
+          "status": "done",
+          "pr": "#1101"
         },
         {
           "id": "1.3",
           "slug": "extensions-discovery-dedupe-idempotent-init",
           "issue": "DOR-1336",
           "title": "Server: extension discovery skips local when local==global; init-server idempotent on unchanged sourceHash; updateCwd(same) no-op",
-          "spec": "§B",
-          "findings": ["F10"],
+          "spec": "\u00a7B",
+          "findings": [
+            "F10"
+          ],
           "dependsOn": [],
           "owns": [
             "apps/server/src/services/extensions/extension-discovery.ts",
@@ -84,16 +99,21 @@
             "apps/server/src/services/extensions/__tests__/**",
             "changelog/unreleased/<id>-extensions-quiet-boot.md"
           ],
-          "done": "Tests red→green for both; dev cockpit boot from cwd=$HOME logs zero 'Ignoring the project copy'; two tabs → zero 'Server shutdown for marketplace'. Adversarial review passed.",
-          "status": "in_progress"
+          "done": "Tests red\u2192green for both; dev cockpit boot from cwd=$HOME logs zero 'Ignoring the project copy'; two tabs \u2192 zero 'Server shutdown for marketplace'. Adversarial review passed.",
+          "status": "done",
+          "pr": "#1095 (9a2892b19)"
         },
         {
           "id": "1.4",
           "slug": "relay-subject-canonical-error-propagation-exposure",
           "issue": "DOR-1337",
           "title": "Relay: docs + describe strings teach relay.agent.{namespace}.{agentId}; mesh_list returns relaySubject; send tools canonicalize bare relay.agent.<agentId>; agent_result carries error and the waiter maps it to AGENT_ERROR; agent sessions get the six agent-to-agent tools always-loaded",
-          "spec": "§C",
-          "findings": ["F5", "F6", "F8"],
+          "spec": "\u00a7C",
+          "findings": [
+            "F5",
+            "F6",
+            "F8"
+          ],
           "dependsOn": [],
           "owns": [
             "apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts",
@@ -109,16 +129,19 @@
             "docs/api/openapi.json (regen)",
             "changelog/unreleased/<id>-agents-reach-each-other.md"
           ],
-          "done": "Unit: canonicalization + pass-through; error-then-done stream → AGENT_ERROR; exposure policy per session kind. Live: two agents in a dev cockpit, a→b following the system prompt only, denied without a rule, AGENT_ERROR on a failing target. Adversarial review passed.",
-          "status": "in_progress"
+          "done": "Unit: canonicalization + pass-through; error-then-done stream \u2192 AGENT_ERROR; exposure policy per session kind. Live: two agents in a dev cockpit, a\u2192b following the system prompt only, denied without a rule, AGENT_ERROR on a failing target. Adversarial review passed.",
+          "status": "done",
+          "pr": "#1099"
         },
         {
           "id": "1.5",
           "slug": "mesh-let-my-agents-talk-switch",
           "issue": "DOR-1338",
-          "title": "Mesh: topology * → * allow rule (persisted, projected as relay.agent.> → relay.agent.>), openMesh in topology, Team → Access switch, agent-creation notice, hint copy",
-          "spec": "§D",
-          "findings": ["F7"],
+          "title": "Mesh: topology * \u2192 * allow rule (persisted, projected as relay.agent.> \u2192 relay.agent.>), openMesh in topology, Team \u2192 Access switch, agent-creation notice, hint copy",
+          "spec": "\u00a7D",
+          "findings": [
+            "F7"
+          ],
           "dependsOn": [],
           "owns": [
             "packages/mesh/src/topology.ts",
@@ -126,23 +149,27 @@
             "packages/mesh/src/__tests__/**",
             "packages/shared/src/mesh-schemas.ts (or wherever TopologyView / AccessRule live)",
             "apps/server/src/routes/mesh.ts",
-            "apps/server/src/services/runtimes/claude-code/mcp-tools/relay-helpers.ts (ACCESS_DENIED_HINT only — coordinate with 1.4)",
+            "apps/server/src/services/runtimes/claude-code/mcp-tools/relay-helpers.ts (ACCESS_DENIED_HINT only \u2014 coordinate with 1.4)",
             "apps/client/src/layers/features/mesh/ui/TopologyPanel.tsx",
             "apps/client/src/layers/features/mesh/**",
             "apps/client/src/layers/**/agent creation flow (notice)",
             "docs/api/openapi.json (regen)",
             "changelog/unreleased/<id>-let-your-agents-talk.md"
           ],
-          "done": "Browser: fresh DORK_HOME, two agents, notice visible, switch on → a reaches b with no pair rule, off → denied. Screenshots in PR. Adversarial review passed.",
-          "status": "in_progress"
+          "done": "Browser: fresh DORK_HOME, two agents, notice visible, switch on \u2192 a reaches b with no pair rule, off \u2192 denied. Screenshots in PR. Adversarial review passed.",
+          "status": "done",
+          "pr": "#1097"
         },
         {
           "id": "1.6",
           "slug": "marketplace-preview-paths-and-source-facet",
           "issue": "DOR-1339",
           "title": "Marketplace: install preview shows per-action counts + common root + expandable path list; Source facet in the sidebar; DorkOS-native packages ranked first by default; source label on cards",
-          "spec": "§E",
-          "findings": ["F12", "F13"],
+          "spec": "\u00a7E",
+          "findings": [
+            "F12",
+            "F13"
+          ],
           "dependsOn": [],
           "owns": [
             "apps/client/src/layers/features/marketplace/lib/format-permissions.ts",
@@ -155,15 +182,21 @@
             "changelog/unreleased/<id>-marketplace-know-what-you-install.md"
           ],
           "done": "RTL tests; browser screenshots of the preview for the flow plugin and of the source facet; DorkOS packages first on first load. Adversarial review passed.",
-          "status": "in_progress"
+          "status": "done",
+          "pr": "#1098 (f12c56c2d)"
         },
         {
           "id": "1.7",
           "slug": "flow-plugin-tracker-slug-runtime-deps-rubric-step5",
           "issue": "DOR-1340",
           "title": "Flow plugin (dork-labs/marketplace): tracker slug schema + regenerated JSON schema + adapter naming decoupled from linear-adapter in generic prose; zod as a runtime dependency + install guidance + npm audit fix; rubric scaffold outside a repo + loud degrade in verify; Step 5 = real adapter read + honest oracle label",
-          "spec": "§F",
-          "findings": ["F1", "F14", "F15", "F16"],
+          "spec": "\u00a7F",
+          "findings": [
+            "F1",
+            "F14",
+            "F15",
+            "F16"
+          ],
           "dependsOn": [],
           "owns": [
             "marketplace:plugins/flow/scripts/config-schema.ts",
@@ -176,9 +209,18 @@
             "marketplace:plugins/flow/README.md"
           ],
           "done": "Plugin tests green; validate-config accepts tracker github; npm install --omit=dev suffices for every runtime script; npm audit clean; PR in dork-labs/marketplace. Adversarial review passed.",
-          "status": "in_progress"
+          "status": "done",
+          "pr": "dork-labs/marketplace #21 (32a933d)"
         }
       ]
     }
+  ],
+  "closedAt": "2026-08-18",
+  "followUps": [
+    "DOR-1341 (shipped #1100)",
+    "DOR-1342 + DOR-1343 (shipped #1106)",
+    "DOR-1344 (shipped #1105)",
+    "DOR-1347 (open: scheduled task runs ignore agent model)",
+    "DOR-1348 (open: CI full test job OOMs; not a required check)"
   ]
 }

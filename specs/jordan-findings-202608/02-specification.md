@@ -1,6 +1,6 @@
 # Jordan Lyall findings (0.61.0) — specification
 
-Status: **specified 2026-08-18** — executing. Findings numbered as in [`00-findings.md`](00-findings.md) (F1…F16). Each section names the root cause **as reproduced**, the decision, and the acceptance bar. Work items map 1:1 onto `03-tasks.json` and the Linear project.
+Status: **implemented 2026-08-18** — every finding shipped; see "Closeout" at the end. Findings numbered as in [`00-findings.md`](00-findings.md) (F1…F16). Each section names the root cause **as reproduced**, the decision, and the acceptance bar. Work items map 1:1 onto `03-tasks.json` and the Linear project.
 
 Conventions for every work item: isolated worktree from `origin/main` (`git gtr new <branch> --from origin/main --yes`), TDD (red before / green after for every fix), an adversarial review by a separate agent against `REVIEW.md` **before** the PR opens, a changelog fragment (`changelog/unreleased/<id>-<slug>.md`, `writing-for-humans` voice), and a real-browser (or packaged-app) proof in the PR body. Builders and reviewers run on Opus/Sonnet, never Fable.
 
@@ -148,3 +148,35 @@ Every agent lands in its own namespace (managed agents under `~/.dork/agents/<sl
 - Namespace-model migration for managed agents (§D follow-up).
 - Bundling `opencode` into the desktop app (it stays provisioned on demand, unchanged).
 - Anything about Codex turn behaviour beyond registration/status.
+
+---
+
+## Closeout (2026-08-18)
+
+**Where it landed** (all squash-merged to `main` the same day; each branch went through a separate REVIEW.md adversarial reviewer before its PR opened, and every reviewer found at least one real defect that was fixed pre-PR):
+
+| Section         | Issue                      | PR                        | What the reviewer caught before the PR                                                                                                                                                       |
+| --------------- | -------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §A / A1 server  | DOR-1334                   | #1096                     | a one-click Claude install did not reach the SDK spawn seam until restart                                                                                                                    |
+| §A / A2 desktop | DOR-1335                   | #1101                     | env precedence split for `DORKOS_BOUNDARY`/`DORKOS_DEFAULT_CWD`; changelog overclaimed Windows/Codex                                                                                         |
+| §B extensions   | DOR-1336                   | #1095                     | idempotent init froze pasted extension secrets (`ExtensionSecretStore` cache) — fixed at the root; automated PR review then caught the `compile_error` status hiding a working client bundle |
+| §C relay        | DOR-1337                   | #1099                     | a failed operator hook (`hook_failure`) was folded into `AGENT_ERROR` and stripped a correct answer                                                                                          |
+| §D mesh switch  | DOR-1338                   | #1097                     | the `* → *` rule was not re-seeded after a `dork.db` rebuild (mesh open, UI said closed)                                                                                                     |
+| §E marketplace  | DOR-1339                   | #1098                     | install path clipped at 390 px; duplicate changelog fragment                                                                                                                                 |
+| §F flow plugin  | DOR-1340                   | dork-labs/marketplace #21 | stale docblocks re-asserting the "no dependencies" belief; absolute `review.rubric` path mangled                                                                                             |
+| follow-up       | DOR-1341 (plugin npm deps) | #1100                     | three security holes in the npm step: package `.npmrc` `global=true` planting a bin shim on PATH, `file:` symlink escapes, `node_modules` walked by skill validation                         |
+| follow-up       | DOR-1342 + DOR-1343        | #1106                     | the orphan-rule sweep deleted a live out-of-home agent's deny rule after a DB rebuild (sweep removed); different-id overwrite captured the wrong `previous`                                  |
+| follow-up       | DOR-1344                   | #1105                     | a settings row naming no model un-did the fix; the Telegram/Slack binding path still ignored the model                                                                                       |
+
+**How it was verified.** Root causes were reproduced by the orchestrator against the installed 0.61.0 Mac app (launchd-style `PATH`, throwaway home) and a synthetic asar inside a real Electron `utilityProcess`. Each slice was proven red→green by test and crossed the seam live (dev cockpit, real Chromium, real relay turns on a cheap model). The merged `main` passes the new 8-assertion packaged smoke on CI (`desktop-smoke.yml`, run 32170590029: three runtimes registered, Claude Code and Codex CLI satisfied from the bundled binaries on a runner with neither on `PATH`, default directory inside home, no session-list warnings, marketplace extension compiles) — that smoke is now the reliable desktop test the tester's report asked for, and it runs on every desktop-touching PR and every push to `main`. A final orchestrator pass on `main` in a browser confirmed: honest runtime cards (Claude Ready, Codex Ready, OpenCode → Install), the Team → Access switch flipping `openMesh` and the relay rule, the marketplace leading with DorkOS packages plus a Source facet, the install preview naming root/counts/files and the npm library, and a real flow-plugin install landing `zod` so `dispatch.ts` runs.
+
+**What is deliberately not done** (filed, not forgotten):
+
+- **DOR-1348** — the CI full `test` job OOMs on every run since 2026-08-18 14:40 and is not a required check.
+- **DOR-1347** — scheduled Tasks runs still ignore the agent manifest model and `runtimes.*.defaultModel` (same defect as DOR-1344, different call sites: `task-handler.ts`, `task-scheduler-service.ts`).
+- The **namespace-model rethink** (managed agents sharing one namespace by default) stays parked; DOR-1342 made creation-time and reconciler-time derivation agree instead. Installs that already flipped under ≤0.61 keep two inert rules for an empty namespace in `access-rules.json` (never enforcement).
+- Codex is **bundled** into the Mac app (~+110 MB download; `bin/codex` gzips 210→88 MB) to mirror the npm CLI. If download size matters, drop the `@openai/codex-*` optionalDependency + `asarUnpack` glob and rely on the on-demand `POST /runtimes/codex/provision` — but read the `.claude/rules/desktop.md` platform-binary rule first.
+- Merge-queue infra observations for whoever owns CI: `merge-tail.yml` is inert without `MERGE_TAIL_TOKEN` (auto-merge was armed by hand); the queue's `check_response_timeout_minutes: 60` is close to the ~45 min `browser-test` and dropped two PRs once each; the queue's `test` job OOMs (heap) but is not a required check.
+- Provisioners (`claude-code`, `codex`, `opencode`) still run `npm install` without `--ignore-scripts` (marketplace installs now do); worth doing together.
+
+**Do not "improve" back into a bug:** the desktop shell must keep resolving the login-shell `PATH` and a home-relative default cwd (both are the packaged-app root causes); `resolveClaudeBinaryPath()` must keep the env rung first and the asar→unpacked remap; the F6 error fold must stay narrowed to turn-fatal errors (`hook_failure` is the operator's script, not the turn's); the marketplace npm step must keep `--ignore-scripts --global=false`, strip the package `.npmrc`, and strip external symlinks.
