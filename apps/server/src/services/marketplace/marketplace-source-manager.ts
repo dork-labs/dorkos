@@ -11,6 +11,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withFileLock } from '@dorkos/shared/atomic-write';
+import { DORKOS_MARKETPLACE_SOURCE_NAME } from '@dorkos/marketplace';
 import { z } from 'zod';
 import type { MarketplaceSource } from './types.js';
 
@@ -58,7 +59,7 @@ function buildDefaultSources(): MarketplaceSource[] {
   const now = new Date().toISOString();
   return [
     {
-      name: 'dorkos-community',
+      name: DORKOS_MARKETPLACE_SOURCE_NAME,
       source: DORKOS_COMMUNITY_URL,
       enabled: true,
       addedAt: now,

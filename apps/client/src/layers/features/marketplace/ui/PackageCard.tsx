@@ -1,4 +1,4 @@
-import { Star, Check, User } from 'lucide-react';
+import { Star, Check, Store, User } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { cn, packageDisplayLabel } from '@/layers/shared/lib';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
@@ -61,6 +61,12 @@ interface PackageCardProps {
  * The title prefers the author's `displayName` and falls back to a humanized
  * `name`, so a package that ships only a kebab-case slug never reads as code.
  *
+ * The meta line under the description carries the author and the marketplace
+ * source the entry came from. They used to share one slot, with the source
+ * standing in when no author was declared under a person icon — which read as
+ * if a registry were a person, and hid the source on every package that did
+ * name an author. They are two different facts and now sit side by side.
+ *
  * Field notes vs. spec:
  * - The install-count line is omitted — `installCount` is not part of the
  *   `AggregatedPackage` shape.
@@ -79,7 +85,7 @@ export function PackageCard({
   variant = 'default',
 }: PackageCardProps) {
   const packageType = pkg.type ?? 'plugin';
-  const authorLabel = resolveAuthorLabel(pkg.author) ?? pkg.marketplace ?? null;
+  const authorLabel = resolveAuthorLabel(pkg.author);
   const isCompact = variant === 'compact';
   const bridge = adapterBridge(pkg.type, pkg.adapterType);
 
@@ -139,11 +145,37 @@ export function PackageCard({
         <p className="text-muted-foreground mb-3 line-clamp-2 text-xs">{pkg.description}</p>
       )}
 
-      {/* Author / source */}
-      {!isCompact && authorLabel && (
+      {/* Author and source. The source is the marketplace the entry was
+          aggregated from — most of the catalog is mirrored from other
+          registries, so it is the fastest way to tell a DorkOS package from a
+          borrowed one. It reads muted next to the author rather than as a
+          badge: it is provenance, not a claim. */}
+      {!isCompact && (authorLabel || pkg.marketplace) && (
         <div className="text-muted-foreground mb-3 flex items-center gap-1.5 text-[11px]">
-          <User className="size-3 shrink-0" aria-hidden />
-          <span className="truncate">{authorLabel}</span>
+          {authorLabel && (
+            <>
+              <User className="size-3 shrink-0" aria-hidden />
+              <span className="min-w-0 truncate">{authorLabel}</span>
+            </>
+          )}
+          {authorLabel && pkg.marketplace && (
+            <span className="text-muted-foreground/50 shrink-0" aria-hidden>
+              ·
+            </span>
+          )}
+          {pkg.marketplace && (
+            <>
+              <Store className="size-3 shrink-0" aria-hidden />
+              <span className="min-w-0 truncate">
+                {/* The icons and the "·" are aria-hidden, so sighted readers get
+                    the distinction from the glyphs and everyone else would hear
+                    "Dork Labs dorkos-community" as one name. This word is the
+                    only thing separating them. */}
+                <span className="sr-only">from </span>
+                {pkg.marketplace}
+              </span>
+            </>
+          )}
         </div>
       )}
 

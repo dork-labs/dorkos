@@ -23,6 +23,7 @@ import {
 import { packageDisplayLabel } from '@/layers/shared/lib';
 import type { PackageScope } from '@dorkos/shared/marketplace-schemas';
 import { usePermissionPreview, useInstalledPackages } from '@/layers/entities/marketplace';
+import { useConfig } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { AgentPicker } from '@/layers/features/tasks';
 
@@ -141,6 +142,14 @@ export function InstallConfirmationDialog() {
 
   const preview = needsAgent ? null : (detail?.preview ?? null);
 
+  // The folder this install is supposed to stay inside, so the preview can say
+  // so out loud. A global install lands under the DorkOS data directory; an
+  // agent-local one lands under that agent's own `.dork` folder. Unknown config
+  // (still loading, or an embedded host that reports none) leaves it undefined
+  // and the preview simply makes no containment claim.
+  const { data: config } = useConfig();
+  const installBase = selectedProjectPath ? `${selectedProjectPath}/.dork` : config?.dorkHome;
+
   // Block install if any conflict carries error severity.
   const hasBlockingConflicts =
     preview !== null && preview.conflicts.some((c) => c.level === 'error');
@@ -257,7 +266,7 @@ export function InstallConfirmationDialog() {
                 </p>
               )}
               {previewLoading && <p className="text-muted-foreground text-sm">Loading preview…</p>}
-              {preview && <PermissionPreviewSection preview={preview} />}
+              {preview && <PermissionPreviewSection preview={preview} installBase={installBase} />}
             </ResponsiveDialogBody>
 
             <ResponsiveDialogFooter className="shrink-0">

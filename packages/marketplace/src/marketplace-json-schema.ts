@@ -47,6 +47,18 @@ export const RESERVED_MARKETPLACE_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The name DorkOS seeds for its own community marketplace in `marketplaces.json`.
+ *
+ * Every aggregated package carries the configured source name it came from, so
+ * this is how any surface tells a DorkOS-native package from one mirrored out of
+ * another registry. The seed lives in the server's source manager; the browse UI
+ * reads it to rank DorkOS packages first. A person who renames the source in
+ * their own `marketplaces.json` loses that ranking, which is the correct
+ * outcome: at that point it is their source, not ours.
+ */
+export const DORKOS_MARKETPLACE_SOURCE_NAME = 'dorkos-community';
+
+/**
  * Transports an author-supplied git URL (`url` and `git-subdir` sources) may
  * use. Anything else — notably git's `ext::` and `file::` command helpers — is
  * rejected at parse time, because these URLs are handed to `git clone` /

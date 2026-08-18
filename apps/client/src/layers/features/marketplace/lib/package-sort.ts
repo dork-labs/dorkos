@@ -4,6 +4,7 @@
  * @module features/marketplace/lib/package-sort
  */
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
+import { DORKOS_MARKETPLACE_SOURCE_NAME } from '@dorkos/marketplace';
 import { packageDisplayLabel } from '@/layers/shared/lib';
 import type { MarketplaceSort } from '../model/marketplace-search';
 
@@ -25,12 +26,22 @@ function byName(a: AggregatedPackage, b: AggregatedPackage): number {
 }
 
 /**
- * Featured-first comparator, falling back to name order.
+ * DorkOS-first, then featured-first, falling back to name order.
+ *
+ * The catalog is dominated by packages mirrored from other registries — nearly
+ * 300 entries, of which a handful are DorkOS's own — so a default browse that
+ * ignores where a package came from buries the ones DorkOS actually maintains.
+ * Source rank comes before the `featured` flag because a mirrored registry sets
+ * its own flags, and one of them outranking every DorkOS package is exactly the
+ * burial this ordering exists to prevent.
  *
  * @param a - Left-hand package.
  * @param b - Right-hand package.
  */
 function byFeatured(a: AggregatedPackage, b: AggregatedPackage): number {
+  const an = a.marketplace === DORKOS_MARKETPLACE_SOURCE_NAME ? 1 : 0;
+  const bn = b.marketplace === DORKOS_MARKETPLACE_SOURCE_NAME ? 1 : 0;
+  if (an !== bn) return bn - an;
   const af = a.featured ? 1 : 0;
   const bf = b.featured ? 1 : 0;
   if (af !== bf) return bf - af;
@@ -80,7 +91,8 @@ function byRecent(a: AggregatedPackage, b: AggregatedPackage): number {
 /**
  * Sort a list of marketplace packages by the chosen sort order.
  *
- * - `featured`: featured packages first, then alphabetical by name.
+ * - `featured`: DorkOS's own packages first, featured ones ahead of the rest
+ *   inside each group, then alphabetical by name.
  * - `name`: alphabetical by name.
  * - `popular`: most community installs first (`installCount`), tie-broken by
  *   name. Degrades to name order when counts are unavailable (offline), so a

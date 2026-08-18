@@ -61,6 +61,9 @@ export type MarketplaceView = 'browse' | 'installed';
  * legacy single-value form (`?category=security`, from links shared before the
  * facet panel went multi-select) and the array form the sidebar now writes; its
  * own `.catch(undefined)` drops any garbage rather than erroring the route.
+ * `source` (marketplace source names) takes the same open-ended string/array
+ * shape, because a source name is whatever the user put in `marketplaces.json`
+ * and no enum here could keep up with it.
  */
 export const marketplaceSearchSchema = z.object({
   view: z.enum(['browse', 'installed']).optional(),
@@ -77,21 +80,26 @@ export const marketplaceSearchSchema = z.object({
     .union([z.string(), z.array(z.string())])
     .optional()
     .catch(undefined),
+  source: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .catch(undefined),
   pkg: z.string().optional(),
 });
 
 /**
- * Normalize the raw `category` search value into a de-duplicated slug array.
+ * Normalize a raw multi-select search value (`category`, `source`) into a
+ * de-duplicated string array.
  *
  * Accepts the legacy single-string form and the multi-select array form,
  * dropping empty and non-string entries so a stale or hand-edited link degrades
  * to a clean array instead of leaking junk into the filter. The order of the
  * incoming values is preserved (first occurrence wins on a duplicate).
  *
- * @param raw - The `category` value straight off the URL search object.
- * @returns The selected category slugs (empty array = no category filter).
+ * @param raw - The facet's value straight off the URL search object.
+ * @returns The selected values (empty array = no restriction on that facet).
  */
-export function normalizeCategoryParam(raw: unknown): string[] {
+export function normalizeFacetParam(raw: unknown): string[] {
   if (typeof raw === 'string') return raw.length > 0 ? [raw] : [];
   if (Array.isArray(raw)) {
     const seen = new Set<string>();

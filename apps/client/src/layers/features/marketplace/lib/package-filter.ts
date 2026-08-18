@@ -20,6 +20,11 @@ export interface FilterCriteria {
    * ANY selected category. Empty array = no category restriction.
    */
   categories: string[];
+  /**
+   * Selected marketplace source names, OR-combined: a package matches when it
+   * came from ANY selected source. Empty array = no source restriction.
+   */
+  sources: string[];
   /** Free-text search string (empty string disables search filtering). */
   search: string;
 }
@@ -54,13 +59,16 @@ function matchesType(pkg: AggregatedPackage, typeFilter: MarketplaceTypeFilter):
 // ---------------------------------------------------------------------------
 
 /**
- * Filter a list of marketplace packages by type, category, and search text.
+ * Filter a list of marketplace packages by type, category, source, and search text.
  *
  * - Type filter: packages with no `type` field are treated as `'plugin'`.
  * - Category filter: OR across the selected slugs — a package matches when it
  *   belongs to ANY of them. Membership is checked against the multi-membership
  *   `categories[]` list, falling back to the singular `category` for packages
  *   that predate the sidecar. An empty selection imposes no restriction.
+ * - Source filter: OR across the selected marketplace source names — the
+ *   `marketplace` field every aggregated package carries. An empty selection
+ *   imposes no restriction.
  * - Search: case-insensitive substring match across `name`, `description`,
  *   `keywords`, and `tags`. Empty search string matches everything.
  *
@@ -86,6 +94,7 @@ export function filterPackages(
       );
       if (!matchesAny) return false;
     }
+    if (criteria.sources.length > 0 && !criteria.sources.includes(pkg.marketplace)) return false;
     if (needle && !matchesMarketplaceSearch(pkg, needle)) return false;
     return true;
   });
