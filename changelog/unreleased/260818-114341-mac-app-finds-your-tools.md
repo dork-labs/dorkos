@@ -1,3 +1,8 @@
+---
+covers:
+  - 'fix(desktop): the packaged app can see the machine it runs on (DOR-1335)'
+---
+
 ### Fixed
 
 - The Mac app now finds the tools you already have installed. Opening DorkOS from the Dock or Spotlight used to hide everything outside a handful of system folders, so agents installed in places like `~/.local/bin` or Homebrew looked missing — even though the same DorkOS found them instantly from a terminal. The app now reads your shell's own setup at startup. (DOR-1335)
