@@ -15,21 +15,33 @@
  * opened a codex session and a claude-code session side by side would be an
  * `@integration` spec that never runs, which is not coverage.
  *
- * **And a matrix over toggled capability flags is not reachable either.**
+ * **And a matrix over toggled capability flags is still not reachable.**
  * `TEST_MODE_CAPABILITIES` is a frozen constant; the second instance this leg
  * registers (`test-mode-b`) is that same object with a different `type`. There
- * is no switch for `supportsToolApproval`, `supportsSteer` or the persistent
- * session, so a "capability variant" would mean adding env-driven capability
- * sets to the product for the sole benefit of a test. Worth doing one day —
- * it is the only route to a real matrix — but it is a product change, not test
- * coverage, and it is not smuggled in here.
+ * is no switch for `supportsToolApproval` or `supportsSteer`, so a "capability
+ * variant" would mean adding env-driven capability sets to the product for the
+ * sole benefit of a test. Worth doing one day — it is the only route to a real
+ * matrix — but it is a product change, not test coverage, and it is not
+ * smuggled in here.
  *
- * **The composer does not gate on those flags anyway.** A grep of
- * `apps/client/src` for `supportsToolApproval`, `supportsSteer` and
- * `supportsPersistentSession` finds them in the dev playground's fake transport
- * and nowhere else in shipping code. So the "affordances hidden, not dead"
- * claim, as it is usually stated about the composer, has nothing behind it to
- * assert yet.
+ * **The persistent session is the exception, and it is covered elsewhere.**
+ * This module used to name it alongside the other two as unreachable. It is
+ * not: test-mode declares `supportsPersistentSession: true` and holds a
+ * scripted process per SESSION (DOR-1326), which is the honest shape anyway —
+ * the flag is a claim about the adapter, and whether a given session holds a
+ * process is a per-session answer. What varies is therefore the session, not
+ * the capability constant, and `tests/chat/held-process.ts` drives both sides
+ * of it.
+ *
+ * **The composer gates on two of them, and on a per-session answer beside
+ * them.** `ChatInputContainer` reads `supportsSteer` and
+ * `supportsContextStaging` off the session's runtime and the session's own
+ * `steerable` status, and shows the Steer and Add context rows only when both
+ * halves say yes — the "hidden, not disabled" rule, live since PR #1041 and
+ * DOR-1268. `supportsToolApproval` and `supportsPersistentSession` are still
+ * read nowhere in the shipping composer. So the affordance claim now HAS
+ * something behind it, and it is asserted where the sessions that differ can be
+ * staged: `tests/chat/held-process.ts`, not here.
  *
  * ## What IS real, and is what this asserts
  *

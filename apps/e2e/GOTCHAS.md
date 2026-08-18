@@ -89,6 +89,13 @@ at the end of this file. Two of the "failures" above were that instead.
 - **The send button does not exist on an empty composer** — the action slot only
   becomes "send" once there is text — so a readiness wait on it _before_ filling
   can never pass.
+- **`ChatPage.input` does not match the composer while a turn is running.** The
+  field renames itself "Compose next — will send when ready" mid-turn, and the
+  page object's locator only names the idle spellings — so typing into a live
+  turn (a steer, an Add context, a queued message) times out on a composer that
+  is plainly on screen, and the error names a missing combobox rather than a
+  changed label. Match both: `getByRole('combobox', { name: /^(message |send a message|compose next)/i })`,
+  as `tests/chat/held-process.ts` does.
 
 ## Dynamic Content
 
@@ -190,15 +197,20 @@ Worth knowing before you assume a behaviour is tested.
   turn, pinned in `test-mode/__tests__/interactive-scenarios.test.ts`), so this is
   a UI gap rather than a broken stop. `live-turn-visibility.ts` pins the current
   behaviour instead, and will go red the day a Stop is offered there.
-- **Steering a message into a live turn (capability C-09) has no coverage,
-  because there is nothing to drive.** P4.1 landed the runtime and dispatcher
-  halves — `AgentRuntime.deliverIntoTurn` and `deliverSteer` in
-  `message-dispatcher.ts` — but `deliverSteer` has **no caller**: no HTTP route
-  reaches it, and no client control asks for it. `POST /messages` accepts
-  `disposition: 'steer'` and `resolveDisposition` degrades every one of them to
-  `queue`; every runtime including claude-code still declares
-  `supportsSteer: false`. There is no composer Steer affordance to click. This
-  needs the product half before a browser test can exist.
+- **The persistent path is drivable now, and only through the test-mode
+  controls.** It used to be listed here as unreachable, and both halves of that
+  have changed: the product half shipped (the composer's Steer row, the
+  `turn_input` carrier, the fold-into-next stage), and DOR-1326 gave test-mode a
+  scripted held process so a browser can reach it for free. Put ONE session on
+  the path with `POST /api/test/persistent { sessionId, enabled: true }` — never
+  a process-wide switch, because this server is shared by four concurrent
+  projects — then `GET /api/test/persistent?sessionId=` reads its warmth and
+  `POST /api/test/reap` gives the process back. The `warm-echo` scenario names
+  the path in its own answer, so an assertion cannot pass on the wrong one. See
+  `tests/chat/held-process.ts`. What is still NOT drivable here: the real
+  claude-code pump (a spec that flips `runtimes.claudeCode.persistentSession`
+  spends model tokens per run and cannot go in CI), so timing, crash recovery and
+  the twelve-slot ceiling stay unit- and self-test territory.
 - **Auto-hide of completed tool calls has no browser coverage.** `chat-mock.spec.ts` switches the preference OFF to assert the card renders, and nothing asserts what it does when it is ON — which is the shipped default, so the default path is the untested one.
 - **Relay's Mode A empty state has no coverage.** DorkOS registers a built-in `claude-code` adapter, so a running server always has one connection and always renders the tabs. Reaching the "Connect your agents to the world" state needs a server with that adapter removed.
 - **Creating a session from the roster has no coverage.** The old spec drove a "New session" control that no longer exists; session creation is exercised only against `TestModeRuntime` in `chat-mock.spec.ts`.
