@@ -22,7 +22,7 @@
           "slug": "canvas-direct-loopback-preview",
           "issue": "DOR-1259",
           "title": "Frame loopback dev servers directly; probe route; honest messages; shim resource-errors; Vite-style e2e; docs",
-          "spec": "§1",
+          "spec": "\u00a71",
           "dependsOn": [],
           "owns": [
             "apps/client/src/layers/features/canvas/lib/browser-url.ts",
@@ -42,8 +42,9 @@
             "docs/api/openapi.json (regen)",
             "changelog/unreleased/<id>-canvas-dev-server-preview-direct.md"
           ],
-          "done": "See DOR-1259 description (mirrors 02-specification.md §1). e2e proven red before / green after; video app renders in a running cockpit; screenshot in PR.",
-          "status": "ready"
+          "done": "See DOR-1259 description (mirrors 02-specification.md \u00a71). e2e proven red before / green after; video app renders in a running cockpit; screenshot in PR.",
+          "status": "done",
+          "pr": "#1084 (4c2eb3912)"
         }
       ]
     },
@@ -56,8 +57,10 @@
           "slug": "canvas-preview-origin-listener",
           "issue": "DOR-1260",
           "title": "PreviewListenerManager (cookie-authorized, all methods, WS, shim); sign returns preview origin or tunnel-unavailable; retire path proxy; client frames own origin; ADR",
-          "spec": "§2",
-          "dependsOn": ["1.1"],
+          "spec": "\u00a72",
+          "dependsOn": [
+            "1.1"
+          ],
           "owns": [
             "apps/server/src/services/workbench-serve/preview-listener.ts (new)",
             "apps/server/src/services/workbench-serve/proxy.ts (retire; keep header helpers)",
@@ -78,10 +81,16 @@
             "docs/api/openapi.json (regen)",
             "changelog/unreleased/<id>-canvas-preview-origin.md"
           ],
-          "done": "See DOR-1260 description (mirrors 02-specification.md §2). Listener unit suite incl. WS; video app renders through the listener with HMR connected; screenshot in PR.",
-          "status": "ready"
+          "done": "See DOR-1260 description (mirrors 02-specification.md \u00a72). Listener unit suite incl. WS; video app renders through the listener with HMR connected; screenshot in PR.",
+          "status": "done",
+          "pr": "#1086 (4996b1b83)"
         }
       ]
     }
+  ],
+  "closedAt": "2026-08-17",
+  "followUps": [
+    "DOR-1305",
+    "DOR-1306"
   ]
 }

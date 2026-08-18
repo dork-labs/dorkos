@@ -6,7 +6,7 @@
       "slug": "canvas-dev-server-preview",
       "title": "Canvas dev-server preview: make localhost dev servers render in the embedded browser",
       "created": "2026-08-16",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260816-070451",

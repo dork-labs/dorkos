@@ -1,7 +1,7 @@
 ---
 slug: canvas-dev-server-preview
 created: 2026-08-16
-status: specified
+status: implemented
 tracker: DOR-1258
 project: Canvas dev-server preview
 ---
