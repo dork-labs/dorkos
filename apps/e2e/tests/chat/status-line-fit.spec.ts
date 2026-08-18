@@ -438,6 +438,16 @@ test.describe('Status line — the tier floors, under a degraded session', () =>
     await expect(demo.getByTestId('make-default-offer')).toContainText(
       'Start every new session in Full autonomy?'
     );
+    // Bring the row on screen the way a real click would. Clicking the radio
+    // above scrolled the RADIO into view — often to the bottom edge of the
+    // viewport — and the offer row that appears beneath it can then sit just
+    // below the fold, where `document.elementFromPoint` answers `null` for
+    // any point on it and the hit-test below reads as "covered". Playwright
+    // scrolls before it clicks; so does a person's eye. Without this the test
+    // is a layout tripwire for every showcase registered above this one on
+    // the page (DOR-1307's `StagedContextNote` section moved it just past
+    // the fold and turned it red in the merge queue).
+    await row.scrollIntoViewIfNeeded();
 
     const fit = await row.evaluate((rowEl) => {
       /** One action's right edge and whether its own center is really hittable. */
