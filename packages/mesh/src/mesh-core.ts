@@ -152,6 +152,9 @@ export class MeshCore {
       relayBridge,
       strategies,
       defaultScanRoot,
+      // Namespace derivation for managed agents is anchored here, so creation
+      // and the reconciler five minutes later give one answer (DOR-1342).
+      agentsHomeDir: options.agentsHomeDir,
       logger,
       generateUlid: monotonicFactory(),
       // Per-callback try/catch, so one broken reaction never costs the others
@@ -441,7 +444,43 @@ export class MeshCore {
 
   /** Run a one-shot anti-entropy reconciliation between filesystem and DB. */
   async reconcileOnStartup(): Promise<ReconcileResult> {
-    return reconcile(this.reconcilerDeps());
+    return this.runReconcile();
+  }
+
+  /**
+   * One reconciliation pass plus the Relay-side sweep that follows it: rules
+   * are derived from which namespaces have agents, so they are only knowably
+   * stale once the registry has been rebuilt from files.
+   */
+  private async runReconcile(): Promise<ReconcileResult> {
+    const result = await reconcile(this.reconcilerDeps());
+    this.pruneOrphanNamespaceRules();
+    return result;
+  }
+
+  /**
+   * Drop the default Relay access rules of every namespace no agent lives in.
+   *
+   * Never throws: a sweep that failed must not turn a good reconcile pass into
+   * a failed one, nor stop the periodic timer that scheduled it.
+   */
+  private pruneOrphanNamespaceRules(): void {
+    try {
+      const live = new Set(
+        this.discoveryDeps.registry
+          .list()
+          .map((entry) => entry.namespace)
+          .filter((namespace): namespace is string => Boolean(namespace))
+      );
+      const pruned = this.discoveryDeps.relayBridge.pruneOrphanedNamespaceRules(live);
+      if (pruned.length > 0) {
+        this.logger.info('[Mesh] Removed access rules for namespaces with no agents left', {
+          namespaces: pruned,
+        });
+      }
+    } catch (err) {
+      this.logger.warn('[Mesh] Could not sweep access rules for empty namespaces', { err });
+    }
   }
 
   /**
@@ -454,7 +493,7 @@ export class MeshCore {
     if (this.reconcileTimer) return;
     this.reconcileTimer = setInterval(async () => {
       try {
-        const result = await reconcile(this.reconcilerDeps());
+        const result = await this.runReconcile();
         // Fire liveness observers ONLY on a real transition edge — an agent went
         // offline (newly unreachable) or came back online (resurrected). A
         // no-change pass broadcasts nothing (DOR-403).

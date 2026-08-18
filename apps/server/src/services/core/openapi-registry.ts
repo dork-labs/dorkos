@@ -88,6 +88,9 @@ import {
   DenyRequestSchema as MeshDenyRequestSchema,
   UpdateAgentRequestSchema,
   AgentListQuerySchema,
+  TopologyViewSchema,
+  UpdateAccessRuleRequestSchema,
+  CrossNamespaceRuleSchema,
 } from '@dorkos/shared/mesh-schemas';
 import {
   AddRoomMemberRequestSchema,
@@ -1781,6 +1784,66 @@ registry.registerPath({
     },
     400: {
       description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/mesh/topology',
+  tags: ['Mesh'],
+  summary: 'Get mesh topology',
+  description:
+    'Every agent on this machine, grouped by namespace, with the access rules that decide who ' +
+    'can message whom. The view is scoped to what the caller can reach: namespaces the caller ' +
+    'has no access to are omitted entirely. `openMesh` reports the mesh-wide "let all my agents ' +
+    'talk to each other" switch.',
+  request: {
+    query: z.object({
+      namespace: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            "The calling agent's namespace, which scopes the view to the namespaces it can " +
+            'reach. Defaults to `*`, the unscoped admin view.',
+          example: '*',
+        }),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Topology view scoped to the caller',
+      content: { 'application/json': { schema: TopologyViewSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/mesh/topology/access',
+  tags: ['Mesh'],
+  summary: 'Update a mesh access rule',
+  description:
+    'Grant or revoke one directional access rule between two namespaces — `allow` lets agents ' +
+    'in the source namespace message agents in the target one, `deny` takes that grant away. ' +
+    'Rules are one-way: allowing `a -> b` does not let `b` answer back.\n\n' +
+    '`*` on BOTH sides is the mesh-wide "let all my agents talk to each other" switch: `allow` ' +
+    'turns it on, `deny` turns it off. `*` on one side only is rejected with a 400 — it would ' +
+    'open far more traffic than the caller asked for.',
+  request: {
+    body: {
+      content: { 'application/json': { schema: UpdateAccessRuleRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The rule as applied',
+      content: { 'application/json': { schema: CrossNamespaceRuleSchema } },
+    },
+    400: {
+      description: 'Validation error, including `*` on one side only',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
