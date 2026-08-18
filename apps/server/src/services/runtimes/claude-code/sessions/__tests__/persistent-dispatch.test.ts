@@ -1171,7 +1171,31 @@ describe('a session keeps its ONE warm process across an SDK rekey (DOR-1309)', 
     expect(receipt).toEqual({ delivered: true });
     expect(cli.launches).toBe(1);
     expect(cli.processes[0]!.ended).toBe(false);
-    await vi.waitFor(() => expect(cli.processes[0]!.staged).toHaveLength(1));
+    const process = cli.processes[0]!;
+    await vi.waitFor(() => expect(process.staged).toHaveLength(1));
+
+    // The staged id must have reached the LIVE windower, not a duplicate
+    // `SessionBundle` built under the wrong key — `stage`'s OWN resolution,
+    // not merely `shouldDispatch`'s (which only gates whether staging is
+    // refused, not which bundle it lands on: `registry.acquire` returns the
+    // real pump even for a duplicate bundle, since it resolves internally and
+    // short-circuits on the existing entry — but that duplicate bundle's OWN
+    // `SessionTurnWindows` is a dead object nothing ever feeds). Proved the
+    // way DOR-1294's own test proves it: dispatch a real turn and let the CLI
+    // merge the staged note into it, naming the STAGED id on the turn's ONE
+    // result. A dead windower never learned 'stage-canonical-1', so that
+    // result would read as "answered a message this session never sent",
+    // open an unrelated runtime window, and leave the real turn stranded open
+    // forever instead of settling as one clean turn.
+    process.goSilent();
+    const running = turn(sessionId, 'now do the thing');
+    // Turn 1 already put one querying message through this process, so the
+    // NEW turn's own message is the SECOND, not the first.
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    process.answer('stage-canonical-1');
+    const events = await running;
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(cli.launches).toBe(1);
   });
 
   it('(e) reaps the one process whichever id names it, and (f) both ids read warmth identically', async () => {
@@ -1225,5 +1249,98 @@ describe('a session keeps its ONE warm process across an SDK rekey (DOR-1309)', 
     // than hanging or leaking into turn 3.
     const events2 = await turn2;
     expect(events2.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
+  it('(h) canSteerSession/canStageSession stay true under BOTH ids once the flag goes off', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const canonical = runtime.getInternalSessionId(sessionId)!;
+    expect(canonical).not.toBe(sessionId);
+
+    // The operator turns the experiment off mid-conversation. A session
+    // already holding its process keeps the path (persistent-dispatch.ts's
+    // module doc), and that has to be honest for EVERY id the session
+    // answers to — `shouldDispatch` reads `registry.peek(sessionId)` WITHOUT
+    // resolving first (it relies entirely on the registry's own resolution),
+    // so a caller holding the canonical id would otherwise see the composer
+    // silently fold a steer into the next turn instead of joining the live
+    // one, the instant the flag is off (DOR-1268's class).
+    optIn.persistentSession = false;
+
+    expect(runtime.canSteerSession(sessionId)).toBe(true);
+    expect(runtime.canSteerSession(canonical)).toBe(true);
+    expect(runtime.canStageSession(sessionId)).toBe(true);
+    expect(runtime.canStageSession(canonical)).toBe(true);
+  });
+
+  it('(i) settleOpenTurn addressed by the canonical id still ends a window left open under the original id (DOR-1295)', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId); // turn 1 — completes; the rename happens here
+    const canonical = runtime.getInternalSessionId(sessionId)!;
+    expect(canonical).not.toBe(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    // Turn 2, left open, under the ORIGINAL id — exactly the setup case (g)
+    // uses, reused here to isolate `settleOpenTurn` from `dispatch` entirely:
+    // `trigger-turn.ts` calls `settleOpenTurnBefore` with "the id the request
+    // carried", which on turn 3's trigger is the CANONICAL id the client
+    // learned from turn 1's 202 — a different id than the one the stranded
+    // window's bundle is filed under.
+    const turn2 = turn(sessionId, 'turn two, left open');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+
+    const settled = await runtime.settleOpenTurn(canonical);
+    expect(settled, 'settleOpenTurn missed the window a different id left open').toBe(true);
+
+    const events2 = await turn2;
+    expect(events2.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
+  it('(j) Stop reaches a RELAUNCH still booting, addressed by the canonical id (DOR-1191)', async () => {
+    // Reset to a KNOWN baseline first — an earlier case in this file (`what a
+    // warm process must be re-checked for`) leaves this mock changed for the
+    // rest of the suite, and this test needs an ACTUAL change between turn 1
+    // and turn 2 to provoke a relaunch, not whatever value happened to leak in.
+    const { buildSystemPromptAppend } = await import('../../messaging/context-builder.js');
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue('<env>test</env>');
+
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const canonical = runtime.getInternalSessionId(sessionId)!;
+    expect(canonical).not.toBe(sessionId);
+    expect(cli.launches).toBe(1);
+
+    // A relaunch pin moves, so the NEXT dispatch tears the warm process down
+    // and boots a fresh one — and this one's `system/init` is held, so it
+    // parks in the booting window rather than reaching the model, exactly as
+    // a cold session's very first turn does (DOR-1191). Dispatched under the
+    // CANONICAL id, which is only possible because dispatch's own resolution
+    // (case a) finds the right bundle to replace.
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue('<env>MOVED-FOR-J</env>');
+    cli.deferNextInit = true;
+
+    const booting = turn(canonical, 'after the change, addressed by the canonical id');
+    const process2 = await vi.waitFor(() => {
+      expect(cli.launches).toBe(2);
+      return cli.processes[1]!;
+    });
+    expect(runtime.getSessionWarmth(canonical)).toBe('warming');
+
+    // Stop, addressed by the CANONICAL id — the same id the relaunch was
+    // dispatched under. `bootingQuery` is reached only after the ordinary
+    // Stop path (`session.activeQuery`) finds nothing, which it does not
+    // during a boot; keyed by the raw id it would miss the bundle (filed
+    // under `sessionId`, the session's stable map key) and report nothing to
+    // stop — DOR-1191's whole point, reintroduced by the id mismatch.
+    expect(
+      await runtime.interruptQuery(canonical),
+      'Stop could not reach the relaunch that was still booting'
+    ).toBe(true);
+    expect(process2.interrupts).toBe(1);
+
+    process2.reportReady();
+    const events = await booting;
+    expect(events.some((e) => e.type === 'done')).toBe(true);
   });
 });

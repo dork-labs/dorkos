@@ -683,6 +683,18 @@ export class SessionStore {
    * `sdkSessionId` — because a twice-renamed session keeps an entry per id it
    * has held, and deleting only the newest would leave the older ones pointing
    * at a map key that no longer exists, for the life of the server.
+   *
+   * The pump's eviction depends on this too, not only the projector
+   * (`ClaudeCodeRuntime.checkSessionHealth` loops `pumps.evict` over every id
+   * returned here). By the time that loop runs, THIS session's row and every
+   * one of its reverse-index entries are already gone — `sessionKeyOf` can no
+   * longer resolve an alias back to the map key, and falls back to whatever id
+   * it was asked with instead. So the ORIGINAL map key must be in this list
+   * for eviction to ever reach the `SessionPumpRegistry` entry that key
+   * actually owns (it always is — `ids` is seeded with it, above). Narrowing
+   * this to "the canonical id is enough" would silently strand a warm
+   * subprocess on every eviction, because no alias would resolve to the key
+   * that finds it (DOR-1309).
    */
   checkSessionHealth(lockManager: SessionLockManager): string[] {
     const now = Date.now();

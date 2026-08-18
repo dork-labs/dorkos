@@ -154,6 +154,17 @@ export class SessionPumpRegistry {
    * when a process is actually about to be booted, because that is what the
    * ceiling counts.
    *
+   * The resolution below is belt-and-braces here, not load-bearing: in
+   * production `acquire` is reached only from `PersistentDispatch`'s own
+   * private `acquire`, which is never called with anything but ITS caller's
+   * already-resolved key — so this never actually sees a raw unresolved id.
+   * Kept anyway (rather than trusting the caller) because a registry that
+   * only resolves correctly when called a specific way is a trap for the
+   * next caller that doesn't; not separately pinned by a test, because no
+   * behaviour observes it (see {@link peek} and `warmth`/`reap`, which ARE
+   * reached with raw ids and so ARE pinned, `persistent-dispatch.test.ts`'s
+   * DOR-1309 block).
+   *
    * @param sessionId - Session the pump belongs to, in any id it answers to
    * @param opts - The launcher, the two bounds, and the pump's seams
    */
@@ -230,6 +241,10 @@ export class SessionPumpRegistry {
    * Drop a session for good: close its process unconditionally, then forget it.
    * This is the eviction edge — the caller drops the session RECORD afterwards,
    * so no subprocess outlives the record it belongs to.
+   *
+   * The resolution below is belt-and-braces here too, for the same reason as
+   * {@link acquire}: production reaches this only from `PersistentDispatch`'s
+   * private `replaceProcess`, always with an already-resolved key.
    *
    * @param sessionId - Session going away, in any id it answers to
    */

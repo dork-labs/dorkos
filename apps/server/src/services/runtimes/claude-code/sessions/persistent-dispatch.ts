@@ -262,6 +262,14 @@ export class PersistentDispatch {
    * the next message builds a fresh pump rather than dispatching into a spent
    * one.
    *
+   * The resolution below is belt-and-braces, not load-bearing: every OTHER
+   * reader of {@link bundles} already checks `registry.peek(key) ===
+   * bundle.pump` before trusting a lingering entry (`acquire`, `steer`,
+   * `stage`, `settleOpenTurn`), so a call here that missed its resolve (an
+   * unresolved raw id landing on nothing, or the wrong stale entry) would at
+   * worst leave a dead `SessionBundle` sitting in the map under an id nothing
+   * will ever ask for again — a harmless space leak, never a wrong answer.
+   *
    * @param sessionId - The session going away, in any id it answers to
    */
   forget(sessionId: string): void {
