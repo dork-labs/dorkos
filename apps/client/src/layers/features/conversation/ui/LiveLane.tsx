@@ -124,6 +124,7 @@ export function LiveLane({
       unavailable={unavailable}
       faces={faces}
       reducedMotion={reducedMotion}
+      scope={scope}
     />
   );
 

@@ -38,7 +38,7 @@ import { CelebrationOverlay } from './CelebrationOverlay';
 import { useFiles } from '@/layers/features/files';
 import { useCelebrations } from '../model/use-celebrations';
 import { ErrorMessageBlock } from './message/ErrorMessageBlock';
-import { ChatStatusStrip } from './status/ChatStatusStrip';
+import { useSessionLaneState } from '../model/use-session-lane-state';
 import { TerminalReasonChip, TurnFailedNotice } from './status';
 import { shouldShowTurnFailedNotice } from '../model/stream/turn-failure';
 import { PromptSuggestionChips } from '@/layers/shared/ui';
@@ -389,6 +389,20 @@ export function ChatPanel({
     [setInput]
   );
 
+  // What the live lane says about this session. Derived here rather than inside
+  // the lane so the lane stays a renderer every surface drives the same way.
+  const laneState = useSessionLaneState({
+    status,
+    streamStartTime,
+    estimatedTokens,
+    permissionMode,
+    isWaitingForUser: isWaitingForUser ?? false,
+    waitingType: waitingType ?? 'approval',
+    operationProgress,
+    systemStatus,
+    activity,
+  });
+
   return (
     // The session's conversation, declared once by the surface every session
     // mounts — the route, the Obsidian embed and the dev simulator alike. Every
@@ -419,17 +433,11 @@ export function ChatPanel({
 
         <TerminalReasonChip terminalReason={sessionStatus?.terminalReason} />
 
-        <ChatStatusStrip
-          status={status}
-          streamStartTime={streamStartTime}
-          estimatedTokens={estimatedTokens}
-          permissionMode={permissionMode}
-          isWaitingForUser={isWaitingForUser ?? false}
-          waitingType={waitingType ?? 'approval'}
-          systemStatus={systemStatus}
-          operationProgress={operationProgress}
-          activity={activity}
-        />
+        {/* The one reserved line, above the composer on every surface. It is
+          always 24px tall, so a turn starting or ending moves nothing that is
+          already on screen — which the collapsing strip it replaces did on
+          every turn. */}
+        <Conversation.LiveLane state={laneState} />
 
         <AnimatePresence>
           {showSuggestions && (

@@ -91,8 +91,8 @@ export const IDENTITY_SECTIONS: PlaygroundSection[] = [
   },
   // RoomPresenceShowcases
   {
-    id: 'roompresenceline',
-    title: 'RoomPresenceLine',
+    id: 'live-lane-presence',
+    title: 'Live lane presence',
     page: 'identity',
     category: 'Identity',
     keywords: [

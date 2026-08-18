@@ -118,7 +118,7 @@ export function useSessionStatus(
     // Safe to narrow back to `PermissionMode` here — this is a DISPLAY value
     // read off descriptors downstream, or through `isBypassPermissionMode`
     // (bypass-alias-aware, e.g. `always-allow`). A literal `=== 'bypassPermissions'`
-    // compare against it IS a bug (ChatStatusStrip.tsx used to have one) — use
+    // compare against it IS a bug (the session's status strip used to have one) — use
     // `isBypassPermissionMode` for any bypass check, never a raw literal.
     permissionMode: resolvePermissionMode(
       overrides.permissionMode,

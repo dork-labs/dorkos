@@ -76,6 +76,35 @@ interface RoomTimelineProps {
 const SKELETON_ROWS = 4;
 
 /**
+ * Take the reader to one entry in the room, and leave them standing on it.
+ *
+ * The interim shape of `ConversationTimelineHandle.scrollToRow`, which lands
+ * with `Conversation.Timeline` in P4 (DOR-1331). It is a module function rather
+ * than an imperative handle because the room's list does not own its own
+ * scroller — `RoomSurface` does — and `scrollIntoView` needs neither: it walks
+ * to whatever scrollable ancestor the row happens to have.
+ *
+ * **Focus IS the flash**, and deliberately so. Every room row is already a tab
+ * stop with a focus ring (`RoomMessage`), so landing the caret on the row marks
+ * it, keeps it marked while the reader looks, and puts a keyboard reader in the
+ * same place a mouse reader is — which a fading highlight does for neither. It
+ * is also how `useRestoreThreadFocus` already returns somebody to a row.
+ *
+ * A row that is not in the loaded page does nothing at all rather than
+ * guessing: the caller only ever offers this for an entry it could quote.
+ *
+ * @param entryId - The entry to go to.
+ */
+export function scrollToEntryRow(entryId: string): void {
+  const row = document.getElementById(entryRowId(entryId));
+  if (row === null) return;
+  row.scrollIntoView({ block: 'center' });
+  // `preventScroll`, because the line above has already put the row exactly
+  // where it should be and the browser's own focus scroll would move it again.
+  row.focus({ preventScroll: true });
+}
+
+/**
  * What a room looks like before it has arrived.
  *
  * Its own component because two different waits render it — the room itself

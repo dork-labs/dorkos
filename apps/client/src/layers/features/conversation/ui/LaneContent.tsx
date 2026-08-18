@@ -130,6 +130,14 @@ export interface LaneContentProps {
   faces?: ReactNode;
   /** True when the reader has asked for less motion. */
   reducedMotion?: boolean;
+  /**
+   * Which half of a room's presence this lane speaks for.
+   *
+   * It names the visible presence node as well as the announcer: with a thread
+   * open on a wide screen there are two lanes on the page, and one testid over
+   * both left "did the ROOM say it" unaskable.
+   */
+  scope?: 'room' | 'thread';
 }
 
 /**
@@ -146,6 +154,7 @@ export function LaneContent({
   unavailable = false,
   faces,
   reducedMotion = false,
+  scope = 'room',
 }: LaneContentProps): ReactNode {
   switch (state.kind) {
     case 'ask':
@@ -153,7 +162,9 @@ export function LaneContent({
     case 'stalled':
       return <StalledLine onRetry={onRetry} unavailable={unavailable} />;
     case 'presence':
-      return <PresenceLine state={state} faces={faces} reducedMotion={reducedMotion} />;
+      return (
+        <PresenceLine state={state} faces={faces} reducedMotion={reducedMotion} scope={scope} />
+      );
     case 'turn-waiting':
       return <WaitingLine state={state} />;
     case 'turn-progress':
@@ -256,23 +267,31 @@ function PresenceLine({
   state,
   faces,
   reducedMotion,
+  scope,
 }: {
   state: Extract<LaneState, { kind: 'presence' }>;
   faces: ReactNode;
   reducedMotion: boolean;
+  scope: 'room' | 'thread';
 }) {
   return (
-    <span
-      // Kept from `RoomPresenceLine`, which this replaces: the shipped presence
-      // suites resolve the line by this name.
-      data-testid="room-presence"
-      data-late={state.late ? 'true' : undefined}
-      className="flex min-w-0 items-center gap-2"
-    >
+    <span className="flex min-w-0 items-center gap-2">
       <LaneDot signal="working" reducedMotion={reducedMotion} />
       {faces}
-      <span className="text-muted-foreground truncate">{state.sentence}</span>
-      <LaneElapsed since={state.since} />
+      {/* The testid covers the WORDS and nothing else, which is not cosmetic:
+          a letter avatar contributes its letter to `textContent`, and the
+          shipped presence suite reads this node as one exact sentence. Faces
+          inside it would have made every assertion read "KKai is working…". */}
+      <span
+        // Kept from `RoomPresenceLine`, which this replaces: the shipped
+        // presence suites resolve the line by this name.
+        data-testid={scope === 'thread' ? 'thread-presence' : 'room-presence'}
+        data-late={state.late ? 'true' : undefined}
+        className="text-muted-foreground flex min-w-0 items-center"
+      >
+        <span className="truncate">{state.sentence}</span>
+        <LaneElapsed since={state.since} />
+      </span>
     </span>
   );
 }

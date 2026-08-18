@@ -3,7 +3,7 @@ import { PAGE_CONFIGS } from '../playground-config';
 import { IdentityShapeMatrixShowcase } from '../showcases/IdentityMatrixShowcases';
 import { IdentityMotionShowcases } from '../showcases/IdentityMotionShowcases';
 import { AgentIdentityShowcases } from '../showcases/AgentIdentityShowcases';
-import { RoomPresenceLineShowcase } from '../showcases/RoomPresenceShowcases';
+import { LiveLanePresenceShowcase } from '../showcases/RoomPresenceShowcases';
 import { TeamShowcases } from '../showcases/TeamShowcases';
 import { ProfileShowcases } from '../showcases/ProfileShowcases';
 import { AccountMenuShowcases, ProfileTabShowcases } from '../showcases/AccountShowcases';
@@ -37,7 +37,7 @@ export function IdentityPage() {
       <IdentityShapeMatrixShowcase />
       <IdentityMotionShowcases />
       <AgentIdentityShowcases />
-      <RoomPresenceLineShowcase />
+      <LiveLanePresenceShowcase />
       <TeamShowcases />
       <ProfileShowcases />
       <AccountMenuShowcases />

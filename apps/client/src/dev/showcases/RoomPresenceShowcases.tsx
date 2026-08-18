@@ -1,143 +1,125 @@
 /**
- * The line that says who is working, with no server behind it.
+ * The live lane when somebody is working, with no server behind it.
  *
- * Presence is ephemeral and never replays, so the only way to reach these
- * states is to publish signals the way the server does — including the 10s
- * republish, without which every line here would expire after 30 seconds and
- * the showcase would quietly go blank (spec `identity-consistency` §W4.3).
+ * It draws the REAL `Conversation.LiveLane`, driven by a `LaneState` the same
+ * pure function the product uses builds from a fixture. The claims are handed
+ * straight to `deriveLaneState` rather than published into the presence store:
+ * the store is a liveness cache that expires after thirty seconds, so a seeded
+ * showcase used to need a republish loop to stop going blank while the page was
+ * open. Its output is a `LaneState`, so a fixture is the honest input.
  *
  * @module dev/showcases/RoomPresenceShowcases
  */
-import { useEffect } from 'react';
-import type { RoomPresenceState, RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { useRoomPresenceStore } from '@/layers/entities/room';
-// By path rather than through the slice's barrel, the same way the room
-// showcases reach `RoomMemberRow`: the line takes a room and its roster and
-// means nothing outside the room view that owns them, so putting it on the
-// widget's public API would advertise a component nothing else may render.
-import { RoomPresenceLine } from '@/layers/widgets/room-view/ui/RoomPresenceLine';
+import {
+  Conversation,
+  deriveLaneState,
+  NO_ASKS,
+  type LanePresenceAuthor,
+} from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { MEMBER } from './rooms-showcase-data';
 
-/** How often the server restates every live claim. Below the 30s expiry. */
-const REPUBLISH_MS = 10_000;
-
-/** One agent's claim in one demo room. */
+/** One agent's claim in one demo. */
 interface Claim {
-  member: RoomRosterEntry;
-  state: Exclude<RoomPresenceState, 'done'>;
+  name: string;
+  authorId: string;
+  state: LanePresenceAuthor['state'];
   /** How long it has been running, so the elapsed time reads as a real wait. */
   minutesIn: number;
 }
 
-/** One demo: a room of its own, so its claims cannot leak into another line. */
+/** One demo line. */
 interface PresenceDemo {
-  roomId: string;
+  id: string;
   label: string;
   claims: readonly Claim[];
 }
 
+/** Turn a roster member into a claim of a given age. */
+function claim(
+  member: (typeof MEMBER)[keyof typeof MEMBER],
+  state: LanePresenceAuthor['state'],
+  minutesIn: number
+): Claim {
+  return { name: member.author.displayName, authorId: member.authorId, state, minutesIn };
+}
+
 const DEMOS: readonly PresenceDemo[] = [
   {
-    roomId: 'presence-one',
+    id: 'one',
     label: 'One agent, and how long the room has been waiting',
-    claims: [{ member: MEMBER.pm, state: 'working', minutesIn: 3 }],
+    claims: [claim(MEMBER.pm, 'working', 3)],
   },
   {
-    roomId: 'presence-late',
+    id: 'late',
     label: 'Past the point the room stopped waiting — the same line, said differently',
-    claims: [{ member: MEMBER.code, state: 'working_late', minutesIn: 12 }],
+    claims: [claim(MEMBER.code, 'working_late', 12)],
   },
   {
-    roomId: 'presence-three',
-    label: 'Three at once — still named, because a room this size can hold the names',
+    id: 'three',
+    label: 'Three at once — still named, because a line this size can hold the names',
     claims: [
-      { member: MEMBER.pm, state: 'working', minutesIn: 4 },
-      { member: MEMBER.code, state: 'working', minutesIn: 2 },
-      { member: MEMBER.kai, state: 'working', minutesIn: 1 },
+      claim(MEMBER.pm, 'working', 4),
+      claim(MEMBER.code, 'working', 2),
+      claim(MEMBER.kai, 'working', 1),
     ],
   },
   {
-    roomId: 'presence-many',
-    label: 'More than it will name — counted, and the count opens the list',
+    id: 'many',
+    label: 'More than it will name — counted, and the peek behind it holds the list',
     claims: [
-      { member: MEMBER.pm, state: 'working', minutesIn: 6 },
-      { member: MEMBER.code, state: 'working', minutesIn: 5 },
-      { member: MEMBER.kai, state: 'working_late', minutesIn: 3 },
-      { member: MEMBER.unresolved, state: 'working', minutesIn: 1 },
+      claim(MEMBER.pm, 'working', 6),
+      claim(MEMBER.code, 'working', 5),
+      claim(MEMBER.kai, 'working_late', 3),
+      claim(MEMBER.unresolved, 'working', 1),
     ],
   },
 ];
 
-/** Every roster the demos draw names from. */
-const ROSTERS: Record<string, RoomRosterEntry[]> = Object.fromEntries(
-  DEMOS.map((demo) => [demo.roomId, demo.claims.map((claim) => claim.member)])
-);
-
-/**
- * Publish the fixture's claims, and keep publishing them.
- *
- * The store is a liveness cache with a 30-second expiry, so a one-shot seed
- * would draw four lines that vanished while the page was still open. Restating
- * them on the server's own cadence is what makes the showcase honest rather
- * than a still. `since` never moves, so the elapsed time really does count up.
- */
-function usePresenceFixture(): void {
-  useEffect(() => {
-    const publish = () => {
-      const store = useRoomPresenceStore.getState();
-      for (const demo of DEMOS) {
-        for (const claim of demo.claims) {
-          store.observe(demo.roomId, {
-            type: 'signal',
-            signal: 'progress',
-            authorId: claim.member.authorId,
-            at: new Date().toISOString(),
-            state: claim.state,
-            entryId: `${demo.roomId}-${claim.member.authorId}`,
-            since: new Date(Date.now() - claim.minutesIn * 60_000).toISOString(),
-          });
-        }
-      }
-    };
-    publish();
-    const timer = setInterval(publish, REPUBLISH_MS);
-    return () => {
-      clearInterval(timer);
-      const store = useRoomPresenceStore.getState();
-      for (const demo of DEMOS) store.clearRoom(demo.roomId);
-    };
-  }, []);
+/** The lane's presence state for one demo, built the way the product builds it. */
+function laneStateFor(demo: PresenceDemo) {
+  return deriveLaneState({
+    capabilities: ROOM_CAPABILITIES,
+    asks: NO_ASKS,
+    stalled: false,
+    presence: demo.claims.map((entry) => ({
+      authorId: entry.authorId,
+      name: entry.name,
+      state: entry.state,
+      since: new Date(Date.now() - entry.minutesIn * 60_000).toISOString(),
+    })),
+    turn: null,
+    queueDepth: 0,
+  });
 }
 
-/** The room's live working line, in each of the shapes it takes. */
-export function RoomPresenceLineShowcase() {
-  usePresenceFixture();
-
+/** The live lane's presence rung, in each of the shapes it takes. */
+export function LiveLanePresenceShowcase() {
   return (
     <PlaygroundSection
-      title="RoomPresenceLine"
-      description="The line under a room's composer that says who is working, counting up from when the work started. It is absent — not empty — when nobody is, so a quiet room looks quiet. Past four agents it stops naming them and counts instead; press the count to see the list. The elapsed times below are live: these claims are republished on the server's own ten-second cadence, because presence expires rather than persists."
+      title="Live lane presence"
+      description="The line above a room's composer that says who is working, counting up from when the work started. It is a fixed 24 pixels whether or not anything is happening, so an agent picking something up moves nothing already on screen — and it draws nothing at all when the room is quiet, so a quiet room still looks quiet. Past three agents it stops naming them and counts instead. The elapsed times below are live and start at ten seconds: a timer that begins at zero draws the eye for nothing."
     >
       {DEMOS.map((demo) => (
-        <div key={demo.roomId}>
+        <div key={demo.id}>
           <ShowcaseLabel>{demo.label}</ShowcaseLabel>
           <ShowcaseDemo>
             <div className="bg-card w-full max-w-md rounded-lg border py-2">
-              <RoomPresenceLine roomId={demo.roomId} members={ROSTERS[demo.roomId]!} />
+              <Conversation.LiveLane state={laneStateFor(demo)} />
             </div>
           </ShowcaseDemo>
         </div>
       ))}
 
-      <ShowcaseLabel>Nobody working — the line is gone, not blank</ShowcaseLabel>
+      <ShowcaseLabel>Nobody working — the line is blank, and still exactly as tall</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="bg-card w-full max-w-md rounded-lg border py-2">
-          <RoomPresenceLine roomId="presence-quiet" members={[]} />
+          <Conversation.LiveLane state={{ kind: 'empty' }} />
           <p className="text-muted-foreground px-4 text-xs italic">
-            (this box is the composer&apos;s footprint — no strip of reserved space above it)
+            (the 24 pixels above this line are the lane, holding its place)
           </p>
         </div>
       </ShowcaseDemo>

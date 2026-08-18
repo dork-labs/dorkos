@@ -22,10 +22,9 @@ import { useStickToBottom } from '../model/use-stick-to-bottom';
 import { useThreadUrlSync, type ThreadRoute } from '../model/use-thread-url-sync';
 import { RoomComposer } from './RoomComposer';
 import { RoomHeader } from './RoomHeader';
-import { RoomPresenceLine } from './RoomPresenceLine';
-import { RoomStalledNotice } from './RoomStalledNotice';
+import { RoomLiveLane } from './RoomLiveLane';
 import { RoomThreadPanel } from './RoomThreadPanel';
-import { RoomTimeline, RoomTimelineSkeleton } from './RoomTimeline';
+import { RoomTimeline, RoomTimelineSkeleton, scrollToEntryRow } from './RoomTimeline';
 
 /** What {@link RoomSurface} needs to draw a room. */
 export interface RoomSurfaceProps {
@@ -281,13 +280,27 @@ export function RoomSurface({
       </div>
       {/* The host's chrome for the composer — see `RoomSurfaceProps.aboveComposer`. */}
       {aboveComposer}
-      {/* Directly above the composer, because the state it describes is about
-          what happens after you press Enter. `RoomStalledNotice` explains why
-          the composer beside it stays open. */}
-      <RoomStalledNotice
+      {/* The one reserved line, ABOVE the composer and outside the scroller.
+          `specs/room-presence` §5.1 put the presence line underneath on purpose;
+          that clause is superseded here (ADR 260818-002806) because the line now
+          says everything that is happening rather than only who is working, and
+          the thing you look at before pressing Enter belongs above the box you
+          press it in. It is a fixed 24px, so an agent picking something up moves
+          nothing that is already on screen — which is what the old placement was
+          protecting against, and what a reserved height protects against better.
+
+          Scoped to everything OUTSIDE the open thread, so an agent working on a
+          thread reply is announced in the panel instead of here — one claim, one
+          line, in the place the work is happening. */}
+      <RoomLiveLane
+        room={room}
+        entries={entries}
+        scope={threadScope}
+        laneScope="room"
         stalled={stream.stalled}
-        onRetry={stream.retry}
         unavailable={stream.unavailable}
+        onRetry={stream.retry}
+        onScrollToRow={scrollToEntryRow}
       />
       {/* Keyed on the room so opening a conversation gives you a composer that
           is focused and freshly sized for that room's draft. Switching to an
@@ -301,15 +314,6 @@ export function RoomSurface({
         offerJumpBackIn={offerJumpBackIn}
         onFocusChange={onComposerFocusChange}
       />
-
-      {/* Under the composer, where a line about the wait belongs: it is about
-          what happens after you press Enter, and putting it above would push
-          the last message every time an agent picked something up.
-
-          Scoped to everything OUTSIDE the open thread, so an agent working on a
-          thread reply is announced in the panel instead of here — one claim,
-          one line, in the place the work is happening. */}
-      <RoomPresenceLine roomId={room.id} members={room.members} scope={threadScope} />
 
       {/* Mounted only while open: it reads the room itself, and a closed one
           would hold a roster from before the last change under it. */}

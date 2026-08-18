@@ -14,10 +14,10 @@ import { authorsById, toMessageAuthor } from '../lib/room-timeline';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
 import { useThreadArrivals } from '../model/use-thread-arrivals';
 import { RoomComposer } from './RoomComposer';
+import { RoomLiveLane } from './RoomLiveLane';
 import { RoomMessage } from './RoomMessage';
 import { RoomPendingList } from './RoomPendingRow';
-import { RoomPresenceLine } from './RoomPresenceLine';
-import { RoomStalledNotice } from './RoomStalledNotice';
+import { scrollToEntryRow } from './RoomTimeline';
 
 interface RoomThreadPanelProps {
   /** The room the thread lives in. */
@@ -411,17 +411,25 @@ export function RoomThreadPanel({
           <RoomPendingList posts={pending} viewerAuthorId={room.viewerAuthorId} />
         </div>
 
-        {/* On a phone the thread REPLACES the room, so the room's own copy of
-          this line is off screen and the reader would have no way to know the
-          conversation had stopped hearing. Beside a room that is drawing one,
-          repeating it would just be the same sentence twice. */}
-        {pushed && onRetryStream !== undefined && (
-          <RoomStalledNotice
-            stalled={streamStalled === true}
-            onRetry={onRetryStream}
-            unavailable={streamUnavailable}
-          />
-        )}
+        {/* The thread's own lane, above its own composer, scoped to the claims
+          triggered INSIDE this thread — so one agent's work is announced once,
+          in the place the work is happening.
+
+          **The stalled rung is this lane's only on a phone**, which is the rule
+          the notice it replaces carried: on a phone the thread REPLACES the
+          room, so the room's own lane is off screen and the reader would have no
+          way to know the conversation had stopped hearing. Beside a room that is
+          already saying it, repeating it would be the same sentence twice. */}
+        <RoomLiveLane
+          room={room}
+          entries={entries}
+          scope={scope}
+          laneScope="thread"
+          stalled={pushed && streamStalled === true}
+          unavailable={streamUnavailable}
+          onRetry={pushed ? onRetryStream : undefined}
+          onScrollToRow={scrollToEntryRow}
+        />
 
         {/* Writes into THIS thread because it is mounted here — no aim, no
           banner. `key` on the thread so opening another one gives you a box
@@ -432,10 +440,6 @@ export function RoomThreadPanel({
           threadRootId={rootEntryId}
           focusOnMount={focusComposer}
         />
-
-        {/* Under the composer, where the room puts its own — it is about what
-          happens after you press Enter. */}
-        <RoomPresenceLine roomId={room.id} members={room.members} scope={scope} />
       </section>
     </AgentInfoProvider>
   );

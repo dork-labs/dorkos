@@ -338,14 +338,14 @@ describe('the verb on a Continue row (BC-37)', () => {
     seedLive({
       [live.id]: {
         lifecycle: 'streaming',
-        activity: { toolName: 'Edit', target: 'strip-state.ts' },
+        activity: { toolName: 'Edit', target: 'lane-state.ts' },
       },
     });
     seedSessions([live]);
 
     render();
 
-    expect(await screen.findByText('Editing strip-state.ts…')).toBeInTheDocument();
+    expect(await screen.findByText('Editing lane-state.ts…')).toBeInTheDocument();
   });
 
   it('says only "Working…" when the server has sent no tool at all', async () => {

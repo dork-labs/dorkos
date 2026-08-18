@@ -258,8 +258,8 @@ describe('getMcpServerBadge', () => {
 describe('formatActivityLabel — the honesty ladder', () => {
   // Rung 1: a tool this client knows, with the argument a person would recognize.
   it('names the file, the command, or the query when it has one', () => {
-    expect(formatActivityLabel({ toolName: 'Edit', target: 'strip-state.ts' })).toBe(
-      'Editing strip-state.ts…'
+    expect(formatActivityLabel({ toolName: 'Edit', target: 'lane-state.ts' })).toBe(
+      'Editing lane-state.ts…'
     );
     expect(formatActivityLabel({ toolName: 'Read', target: 'README.md' })).toBe(
       'Reading README.md…'
@@ -267,8 +267,8 @@ describe('formatActivityLabel — the honesty ladder', () => {
     expect(formatActivityLabel({ toolName: 'Bash', target: 'pnpm verify' })).toBe(
       'Running pnpm verify…'
     );
-    expect(formatActivityLabel({ toolName: 'Grep', target: 'deriveStripState' })).toBe(
-      'Searching for deriveStripState…'
+    expect(formatActivityLabel({ toolName: 'Grep', target: 'deriveLaneState' })).toBe(
+      'Searching for deriveLaneState…'
     );
   });
 
