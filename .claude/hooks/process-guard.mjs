@@ -98,8 +98,12 @@ Name the one PID you started instead: \`kill <pid>\`; find it with \`lsof -ti :<
  * number (`-1` = everything, `-<pgid>` = that group) is never one process. The
  * ambiguity is `-1`: as an option it is SIGHUP (`kill -1 <pid>`), as a target
  * it is "everything". Resolve it the way kill does — a leading `-<digits>` is a
- * signal ONLY when at least one positive target follows it; a lone `-1`, or a
- * `-<digits>` after `--` or after another signal option, is a target.
+ * signal when ANY further token follows it (`kill -1 12345`), and a target when
+ * it stands alone, comes after `--`, or comes after another signal option. The
+ * check does not require the following token to be positive on purpose: if it
+ * is itself negative or zero (`kill -9 -1`) it lands in `targets` and the group
+ * test below catches it anyway, so `-9` being read as a signal there is
+ * harmless.
  *
  * @param {string[]} args - Tokens after the `kill` word.
  * @returns {string | null} A refusal message, or null to allow.
