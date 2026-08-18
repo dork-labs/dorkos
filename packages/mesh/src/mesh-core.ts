@@ -152,6 +152,9 @@ export class MeshCore {
       relayBridge,
       strategies,
       defaultScanRoot,
+      // Namespace derivation for managed agents is anchored here, so creation
+      // and the reconciler five minutes later give one answer (DOR-1342).
+      agentsHomeDir: options.agentsHomeDir,
       logger,
       generateUlid: monotonicFactory(),
       // Per-callback try/catch, so one broken reaction never costs the others

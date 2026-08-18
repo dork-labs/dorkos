@@ -131,14 +131,18 @@ export interface LaneStateInput {
    * leaves it out — the lane then names the agent by its directory.
    */
   agentNames?: Readonly<Record<string, string>>;
-  /** True when this surface's own event stream has given up. */
+  /**
+   * True when this surface's own event stream has given up.
+   *
+   * Read only where `capabilities.streamHealth` says the lane is this
+   * conversation's home for that fact — a session reports it in the status
+   * strip under its box instead.
+   */
   stalled: boolean;
   /** Who is working here, oldest claim first. */
   presence: readonly LanePresenceAuthor[];
   /** This conversation's own turn, or `null` on a surface that has none. */
   turn: LaneTurn | null;
-  /** How many drafts the composer is holding for the current turn. */
-  queueDepth: number;
 }
 
 /** Everything the live lane can be showing. One at a time, always. */
@@ -184,7 +188,6 @@ export type LaneState =
       isBypass: boolean;
     }
   | { kind: 'turn-complete'; elapsed: string; tokens: string }
-  | { kind: 'queued'; depth: number }
   | { kind: 'empty' };
 
 /** One shared empty lane, so a quiet conversation never re-renders on identity. */
@@ -226,15 +229,21 @@ export function laneElapsed(since: string, now: number): string | null {
  * **Priority, first match wins.** Each rung names the capability that gates it:
  *
  * 1. `ask` — `capabilities.asks`. A prompt somebody can answer.
- * 2. `stalled` — always. This client cannot read the stream.
+ * 2. `stalled` — `capabilities.streamHealth`. This client cannot read the stream.
  * 3. `presence` — `capabilities.presence`. Somebody else is working here.
  * 4. `turn-waiting` — `capabilities.turnStatus`. This turn is parked.
  * 5. `turn-progress` — `capabilities.turnStatus`. A long operation is running.
  * 6. `turn-system` — `capabilities.turnStatus`. An informational runtime event.
  * 7. `turn-streaming` — `capabilities.turnStatus`. A turn in flight.
  * 8. `turn-complete` — `capabilities.turnStatus`. The summary, auto-dismissing.
- * 9. `queued` — `queueDepth > 0`. Drafts held for the current turn.
- * 10. `empty` — nothing to say, and the lane looks like it.
+ * 9. `empty` — nothing to say, and the lane looks like it.
+ *
+ * **There is no `queued` rung, and that is a decision.** One sat below every
+ * `turn-*` rung, and a queue only ever exists BECAUSE a turn is in flight — so
+ * rung 7 always won and a person with two messages held saw no mention of them
+ * at all. Reordering it above the turn would be worse: it would hide what the
+ * agent is doing in order to report a number. The composer's own queue panel is
+ * where held drafts live, and it is where they stay.
  *
  * Three of those orderings are decisions rather than arbitrary, and none of them
  * may be collapsed:
@@ -269,8 +278,10 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
     };
   }
 
-  // 2. A stream this client cannot read.
-  if (input.stalled) return { kind: 'stalled' };
+  // 2. A stream this client cannot read — where the lane is this conversation's
+  // home for that fact. A session says it in the status strip under its box
+  // instead, and two alarms about one fact teach people to read neither.
+  if (capabilities.streamHealth && input.stalled) return { kind: 'stalled' };
 
   // 3. Somebody else working here.
   if (capabilities.presence && input.presence.length > 0) {
@@ -325,10 +336,7 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
     }
   }
 
-  // 9. Drafts the composer is holding.
-  if (input.queueDepth > 0) return { kind: 'queued', depth: input.queueDepth };
-
-  // 10. Nothing to say.
+  // 9. Nothing to say.
   return EMPTY;
 }
 

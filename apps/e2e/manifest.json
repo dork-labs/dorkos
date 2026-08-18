@@ -39,7 +39,7 @@
       "failCount": 1,
       "relatedCode": [
         "apps/client/src/layers/features/chat/ui/ChatPanel.tsx",
-        "apps/client/src/layers/features/chat/ui/MessageList.tsx",
+        "apps/client/src/layers/features/conversation/ui/Timeline.tsx",
         "apps/client/src/layers/features/chat/ui/message/SessionMessage.tsx",
         "apps/client/src/layers/features/chat/ui/InferenceIndicator.tsx"
       ],
@@ -155,8 +155,9 @@
       "failCount": 0,
       "relatedCode": [
         "apps/client/src/layers/widgets/room-view/ui/ChannelsPage.tsx",
-        "apps/client/src/layers/widgets/room-view/ui/RoomComposer.tsx",
-        "apps/client/src/layers/widgets/room-view/model/use-stick-to-bottom.ts",
+        "apps/client/src/layers/widgets/room-view/ui/ChannelComposer.tsx",
+        "apps/client/src/layers/features/conversation/ui/ComposerHost.tsx",
+        "apps/client/src/layers/features/conversation/model/use-timeline-scroll.ts",
         "apps/client/src/layers/entities/room/model/use-room-stream.ts",
         "apps/client/src/layers/shared/model/use-document-title.ts"
       ],

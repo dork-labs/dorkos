@@ -43,7 +43,6 @@ import {
   toMessageAuthor,
 } from '../lib/room-timeline';
 import { useRoomAgentDirectory } from '../model/agent-info-context';
-import { scrollToRow } from './RoomTimeline';
 
 /**
  * What to call an agent the roster does not hold.
@@ -79,6 +78,18 @@ export interface RoomLiveLaneProps {
   unavailable?: boolean;
   /** Ask the stream to try now. Omitted where this lane does not own the retry. */
   onRetry?: () => void;
+  /**
+   * Take the reader to one row of the history this lane sits under.
+   *
+   * The host's, not this component's, because the row may not be in the
+   * document at all: the timeline is virtualized, so only what is on screen
+   * exists, and only the timeline can scroll something into being. It hands
+   * `Conversation.Timeline`'s own handle down — see `RoomSurface`.
+   *
+   * Omitted where the peek has nowhere to take anybody; the "replying to …"
+   * link is then not drawn at all.
+   */
+  onScrollToRow?: (domId: string) => void;
 }
 
 /**
@@ -99,6 +110,7 @@ export function RoomLiveLane({
   stalled,
   unavailable = false,
   onRetry,
+  onScrollToRow,
 }: RoomLiveLaneProps) {
   const navigate = useNavigate();
   const claims = useRoomPresenceClaims(room.id, scope);
@@ -154,11 +166,9 @@ export function RoomLiveLane({
         agentNames: askAgentNames,
         stalled,
         presence,
-        // A room has no turn of its own and no composer queue: `turnStatus` is
-        // off in its capability table, and the queue's source is the
-        // `ConversationTarget` P4 introduces.
+        // A room has no turn of its own: `turnStatus` is off in its capability
+        // table.
         turn: null,
-        queueDepth: 0,
       }),
     [asks, askAgentNames, presence, stalled]
   );
@@ -283,7 +293,7 @@ export function RoomLiveLane({
       peek={
         <Conversation.LivePeek
           rows={peekRows}
-          onScrollToRow={scrollToRow}
+          onScrollToRow={onScrollToRow}
           onOpenSession={(sessionId) => {
             void navigate({ to: '/session', search: { session: sessionId } });
           }}

@@ -1,14 +1,9 @@
-import { useRef, useState, useEffect, useCallback, Fragment } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { ChevronRight } from 'lucide-react';
-import type { MessagePart } from '@dorkos/shared/types';
-import type { ChatMessage, HookState } from '../../model/use-chat-session';
+import { useCallback, Fragment } from 'react';
+import type { ChatMessage } from '../../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
-import { TIMING } from '@/layers/shared/lib';
 import { groupApprovalReceipts } from '../../lib/group-approval-receipts';
 import { isSettledQuestion, questionEnding } from '../../lib/question-state';
 import { StreamingText } from './StreamingText';
-import { ToolCallCard } from '../tools/ToolCallCard';
 import {
   ApprovalPrompt,
   AskReceiptRow,
@@ -19,220 +14,17 @@ import {
 } from '@/layers/features/ask';
 import { useMessageContext } from './MessageContext';
 import { SubagentBlock } from './SubagentBlock';
-import { ThinkingBlock } from './ThinkingBlock';
 import { ErrorMessageBlock } from './ErrorMessageBlock';
 import { MemoryRecallBlock } from './MemoryRecallBlock';
 import { PermissionDeniedChip } from './PermissionDeniedChip';
 import { CapabilityApprovalTimedOut } from './CapabilityApprovalTimedOut';
 import { McpSigninCard } from './McpSigninCard';
 import { CompactBoundaryRow } from './CompactBoundaryRow';
-import { CompactPendingRow, CollapsibleCard } from '../primitives';
+import { CompactPendingRow } from '../primitives';
+import { AutoHideThinking, ToolCallWithApp } from './auto-hiding-parts';
+import { CollapsibleRun } from './CollapsibleRun';
 import { TouchChipStrip } from '../chips';
-import { McpAppBlock } from '@/layers/features/mcp-apps';
 import { ApprovalCard } from '@/layers/features/approvals';
-
-/**
- * Derive the MCP server name from a namespaced MCP tool name
- * (`mcp__<server>__<tool>`). Returns undefined for non-MCP tools.
- */
-function mcpServerFromToolName(toolName: string): string | undefined {
-  if (!toolName.startsWith('mcp__')) return undefined;
-  return toolName.split('__')[1] || undefined;
-}
-
-/**
- * Determines whether a tool call should be visible based on auto-hide settings.
- * If autoHide is enabled, tool calls that were already complete on mount are hidden immediately.
- * Tool calls that transition to complete are hidden after TIMING.TOOL_CALL_AUTO_HIDE_MS.
- */
-function useToolCallVisibility(status: string, autoHide: boolean, hasFailedHook: boolean): boolean {
-  const initialStatusRef = useRef(status);
-  // eslint-disable-next-line react-hooks/refs -- Intentional: useState initializer runs once on mount
-  const [visible, setVisible] = useState(!(autoHide && initialStatusRef.current === 'complete'));
-
-  useEffect(() => {
-    if (
-      autoHide &&
-      status === 'complete' &&
-      initialStatusRef.current !== 'complete' &&
-      !hasFailedHook
-    ) {
-      const timer = setTimeout(() => setVisible(false), TIMING.TOOL_CALL_AUTO_HIDE_MS);
-      return () => clearTimeout(timer);
-    }
-  }, [status, autoHide, hasFailedHook]);
-
-  if (!autoHide) return true;
-  // Keep visible when a hook has failed, even if tool call is complete
-  if (hasFailedHook) return true;
-  return visible;
-}
-
-/**
- * Wraps a ToolCallCard with auto-hide animation behavior.
- * Uses AnimatePresence for exit animation when hiding.
- */
-function AutoHideToolCall({
-  part,
-  autoHide,
-  expandToolCalls,
-}: {
-  part: {
-    toolCallId: string;
-    toolName: string;
-    input?: string;
-    result?: string;
-    progressOutput?: string;
-    status: 'pending' | 'running' | 'complete' | 'error';
-    hooks?: HookState[];
-    startedAt?: number;
-    completedAt?: number;
-  };
-  autoHide: boolean;
-  expandToolCalls: boolean;
-}) {
-  const hasFailedHook = part.hooks?.some((h) => h.status === 'error') ?? false;
-  const visible = useToolCallVisibility(part.status, autoHide, hasFailedHook);
-
-  return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          key={part.toolCallId}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-          className="overflow-hidden"
-        >
-          <ToolCallCard
-            toolCall={{
-              toolCallId: part.toolCallId,
-              toolName: part.toolName,
-              input: part.input || '',
-              result: part.result,
-              progressOutput: part.progressOutput,
-              status: part.status,
-              hooks: part.hooks,
-              startedAt: part.startedAt,
-              completedAt: part.completedAt,
-            }}
-            defaultExpanded={expandToolCalls}
-          />
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
-
-/**
- * A tool card plus the inline MCP App its result points at (SEP-1865), when it
- * has one.
- *
- * Shared by the plain tool path and the approval-receipt path: an MCP tool that
- * had to ask permission first is still an MCP tool, and gating it must not cost
- * it its App. Renders exactly the card alone when there is no `ui://` reference
- * or the tool has not completed.
- */
-function ToolCallWithApp({
-  part,
-  sessionId,
-  autoHide,
-  expandToolCalls,
-}: {
-  part: Extract<MessagePart, { type: 'tool_call' }>;
-  sessionId: string;
-  autoHide: boolean;
-  expandToolCalls: boolean;
-}) {
-  const mcpServer = part.ui ? mcpServerFromToolName(part.toolName) : undefined;
-  const card = (
-    <AutoHideToolCall part={part} autoHide={autoHide} expandToolCalls={expandToolCalls} />
-  );
-  if (!part.ui || part.status !== 'complete' || !mcpServer) return card;
-  return (
-    <div className="flex flex-col gap-2">
-      {card}
-      <McpAppBlock sessionId={sessionId} serverName={mcpServer} uri={part.ui.resourceUri} />
-    </div>
-  );
-}
-
-/**
- * Wraps a ThinkingBlock with auto-hide animation behavior.
- * Reuses useToolCallVisibility by mapping isStreaming to a status string.
- */
-function AutoHideThinking({
-  part,
-  autoHide,
-  index,
-}: {
-  part: { text: string; isStreaming?: boolean; elapsedMs?: number };
-  autoHide: boolean;
-  index: number;
-}) {
-  const status = part.isStreaming ? 'running' : 'complete';
-  const visible = useToolCallVisibility(status, autoHide, false);
-
-  return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          key={`thinking-${index}`}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-          className="overflow-hidden"
-        >
-          <ThinkingBlock
-            text={part.text}
-            isStreaming={part.isStreaming ?? false}
-            elapsedMs={part.elapsedMs}
-          />
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
-
-/** Minimum run length before the "N more" collapse kicks in. */
-const COLLAPSE_THRESHOLD = 4;
-/** Number of items shown before the collapse button. */
-const VISIBLE_COUNT = 2;
-
-/**
- * Wraps a run of consecutive tool/thinking elements with a "show N more" collapse.
- * Runs shorter than COLLAPSE_THRESHOLD render all children directly.
- * Uses CollapsibleCard as the visual base to stay in the same family as tool calls and thinking.
- */
-export function CollapsibleRun({ children }: { children: React.ReactNode[] }) {
-  const [expanded, setExpanded] = useState(false);
-
-  if (children.length <= COLLAPSE_THRESHOLD || expanded) {
-    return <>{children}</>;
-  }
-
-  const hiddenCount = children.length - VISIBLE_COUNT;
-
-  return (
-    <>
-      {children.slice(0, VISIBLE_COUNT)}
-      <CollapsibleCard
-        expanded={false}
-        onToggle={() => setExpanded(true)}
-        hideChevron
-        className="border-l-muted-foreground/15"
-        header={
-          <>
-            <ChevronRight className="text-muted-foreground size-(--size-icon-xs)" />
-            <span className="text-3xs text-muted-foreground font-mono">
-              and {hiddenCount} more steps&hellip;
-            </span>
-          </>
-        }
-      >
-        <></>
-      </CollapsibleCard>
-    </>
-  );
-}
 
 /**
  * Renders assistant message content by mapping over message parts.

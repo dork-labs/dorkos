@@ -12,7 +12,7 @@ import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { PanelLeft } from 'lucide-react';
 import { EmbedSidebar } from '@/layers/features/session-list';
-import { ChatPanel } from '@/layers/features/chat';
+import { ChatPanel } from '@/layers/widgets/session';
 import {
   Toaster,
   TooltipProvider,

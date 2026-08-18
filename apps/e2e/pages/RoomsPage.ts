@@ -1,4 +1,4 @@
-import type { Page, Locator } from '@playwright/test';
+import { expect, type Page, type Locator } from '@playwright/test';
 import { NewMenuPage } from './NewMenuPage';
 
 /**
@@ -535,10 +535,19 @@ export class RoomsPage {
    * where the row sits — matching it by position is what catches a row that
    * renders against the wrong root, which a page-wide `getByTestId` would pass.
    *
+   * **The step up to `data-index` is the virtualizer's** (P4, DOR-1331). The
+   * room's timeline draws only the rows on screen, and each one sits inside the
+   * box the virtualizer measures it by — so a message's reply line is the next
+   * BOX rather than the next element. The claim is unchanged: still the row
+   * immediately after this message, still positional, still able to catch one
+   * drawn against the wrong root.
+   *
    * @param entry - The message the thread hangs off.
    */
   replyRow(entry: Locator): Locator {
-    return entry.locator('xpath=following-sibling::*[1][@data-testid="room-thread-replies"]');
+    return entry.locator(
+      'xpath=ancestor::*[@data-index][1]/following-sibling::*[1]//*[@data-testid="room-thread-replies"]'
+    );
   }
 
   /** Every reply row in the open room — how many threads it is showing. */
@@ -675,6 +684,67 @@ export class RoomsPage {
     if (driftPx > 0) await this.page.mouse.move(x, y + driftPx);
     await this.page.waitForTimeout(holdMs);
     await this.page.mouse.up();
+  }
+
+  /**
+   * Wait until a room's whole history has landed.
+   *
+   * **`toHaveCount(n)` cannot ask this any more, and that is the virtualizer's
+   * doing** (P4, DOR-1331). The room's timeline draws only the rows on screen,
+   * so a room of thirty messages holds about sixteen elements and always will —
+   * a count assertion over the seeded total is a claim the design has made
+   * impossible rather than a regression.
+   *
+   * What the list still publishes is its SIZE: the virtualizer gives the
+   * scroller a height for every row it knows about, whether or not that row is
+   * drawn. So "the history has landed" is "the scroller has been sized for all
+   * of them", which is the same barrier the count was being used as — and it
+   * still fails loudly on a room that rendered nothing.
+   *
+   * @param total - How many entries were seeded.
+   * @param timeout - How long to wait for them.
+   */
+  async waitForHistory(total: number, timeout: number): Promise<void> {
+    // The shortest a message row is ever laid out at — a one-line continuation
+    // with no author line. Anything at or above `total` of these means the list
+    // has been told about every entry.
+    const MIN_ROW_PX = 24;
+    await expect(this.entries.first()).toBeVisible({ timeout });
+    await expect
+      .poll(() => this.scroller.evaluate((el) => el.scrollHeight), { timeout })
+      .toBeGreaterThanOrEqual(total * MIN_ROW_PX);
+  }
+
+  /**
+   * The timeline's own box, which publishes what its landing decided.
+   *
+   * `data-landed-on` is `remembered` when the list put a returning reader back
+   * on the row they were on, `unread` when it landed on the rule, and `end`
+   * when it opened at the newest message. Only a browser can tell those apart,
+   * which is why the component says so out loud.
+   */
+  get timeline(): Locator {
+    return this.page.locator('[data-landed-on]');
+  }
+
+  /**
+   * The text of the message at the top of the viewport.
+   *
+   * Not `entries.first()`: the list is virtualized and keeps a few rows of
+   * overscan ABOVE the viewport, so the first drawn row is not the first
+   * visible one — a claim about where a reader is standing has to be measured,
+   * not counted.
+   */
+  async topVisibleEntryText(): Promise<string | null> {
+    return this.page.evaluate(() => {
+      const scroller = document.querySelector('.chat-scroll-area');
+      if (scroller === null) return null;
+      const top = scroller.getBoundingClientRect().top;
+      for (const row of document.querySelectorAll('[data-testid="room-entry"]')) {
+        if (row.getBoundingClientRect().bottom > top + 1) return row.textContent;
+      }
+      return null;
+    });
   }
 
   /** How far the room's history is scrolled, in pixels from the top. */

@@ -35,7 +35,7 @@ const IN_PROGRESS_TURN_KEY = '__in_progress_turn__';
 
 /**
  * Opening fence marker for a `dorkos-ui` widget document. Any match is enough —
- * no full markdown parse. Exported so the inline chat path (`MessageList`) can
+ * no full markdown parse. Exported so the inline chat path (`SessionTranscript`) can
  * compute its newest-fence-bearing-message index with the same marker.
  */
 export const WIDGET_FENCE_MARKER = '```dorkos-ui';

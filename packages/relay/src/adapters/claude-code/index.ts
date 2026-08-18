@@ -10,5 +10,7 @@ export type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
   TasksStoreLike,
+  ExecutionSettingsResolver,
+  TurnExecutionSettings,
 } from './types.js';
 export type { TraceStoreLike } from '../../types.js';

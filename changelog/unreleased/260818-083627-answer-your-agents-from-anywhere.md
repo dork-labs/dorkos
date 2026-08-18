@@ -1,6 +1,5 @@
 ---
 covers:
-  - 'fix(client): a legacy Ask sorts by its remainder as of now, not by the stale startedAt+remainingMs formula the card already retired (DOR-1330)'
   - 'feat(shared): P3.1 — the Ask on the wire, reusing the pending-interaction DTO (DOR-1330)'
   - 'feat(server): P3.2 — the projector says when a session starts and stops waiting on a person (DOR-1330)'
   - 'feat(server): P3.3 — the Ask goes out on the global stream, with the room it came from (DOR-1330)'

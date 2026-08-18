@@ -29,14 +29,17 @@
  *
  * They were listed once, and the list rotted within days: main's team-room-home
  * work deleted `DashboardComposerSection` outright (the home page became a room,
- * so its composer is `RoomComposer`, already covered here). A hardcoded path
+ * so its composer is `ChannelComposer`, already covered here). A hardcoded path
  * that no longer exists is the good case — it throws. The bad case is the one
  * this now prevents: a NEW surface mounting a composer and nobody adding it
  * here, so the lock silently stops covering it.
  *
- * So the set is read off the tree: every file that renders `<Composer.Input`.
- * The dev playground is excluded on purpose — it forces the prop to show the
- * field off, which is the one legitimate reason to pass it.
+ * So the set is read off the tree: every file that HANDS a composer its field
+ * wiring. Since P4 there is exactly one mount of `<Composer.Input` —
+ * `Conversation.Composer`, the one card every surface draws — so the surfaces
+ * are the files that render `<Conversation.Composer` and pass it an `input`
+ * bag. The dev playground is excluded on purpose: it forces the prop to show
+ * the field off, which is the one legitimate reason to pass it.
  */
 import { readFileSync, readdirSync } from 'fs';
 import path from 'path';
@@ -71,10 +74,22 @@ function allClientTsx(dir = CLIENT_SRC): string[] {
  */
 const SURFACES = allClientTsx()
   .filter((rel) => !rel.includes('__tests__') && !rel.startsWith('dev' + path.sep))
-  .filter((rel) => readClientSource(rel).includes('<Composer.Input'));
+  .filter((rel) => {
+    const source = readClientSource(rel);
+    return source.includes('<Conversation.Composer') || source.includes('<Composer.Input');
+  });
+
+/**
+ * The one place `Composer.Input` is mounted at all.
+ *
+ * Its own assertion below, because the surfaces are now found by what they hand
+ * that mount rather than by mounting it themselves — and a second mount
+ * appearing would make this whole detector blind to it.
+ */
+const COMPOSER_HOST = path.join('layers', 'features', 'conversation', 'ui', 'ComposerHost.tsx');
 
 /** The one surface that HAS formatting at ship time. */
-const CHAT = path.join('layers', 'features', 'chat', 'ui', 'input', 'ChatInputContainer.tsx');
+const CHAT = path.join('layers', 'widgets', 'session', 'ui', 'SessionComposer.tsx');
 
 describe('which surfaces declare rich text', () => {
   // Guard the guard: if the detector ever matches nothing, every assertion
@@ -84,10 +99,27 @@ describe('which surfaces declare rich text', () => {
     expect(SURFACES).toContain(CHAT);
   });
 
+  it('mounts the field in the shared card and the one surface that has no conversation', () => {
+    // Two, and the second is the point: the onboarding narration draws a
+    // composer with no conversation behind it — nothing to send to, no target —
+    // so it composes `Composer.Input` directly. Anything ELSE growing a third
+    // mount is a surface that has quietly stopped going through the shared card,
+    // and the detector above would go blind to it.
+    const mounts = allClientTsx()
+      .filter((rel) => !rel.includes('__tests__') && !rel.startsWith('dev' + path.sep))
+      .filter((rel) => readClientSource(rel).includes('<Composer.Input'));
+    expect([...mounts].sort()).toEqual(
+      [
+        COMPOSER_HOST,
+        path.join('layers', 'features', 'onboarding', 'ui', 'OnboardingConversation.tsx'),
+      ].sort()
+    );
+  });
+
   it('chat passes it, from the preference', () => {
     const source = readClientSource(CHAT);
     expect(source).toContain('useComposerRichText');
-    expect(source).toContain('richText={richText}');
+    expect(source).toContain('richText: richText');
   });
 
   it('every OTHER surface passes nothing at all', () => {

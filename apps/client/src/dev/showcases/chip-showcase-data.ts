@@ -136,7 +136,7 @@ const ROSTER_FILES = [
   'event-mapper.ts',
   'transport.ts',
   'use-chat-session.ts',
-  'MessageList.tsx',
+  'Timeline.tsx',
   'chip-motion.ts',
   'touch-chips.ts',
   'agent-runtime.ts',

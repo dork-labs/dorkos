@@ -24,7 +24,7 @@ export const TOUR_ANCHORS = {
   /**
    * The home tab's composer — the box you say something to your team in.
    *
-   * Stamped by `RoomComposer` on the one composer that offers "Jump back in",
+   * Stamped by `ChannelComposer` on the one composer that offers "Jump back in",
    * which is the home surface's and no other (team-room-home spec D3.2). It was
    * `dashboard-composer` until the dashboard was replaced by the #team room; a
    * dead surface's name on a live anchor is worse than a rename.

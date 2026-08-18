@@ -128,6 +128,9 @@ function line(): string {
 }
 
 /** Mount the lane with everything a room hands it. */
+/** Where the lane asked to be taken, as the host would hear it. */
+const scrollToRowSpy = vi.fn();
+
 function renderLane(
   props: Partial<Parameters<typeof RoomLiveLane>[0]> = {},
   transport = createMockTransport()
@@ -142,6 +145,12 @@ function renderLane(
             entries={ENTRIES}
             laneScope="room"
             stalled={false}
+            // The host's, as both real hosts wire it: `Conversation.Timeline`'s
+            // own handle, because a row may not be in the document at all —
+            // only the virtualized list can scroll one into being. What THIS
+            // lane owns is which row to ask for; whether asking lands you on it
+            // is `Timeline.test.tsx`'s claim.
+            onScrollToRow={scrollToRowSpy}
             {...props}
           />
         </QueryClientProvider>
@@ -152,6 +161,7 @@ function renderLane(
 
 beforeEach(() => {
   navigateSpy.mockClear();
+  scrollToRowSpy.mockClear();
   useRoomPresenceStore.setState({ rooms: {} });
   vi.useFakeTimers();
   vi.setSystemTime(new Date(STARTED));
@@ -405,21 +415,12 @@ describe('RoomLiveLane', () => {
     // own row id.
     vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
     working('kai');
-    const row = document.createElement('div');
-    row.id = 'room-entry-trigger-kai';
-    // Focusable, as every real room row is (`RoomMessage` gives each one a tab
-    // stop): focus is what marks the row a reader was sent to.
-    row.tabIndex = 0;
-    row.scrollIntoView = vi.fn();
-    document.body.append(row);
 
     renderLane();
     fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
     fireEvent.click(screen.getByTestId('live-peek-replying-to'));
 
-    expect(row.scrollIntoView).toHaveBeenCalled();
-    expect(row).toHaveFocus();
-    row.remove();
+    expect(scrollToRowSpy).toHaveBeenCalledWith('room-entry-trigger-kai');
   });
 
   it('sends a reply’s claim to the thread it belongs to, which the room does draw', () => {
@@ -428,20 +429,12 @@ describe('RoomLiveLane', () => {
     // you is the "↳ N replies" row of the thread it is in.
     vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
     working('kai', 'working', STARTED, 'reply-in-a-thread');
-    const row = document.createElement('div');
-    row.id = 'thread-row-trigger-kai';
-    // Focusable, as every real room row is (`RoomMessage` gives each one a tab
-    // stop): focus is what marks the row a reader was sent to.
-    row.tabIndex = 0;
-    row.scrollIntoView = vi.fn();
-    document.body.append(row);
 
     renderLane({ entries: [...ENTRIES, THREAD_REPLY] });
     fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
     fireEvent.click(screen.getByTestId('live-peek-replying-to'));
 
-    expect(row.scrollIntoView).toHaveBeenCalled();
-    row.remove();
+    expect(scrollToRowSpy).toHaveBeenCalledWith('thread-row-trigger-kai');
   });
 
   it('draws no “replying to” link at all when the trigger is drawn nowhere', () => {
@@ -462,20 +455,12 @@ describe('RoomLiveLane', () => {
   it('aims inside the panel when it is the thread’s own lane', () => {
     vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
     working('kai');
-    const row = document.createElement('div');
-    row.id = 'thread-panel-entry-trigger-kai';
-    // Focusable, as every real room row is (`RoomMessage` gives each one a tab
-    // stop): focus is what marks the row a reader was sent to.
-    row.tabIndex = 0;
-    row.scrollIntoView = vi.fn();
-    document.body.append(row);
 
     renderLane({ laneScope: 'thread' });
     fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
     fireEvent.click(screen.getByTestId('live-peek-replying-to'));
 
-    expect(row.scrollIntoView).toHaveBeenCalled();
-    row.remove();
+    expect(scrollToRowSpy).toHaveBeenCalledWith('thread-panel-entry-trigger-kai');
   });
 
   it('closes the peek when the work ends, and does not re-open it on the next claim', async () => {

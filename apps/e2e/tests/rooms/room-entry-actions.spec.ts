@@ -16,6 +16,15 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
 const TALL_MESSAGE = Array.from({ length: 80 }, (_, i) => `paragraph ${i}`).join('\n\n');
 
 /**
+ * How many ordinary messages sit above the tall one.
+ *
+ * Enough that the virtualizer's drawn window starts below the top of the
+ * scroller — see the comment at the call site for why a zero offset is the one
+ * case this test must not measure.
+ */
+const FILLER_BEFORE_TALL = 30;
+
+/**
  * The action surface every message carries: the toolbar, the right-click menu,
  * the touch drawer, and the reply that comes out of all three.
  *
@@ -252,12 +261,35 @@ test.describe('Rooms — every message gets a menu', () => {
     // screen for exactly this message. Ours is `sticky` inside the row.
     const slug = `e2e-actions-tall-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug, slug);
-    await roomsApi.postEntries(room.id, [TALL_MESSAGE]);
+    // Filler BEFORE the tall one, and it is the point of the test rather than
+    // scenery. The list is virtualized: the drawn window is one box offset from
+    // the top of the scroller, and with a single entry that offset is 0 — the
+    // one value at which a broken offset (a `transform`, which kills `sticky`
+    // for everything inside it) is indistinguishable from a working one. Thirty
+    // entries put the tall message far enough down that the window it is drawn
+    // in has a real offset, so the assertion below can tell them apart.
+    await roomsApi.postEntries(room.id, [
+      ...Array.from({ length: FILLER_BEFORE_TALL }, (_, i) => `filler ${i}`),
+      TALL_MESSAGE,
+    ]);
 
     await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(roomsPage.entries.last()).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
-    const entry = roomsPage.entries.first();
+    const entry = roomsPage.entries.last();
+    // The drawn window really is offset from the top of the list — otherwise
+    // this test is back to measuring the only case that cannot fail. Read as a
+    // RENDERED distance rather than off the `top` property, so the probe says
+    // nothing about how the offset is written and the assertion below is what
+    // has to catch a broken one.
+    const windowOffset = await page.evaluate(() => {
+      const row = document.querySelector('[data-index]');
+      const box = row?.parentElement;
+      const list = box?.parentElement;
+      if (box == null || list == null) return 0;
+      return box.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    });
+    expect(windowOffset).toBeGreaterThan(0);
     const toolbar = roomsPage.actionsIn(entry);
 
     // The room opens at its newest, which for a single tall message means its
@@ -880,7 +912,7 @@ test.describe('Rooms — a thread on a phone', () => {
   }) => {
     // The push UNMOUNTS the room, so coming back mounts a brand new scroller at
     // the top — and neither the room id nor its newest entry changed, so
-    // nothing in `useStickToBottom` would re-pin it. Measured before the fix on
+    // nothing about the room changed, so nothing would re-pin it. Measured on
     // this exact viewport: 1148px before opening the thread, 0px after closing
     // it. The reader pressed Back and silently landed on the oldest message in
     // the room.
@@ -899,7 +931,7 @@ test.describe('Rooms — a thread on a phone', () => {
     await roomsApi.postThreadReply(room.id, ids[ids.length - 1]!, 'answering the last one');
 
     await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.entries).toHaveCount(30, { timeout: SERVER_ROUND_TRIP_MS });
+    await roomsPage.waitForHistory(30, SERVER_ROUND_TRIP_MS);
 
     // A room opens at its newest message, so it is already scrolled down.
     await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
@@ -911,10 +943,59 @@ test.describe('Rooms — a thread on a phone', () => {
     await expect(roomsPage.entries).toHaveCount(0);
 
     await roomsPage.backToRoom(`#${slug}`).click();
-    await expect(roomsPage.entries).toHaveCount(30);
+    await roomsPage.waitForHistory(30, SERVER_ROUND_TRIP_MS);
 
     // Back at the newest message, not thrown to the top of the history.
     await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
     expect(await roomsPage.scrollTop()).toBeGreaterThan(0);
+  });
+
+  test('coming back from a thread leaves a reader who had scrolled BACK where they were', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The other half, and the harder one: the test above leaves at the bottom,
+    // where "put me back" and "open at the newest message" are the same answer.
+    // A reader who has scrolled INTO the history has to come back to the message
+    // they were reading — which the timeline can only do by remembering a ROW,
+    // because its own total height is an estimate until it settles (measured on
+    // this viewport: a remembered 900px offset was carried to 0 by the
+    // end-anchor as the list shrank from 16 000px to 4 159px).
+    const slug = `e2e-thread-resume-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(
+      room.id,
+      Array.from({ length: 40 }, (_, i) => `resume line ${i + 1}`)
+    );
+    const ids = await roomsApi.entryIds(room.id);
+    // The thread hangs off a message in the MIDDLE, so opening it neither
+    // scrolls the room nor needs the reader to be at either end.
+    const middle = ids[Math.floor(ids.length / 2)]!;
+    await roomsApi.postThreadReply(room.id, middle, 'answering one from the middle');
+
+    await page.goto(`/channels?id=${room.id}`);
+    await roomsPage.waitForHistory(40, SERVER_ROUND_TRIP_MS);
+    await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
+
+    // Read back into the history and settle there.
+    await roomsPage.scroller.evaluate((el) => {
+      el.scrollTop = Math.round(el.scrollHeight / 2);
+    });
+    await expect.poll(() => roomsPage.isAtBottom()).toBe(false);
+    const topBefore = await roomsPage.topVisibleEntryText();
+
+    await roomsPage.replyRow(roomsPage.entry('resume line 21')).click();
+    await expect(roomsPage.threadPanel).toBeVisible();
+    await expect(roomsPage.entries).toHaveCount(0);
+
+    await roomsPage.backToRoom(`#${slug}`).click();
+    await roomsPage.waitForHistory(40, SERVER_ROUND_TRIP_MS);
+
+    // The same message at the top of the viewport, and the room did NOT decide
+    // to open at its newest message instead. The second assertion names the
+    // mechanism: `remembered` is the landing that read the row back.
+    await expect.poll(() => roomsPage.timeline.getAttribute('data-landed-on')).toBe('remembered');
+    expect(await roomsPage.topVisibleEntryText()).toBe(topBefore);
   });
 });

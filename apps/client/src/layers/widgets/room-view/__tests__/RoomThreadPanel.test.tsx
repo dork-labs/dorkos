@@ -97,7 +97,7 @@ const room: RoomWithRoster = {
   createdAt: '2026-07-30T09:00:00.000Z',
   viewerAuthorId: 'reader',
   reactionFrequents: ['👍', '❤️', '🎉'],
-  // The reader themselves, on the roster — `RoomComposer` now reads
+  // The reader themselves, on the roster — `ChannelComposer` now reads
   // membership before offering a live composer at all (DOR-1233), and this
   // panel's thread composer is the same component.
   members: [

@@ -15,3 +15,5 @@ export { SubagentBlock } from './SubagentBlock';
 export { OutputRenderer } from './OutputRenderer';
 export { ErrorMessageBlock } from './ErrorMessageBlock';
 export { PermissionDeniedChip } from './PermissionDeniedChip';
+export { AssistantMessageContent } from './AssistantMessageContent';
+export { UserMessageContent } from './UserMessageContent';

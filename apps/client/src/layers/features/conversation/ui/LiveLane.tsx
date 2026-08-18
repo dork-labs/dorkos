@@ -9,7 +9,7 @@
  *
  * **A flex sibling of the scroller, never inside it.** `RoomSurface.tsx`
  * documents why in full: a height change inside the scrolling element moves
- * `scrollHeight` under `useStickToBottom`, which un-pins a reader who never
+ * `scrollHeight` under `useTimelineScroll`, which un-pins a reader who never
  * scrolled.
  *
  * Mounted once per conversation surface. A room's thread panel composes its own

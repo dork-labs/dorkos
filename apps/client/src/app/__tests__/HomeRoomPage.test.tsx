@@ -8,7 +8,7 @@
  * — none of which may draw a half-built conversation, and the last of which may
  * not quietly undo the owner's decision. The second is WHERE the pinned triage
  * header is mounted: outside the room's scroller. A header whose height changes
- * inside that element moves `scrollHeight` under `useStickToBottom` and un-pins
+ * inside that element moves `scrollHeight` under `useTimelineScroll` and un-pins
  * a reader who never scrolled, and only a test that mounts both can say which
  * side of the scroller it landed on.
  */

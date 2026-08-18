@@ -31,7 +31,7 @@ import type { TextEffectConfig } from '@/layers/shared/lib';
 import { feedArticleProps } from '@/layers/shared/model';
 import type { FeedPosition, MessageAuthor } from '@/layers/shared/model';
 import { Message, formatTime } from '@/layers/features/conversation';
-import type { ChatMessage, MessageGrouping } from '../../model/use-chat-session';
+import type { ChatMessage, MessageGrouping } from '@/layers/shared/model';
 import { renderSessionBody } from '../render-session-body';
 import { MessageProvider } from './MessageContext';
 import type { InteractiveToolHandle } from './types';

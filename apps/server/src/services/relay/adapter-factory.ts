@@ -31,6 +31,7 @@ import type {
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
 import { AdapterNotRegisteredError } from './adapter-manager.js';
+import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
 
 /** Dependencies for constructing runtime adapters. */
 export interface AdapterFactoryDeps {
@@ -97,6 +98,10 @@ export async function createAdapter(
         traceStore: deps.traceStore,
         taskStore: deps.taskStore,
         agentSessionStore: deps.agentSessionStore,
+        // What the turn runs on. The literal is the honest key here and not a
+        // guess: this is the `'claude-code'` branch, and the runtime it resolves
+        // against is the one the lookup above took from that exact map entry.
+        resolveExecutionSettings: createTurnExecutionSettingsResolver('claude-code'),
         logger,
       });
     }

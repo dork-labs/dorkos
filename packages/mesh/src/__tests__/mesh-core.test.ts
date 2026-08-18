@@ -567,8 +567,11 @@ describe('namespace wiring', () => {
 
     await mesh.unregister(manifest.id);
 
-    // removeAccessRule should be called for namespace cleanup (same-ns allow + cross-ns deny)
-    expect(mockRelayCore.removeAccessRule).toHaveBeenCalledTimes(2);
+    // Namespace cleanup removes every default rule the namespace could hold —
+    // same-ns allow, cross-ns deny, and the two system-agent rules (which match
+    // nothing here, and must still be asked for so a system namespace leaves
+    // nothing behind either).
+    expect(mockRelayCore.removeAccessRule).toHaveBeenCalledTimes(4);
 
     mesh.close();
   });

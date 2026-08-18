@@ -181,7 +181,7 @@ export function handleQuestionPrompt(helpers, data, assistantId) {
 
 **4. The message UI renders `QuestionPrompt`**
 
-`QuestionPrompt` is rendered from `ui/message/AssistantMessageContent.tsx` (inline, when a tool-call part has `interactiveType === 'question'` and `questions`) and from `ui/input/InteractiveInputPanel.tsx` (the pinned input-zone variant). There is no row-level switch — `interactiveType` is matched at the part level:
+`QuestionPrompt` is rendered from `ui/message/AssistantMessageContent.tsx` (inline, when a tool-call part has `interactiveType === 'question'` and `questions`) and from `widgets/session/ui/SessionAsks.tsx` (the prompt that takes the composer). There is no row-level switch — `interactiveType` is matched at the part level:
 
 ```typescript
 // ui/message/AssistantMessageContent.tsx
@@ -418,7 +418,7 @@ await transport.batchDenyTool(sessionId, toolCallIds);
 
 After the user clicks Approve or Deny, the transport call resolves the server-side promise — but the server's `tool_result` event can take seconds for slow tools (e.g., Bash). Without an optimistic update, the `InferenceIndicator` would stay stuck on "Waiting for your approval" during that gap.
 
-The fix: `ApprovalPrompt` receives an `onDecided` callback (threaded from `useChatSession` → `ChatPanel` → `MessageList` → `SessionMessage` → `MessageContext` → `AssistantMessageContent` → `ApprovalPrompt`). This calls `markToolCallResponded(toolCallId)`, which immediately sets the tool call part's status from `'pending'` to `'running'` in the message state:
+The fix: `ApprovalPrompt` receives an `onDecided` callback (threaded from `useChatSession` → `ChatPanel` → `SessionTranscript` → `SessionMessage` → `MessageContext` → `AssistantMessageContent` → `ApprovalPrompt`). This calls `markToolCallResponded(toolCallId)`, which immediately sets the tool call part's status from `'pending'` to `'running'` in the message state:
 
 ```typescript
 // useChatSession.ts — markToolCallResponded

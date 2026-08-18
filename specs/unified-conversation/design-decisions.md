@@ -162,3 +162,22 @@ The accepted cost is A's own: one blank 22px line in a quiet room. Recorded as a
 **Who may answer, and who may see.** Detail goes only to someone who can act on it. On this machine that is the operator. In a room bridged to Telegram or Slack it is the configured approvers, and the agent that raised the Ask can never answer its own. Everyone else sees exactly what the room shows today: the vague, durable, late notice, with no file path, no command and no countdown. That notice does not change, and the live card does not replace it — the card is instant and ephemeral, the notice is the log.
 
 **What goes away.** The room's presence line under the composer, the session's status strip and its in-composer status section, the room's own timeline and row, the second composer host, the second scroll-pinning hook, the second time formatter, and the two hover-action systems. Each is replaced by the one shared thing, in the same pull request that deletes it.
+
+---
+
+## Post-implementation notes (2026-08-18, P4 review fixes, DOR-1331)
+
+Two lines of the summary above read differently in the shipped tree, and both are corrections of this
+document rather than departures from it:
+
+- **"Behaviour is decided by capability flags — reactions, threads, run-with, attachments, tool
+  cards."** There is no `toolCards` flag. Which body a row draws is decided by which renderer the
+  HOST hands it — `renderSessionBody` or `renderRoomBody` — which is the same seam the next sentence
+  of the summary already describes ("two renderers behind one map"). A boolean beside it would have
+  been a second way of saying one thing, kept in step by two capability tables and read by nobody.
+- **"…which beats a queue note ('1 queued'), which falls through to empty."** The lane has no queue
+  rung. A queue only ever exists because a turn is in flight, so the turn's own rung always won it;
+  held drafts are shown in the composer's queue panel, where they can also be edited and reordered.
+  The lane also gained `streamHealth`, which decides whether a surface says "stopped hearing" there
+  at all: a channel does, and a session says it in the status strip under its box, because two alarms
+  about one fact teach people to read neither.

@@ -164,6 +164,8 @@ export type {
   AgentSessionStoreLike,
   TraceStoreLike,
   TasksStoreLike,
+  ExecutionSettingsResolver,
+  TurnExecutionSettings,
 } from './adapters/claude-code/index.js';
 
 // Payload utilities

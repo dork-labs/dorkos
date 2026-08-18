@@ -144,6 +144,12 @@ const { SessionEventStore, setSessionEventStore } = await import('../../session/
 const { setRoomAttachmentStores } = await import('../index.js');
 const { LocalRoomAttachmentStore } = await import('../attachments/local-room-attachment-store.js');
 const { PROJECTED_ATTACHMENTS_ROOT } = await import('../attachments/attachment-paths.js');
+// The relay's answer to the same question, imported HERE rather than tested
+// beside itself: the claim is that the two surfaces agree, and this is the file
+// that drives the room's real path. Its own behavior is covered in
+// `relay/__tests__/turn-execution-settings.test.ts`.
+const { createTurnExecutionSettingsResolver } =
+  await import('../../relay/turn-execution-settings.js');
 type SessionEventStoreInstance = InstanceType<typeof SessionEventStore>;
 
 let counter = 0;
@@ -1154,6 +1160,33 @@ describe('what a room turn runs with (execution defaults)', () => {
     await createSessionRoomTurnRunner().run(request());
 
     expect(triggered[0].settings).toEqual({ model: 'sonnet', effort: 'high' });
+  });
+
+  it('answers the same for a relay-triggered turn as for a room turn', async () => {
+    // Which model an agent is is not a question that may depend on who is
+    // asking. It did: the room resolved this whole ladder and the relay
+    // resolved nothing at all, so the same agent answered a person in a channel
+    // on haiku and a colleague over relay on the server default (DOR-1344).
+    // Both surfaces now go through `resolveUnattendedSessionDefaults`, and this
+    // is what would notice one of them growing a second opinion.
+    runtimesConfig = {
+      ...USER_CONFIG_DEFAULTS.runtimes,
+      claudeCode: {
+        ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
+        defaultModel: 'opus',
+        defaultEffort: 'high',
+      },
+    };
+    agentManifest = { runtime: 'claude-code', model: 'claude-haiku-4-5', effort: 'low' };
+
+    await createSessionRoomTurnRunner().run(request());
+    const viaRelay = await createTurnExecutionSettingsResolver('claude-code')({
+      sessionId: 'a-relay-session-with-no-row',
+      agentDirectory: '/repo/ana',
+    });
+
+    expect(viaRelay).toEqual(triggered[0].settings);
+    expect(viaRelay).toEqual({ model: 'claude-haiku-4-5', effort: 'low' });
   });
 });
 

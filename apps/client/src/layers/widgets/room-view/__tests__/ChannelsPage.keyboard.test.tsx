@@ -43,7 +43,7 @@ const ROOM: RoomWithRoster = {
   ambientMaxEntries: 30,
   createdAt: '2026-07-30T09:00:00.000Z',
   lastActivityAt: '2026-07-30T10:00:00.000Z',
-  // The viewer themselves, on the roster — `RoomComposer` now reads
+  // The viewer themselves, on the roster — `ChannelComposer` now reads
   // membership before offering a live composer at all (DOR-1233).
   members: [
     {

@@ -893,11 +893,11 @@ site should be able to get wrong.
 
 ### Safe Area Classes
 
-| Class                  | Applied To                   | Purpose                         |
-| ---------------------- | ---------------------------- | ------------------------------- |
-| `chat-input-container` | ChatPanel input wrapper      | Bottom safe area inset          |
-| `sidebar-container`    | Sidebar root                 | Left + bottom safe area insets  |
-| `chat-scroll-area`     | MessageList scroll container | `touch-action: pan-y` on mobile |
+| Class                  | Applied To                         | Purpose                         |
+| ---------------------- | ---------------------------------- | ------------------------------- |
+| `chat-input-container` | ChatPanel input wrapper            | Bottom safe area inset          |
+| `sidebar-container`    | Sidebar root                       | Left + bottom safe area insets  |
+| `chat-scroll-area`     | `Conversation.Timeline`'s scroller | `touch-action: pan-y` on mobile |
 
 ### Adjusting the Scale
 

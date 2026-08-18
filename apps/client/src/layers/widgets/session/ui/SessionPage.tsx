@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { ChatPanel } from '@/layers/features/chat';
+import { ChatPanel } from './ChatPanel';
 import { useCanvasPersistence } from '@/layers/features/canvas';
 import { useRightPanelLayoutPersistence } from '@/layers/features/right-panel';
 import { useSessionId, useSessionSearch } from '@/layers/entities/session';

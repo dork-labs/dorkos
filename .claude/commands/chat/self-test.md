@@ -65,7 +65,7 @@ The phases below are written against `mcp__claude-in-chrome__*`, which is how th
 
 Two gotchas that cost time either way: `browser_click` takes a **`target`** (a ref from the snapshot, or a CSS/`text=` selector), not `ref`; and a raw `el.click()` inside `browser_evaluate` does not reliably fire a Radix handler, so click Radix menu and dialog options for real.
 
-**The transcript is virtualized — a DOM query only ever sees the mounted rows, not the whole history.** `MessageList` (`apps/client/src/layers/features/chat/ui/MessageList.tsx`) renders with `@tanstack/react-virtual`'s `useVirtualizer`, which mounts roughly a viewport's worth of rows plus a small overscan (about 8 rows on a typical screenshot-sized window) and unmounts the rest. Counting `[data-message-role]` elements in the DOM and comparing that number to the API or JSONL message count reads as message loss when nothing was lost — it is only counting what happens to be mounted. Count messages from `GET /api/sessions/:id/messages` (or the JSONL) instead, or scroll the full transcript first and count across the sweep; never treat a raw DOM row count as the message total.
+**The transcript is virtualized — a DOM query only ever sees the mounted rows, not the whole history.** `Conversation.Timeline` (`apps/client/src/layers/features/conversation/ui/Timeline.tsx`) renders with `@tanstack/react-virtual`'s `useVirtualizer`, which mounts roughly a viewport's worth of rows plus a small overscan (about 8 rows on a typical screenshot-sized window) and unmounts the rest. Counting `[data-message-role]` elements in the DOM and comparing that number to the API or JSONL message count reads as message loss when nothing was lost — it is only counting what happens to be mounted. Count messages from `GET /api/sessions/:id/messages` (or the JSONL) instead, or scroll the full transcript first and count across the sweep; never treat a raw DOM row count as the message total.
 
 **Every Bash call is a fresh shell** — `$TEST_URL`, `$API_PORT`, `$JSONL_FILE` and friends do not survive between blocks. Substitute the resolved literals into every block you run, and record them in the report header.
 
@@ -428,7 +428,7 @@ curl -s "http://localhost:$API_PORT/api/sessions/$SDK_SESSION_ID" | jq '{model, 
 
 ## Phase 5b — Reload from History (Critical Regression Check)
 
-This phase verifies that message history renders correctly when loaded from disk — a different code path (`GET /api/sessions/:id/messages` -> `transcript-parser.ts` -> `MessageList` props) that often hides bugs invisible during live streaming.
+This phase verifies that message history renders correctly when loaded from disk — a different code path (`GET /api/sessions/:id/messages` -> `transcript-parser.ts` -> `SessionTranscript` props) that often hides bugs invisible during live streaming.
 
 **Method A: Hard page refresh**
 

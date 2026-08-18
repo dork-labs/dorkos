@@ -72,7 +72,7 @@ async function findRichField() {
 describe('the palettes still get what they need from the rich-text field', () => {
   // Hydration deliberately does NOT move the caret to the end — an external
   // write is not a claim about where the person is looking. The host puts it
-  // where it belongs, exactly as ChatInputContainer does after a path drop
+  // where it belongs, exactly as `SessionComposer` does after a path drop
   // (`focusAt(next.length)`), and that is the flow driven here.
   it('reports a slash command and a caret the command detector can read', async () => {
     const handle = createRef<ComposerInputHandle>();
@@ -184,7 +184,7 @@ describe('the palettes still get what they need from the rich-text field', () =>
 
 describe('insertMention round-trips through the rich-text field', () => {
   // `insertMention` returns `{ value, cursorPos }` where cursorPos is always
-  // PAST the separating space. RoomComposer writes the value and then calls
+  // PAST the separating space. `ChannelComposer` writes the value and then calls
   // focusAt(cursorPos); this asserts the caret the field reports back is the
   // one the picker asked for.
   it('lands the caret past the separating space, and reports it back', async () => {
