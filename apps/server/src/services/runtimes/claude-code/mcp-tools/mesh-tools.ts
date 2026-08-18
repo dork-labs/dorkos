@@ -163,21 +163,47 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
   };
 }
 
-/** List registered agents with optional filters. */
+/**
+ * List registered agents with optional filters, each carrying the address to
+ * send to.
+ *
+ * The manifest itself is unchanged — `namespace` stays stripped, as it is on
+ * every other public mesh surface. What is added is `relaySubject`: the agent's
+ * canonical `relay.agent.{namespace}.{agentId}` endpoint, resolved through
+ * `meshCore.getSubject()` (the un-stripped registry entry) so it is byte-identical
+ * to what `mesh_inspect` reports and to what Relay registered the endpoint and
+ * its access rules under.
+ *
+ * It rides the listing because the listing is where an agent decides who to talk
+ * to. Without it the only honest way to address a peer was a second
+ * `mesh_inspect` per agent, and the shortcut the model actually took was to
+ * invent `relay.agent.{agentId}` from the prose — a subject no allow rule can
+ * match, so every send was refused with ACCESS_DENIED (DOR-1337 / F5).
+ *
+ * A `relaySubject` is omitted, never guessed, when the id resolves to nothing —
+ * a row that raced with an unregister has no address, and an invented one would
+ * be worse than none.
+ */
 export function createMeshListHandler(deps: McpToolDeps) {
   return async (args: { runtime?: string; capability?: string; callerNamespace?: string }) => {
     const err = requireMesh(deps);
     if (err) return err;
     const hasFilters = args.runtime || args.capability || args.callerNamespace;
-    const agents = deps.meshCore!.list(
-      hasFilters
-        ? {
-            runtime: args.runtime as 'claude-code' | 'cursor' | 'codex' | 'other' | undefined,
-            capability: args.capability,
-            callerNamespace: args.callerNamespace,
-          }
-        : undefined
-    );
+    const mesh = deps.meshCore!;
+    const agents = mesh
+      .list(
+        hasFilters
+          ? {
+              runtime: args.runtime as 'claude-code' | 'cursor' | 'codex' | 'other' | undefined,
+              capability: args.capability,
+              callerNamespace: args.callerNamespace,
+            }
+          : undefined
+      )
+      .map((agent) => {
+        const relaySubject = mesh.getSubject(agent.id);
+        return { ...agent, ...(relaySubject ? { relaySubject } : {}) };
+      });
     return structuredJsonContent({ agents, count: agents.length });
   };
 }
@@ -312,7 +338,9 @@ export function meshToolDefinitions(deps: McpToolDeps) {
     ),
     tool(
       'mesh_list',
-      'List all registered agents with optional filters.',
+      'List all registered agents with optional filters. Each agent carries relaySubject — ' +
+        'its full endpoint address, e.g. "relay.agent.{namespace}.{agentId}". Send to that exact ' +
+        'string; a shorter subject you assemble yourself matches no access rule and is refused.',
       {
         runtime: z.string().optional().describe('Filter by runtime'),
         capability: z.string().optional().describe('Filter by capability'),

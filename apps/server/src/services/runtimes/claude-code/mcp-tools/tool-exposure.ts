@@ -24,18 +24,21 @@
  * absent from the turn-1 prompt, reachable only after `ToolSearch`. The SDK offers
  * two escapes and this module uses both, deliberately unevenly:
  *
- * - **`alwaysLoad`** puts a tool in the prompt from turn 1. Granted to exactly the
- *   {@link ALWAYS_LOADED_TOOLS} five. A room turn is the case that cannot afford a
- *   lookup: the agent is answering a person in a shared room, and a search step
- *   before it can react is a turn spent on plumbing. `list_capabilities` joins them
- *   as the discovery entry point — the one name that leads to the other seventy.
+ * - **`alwaysLoad`** puts a tool in the prompt from turn 1. Granted to the
+ *   {@link ALWAYS_LOADED_TOOLS} five on every session. A room turn is the case that
+ *   cannot afford a lookup: the agent is answering a person in a shared room, and a
+ *   search step before it can react is a turn spent on plumbing. `list_capabilities`
+ *   joins them as the discovery entry point — the one name that leads to the other
+ *   seventy. Sessions that ARE a registered mesh agent additionally get the
+ *   {@link AGENT_TO_AGENT_TOOLS} six, for the same reason applied to a different
+ *   turn; see {@link alwaysLoadedToolsFor}.
  * - **`searchHint`** is a short phrase the tool can be FOUND by, so the deferred
  *   remainder is discoverable by intent rather than by guessing a name. Every tool
  *   gets one, derived mechanically from what it already says about itself.
  *
- * **Always-loading the whole server would be the wrong trade**, which is why this
- * is a set and not a flag: eighty-odd tool schemas would ride every turn's prompt,
- * on every session, to save a lookup that only rooms genuinely cannot afford.
+ * **Always-loading the whole server would be the wrong trade**, which is why these
+ * are sets and not a flag: eighty-odd tool schemas would ride every turn's prompt,
+ * on every session, to save a lookup that only a few turns genuinely cannot afford.
  *
  * Nothing here is runtime-neutral. Codex and OpenCode reach the same tools through
  * the external `/mcp` server — under `dorkos_ui` for the UI server Codex spawns
@@ -95,6 +98,45 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'list_capabilities',
 ]);
 
+/**
+ * The six tools an agent-to-agent turn cannot afford to search for first.
+ *
+ * Granted eagerly only to sessions that ARE a registered mesh agent with Relay
+ * on — never to a plain session, which is most of them. The trade is the same
+ * one the five above make and it is paid by a different set of turns: reaching
+ * a peer means finding it (`mesh_list`), reading its address
+ * (`mesh_inspect`), and sending (`relay_send`, `relay_send_async`,
+ * `relay_send_and_wait`, `relay_inbox`), and DorkOS's own tester watched an
+ * agent narrate the cost — "I'll need to search for the mesh_list and relay
+ * tool schemas since they're deferred" — inside a three-minute call budget
+ * (DOR-1337 / F8).
+ *
+ * Kept to six. The rest of the relay and mesh surface (endpoint registration,
+ * topology writes, adapters, traces) is not on the critical path of one
+ * agent asking another a question, and stays deferred.
+ */
+export const AGENT_TO_AGENT_TOOLS: ReadonlySet<string> = new Set([
+  'mesh_list',
+  'mesh_inspect',
+  'relay_send',
+  'relay_send_async',
+  'relay_send_and_wait',
+  'relay_inbox',
+]);
+
+/**
+ * The always-loaded set for one session.
+ *
+ * @param agentToAgent - True when this session's working directory hosts a
+ *   registered mesh agent AND Relay is enabled, i.e. when the session can
+ *   actually reach a peer. False for every plain session, which then sees
+ *   exactly {@link ALWAYS_LOADED_TOOLS}.
+ */
+export function alwaysLoadedToolsFor(agentToAgent: boolean): ReadonlySet<string> {
+  if (!agentToAgent) return ALWAYS_LOADED_TOOLS;
+  return new Set([...ALWAYS_LOADED_TOOLS, ...AGENT_TO_AGENT_TOOLS]);
+}
+
 /** Longest search hint kept; anything past this is a description, not a hint. */
 const SEARCH_HINT_MAX_CHARS = 120;
 
@@ -143,15 +185,19 @@ export function searchHintFrom(source: string): string | undefined {
  *
  * @param bareName - The registered tool name.
  * @param hintSource - The capability's title, or the tool's description.
+ * @param alwaysLoaded - The set that decides eager loading for THIS session.
+ *   Defaults to {@link ALWAYS_LOADED_TOOLS}; an agent session passes the wider
+ *   set from {@link alwaysLoadedToolsFor}.
  * @returns Extras to pass as `tool()`'s fifth argument.
  */
 export function toolExposure(
   bareName: string,
-  hintSource: string
+  hintSource: string,
+  alwaysLoaded: ReadonlySet<string> = ALWAYS_LOADED_TOOLS
 ): { alwaysLoad?: true; searchHint?: string } {
   const searchHint = searchHintFrom(hintSource);
   return {
-    ...(ALWAYS_LOADED_TOOLS.has(bareName) ? { alwaysLoad: true as const } : {}),
+    ...(alwaysLoaded.has(bareName) ? { alwaysLoad: true as const } : {}),
     ...(searchHint ? { searchHint } : {}),
   };
 }

@@ -593,11 +593,43 @@ describe('buildRelayToolsBlock', () => {
   it('returns relay context when relay enabled and config on', () => {
     const result = _buildRelayToolsBlock();
     expect(result).toContain('<relay_tools>');
-    expect(result).toContain('relay.agent.{agentId}');
     expect(result).toContain('relay_register_endpoint');
     expect(result).toContain('relay_send');
     expect(result).toContain('relay_inbox');
     expect(result).toContain('</relay_tools>');
+  });
+
+  // DOR-1337 (F5). The block used to teach `relay.agent.{agentId}` — two
+  // segments — while every allow rule matches the four-segment
+  // `relay.agent.{namespace}.{agentId}`. An agent following its own
+  // documentation addressed a subject no rule could match and was refused,
+  // with the operator's grant sitting there correct and unmatched.
+  it('teaches the four-segment agent subject and never the two-segment one', () => {
+    const result = _buildRelayToolsBlock();
+    expect(result).toContain('relay.agent.{namespace}.{agentId}');
+    expect(result).not.toContain('relay.agent.{agentId}');
+    expect(result).not.toContain('relay.agent.{theirAgentId}');
+  });
+
+  it('sends the agent to relaySubject rather than to a subject it assembles', () => {
+    const result = _buildRelayToolsBlock();
+    expect(result).toContain('relaySubject');
+    expect(result).toContain('never');
+  });
+
+  // DOR-1337 (F6). A failed target used to arrive as an empty success.
+  it('warns that a done:true payload may carry an error', () => {
+    const result = _buildRelayToolsBlock();
+    expect(result).toContain('error');
+    expect(result).toContain('AGENT_ERROR');
+  });
+
+  // DOR-1337 (F8). The claim must match the exposure decision, both ways.
+  it('claims the six agent-to-agent tools are loaded only for an agent session', () => {
+    expect(_buildRelayToolsBlock(undefined, true)).toContain('already in your tool list');
+    const plain = _buildRelayToolsBlock(undefined, false);
+    expect(plain).not.toContain('already in your tool list');
+    expect(plain).toContain('ToolSearch');
   });
 
   it('returns empty string when relay disabled', () => {

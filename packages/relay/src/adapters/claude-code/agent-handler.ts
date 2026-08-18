@@ -223,6 +223,13 @@ export async function handleAgentMessage(
     messageBuffer = '';
   let streamedDone = false,
     streamError: string | undefined;
+  // An `error` event the turn emitted and then carried on from, ending with a
+  // normal `done`. Kept apart from `streamError` (a THROWN iterator) on purpose:
+  // `streamError` decides this delivery's success flag and trace-span status,
+  // and an upstream API 500 inside an otherwise-complete turn is not a delivery
+  // failure — the message arrived and was processed. What it must change is the
+  // ANSWER the caller reads, which is the `agent_result` below (DOR-1337 / F6).
+  let inStreamError: string | undefined;
 
   try {
     for await (const event of eventStream) {
@@ -232,6 +239,12 @@ export async function handleAgentMessage(
 
       if (envelope.replyTo && relay) {
         if (isInboxReplyTo) {
+          if (event.type === 'error') {
+            const data = event.data as { message?: string } | undefined;
+            // First failure wins: a turn that reports several is described by
+            // the one that started it, not by whatever landed last.
+            inStreamError ??= data?.message ?? 'Agent turn reported an error';
+          }
           if (event.type === 'text_delta') {
             const data = event.data as { text: string };
             messageBuffer += data.text;
@@ -335,7 +348,17 @@ export async function handleAgentMessage(
         relay
       );
     }
-    await publishAgentResult(envelope, collectedText, ccaSessionKey, relay);
+    // Every way this turn can have failed, on the ONE payload an inbox reader is
+    // told is terminal. A thrown iterator and a TTL abort also publish a separate
+    // error event from the `finally` above, which is enough for the synchronous
+    // waiter (it settles on the first non-progress payload) but not for a poller:
+    // that one reads a list, is told `done:true` ends it, and would otherwise see
+    // an error event next to a clean-looking result and have to guess which won.
+    const failure =
+      inStreamError ??
+      streamError ??
+      (controller.signal.aborted ? 'TTL budget expired' : undefined);
+    await publishAgentResult(envelope, collectedText, ccaSessionKey, relay, failure);
   }
 
   // Persist SDK session UUID for future messages

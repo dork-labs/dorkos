@@ -6,7 +6,7 @@
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import type { McpToolDeps } from './types.js';
-import { DORKOS_MCP_SERVER_NAME, toolExposure } from './tool-exposure.js';
+import { DORKOS_MCP_SERVER_NAME, toolExposure, alwaysLoadedToolsFor } from './tool-exposure.js';
 import { getCoreTools } from './core-tools.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
@@ -147,6 +147,15 @@ export function handRegisteredInSessionTools(
   const resolveDevtoolsSessionId =
     session || sessionId ? () => session?.sdkSessionId || sessionId || undefined : undefined;
 
+  // Which tools ride this session's turn-1 prompt. A session whose working
+  // directory hosts a registered agent AND has Relay wired can reach peers, so
+  // it gets the six agent-to-agent tools eagerly; every other session sees the
+  // standing five (DOR-1337 / F8). `relayIdentity.agentId` is set only by the
+  // registry lookup above, so this cannot be asserted by the model.
+  const alwaysLoaded = alwaysLoadedToolsFor(
+    relayIdentity.agentId !== undefined && deps.relayCore !== undefined
+  );
+
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each
   // tool's advertised input schema (it adds `approvalToken` to destructive ones),
   // so hinting the pre-gate definition would hint a schema the model never sees.
@@ -166,7 +175,8 @@ export function handRegisteredInSessionTools(
         ...getExtensionTools(deps),
       ],
       resolveContext
-    )
+    ),
+    alwaysLoaded
   );
 }
 
@@ -177,12 +187,16 @@ export function handRegisteredInSessionTools(
  * keys (`anthropic/alwaysLoad`, `anthropic/searchHint`) are the SDK's private
  * spelling of that contract — hand-writing them would pin this codebase to an
  * internal string. The hint source is the tool's own description, so nothing has
- * to be maintained per tool; see `tool-exposure.ts` for why only five load eagerly.
+ * to be maintained per tool; see `tool-exposure.ts` for which tools load eagerly
+ * and why the set is deliberately short.
  *
  * @param tools - Gated tool definitions.
+ * @param alwaysLoaded - The eager-loading set for this session (see
+ *   `tool-exposure.ts`: the standing five, plus the agent-to-agent six when the
+ *   session is itself a registered agent).
  * @returns The same tools, carrying their exposure metadata.
  */
-function withToolExposure(tools: SdkMcpTool[]): SdkMcpTool[] {
+function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>): SdkMcpTool[] {
   return tools.map((definition) => {
     const rebuilt = tool(
       definition.name,
@@ -190,7 +204,7 @@ function withToolExposure(tools: SdkMcpTool[]): SdkMcpTool[] {
       definition.inputSchema,
       definition.handler as Parameters<typeof tool>[3],
       {
-        ...toolExposure(definition.name, definition.description),
+        ...toolExposure(definition.name, definition.description, alwaysLoaded),
         ...(definition.annotations ? { annotations: definition.annotations } : {}),
       }
     );

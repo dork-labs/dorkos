@@ -162,7 +162,14 @@ export async function resolveLaunch(args: {
     isCommandDispatch = knownCommands === null || knownCommands.includes(`/${commandName}`);
   }
 
-  const baseAppend = await buildSystemPromptAppend(effectiveCwd, toolConfig);
+  // Whether this turn's prompt already carries the six agent-to-agent tools.
+  // Same two facts the tool server keys the decision on (`mcp-tools/index.ts`):
+  // the working directory hosts a registered agent, and Relay is on. The prose
+  // must not claim a tool is loaded when it is deferred, so both sides read the
+  // same registry and the same flag (DOR-1337 / F8).
+  const baseAppend = await buildSystemPromptAppend(effectiveCwd, toolConfig, {
+    agentSession: !!meshAgentId && isRelayEnabled(),
+  });
   // Concatenate caller-supplied append (e.g. Tasks scheduler context) after the base
   const systemPromptAppend = messageOpts?.systemPromptAppend
     ? `${baseAppend}\n\n${messageOpts.systemPromptAppend}`

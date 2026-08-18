@@ -539,6 +539,87 @@ describe('relay_send_and_wait terminal error handling', () => {
     expect(parsed.progress).toHaveLength(1);
     expect(parsed.reply).toBeUndefined();
   });
+
+  // DOR-1337 (F6). The other terminal shape: the turn hit an upstream failure
+  // mid-stream and still ended normally, so CCA publishes no error event at all
+  // — only the final agent_result, now carrying `error`. Before this, the caller
+  // read `{"reply":{"type":"agent_result","text":"","done":true}}` and had no
+  // way to tell a crash from an empty answer.
+  it('returns AGENT_ERROR when the final agent_result carries an error', async () => {
+    const mockRelay = {
+      registerEndpoint: vi.fn().mockResolvedValue({}),
+      publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
+      subscribe: vi.fn().mockImplementation((_subject: string, handler: (env: unknown) => void) => {
+        setTimeout(
+          () =>
+            handler({
+              payload: {
+                type: 'agent_result',
+                text: 'got this far',
+                done: true,
+                error: 'API Error: 500',
+              },
+              from: 'relay.agent.team.b',
+              id: 'e1',
+            }),
+          5
+        );
+        return vi.fn();
+      }),
+      unregisterEndpoint: vi.fn().mockResolvedValue(true),
+    };
+    const handler = createRelayQueryHandler(
+      { relayCore: mockRelay as never } as McpToolDeps,
+      SENDER
+    );
+    const result = await handler({
+      to_subject: 'relay.agent.team.b',
+      payload: { task: 'work' },
+      timeout_ms: 5000,
+    });
+
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.code).toBe('AGENT_ERROR');
+    expect(parsed.error).toContain('API Error: 500');
+    expect(parsed.partialText).toBe('got this far');
+    expect(parsed.from).toBe('relay.agent.team.b');
+    // Never success-shaped: a `reply` field is what a caller reads as an answer.
+    expect(parsed.reply).toBeUndefined();
+  });
+
+  it('still returns a success-shaped reply for an error-free agent_result', async () => {
+    const mockRelay = {
+      registerEndpoint: vi.fn().mockResolvedValue({}),
+      publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
+      subscribe: vi.fn().mockImplementation((_subject: string, handler: (env: unknown) => void) => {
+        setTimeout(
+          () =>
+            handler({
+              payload: { type: 'agent_result', text: 'the answer', done: true },
+              from: 'relay.agent.team.b',
+              id: 'e1',
+            }),
+          5
+        );
+        return vi.fn();
+      }),
+      unregisterEndpoint: vi.fn().mockResolvedValue(true),
+    };
+    const handler = createRelayQueryHandler(
+      { relayCore: mockRelay as never } as McpToolDeps,
+      SENDER
+    );
+    const result = await handler({
+      to_subject: 'relay.agent.team.b',
+      payload: {},
+      timeout_ms: 5000,
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.reply).toMatchObject({ type: 'agent_result', text: 'the answer' });
+  });
 });
 
 describe('ACCESS_DENIED remediation hint', () => {
@@ -592,6 +673,128 @@ describe('server-injected sender identity (M6)', () => {
       {},
       expect.objectContaining({ from: 'relay.agent.ns.trusted' })
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bare-agent-id targets (DOR-1337 / F5)
+//
+// The canonical inbox is `relay.agent.{namespace}.{agentId}` and every allow
+// rule is written against it, so a caller that addressed a peer by id alone hit
+// the blanket cross-namespace deny no matter what the operator had allowed. The
+// send tools now rewrite that one shape — and only when the id is really an
+// agent — before the ACL sees it. The pass-through half matters just as much:
+// `relay.agent.<sessionId>` is the legacy session-routing address and must keep
+// meaning what it says.
+// ---------------------------------------------------------------------------
+describe('bare relay.agent.<agentId> targets are canonicalized before publish', () => {
+  /** Deps whose mesh knows exactly one agent, `a1`, living in namespace `team`. */
+  function depsKnowingA1(relayOverrides: Record<string, unknown> = {}): McpToolDeps {
+    const deps = makeMockDeps(relayOverrides);
+    return {
+      ...deps,
+      meshCore: {
+        getSubject: vi.fn((agentId: string) =>
+          agentId === 'a1' ? 'relay.agent.team.a1' : undefined
+        ),
+      } as unknown as McpToolDeps['meshCore'],
+    };
+  }
+
+  it('relay_send publishes to the agent full address, not the two-segment one it was given', async () => {
+    const deps = depsKnowingA1();
+    await createRelaySendHandler(deps, SENDER)({ subject: 'relay.agent.a1', payload: { q: 1 } });
+
+    expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+      'relay.agent.team.a1',
+      { q: 1 },
+      expect.anything()
+    );
+  });
+
+  it('relay_send_async publishes to the full address', async () => {
+    const deps = depsKnowingA1();
+    await createRelayDispatchHandler(
+      deps,
+      SENDER
+    )({
+      to_subject: 'relay.agent.a1',
+      payload: { q: 1 },
+    });
+
+    expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+      'relay.agent.team.a1',
+      { q: 1 },
+      expect.objectContaining({ from: SENDER.subject })
+    );
+  });
+
+  it('relay_send_and_wait publishes to the full address', async () => {
+    const deps = depsKnowingA1({
+      subscribe: vi.fn().mockImplementation((_s: string, handler: (env: unknown) => void) => {
+        setTimeout(
+          () => handler({ payload: { type: 'agent_result', text: 'ok', done: true }, from: 'b' }),
+          5
+        );
+        return vi.fn();
+      }),
+    });
+    await createRelayQueryHandler(
+      deps,
+      SENDER
+    )({
+      to_subject: 'relay.agent.a1',
+      payload: { q: 1 },
+      timeout_ms: 2000,
+    });
+
+    expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+      'relay.agent.team.a1',
+      { q: 1 },
+      expect.objectContaining({ replyTo: expect.stringContaining('relay.inbox.query.') })
+    );
+  });
+
+  it('leaves a legacy relay.agent.<sessionId> alone — a session id is not an agent id', async () => {
+    const deps = depsKnowingA1();
+    const sessionSubject = 'relay.agent.7f3c9a12-0000-4000-8000-000000000000';
+    await createRelaySendHandler(deps, SENDER)({ subject: sessionSubject, payload: {} });
+
+    expect(deps.relayCore!.publish).toHaveBeenCalledWith(sessionSubject, {}, expect.anything());
+  });
+
+  it('leaves an already-canonical four-segment subject alone', async () => {
+    const deps = depsKnowingA1();
+    await createRelaySendHandler(deps, SENDER)({ subject: 'relay.agent.team.a1', payload: {} });
+
+    expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+      'relay.agent.team.a1',
+      {},
+      expect.anything()
+    );
+  });
+
+  it('leaves a runtime-scoped session subject alone', async () => {
+    const deps = depsKnowingA1();
+    const runtimeScoped = 'relay.agent.claude-code.a1';
+    await createRelaySendHandler(deps, SENDER)({ subject: runtimeScoped, payload: {} });
+
+    expect(deps.relayCore!.publish).toHaveBeenCalledWith(runtimeScoped, {}, expect.anything());
+  });
+
+  it('leaves every non-agent subject alone', async () => {
+    const deps = depsKnowingA1();
+    for (const subject of ['relay.inbox.a1', 'relay.system.console', 'relay.human.console.c1']) {
+      await createRelaySendHandler(deps, SENDER)({ subject, payload: {} });
+      expect(deps.relayCore!.publish).toHaveBeenCalledWith(subject, {}, expect.anything());
+    }
+  });
+
+  it('leaves the subject alone when Mesh is not wired at all', async () => {
+    const deps = makeMockDeps({});
+    await createRelaySendHandler(deps, SENDER)({ subject: 'relay.agent.a1', payload: {} });
+
+    expect(deps.relayCore!.publish).toHaveBeenCalledWith('relay.agent.a1', {}, expect.anything());
   });
 });
 

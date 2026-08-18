@@ -346,6 +346,14 @@ export const RelayAgentResultPayloadSchema = z
     type: z.literal('agent_result'),
     text: z.string().describe('Full collected response text from the agent session'),
     done: z.literal(true),
+    error: z
+      .string()
+      .optional()
+      .describe(
+        'Present only when the agent turn failed. `text` then holds whatever was ' +
+          'streamed before the failure, so a reader must check this field before ' +
+          'treating the result as an answer (DOR-1337).'
+      ),
   })
   .openapi('RelayAgentResultPayload');
 

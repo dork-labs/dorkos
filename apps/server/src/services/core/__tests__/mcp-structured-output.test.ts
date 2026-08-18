@@ -142,6 +142,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
       } as unknown as McpToolDeps['traceStore'],
       meshCore: {
         list: () => [MANIFEST],
+        getSubject: (agentId: string) => `relay.agent.demo.${agentId}`,
         getStatus: () => MESH_STATUS,
         inspect: () => MESH_INSPECT,
         getTopology: () => TOPOLOGY,
@@ -198,7 +199,13 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
   it('mesh_list returns schema-valid structuredContent', async () => {
     const structured = await callStructured('mesh_list');
     expect(structured).toMatchObject({ count: 1 });
-    expect(structured.agents).toEqual([MANIFEST]);
+    // The manifest plus the address to send to (DOR-1337). This assertion is
+    // what proves the added field passes the tool's declared `outputSchema` —
+    // the MCP SDK validates `structuredContent` against it and an unexpected
+    // key would fail the call rather than reach here.
+    expect(structured.agents).toEqual([
+      { ...MANIFEST, relaySubject: `relay.agent.demo.${MANIFEST.id}` },
+    ]);
   });
 
   it('mesh_status returns schema-valid structuredContent', async () => {

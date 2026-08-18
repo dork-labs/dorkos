@@ -23,9 +23,22 @@ import { registerFromDefinitions, type ExternalToolConfigs } from './register-fr
 
 const A = ToolAnnotationPresets;
 
-/** `outputSchema` for `mesh_list`. */
+/**
+ * `outputSchema` for `mesh_list`.
+ *
+ * The manifest plus the one field the listing adds: `relaySubject`, the agent's
+ * canonical endpoint address (DOR-1337). Optional because the handler omits it
+ * rather than guessing when an id resolves to nothing.
+ */
 const meshListOutputSchema = {
-  agents: z.array(AgentManifestSchema),
+  agents: z.array(
+    AgentManifestSchema.extend({
+      relaySubject: z
+        .string()
+        .optional()
+        .describe('Canonical relay endpoint, e.g. relay.agent.{namespace}.{agentId}'),
+    })
+  ),
   count: z.number(),
 };
 

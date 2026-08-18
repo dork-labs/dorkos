@@ -30,16 +30,24 @@ import type { RelayPublisher, PublishOptions } from '../../types.js';
  * Used for agent-to-agent communication where the receiving agent polls an
  * inbox. Sends one clean message instead of streaming raw events.
  *
+ * `error` is what makes a failed turn legible across the relay boundary. Without
+ * it, a turn that died mid-way published the same shape as a turn that finished
+ * with nothing to say, and the caller could not tell them apart (DOR-1337 / F6).
+ * `text` still carries whatever was streamed before the failure, so partial work
+ * is not thrown away — but it travels as partial work, labelled.
+ *
  * @param originalEnvelope - The original incoming envelope
  * @param text - The full collected response text
  * @param fromId - The session ID to use as the sender
  * @param relay - The relay publisher
+ * @param error - The failure message when the turn failed; omit on success
  */
 export async function publishAgentResult(
   originalEnvelope: RelayEnvelope,
   text: string,
   fromId: string,
-  relay: RelayPublisher
+  relay: RelayPublisher,
+  error?: string
 ): Promise<void> {
   if (!originalEnvelope.replyTo) return;
   const opts: PublishOptions = {
@@ -49,7 +57,11 @@ export async function publishAgentResult(
       hopCount: originalEnvelope.budget.hopCount + 1,
     },
   };
-  await relay.publish(originalEnvelope.replyTo, { type: 'agent_result', text, done: true }, opts);
+  await relay.publish(
+    originalEnvelope.replyTo,
+    { type: 'agent_result', text, done: true, ...(error ? { error } : {}) },
+    opts
+  );
 }
 
 /**
