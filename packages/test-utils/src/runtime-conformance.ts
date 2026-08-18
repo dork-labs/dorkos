@@ -1787,7 +1787,7 @@ export function runtimeConformance(
       });
     });
 
-    describe('dispositions (C1, C2, C3, C6, C7)', () => {
+    describe('dispositions (C1, C2, C3, C6, C7, C9)', () => {
       const declaresSteer = (runtime: AgentRuntime): boolean =>
         runtime.getCapabilities().supportsSteer === true;
       const declaresStage = (runtime: AgentRuntime): boolean =>
@@ -1884,6 +1884,83 @@ export function runtimeConformance(
           cold,
           'a session holding no process cannot report steerable — there is nothing to push into, ' +
             'and saying otherwise is the promise DOR-1268 was filed for'
+        ).toBe(false);
+      });
+
+      it('C9: canStageSession tracks the seam a stage needs, and never outruns supportsContextStaging', async (ctx) => {
+        // The per-SESSION half of staging (DOR-1307), and the exact counterpart
+        // of C7 (C8 was already spoken for by `settleOpenTurn`). Optional on the
+        // same terms as C7: a runtime whose staging is uniform
+        // omits it and its static flag stands for every session. One that
+        // implements it is held to the claims below, because the server routes a
+        // stage to the NATIVE path on the strength of this answer — and for
+        // claude-code the native path is what starts a process.
+        const runtime = makeRuntime();
+        const canStageSession = runtime.canStageSession?.bind(runtime);
+        if (canStageSession === undefined) {
+          // A SKIP, not a pass, for C7's reason: an `it` that returns early is
+          // indistinguishable from one that asserted something.
+          ctx.skip(
+            'this runtime does not implement `canStageSession`, so its static `supportsContextStaging` ' +
+              'is the answer for every one of its sessions (see AgentRuntime.canStageSession)'
+          );
+          return;
+        }
+
+        // (1) ANSWERABLE for a session it has never heard of, never a throw —
+        // the ladder asks about whatever session the message arrived for.
+        const strangerId = nextSessionId();
+        expect(
+          () => canStageSession(strangerId),
+          'canStageSession must answer for a session it has never heard of, not throw'
+        ).not.toThrow();
+        const stranger = canStageSession(strangerId);
+        expect(typeof stranger, 'canStageSession must answer a boolean').toBe('boolean');
+
+        // (2) It NARROWS the static flag, never widens it. A runtime that cannot
+        // stage at all has no stageable session, and claiming one would send the
+        // ladder down a native path that does not exist.
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        if (!declaresStage(runtime)) {
+          expect(
+            stranger || canStageSession(sessionId),
+            'a runtime declaring supportsContextStaging: false must report no session as stageable'
+          ).toBe(false);
+          return;
+        }
+
+        // (3) The answer FOLLOWS THE MECHANISM rather than the adapter, which is
+        // the whole reason the method exists and the one claim a constant cannot
+        // satisfy.
+        if (!warmSession) {
+          expect(
+            runtime.getCapabilities().supportsPersistentSession,
+            'a runtime that implements canStageSession without holding a process between turns ' +
+              'has no state for the answer to follow — say what varies, or drop the method and ' +
+              'let supportsContextStaging stand'
+          ).toBe(false);
+          return;
+        }
+
+        const cold = canStageSession(sessionId);
+        await warmSession(runtime, sessionId);
+        const warm = canStageSession(sessionId);
+
+        // A session HOLDING the process a stage appends to is stageable. A
+        // constant `false` fails here.
+        expect(
+          warm,
+          'a session holding this runtime`s process must report stageable — a stage has a transcript to reach'
+        ).toBe(true);
+        // And one holding no process has no transcript to append to. A constant
+        // `true` fails here, which is exactly the defect DOR-1307 shipped: the
+        // server took the native path, and the adapter's only way to honour it
+        // was to boot an agent the operator never opted into.
+        expect(
+          cold,
+          'a session holding no process cannot report stageable — there is nothing to append to, ' +
+            'and saying otherwise is what made Add context start a process (DOR-1307)'
         ).toBe(false);
       });
 

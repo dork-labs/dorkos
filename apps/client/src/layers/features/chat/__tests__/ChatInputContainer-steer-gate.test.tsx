@@ -184,6 +184,11 @@ function steerRow() {
   return screen.queryByRole('button', { name: 'Steer' });
 }
 
+/** The Add context row, if the composer offered one. */
+function addContextRow() {
+  return screen.queryByRole('button', { name: 'Add context' });
+}
+
 describe('the Steer row is in the DOM only when this chat could really cut in', () => {
   it('is absent on a steer-capable runtime whose session cannot cut in (DOR-1268)', () => {
     seedSteerable(false);
@@ -207,6 +212,33 @@ describe('the Steer row is in the DOM only when this chat could really cut in', 
     // never sets the field, and reading its silence as "no" would hide a row
     // that works.
     render(<ChatInputContainer {...baseProps} />);
+    expect(steerRow()).toBeTruthy();
+  });
+});
+
+describe('the Add context row stays offered on both paths (DOR-1307)', () => {
+  // Steer and Add context are gated differently ON PURPOSE, and the difference
+  // is what each `false` costs the person. A steer that cannot cut in is a dead
+  // button, so the row goes. A stage that cannot reach the transcript is FOLDED
+  // into the next turn and lands anyway, so hiding the row would take away
+  // something that works. The fix for DOR-1307 was in the server's routing, not
+  // in what the composer offers, and these two cases hold that line: they go red
+  // if a later change gates Add context on the same per-session answer as Steer.
+  it('is offered on the resume path, where a stage folds into the next turn', () => {
+    seedSteerable(false);
+    render(<ChatInputContainer {...baseProps} />);
+
+    expect(addContextRow()).toBeTruthy();
+    // The pairing is the point: same session, same instant, one row gone and the
+    // other kept.
+    expect(steerRow()).toBeNull();
+  });
+
+  it('is offered on a session holding its agent open, where a stage lands natively', () => {
+    seedSteerable(true);
+    render(<ChatInputContainer {...baseProps} />);
+
+    expect(addContextRow()).toBeTruthy();
     expect(steerRow()).toBeTruthy();
   });
 });

@@ -3395,6 +3395,7 @@
           "unsupported",
           "session-idle",
           "not-steerable",
+          "not-stageable",
           "no-open-turn",
           "pending-interaction"
         ]
