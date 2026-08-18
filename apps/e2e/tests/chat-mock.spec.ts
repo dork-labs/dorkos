@@ -8,6 +8,7 @@ import { RightPanelPage } from '../pages/RightPanelPage.js';
 import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
 import { registerCompactionTests } from './chat/compaction.js';
 import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-ime.js';
+import { registerHeldProcessTests } from './chat/held-process.js';
 import { registerInteractivePromptTests } from './chat/interactive-prompts.js';
 import { registerAskAnywhereTests } from './conversation/ask-anywhere.js';
 import { registerLiveTurnVisibilityTests } from './chat/live-turn-visibility.js';
@@ -969,6 +970,13 @@ registerAskAnywhereTests({ apiUrl: API_URL, agentDir: () => agentDir });
 // open across several assertions using step barriers, which only survives on
 // this file's sequential worker.
 registerLiveTurnVisibilityTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
+// The persistent path — warm agents, a steer that cuts in, Add context, and Stop
+// on a warm agent (L-11, C-09b, C-11, C-10's pump scope; DOR-1326). Registered
+// here for the same lock as the suite above, plus one of its own: it puts
+// individual sessions on the held-process path, which only stays contained
+// because this file's tests run one at a time on one worker.
+registerHeldProcessTests({ apiUrl: API_URL, agentDir: () => agentDir });
 
 // Compaction end to end (L-04, DOR-1215). Registered here because it drives
 // turns and a `/compact` against the shared test-mode server — see the module
