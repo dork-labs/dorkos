@@ -16,7 +16,7 @@ Worth saying first, because three of my Aug 11 notes are closed:
   Approve / Always Allow / Deny, and `Heads up → agent › Waiting on you` shows in the sidebar. On
   Aug 11 a real permission request rendered nowhere I could get to and auto-denied itself at 10:00.
 - **The engaged window announces itself.** `stopped replying here — this back-and-forth hit its
-  automatic-reply limit`. Before, it lapsed silently and I posted into a dead room.
+automatic-reply limit`. Before, it lapsed silently and I posted into a dead room.
 - **`relay_send_and_wait` fails fast.** It used to hang the full 10 minutes, three times in a row,
   and abort the turn. Now it returns `ACCESS_DENIED` in seconds with a reason.
 
@@ -40,7 +40,7 @@ The only workaround is widening that enum in both `config-schema.ts` and the gen
 `config/config.schema.json` — which a plugin update overwrites, at which point the config silently
 stops validating. My install is in that state now.
 
-Related: `flow.md` says *"All tracker I/O routes through the `linear-adapter` skill."* The
+Related: `flow.md` says _"All tracker I/O routes through the `linear-adapter` skill."_ The
 PM-agnostic framing is real in the architecture and not yet true in the shipped code.
 
 ### 2. Mac app reports Claude Code missing when it's installed and signed in
@@ -109,7 +109,7 @@ grew a segment, routing learned both, and the ACL layer and the docs didn't.
 When the target agent's turn died, the caller got:
 
 ```json
-{"reply":{"type":"agent_result","text":"","done":true},"progress":[]}
+{ "reply": { "type": "agent_result", "text": "", "done": true }, "progress": [] }
 ```
 
 with a real `replyMessageId`. The failure was an upstream `API Error: 500` — Anthropic's, not
@@ -131,8 +131,8 @@ scales badly: 5 agents is 20 grants.
 
 ### 8. Relay tool schemas are deferred, and the agent pays for it
 
-Its own words: *"I'll need to search for the mesh_list and relay tool schemas since they're
-deferred."* That's a round trip on every agent-to-agent call, against a 3-minute timeout.
+Its own words: _"I'll need to search for the mesh_list and relay tool schemas since they're
+deferred."_ That's a round trip on every agent-to-agent call, against a 3-minute timeout.
 
 ---
 
@@ -192,14 +192,14 @@ agent caught this and flagged it, which is the only reason I didn't misread it.
   author's code.
 - **`/flow:init` probed before it offered.** It checked what was actually reachable on my machine
   instead of listing all three trackers blindly, recommended `gh` on a stated security property
-  (per-call identity), and named the Notion MCP problem unprompted: *"an MCP server acts as whoever
-  OAuth'd it, with no per-call account flag … /flow silently writes as the wrong user."* Then it
+  (per-call identity), and named the Notion MCP problem unprompted: _"an MCP server acts as whoever
+  OAuth'd it, with no per-call account flag … /flow silently writes as the wrong user."_ Then it
   offered **"Decide later"** with the exact consequence spelled out. That's how a setup wizard
   avoids pointing something at production.
 - **The agents kept out-reporting the UI.** Three separate times. One diagnosed its own
   `ACCESS_DENIED`, named both namespaces and the rule, and gave me the click path. One refused to
-  trust its own passing gate — *"it passed first try, which made me suspicious, so I proved the
-  harness bites"* — and then failed a bad fixture on INV-3. And it listed four explicit guesses it
+  trust its own passing gate — _"it passed first try, which made me suspicious, so I proved the
+  harness bites"_ — and then failed a bad fixture on INV-3. And it listed four explicit guesses it
   hadn't verified, and set `autonomy.default: "manual"` on its own initiative because no repo was
   wired, flagging that as its call rather than something I asked for.
 
