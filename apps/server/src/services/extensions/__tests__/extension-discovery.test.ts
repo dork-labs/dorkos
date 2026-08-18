@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { ExtensionDiscovery } from '../extension-discovery.js';
 import { mayRunExtensionCode } from '../extension-load-policy.js';
 import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
+import { logger } from '../../../lib/logger.js';
 
 /** No user overrides. */
 const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [], approvedToRun: [] };
@@ -43,6 +44,7 @@ describe('ExtensionDiscovery', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -636,6 +638,102 @@ describe('ExtensionDiscovery', () => {
       );
 
       expect(results[0]).toMatchObject({ id: 'user-ext', origin: 'user', status: 'enabled' });
+    });
+  });
+
+  /**
+   * The working directory is `$HOME` for a Finder-launched Mac app and for
+   * `dorkos` started from `~`, which makes `{cwd}/.dork/extensions` the very
+   * directory `{dorkHome}/extensions` names. Every installed extension was then
+   * re-found as a "project copy" of itself and warned about (DOR-1336 / F10).
+   */
+  describe('when the project directory holds the DorkOS home itself', () => {
+    it('finds each extension once, keeps it global and core, and warns about nothing', async () => {
+      await writeManifest(path.join(dorkHome, 'extensions', 'marketplace'), {
+        id: 'marketplace',
+        name: 'Marketplace',
+        version: '1.0.0',
+      });
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+      const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+
+      // `dorkHome` is `{tmpDir}/.dork`, so a cwd of `{tmpDir}` makes the local
+      // extensions directory the global one.
+      const results = await discovery.discover(tmpDir, EMPTY_CONFIG, core);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        id: 'marketplace',
+        scope: 'global',
+        origin: 'core',
+        status: 'enabled',
+        path: path.join(dorkHome, 'extensions', 'marketplace'),
+      });
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('keeps an ordinary extension global rather than re-scoping it as local', async () => {
+      // No core membership and no approval, so nothing warns either way — the
+      // question here is only whether the same directory was listed twice.
+      await writeManifest(path.join(dorkHome, 'extensions', 'my-tool'), {
+        id: 'my-tool',
+        name: 'My Tool',
+        version: '1.0.0',
+      });
+
+      const results = await discovery.discover(tmpDir, EMPTY_CONFIG, EMPTY_CORE);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ id: 'my-tool', scope: 'global', origin: 'user' });
+    });
+
+    it('recognizes the global directory through a symlinked project .dork', async () => {
+      await writeManifest(path.join(dorkHome, 'extensions', 'marketplace'), {
+        id: 'marketplace',
+        name: 'Marketplace',
+        version: '1.0.0',
+      });
+      const cwd = path.join(tmpDir, 'home-alias');
+      await fs.mkdir(cwd, { recursive: true });
+      await fs.symlink(dorkHome, path.join(cwd, '.dork'), 'dir');
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+      const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+
+      const results = await discovery.discover(cwd, EMPTY_CONFIG, core);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ id: 'marketplace', scope: 'global', origin: 'core' });
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('still ignores a project copy of a core id in a genuinely different directory', async () => {
+      // The DOR-511 protection is not what is being relaxed: a project tree that
+      // is NOT the DorkOS home still cannot take over a bundled id.
+      await writeManifest(path.join(dorkHome, 'extensions', 'marketplace'), {
+        id: 'marketplace',
+        name: 'Marketplace',
+        version: '1.0.0',
+      });
+      const cwd = path.join(tmpDir, 'project');
+      const planted = path.join(cwd, '.dork', 'extensions', 'marketplace');
+      await writeManifest(planted, { id: 'marketplace', name: 'Marketplace', version: '9.9.9' });
+      await fs.writeFile(path.join(planted, 'server.ts'), 'PLANTED();\n', 'utf-8');
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+      const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+
+      const results = await discovery.discover(cwd, EMPTY_CONFIG, core);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        id: 'marketplace',
+        scope: 'global',
+        origin: 'core',
+        path: path.join(dorkHome, 'extensions', 'marketplace'),
+      });
+      expect(results[0].hasServerEntry).toBe(false);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("Ignoring the project copy of 'marketplace'")
+      );
     });
   });
 });

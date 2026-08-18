@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ExtensionRecord } from '@dorkos/extension-api';
+import { logger } from '../../../lib/logger.js';
 
 // --- Hoisted mocks (available before module-level code runs) ---
 
@@ -171,6 +172,8 @@ describe('ExtensionManager — server lifecycle', () => {
         'throw-srv',
         'obj-srv',
         'reinit-ext',
+        'idem-ext',
+        'proxy-ext',
         'shutdown-ext',
         'router-ext',
         'auto-srv',
@@ -308,7 +311,7 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(result.error).toBe('Server entry does not export a register function');
     });
 
-    it('shuts down existing server instance before reinitializing', async () => {
+    it('shuts down the existing instance when the server source changed', async () => {
       const record = makeRecord('reinit-ext', {
         status: 'compiled',
         hasServerEntry: true,
@@ -321,18 +324,106 @@ describe('ExtensionManager — server lifecycle', () => {
         sourceHash: 'srvhash',
       });
 
+      // `initialize` already started it once.
       await manager.initialize(null);
+      const first = manager.getServerRouter('reinit-ext');
+      expect(first).not.toBeNull();
 
-      // First init
+      // The extension's server.ts changed, so the running instance is stale.
+      mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash-v2' });
       await manager.initializeServer('reinit-ext');
-      expect(manager.getServerRouter('reinit-ext')).not.toBeNull();
 
-      // Second init should shut down the first
-      await manager.initializeServer('reinit-ext');
-      expect(manager.getServerRouter('reinit-ext')).not.toBeNull();
-
+      expect(manager.getServerRouter('reinit-ext')).not.toBe(first);
       // The scheduled cleanup from the first init should have been called
       expect(mockScheduledCleanup).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining('Server shutdown for reinit-ext')
+      );
+    });
+
+    /**
+     * The client POSTs `/api/extensions/:id/init-server` for every server-side
+     * extension on every page load and every tab, so an unconditional restart
+     * meant the marketplace extension tore itself down and re-evaluated its
+     * module seconds after boot, and again on each new tab (DOR-1336 / F10).
+     */
+    describe('idempotence', () => {
+      it('leaves an unchanged running server extension alone', async () => {
+        const record = makeRecord('idem-ext', {
+          status: 'compiled',
+          hasServerEntry: true,
+          serverEntryPath: '/fake/extensions/idem-ext/server.ts',
+        });
+        mockDiscover.mockResolvedValue([record]);
+        mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+        mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash' });
+
+        await manager.initialize(null);
+        const router = manager.getServerRouter('idem-ext');
+        expect(mockCreateDataProviderContext).toHaveBeenCalledTimes(1);
+
+        // What every page load asks for.
+        const result = await manager.initializeServer('idem-ext');
+
+        expect(result).toEqual({ ok: true });
+        expect(manager.getServerRouter('idem-ext')).toBe(router);
+        expect(mockCreateDataProviderContext).toHaveBeenCalledTimes(1);
+        expect(mockScheduledCleanup).not.toHaveBeenCalled();
+        expect(logger.info).not.toHaveBeenCalledWith(
+          expect.stringContaining('Server shutdown for idem-ext')
+        );
+      });
+
+      it('leaves an unchanged proxy-only extension mounted', async () => {
+        const record = makeRecord('proxy-ext', {
+          status: 'compiled',
+          hasDataProxy: true,
+          manifest: {
+            id: 'proxy-ext',
+            name: 'proxy-ext',
+            version: '1.0.0',
+            dataProxy: { baseUrl: 'https://api.example.com', authSecret: 'api_key' },
+          },
+        });
+        mockDiscover.mockResolvedValue([record]);
+        mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+
+        await manager.initialize(null);
+        const router = manager.getServerRouter('proxy-ext');
+        expect(router).not.toBeNull();
+
+        await manager.initializeServer('proxy-ext');
+
+        expect(manager.getServerRouter('proxy-ext')).toBe(router);
+        expect(logger.info).not.toHaveBeenCalledWith(
+          expect.stringContaining('Server shutdown for proxy-ext')
+        );
+      });
+
+      it('restarts an extension whose reload the operator asked for', async () => {
+        const record = makeRecord('reload-ext', {
+          status: 'compiled',
+          hasServerEntry: true,
+          serverEntryPath: '/fake/extensions/reload-ext/server.ts',
+        });
+        mockConfigGet.mockReturnValue({
+          enabled: ['reload-ext'],
+          disabled: [],
+          approvedToRun: ['reload-ext'],
+        });
+        mockDiscover.mockResolvedValue([record]);
+        mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+        mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash' });
+
+        await manager.initialize(null);
+        const router = manager.getServerRouter('reload-ext');
+
+        // `reload_extensions --id` means "run this again", even byte-for-byte.
+        await manager.reloadExtension('reload-ext');
+
+        expect(manager.getServerRouter('reload-ext')).not.toBe(router);
+        expect(mockScheduledCleanup).toHaveBeenCalled();
+      });
     });
   });
 

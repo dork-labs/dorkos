@@ -18,6 +18,13 @@ export interface ActiveServerExtension {
   router: Router;
   cleanup: (() => void) | null;
   scheduledCleanups: Array<() => void>;
+  /**
+   * What this instance was built from — see `buildSourceKey` in
+   * `extension-server-lifecycle.ts`. An `initialize` call carrying the same key
+   * is answered without a restart, which is what keeps the client's per-page-load
+   * init request from cycling every server-side extension.
+   */
+  sourceKey: string;
 }
 
 /** Result of creating a new extension. */

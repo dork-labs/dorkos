@@ -534,6 +534,48 @@ describe('ExtensionManager', () => {
     expect(diff.removed).toEqual([]);
   });
 
+  /**
+   * The cockpit announces its working directory once per page load, and it is
+   * usually the directory the server already booted with — a second full
+   * discovery pass that can only produce what the first one did (DOR-1336).
+   */
+  it('does not re-discover when the CWD has not actually changed', async () => {
+    mockDiscover.mockResolvedValue([makeRecord('ext-a', { status: 'disabled' })]);
+
+    await manager.initialize('/project-1');
+    const discoveriesAtBoot = mockDiscover.mock.calls.length;
+
+    const diff = await manager.updateCwd('/project-1');
+
+    expect(diff).toEqual({ added: [], removed: [] });
+    expect(mockDiscover).toHaveBeenCalledTimes(discoveriesAtBoot);
+  });
+
+  it('treats an equivalent path spelling as the same CWD', async () => {
+    mockDiscover.mockResolvedValue([makeRecord('ext-a', { status: 'disabled' })]);
+
+    await manager.initialize('/project-1');
+    const discoveriesAtBoot = mockDiscover.mock.calls.length;
+
+    const diff = await manager.updateCwd('/project-1/');
+
+    expect(diff).toEqual({ added: [], removed: [] });
+    expect(mockDiscover).toHaveBeenCalledTimes(discoveriesAtBoot);
+  });
+
+  it('re-discovers when the CWD is cleared', async () => {
+    mockDiscover.mockResolvedValue([makeRecord('ext-a', { status: 'disabled' })]);
+
+    await manager.initialize('/project-1');
+    const discoveriesAtBoot = mockDiscover.mock.calls.length;
+    mockDiscover.mockResolvedValue([]);
+
+    const diff = await manager.updateCwd(null);
+
+    expect(diff).toEqual({ added: [], removed: ['ext-a'] });
+    expect(mockDiscover).toHaveBeenCalledTimes(discoveriesAtBoot + 1);
+  });
+
   // === 12. toPublic strips internal fields ===
 
   it('strips path and sourceHash from public records', async () => {
