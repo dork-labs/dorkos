@@ -189,6 +189,7 @@ FILTERED_SPECS=(
 REGISTERED_MODULES=(
   'chat/compaction.ts'
   'chat/composer-escape-and-ime.ts'
+  'chat/held-process.ts'
   'chat/interactive-prompts.ts'
   'chat/live-turn-visibility.ts'
   'chat/runtime-capability-parity.ts'

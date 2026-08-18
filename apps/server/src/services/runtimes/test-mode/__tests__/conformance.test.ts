@@ -1,6 +1,7 @@
 import { afterEach, expect, vi } from 'vitest';
 import { runtimeConformance } from '@dorkos/test-utils';
 import { scenarioStore, requestFinishTurn } from '../scenario-store.js';
+import { heldProcesses } from '../held-process.js';
 import { interactionGate } from '../interaction-gate.js';
 import { TestModeRuntime } from '../test-mode-runtime.js';
 import {
@@ -14,9 +15,12 @@ import {
 
 // The failing and compacting factories below each flip the module-level
 // scenario store's DEFAULT, so restore it after every test: the passing tests
-// rely on 'simple-text'.
+// rely on 'simple-text'. The warmth and disposition drivers put their session on
+// the held-process path, which is per-session module state for the same reason —
+// give every process back so no case inherits another's warm session.
 afterEach(() => {
   scenarioStore.reset();
+  heldProcesses.reset();
 });
 
 // Purpose: TestModeRuntime is the reference "passing" runtime for the shared
@@ -68,13 +72,36 @@ runtimeConformance(() => new TestModeRuntime(), {
   // through the same projector the trigger path feeds.
   presenceTurn: (runtime, sessionId, content, probes) =>
     drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
+  // Test-mode declares `supportsPersistentSession`, so it owes the suite a way
+  // to reach WARM (C4/C5/C8). Turning the per-session opt-in on is the driver's
+  // job — the capability says this adapter CAN hold a process across turns, and
+  // whether a given session does is its own switch (`POST /api/test/persistent`
+  // in the browser leg, this call here).
+  //
+  // One drained turn is all it takes: the process is booted at the turn's start
+  // and handed back WARM when the generator finishes, so unlike claude-code
+  // there is no long-lived double to swap in.
+  warmSession: async (runtime, sessionId) => {
+    heldProcesses.setEnabled(sessionId, true);
+    for await (const _event of runtime.sendMessage(sessionId, 'conformance ping', {
+      cwd: '/projects/conformance',
+    })) {
+      // Drained rather than inspected: this driver's job is to LEAVE the session
+      // warm, and the suite makes its own assertions afterwards.
+    }
+  },
   // C1 declared arm: test-mode declares BOTH steer and stage, so it owes the
-  // suite a turn held open to deliver into. The `long-turn` scenario streams a
-  // heartbeat and stays `streaming` with no pending interaction — which keeps
-  // `interactionGate.isOpen` true, the exact gate deliverIntoTurn(steer) reads —
-  // and `requestFinishTurn` ends it. The default is restored by the afterEach.
+  // suite a turn held open to deliver into. Two things have to be true at once,
+  // and the driver arranges both: the session must be on the held-process path
+  // (a steer pushes into the process, and a session holding none refuses exactly
+  // as claude-code's resume path does), and a turn must genuinely be open. The
+  // `long-turn` scenario streams a heartbeat and stays `streaming` with no
+  // pending interaction — which keeps `interactionGate.isOpen` true, the second
+  // gate deliverIntoTurn(steer) reads — and `requestFinishTurn` ends it. Both
+  // module-level switches are restored by the afterEach.
   dispositionTurn: (runtime, sessionId, content, probes) => {
     scenarioStore.setDefault('long-turn');
+    heldProcesses.setEnabled(sessionId, true);
     return driveDispositionTurn(runtime, sessionId, content, '/projects/conformance', probes, {
       awaitOpen: () => vi.waitFor(() => expect(interactionGate.isOpen(sessionId)).toBe(true)),
       endTurn: () => requestFinishTurn(),

@@ -1377,9 +1377,15 @@ export function runtimeConformance(
           ).resolves.toBe(false);
 
           // And a session that is warm and IDLE — holding a process, running
-          // nothing. This is the half a constant `false` cannot fake its way
-          // through honestly: it is the state the answer is most tempting to get
-          // wrong, because there IS a live process behind it.
+          // nothing. This is the half a constant `true` cannot survive: it is
+          // the state the answer is most tempting to get wrong, because there IS
+          // a live process behind it, and a runtime that reported "yes, I
+          // settled something" here would be claiming to have ended a turn that
+          // never existed — which the server logs as a person's previous reply
+          // having failed. A constant `false` passes all three checks, and for a
+          // runtime whose turn cannot outlive its stream that is the honest
+          // answer rather than a dodge; what C8 pins is that the answer is never
+          // an invention.
           const sessionId = nextSessionId();
           runtime.ensureSession(sessionId, sessionOpts(runtime));
           await warmSession(runtime, sessionId);

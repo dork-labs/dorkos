@@ -862,6 +862,34 @@
         "Stability: --repeat-each=3 --workers=1, 36/36 across both modules; full chromium-mock project 45/45."
       ]
     },
+    "held-process": {
+      "specFile": "tests/chat/held-process.ts",
+      "feature": "chat",
+      "description": "The persistent path in a browser (DOR-1326): a warm agent answers the second message on the process the first left behind and a reap is invisible (L-11); a steer joins the live turn, renders inline and opens no second turn, while a chat that cannot cut in is not offered the choice and an API steer returns not-steerable (C-09a/C-09b); Add context reaches a warm agent natively and folds into the next reply when there is none (C-11); Stop settles a turn on a warm agent and the agent stays up (C-10, pump scope). Registered by chat-mock.spec.ts under the shared-server lock interactive-prompts.ts documents.",
+      "lastRun": "2026-08-18T19:20:00.000Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 2,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/server/src/services/runtimes/test-mode/held-process.ts",
+        "apps/server/src/services/runtimes/test-mode/held-process-scenarios.ts",
+        "apps/server/src/routes/test-control.ts",
+        "apps/server/src/services/session/message-dispatcher.ts",
+        "apps/client/src/layers/features/composer/ui/DispositionMenu.tsx",
+        "apps/client/src/layers/features/chat/ui/message/StagedContextNote.tsx"
+      ],
+      "lastModified": "",
+      "explorationNotes": [
+        "Put ONE session on the held path (POST /api/test/persistent {sessionId, enabled}), never a process-wide switch: this server is shared by four concurrent Playwright projects, the same reason POST /api/test/step is session-keyed.",
+        "Warmth has no product API — it is invisible to the person by design — so GET /api/test/persistent?sessionId= is the only way a browser can see it. It reads getSessionWarmth/canSteerSession/canStageSession off the runtime, not the bookkeeping behind them.",
+        "ChatPage.input does NOT match the composer mid-turn: the field renames itself 'Compose next — will send when ready'. Every case here types into a running turn, so the module matches both names (see GOTCHAS).",
+        "The warm-echo scenario names the path in its own answer (HELD-PROCESS-TURN-N vs NO-HELD-PROCESS) and labels staged words by route (staged-native: vs staged-folded:), so a case that quietly ran on the other path fails instead of passing.",
+        "warm-echo parks on a step barrier, so every turn needs one releaseStep — which polls, because a step fired before the scenario reaches the barrier is dropped and the turn then waits forever.",
+        "RED-for-the-right-reason: restoring pre-DOR-1326 semantics (nothing held, steer and stage accepted for every session) failed 7 of the 8 cases, including the Steer row OFFERED on a session that cannot cut in (DOR-1268) and Add context taking the native path so the fold never happened (DOR-1307). The eighth — the resume-path L-11 case — passed, correctly.",
+        "Stability: 8/8 twice at --workers=1 (44.7s, 1.2m); the whole chromium-mock project 62/62 in 5.1m."
+      ]
+    },
     "runtime-capability-parity": {
       "specFile": "tests/chat/runtime-capability-parity.ts",
       "feature": "chat",

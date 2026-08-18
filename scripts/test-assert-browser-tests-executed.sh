@@ -46,6 +46,7 @@ make_workspace() {
   : >"$root/apps/e2e/tests/chat/send-message.spec.ts"
   : >"$root/apps/e2e/tests/chat/compaction.ts"
   : >"$root/apps/e2e/tests/chat/composer-escape-and-ime.ts"
+  : >"$root/apps/e2e/tests/chat/held-process.ts"
   : >"$root/apps/e2e/tests/chat/interactive-prompts.ts"
   : >"$root/apps/e2e/tests/chat/live-turn-visibility.ts"
   : >"$root/apps/e2e/tests/chat/runtime-capability-parity.ts"
@@ -67,6 +68,9 @@ make_workspace() {
                    "tests": [ { "status": "expected" } ] } ] },
     { "title": "chat/composer-escape-and-ime.ts", "file": "chat/composer-escape-and-ime.ts",
       "specs": [ { "title": "the escape-and-ime module's suite runs", "file": "chat/composer-escape-and-ime.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
+    { "title": "chat/held-process.ts", "file": "chat/held-process.ts",
+      "specs": [ { "title": "the held-process module's suite runs", "file": "chat/held-process.ts",
                    "tests": [ { "status": "expected" } ] } ] },
     { "title": "chat/interactive-prompts.ts", "file": "chat/interactive-prompts.ts",
       "specs": [ { "title": "the interactive-prompts module's suite runs", "file": "chat/interactive-prompts.ts",
@@ -94,7 +98,7 @@ make_workspace() {
                     "specs": [ { "title": "auth runs", "file": "settings/auth-login.spec.ts",
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
-  "stats": { "expected": 11, "unexpected": 0, "flaky": 0, "skipped": 1 }
+  "stats": { "expected": 12, "unexpected": 0, "flaky": 0, "skipped": 1 }
 }
 JSON
 }
@@ -136,7 +140,7 @@ make_workspace "$tmp/healthy"
 # The count is the FIXTURE's, not the real suite's — two ordinary specs plus one
 # test per registered module — so it moves when make_workspace does and never
 # because somebody added a browser test.
-check 'a healthy run passes' "$tmp/healthy" 0 '11 test(s) executed'
+check 'a healthy run passes' "$tmp/healthy" 0 '12 test(s) executed'
 
 # A spec on disk that the run never collected — the testIgnore/testMatch hole.
 make_workspace "$tmp/uncollected"

@@ -1,5 +1,7 @@
+import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { DEMO_SCENARIOS } from './demo-scenarios.js';
+import { HELD_PROCESS_SCENARIOS } from './held-process-scenarios.js';
 import { interactionGate, type ScenarioContext } from './interaction-gate.js';
 import { INTERACTIVE_SCENARIOS } from './interactive-scenarios.js';
 import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
@@ -9,12 +11,21 @@ import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
  *
  * `ctx` is how a scenario WAITS — for an operator's approval, an answer, an
  * elicitation response, or a step the test releases (see
- * {@link ScenarioContext}). It is a second parameter rather than a wrapper so
- * every scenario written before it, which declares only `(content)`, keeps
- * type-checking and behaving identically: a function may always ignore
- * arguments it does not name.
+ * {@link ScenarioContext}). `opts` is what the RUNTIME was handed for this turn,
+ * whose `additionalContext` carries anything the server folded in — the only
+ * place a scenario can see a staged message that took the fold route rather than
+ * the native one (`held-process-scenarios.ts`).
+ *
+ * Both are trailing parameters rather than a wrapper so every scenario written
+ * before them, which declares only `(content)` or `(content, ctx)`, keeps
+ * type-checking and behaving identically: a function may always ignore arguments
+ * it does not name.
  */
-export type ScenarioFn = (content: string, ctx: ScenarioContext) => AsyncGenerator<StreamEvent>;
+export type ScenarioFn = (
+  content: string,
+  ctx: ScenarioContext,
+  opts: MessageOpts | undefined
+) => AsyncGenerator<StreamEvent>;
 
 /** Heartbeat interval for the working-turn scenarios. */
 const WORKING_TICK_MS = 1_000;
@@ -202,13 +213,15 @@ function compactingTurn(options: { hold: boolean }): ScenarioFn {
  * resource-contention measurement; the interactive entries come from
  * {@link INTERACTIVE_SCENARIOS} and back the interactive-session rows of
  * `meta/chat-capabilities.md` (DOR-1214) by PARKING until a person — or a test —
- * answers. All three families are inert unless selected via
- * `POST /api/test/scenario`.
+ * answers; the held-path entry comes from {@link HELD_PROCESS_SCENARIOS} and
+ * names in its own answer which path served the turn (DOR-1326). All four
+ * families are inert unless selected via `POST /api/test/scenario`.
  */
 const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   ...DEMO_SCENARIOS,
   ...Q3_SCENARIOS,
   ...INTERACTIVE_SCENARIOS,
+  ...HELD_PROCESS_SCENARIOS,
   /**
    * A turn that stays busy until `POST /api/test/finish-turn` says otherwise,
    * and gives up after three minutes regardless — see {@link workingTurn}.

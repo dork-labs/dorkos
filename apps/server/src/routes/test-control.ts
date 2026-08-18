@@ -4,10 +4,12 @@ import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import { getBoundary, validateBoundary } from '../lib/boundary.js';
 import { localDialHost } from '../lib/local-dial-host.js';
 import { env } from '../env.js';
+import { heldProcesses } from '../services/runtimes/test-mode/held-process.js';
 import { interactionGate } from '../services/runtimes/test-mode/interaction-gate.js';
 import { requestFinishTurn, scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
@@ -97,6 +99,153 @@ testControlRouter.post('/step', (req, res) => {
       .json({ error: 'Validation failed', details: z.flattenError(result.error) });
   }
   res.json({ ok: true, released: interactionGate.step(result.data.sessionId) });
+});
+
+/** The session a held-process control acts on. */
+const heldProcessSchema = z.object({
+  sessionId: z.string().uuid(),
+  enabled: z.boolean(),
+});
+
+/**
+ * Resolve the runtime that owns `sessionId`, and refuse unless it is a
+ * TestModeRuntime — the one adapter whose held process these controls speak for.
+ *
+ * All three held-process routes go through here, so the opt-in, the read and the
+ * reap can never disagree about which runtime they are talking to. Without the
+ * check, `POST /persistent` would happily write an opt-in for a session bound to
+ * a runtime that reads a different switch entirely (this server registers a
+ * claude-code-typed alias, and `?runtime=` can bind a session to `test-mode-b`),
+ * and the failure would surface much later as an affordance that never appeared.
+ *
+ * The class is imported DYNAMICALLY, the same way `POST /reset` imports it:
+ * `app.ts` imports this router statically, so a static class import here would
+ * pull TestModeRuntime into the production module graph and defeat the env-var
+ * gating in `index.ts`.
+ *
+ * @param sessionId - The session the caller named.
+ * @returns The owning runtime, or the status and message to answer with.
+ */
+async function resolveTestModeRuntime(
+  sessionId: string
+): Promise<{ runtime: AgentRuntime } | { status: number; error: string }> {
+  let runtime: AgentRuntime;
+  try {
+    runtime = await runtimeRegistry.resolveForSession(sessionId);
+  } catch (err) {
+    return {
+      status: 500,
+      error: err instanceof Error ? err.message : 'could not resolve the session runtime',
+    };
+  }
+  const { TestModeRuntime } = await import('../services/runtimes/test-mode/test-mode-runtime.js');
+  if (!(runtime instanceof TestModeRuntime)) {
+    return {
+      status: 400,
+      error:
+        `Session ${sessionId} is bound to '${runtime.type}', which is not a test-mode runtime. ` +
+        `The held-process controls only speak for test-mode's scripted process; a real runtime's ` +
+        `persistent session is the operator's own setting.`,
+    };
+  }
+  return { runtime };
+}
+
+/**
+ * `POST /api/test/persistent` — put ONE session on the held-process path, or
+ * take it off (DOR-1326).
+ *
+ * The test-mode equivalent of the operator turning "Keep agents warm between
+ * messages" on for a chat, and the lever that makes the persistent path
+ * reachable from a browser at all. With it on, the session's next turn boots a
+ * scripted process and keeps it: `getSessionWarmth` climbs to `warm`,
+ * `canSteerSession` and `canStageSession` answer `true` for THAT session, a
+ * steer joins its live turn, and a stage appends to it. With it off — the
+ * default for every session — the same runtime answers `false` and the server
+ * degrades exactly as it does for a default claude-code install.
+ *
+ * **Keyed by SESSION, and that is not a convenience.** The test-mode server is
+ * shared by four concurrent Playwright projects, so a process-wide switch would
+ * warm sessions belonging to specs that never asked for it — the same reason
+ * `POST /api/test/step` is session-keyed while `finish-turn` is deliberately not.
+ *
+ * Turning it OFF does not cool a session that is already holding a process,
+ * mirroring claude-code (ADR `260812-134510`). `POST /api/test/reap` is how a
+ * process is given back.
+ *
+ * Refuses a session bound to a runtime that is not test-mode, rather than
+ * writing an opt-in nothing will ever read: this server registers a
+ * claude-code-typed alias and could register more, and a silent no-op here would
+ * surface as a spec whose Steer row never appears, with nothing to point at.
+ */
+testControlRouter.post('/persistent', async (req, res) => {
+  const result = heldProcessSchema.safeParse(req.body);
+  if (!result.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+  }
+  const { sessionId, enabled } = result.data;
+  const runtime = await resolveTestModeRuntime(sessionId);
+  if ('error' in runtime) return res.status(runtime.status).json({ error: runtime.error });
+  heldProcesses.setEnabled(sessionId, enabled);
+  res.json({ ok: true, sessionId, enabled });
+});
+
+/** The session a held-process read reports on. */
+const heldProcessQuerySchema = z.object({ sessionId: z.string().uuid() });
+
+/**
+ * `GET /api/test/persistent?sessionId=…` — what the RUNTIME says about this
+ * session's process right now.
+ *
+ * Every field is read off the `AgentRuntime` seams themselves rather than out of
+ * the bookkeeping behind them, which is what makes a browser assertion on
+ * warmth a check of `getSessionWarmth` rather than of a number this route kept.
+ * There is no product API that reports warmth — it is invisible to the person by
+ * design, which is exactly why a test needs a seam of its own to see it.
+ */
+testControlRouter.get('/persistent', async (req, res) => {
+  const result = heldProcessQuerySchema.safeParse(req.query);
+  if (!result.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+  }
+  const { sessionId } = result.data;
+  const resolved = await resolveTestModeRuntime(sessionId);
+  if ('error' in resolved) return res.status(resolved.status).json({ error: resolved.error });
+  const { runtime } = resolved;
+  res.json({
+    enabled: heldProcesses.isEnabled(sessionId),
+    warmth: runtime.getSessionWarmth?.(sessionId) ?? 'cold',
+    steerable: runtime.canSteerSession?.(sessionId) ?? runtime.getCapabilities().supportsSteer,
+    stageable:
+      runtime.canStageSession?.(sessionId) ?? runtime.getCapabilities().supportsContextStaging,
+  });
+});
+
+/**
+ * `POST /api/test/reap` — give this session's held process back.
+ *
+ * The scripted stand-in for the five-minute idle reap and the warm-slot
+ * eviction, neither of which a browser test can wait out or provoke. It goes
+ * through the runtime's own `reapSession`, so what a test observes afterwards —
+ * `cold` warmth, and a next turn that answers exactly as the last one did — is
+ * the contract C5 states rather than this route's own bookkeeping.
+ */
+testControlRouter.post('/reap', async (req, res) => {
+  const result = heldProcessQuerySchema.safeParse(req.body);
+  if (!result.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+  }
+  const { sessionId } = result.data;
+  const resolved = await resolveTestModeRuntime(sessionId);
+  if ('error' in resolved) return res.status(resolved.status).json({ error: resolved.error });
+  await resolved.runtime.reapSession?.(sessionId);
+  res.json({ ok: true });
 });
 
 /** What `POST /api/test/agent-token` needs to name the agent it speaks for. */
