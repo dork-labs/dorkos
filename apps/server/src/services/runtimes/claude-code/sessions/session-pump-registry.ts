@@ -65,6 +65,23 @@
  * until their laptop fan told them. It is the same reasoning `message-dispatcher`
  * gives for wiring its projector hooks on import.
  *
+ * ## Every entry keys by ONE resolved id, never by whatever a caller passed
+ *
+ * A session can be asked about under more than one id: the request UUID a
+ * first turn warmed it under, and the canonical id the SDK re-mints on that
+ * same turn's `system/init` (ADR-0267). `SessionStore.sessionKeyOf` is the one
+ * place that already answers "which key does this session's record live
+ * under, given any id it answers to" — this registry takes that resolver
+ * ({@link SessionPumpRegistry.constructor}) and runs every caller-supplied id
+ * through it before the id ever touches {@link entries}. Before this existed,
+ * `acquire`/`peek`/`warmth`/`reap`/`evict` were keyed by the raw id: a pump
+ * warmed under the request UUID was invisible to a caller asking by the
+ * canonical id, so a second turn under the id the first turn's rebind had just
+ * taught the client spawned a SECOND process beside the first, which then sat
+ * orphaned until the idle reaper (DOR-1309). Resolving here, once, is what lets
+ * `PersistentDispatch` and the runtime's direct `getSessionWarmth`/`reapSession`
+ * calls agree without each remembering to resolve for itself.
+ *
  * @module services/runtimes/claude-code/sessions/session-pump-registry
  */
 import type { SessionWarmth } from '@dorkos/shared/agent-runtime';
@@ -119,49 +136,62 @@ export class SessionPumpRegistry {
   private readonly slots = new WarmSlotBook();
 
   /**
+   * Build a registry that resolves every caller-supplied id through ONE
+   * source of truth before it ever keys {@link entries} — see the module doc.
+   *
+   * @param sessionKeyOf - Answers "which key does this session's pump live
+   *   under, given any id it answers to" — `SessionStore.sessionKeyOf` in
+   *   production (DOR-1309). A raw id the resolver has never heard of comes
+   *   back unchanged, which is correct: a genuinely new session has nothing to
+   *   resolve TO yet.
+   */
+  constructor(private readonly sessionKeyOf: (sessionId: string) => string) {}
+
+  /**
    * The pump for `sessionId`, creating one (COLD, unlaunched) if there is none.
    *
    * Creating a pump costs nothing and boots nothing; the ceiling is enforced
    * when a process is actually about to be booted, because that is what the
    * ceiling counts.
    *
-   * @param sessionId - Session the pump belongs to
+   * @param sessionId - Session the pump belongs to, in any id it answers to
    * @param opts - The launcher, the two bounds, and the pump's seams
    */
   acquire(sessionId: string, opts: AcquirePumpOptions): SessionPump {
-    const existing = this.entries.get(sessionId);
+    const key = this.sessionKeyOf(sessionId);
+    const existing = this.entries.get(key);
     if (existing) return existing.pump;
     const { maxWarmSessions, warmIdleMs, ...pumpOpts } = opts;
     const pump = new SessionPump({
       ...pumpOpts,
-      sessionId,
-      reserveSlot: () => this.reserveSlot(sessionId, maxWarmSessions),
+      sessionId: key,
+      reserveSlot: () => this.reserveSlot(key, maxWarmSessions),
       onStateChange: (change) => {
         // The registry's own bookkeeping runs FIRST, so a throw from the
         // caller's observer cannot cost this session its idle timer. The pump
         // catches and logs whatever either of us throws.
-        this.noteStateChange(sessionId, change.to);
+        this.noteStateChange(key, change.to);
         pumpOpts.onStateChange?.(change);
       },
     });
-    this.entries.set(sessionId, { pump, maxWarmSessions, warmIdleMs });
+    this.entries.set(key, { pump, maxWarmSessions, warmIdleMs });
     liveRegistries.add(this);
     return pump;
   }
 
   /** The pump for `sessionId`, or undefined when this server holds none. */
   peek(sessionId: string): SessionPump | undefined {
-    return this.entries.get(sessionId)?.pump;
+    return this.entries.get(this.sessionKeyOf(sessionId))?.pump;
   }
 
   /**
    * How warm `sessionId` is. `'cold'` for a session this registry has never
    * heard of, which is the honest answer: there is no process.
    *
-   * @param sessionId - Session to report on
+   * @param sessionId - Session to report on, in any id it answers to
    */
   warmth(sessionId: string): SessionWarmth {
-    return this.entries.get(sessionId)?.pump.warmth ?? 'cold';
+    return this.entries.get(this.sessionKeyOf(sessionId))?.pump.warmth ?? 'cold';
   }
 
   /** How many processes exist or are booting right now — what the ceiling counts. */
@@ -182,15 +212,17 @@ export class SessionPumpRegistry {
    * timer or a sweep asking at the wrong moment is a normal outcome, not an
    * error.
    *
-   * @param sessionId - Session whose process should be given back
+   * @param sessionId - Session whose process should be given back, in any id
+   *   it answers to
    * @returns True when the process was closed, false when the pump declined
    *   (not warm, or parked on a person) or there was nothing to close
    */
   async reap(sessionId: string): Promise<boolean> {
-    const entry = this.entries.get(sessionId);
+    const key = this.sessionKeyOf(sessionId);
+    const entry = this.entries.get(key);
     if (!entry) return false;
     if (!(await entry.pump.reap())) return false;
-    this.drop(sessionId);
+    this.drop(key);
     return true;
   }
 
@@ -199,13 +231,14 @@ export class SessionPumpRegistry {
    * This is the eviction edge — the caller drops the session RECORD afterwards,
    * so no subprocess outlives the record it belongs to.
    *
-   * @param sessionId - Session going away
+   * @param sessionId - Session going away, in any id it answers to
    */
   async evict(sessionId: string): Promise<void> {
-    const entry = this.entries.get(sessionId);
+    const key = this.sessionKeyOf(sessionId);
+    const entry = this.entries.get(key);
     if (!entry) return;
     await entry.pump.teardown();
-    this.drop(sessionId);
+    this.drop(key);
   }
 
   /**

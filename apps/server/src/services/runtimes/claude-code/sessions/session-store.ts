@@ -158,6 +158,34 @@ export class SessionStore {
     return mappedKey !== undefined && this.sessions.has(mappedKey) ? mappedKey : undefined;
   }
 
+  /**
+   * The single answer to "which key is this session's warm process filed
+   * under?" — {@link resolveMapKey} with a total return, so a caller never has
+   * to decide what an unresolved id means.
+   *
+   * `PersistentDispatch` and `SessionPumpRegistry` (`sessions/persistent-dispatch.ts`,
+   * `sessions/session-pump-registry.ts`) key their own maps by this rather than
+   * by whatever id a caller happens to pass, which is what makes a pump
+   * reachable by every id its session has ever answered to — the request UUID
+   * a first turn warmed it under AND the canonical id the SDK re-mints on that
+   * same turn's `system/init` (ADR-0267). Before this existed, those two maps
+   * were keyed by the raw id: turn 1 warmed a process under the request UUID,
+   * the rebind updated only THIS store's own reverse index, and turn 2's POST
+   * — sent under the canonical id the 202 just taught the client — missed both
+   * maps and started a second warm process beside the first, which then sat
+   * orphaned until the idle reaper (DOR-1309).
+   *
+   * Falls back to `sessionId` itself for an id this store has never heard of —
+   * a genuinely new session has no alias to resolve TO yet, and is about to
+   * become the map key on its own first use, so the id already is its own
+   * answer.
+   *
+   * @param sessionId - Any id the session answers to, or an id nobody has used
+   */
+  sessionKeyOf(sessionId: string): string {
+    return this.resolveMapKey(sessionId) ?? sessionId;
+  }
+
   /** Find a session by map key or SDK session ID (O(1) via reverse index). */
   findSession(sessionId: string): AgentSession | undefined {
     const direct = this.sessions.get(sessionId);

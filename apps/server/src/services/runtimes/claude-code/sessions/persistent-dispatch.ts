@@ -67,6 +67,43 @@
  * shape that would need it (one stream, several concurrently-open turns) still
  * does not exist on this path.
  *
+ * ## Every entry point resolves to ONE key before touching `bundles`
+ *
+ * A session answers to more than one id across its life: the request UUID a
+ * first turn warmed it under, and the canonical id the SDK re-mints on that
+ * same turn's `system/init` (ADR-0267) — and the client learns the canonical
+ * id from that turn's 202, so its VERY NEXT message is sent under it. Every
+ * method below that touches {@link bundles} therefore resolves its
+ * caller-supplied id through {@link sessionKeyOf} first — `dispatch`, `steer`,
+ * `stage`, `forget`, `bootingQuery`, `settleOpenTurn` — rather than keying by
+ * whatever id happened to arrive. `SessionPumpRegistry` does the same for its
+ * own map (see its module doc), off the SAME resolver, so the two structures
+ * this class wires together can never learn about a rekey at different times.
+ *
+ * `SessionStore.sessionKeyOf` is that resolver, and there is exactly one of
+ * it, injected at construction, because before this existed there were three
+ * candidates for "which id is a session's pump filed under" — the map key
+ * `bundles` used, the map key the registry used, and the alias graph
+ * `SessionStore` already kept for its own reverse index — and the first two
+ * never consulted the third. Turn 1 warmed a process under the request UUID;
+ * the rebind updated only `SessionStore`'s own index; turn 2's POST, sent
+ * under the canonical id the 202 had just taught the client, missed both this
+ * class's `bundles` and the registry's `entries`, and `dispatch` minted a
+ * SECOND process for what the person experienced as one conversation — the
+ * orphan then held its memory until the idle reaper, five minutes later
+ * (DOR-1309). A steer or a stage under the other id failed the same way,
+ * which is the shared root of DOR-1315's second-window steer and DOR-1318's
+ * "failed to warm" on an idle session addressed by its canonical id.
+ *
+ * Resolving here, once, is deliberately preferred over teaching `bundles` and
+ * `entries` to REKEY themselves on the `onSdkSessionRebind` announcement (the
+ * shape DOR-1262 used for the projector registry's retired→canonical
+ * redirect). A redirect map is a second alias graph to keep in sync with
+ * `SessionStore`'s; a shared resolver has only one. Nothing here needs its OWN
+ * copy of "which ids has this session answered to" — `SessionStore` already
+ * has to know that for `rebindSdkSession` and `findSession`, so this class and
+ * the registry just ask it.
+ *
  * ## Runtime windows are drained, never projected
  *
  * `SessionTurnWindows` opens a synthetic `origin: 'runtime'` window for a
@@ -180,16 +217,22 @@ function* terminalFailure(
  */
 export class PersistentDispatch {
   private readonly registry: SessionPumpRegistry;
+  private readonly sessionKeyOf: (sessionId: string) => string;
   private readonly bundles = new Map<string, SessionBundle>();
 
   /**
    * Build the dispatcher over a runtime's pump registry.
    *
    * @param registry - The runtime's registry; this never creates its own, so
-   *   warmth and reaping answer about the same processes turns run on
+   *   warmth and reaping answer about the same processes turns run on. Given
+   *   the SAME `sessionKeyOf` resolver, so the two structures resolve a rekey
+   *   identically (see the module doc).
+   * @param sessionKeyOf - The single answer to "which key is this session's
+   *   pump filed under" — `SessionStore.sessionKeyOf` in production.
    */
-  constructor(registry: SessionPumpRegistry) {
+  constructor(registry: SessionPumpRegistry, sessionKeyOf: (sessionId: string) => string) {
     this.registry = registry;
+    this.sessionKeyOf = sessionKeyOf;
   }
 
   /**
@@ -208,6 +251,8 @@ export class PersistentDispatch {
    * @param sessionId - The session about to dispatch
    */
   shouldDispatch(sessionId: string): boolean {
+    // Not resolved here: `registry.peek` already resolves through the SAME
+    // `sessionKeyOf`, so a second resolution here would only be redundant.
     if (this.registry.peek(sessionId) !== undefined) return true;
     return isPersistentSessionEnabled();
   }
@@ -217,10 +262,10 @@ export class PersistentDispatch {
    * the next message builds a fresh pump rather than dispatching into a spent
    * one.
    *
-   * @param sessionId - The session going away
+   * @param sessionId - The session going away, in any id it answers to
    */
   forget(sessionId: string): void {
-    this.bundles.delete(sessionId);
+    this.bundles.delete(this.sessionKeyOf(sessionId));
   }
 
   /**
@@ -235,10 +280,11 @@ export class PersistentDispatch {
    * only true while a dispatch is opening a turn, so a healthy warm process is
    * never handed out to be interrupted.
    *
-   * @param sessionId - The session a Stop is trying to reach
+   * @param sessionId - The session a Stop is trying to reach, in any id it
+   *   answers to
    */
   bootingQuery(sessionId: string): Query | undefined {
-    const bundle = this.bundles.get(sessionId);
+    const bundle = this.bundles.get(this.sessionKeyOf(sessionId));
     if (bundle === undefined || !bundle.booting) return undefined;
     return bundle.live;
   }
@@ -246,10 +292,17 @@ export class PersistentDispatch {
   /**
    * Run one message as a turn on this session's held process.
    *
-   * @param args - The session, its message, and the runtime's ports
+   * @param args - The session, its message, and the runtime's ports. `sessionId`
+   *   is the id THIS call was asked with — only a hint after the session's
+   *   first rename — and is resolved to {@link key} before it ever reaches
+   *   {@link bundles} or the registry; it is kept as-is everywhere else
+   *   (logging, the launch resolution, the events this turn yields) because
+   *   those are cosmetic to the id a caller happened to use, not the identity
+   *   of the process being dispatched to.
    */
   async *dispatch(args: PersistentDispatchArgs): AsyncGenerator<StreamEvent> {
     const { sessionId, content, session, opts, messageOpts } = args;
+    const key = this.sessionKeyOf(sessionId);
     session.lastActivity = Date.now();
     session.eventQueue = [];
     // Clear last turn's breakdown so a failed fetch this turn never shows stale
@@ -293,7 +346,7 @@ export class PersistentDispatch {
       fingerprint: captureLaunchFingerprint(resolved.launch),
     };
 
-    let bundle = this.acquire(sessionId, session, opts);
+    let bundle = this.acquire(key, session, opts);
     // Nothing pinned to the live process may be stale by the time the turn
     // opens. A pin the SDK cannot set live replaces the process outright; the
     // four it can are awaited, never fired blind (`launch-live-settings.ts`).
@@ -303,8 +356,8 @@ export class PersistentDispatch {
         session: sessionId,
         reason: reuse.reason,
       });
-      await this.replaceProcess(sessionId);
-      bundle = this.acquire(sessionId, session, opts);
+      await this.replaceProcess(key);
+      bundle = this.acquire(key, session, opts);
     } else if (reuse.action === 'adjust') {
       const control = bundle.pump.controlQuery;
       if (control === undefined) {
@@ -379,12 +432,13 @@ export class PersistentDispatch {
    * the same reason {@link steer} does: a reaped pump is spent and refuses
    * everything asked of it, and there is no window under it to settle anyway.
    *
-   * @param sessionId - The session about to open a turn
+   * @param sessionId - The session about to open a turn, in any id it answers to
    * @returns True when a window was open and has been settled
    */
   settleOpenTurn(sessionId: string): boolean {
-    const bundle = this.bundles.get(sessionId);
-    if (bundle === undefined || this.registry.peek(sessionId) !== bundle.pump) return false;
+    const key = this.sessionKeyOf(sessionId);
+    const bundle = this.bundles.get(key);
+    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
     return bundle.windows.abandonOpenWindow();
   }
 
@@ -425,17 +479,19 @@ export class PersistentDispatch {
    *   accepted the id does the push follow, in the same synchronous beat so no
    *   `result` can slip between them.
    *
-   * @param sessionId - The session to steer; either id a caller might hold
+   * @param sessionId - The session to steer; either id a caller might hold,
+   *   resolved to the one key this session's bundle is filed under
    * @param content - The user's text, pristine
    * @param opts - The correlation id and the neutral context bag
    * @returns Whether the steer reached the process, and why not when it did not
    */
   steer(sessionId: string, content: string, opts: DeliverIntoTurnOpts): RuntimeDeliveryResult {
-    const bundle = this.bundles.get(sessionId);
+    const key = this.sessionKeyOf(sessionId);
+    const bundle = this.bundles.get(key);
     // No wiring, or a bundle the registry no longer backs (an idle reap or a
     // warm-ceiling reclaim this class was never told about): no live process to
     // join, and touching a spent pump would throw the must-not-throw contract.
-    if (bundle === undefined || this.registry.peek(sessionId) !== bundle.pump) {
+    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) {
       return { delivered: false, reason: 'no-open-turn' };
     }
     // Tag the OPEN window first — this both proves a window is open (the gate)
@@ -494,7 +550,8 @@ export class PersistentDispatch {
    * a boundary a warm cwd would fail, a stream that closed under a warm process,
    * a launch that could not boot — all come back as `{ delivered: false }`.
    *
-   * @param sessionId - The session to stage onto; either id a caller might hold
+   * @param sessionId - The session to stage onto; either id a caller might
+   *   hold, resolved to the one key this session's bundle is filed under
    * @param content - The person's text, pristine; context rides `opts`
    * @param opts - The mode, correlation id, and the neutral context bag
    * @param session - The session record, for a cold warm-up
@@ -510,13 +567,14 @@ export class PersistentDispatch {
     senderOpts: MessageSenderOpts,
     messageOpts?: MessageOpts
   ): Promise<RuntimeDeliveryResult> {
+    const key = this.sessionKeyOf(sessionId);
     const enriched = enrichDeliveredContent(content, opts.additionalContext);
-    const existing = this.bundles.get(sessionId);
+    const existing = this.bundles.get(key);
     // A bundle the registry still backs holds a live (warm or running) process.
     // A bundle it no longer backs — an idle reap or a warm-ceiling reclaim this
     // class was never told about — is as good as cold: touching its spent pump
     // would throw, so it falls through to the cold path and builds a fresh one.
-    const live = existing !== undefined && this.registry.peek(sessionId) === existing.pump;
+    const live = existing !== undefined && this.registry.peek(key) === existing.pump;
 
     let bundle: SessionBundle;
     if (live) {
@@ -526,7 +584,7 @@ export class PersistentDispatch {
       // dispatched here anyway: `acquire` registers the session and `warm()`
       // boots a real CLI subprocess, and both are the operator's decision, not a
       // side effect of adding a note (DOR-1307).
-      if (!this.shouldDispatch(sessionId)) {
+      if (!this.shouldDispatch(key)) {
         return { delivered: false, reason: 'unsupported' };
       }
       const effectiveCwd = resolveEffectiveCwd(senderOpts, messageOpts);
@@ -563,7 +621,7 @@ export class PersistentDispatch {
         sdkOptions: resolved.sdkOptions,
         fingerprint: captureLaunchFingerprint(resolved.launch),
       };
-      bundle = this.acquire(sessionId, session, senderOpts);
+      bundle = this.acquire(key, session, senderOpts);
       bundle.plan = plan;
     }
 
@@ -643,13 +701,16 @@ export class PersistentDispatch {
    * windower — so the bundle is created empty and filled in place. It stays ONE
    * object throughout: the launcher writes this session's fingerprint into it,
    * and a copy would mean that write landed somewhere nothing consults.
+   *
+   * @param key - The resolved map key this session's bundle lives (or will
+   *   live) under — every public method resolves the caller's id through
+   *   {@link sessionKeyOf} before calling this, so this private half never
+   *   resolves twice
+   * @param session - The session record the bundle is wired for
+   * @param opts - The runtime ports the launcher and the interactive gate need
    */
-  private acquire(
-    sessionId: string,
-    session: AgentSession,
-    opts: MessageSenderOpts
-  ): SessionBundle {
-    const existing = this.bundles.get(sessionId);
+  private acquire(key: string, session: AgentSession, opts: MessageSenderOpts): SessionBundle {
+    const existing = this.bundles.get(key);
     // Held to the REGISTRY's answer, not to the map's, because the registry
     // drops pumps this class never hears about: the idle timer reaps one after
     // five quiet minutes, and a warm-ceiling reclaim takes the least recently
@@ -657,7 +718,7 @@ export class PersistentDispatch {
     // bundle still pointing at one would turn the next message into an illegal
     // transition instead of a fresh launch. Identity, not presence: a pump the
     // registry replaced is as stale as one it dropped.
-    if (existing !== undefined && this.registry.peek(sessionId) === existing.pump) return existing;
+    if (existing !== undefined && this.registry.peek(key) === existing.pump) return existing;
 
     // Definitely-assigned three lines down. Nothing can observe the gap: the
     // pump boots nothing until it is dispatched to, which cannot happen before
@@ -669,7 +730,7 @@ export class PersistentDispatch {
       booting: false,
     } as unknown as SessionBundle;
 
-    bundle.pump = this.registry.acquire(sessionId, {
+    bundle.pump = this.registry.acquire(key, {
       maxWarmSessions: SESSIONS.MAX_WARM_SESSIONS,
       warmIdleMs: SESSIONS.WARM_IDLE_MS,
       launch: createPumpLauncher(
@@ -684,7 +745,7 @@ export class PersistentDispatch {
             // caller-bug guard, not a fallback.
             throw new PumpRefusedError(
               'process-gone',
-              `session ${sessionId} tried to launch with no resolved plan`
+              `session ${key} tried to launch with no resolved plan`
             );
           }
           return plan;
@@ -731,12 +792,12 @@ export class PersistentDispatch {
     });
 
     bundle.windows = new SessionTurnWindows({
-      sessionId,
+      sessionId: key,
       pump: bundle.pump,
       onWindowOpen: (window) => {
         // A window nobody dispatched has no consumer here. Its channel would
         // otherwise buffer a whole synthetic turn that nothing ever reads.
-        if (window.origin === 'runtime') void drainUnprojected(sessionId, window);
+        if (window.origin === 'runtime') void drainUnprojected(key, window);
       },
       onUsage: (usage) => {
         // Delivered BEFORE the window's `result` is released, so `context_usage`
@@ -749,12 +810,12 @@ export class PersistentDispatch {
     });
 
     bundle.recovery = new SessionCrashRecovery({
-      sessionId,
+      sessionId: key,
       pump: bundle.pump,
       windows: bundle.windows,
     });
 
-    this.bundles.set(sessionId, bundle);
+    this.bundles.set(key, bundle);
     return bundle;
   }
 
@@ -769,10 +830,12 @@ export class PersistentDispatch {
    * called this builds fresh wiring for a fresh launch. It is called from
    * {@link dispatch} before any window is opened, which is the only moment this
    * session has no turn of its own in flight.
+   *
+   * @param key - The resolved map key, exactly as {@link acquire} takes
    */
-  private async replaceProcess(sessionId: string): Promise<void> {
-    await this.registry.evict(sessionId);
-    this.forget(sessionId);
+  private async replaceProcess(key: string): Promise<void> {
+    await this.registry.evict(key);
+    this.forget(key);
   }
 }
 
