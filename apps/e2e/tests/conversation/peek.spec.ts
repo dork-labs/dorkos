@@ -94,7 +94,10 @@ test.describe('Conversation — the peek behind the live lane', () => {
     // the click above. On a busy CI runner that is a few seconds, not zero, so
     // the row is asserted to read twenty-something up to fifty-something
     // seconds rather than the literal `20s` (which failed the merge queue once).
-    await expect(rows.nth(1)).toContainText(/\b[2-5]\ds\b/);
+    // The row's text has no space between the clock and the next label
+    // (`working·24sReplying to`), so no word boundary follows the `s`; anchor
+    // on the separator before it instead.
+    await expect(rows.nth(1)).toContainText(/·\s*[2-5]\ds/);
 
     // No per-row Stop with two agents working, and one footer action that says
     // exactly what it will do. A button never stops work you did not mean to.
