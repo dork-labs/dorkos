@@ -13,7 +13,9 @@ superseded-by: null
 
 Accepted. **One clause is retired by**
 [260728-022013](260728-022013-a-thread-is-a-relation-between-entries.md) (A thread is a relation
-between entries, not a child room).
+between entries, not a child room). **One READING of a second clause is retired by**
+[260818-234541](260818-234541-a-busy-agents-message-is-held-not-refused.md) (A busy agent's message
+is held, not refused) — see the note at the end of this section.
 
 **Exactly one clause below is retired:** "A **thread is a child room** — the same entity with a
 parent, one level deep." A thread is now a set of entries in the same room pointing at a common root
@@ -29,6 +31,18 @@ and never trimmed; rooms carry addressing and atomicity but never a concurrency 
 may reference a workspace; signing is reserved. **That is why this ADR stays `accepted` rather than
 `superseded`:** the status tells a reader whether to rely on the document, and almost all of this
 one is still load-bearing for the rooms programme. 260728-022013 records the reasoning in full.
+
+**The second amendment retires an inference, not a sentence.**
+[260818-234541](260818-234541-a-busy-agents-message-is-held-not-refused.md) retires the reading of
+"**Rooms carry addressing and atomicity, never a concurrency primitive**" under which a room must
+_refuse_ a message for an agent that is mid-turn in a different room. That clause's own words all
+stand — no room-scoped write lock, no room turn policy, write coordination keyed on the resource —
+and so does its DOR-500 conclusion that tree-sharing is the collision and the tree is what a lock
+must be keyed on. What changes is only what the dispatcher does when a ceiling holds: the message is
+now **held** for the agent's next free moment rather than refused with a line asking the person to
+send it again. Holding takes no lock, starts no second turn, and orders no two agents against each
+other; the Positive bullet "Rooms stay out of the concurrency business" is therefore unaffected.
+Read `room-trigger.ts`'s old citation of this ADR for "refusing rather than queueing" as history.
 
 ## Context
 
