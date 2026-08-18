@@ -39,18 +39,27 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsQuestionPrompt: true,
   // Capability-gated: asClaudePluginTransport() returns null for this runtime.
   supportsPlugins: false,
-  // `false`: test-mode starts a fresh scripted turn per message and holds no
-  // process across turns — it has no warm state to report, so `getSessionWarmth`
-  // is honestly absent and every session reads `cold`.
-  supportsPersistentSession: false,
-  // Both `true` (spec `persistent-session-runtime` P4). Test-mode exists to
-  // exercise the contract deterministically, and it can honestly do both without
-  // cross-turn warmth: a steer joins a turn that is ALREADY open (the scripted
-  // generator is live, `interactionGate.isOpen`), and a stage needs no open turn
-  // at all — neither depends on holding a process BETWEEN turns, which is all
-  // `supportsPersistentSession` denotes. `deliverIntoTurn` returns a truthful
-  // receipt for each; the dispatcher mints the `turn_input`/`context_staged` that
-  // surface them (task 4.4).
+  // `true` since DOR-1326: test-mode can hold a scripted process across a
+  // session's turns (`held-process.ts`), which is all this flag denotes — the
+  // ADAPTER's ability, never a claim that every session does. Whether a given
+  // session does is its own opt-in, exactly as claude-code's is the operator's
+  // `runtimes.claudeCode.persistentSession`; here it is `POST /api/test/persistent`,
+  // named per session so one Playwright project cannot warm a neighbour's.
+  //
+  // It was `false`, and honestly so while nothing here held anything. What that
+  // cost was the one shape the persistent path keeps getting wrong: a capable
+  // RUNTIME paired with an INCAPABLE session (DOR-1268, DOR-1307). No browser
+  // test could stage it, because the only free runtime declared the whole idea
+  // away — so `getSessionWarmth`, `canSteerSession` and `canStageSession` now
+  // answer per session and vary, which is what makes that pairing reachable.
+  supportsPersistentSession: true,
+  // Both `true` (spec `persistent-session-runtime` P4). The per-runtime flags say
+  // the adapter can do each; `canSteerSession` / `canStageSession` say whether
+  // the mechanism is under a GIVEN session, and for test-mode both ride the held
+  // process — a session on the resume path is neither steerable nor stageable,
+  // and degrades exactly as claude-code's does. `deliverIntoTurn` returns a
+  // truthful receipt for each; the dispatcher mints the `turn_input` /
+  // `context_staged` that surface them (task 4.4).
   supportsSteer: true,
   supportsContextStaging: true,
   // Test-mode injects nothing natively; the assembler bag is rendered verbatim.

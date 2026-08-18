@@ -27,9 +27,10 @@ async function drain(name: string): Promise<{ text: string; events: StreamEvent[
   if (!scenario) throw new Error(`missing scenario ${name}`);
   const events: StreamEvent[] = [];
   let text = '';
-  // The q3 scenarios never park on the context, but every ScenarioFn now takes
-  // one — a real gate rather than a cast, so this stays honest if one ever does.
-  for await (const event of scenario('go', interactionGate.open('q3-drain'))) {
+  // The q3 scenarios never park on the context and read no turn options, but
+  // every ScenarioFn now takes both — a real gate rather than a cast, so this
+  // stays honest if one ever does.
+  for await (const event of scenario('go', interactionGate.open('q3-drain'), undefined)) {
     events.push(event);
     if (event.type === 'text_delta') text += (event.data as { text: string }).text;
   }

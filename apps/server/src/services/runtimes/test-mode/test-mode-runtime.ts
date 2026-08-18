@@ -5,6 +5,7 @@ import type {
   RuntimeCapabilities,
   RuntimeDeliveryResult,
   SessionOpts,
+  SessionWarmth,
   MessageOpts,
   CommandIntentOpts,
   SseResponse,
@@ -39,6 +40,7 @@ import {
 import { logger } from '../../../lib/logger.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
+import { heldProcesses } from './held-process.js';
 import { ScenarioAborted, interactionGate } from './interaction-gate.js';
 import { scenarioStore } from './scenario-store.js';
 import { TestModeSessionRegistry } from './session-registry.js';
@@ -115,8 +117,14 @@ export class TestModeRuntime implements AgentRuntime {
    * reused id resurrects pre-reset history straight from SQLite. The store is
    * absent in bare unit tests — then `getSessionEventStore()` is `undefined`
    * and only the projector is disposed, the pre-DOR-189 behavior.
+   *
+   * Held processes go back too (DOR-1326). They are per-session runtime state
+   * like the projectors above, so a session id reused after a reset must not
+   * inherit the previous test's warmth — which would make a cold session report
+   * `warm` and offer a Steer nothing could take.
    */
   resetTrackedSessions(): void {
+    heldProcesses.reset();
     const store = getSessionEventStore();
     for (const sessionId of this.registry.ids()) {
       disposeProjector(sessionId);
@@ -172,8 +180,13 @@ export class TestModeRuntime implements AgentRuntime {
     // scenario the handle it parks on, and gives `approveTool`/`submitAnswers`/
     // `submitElicitation`/`interruptQuery` something real to resolve.
     const ctx = interactionGate.open(sessionId);
+    // Boots this session's scripted process if it opted in and holds none yet,
+    // and counts the turn against it — which is what later makes a warm second
+    // turn distinguishable from a fresh one. `undefined` for a session on the
+    // resume path: nothing is held, so there is nothing to hand back.
+    const heldTurn = heldProcesses.beginTurn(sessionId);
     try {
-      yield* scenario(content, ctx);
+      yield* scenario(content, ctx, opts);
     } catch (error) {
       // A stop is not a failure, and it must not be reported as one. Anything
       // else IS a failure and has to keep propagating — a scenario that threw a
@@ -195,6 +208,10 @@ export class TestModeRuntime implements AgentRuntime {
       // gate — and closing that one would make its card unanswerable and kill it
       // as `aborted_streaming`. See `InteractionGate.close`.
       interactionGate.close(sessionId, ctx.token);
+      // The process survives the turn, however the turn ended — a Stop included,
+      // which is what an acked stop does on the real pump. Token-scoped for the
+      // same lazy-disposal reason the gate close is.
+      if (heldTurn !== undefined) heldProcesses.endTurn(sessionId, heldTurn);
     }
   }
 
@@ -452,33 +469,119 @@ export class TestModeRuntime implements AgentRuntime {
    *
    * The deterministic double for the two non-turn-opening dispositions
    * (spec `persistent-session-runtime` §2.3, task 4.4). Test-mode declares both
-   * capabilities, so it answers with a TRUTHFUL receipt and opens no turn of its
-   * own — the whole point of the double is to exercise the contract, not to
-   * pretend a scripted generator changed course.
+   * capabilities, and since DOR-1326 both ride the session's HELD process —
+   * which is what makes the refusals below real rather than decorative.
    *
-   * - `'steer'` reaches a turn that is ALREADY running, so it delivers only while
-   *   one is open ({@link interactionGate.isOpen}); with none open it reports
-   *   `no-open-turn`, exactly as a real steer arriving on an idle session does.
+   * - `'steer'` needs two things, exactly as claude-code does: a held process to
+   *   push into, and a turn already running to join. Missing either is
+   *   `no-open-turn`, which the dispatcher tells apart for the person — a turn
+   *   IS open and could not be joined reads `not-steerable`, no turn open reads
+   *   `session-idle`. A session on the resume path therefore refuses a steer
+   *   that would once have been accepted here, which is the whole point: that is
+   *   the pairing DOR-1268 shipped and nothing above the unit layer could stage.
    *   The steered content SURFACES via the dispatcher's `turn_input` carrier, not
    *   here — a runtime never mints that event (it rides the open turn's stream).
-   * - `'stage'` needs no open turn, so it always accepts; the dispatcher emits the
-   *   `context_staged` receipt onto the durable stream.
+   * - `'stage'` needs no open turn, but it does need somewhere to append: the
+   *   words go onto the held process and the next scripted answer repeats them,
+   *   so a browser can see that the stage LANDED rather than that a receipt was
+   *   emitted. With no process held there is no transcript to reach, and the
+   *   server folds the words into the next dispatch instead — the route
+   *   {@link canStageSession} keeps it on, so this refusal is only reached by a
+   *   caller that ignored the answer.
    *
    * Never throws for an ordinary refusal, per the `deliverIntoTurn` contract.
    *
    * @param sessionId - Target session.
-   * @param _content - The person's text; test-mode records nothing of its own.
+   * @param content - The person's text, kept only by a stage onto a held process.
    * @param opts - The delivery mode and its correlation id.
    */
   async deliverIntoTurn(
     sessionId: string,
-    _content: string,
+    content: string,
     opts: DeliverIntoTurnOpts
   ): Promise<RuntimeDeliveryResult> {
-    if (opts.mode === 'steer' && !interactionGate.isOpen(sessionId)) {
+    if (!heldProcesses.holds(sessionId)) {
       return { delivered: false, reason: 'no-open-turn' };
     }
+    if (opts.mode === 'steer') {
+      if (!interactionGate.isOpen(sessionId)) return { delivered: false, reason: 'no-open-turn' };
+      return { delivered: true };
+    }
+    heldProcesses.stage(sessionId, content);
     return { delivered: true };
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Test-mode's steer rides the session's held process, so the honest answer is
+   * the same question the dispatch path asks: will this session's next turn run
+   * on one? A session that opted in is steerable before its first turn, and one
+   * already holding a process stays steerable after the opt-in is turned off —
+   * both mirroring claude-code's `PersistentDispatch.shouldDispatch`.
+   *
+   * Deliberately NOT {@link getSessionWarmth}: warmth is about this instant
+   * (`warm` versus `running`), and an affordance offered only while a turn was
+   * already open would flicker with the turn instead of describing the session.
+   */
+  canSteerSession(sessionId: string): boolean {
+    return heldProcesses.willHold(sessionId);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * The same question as {@link canSteerSession}, and here the same answer,
+   * because both rides are the same ride: a stage appends to the held process,
+   * so a session that will not run its next turn on one has nothing to append
+   * to. `false` is not a refusal — the server folds the words into the next
+   * dispatch and the person still sees "Added context for the next reply".
+   */
+  canStageSession(sessionId: string): boolean {
+    return heldProcesses.willHold(sessionId);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * `cold` for every session that holds no scripted process, including one this
+   * runtime has never heard of.
+   */
+  getSessionWarmth(sessionId: string): SessionWarmth {
+    return heldProcesses.warmth(sessionId);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Gives the scripted process back. Invisible to the person: the next message
+   * boots a fresh one and answers the same way, which is what conformance C5
+   * checks — and what the browser leg drives through
+   * `POST /api/test/reap` to reach a warmth that went back to `cold` without
+   * waiting out an idle window nothing can hurry.
+   */
+  async reapSession(sessionId: string): Promise<void> {
+    heldProcesses.reap(sessionId);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Always `false`, and that is the honest answer rather than a stub: a
+   * test-mode turn is bounded by the generator {@link sendMessage} hands back on
+   * BOTH paths, so there is no way for one to outlive its stream and be left
+   * open. The held process is bookkeeping, not a subprocess with an input stream
+   * of its own — the thing that can strand a turn on the real pump does not
+   * exist here.
+   *
+   * Implemented rather than omitted because declaring
+   * `supportsPersistentSession` is what creates the obligation (conformance C8),
+   * and because the server reads the ABSENCE of this method as "this runtime
+   * cannot strand a turn" — which is true of test-mode and would then be
+   * indistinguishable from a persistent runtime that forgot to wire it.
+   */
+  async settleOpenTurn(_sessionId: string): Promise<boolean> {
+    return false;
   }
 
   /**

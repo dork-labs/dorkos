@@ -10,6 +10,7 @@ import {
 import { SessionEventStore, setSessionEventStore } from '../../../session/index.js';
 import { triggerTurn } from '../../../session/trigger-turn.js';
 import { scenarioStore } from '../scenario-store.js';
+import { heldProcesses } from '../held-process.js';
 import { interactionGate } from '../interaction-gate.js';
 import { TEST_MODE_CAPABILITIES } from '../runtime-constants.js';
 import { TestModeRuntime } from '../test-mode-runtime.js';
@@ -270,6 +271,7 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
 describe('TestModeRuntime — deliverIntoTurn (the honest steer/stage receipt, task 4.4)', () => {
   afterEach(() => {
     interactionGate.reset();
+    heldProcesses.reset();
   });
 
   it('declares both dispositions, so the flags it flipped are backed by a method', () => {
@@ -281,7 +283,10 @@ describe('TestModeRuntime — deliverIntoTurn (the honest steer/stage receipt, t
 
   it('reports no-open-turn for a steer when no turn is running', async () => {
     const runtime = new TestModeRuntime();
-    // No turn open — interactionGate.isOpen(SESSION_A) is false.
+    // Held path, so the only thing missing is the turn itself —
+    // interactionGate.isOpen(SESSION_A) is false.
+    heldProcesses.setEnabled(SESSION_A, true);
+    await runTurn(runtime, SESSION_A, 'warm it up');
     const result = await runtime.deliverIntoTurn(SESSION_A, 'change course', {
       mode: 'steer',
       messageId: 'steer-1',
@@ -289,8 +294,10 @@ describe('TestModeRuntime — deliverIntoTurn (the honest steer/stage receipt, t
     expect(result).toEqual({ delivered: false, reason: 'no-open-turn' });
   });
 
-  it('delivers a steer when a turn is genuinely open', async () => {
+  it('delivers a steer when the session holds a process AND a turn is open', async () => {
     const runtime = new TestModeRuntime();
+    heldProcesses.setEnabled(SESSION_A, true);
+    await runTurn(runtime, SESSION_A, 'warm it up');
     // Open a scripted turn the way sendMessage does — now there is one to join.
     interactionGate.open(SESSION_A);
     const result = await runtime.deliverIntoTurn(SESSION_A, 'also check the tests', {
@@ -300,13 +307,40 @@ describe('TestModeRuntime — deliverIntoTurn (the honest steer/stage receipt, t
     expect(result).toEqual({ delivered: true });
   });
 
-  it('accepts a stage with no open turn — a stage needs none', async () => {
+  // The pairing DOR-1268 shipped and nothing above the unit layer could stage
+  // before DOR-1326: the RUNTIME declares steer, the SESSION cannot take one.
+  // A turn is plainly running and the steer is still refused, because the
+  // mechanism a steer pushes into is not under this session.
+  it('refuses a steer on a session holding no process, even with a turn open', async () => {
     const runtime = new TestModeRuntime();
+    interactionGate.open(SESSION_A);
+    const result = await runtime.deliverIntoTurn(SESSION_A, 'change course', {
+      mode: 'steer',
+      messageId: 'steer-3',
+    });
+    expect(result).toEqual({ delivered: false, reason: 'no-open-turn' });
+  });
+
+  it('accepts a stage with no open turn — a stage needs none, only a process', async () => {
+    const runtime = new TestModeRuntime();
+    heldProcesses.setEnabled(SESSION_A, true);
+    await runTurn(runtime, SESSION_A, 'warm it up');
     const result = await runtime.deliverIntoTurn(SESSION_A, 'attach this', {
       mode: 'stage',
       messageId: 'stage-1',
     });
     expect(result).toEqual({ delivered: true });
+  });
+
+  // Only reachable by a caller that ignored `canStageSession`; the server folds
+  // the words into the next dispatch instead of asking (DOR-1307).
+  it('refuses a stage on a session holding no process, rather than pretending to keep it', async () => {
+    const runtime = new TestModeRuntime();
+    const result = await runtime.deliverIntoTurn(SESSION_A, 'attach this', {
+      mode: 'stage',
+      messageId: 'stage-2',
+    });
+    expect(result).toEqual({ delivered: false, reason: 'no-open-turn' });
   });
 });
 
