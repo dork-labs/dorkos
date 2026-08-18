@@ -12,8 +12,11 @@
  * DorkOS uses both unevenly on purpose, and this file is where that decision is
  * pinned rather than merely commented:
  *
- * - exactly five tools always-load, because a room turn cannot afford a lookup
- *   before it can react and `list_capabilities` is how everything else is found;
+ * - exactly five tools always-load on a plain session, because a room turn cannot
+ *   afford a lookup before it can react and `list_capabilities` is how everything
+ *   else is found;
+ * - a session that IS a registered mesh agent, with Relay wired, gets six more —
+ *   the agent-to-agent path, for the same reason (DOR-1337 / F8);
  * - every advertised tool carries a hint, so the deferred remainder is findable
  *   by intent instead of by guessing a name;
  * - nothing else always-loads, because eighty-odd schemas on every turn's prompt
@@ -41,6 +44,8 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedVa
 import { createDorkOsToolServer } from '../index.js';
 import {
   ALWAYS_LOADED_TOOLS,
+  AGENT_TO_AGENT_TOOLS,
+  alwaysLoadedToolsFor,
   IN_SESSION_TOOL_PREFIX,
   inSessionToolName,
   searchHintFrom,
@@ -80,11 +85,21 @@ interface AdvertisedTool {
   _meta?: Record<string, unknown>;
 }
 
-/** Every tool the live in-session server advertises, with its `_meta`. */
-async function advertisedTools(): Promise<AdvertisedTool[]> {
+/**
+ * Every tool the live in-session server advertises, with its `_meta`.
+ *
+ * @param session - The per-query session, when the case under test needs one.
+ *   Omitted, the server builds as a plain session with no identity — which is
+ *   what every assertion about the standing five relies on.
+ * @param deps - Dependency override, for the mesh/relay wiring cases.
+ */
+async function advertisedTools(
+  session?: { cwd?: string },
+  deps: McpToolDeps = createFullDeps()
+): Promise<AdvertisedTool[]> {
   const server = createDorkOsToolServer(
-    createFullDeps(),
-    undefined,
+    deps,
+    session as Parameters<typeof createDorkOsToolServer>[1],
     undefined,
     undefined,
     composeCapabilityRegistryForDocs()
@@ -95,6 +110,26 @@ async function advertisedTools(): Promise<AdvertisedTool[]> {
   const { tools } = await client.listTools();
   await client.close();
   return tools as AdvertisedTool[];
+}
+
+/**
+ * Deps whose Mesh recognises `/agents/alpha` as a registered agent.
+ *
+ * `getSubjectByPath` is the ONLY thing that makes a session an agent session —
+ * the same server-side lookup `resolveSenderIdentity` uses, so nothing the model
+ * says can put a session on this path.
+ */
+function createAgentSessionDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
+  return {
+    ...createFullDeps(),
+    meshCore: {
+      getSubjectByPath: (cwd: string) =>
+        cwd === '/agents/alpha'
+          ? { subject: 'relay.agent.team.alpha', agentId: 'alpha' }
+          : undefined,
+    } as unknown as McpToolDeps['meshCore'],
+    ...overrides,
+  };
 }
 
 describe('in-session tool exposure', () => {
@@ -139,6 +174,65 @@ describe('in-session tool exposure', () => {
       unhinted,
       'these tools carry no searchHint, so they can only be found by guessing their name'
     ).toEqual([]);
+  });
+
+  // DOR-1337 (F8). An agent asking another agent a question had to ToolSearch
+  // for `mesh_list` and the relay schemas first, inside its own timeout — the
+  // tester quoted the agent narrating exactly that. A session that IS an agent
+  // gets those six eagerly; nothing else does.
+  it('adds the six agent-to-agent tools for a session that is a registered agent', async () => {
+    const tools = await advertisedTools({ cwd: '/agents/alpha' }, createAgentSessionDeps());
+    const eager = tools
+      .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
+      .map((t) => t.name)
+      .sort();
+
+    expect(eager).toEqual(
+      [
+        'list_capabilities',
+        'post_to_room',
+        'react_to_room_entry',
+        'read_room_history',
+        'search_room_history',
+        'mesh_list',
+        'mesh_inspect',
+        'relay_send',
+        'relay_send_async',
+        'relay_send_and_wait',
+        'relay_inbox',
+      ].sort()
+    );
+    expect(eager).toEqual([...alwaysLoadedToolsFor(true)].sort());
+    // Every name in the constant is a tool the server really advertises, and the
+    // two sets do not overlap — a stale or duplicated name would sit there
+    // looking load-bearing while changing nothing.
+    const advertised = new Set(tools.map((t) => t.name));
+    expect([...AGENT_TO_AGENT_TOOLS].filter((n) => !advertised.has(n))).toEqual([]);
+    expect([...AGENT_TO_AGENT_TOOLS].filter((n) => ALWAYS_LOADED_TOOLS.has(n))).toEqual([]);
+  });
+
+  it('leaves a plain session in the same directory family on the standing five', async () => {
+    // Same deps, a cwd Mesh does not recognise: the six stay deferred, which is
+    // the half that keeps eighty-odd schemas off most sessions' prompts.
+    const tools = await advertisedTools({ cwd: '/tmp/just-a-project' }, createAgentSessionDeps());
+    const eager = tools
+      .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
+      .map((t) => t.name)
+      .sort();
+    expect(eager).toEqual([...ALWAYS_LOADED_TOOLS].sort());
+  });
+
+  it('keeps the six deferred for an agent session with Relay switched off', async () => {
+    // No `relayCore` means no relay tool can do anything, so preloading their
+    // schemas would spend prompt on six tools that answer RELAY_DISABLED.
+    const deps = createAgentSessionDeps();
+    delete (deps as { relayCore?: unknown }).relayCore;
+    const tools = await advertisedTools({ cwd: '/agents/alpha' }, deps);
+    const eager = tools
+      .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
+      .map((t) => t.name)
+      .sort();
+    expect(eager).toEqual([...ALWAYS_LOADED_TOOLS].sort());
   });
 
   it('hints the room verbs with their curated capability titles', async () => {

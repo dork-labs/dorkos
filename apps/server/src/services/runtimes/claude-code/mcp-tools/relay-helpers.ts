@@ -6,7 +6,8 @@
 import path from 'node:path';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
-import { isServerManagedSubject } from '@dorkos/relay';
+import { isServerManagedSubject, parseAgentSubject } from '@dorkos/relay';
+import { logger } from '../../../../lib/logger.js';
 
 /** Sender identity injected on the external `/mcp` surface (no per-session context). */
 export const EXTERNAL_MCP_SENDER = 'relay.external.mcp';
@@ -55,6 +56,49 @@ export function resolveSenderIdentity(deps: McpToolDeps, cwd: string | undefined
     if (identity) return identity;
   }
   return { subject: cwd ? `relay.session.${path.basename(cwd)}` : EXTERNAL_MCP_SENDER };
+}
+
+/**
+ * Rewrite a bare `relay.agent.<agentId>` target to that agent's real address.
+ *
+ * An agent inbox is `relay.agent.{namespace}.{agentId}`, and every access rule
+ * is written against that shape. A two-segment subject therefore matches only
+ * the blanket cross-namespace deny, so a caller that addressed a peer by id
+ * alone was refused with ACCESS_DENIED no matter which rules the operator had
+ * written (DOR-1337 / F5). The prose taught exactly that shape for a long time,
+ * and prose is not the only source of it — an id is the obvious thing to reach
+ * for. Canonicalising here means an agent that guesses is routed instead of
+ * refused, without loosening a single ACL rule: the rewritten subject is the
+ * agent's own registered endpoint, so the same allow rule decides the send.
+ *
+ * The rewrite is deliberately narrow. It fires ONLY when:
+ *
+ * 1. the subject parses as the three-token `legacy` shape (`relay.agent.X`), and
+ * 2. `X` is an id the mesh registry currently knows.
+ *
+ * Everything else is returned untouched, and the second condition is what keeps
+ * the other meaning of that shape working: `relay.agent.<sessionId>` is the
+ * legacy session-routing address (`routes/relay.ts`, `subject-resolver.ts`), and
+ * a session id is not an agent id, so it never matches and never moves.
+ * Four-token subjects — canonical agent subjects and runtime-scoped session
+ * subjects alike — are already addressed correctly and are never touched.
+ *
+ * @param deps - Tool dependencies, for the Mesh registry lookup
+ * @param subject - The target subject exactly as the caller wrote it
+ * @returns The agent's canonical subject when the rewrite applies, else `subject`
+ */
+export function canonicalizeAgentSubject(deps: McpToolDeps, subject: string): string {
+  const parsed = parseAgentSubject(subject);
+  if (!parsed || parsed.format !== 'legacy') return subject;
+
+  const canonical = deps.meshCore?.getSubject(parsed.sessionId);
+  if (!canonical || canonical === subject) return subject;
+
+  logger.debug(
+    `[relay-tools] canonicalized agent subject "${subject}" -> "${canonical}" ` +
+      `(bare agent id addressed by the caller)`
+  );
+  return canonical;
 }
 
 /**

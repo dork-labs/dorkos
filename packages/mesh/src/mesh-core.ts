@@ -152,6 +152,9 @@ export class MeshCore {
       relayBridge,
       strategies,
       defaultScanRoot,
+      // Namespace derivation for managed agents is anchored here, so creation
+      // and the reconciler five minutes later give one answer (DOR-1342).
+      agentsHomeDir: options.agentsHomeDir,
       logger,
       generateUlid: monotonicFactory(),
       // Per-callback try/catch, so one broken reaction never costs the others
@@ -369,6 +372,18 @@ export class MeshCore {
    */
   getSubjectByPath(projectPath: string): { subject: string; agentId: string } | undefined {
     return agentMgmt.getSubjectByPath(this.agentDeps, projectPath);
+  }
+
+  /**
+   * Resolve an agent's canonical Relay subject by id.
+   *
+   * The by-id twin of {@link getSubjectByPath}, built from the same un-stripped
+   * registry entry, so it equals the `relaySubject` {@link inspect} reports.
+   * Use it (never a subject rebuilt from `get()`'s namespace-stripped manifest)
+   * wherever the subject is an address a caller will publish to.
+   */
+  getSubject(agentId: string): string | undefined {
+    return agentMgmt.getSubject(this.agentDeps, agentId);
   }
 
   /** Get the project path for a registered agent. */

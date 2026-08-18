@@ -24,7 +24,14 @@ import {
   resourceUnavailable,
 } from './resource-helpers.js';
 
-/** `dorkos://agents` list payload — mirrors the `mesh_list` tool's `outputSchema`. */
+/**
+ * `dorkos://agents` list payload — the plain manifest list.
+ *
+ * The `mesh_list` TOOL additionally decorates each entry with `relaySubject`,
+ * because a tool call is where an agent picks who to message next and needs the
+ * address (DOR-1337). A resource read is a state snapshot with no send to set
+ * up, so this stays the bare manifest.
+ */
 const AgentListResourceSchema = z.object({
   agents: z.array(AgentManifestSchema),
   count: z.number(),

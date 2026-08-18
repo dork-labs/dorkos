@@ -11,6 +11,13 @@ import { backgroundTasksMessage, FakeQuery, initMessage } from './fake-pump-quer
 /** The idle window these tests measure against, unless one overrides it. */
 const IDLE_MS = 5 * 60 * 1000;
 
+/**
+ * The registry's id resolver, standing in for `SessionStore.sessionKeyOf` —
+ * this suite drives the registry directly with ids it invents, which never
+ * alias to anything, so every id is already its own answer.
+ */
+const identity = (sessionId: string): string => sessionId;
+
 /** Acquire options whose launcher hands back a query that inits on demand. */
 function launchOpts(
   queries: FakeQuery[],
@@ -47,7 +54,7 @@ describe('SessionPumpRegistry', () => {
   // Purpose: a session this server holds no process for is cold, and asking
   // about one it has never heard of must not create anything.
   it('reports cold for a session it has never heard of', () => {
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     expect(registry.warmth('never-seen')).toBe('cold');
     expect(registry.peek('never-seen')).toBeUndefined();
     expect(registry.size).toBe(0);
@@ -57,7 +64,7 @@ describe('SessionPumpRegistry', () => {
   // is what `getSessionWarmth` answers with at each point.
   it('reports the state the machine is actually in', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const pump = registry.acquire('s1', launchOpts(queries));
 
     expect(registry.warmth('s1')).toBe('cold');
@@ -74,7 +81,7 @@ describe('SessionPumpRegistry', () => {
   // Purpose: one session, one process. A second acquire must not shadow the
   // pump that owns the running subprocess.
   it('hands back the same pump for a session', () => {
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const first = registry.acquire('s1', launchOpts([]));
     expect(registry.acquire('s1', launchOpts([]))).toBe(first);
   });
@@ -83,7 +90,7 @@ describe('SessionPumpRegistry', () => {
   // with a fresh input stream and freshly detected capabilities.
   it('drops a reaped pump so the next acquire builds a fresh one', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const first = registry.acquire('s1', launchOpts(queries));
     await first.warm();
 
@@ -102,7 +109,7 @@ describe('SessionPumpRegistry', () => {
   // a crashed session must stay on the books rather than being swept away.
   it('keeps a crashed pump, because its recovery is a relaunch of it', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const pump = registry.acquire('s1', launchOpts(queries));
     await pump.warm();
     queries[0]!.failStream(new Error('killed'));
@@ -115,7 +122,7 @@ describe('SessionPumpRegistry', () => {
   // Purpose: reap's callers are timers and sweeps that cannot know the answer
   // in advance, so asking about nothing must be free and silent.
   it('reap is idempotent and a no-op for an unknown or cold session', async () => {
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     await expect(registry.reap('never-seen')).resolves.toBe(false);
 
     const queries: FakeQuery[] = [];
@@ -132,7 +139,7 @@ describe('SessionPumpRegistry', () => {
   // freshest use, so a registry reclaiming by age reaps the wrong session.
   it('reclaims the least recently used warm session, not the oldest one', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const opts = launchOpts(queries, { maxWarmSessions: 3 });
     await registry.acquire('s1', opts).warm();
     await registry.acquire('s2', opts).warm();
@@ -163,7 +170,7 @@ describe('SessionPumpRegistry', () => {
   // is what keeps this correct if the pump's guard ever moves.
   it('never reclaims a running session, and refuses rather than killing a turn', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const opts = launchOpts(queries, { maxWarmSessions: 2 });
     const first = registry.acquire('s1', opts);
     const second = registry.acquire('s2', opts);
@@ -187,7 +194,7 @@ describe('SessionPumpRegistry', () => {
   // unavailable candidate is not "nothing is reclaimable".
   it('skips a session parked on a person and reclaims the next-least-recent', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const opts = launchOpts(queries, { maxWarmSessions: 2 });
     // s1 is the least recently used AND parked on an approval nobody has
     // answered; s2 is the next in line.
@@ -205,7 +212,7 @@ describe('SessionPumpRegistry', () => {
   // than in a launch that quietly exceeds the ceiling.
   it('still refuses when every warm session declines its reap', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const opts = launchOpts(queries, {
       maxWarmSessions: 1,
       hasPendingInteraction: () => true,
@@ -224,7 +231,7 @@ describe('SessionPumpRegistry', () => {
   // ceiling of two and the host ends up with a subprocess it refused.
   it('holds the ceiling when several sessions warm in the same tick', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const opts = launchOpts(queries, { maxWarmSessions: 2 });
 
     const settled = await Promise.allSettled([
@@ -244,7 +251,7 @@ describe('SessionPumpRegistry', () => {
   // whole of "no subprocess outlives its session record".
   it('evict closes the process mid-turn and forgets the session', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const pump = registry.acquire('s1', launchOpts(queries));
     await pump.warm();
     await pump.dispatch([{ content: 'hi', messageId: 'msg-hi' }]);
@@ -273,7 +280,7 @@ describe('the warm ceiling when the asking session leaves mid-reclaim', () => {
   // loses one warm slot per occurrence until it restarts.
   it('does not book a slot for a session evicted while the reclaim ran', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     // A long drain grace makes the reclaim's await a window this test owns,
     // rather than a race it would have to sleep on.
     const slow = launchOpts(queries, { maxWarmSessions: 1, drainGraceMs: 10_000 });
@@ -345,7 +352,7 @@ describe('the process idle timer', () => {
   // about it changing.
   it('reaps a warm session that has sat untouched for the idle window', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     await registry.acquire('s1', launchOpts(queries)).warm();
     expect(registry.warmth('s1')).toBe('warm');
 
@@ -364,7 +371,7 @@ describe('the process idle timer', () => {
   // went warm, which is the off-by-one-arming a single-shot timer would give.
   it('a dispatch disarms the countdown, and the turn ending restarts it', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const pump = registry.acquire('s1', launchOpts(queries));
     await pump.warm();
 
@@ -393,7 +400,7 @@ describe('the process idle timer', () => {
   // approval they come back to.
   it('never reaps a session parked on a person, and asks again a window later', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     let parked = true;
     const pump = registry.acquire(
       's1',
@@ -421,7 +428,7 @@ describe('the process idle timer', () => {
   // the life of the server.
   it('never reaps a session running a background subagent, and asks again a window later', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const pump = registry.acquire('s1', launchOpts(queries));
     const reaps = vi.spyOn(pump, 'reap');
     await pump.warm();
@@ -445,7 +452,7 @@ describe('the process idle timer', () => {
   // countdown with it.
   it('leaves no timer armed after a reap, an eviction, or a teardown', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     await registry.acquire('reaped', launchOpts(queries)).warm();
     await registry.acquire('evicted', launchOpts(queries)).warm();
     await registry.acquire('torn-down', launchOpts(queries)).warm();
@@ -468,7 +475,7 @@ describe('the process idle timer', () => {
   // free to become a half-reaped turn.
   it('a reap firing and a dispatch arriving cannot interleave, in either order', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
 
     // Reap first: the dispatch that lands behind it is refused outright, and the
     // caller's message stays queued for the fresh pump the next acquire builds.
@@ -498,8 +505,8 @@ describe('shutdownSessionPumps', () => {
   // survive DorkOS, whichever registry happens to hold it.
   it('closes every process in every registry that holds one', async () => {
     const queries: FakeQuery[] = [];
-    const first = new SessionPumpRegistry();
-    const second = new SessionPumpRegistry();
+    const first = new SessionPumpRegistry(identity);
+    const second = new SessionPumpRegistry(identity);
     await first.acquire('s1', launchOpts(queries)).warm();
     await first.acquire('s2', launchOpts(queries)).warm();
     await second.acquire('s3', launchOpts(queries)).warm();
@@ -522,7 +529,7 @@ describe('shutdownSessionPumps', () => {
   // the point is that nothing is left running.
   it('closes the rest when one pump fails to tear down', async () => {
     const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const doomed = registry.acquire('s1', launchOpts(queries));
     await doomed.warm();
     await registry.acquire('s2', launchOpts(queries)).warm();

@@ -217,6 +217,32 @@ export function getSubjectByPath(
 }
 
 /**
+ * Resolve an agent's canonical Relay subject from its id.
+ *
+ * The by-id twin of {@link getSubjectByPath}, and built the same way: from the
+ * UN-stripped registry entry, so the result is byte-identical to the
+ * `relaySubject` {@link inspect} reports and to the subject RelayBridge
+ * registered the endpoint and access rules with. `get()` cannot stand in for it
+ * — its public manifest has `namespace` stripped, so a subject rebuilt from one
+ * silently degrades to `basename(projectPath)` and matches no rule.
+ *
+ * Exists because two callers need the subject without the health snapshot
+ * `inspect()` also computes: `mesh_list`, which decorates every listed agent
+ * with the address the caller must send to, and the send tools' subject
+ * canonicalizer, which asks "is this bare id a registered agent, and what is
+ * its real address?" once per call.
+ *
+ * @param deps - Agent management dependencies
+ * @param agentId - The agent's ULID
+ * @returns The agent's canonical relay subject, or undefined if not registered
+ */
+export function getSubject(deps: AgentManagementDeps, agentId: string): string | undefined {
+  const entry = deps.registry.get(agentId);
+  if (!entry) return undefined;
+  return subjectForAgent(entry);
+}
+
+/**
  * Get the project path for a registered agent.
  *
  * @param deps - Agent management dependencies

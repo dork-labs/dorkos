@@ -45,6 +45,7 @@ function createMockDeps(meshEnabled = true): McpToolDeps {
     list: vi.fn().mockReturnValue([]),
     get: vi.fn(),
     getByPath: vi.fn(),
+    getSubject: vi.fn((agentId: string) => `relay.agent.ns.${agentId}`),
     unregister: vi.fn(),
     deny: vi.fn(),
     undeny: vi.fn(),
@@ -261,6 +262,45 @@ describe('Mesh MCP Tools', () => {
       const data = JSON.parse(result.content[0].text);
       expect(data.agents).toHaveLength(1);
       expect(meshCore.list).toHaveBeenCalledWith({ runtime: 'claude-code', capability: undefined });
+    });
+
+    // DOR-1337 (F5): the docs tell an agent to find peers with mesh_list and then
+    // send to them, but the only address that matches an allow rule is the
+    // four-segment `relay.agent.{namespace}.{agentId}` — and mesh_list used to
+    // return the namespace-stripped manifest, leaving the agent to invent a
+    // two-segment subject that no rule can match. The address now travels with
+    // the listing, derived exactly as `mesh_inspect` derives it.
+    it('mesh_list carries each agent relaySubject, resolved by the canonical id lookup', async () => {
+      const deps = createMockDeps(true);
+      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      meshCore.list.mockReturnValue([
+        { id: 'a1', name: 'alpha' },
+        { id: 'b2', name: 'beta' },
+      ]);
+
+      const handler = createMeshListHandler(deps);
+      const result = await handler({});
+      const data = JSON.parse(result.content[0].text);
+
+      expect(data.agents).toEqual([
+        { id: 'a1', name: 'alpha', relaySubject: 'relay.agent.ns.a1' },
+        { id: 'b2', name: 'beta', relaySubject: 'relay.agent.ns.b2' },
+      ]);
+      // Never rebuilt from the manifest: only the un-stripped registry lookup
+      // knows the namespace the endpoint and its rules were registered under.
+      expect(meshCore.getSubject).toHaveBeenCalledWith('a1');
+      expect(meshCore.getSubject).toHaveBeenCalledWith('b2');
+    });
+
+    it('mesh_list omits relaySubject rather than inventing one when the id resolves to nothing', async () => {
+      const deps = createMockDeps(true);
+      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      meshCore.list.mockReturnValue([{ id: 'ghost', name: 'ghost' }]);
+      meshCore.getSubject.mockReturnValue(undefined);
+
+      const handler = createMeshListHandler(deps);
+      const data = JSON.parse((await handler({})).content[0].text);
+      expect(data.agents).toEqual([{ id: 'ghost', name: 'ghost' }]);
     });
 
     it('mesh_deny denies a path', async () => {

@@ -15,6 +15,7 @@ import {
   ownsEndpoint,
   isReservedSubject,
   endpointAccessDeniedContent,
+  canonicalizeAgentSubject,
   type SenderIdentity,
 } from './relay-helpers.js';
 import { createRelayNotifyUserHandler } from './relay-notify-tools.js';
@@ -34,8 +35,11 @@ export function createRelaySendHandler(deps: McpToolDeps, identity: SenderIdenti
   }) => {
     const err = requireRelay(deps);
     if (err) return err;
+    // A bare `relay.agent.<agentId>` becomes that agent's real address before
+    // the ACL sees it; anything else is published exactly as written.
+    const subject = canonicalizeAgentSubject(deps, args.subject);
     try {
-      const result = await deps.relayCore!.publish(args.subject, args.payload, {
+      const result = await deps.relayCore!.publish(subject, args.payload, {
         from: identity.subject,
         replyTo: args.replyTo,
         budget: args.budget,
@@ -210,6 +214,8 @@ export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdent
     if (err) return err;
 
     const relay = deps.relayCore!;
+    // See `canonicalizeAgentSubject`: a bare agent id is routed, not refused.
+    const toSubject = canonicalizeAgentSubject(deps, args.to_subject);
     const inboxSubject = `relay.inbox.query.${randomUUID()}`;
     let unsub: (() => void) | undefined;
 
@@ -245,7 +251,7 @@ export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdent
 
       let sentMessageId: string;
       try {
-        const result = await relay.publish(args.to_subject, args.payload, {
+        const result = await relay.publish(toSubject, args.payload, {
           from: identity.subject,
           replyTo: inboxSubject,
           budget: args.budget,
@@ -283,19 +289,44 @@ export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdent
         }
       );
 
-      // A terminal error StreamEvent means the target agent's turn crashed or
-      // was aborted — return an error result, never a success-shaped reply
-      // that would pass partial output off as a completed answer.
+      // A turn can fail in two shapes, and BOTH answer with the same object.
+      //
+      // 1. A terminal error StreamEvent — a crashed iterator or a TTL abort,
+      //    published from the adapter's `finally` before the aggregated result,
+      //    so it is what this waiter settles on.
+      // 2. An `agent_result` carrying `error` — the turn reported a failure
+      //    mid-stream and still ended normally, so there is no terminal error
+      //    event at all (DOR-1337 / F6).
+      //
+      // The prompt block promises `partialText` on `AGENT_ERROR` without
+      // qualification, so shape 1 has to carry it too. Its own text is not in
+      // the payload, but the caller has already been handed it: the message
+      // progress steps ARE the partial answer, streamed as it was produced.
       const replyPayload = reply.payload as Record<string, unknown> | null;
-      if (replyPayload?.type === 'error') {
-        const errData = replyPayload.data as { message?: string } | undefined;
+      const agentFailure =
+        replyPayload?.type === 'error'
+          ? ((replyPayload.data as { message?: string } | undefined)?.message ?? 'unknown error')
+          : replyPayload?.type === 'agent_result' && typeof replyPayload.error === 'string'
+            ? replyPayload.error
+            : undefined;
+
+      if (agentFailure !== undefined) {
+        const partialText =
+          replyPayload?.type === 'agent_result' && typeof replyPayload.text === 'string'
+            ? replyPayload.text
+            : progressEvents
+                .filter((step) => step.step_type === 'message')
+                .map((step) => step.text)
+                .join('');
         return jsonContent(
           {
-            error: `Agent turn failed: ${errData?.message ?? 'unknown error'}`,
+            error: `Agent turn failed: ${agentFailure}`,
             code: 'AGENT_ERROR',
             from: reply.from,
+            partialText,
             progress: progressEvents,
             sentMessageId,
+            replyMessageId: reply.id,
           },
           true
         );
@@ -346,6 +377,8 @@ export function createRelayDispatchHandler(deps: McpToolDeps, identity: SenderId
     if (err) return err;
 
     const relay = deps.relayCore!;
+    // See `canonicalizeAgentSubject`: a bare agent id is routed, not refused.
+    const toSubject = canonicalizeAgentSubject(deps, args.to_subject);
     const inboxSubject = `relay.inbox.dispatch.${randomUUID()}`;
 
     try {
@@ -358,7 +391,7 @@ export function createRelayDispatchHandler(deps: McpToolDeps, identity: SenderId
     }
 
     try {
-      const result = await relay.publish(args.to_subject, args.payload, {
+      const result = await relay.publish(toSubject, args.payload, {
         from: identity.subject,
         replyTo: inboxSubject,
         budget: args.budget,
@@ -465,7 +498,14 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
         'the message was buffered for a late subscriber or dead-lettered, not delivered. ' +
         'Rejected sends (e.g. rate-limited) return an error with code REJECTED; they are NOT queued.',
       {
-        subject: z.string().describe('Target subject (e.g., "relay.agent.backend")'),
+        subject: z
+          .string()
+          .describe(
+            'Target subject, e.g. "relay.agent.{namespace}.{agentId}" — prefer the relaySubject ' +
+              'from mesh_list rather than assembling one. A bare "relay.agent.{agentId}" is ' +
+              'canonicalized when that id is a registered agent; anything else you build by ' +
+              'hand may match no access rule and come back ACCESS_DENIED.'
+          ),
         payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
         replyTo: z.string().optional().describe('Subject to send replies to'),
         budget: z
@@ -491,7 +531,9 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
         "agent's endpoint fails with code ENDPOINT_ACCESS_DENIED. Each message includes the sender payload: " +
         '{ id, subject, status, createdAt, sender, payload }. For agent dispatch inboxes the payload is ' +
         'a progress event { type: "progress", step, step_type, text, done: false } or the final ' +
-        '{ type: "agent_result", text, done: true }. Defaults to status="pending" (deliverable, unread ' +
+        '{ type: "agent_result", text, done: true }. A final payload may also carry error: the ' +
+        'agent turn FAILED, and text is only what it produced before failing — check for error ' +
+        'before treating text as an answer. Defaults to status="pending" (deliverable, unread ' +
         'messages) so budget-rejected failures never surface silently next to real deliverables. Pass ' +
         'ack=true when polling so each message is returned once — note that ack PERMANENTLY DELETES the ' +
         'message content, so read what you need out of the response before your next call.',
@@ -545,11 +587,18 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
         'Response shape: { reply, progress, from, replyMessageId, sentMessageId }. ' +
         'progress: array of intermediate steps emitted before the final reply (empty [] for quick replies; populated for multi-step CCA tasks). ' +
         'Each progress step: { type: "progress", step: number, step_type: "message"|"tool_result", text: string, done: false }. ' +
-        'Callers that only use { reply, from, replyMessageId } are unaffected — progress is additive.',
+        'Callers that only use { reply, from, replyMessageId } are unaffected — progress is additive. ' +
+        'A target whose turn FAILED comes back as an error with code AGENT_ERROR and partialText ' +
+        'instead of a reply, so a crash is never returned as an empty answer.',
       {
         to_subject: z
           .string()
-          .describe('Target subject for the message (e.g., "relay.agent.{agentId}")'),
+          .describe(
+            'Target subject, e.g. "relay.agent.{namespace}.{agentId}" — prefer the relaySubject ' +
+              'from mesh_list rather than assembling one. A bare "relay.agent.{agentId}" is ' +
+              'canonicalized when that id is a registered agent; anything else you build by ' +
+              'hand may match no access rule and come back ACCESS_DENIED.'
+          ),
         payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
         timeout_ms: z
           .number()
@@ -583,9 +632,17 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
         'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
         'to the inbox. Poll the inbox tool with that subject and ack=true for updates (defaults ' +
         'to pending/unread messages). When you receive a payload with done:true, call ' +
-        'the unregister-endpoint tool on that subject to clean up.',
+        'the unregister-endpoint tool on that subject to clean up. A done:true payload carrying ' +
+        'error means their turn failed — its text is partial work, not an answer.',
       {
-        to_subject: z.string().describe('Target subject (e.g., "relay.agent.{agentId}")'),
+        to_subject: z
+          .string()
+          .describe(
+            'Target subject, e.g. "relay.agent.{namespace}.{agentId}" — prefer the relaySubject ' +
+              'from mesh_list rather than assembling one. A bare "relay.agent.{agentId}" is ' +
+              'canonicalized when that id is a registered agent; anything else you build by ' +
+              'hand may match no access rule and come back ACCESS_DENIED.'
+          ),
         payload: z.unknown().describe('Message payload'),
         budget: z
           .object({

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Trash2, RefreshCw, FolderOpen, Bot, Shapes } from 'lucide-react';
+import { Trash2, RefreshCw, FolderOpen, Bot, Shapes, AlertTriangle } from 'lucide-react';
 import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 import { useInstalledPackages } from '@/layers/entities/marketplace';
 import { useShapes } from '@/layers/entities/shapes';
@@ -47,6 +47,7 @@ function PackageRow({
   onUninstallClick,
 }: PackageRowProps) {
   const { name, version, type, scope, installedFrom, installedAt } = installation;
+  const dependencyWarnings = installation.dependencyWarnings ?? [];
   const isShape = type === 'shape';
   // The installed record ships only a slug (no `displayName`), so humanize it
   // for the row title and every action label that names the package.
@@ -97,6 +98,23 @@ function PackageRow({
           )}
           {formattedDate && <span>Installed {formattedDate}</span>}
         </div>
+        {/* A package whose npm libraries did not install is on disk and usable
+            but incomplete, and that outlives the toast the person dismissed at
+            install time. The note carries its own remedy, so it is shown in
+            full rather than summarised (DOR-1341). */}
+        {dependencyWarnings.length > 0 && (
+          <div className="mt-1 space-y-0.5">
+            {dependencyWarnings.map((warning) => (
+              <p
+                key={warning}
+                className="flex items-start gap-1 text-xs text-amber-600 dark:text-amber-400"
+              >
+                <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
+                <span>{warning}</span>
+              </p>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Right: actions */}

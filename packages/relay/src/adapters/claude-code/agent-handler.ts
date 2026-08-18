@@ -21,7 +21,12 @@ import type {
 } from '../../types.js';
 import { extractPayloadContent, extractSenderIdentity } from '../../lib/payload-utils.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
-import type { AgentRuntimeLike, AgentSessionStoreLike } from './types.js';
+import type {
+  AgentRuntimeLike,
+  AgentSessionStoreLike,
+  ExecutionSettingsResolver,
+  TurnExecutionSettings,
+} from './types.js';
 import {
   publishAgentResult,
   publishDispatchProgress,
@@ -33,6 +38,8 @@ export interface AgentHandlerDeps {
   agentManager: AgentRuntimeLike;
   traceStore: TraceStoreLike;
   agentSessionStore?: AgentSessionStoreLike;
+  /** What model and effort this turn runs on — see {@link ExecutionSettingsResolver}. */
+  resolveExecutionSettings?: ExecutionSettingsResolver;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -47,6 +54,42 @@ interface ResponseContext {
   maxLength?: number;
   supportedFormats?: string[];
   formattingInstructions?: string;
+}
+
+/**
+ * `error` events that do NOT mean the turn failed.
+ *
+ * A DENYLIST, not an allowlist, and the direction is the whole decision. Most
+ * genuinely fatal errors reaching this adapter carry no `code` at all — a
+ * boundary violation, an empty stream, a crashed sender all publish
+ * `{ type: 'error', data: { message } }` — so an allowlist of "fatal codes"
+ * would silently pass every one of them off as a successful empty answer, which
+ * is precisely the bug this whole change exists to fix (DOR-1337 / F6). A
+ * denylist fails the other way: an error nobody has classified yet is reported
+ * as a failure, and being told about a failure that was survivable costs a
+ * retry, while being told nothing about a real one costs the answer.
+ *
+ * `hook_failure` is on it because a hook is the OPERATOR'S own script, not the
+ * agent's work. The claude-code runtime escalates any non-tool hook that exits
+ * non-zero (Stop, SubagentStop, SessionStart — this repo configures all three)
+ * to a stream `error` event, and the turn then ends with a normal `done`
+ * carrying the complete answer. Folding that in would turn a correct reply into
+ * an `AGENT_ERROR` whose `partialText` is the whole answer nobody reads.
+ *
+ * Runtime-neutral by construction: this module receives `StreamEvent`s from any
+ * `AgentRuntimeLike`, so the rule is about the code's MEANING, not about which
+ * runtime emitted it. A new runtime that invents a non-fatal error code adds it
+ * here; until then its errors are treated as failures, which is the safe half.
+ */
+const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure']);
+
+/**
+ * Whether an `error` event's code marks it as survivable rather than turn-fatal.
+ *
+ * @param code - The `data.code` of an `error` StreamEvent, when it has one.
+ */
+function isNonFatalErrorCode(code: string | undefined): boolean {
+  return code !== undefined && NON_FATAL_ERROR_CODES.has(code);
 }
 
 /** StreamEvent types that are skipped to prevent infinite loops (Bug 1 guard). */
@@ -162,10 +205,28 @@ export async function handleAgentMessage(
   // prompting mode — absence is not consent (DOR-604). The in-process readers
   // that used to default to 'acceptEdits' were the bug and are gone.
   const effectivePermissionMode: PermissionMode = bindingPerms?.permissionMode ?? 'default';
+
+  // Which model an agent is, is a property of the AGENT — so the manifest is
+  // looked for where the agent lives, and NOT at `effectiveCwd`. The two differ
+  // exactly when a payload names its own working directory: that moves where
+  // the turn runs, which is a fact about this message, and it must not silently
+  // re-decide who the answering agent is. Falls back to the payload's directory
+  // only when nothing resolved an agent at all, because a project directory is
+  // a better guess at a manifest than nothing.
+  const agentManifestDir = context?.agent?.directory ?? payloadCwd;
+
+  // What this turn runs on. Asked BEFORE `ensureSession`, because that call is
+  // the only one that can answer it: the claude-code runtime reads
+  // `session.model` when it launches a query, and that field is written once,
+  // when the session record is created. A model handed over afterwards reaches
+  // nothing (see `messaging/launch-resolver.ts`).
+  const executionSettings = await resolveTurnSettings(deps, ccaSessionKey, agentManifestDir, log);
+
   log.debug?.(
     `[CCA] handleAgentMessage agentId=${agentId} ccaSessionKey=${ccaSessionKey}, ` +
       `payloadCwd=${payloadCwd ?? '(none)'}, context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +
-      `resolvedCwd=${effectiveCwd ?? '(deferred to session)'}, permissionMode=${effectivePermissionMode}`
+      `resolvedCwd=${effectiveCwd ?? '(deferred to session)'}, permissionMode=${effectivePermissionMode}, ` +
+      `model=${executionSettings.model ?? '(runtime default)'}`
   );
 
   // Only mark hasStarted when we have a real SDK session ID from the persistent
@@ -176,6 +237,7 @@ export async function handleAgentMessage(
     permissionMode: effectivePermissionMode,
     hasStarted: !!persistedSdkSessionId,
     ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+    ...executionSettings,
   });
   deps.traceStore.updateSpan(envelope.id, { status: 'delivered', deliveredAt: Date.now() });
 
@@ -215,6 +277,11 @@ export async function handleAgentMessage(
     permissionMode: effectivePermissionMode,
     ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
     ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
+    // Sent again, for the same reason the permission mode and the cwd are: the
+    // runtime contract resolves a turn as per-send override → persisted → its
+    // own default, and a runtime whose sessions are not held in memory sees
+    // this call and not the one above.
+    ...executionSettings,
   });
 
   let eventCount = 0,
@@ -223,6 +290,13 @@ export async function handleAgentMessage(
     messageBuffer = '';
   let streamedDone = false,
     streamError: string | undefined;
+  // An `error` event the turn emitted and then carried on from, ending with a
+  // normal `done`. Kept apart from `streamError` (a THROWN iterator) on purpose:
+  // `streamError` decides this delivery's success flag and trace-span status,
+  // and an upstream API 500 inside an otherwise-complete turn is not a delivery
+  // failure — the message arrived and was processed. What it must change is the
+  // ANSWER the caller reads, which is the `agent_result` below (DOR-1337 / F6).
+  let inStreamError: string | undefined;
 
   try {
     for await (const event of eventStream) {
@@ -232,6 +306,14 @@ export async function handleAgentMessage(
 
       if (envelope.replyTo && relay) {
         if (isInboxReplyTo) {
+          if (event.type === 'error') {
+            const data = event.data as { message?: string; code?: string } | undefined;
+            if (!isNonFatalErrorCode(data?.code)) {
+              // First failure wins: a turn that reports several is described by
+              // the one that started it, not by whatever landed last.
+              inStreamError ??= data?.message ?? 'Agent turn reported an error';
+            }
+          }
           if (event.type === 'text_delta') {
             const data = event.data as { text: string };
             messageBuffer += data.text;
@@ -335,7 +417,17 @@ export async function handleAgentMessage(
         relay
       );
     }
-    await publishAgentResult(envelope, collectedText, ccaSessionKey, relay);
+    // Every way this turn can have failed, on the ONE payload an inbox reader is
+    // told is terminal. A thrown iterator and a TTL abort also publish a separate
+    // error event from the `finally` above, which is enough for the synchronous
+    // waiter (it settles on the first non-progress payload) but not for a poller:
+    // that one reads a list, is told `done:true` ends it, and would otherwise see
+    // an error event next to a clean-looking result and have to guess which won.
+    const failure =
+      inStreamError ??
+      streamError ??
+      (controller.signal.aborted ? 'TTL budget expired' : undefined);
+    await publishAgentResult(envelope, collectedText, ccaSessionKey, relay, failure);
   }
 
   // Persist SDK session UUID for future messages
@@ -375,6 +467,43 @@ export async function handleAgentMessage(
 }
 
 // === Private: pure helpers ===
+
+/**
+ * Ask the host what this turn should run on, and never let the answer stop it.
+ *
+ * Three ways to get nothing, and all three mean the same thing — no preference,
+ * so the runtime picks, which is what every relay turn did before this existed:
+ * a host that wired no resolver, an agent whose directory is unknown, and a
+ * lookup that threw. The last one is the reason this is a function rather than
+ * an inline `await`: reading a manifest or a settings row can fail for reasons
+ * that have nothing to do with the message, and a dropped agent-to-agent
+ * message is a far worse outcome than a turn on the default model.
+ *
+ * @param deps - The handler's dependencies; the resolver is optional on them.
+ * @param sessionId - The key this turn runs under (`ccaSessionKey`).
+ * @param agentDirectory - Where the turn runs, which is where its manifest is.
+ * @param log - Where a failed lookup is reported.
+ */
+async function resolveTurnSettings(
+  deps: AgentHandlerDeps,
+  sessionId: string,
+  agentDirectory: string | undefined,
+  log: NonNullable<AgentHandlerDeps['logger']> | Console
+): Promise<TurnExecutionSettings> {
+  if (!deps.resolveExecutionSettings) return {};
+  try {
+    return await deps.resolveExecutionSettings({
+      sessionId,
+      ...(agentDirectory ? { agentDirectory } : {}),
+    });
+  } catch (err) {
+    log.warn(
+      `[CCA] could not resolve execution settings for ${sessionId}; running on the runtime default`,
+      err
+    );
+    return {};
+  }
+}
 
 /**
  * Extract agent ID from a `relay.agent.*` subject.

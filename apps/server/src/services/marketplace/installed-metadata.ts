@@ -69,6 +69,17 @@ export interface InstallMetadata {
    * marketplace repo's resolved commit SHA.
    */
   commitSha?: string;
+  /**
+   * Problems installing the package's npm libraries (DOR-1341), kept verbatim
+   * so the installed-package view can keep showing them with their remedy.
+   *
+   * A dependency failure warns rather than failing the install, which means the
+   * package is on disk and usable but incomplete — a state that outlives the
+   * toast a person dismissed, and that nothing else on disk records. Absent or
+   * empty means the libraries installed cleanly (or none were declared). A
+   * reinstall rewrites the sidecar, so a repaired package stops reporting.
+   */
+  dependencyWarnings?: string[];
 }
 
 /**
@@ -97,6 +108,14 @@ export async function readInstallMetadata(installRoot: string): Promise<InstallM
       sourceRepo: typeof obj.sourceRepo === 'string' ? obj.sourceRepo : undefined,
       sourceRef: typeof obj.sourceRef === 'string' ? obj.sourceRef : undefined,
       commitSha: typeof obj.commitSha === 'string' ? obj.commitSha : undefined,
+      // Every element is checked, not just the array-ness: this string goes
+      // straight onto a UI surface, and a sidecar is a file anything on the
+      // machine can have written.
+      dependencyWarnings:
+        Array.isArray(obj.dependencyWarnings) &&
+        obj.dependencyWarnings.every((w) => typeof w === 'string')
+          ? (obj.dependencyWarnings as string[])
+          : undefined,
     };
   } catch {
     return null;

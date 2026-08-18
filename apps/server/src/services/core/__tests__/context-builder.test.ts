@@ -593,11 +593,63 @@ describe('buildRelayToolsBlock', () => {
   it('returns relay context when relay enabled and config on', () => {
     const result = _buildRelayToolsBlock();
     expect(result).toContain('<relay_tools>');
-    expect(result).toContain('relay.agent.{agentId}');
     expect(result).toContain('relay_register_endpoint');
     expect(result).toContain('relay_send');
     expect(result).toContain('relay_inbox');
     expect(result).toContain('</relay_tools>');
+  });
+
+  // DOR-1337 (F5). The block used to teach `relay.agent.{agentId}` — two
+  // segments — while every allow rule matches the four-segment
+  // `relay.agent.{namespace}.{agentId}`. An agent following its own
+  // documentation addressed a subject no rule could match and was refused,
+  // with the operator's grant sitting there correct and unmatched.
+  it('teaches the four-segment agent subject', () => {
+    const result = _buildRelayToolsBlock();
+    expect(result).toContain('relay.agent.{namespace}.{agentId}');
+    // The old placeholder is gone entirely; the two-segment form now appears
+    // only in the sentence explaining that it gets rewritten, never as a
+    // template to fill in.
+    expect(result).not.toContain('{theirAgentId}');
+  });
+
+  it('never hands the agent a two-segment subject to fill in and send', () => {
+    const result = _buildRelayToolsBlock();
+    // Every place the block shows what to PUT in a subject argument. The bare
+    // form is described once, in prose, as the thing the server canonicalizes —
+    // so the check is about the example lines, not about the string appearing.
+    const subjectArguments = result
+      .split('\n')
+      .filter((line) => /(to_subject|subject)=/.test(line));
+    expect(subjectArguments.length).toBeGreaterThan(0);
+    for (const line of subjectArguments) {
+      expect(line, `this line tells the agent to build a subject: ${line}`).not.toMatch(
+        /relay\.agent\.\{[a-zA-Z]+\}(?!\.)/
+      );
+    }
+  });
+
+  it('sends the agent to relaySubject rather than to a subject it assembles', () => {
+    // Whitespace-normalized: the block is hand-wrapped, so the sentence spans
+    // lines and a raw substring check would pin the wrapping instead of the words.
+    const result = _buildRelayToolsBlock().replace(/\s+/g, ' ');
+    expect(result).toContain('relaySubject');
+    expect(result).toContain('rather than building it by hand');
+  });
+
+  // DOR-1337 (F6). A failed target used to arrive as an empty success.
+  it('warns that a done:true payload may carry an error', () => {
+    const result = _buildRelayToolsBlock();
+    expect(result).toContain('error');
+    expect(result).toContain('AGENT_ERROR');
+  });
+
+  // DOR-1337 (F8). The claim must match the exposure decision, both ways.
+  it('claims the six agent-to-agent tools are loaded only for an agent session', () => {
+    expect(_buildRelayToolsBlock(undefined, true)).toContain('already in your tool list');
+    const plain = _buildRelayToolsBlock(undefined, false);
+    expect(plain).not.toContain('already in your tool list');
+    expect(plain).toContain('ToolSearch');
   });
 
   it('returns empty string when relay disabled', () => {

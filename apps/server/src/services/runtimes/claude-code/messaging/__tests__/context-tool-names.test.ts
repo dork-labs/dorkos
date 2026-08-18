@@ -341,7 +341,40 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // The reverse guard on the guard: if nothing were prefixed at all, the check
     // above would pass while teaching nothing callable. Counted exactly, so the
     // day a block stops rendering the number moves rather than the bound holding.
-    expect(prefixed.length).toBe(79);
+    expect(prefixed.length).toBe(83);
+  });
+
+  it('names only advertised tools in the agent-session variant of the prompt too', async () => {
+    // The prompt has two shapes now: a plain session, and one whose working
+    // directory hosts a registered agent — which is told the six agent-to-agent
+    // tools are already loaded (DOR-1337 / F8). The variant the plain scan above
+    // never renders needs the same guard, or a name could rot in the half of the
+    // prose only agents read.
+    const advertised = await advertisedToolNames();
+    const prompt = await buildSystemPromptAppend(CWD, undefined, { agentSession: true });
+
+    const unknown = [
+      ...new Set(
+        identifierTokens(prompt)
+          .filter((token) => token.startsWith(IN_SESSION_TOOL_PREFIX))
+          .filter((token) => token !== IN_SESSION_TOOL_PREFIX)
+          .map((token) => token.slice(IN_SESSION_TOOL_PREFIX.length))
+          .filter((name) => !advertised.has(name))
+      ),
+    ].sort();
+    expect(unknown).toEqual([]);
+
+    // And it says the six are loaded, in full, so nothing spends a ToolSearch.
+    for (const name of [
+      'mesh_list',
+      'mesh_inspect',
+      'relay_send',
+      'relay_send_async',
+      'relay_send_and_wait',
+      'relay_inbox',
+    ]) {
+      expect(prompt).toContain(`${IN_SESSION_TOOL_PREFIX}${name}`);
+    }
   });
 
   it('explains the naming rule, and which tools need no lookup at all', async () => {

@@ -1,5 +1,12 @@
 import { execFileSync } from 'child_process';
-import { build, formatMessages, type Message, type Metafile, type Plugin } from 'esbuild';
+import {
+  build,
+  formatMessages,
+  version as esbuildVersion,
+  type Message,
+  type Metafile,
+  type Plugin,
+} from 'esbuild';
 import { cpSync, readFileSync, readdirSync, rmSync } from 'fs';
 import { isBuiltin } from 'module';
 import path from 'path';
@@ -425,8 +432,110 @@ function verifyBundleLoadable(outfile: string, metafile: Metafile): void {
   );
 }
 
+/** The declared dependency versions this build reads pins against. */
+type DeclaredDependencies = Record<string, string>;
+
+/**
+ * The three families of per-platform native binary the packaged app ships, and
+ * what each one's `optionalDependencies` pin has to equal.
+ *
+ * All three are the same shape of hazard: a package whose only job is to carry
+ * an executable for one platform, kept in step with a parent package by nothing
+ * but somebody remembering. A skewed pin does not fail to install and does not
+ * fail to package — it produces an app that starts and then cannot do one
+ * particular thing:
+ *
+ * - **Claude Code** — the SDK spawns a binary from a different release than the
+ *   protocol it speaks.
+ * - **Codex** — same, one runtime over.
+ * - **esbuild** — the loudest of the three: esbuild passes its own version to
+ *   the binary and refuses outright when they differ, so every extension in the
+ *   app stops compiling. Its pin is compared against the version esbuild
+ *   actually resolves to rather than the range in `package.json`, because the
+ *   repo root pins `esbuild` through a pnpm override — `^0.25.0`, which is what
+ *   `apps/desktop` now declares too, so this package reads honestly on its own.
+ *   (`apps/server` and `packages/cli` still say `^0.28.0` and are still
+ *   overridden to 0.25.x; neither packages a binary, so neither is checked
+ *   here.)
+ *
+ * Anything outside these prefixes is left alone: this is a rule about
+ * per-platform binaries, not about optional dependencies in general.
+ */
+const PLATFORM_BINARY_FAMILIES: ReadonlyArray<{
+  /** Package-name prefix the family's members share. */
+  prefix: string;
+  /** The pin a member must carry, given the name's platform suffix. */
+  expected: (suffix: string, dependencies: DeclaredDependencies) => string | undefined;
+  /** What the pin has to stay locked to, for the failure message. */
+  lockedTo: string;
+}> = [
+  {
+    prefix: '@anthropic-ai/claude-agent-sdk-',
+    expected: (_suffix, dependencies) => dependencies['@anthropic-ai/claude-agent-sdk'],
+    lockedTo: 'the @anthropic-ai/claude-agent-sdk dependency',
+  },
+  {
+    prefix: '@openai/codex-',
+    // Published as one package with per-platform versions rather than per-
+    // platform packages, so these are npm aliases: `@openai/codex-darwin-arm64`
+    // is `@openai/codex@<version>-darwin-arm64`.
+    expected: (suffix, dependencies) => {
+      const codex = dependencies['@openai/codex'];
+      return codex ? `npm:@openai/codex@${codex}-${suffix}` : undefined;
+    },
+    lockedTo: 'the @openai/codex dependency',
+  },
+  {
+    prefix: '@esbuild/',
+    expected: () => esbuildVersion,
+    lockedTo: 'the esbuild version this build resolved',
+  },
+];
+
+/**
+ * Assert every per-platform binary package is pinned to its parent's version.
+ *
+ * Checked here, in the build, because there is nowhere later that would notice:
+ * `pnpm install` is happy to install a skewed pair, electron-builder packages
+ * whatever it finds, and the symptom only appears in an installed app.
+ *
+ * @throws If any pin has drifted from what it is locked to.
+ */
+function assertPlatformBinariesLocked(): void {
+  const pkg = JSON.parse(readFileSync(path.join(DESKTOP_PKG, 'package.json'), 'utf-8')) as {
+    dependencies?: DeclaredDependencies;
+    optionalDependencies?: DeclaredDependencies;
+  };
+  const dependencies = pkg.dependencies ?? {};
+  const problems: string[] = [];
+  let checked = 0;
+
+  for (const [name, pin] of Object.entries(pkg.optionalDependencies ?? {})) {
+    const family = PLATFORM_BINARY_FAMILIES.find(({ prefix }) => name.startsWith(prefix));
+    if (!family) continue;
+    checked++;
+    const expected = family.expected(name.slice(family.prefix.length), dependencies);
+    if (expected === undefined) {
+      problems.push(`  ${name} is pinned to "${pin}", but ${family.lockedTo} is not declared.`);
+    } else if (pin !== expected) {
+      problems.push(`  ${name} is pinned to "${pin}", but ${family.lockedTo} says "${expected}".`);
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new Error(
+      `apps/desktop/package.json ships per-platform binaries whose versions have drifted ` +
+        `from what they carry the executable for:\n\n${problems.join('\n')}\n\n` +
+        `Update the optionalDependencies pins (and run pnpm install), or roll the parent back. ` +
+        `A skewed pin packages green and only breaks in an installed app.`
+    );
+  }
+  console.log(`  ✓ All ${checked} per-platform binary packages are version-locked`);
+}
+
 async function buildServer() {
   console.log('[1/2] Bundling server...');
+  assertPlatformBinariesLocked();
   rmSync(path.join(OUT, 'server'), { recursive: true, force: true });
 
   // ESM, not CJS, and `.mjs` (not `.js`): apps/server's source is ESM

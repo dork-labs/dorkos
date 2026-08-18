@@ -467,6 +467,18 @@ importers:
       '@anthropic-ai/claude-agent-sdk-win32-x64':
         specifier: 0.3.224
         version: 0.3.224
+      '@esbuild/darwin-arm64':
+        specifier: 0.25.12
+        version: 0.25.12
+      '@esbuild/win32-x64':
+        specifier: 0.25.12
+        version: 0.25.12
+      '@openai/codex-darwin-arm64':
+        specifier: npm:@openai/codex@0.147.0-darwin-arm64
+        version: '@openai/codex@0.147.0-darwin-arm64'
+      '@openai/codex-win32-x64':
+        specifier: npm:@openai/codex@0.147.0-win32-x64
+        version: '@openai/codex@0.147.0-win32-x64'
 
   apps/e2e:
     devDependencies:

@@ -5446,6 +5446,173 @@
           }
         }
       },
+      "TopologyView": {
+        "type": "object",
+        "properties": {
+          "callerNamespace": {
+            "type": "string"
+          },
+          "namespaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NamespaceInfo"
+            }
+          },
+          "accessRules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CrossNamespaceRule"
+            }
+          },
+          "openMesh": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "callerNamespace",
+          "namespaces",
+          "accessRules"
+        ]
+      },
+      "NamespaceInfo": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string"
+          },
+          "agentCount": {
+            "type": "integer"
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopologyAgent"
+            }
+          }
+        },
+        "required": [
+          "namespace",
+          "agentCount",
+          "agents"
+        ]
+      },
+      "TopologyAgent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentManifest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "projectPath": {
+                "type": "string"
+              },
+              "healthStatus": {
+                "$ref": "#/components/schemas/AgentHealthStatus"
+              },
+              "relayAdapters": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "relaySubject": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              },
+              "taskCount": {
+                "type": "integer",
+                "default": 0
+              },
+              "lastSeenAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              },
+              "lastSeenEvent": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              }
+            }
+          }
+        ]
+      },
+      "AgentHealthStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "inactive",
+          "stale",
+          "unreachable"
+        ],
+        "default": "stale"
+      },
+      "CrossNamespaceRule": {
+        "type": "object",
+        "properties": {
+          "sourceNamespace": {
+            "type": "string"
+          },
+          "targetNamespace": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "deny"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "default",
+              "explicit"
+            ],
+            "default": "explicit"
+          }
+        },
+        "required": [
+          "sourceNamespace",
+          "targetNamespace",
+          "action"
+        ]
+      },
+      "UpdateAccessRuleRequest": {
+        "type": "object",
+        "properties": {
+          "sourceNamespace": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetNamespace": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "deny"
+            ]
+          }
+        },
+        "required": [
+          "sourceNamespace",
+          "targetNamespace",
+          "action"
+        ]
+      },
       "DenyRequest": {
         "type": "object",
         "properties": {
@@ -8054,15 +8221,6 @@
           "isDefault",
           "isSystem",
           "registeredAt"
-        ]
-      },
-      "AgentHealthStatus": {
-        "type": "string",
-        "enum": [
-          "active",
-          "inactive",
-          "stale",
-          "unreachable"
         ]
       },
       "TeamAgentActivity": {
@@ -12328,6 +12486,80 @@
         }
       }
     },
+    "/api/mesh/topology": {
+      "get": {
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Get mesh topology",
+        "description": "Every agent on this machine, grouped by namespace, with the access rules that decide who can message whom. The view is scoped to what the caller can reach: namespaces the caller has no access to are omitted entirely. `openMesh` reports the mesh-wide \"let all my agents talk to each other\" switch.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The calling agent's namespace, which scopes the view to the namespaces it can reach. Defaults to `*`, the unscoped admin view.",
+              "example": "*"
+            },
+            "required": false,
+            "description": "The calling agent's namespace, which scopes the view to the namespaces it can reach. Defaults to `*`, the unscoped admin view.",
+            "name": "namespace",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Topology view scoped to the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopologyView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/topology/access": {
+      "put": {
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Update a mesh access rule",
+        "description": "Grant or revoke one directional access rule between two namespaces — `allow` lets agents in the source namespace message agents in the target one, `deny` takes that grant away. Rules are one-way: allowing `a -> b` does not let `b` answer back.\n\n`*` on BOTH sides is the mesh-wide \"let all my agents talk to each other\" switch: `allow` turns it on, `deny` turns it off. `*` on one side only is rejected with a 400 — it would open far more traffic than the caller asked for.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccessRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The rule as applied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossNamespaceRule"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, including `*` on one side only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mesh/deny": {
       "post": {
         "tags": [
@@ -12964,6 +13196,12 @@
                               "skills",
                               "hooks"
                             ]
+                          },
+                          "dependencyWarnings": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
                           }
                         },
                         "required": [
@@ -13397,6 +13635,27 @@
                             ]
                           }
                         },
+                        "npmDependencies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "range": {
+                                "type": "string"
+                              },
+                              "optional": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "range"
+                            ]
+                          }
+                        },
                         "externalHosts": {
                           "type": "array",
                           "items": {
@@ -13473,6 +13732,7 @@
                         "unreadableHooks",
                         "schedules",
                         "secrets",
+                        "npmDependencies",
                         "externalHosts",
                         "requires",
                         "conflicts"
@@ -13699,6 +13959,27 @@
                             ]
                           }
                         },
+                        "npmDependencies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "range": {
+                                "type": "string"
+                              },
+                              "optional": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "range"
+                            ]
+                          }
+                        },
                         "externalHosts": {
                           "type": "array",
                           "items": {
@@ -13775,6 +14056,7 @@
                         "unreadableHooks",
                         "schedules",
                         "secrets",
+                        "npmDependencies",
                         "externalHosts",
                         "requires",
                         "conflicts"
@@ -13957,6 +14239,12 @@
                       "additionalProperties": {}
                     },
                     "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "dependencyWarnings": {
                       "type": "array",
                       "items": {
                         "type": "string"
@@ -14279,6 +14567,12 @@
                             "additionalProperties": {}
                           },
                           "warnings": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "dependencyWarnings": {
                             "type": "array",
                             "items": {
                               "type": "string"

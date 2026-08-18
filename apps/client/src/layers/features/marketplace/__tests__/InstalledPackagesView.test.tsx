@@ -162,6 +162,37 @@ describe('InstalledPackagesView', () => {
       expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
     });
 
+    it('keeps a dependency warning visible on the package it belongs to (DOR-1341)', () => {
+      // The install toast said this once and is long gone. A package that is on
+      // disk but missing its libraries has to be able to say so on the surface
+      // a person visits when something is not working.
+      setInstalledState({
+        data: [
+          makeInstalled({
+            dependencyWarnings: [
+              "DorkOS could not install this package's npm libraries because npm is not installed. Run `npm install --omit=dev` in /tmp/p to finish setting it up.",
+            ],
+          }),
+        ],
+      });
+
+      render(<InstalledPackagesView />);
+
+      expect(
+        screen.getByText(/could not install this package's npm libraries/i)
+      ).toBeInTheDocument();
+      // The remedy travels with it — a warning you cannot act on is noise.
+      expect(screen.getByText(/npm install --omit=dev/)).toBeInTheDocument();
+    });
+
+    it('shows no warning line for a package that installed cleanly', () => {
+      setInstalledState({ data: [makeInstalled()] });
+
+      render(<InstalledPackagesView />);
+
+      expect(screen.queryByText(/npm libraries/i)).not.toBeInTheDocument();
+    });
+
     it('renders the empty state when no packages are installed', () => {
       setInstalledState({ data: [] });
 
