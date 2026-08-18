@@ -34,16 +34,19 @@ const LOGIN_PATH = `/Users/kai/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/s
 /**
  * Everything a login shell wrote to stdout for a given PATH, marker and all.
  *
- * Built from the module's own marker rather than a copy of it, and deliberately
- * surrounded by noise: an interactive shell prints whatever the user's rc files
- * print (version notices, `fortune`, a direnv banner), and the parser has to
- * survive that — which is the reason the marker exists.
+ * Shaped like the real thing: the markers wrap an `env` dump, with the PATH one
+ * line among several and other variables on both sides of it. Built from the
+ * module's own marker rather than a copy of it, and deliberately surrounded by
+ * noise — an interactive shell prints whatever the user's rc files print
+ * (version notices, `fortune`, a direnv banner), and the parser has to survive
+ * that, which is the reason the marker exists.
  */
 async function shellStdout(pathValue: string, { noise = true } = {}): Promise<string> {
   const { LOGIN_SHELL_PATH_MARKER } = await import('../../shared/login-shell-path');
   const before = noise ? 'nvm: using node v22.14.0\n' : '';
   const after = noise ? '\n(anaconda3) ' : '';
-  return `${before}${LOGIN_SHELL_PATH_MARKER}${pathValue}${LOGIN_SHELL_PATH_MARKER}${after}`;
+  const dump = `SHLVL=1\nPATH=${pathValue}\nHOME=/Users/kai\nLANG=en_US.UTF-8\n`;
+  return `${before}${LOGIN_SHELL_PATH_MARKER}${dump}${LOGIN_SHELL_PATH_MARKER}${after}`;
 }
 
 beforeEach(async () => {
@@ -112,7 +115,10 @@ describe('resolveChildPath', () => {
     // `-i` is load-bearing: plenty of people export PATH in ~/.zshrc, which a
     // non-interactive login shell never reads.
     expect(args).toEqual(['-ilc', expect.stringContaining(LOGIN_SHELL_PATH_MARKER)]);
-    expect(args[1]).toContain('${PATH}');
+    // `env`, not `"$PATH"`: the variable's syntax differs between shells in a
+    // way that fails quietly (see PROBE_SCRIPT), the environment's does not.
+    expect(args[1]).toContain('env');
+    expect(args[1]).not.toContain('$PATH');
     // Bounded, and killed outright if it hangs: an rc file that waits for input
     // must not be able to stop the app from starting.
     expect(options).toMatchObject({ killSignal: 'SIGKILL', encoding: 'utf8' });
@@ -149,6 +155,44 @@ describe('resolveChildPath', () => {
     const { resolveChildPath } = await import('../shell-path');
 
     expect(resolveChildPath(LAUNCHD_PATH)).toBe(LOGIN_PATH);
+  });
+
+  it("reads fish's colon-joined PATH, never a space-separated list", async () => {
+    // fish keeps PATH as a LIST, so asking it for `"$PATH"` yields
+    // `/opt/homebrew/bin /usr/local/bin …` — one junk entry that the old probe
+    // would have prepended to the child's PATH and logged as a success. What
+    // fish *exports* is colon-joined like everyone else, which is why the probe
+    // reads `env` instead. The decoy line below is the shape that used to win.
+    const { LOGIN_SHELL_PATH_MARKER } = await import('../../shared/login-shell-path');
+    const dump =
+      'fish_user_paths=/opt/homebrew/bin /usr/local/bin\n' + `PATH=${LOGIN_PATH}\n` + 'SHLVL=1\n';
+    const { spawnSync } = await getChildProcessMock();
+    spawnSync.mockReturnValue({
+      status: 0,
+      signal: null,
+      stdout: `Welcome to fish, the friendly interactive shell\n${LOGIN_SHELL_PATH_MARKER}${dump}${LOGIN_SHELL_PATH_MARKER}`,
+      stderr: '',
+    });
+    const { resolveChildPath } = await import('../shell-path');
+
+    expect(resolveChildPath(LAUNCHD_PATH)).toBe(LOGIN_PATH);
+  });
+
+  it('falls back when the shell rejected the flags, as tcsh and csh do', async () => {
+    // Measured: `/bin/tcsh -ilc …` answers "Unknown option: `-lc'" and never
+    // runs the command, so there is no marker to find and nothing to trust.
+    const { spawnSync } = await getChildProcessMock();
+    spawnSync.mockReturnValue({
+      status: 0,
+      signal: null,
+      stdout: "Unknown option: `-lc'\nUsage: tcsh [ -bcdefilmnqstvVxX ] [ argument ... ].\n",
+      stderr: '',
+    });
+    const { resolveChildPath } = await import('../shell-path');
+    const { default: log } = await getLogMock();
+
+    expect(resolveChildPath(LAUNCHD_PATH)).toBe(LAUNCHD_PATH);
+    expect(log.warn).toHaveBeenCalled();
   });
 
   it('parses a shell that printed nothing but the PATH', async () => {

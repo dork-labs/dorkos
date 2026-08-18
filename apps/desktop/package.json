@@ -40,7 +40,7 @@
     "dotenv": "^17.4.2",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.25.0",
     "express": "^5.2.1",
     "gray-matter": "^4.0.3",
     "node-pty": "^1.1.0",

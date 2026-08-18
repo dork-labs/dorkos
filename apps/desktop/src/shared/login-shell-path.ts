@@ -13,10 +13,14 @@
  * because that is the only way to see a PATH exported from `~/.zshrc` — and an
  * interactive shell prints whatever that person's rc files print, all of it on
  * the same stdout as the answer. Marking both ends is what lets the parser find
- * the PATH inside the noise.
+ * the answer inside the noise.
+ *
+ * What sits between the markers is the shell's whole `env` dump, from which the
+ * probe reads the `PATH=` line — see `PROBE_SCRIPT` in `main/shell-path.ts` for
+ * why it asks that way rather than interpolating `$PATH`.
  *
  * @module shared/login-shell-path
  */
 
-/** Wraps the PATH the login-shell probe prints, on both sides. */
+/** Wraps the `env` dump the login-shell probe prints, on both sides. */
 export const LOGIN_SHELL_PATH_MARKER = '__dorkos_path__';

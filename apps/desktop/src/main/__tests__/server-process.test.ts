@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { MockServerProcess } from './server-child-mock';
@@ -691,12 +691,21 @@ describe('what a packaged server child is told about the machine it runs on', ()
   }
 
   beforeEach(async () => {
-    home = mkdtempSync(join(tmpdir(), 'dorkos-packaged-home-'));
+    // Canonicalized: the working-directory resolver returns realpaths (it has
+    // to, because the server's boundary check compares canonical paths), and
+    // macOS hands out temp directories under `/var`, which is a symlink to
+    // `/private/var`. Realpathing the fixture keeps these assertions about the
+    // shell rather than about that symlink.
+    home = realpathSync(mkdtempSync(join(tmpdir(), 'dorkos-packaged-home-')));
     mkdirSync(join(home, '.dork'), { recursive: true });
     resources = mkdtempSync(join(tmpdir(), 'dorkos-packaged-resources-'));
     mkdirSync(dirname(esbuildBinaryPath()), { recursive: true });
     writeFileSync(esbuildBinaryPath(), '#!/bin/sh\n', 'utf8');
     restorePaths = stubPackagedPaths(resources);
+    // Unset, not blank: both now steer the resolver, and a blank one would
+    // still be spread into the child's environment by `...process.env`.
+    vi.stubEnv('DORKOS_DEFAULT_CWD', undefined);
+    vi.stubEnv('DORKOS_BOUNDARY', undefined);
 
     const { app } = await getElectronMock();
     app.isPackaged = true;
@@ -754,10 +763,13 @@ describe('what a packaged server child is told about the machine it runs on', ()
     const { spawnSync } = await getChildProcessMock();
     const { LOGIN_SHELL_PATH_MARKER } = await import('../../shared/login-shell-path');
     const loginPath = `${home}/.local/bin:/opt/homebrew/bin:/usr/bin:/bin`;
+    // The probe asks the shell for its whole `env`, so the answer is a dump
+    // with the PATH one line among several — see PROBE_SCRIPT in shell-path.ts.
+    const dump = `SHLVL=1\nPATH=${loginPath}\nHOME=${home}\n`;
     spawnSync.mockReturnValue({
       status: 0,
       signal: null,
-      stdout: `${LOGIN_SHELL_PATH_MARKER}${loginPath}${LOGIN_SHELL_PATH_MARKER}`,
+      stdout: `${LOGIN_SHELL_PATH_MARKER}${dump}${LOGIN_SHELL_PATH_MARKER}`,
       stderr: '',
     });
     vi.stubEnv('SHELL', '/bin/zsh');

@@ -452,8 +452,11 @@ type DeclaredDependencies = Record<string, string>;
  *   the binary and refuses outright when they differ, so every extension in the
  *   app stops compiling. Its pin is compared against the version esbuild
  *   actually resolves to rather than the range in `package.json`, because the
- *   repo root pins `esbuild` through a pnpm override and the range there is not
- *   what gets installed.
+ *   repo root pins `esbuild` through a pnpm override — `^0.25.0`, which is what
+ *   `apps/desktop` now declares too, so this package reads honestly on its own.
+ *   (`apps/server` and `packages/cli` still say `^0.28.0` and are still
+ *   overridden to 0.25.x; neither packages a binary, so neither is checked
+ *   here.)
  *
  * Anything outside these prefixes is left alone: this is a rule about
  * per-platform binaries, not about optional dependencies in general.

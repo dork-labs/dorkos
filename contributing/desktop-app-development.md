@@ -180,7 +180,7 @@ spawnSync(that path)      → ENOTDIR
 execFileSync(that path)   → works        ← Electron patches execFile/execFileSync, NOT spawn/spawnSync
 ```
 
-So anything that **spawns** its binary needs the real `app.asar.unpacked` path, and `server-spawn.ts` computes it and hands it over in the environment. esbuild spawns (`ESBUILD_BINARY_PATH`); the Claude SDK does too (`DORKOS_CLAUDE_CLI_PATH`). Codex is resolved server-side instead, through the runtime's own binary ladder, which remaps `app.asar` → `app.asar.unpacked` itself.
+So anything that **spawns** its binary needs the real `app.asar.unpacked` path, and `server-spawn.ts` computes it and hands it over in the environment. esbuild spawns (`ESBUILD_BINARY_PATH`); the Claude SDK does too (`DORKOS_CLAUDE_CLI_PATH`). Codex is resolved server-side instead, through the runtime's own binary ladder (`resolveCodexBinaryPath`), which remaps `app.asar` → `app.asar.unpacked` itself — that remap is DOR-1334's half of this fix, and without it the packaged app registers the Codex runtime and then reports its CLI as missing.
 
 ### 3.3 Runtime resilience (optional runtimes)
 

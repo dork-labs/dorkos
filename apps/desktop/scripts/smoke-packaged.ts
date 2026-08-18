@@ -187,7 +187,22 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
+ * The bundle name electron-builder produces, from `productName` in
+ * `electron-builder.yml`. Hardcoded rather than parsed: unlike `appId`, this
+ * one is already asserted against the packaged `Info.plist` further down, so a
+ * rename shows up as a clear mismatch rather than a silent miss.
+ */
+const PACKAGED_APP_BUNDLE = 'DorkOS.app';
+
+/**
  * Locate the packaged `.app` bundle electron-builder produced.
+ *
+ * Matches `DorkOS.app` by name rather than taking the first `*.app` it finds.
+ * electron-builder copies the Electron template in as `Electron.app` and
+ * renames it at the end, so a pack that was interrupted — or one still running
+ * — leaves an `Electron.app` sitting in the same directory. Taking the first
+ * match launched THAT: a bare Electron with no app, which fails minutes later
+ * as "no /api/health response" and reads exactly like a broken build.
  *
  * @returns Absolute path to the `.app` bundle.
  * @throws If no packaged app is present.
@@ -201,11 +216,19 @@ function findPackagedApp(): string {
         .map((entry) => path.join(RELEASE_DIR, entry.name))
     : [];
   for (const dir of archDirs) {
-    const bundle = readdirSync(dir).find((name) => name.endsWith('.app'));
-    if (bundle) return path.join(dir, bundle);
+    const bundle = path.join(dir, PACKAGED_APP_BUNDLE);
+    if (existsSync(bundle)) return bundle;
   }
+  const strays = archDirs.flatMap((dir) =>
+    readdirSync(dir).filter((name) => name.endsWith('.app'))
+  );
   throw new Error(
-    `No packaged .app found under ${RELEASE_DIR}. Package one first:\n` +
+    `No ${PACKAGED_APP_BUNDLE} found under ${RELEASE_DIR}` +
+      (strays.length > 0
+        ? ` (found ${strays.join(', ')} — an interrupted or still-running pack leaves ` +
+          `Electron.app behind; let it finish, or delete the release directory and repack)`
+        : '') +
+      `. Package one first:\n` +
       `  cd apps/desktop && CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --dir`
   );
 }
@@ -503,7 +526,11 @@ interface FakeLoginShell {
  *
  * The shell ignores its arguments on purpose: it is standing in for the whole
  * `$SHELL -ilc …` protocol, and what is under test is that the app runs it and
- * reads what it prints, not that a real zsh parses the flags.
+ * reads what it prints, not that a real zsh parses the flags. What it does NOT
+ * fake is the answer's shape — it exports a PATH and then runs the real `env`,
+ * so the app parses a genuine environment dump exactly as it would from a real
+ * shell (see `PROBE_SCRIPT` in `src/main/shell-path.ts` for why the probe asks
+ * that way).
  *
  * @param dir - A throwaway directory to build the fixture in.
  */
@@ -516,8 +543,14 @@ function createFakeLoginShell(dir: string): FakeLoginShell {
   chmodSync(opencode, 0o755);
 
   const shell = path.join(dir, 'login-shell');
-  const printed = `${LOGIN_SHELL_PATH_MARKER}${binDir}:${LAUNCHD_PATH}${LOGIN_SHELL_PATH_MARKER}`;
-  writeFileSync(shell, `#!/bin/sh\nprintf %s '${printed}'\n`, 'utf-8');
+  writeFileSync(
+    shell,
+    `#!/bin/sh\n` +
+      `PATH="${binDir}:${LAUNCHD_PATH}"\n` +
+      `export PATH\n` +
+      `printf %s '${LOGIN_SHELL_PATH_MARKER}'; env; printf %s '${LOGIN_SHELL_PATH_MARKER}'\n`,
+    'utf-8'
+  );
   chmodSync(shell, 0o755);
 
   return { shell, binDir };

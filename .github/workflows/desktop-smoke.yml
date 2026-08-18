@@ -131,7 +131,7 @@ jobs:
       # APPLE_DEVELOPER_CONFIGURED. An unsigned, freshly built app is not
       # quarantined, so it launches without the Gatekeeper consent dialog that
       # would otherwise block it forever (the smoke script clears extended
-      # attributes anyway — see contributing/desktop-app-development.md §7).
+      # attributes anyway — see contributing/desktop-app-development.md §6).
       #
       # An unsigned app can need one fixup before it launches at all: when
       # electron-builder ad-hoc-signs each binary separately, hardened runtime's

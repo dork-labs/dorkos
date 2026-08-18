@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -29,12 +29,22 @@ async function getLogMock() {
  * is to hand `utilityProcess.fork` a directory that EXISTS — a fork against a
  * deleted `server.cwd` fails to spawn and the app never starts — and a mocked
  * `fs` can only ever agree with itself about what exists.
+ *
+ * Canonicalized on creation, because the resolver returns canonical paths and
+ * macOS hands out temp directories under `/var`, which is itself a symlink to
+ * `/private/var`. Realpathing the fixture keeps every assertion about the
+ * resolver rather than about that symlink.
  */
 let home: string;
 
+/** A throwaway directory OUTSIDE the home, canonicalized for the same reason. */
+function makeOutsideDir(prefix: string): string {
+  return realpathSync(mkdtempSync(path.join(os.tmpdir(), prefix)));
+}
+
 beforeEach(async () => {
   vi.resetModules();
-  home = mkdtempSync(path.join(os.tmpdir(), 'dorkos-cwd-test-'));
+  home = makeOutsideDir('dorkos-cwd-test-');
   mkdirSync(path.join(home, '.dork'), { recursive: true });
 
   const { app, resetElectronMock } = await getElectronMock();
@@ -43,9 +53,14 @@ beforeEach(async () => {
   resetLogMock();
   app.isPackaged = true;
   app.getPath = vi.fn(() => home);
+  // Unset, not blank: these two steer the resolver now, and a developer who
+  // exports either would otherwise change what these tests measure.
+  vi.stubEnv('DORKOS_DEFAULT_CWD', undefined);
+  vi.stubEnv('DORKOS_BOUNDARY', undefined);
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -87,7 +102,7 @@ describe('resolveServerCwd', () => {
     // The whole point of the clamp: the server refuses every path outside its
     // boundary, so handing it one produces an app whose session list is a wall
     // of "Access denied" — which is exactly the packaged-app bug this fixes.
-    const outside = mkdtempSync(path.join(os.tmpdir(), 'dorkos-outside-'));
+    const outside = makeOutsideDir('dorkos-outside-');
     try {
       writeConfig({ cwd: outside });
       const { resolveServerCwd } = await import('../server-cwd');
@@ -101,7 +116,7 @@ describe('resolveServerCwd', () => {
   });
 
   it('clamps against a configured boundary rather than home, and passes it through', async () => {
-    const workspace = mkdtempSync(path.join(os.tmpdir(), 'dorkos-workspace-'));
+    const workspace = makeOutsideDir('dorkos-workspace-');
     const inside = path.join(workspace, 'repo');
     mkdirSync(inside);
     try {
@@ -116,7 +131,7 @@ describe('resolveServerCwd', () => {
   });
 
   it('falls back to the configured boundary root, not home, when the cwd is outside it', async () => {
-    const workspace = mkdtempSync(path.join(os.tmpdir(), 'dorkos-workspace-'));
+    const workspace = makeOutsideDir('dorkos-workspace-');
     try {
       writeConfig({ boundary: workspace, cwd: home });
       const { resolveServerCwd } = await import('../server-cwd');
@@ -171,5 +186,95 @@ describe('resolveServerCwd', () => {
     const { resolveServerCwd } = await import('../server-cwd');
 
     expect(resolveServerCwd()).toEqual({ cwd: projects, boundary: undefined });
+  });
+});
+
+describe('resolveServerCwd and the environment it was launched in', () => {
+  it('clamps against an inherited DORKOS_BOUNDARY, which the child enforces either way', async () => {
+    // The failure this closes: the child inherits this process's environment
+    // wholesale, so an exported DORKOS_BOUNDARY reached it whether or not
+    // anything here read it. Clamping against home while the child enforced
+    // /tmp/scope produced a DORKOS_DEFAULT_CWD the child then refused — the
+    // exact "path outside directory boundary" bug this module exists to stop.
+    const scope = makeOutsideDir('dorkos-scope-');
+    const inside = path.join(scope, 'repo');
+    mkdirSync(inside);
+    try {
+      vi.stubEnv('DORKOS_BOUNDARY', scope);
+      const { resolveServerCwd } = await import('../server-cwd');
+
+      // Home is outside the inherited boundary, so it cannot be the answer.
+      expect(resolveServerCwd()).toEqual({ cwd: scope, boundary: scope });
+    } finally {
+      rmSync(scope, { recursive: true, force: true });
+    }
+  });
+
+  it('lets an inherited DORKOS_DEFAULT_CWD win over config.json', async () => {
+    const fromEnv = makeDir('from-env');
+    writeConfig({ cwd: makeDir('from-config') });
+    vi.stubEnv('DORKOS_DEFAULT_CWD', fromEnv);
+    const { resolveServerCwd } = await import('../server-cwd');
+
+    expect(resolveServerCwd().cwd).toBe(fromEnv);
+  });
+
+  it('lets an inherited DORKOS_BOUNDARY win over config.json', async () => {
+    const scope = makeOutsideDir('dorkos-scope-');
+    const ignored = makeOutsideDir('dorkos-ignored-boundary-');
+    try {
+      writeConfig({ boundary: ignored });
+      vi.stubEnv('DORKOS_BOUNDARY', scope);
+      const { resolveServerCwd } = await import('../server-cwd');
+
+      expect(resolveServerCwd().boundary).toBe(scope);
+    } finally {
+      rmSync(scope, { recursive: true, force: true });
+      rmSync(ignored, { recursive: true, force: true });
+    }
+  });
+
+  it('clamps an inherited DORKOS_DEFAULT_CWD too, wherever it came from', async () => {
+    const outside = makeOutsideDir('dorkos-outside-');
+    try {
+      vi.stubEnv('DORKOS_DEFAULT_CWD', outside);
+      const { resolveServerCwd } = await import('../server-cwd');
+
+      expect(resolveServerCwd().cwd).toBe(home);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('resolveServerCwd and symlinks', () => {
+  it('refuses a working directory whose real target is outside the boundary', async () => {
+    // The server compares CANONICAL paths (initBoundary / resolveCanonicalPath
+    // in apps/server/src/lib/boundary.ts), so a lexical check here would hand
+    // over a path that looks contained and is then refused on every request.
+    const external = makeOutsideDir('dorkos-external-');
+    const link = path.join(home, 'work');
+    symlinkSync(external, link);
+    try {
+      writeConfig({ cwd: link });
+      const { resolveServerCwd } = await import('../server-cwd');
+      const { default: log } = await getLogMock();
+
+      expect(resolveServerCwd().cwd).toBe(home);
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining(external));
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a symlink whose real target is inside the boundary, resolved', async () => {
+    const real = makeDir('projects', 'dorkos');
+    const link = path.join(home, 'current');
+    symlinkSync(real, link);
+    writeConfig({ cwd: link });
+    const { resolveServerCwd } = await import('../server-cwd');
+
+    // Canonical, so the child's own boundary check lands on the same string.
+    expect(resolveServerCwd().cwd).toBe(real);
   });
 });

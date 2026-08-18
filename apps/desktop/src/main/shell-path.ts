@@ -16,9 +16,11 @@ import { LOGIN_SHELL_PATH_MARKER } from '../shared/login-shell-path';
  * them all (DOR-1335). Nothing about the tools was different; only the PATH was.
  *
  * The fix is the one every GUI developer tool on macOS ends up with: ask the
- * user's own login shell what its PATH is, and put that in front of the one
- * launchd handed down. Interactively (`-i`), because plenty of people export
- * PATH from `~/.zshrc`, which a non-interactive shell never reads.
+ * user's own login shell what environment it exports, and put its PATH in front
+ * of the one launchd handed down. Interactively (`-i`), because plenty of
+ * people export PATH from `~/.zshrc`, which a non-interactive shell never
+ * reads. Verified by hand against zsh and bash on macOS; tcsh and csh reject
+ * the flags and take the fallback path below.
  *
  * Three properties make that safe to do on the start-up path:
  *
@@ -40,11 +42,24 @@ import { LOGIN_SHELL_PATH_MARKER } from '../shared/login-shell-path';
 /**
  * The one command run in the user's shell.
  *
- * `${PATH}` is braced deliberately: `_` is a valid identifier character, so a
- * bare `$PATH` immediately followed by the marker would be read as a variable
- * named `PATH__dorkos_path__` and expand to nothing.
+ * It asks for the whole exported environment rather than for `$PATH`, and that
+ * is not incidental. Interpolating the variable means writing it in the shell's
+ * own syntax, and the syntaxes disagree in a way that fails *quietly*: fish
+ * keeps `PATH` as a list, so `"$PATH"` there expands space-separated, which
+ * parses as a single junk entry that then gets prepended to the child's PATH
+ * and logged as a success. `env` sidesteps the question entirely — it prints
+ * what a child process spawned from that shell would actually receive, which is
+ * exactly what is being asked, and it prints it colon-joined in every shell
+ * including fish. Shells that reject the flags (tcsh/csh do) print no marker
+ * and fall back cleanly.
+ *
+ * The markers wrap the whole dump, so the first line of the extracted text
+ * begins immediately after the opening marker.
  */
-const PROBE_SCRIPT = `printf %s "${LOGIN_SHELL_PATH_MARKER}\${PATH}${LOGIN_SHELL_PATH_MARKER}"`;
+const PROBE_SCRIPT = `printf %s '${LOGIN_SHELL_PATH_MARKER}'; env; printf %s '${LOGIN_SHELL_PATH_MARKER}'`;
+
+/** Matches the `PATH=…` line of an `env` dump, at the start of any line. */
+const PATH_LINE = /^PATH=(.*)$/m;
 
 /**
  * How long the shell gets to answer.
@@ -85,18 +100,24 @@ function looksLikeAPath(value: string): boolean {
 }
 
 /**
- * Pull the marked PATH out of everything the shell printed.
+ * Pull the PATH out of the marked `env` dump in everything the shell printed.
+ *
+ * Two steps, and both are needed: the markers isolate the dump from whatever
+ * the user's rc files printed around it, and the `PATH=` line is then found
+ * inside that. A shell that never got as far as printing the dump — one that
+ * rejected the flags, or died in an rc file — has no opening marker and lands
+ * on `null` here rather than on a half-parsed answer.
  *
  * @param stdout - The shell's complete stdout.
- * @returns The PATH between the markers, or `null` when it is not there.
+ * @returns The exported PATH, or `null` when it is not there.
  */
-function extractMarkedPath(stdout: string): string | null {
+function extractPathFromEnvDump(stdout: string): string | null {
   const start = stdout.indexOf(LOGIN_SHELL_PATH_MARKER);
   if (start === -1) return null;
-  const valueStart = start + LOGIN_SHELL_PATH_MARKER.length;
-  const end = stdout.indexOf(LOGIN_SHELL_PATH_MARKER, valueStart);
+  const dumpStart = start + LOGIN_SHELL_PATH_MARKER.length;
+  const end = stdout.indexOf(LOGIN_SHELL_PATH_MARKER, dumpStart);
   if (end === -1) return null;
-  return stdout.slice(valueStart, end);
+  return PATH_LINE.exec(stdout.slice(dumpStart, end))?.[1] ?? null;
 }
 
 /**
@@ -143,7 +164,7 @@ function readLoginShellPath(): string | null {
   }
   if (result.status !== 0) return complain(`it exited with code ${String(result.status)}`);
 
-  const extracted = extractMarkedPath(result.stdout ?? '');
+  const extracted = extractPathFromEnvDump(result.stdout ?? '');
   if (extracted === null) return complain('it printed no PATH');
   if (!looksLikeAPath(extracted)) return complain('what it printed does not look like a PATH');
   return extracted;
