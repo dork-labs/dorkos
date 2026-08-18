@@ -57,7 +57,7 @@
  * @module server/services/relay/chat-bridge/deliver
  */
 import type { PublishOptions, PublishResult } from '@dorkos/relay';
-import type { RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
+import type { RoomEntry, RoomEntryBody, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { AuthorRecord } from '../../rooms/author-registry.js';
 import {
@@ -71,11 +71,43 @@ import type { Bridge, BridgeStore, ExternalRef } from './bridge-store.js';
 
 /**
  * The room notices a bridge delivers when `deliverNotices` is on (spec §6.2).
- * Deliberately exactly two: `turn_failed` and `halted`, the two a person on the
- * other end of a bridged DM needs to hear. Every other notice is cockpit-shaped
- * and stays in the room.
+ *
+ * The test is one question: **would a person on the far end otherwise be left
+ * watching an agent that has stopped, with nothing to tell them it has?** Four
+ * codes answer yes.
+ *
+ * - `turn_failed` — the turn ran and broke. Re-rendered for the chat
+ *   ({@link ChatBridgeDelivery.buildNoticeContent}).
+ * - `halted` — somebody stopped everything running in the room.
+ * - `awaiting_approval` — the turn stopped and is parked on a person (DOR-1359).
+ * - `agent_busy` — the agent was already working, so no turn ran at all
+ *   (DOR-1359).
+ *
+ * **The last two were excluded, and the exclusion was the bug.** Spec §6.2
+ * called every remaining notice "cockpit-shaped", which is true of
+ * `cascade_stopped` and `budget_reached` (they describe this install's own
+ * limits) and true of `agent_gone` and `agent_unavailable` (they name a
+ * registration and a database the platform person has no relationship with and
+ * cannot act on). It was not true of these two: both describe an agent that has
+ * STOPPED, and both are exactly what somebody on Telegram is missing while they
+ * wait for an answer that is never coming. Until DOR-1359 they learned nothing.
+ *
+ * **Both forward the room's stored words unchanged, and neither is actionable.**
+ * The waiting line is deliberately vague, late and damped
+ * (`notice-copy.ts`'s `buildWaitingNotice`) — it carries no tool name, path or command, which
+ * is what keeps one member's approval decision out of a shared chat (DOR-613).
+ * Making the chat able to ANSWER the Ask is a different piece of work: it needs
+ * the platform user to be entitled to approve, which is the relay adapters'
+ * approver allowlist (`mayApprove`, `adapters/approver-allowlist.ts`) and today
+ * only covers agents bound straight to a chat, not rooms projected into one.
+ * That is DOR-1356.
  */
-const DELIVERABLE_NOTICES: ReadonlySet<string> = new Set(['turn_failed', 'halted']);
+const DELIVERABLE_NOTICES: ReadonlySet<RoomNoticeCode> = new Set<RoomNoticeCode>([
+  'turn_failed',
+  'halted',
+  'awaiting_approval',
+  'agent_busy',
+]);
 
 /**
  * How long a bridge notice (`bridge_blocked`, `bridge_undelivered`) stays quiet
@@ -399,10 +431,10 @@ export class ChatBridgeDelivery {
     if (existing) return existing.direction === 'inbound' ? 'echo' : 'noop';
 
     // Eligibility criterion 2 (spec §6.1): a post always; a notice only when
-    // this bridge delivers notices and the code is one of the two that a person
-    // on the far end needs (§6.2). The scan hands the SAME test to a
-    // `turn_failed` committed while the adapter was down, which is the one
-    // notice a bridged DM exists to deliver (spec §6.1).
+    // this bridge delivers notices and the code is one a person on the far end
+    // needs (§6.2, DELIVERABLE_NOTICES). The scan hands the SAME test to a
+    // notice committed while the adapter was down, which is the whole reason a
+    // bridged DM delivers notices at all (spec §6.1).
     if (entry.kind === 'notice') {
       if (!bridge.deliverNotices) return 'skipped';
       if (!entry.body.notice || !DELIVERABLE_NOTICES.has(entry.body.notice)) return 'skipped';
@@ -597,9 +629,8 @@ export class ChatBridgeDelivery {
    * pointer for a cockpit reader, meaningless to a person on Telegram who has
    * no session to open. {@link ChatBridgeDelivery.buildContent} sends this
    * one plain sentence instead; the stored entry, and what a cockpit reader
-   * sees scrolling the same room, is unchanged. `halted` needs no such
-   * rewrite — its stored text already names nothing cockpit-shaped — so it,
-   * and every other kind, forward the stored text as-is.
+   * sees scrolling the same room, is unchanged. Every other deliverable
+   * notice, and every post, forwards its stored text as-is.
    */
   private buildContent(entry: RoomEntry, author: AuthorRecord | null | undefined): string {
     if (entry.kind === 'notice') return this.buildNoticeContent(entry);
@@ -610,11 +641,26 @@ export class ChatBridgeDelivery {
   }
 
   /**
-   * The delivered text for a notice. Only `turn_failed` and `halted` ever
+   * The delivered text for a notice. Only {@link DELIVERABLE_NOTICES} ever
    * reach here (the eligibility gate in {@link ChatBridgeDelivery.deliverSerial}
    * refuses every other code before content is ever built), and only
    * `turn_failed` needs a different rendering than the room's own line — see
    * {@link ChatBridgeDelivery.buildContent}.
+   *
+   * **`awaiting_approval` forwards verbatim even though its line ends in "Open
+   * Ana's session to answer" (DOR-1359).** That clause is the one cockpit
+   * pointer that survives into a chat, and `turn_failed`'s treatment above is
+   * the obvious remedy — but it is not available here at the same price. A
+   * failed turn has one sentence; a wait has three, one per `WaitingKind`
+   * (approve / a question / needs something), and the kind is not on the
+   * entry. Re-rendering would mean either putting `WaitingKind` on
+   * `RoomEntryBody` — a schema field with exactly one reader — or collapsing
+   * the three into one vaguer sentence, which costs the reader the only fact
+   * the line carries. Forwarding is the honest middle: the bridged DM a notice
+   * is delivered to by default is usually the operator's own account (spec
+   * §6.2), so the session it points at is generally theirs to open. Revisit it
+   * with the actionable bridged Ask (DOR-1356), which decides what a chat
+   * reader can do about a wait rather than only what they are told.
    */
   private buildNoticeContent(entry: RoomEntry): string {
     if (entry.body.notice === 'turn_failed') {

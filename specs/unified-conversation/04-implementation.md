@@ -745,7 +745,7 @@ Carried forward verbatim from the spec's own "What is not done" (§ same name), 
 3. **No scope options.** Unchanged. "Allow & don't ask again" still does nothing; tier C.
 4. **No verb glimpse in a room.** Unchanged. The lane says "is working on it," never "is reading `standup.md`" — presence tier 3, deferred with tier C.
 5. **No per-agent Stop in a room.** Unchanged, and P4's Known Issue 27's file-size note is adjacent context, not a fix: a per-author halt still needs its own notice copy and a scoped gather-buffer drop.
-6. **Bridged DMs still drop the waiting notice.** Unchanged. `services/relay/chat-bridge/deliver.ts:78` delivers only `turn_failed` and `halted`.
+6. **Bridged DMs still drop the waiting notice.** Unchanged as of P5. `services/relay/chat-bridge/deliver.ts:78` delivers only `turn_failed` and `halted`. **Closed after the programme by DOR-1359 — see Post-programme follow-ups below.**
 7. **Codex and OpenCode timeout parity is DOR-803.** Unchanged; that item's question, not this programme's.
 8. **Human typing indicators do not exist.** Unchanged; `specs/room-presence` §5.2 keeps it a separate question, if ever.
 9. **The room's durable waiting notice is unchanged, on purpose.** Still vague, late and damped.
@@ -780,3 +780,21 @@ In Linear-ready form — one bullet each, owner named where the record above alr
 - **The timeline's prop is `renderRow`, not the spec's `renderBody`** (P4 Known Issue 20). The spec's shape would need `SessionMessage` and `RoomMessage`'s surface knowledge lifted into props, undoing P1's own seam. Owner: whoever revisits `ConversationBodyRenderer`, if anybody does — otherwise the spec is what is wrong, not the code.
 - **`ConversationTarget` has no mention port** (P4 Known Issue 21), so `capabilities.mentions` is the only fact about the `@` picker in the neutral tree and the picker itself rides the host's slot. The consequence to watch is a third surface wanting mentions and finding nothing shared to reuse. Owner: whoever adds that surface.
 - **No unit test can see a virtualization bug** (P4 Known Issue 23): `@tanstack/react-virtual` is mocked globally in `test-setup.ts`, without which the room and chat suites could assert nothing. The nets that do see them are named in the issue, both in `apps/e2e`. Owner: a testing-infrastructure pass, not a feature phase — and not worth opening until a virtualization regression actually escapes.
+
+## Post-programme follow-ups
+
+Work done against this record after P5 closed. Appended, never rewritten — the sections above are what the programme itself found, and stay as it left them.
+
+### 2026-08-18 — DOR-1359, "What is not done" #6 is closed for the waiting line
+
+**What changed.** `DELIVERABLE_NOTICES` in `apps/server/src/services/relay/chat-bridge/deliver.ts` grew from two codes to four: `awaiting_approval` and `agent_busy` join `turn_failed` and `halted`. A person on Telegram or Slack in a bridged room now learns that the agent has stopped and why, instead of watching an answer that is never coming.
+
+**What was decided, and why.**
+
+- **The eligibility test is now "does this notice say an agent has stopped?"** The old scope called every other code "cockpit-shaped". That reading held for `cascade_stopped` and `budget_reached` (they describe this install's own limits) and for `agent_gone` and `agent_unavailable` (they name a registration and a database the platform person has no relationship with and cannot act on). It did not hold for these two, which describe exactly the state a waiting person cannot see. Those four exclusions stand, unchanged.
+- **Both forward the room's stored words, byte for byte.** No new copy was written and `notice-copy.ts` was not touched, so the spec's "What is not done" #9 — the room's durable waiting notice stays vague, late and damped — is still true. No tool name, path or command crosses into the chat (DOR-613); the vagueness that makes the room line safe is what makes the bridged line safe.
+- **Deliberately NOT re-rendered the way `turn_failed` is.** `bridgeTurnFailedText` exists because the room's failure line points a chat reader at "Ana's session", a door they cannot walk through — and the waiting line ends the same way. The same fix is not available at the same price: a failed turn has one sentence, a wait has three (one per `WaitingKind`), and the kind is not on the entry. Re-rendering would mean either putting `WaitingKind` on `RoomEntryBody` — a schema field with exactly one reader, which is the speculative widening this spec's Open Questions already declined once — or collapsing the three into one vaguer sentence, which costs the reader the only fact the line carries. Forwarding is the honest middle: a bridged DM delivers notices by default precisely because it is usually the operator's own account (chats-as-channels §6.2), so the session it points at is generally theirs to open. `deliver.ts`'s `buildNoticeContent` says all of this at the call site.
+- **Still not actionable, and that is a different item.** Nothing gained Approve/Deny buttons. An answerable bridged Ask needs the platform user to be _entitled_ to approve, which is the relay adapters' approver allowlist (`mayApprove`, `packages/relay/src/adapters/approver-allowlist.ts`) — today that gates the relay approval path for agents bound straight to a chat, not rooms projected into one. **That work is DOR-1356.**
+- **No new damping was written, because none was needed.** `RoomNoticeLog.reportWaiting` already writes one `awaiting_approval` per `(room, agent)` for the life of the turn, and `reportSilence` one `agent_busy` per `(room, agent, reason)` until recovery — so one wait is one room entry. The bridge's external-ref idempotence (chats-as-channels §6.3) then makes one room entry exactly one platform message, whether the inline commit path or the catch-up scan asks. Both are pinned by tests.
+
+**Also amended:** `specs/chats-as-channels/02-specification.md` §6.2 and its `design-decisions.md` Q5 — that spec owns `deliverNotices` and its scope, so the widening is recorded there too, append-only.
