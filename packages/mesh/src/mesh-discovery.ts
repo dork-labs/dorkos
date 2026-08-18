@@ -453,6 +453,9 @@ export async function upsertAutoImported(
 ): Promise<AutoImportResult> {
   const existing = deps.registry.getByPath(projectPath);
   // Registry rows persist scanRoot as '' when unknown — treat that as absent.
+  // Taken from whatever row sits at this path, same id or not: a scan root
+  // describes where the DIRECTORY was found, so it stays true when a different
+  // manifest turns up in it.
   const existingScanRoot = existing?.scanRoot || undefined;
   const effectiveScanRoot =
     managedScanRoot(projectPath, deps) ?? scanRoot ?? existingScanRoot ?? deps.defaultScanRoot;
@@ -464,12 +467,28 @@ export async function upsertAutoImported(
     scanRoot: effectiveScanRoot,
   };
 
-  // The identity this agent had before this write, so a namespace change can
+  // The identity THIS agent had before this write, so a namespace change can
   // take its old Relay identity down with it. For a relocation the previous
   // identity lives on the incumbent row, not on this path — set below.
-  let previous: { namespace: string; projectPath: string } | undefined = existing
-    ? { namespace: existing.namespace, projectPath: existing.projectPath }
-    : undefined;
+  //
+  // Same id or nothing. A row at this path carrying a DIFFERENT id is the
+  // branch-swap case (`AgentRegistry.upsert` deletes it and reports
+  // `'registered'`), and it is another agent's identity, not an earlier version
+  // of this one. Reading it as "the namespace this agent came from" would build
+  // a subject out of the old namespace and the new id — an address nobody ever
+  // registered — and then, finding the old namespace's last row gone, delete
+  // that namespace's catch-all deny while the displaced agent's real endpoint
+  // is still registered. That agent is left addressable with its ADR-0033
+  // secure default removed.
+  //
+  // The displaced agent's own identity is deliberately left alone: `upsert`
+  // drops its row directly rather than through `removeAgent`'s cascade, so
+  // nothing here has watched it go — and leaving an endpoint with its rules
+  // intact is the safe half of that trade.
+  let previous: { namespace: string; projectPath: string } | undefined =
+    existing && existing.id === manifest.id
+      ? { namespace: existing.namespace, projectPath: existing.projectPath }
+      : undefined;
 
   // Upsert handles both new and existing agents — and refuses, writing nothing,
   // when this id already belongs to another directory.

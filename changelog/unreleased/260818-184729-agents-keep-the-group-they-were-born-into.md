@@ -2,6 +2,7 @@
 covers:
   - 'fix(mesh,server): a new agent keeps the namespace it was created in (DOR-1342, DOR-1343)'
   - 'fix(mesh): never sweep access rules on registry evidence alone (review fixes, DOR-1342)'
+  - 'fix(mesh): a different manifest in a directory is not the same agent moving (review fix, DOR-1342)'
 ---
 
 ### Fixed

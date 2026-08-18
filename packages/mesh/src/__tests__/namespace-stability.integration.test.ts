@@ -257,6 +257,50 @@ describe('managed-agent namespace stability (real MeshCore + RelayCore)', () => 
     });
   });
 
+  it('leaves the displaced agent alone when a different manifest turns up in its directory', async () => {
+    mesh = bootMesh();
+    // A branch swap: `/w` is registered as one agent, then checks out a branch
+    // whose committed `.dork/agent.json` carries a different id. The registry
+    // replaces the row at that path and reports a plain registration.
+    const dir = path.join(home, 'code', 'proj', 'agent');
+    await fs.mkdir(dir, { recursive: true });
+    const displaced = await mesh.registerByPath(
+      dir,
+      { name: 'displaced', runtime: 'claude-code' },
+      'test',
+      path.join(home, 'code')
+    );
+    const displacedSubject = `relay.agent.proj.${displaced.id}`;
+    expect(relay.listEndpoints().map((e) => e.subject)).toContain(displacedSubject);
+    expect(rulesNaming('proj')).toHaveLength(2);
+
+    // The incoming manifest names its own namespace, so it lands somewhere else
+    // — the shape that makes a namespace change look like it happened here.
+    await writeManifest(
+      dir,
+      makeManifest({ id: '01JKBRANCHSWAP01', name: 'incoming', namespace: 'other' })
+    );
+    expect(await mesh.syncFromDisk(dir)).toBe('synced');
+
+    // The new agent is in, and the old row is gone — that much is the registry's
+    // existing overwrite behaviour.
+    expect(mesh.agentRegistry.getByPath(dir)?.id).toBe('01JKBRANCHSWAP01');
+    expect(mesh.agentRegistry.getByPath(dir)?.namespace).toBe('other');
+    expect(mesh.agentRegistry.get(displaced.id)).toBeUndefined();
+
+    // What must NOT happen: reading the displaced agent's namespace as this
+    // agent's previous one. Its endpoint is still registered and still reachable
+    // at its own address, so its namespace's catch-all deny has to stand.
+    expect(relay.listEndpoints().map((e) => e.subject)).toContain(displacedSubject);
+    expect(rulesNaming('proj')).toContainEqual({
+      from: 'relay.agent.proj.*',
+      to: 'relay.agent.>',
+      action: 'deny',
+      priority: 10,
+    });
+    expect(rulesNaming('proj')).toHaveLength(2);
+  });
+
   it('leaves a rule naming a namespace with no agents alone, pass after pass', async () => {
     mesh = bootMesh();
     await mesh.syncFromDisk(await scaffoldManagedAgent('alpha'));
