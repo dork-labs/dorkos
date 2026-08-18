@@ -531,6 +531,33 @@ describe('PluginInstallFlow', () => {
       expect(result.warnings[0]).toContain(installRoot);
     });
 
+    it('leaves no node_modules behind when a later step in the transaction fails', async () => {
+      // The whole reason npm runs on the STAGED tree: a rollback has to take
+      // the vendored libraries with it. npm succeeds here; the extension enable
+      // that follows does not, so the transaction unwinds a fresh install.
+      await stubNpm('#!/bin/sh\nmkdir -p node_modules/zod\necho ok > node_modules/zod/index.js\n');
+      const deps = await buildDeps();
+      cleanupDirs.push(deps.dorkHome);
+      deps.extensionManager.enable.mockRejectedValue(new Error('boom: enable failed'));
+      const manifest = buildManifest({ name: 'rolls-back', extensions: ['hello-world'] });
+      const pkgPath = await stagePackage({
+        manifest,
+        extensions: [
+          { id: 'hello-world', manifest: { id: 'hello-world', name: 'H', version: '0.1.0' } },
+        ],
+        packageJson: { name: 'rolls-back', dependencies: { zod: '^4.3.6' } },
+      });
+      cleanupDirs.push(pkgPath);
+
+      await expect(new PluginInstallFlow(deps).install(pkgPath, manifest, {})).rejects.toThrow(
+        /enable failed/
+      );
+
+      const installRoot = path.join(deps.dorkHome, 'plugins', 'rolls-back');
+      expect(await pathExists(path.join(installRoot, 'node_modules'))).toBe(false);
+      expect(await pathExists(installRoot)).toBe(false);
+    });
+
     it('still installs the package, with a warning, when npm is not on the machine', async () => {
       vi.stubEnv('PATH', path.join(tmpdir(), 'dorkos-no-npm-here'));
       const deps = await buildDeps();

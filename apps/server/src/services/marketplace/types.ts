@@ -175,4 +175,13 @@ export interface InstallResult {
   installPath: string;
   manifest: MarketplacePackageManifest;
   warnings: string[];
+  /**
+   * The subset of {@link InstallResult.warnings} describing npm dependency
+   * problems (DOR-1341). Carried separately because these are the warnings
+   * that outlive the install: the installer persists them to the package's
+   * `install-metadata.json` sidecar, and the installed-package view keeps
+   * showing them until a reinstall clears them. A toast the person dismissed
+   * is not a record of a package that is still missing its libraries.
+   */
+  dependencyWarnings?: string[];
 }

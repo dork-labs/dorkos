@@ -92,13 +92,17 @@ export class ShapeInstallFlow {
       installRootDirForType(manifest.type),
       manifest.name
     );
-    const warnings = opts.projectPath ? [SHAPE_PROJECT_PATH_IGNORED_WARNING] : [];
+    const scopeWarnings = opts.projectPath ? [SHAPE_PROJECT_PATH_IGNORED_WARNING] : [];
+    // Kept apart from `scopeWarnings`: only the dependency notes are persisted
+    // to the sidecar and re-shown on the installed-package view (DOR-1341).
+    const dependencyWarnings: string[] = [];
 
     return runTransaction<InstallResult>({
       name: `install-shape-${manifest.name}`,
       target: installRoot,
-      stage: (staging) => this.stage(staging.path, packagePath, installRoot, warnings),
-      activate: (staging) => this.activate(staging.path, installRoot, manifest, warnings),
+      stage: (staging) => this.stage(staging.path, packagePath, installRoot, dependencyWarnings),
+      activate: (staging) =>
+        this.activate(staging.path, installRoot, manifest, scopeWarnings, dependencyWarnings),
     });
   }
 
@@ -149,7 +153,8 @@ export class ShapeInstallFlow {
     stagingDir: string,
     installRoot: string,
     manifest: ShapePackageManifest,
-    warnings: string[]
+    scopeWarnings: string[],
+    dependencyWarnings: string[]
   ): Promise<InstallResult> {
     await mkdir(path.dirname(installRoot), { recursive: true });
     await atomicMove(stagingDir, installRoot);
@@ -161,7 +166,8 @@ export class ShapeInstallFlow {
       type: 'shape',
       installPath: installRoot,
       manifest,
-      warnings,
+      warnings: [...scopeWarnings, ...dependencyWarnings],
+      dependencyWarnings: [...dependencyWarnings],
     };
   }
 }

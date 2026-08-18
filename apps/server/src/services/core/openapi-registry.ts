@@ -279,7 +279,9 @@ const LocalPermissionPreviewSchema = z.object({
       description: z.string().optional(),
     })
   ),
-  npmDependencies: z.array(z.object({ name: z.string(), range: z.string() })),
+  npmDependencies: z.array(
+    z.object({ name: z.string(), range: z.string(), optional: z.boolean().optional() })
+  ),
   externalHosts: z.array(z.string()),
   requires: z.array(
     z.object({
@@ -304,6 +306,7 @@ const LocalInstallResultSchema = z.object({
   installPath: z.string(),
   manifest: LocalMarketplacePackageManifestSchema,
   warnings: z.array(z.string()),
+  dependencyWarnings: z.array(z.string()).optional(),
 });
 
 /** Local Zod 4 mirror of the update flow's per-package advisory check. */
@@ -1889,6 +1892,7 @@ const InstalledPackageSchema = z.object({
  */
 const InstalledPackageDetailSchema = InstalledPackageSchema.extend({
   provides: PackageProvidesSchema.optional(),
+  dependencyWarnings: z.array(z.string()).optional(),
 });
 
 const MarketplaceCacheStatusSchema = z.object({

@@ -76,7 +76,10 @@ export interface FormattedPermissionGroups {
  * marketplace packages this one needs, which are a different thing from third-
  * party libraries fetched off the npm registry. It says "download" because that
  * is the part a person is consenting to: an install that reaches the network
- * before the package has run a single line.
+ * before the package has run a single line. It counts only what the package
+ * DECLARED and says "and everything they depend on", because the transitive
+ * total is unknown until npm resolves it and is routinely an order of magnitude
+ * larger.
  *
  * @param preview - Full permission preview from the server.
  */
@@ -94,11 +97,17 @@ function formatEffects(preview: PermissionPreview): FormattedPermission[] {
     const count = preview.npmDependencies.length;
     rows.push({
       icon: 'globe',
-      label: `Download ${count} npm ${count === 1 ? 'library' : 'libraries'} from the npm registry`,
-      // Every library is named, not just the first few: this is the row that
-      // tells a person exactly what code is about to be fetched onto their
+      // "and everything they depend on" is doing real work: `count` is what the
+      // package declared, and one declared library routinely pulls dozens more
+      // (`express` alone is 68 packages). A bare "Download 1 npm library" would
+      // be a number a person could reasonably rely on, and it would be wrong.
+      label: `Download ${count} npm ${count === 1 ? 'library' : 'libraries'}, and everything they depend on`,
+      // Every declared library is named, not just the first few: this is the
+      // row that tells a person what code is about to be fetched onto their
       // machine, and a truncated list would hide the one that matters.
-      description: preview.npmDependencies.map((dep) => `${dep.name}@${dep.range}`).join(', '),
+      description: preview.npmDependencies
+        .map((dep) => `${dep.name}@${dep.range}${dep.optional ? ' (optional)' : ''}`)
+        .join(', '),
     });
   }
 

@@ -12857,6 +12857,12 @@
                               "skills",
                               "hooks"
                             ]
+                          },
+                          "dependencyWarnings": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
                           }
                         },
                         "required": [
@@ -13300,6 +13306,9 @@
                               },
                               "range": {
                                 "type": "string"
+                              },
+                              "optional": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -13621,6 +13630,9 @@
                               },
                               "range": {
                                 "type": "string"
+                              },
+                              "optional": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -13888,6 +13900,12 @@
                       "additionalProperties": {}
                     },
                     "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "dependencyWarnings": {
                       "type": "array",
                       "items": {
                         "type": "string"
@@ -14210,6 +14228,12 @@
                             "additionalProperties": {}
                           },
                           "warnings": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "dependencyWarnings": {
                             "type": "array",
                             "items": {
                               "type": "string"

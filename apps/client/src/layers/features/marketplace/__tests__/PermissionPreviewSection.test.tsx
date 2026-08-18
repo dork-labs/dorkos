@@ -65,7 +65,9 @@ describe('PermissionPreviewSection', () => {
 
     render(<PermissionPreviewSection preview={preview} />);
 
-    expect(screen.getByText(/download 2 npm libraries/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/download 2 npm libraries, and everything they depend on/i)
+    ).toBeInTheDocument();
     expect(screen.getByText(/zod@\^4\.3\.6, cronstrue@~2\.0\.0/)).toBeInTheDocument();
   });
 
@@ -76,7 +78,23 @@ describe('PermissionPreviewSection', () => {
       />
     );
 
-    expect(screen.getByText(/download 1 npm library/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/download 1 npm library, and everything they depend on/i)
+    ).toBeInTheDocument();
+  });
+
+  it('marks an optionalDependency as optional', () => {
+    // npm installs these by default, so they are disclosed like any other; the
+    // marker only says this one is allowed to fail.
+    render(
+      <PermissionPreviewSection
+        preview={makePreview({
+          npmDependencies: [{ name: 'fsevents', range: '^2.3.3', optional: true }],
+        })}
+      />
+    );
+
+    expect(screen.getByText(/fsevents@\^2\.3\.3 \(optional\)/)).toBeInTheDocument();
   });
 
   it('shows the literal hook command, not a summary of it', () => {

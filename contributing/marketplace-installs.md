@@ -204,13 +204,24 @@ The net guarantee: either the package is fully installed and visible, or (for a 
 
 ### 5.1 npm dependencies
 
-A package may ship runtime code that imports from npm — the `/flow` plugin's `scripts/*.ts` import `zod`. Copying those files onto disk is not enough: without a `node_modules` beside them the first `node --experimental-strip-types <plugin>/scripts/dispatch.ts` dies with `ERR_MODULE_NOT_FOUND` (DOR-1341). So every install flow's `stage` callback, after the package contents are copied and before the transaction takes its backup, calls `installStagedNpmDependencies` (`lib/npm-dependencies.ts`). When the staged package root has a `package.json` with a non-empty `dependencies` map, that runs one `npm install --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error` in the staging directory (`npm.cmd` on win32), bounded at 120 s with `SIGKILL`. Three rules govern it, and none of them are style choices:
+A package may ship runtime code that imports from npm — the `/flow` plugin's `scripts/*.ts` import `zod`. Copying those files onto disk is not enough: without a `node_modules` beside them the first `node --experimental-strip-types <plugin>/scripts/dispatch.ts` dies with `ERR_MODULE_NOT_FOUND` (DOR-1341). So every install flow's `stage` callback, after the package contents are copied and before the transaction takes its backup, calls `installStagedNpmDependencies` (`lib/npm-dependencies.ts`). When the staged package root declares dependencies, that runs one `npm install` in the staging directory (`npm.cmd` on win32), bounded at 120 s with `SIGKILL`.
 
-- **`--ignore-scripts` is not optional.** The person approved a file copy and a library download, not lifecycle code from a transitive dependency. npm reads a project `.npmrc` from its cwd, which here is a directory a stranger authored — a command-line flag outranks every config file, and a test ships a hostile `.npmrc` plus a postinstall against the real npm to keep it that way.
+**The containment model.** Running a package manager inside a directory a stranger authored is the dangerous part, and npm takes instructions from that directory in three ways that all had to be closed. The doctrine is the one `lib/stage-package.ts` already applies to symlinks: strip the capability unconditionally rather than reason about whether this particular use of it is benign.
+
+- **The argv carries the guarantees**, because a command-line flag is the only npm setting a config file cannot override. `--ignore-scripts` (no lifecycle code, from the package or any dependency of it), `--global=false` (npm may only write inside the staging directory), `--no-workspaces` (only the package root, which is what the preview disclosed). Then `--omit=dev --no-audit --no-fund --loglevel=error` for hygiene.
+- **The package's own root `.npmrc` is stripped** — during the staging copy (`stage-package.ts`, so it never reaches disk) and again defensively before the spawn. It is not a preference file: `global=true` in it turns a plain `npm install` into a global install of the package **itself**, planting bin shims — a shim named `git`, `claude` or `dorkos` runs the package's code the next time anyone types that command — with npm exiting 0 and nothing written inside the staging tree for a rollback to undo. `registry=` and `cache=` redirect where bytes come from and go. `--global=false` closes the worst of it, but the file would still be sitting at the install root, where the remedy DorkOS prints for a failed dependency install ("run `npm install` in `<path>`") would walk the person straight into it. Only the **root** copy is dropped; one nested in the package is inert content. The **user's** `~/.npmrc` is untouched — private-registry auth lives there.
+- **Symlinks npm re-introduces are stripped after it returns.** `stage-package.ts` strips links as it copies (DOR-279), but npm runs afterwards: a `file:` dependency makes it mint a brand-new link to anywhere on the machine (`node_modules/peek -> ../../secretdir`), readable for as long as the staged tree lives. Every link under the staged `node_modules` whose real path leaves the staging directory is removed, and the person is told; npm's own `.bin` shims resolve inside the tree and survive. A link that cannot be resolved at all is removed too — "dangling right now" is a property of the machine, not of the package.
+
+Each of those has a test that drives the **real** npm against a hostile fixture, because a stub only proves which flags we pass, not that they work. All three fixtures were confirmed to do the bad thing before the fix.
+
+Two more rules:
+
 - **It runs on the staged tree, never on the activated one.** The `node_modules` it creates is activated by the same atomic `atomicMove` as the package files, so a rolled-back install leaves neither behind and a reinstall's previous `node_modules` is restored with everything else.
-- **A dependency problem warns; it does not fail the install.** No `npm` on the machine, a non-zero exit, a timeout, an offline registry — each comes back as one sentence on `InstallResult.warnings` naming the exact command to run by hand (`Run \`npm install --omit=dev\` in <installPath>`), which the install toast shows. Failing would roll back a package whose own commands, skills and docs work fine. Only the package **root**'s `package.json` is read — nested workspaces are deliberately not chased.
+- **A dependency problem warns; it does not fail the install.** No `npm` on the machine, a non-zero exit, a timeout, an offline registry — each comes back as one sentence on `InstallResult.warnings` naming the exact command to run by hand. Failing would roll back a package whose own commands, skills and docs work fine. The half-written `node_modules` is removed first, so the state is a clean "not installed" rather than a partial tree that looks installed. The same sentence is carried on `InstallResult.dependencyWarnings`, persisted to the package's `install-metadata.json` sidecar and re-shown by `InstalledPackagesView` — a package that is on disk but incomplete outlives the toast that said so.
 
-The permission preview reports the same `dependencies` map as `npmDependencies: { name, range }[]` (section 6), and **both** consent surfaces name every library before the person approves the network fetch: the cockpit's install dialog (`features/marketplace/lib/format-permissions.ts`) and `dorkos install`'s terminal preview (`packages/cli/src/lib/preview-render.ts`). `node_modules` stays out of `fileChanges` as it always has.
+Consumers of the staged tree must skip `node_modules`. `findSkillFiles` in `install-skill-pack.ts` does: a vendored dependency shipping any file named `SKILL.md` that the parser rejects would otherwise **throw** and roll the whole install back, over a file the package author neither wrote nor can fix.
+
+The permission preview reports the declared `dependencies` **and** `optionalDependencies` as `npmDependencies: { name, range, optional? }[]` (section 6), and **both** consent surfaces name every library before the person approves the network fetch: the cockpit's install dialog (`features/marketplace/lib/format-permissions.ts`) and `dorkos install`'s terminal preview (`packages/cli/src/lib/preview-render.ts`). Both say "and everything they depend on", because the count is what the package declared and one declared library routinely pulls dozens more. `node_modules` stays out of `fileChanges` as it always has.
 
 A new flow gets none of this for free — the call lives in each flow's `stage`, not in `runTransaction` (`services/shapes/fork.ts` shares the engine and must not npm-install). Step 2 of section 9 is where to add it.
 
@@ -244,7 +255,7 @@ export interface PermissionPreview {
   /** Secrets the package will request. */
   secrets: { key: string; required: boolean; description?: string }[];
   /** npm libraries the install will fetch from the registry (section 5.1). */
-  npmDependencies: { name: string; range: string }[];
+  npmDependencies: { name: string; range: string; optional?: boolean }[];
   /** External hosts the package will contact. */
   externalHosts: string[];
   /** Other packages this depends on. */
@@ -278,7 +289,7 @@ The builder (`services/marketplace/permission-preview.ts`) walks the staged pack
   `apply-shape.ts` may still force a schedule off when its bound agent is missing at apply time, which the preview cannot know in advance, so a `true` remains the more permissive of the two outcomes.
 
 - `.dork/adapters/*/manifest.json` for adapter requirements.
-- `package.json` at the package **root** for `npmDependencies` — the libraries the install will download from the npm registry (section 5.1). Nested workspaces are not chased, and `node_modules` stays out of `fileChanges`.
+- `package.json` at the package **root** for `npmDependencies` — the `dependencies` and `optionalDependencies` the install will download (section 5.1). Nested workspaces are not chased, and `node_modules` stays out of `fileChanges`.
 - The `requires` field on the top-level manifest for dependency resolution against the installed set.
 
 It then delegates to the conflict detector (section 7) and attaches the result to `preview.conflicts`.

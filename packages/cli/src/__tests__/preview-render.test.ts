@@ -48,7 +48,9 @@ describe('renderPreview', () => {
       )
     );
 
-    expect(out).toContain('npm libraries this install will download:');
+    expect(out).toContain(
+      'npm libraries this install will download, and everything they depend on:'
+    );
     expect(out).toContain('zod@^4.3.6');
     expect(out).toContain('cronstrue@~2.0.0');
   });

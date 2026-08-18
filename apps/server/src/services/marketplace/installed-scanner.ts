@@ -53,6 +53,13 @@ export interface InstalledPackage {
   agentName?: string;
   /** Capability counts — populated on demand by {@link computeProvides}. */
   provides?: PackageProvides;
+  /**
+   * Problems installing this package's npm libraries, from the
+   * `install-metadata.json` sidecar (DOR-1341). Present only when something
+   * went wrong, so the installed-package view can say the package is on disk
+   * but incomplete, and name the command that finishes the job.
+   */
+  dependencyWarnings?: string[];
 }
 
 /** A registered agent whose project directory the cross-scope scan should walk. */
@@ -300,6 +307,10 @@ async function readInstalledPackage(packagePath: string): Promise<InstalledPacka
     ...base,
     ...(metadata?.installedFrom !== undefined && { installedFrom: metadata.installedFrom }),
     ...(metadata?.installedAt !== undefined && { installedAt: metadata.installedAt }),
+    ...(metadata?.dependencyWarnings !== undefined &&
+      metadata.dependencyWarnings.length > 0 && {
+        dependencyWarnings: metadata.dependencyWarnings,
+      }),
   };
 }
 

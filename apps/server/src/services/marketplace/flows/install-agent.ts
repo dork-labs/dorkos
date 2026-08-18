@@ -101,6 +101,7 @@ export class AgentInstallFlow {
       installPath: transactionResult.installPath,
       manifest,
       warnings: [...warnings],
+      dependencyWarnings: [...warnings],
     };
   }
 

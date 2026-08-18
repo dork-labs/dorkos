@@ -73,6 +73,29 @@ describe('readNpmDependencies', () => {
     await expect(readNpmDependencies(workDir)).resolves.toEqual([]);
   });
 
+  it('includes optionalDependencies, which npm installs by default', async () => {
+    // Leaving these out would under-report the fetch: npm installs them unless
+    // asked not to, and the preview is what a person consents to.
+    await writePackageJson(workDir, {
+      dependencies: { zod: '^4.3.6' },
+      optionalDependencies: { fsevents: '^2.3.3' },
+    });
+
+    await expect(readNpmDependencies(workDir)).resolves.toEqual([
+      { name: 'zod', range: '^4.3.6' },
+      { name: 'fsevents', range: '^2.3.3', optional: true },
+    ]);
+  });
+
+  it('reports a name declared in both maps once, as required', async () => {
+    await writePackageJson(workDir, {
+      dependencies: { zod: '^4.3.6' },
+      optionalDependencies: { zod: '^3.0.0' },
+    });
+
+    await expect(readNpmDependencies(workDir)).resolves.toEqual([{ name: 'zod', range: '^4.3.6' }]);
+  });
+
   it('skips dependency entries whose range is not a string', async () => {
     await writePackageJson(workDir, { dependencies: { zod: '^4.3.6', bogus: { version: 1 } } });
 
@@ -81,8 +104,13 @@ describe('readNpmDependencies', () => {
 });
 
 describe('npmInstallCommand', () => {
-  it('never lets a package run lifecycle scripts', () => {
-    expect(npmInstallCommand(workDir).args).toContain('--ignore-scripts');
+  it('pins the three flags a package-shipped .npmrc must not be able to override', () => {
+    // Each of these is a security boundary, and a command-line flag is the only
+    // kind of npm setting a config file in npm's cwd cannot override.
+    const { args } = npmInstallCommand(workDir);
+    expect(args).toContain('--ignore-scripts'); // no lifecycle code
+    expect(args).toContain('--global=false'); // may only write inside staging
+    expect(args).toContain('--no-workspaces'); // only the root the preview disclosed
   });
 
   it('installs production dependencies only, quietly, in the given directory', () => {
@@ -93,6 +121,8 @@ describe('npmInstallCommand', () => {
       'install',
       '--omit=dev',
       '--ignore-scripts',
+      '--global=false',
+      '--no-workspaces',
       '--no-audit',
       '--no-fund',
       '--loglevel=error',
@@ -279,39 +309,40 @@ describe.skipIf(process.platform === 'win32')('the default runner', () => {
 });
 
 /**
- * The security rule, pinned against the REAL npm rather than a stub.
+ * Containment, pinned against the REAL npm rather than a stub.
  *
- * A stub proves we pass `--ignore-scripts`; only real npm proves the flag has
- * the effect we claim — and, crucially, that it survives a package shipping its
- * own `.npmrc` that turns it back on. npm reads a project `.npmrc` from its
- * cwd, which for us is a directory whose contents a stranger authored, so
- * "command-line flags outrank config files" is load-bearing rather than
- * incidental. The dependency is a `file:` path so this needs no registry and no
- * network.
+ * A stub proves which flags we pass; only real npm proves those flags have the
+ * effect we claim when the directory npm runs in was authored by a stranger.
+ * Every fixture below was first run against the unprotected version and did the
+ * bad thing (DOR-1341 review): a `git` shim in the global bin, and `TOPSECRET`
+ * readable through `node_modules`.
  *
- * Skipped on win32 (the marker script is `/bin/sh`) and when npm is absent.
+ * All dependencies are `file:` paths, so none of this needs a registry or a
+ * network. Skipped on win32, where the global prefix layout differs.
  */
-describe.skipIf(process.platform === 'win32')('lifecycle scripts, against real npm', () => {
+describe.skipIf(process.platform === 'win32')('containment, against real npm', () => {
+  /** A minimal local package directory usable as a `file:` dependency. */
+  async function writeLocalDep(dir: string, manifest: Record<string, unknown>): Promise<string> {
+    await mkdir(dir, { recursive: true });
+    await writePackageJson(dir, { version: '1.0.0', ...manifest });
+    return dir;
+  }
+
   it('does not run a dependency postinstall, even when the package ships .npmrc ignore-scripts=false', async () => {
     const marker = path.join(workDir, 'POSTINSTALL-RAN');
-
-    // A local dependency whose postinstall would announce itself on disk.
-    const evilDir = path.join(workDir, 'evil-dep');
-    await mkdir(evilDir, { recursive: true });
-    await writePackageJson(evilDir, {
-      name: 'evil-dep',
-      version: '1.0.0',
-      scripts: { postinstall: `node -e "require('fs').writeFileSync('${marker}','ran')"` },
-    });
-
     const pkgDir = path.join(workDir, 'pkg');
     await mkdir(pkgDir, { recursive: true });
+    // Inside the staging dir, so the link npm makes for it stays internal and
+    // this test measures only the lifecycle-script rule.
+    await writeLocalDep(path.join(pkgDir, 'evil-dep'), {
+      name: 'evil-dep',
+      scripts: { postinstall: `node -e "require('fs').writeFileSync('${marker}','ran')"` },
+    });
     await writePackageJson(pkgDir, {
       name: 'hostile',
       version: '1.0.0',
-      dependencies: { 'evil-dep': `file:${evilDir}` },
+      dependencies: { 'evil-dep': 'file:./evil-dep' },
     });
-    // The package's own attempt to switch the protection back off.
     await writeFile(path.join(pkgDir, '.npmrc'), 'ignore-scripts=false\n', 'utf-8');
 
     const warnings = await installStagedNpmDependencies({
@@ -320,10 +351,87 @@ describe.skipIf(process.platform === 'win32')('lifecycle scripts, against real n
       logger: noopLogger,
     });
 
-    // The dependency itself is installed…
     expect(warnings).toEqual([]);
     expect(existsSync(path.join(pkgDir, 'node_modules', 'evil-dep'))).toBe(true);
-    // …and its postinstall never ran.
+    // The postinstall never ran, and the file that asked for it is gone.
     expect(existsSync(marker)).toBe(false);
+    expect(existsSync(path.join(pkgDir, '.npmrc'))).toBe(false);
+  }, 120_000);
+
+  it('cannot be turned into a global install by the package .npmrc, so no bin shim is planted', async () => {
+    // The original escape: `global=true` makes a bare `npm install` install THE
+    // CWD PACKAGE ITSELF into the machine's global prefix, bin shims and all —
+    // exit code 0, nothing written inside staging for a rollback to undo. A
+    // shim named `git` runs the package's code the next time anyone types it.
+    const prefix = path.join(workDir, 'global-prefix');
+    await mkdir(prefix, { recursive: true });
+    vi.stubEnv('npm_config_prefix', prefix);
+
+    const pkgDir = path.join(workDir, 'pkg');
+    await mkdir(pkgDir, { recursive: true });
+    await writeFile(path.join(pkgDir, 'pwn.js'), 'console.log("pwned")\n', 'utf-8');
+    await writeLocalDep(path.join(pkgDir, 'real-dep'), { name: 'real-dep' });
+    await writePackageJson(pkgDir, {
+      name: 'hostile-plugin',
+      version: '1.0.0',
+      bin: { git: 'pwn.js' },
+      dependencies: { 'real-dep': 'file:./real-dep' },
+    });
+    await writeFile(path.join(pkgDir, '.npmrc'), 'global=true\n', 'utf-8');
+
+    await installStagedNpmDependencies({
+      stagingDir: pkgDir,
+      installPath: '/data/plugins/hostile-plugin',
+      logger: noopLogger,
+    });
+
+    // Nothing reached the global prefix…
+    expect(existsSync(path.join(prefix, 'bin', 'git'))).toBe(false);
+    expect(existsSync(path.join(prefix, 'lib', 'node_modules', 'hostile-plugin'))).toBe(false);
+    // …the dependency landed where it belongs…
+    expect(existsSync(path.join(pkgDir, 'node_modules', 'real-dep'))).toBe(true);
+    // …and the file that asked for the escape is not on its way to the install root.
+    expect(existsSync(path.join(pkgDir, '.npmrc'))).toBe(false);
+  }, 120_000);
+
+  it('removes the links npm mints outside the package, and keeps the .bin shims inside it', async () => {
+    // `stage-package.ts` strips symlinks as it copies (DOR-279), but npm runs
+    // afterwards: a `file:` dependency makes it create a brand-new link to
+    // anywhere on the machine, readable for as long as the staged tree lives.
+    const secretDir = path.join(workDir, 'outside-secrets');
+    await writeLocalDep(secretDir, { name: 'peek' });
+    await writeFile(path.join(secretDir, 'creds.txt'), 'TOPSECRET\n', 'utf-8');
+
+    const pkgDir = path.join(workDir, 'pkg');
+    await mkdir(pkgDir, { recursive: true });
+    // A second dependency INSIDE the package, declaring a bin, so the test can
+    // tell "strip escaping links" apart from "strip every link".
+    const toolDir = path.join(pkgDir, 'tool-dep');
+    await writeLocalDep(toolDir, { name: 'tool-dep', bin: { mytool: 'cli.js' } });
+    await writeFile(path.join(toolDir, 'cli.js'), '#!/usr/bin/env node\n', 'utf-8');
+    await writePackageJson(pkgDir, {
+      name: 'peeker',
+      version: '1.0.0',
+      dependencies: { peek: `file:${secretDir}`, 'tool-dep': 'file:./tool-dep' },
+    });
+
+    const warnings = await installStagedNpmDependencies({
+      stagingDir: pkgDir,
+      installPath: '/data/plugins/peeker',
+      logger: noopLogger,
+    });
+
+    // The escaping link is gone — and so is the read through it.
+    expect(existsSync(path.join(pkgDir, 'node_modules', 'peek'))).toBe(false);
+    expect(existsSync(path.join(pkgDir, 'node_modules', 'peek', 'creds.txt'))).toBe(false);
+    // The secret itself is untouched: we removed our link, not the target.
+    expect(existsSync(path.join(secretDir, 'creds.txt'))).toBe(true);
+    // The internal dependency and its bin shim survive.
+    expect(existsSync(path.join(pkgDir, 'node_modules', 'tool-dep'))).toBe(true);
+    expect(existsSync(path.join(pkgDir, 'node_modules', '.bin', 'mytool'))).toBe(true);
+    // And the person is told, rather than left with a quietly different package.
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('outside the package');
+    expect(warnings[0]).toContain('peek');
   }, 120_000);
 });

@@ -162,6 +162,7 @@ function buildInstallResult(
     installPath,
     manifest,
     warnings: [...warnings],
+    dependencyWarnings: [...warnings],
   };
 }
 
@@ -180,9 +181,28 @@ async function findSkillFiles(root: string): Promise<string[]> {
     // `entry.parentPath` is preferred (Node 20.12+); fall back to `entry.path`
     // for older runtimes used in CI matrices.
     const parent = entry.parentPath ?? (entry as { path?: string }).path ?? root;
+    if (isUnderNodeModules(path.relative(root, parent))) continue;
     matches.push(path.join(parent, entry.name));
   }
   return matches;
+}
+
+/**
+ * True when a package-relative directory path sits inside a `node_modules`
+ * tree at any depth.
+ *
+ * Vendored dependencies are not the package's skills, and treating them as
+ * such is actively harmful in two ways. A dependency shipping any file named
+ * `SKILL.md` that DorkOS's parser rejects would make {@link validateSkillFile}
+ * throw, rolling the whole install back over a file the package author neither
+ * wrote nor can fix — the exact opposite of the warn-don't-fail policy the npm
+ * step is built on. And a real dependency tree is thousands of files to stat
+ * for nothing. The filter lives here rather than in the call order so it holds
+ * however the flow is later rearranged.
+ */
+function isUnderNodeModules(relativeDir: string): boolean {
+  if (relativeDir === '') return false;
+  return relativeDir.split(path.sep).includes('node_modules');
 }
 
 /**

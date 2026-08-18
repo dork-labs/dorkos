@@ -44,6 +44,8 @@ export interface UnreadablePreviewHook {
 export interface PreviewNpmDependency {
   name: string;
   range: string;
+  /** True for an `optionalDependencies` entry — installed, but allowed to fail. */
+  optional?: boolean;
 }
 
 /** A scheduled job the install will create, and what it may do unattended. */
@@ -117,10 +119,12 @@ export function renderPreview(
 
   // Named before the commands section, because this is the one effect that
   // reaches the network — and it happens during the install itself, not later.
+  // The heading says "and everything they depend on" because these are the
+  // DECLARED libraries; one of them routinely pulls in dozens more.
   if (preview.npmDependencies.length > 0) {
-    lines.push('npm libraries this install will download:');
+    lines.push('npm libraries this install will download, and everything they depend on:');
     for (const dep of preview.npmDependencies) {
-      lines.push(`  ${dep.name}@${dep.range}`);
+      lines.push(`  ${dep.name}@${dep.range}${dep.optional ? ' (optional)' : ''}`);
     }
     lines.push('');
   }

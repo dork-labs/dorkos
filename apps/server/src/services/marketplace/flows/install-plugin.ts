@@ -234,6 +234,7 @@ export class PluginInstallFlow {
       installPath: installRoot,
       manifest,
       warnings: [...warnings],
+      dependencyWarnings: [...warnings],
     };
   }
 }

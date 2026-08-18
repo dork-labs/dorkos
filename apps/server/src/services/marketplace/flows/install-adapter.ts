@@ -102,6 +102,7 @@ export class AdapterInstallFlow {
         `Configure secrets via dorkos relay-adapters set ${manifest.name}`,
         ...dependencyWarnings,
       ],
+      dependencyWarnings: [...dependencyWarnings],
     };
   }
 }

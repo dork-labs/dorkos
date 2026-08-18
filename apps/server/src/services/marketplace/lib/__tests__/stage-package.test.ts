@@ -121,4 +121,36 @@ describe('stagePackageContents', () => {
     expect(await isSymlink(path.join(dest, 'alias.txt'))).toBe(false);
     expect(await exists(path.join(dest, 'alias.txt'))).toBe(false);
   });
+
+  it("drops the package's own root .npmrc, and says so", async () => {
+    // Not a preference file: it lands where npm runs, and `global=true` in it
+    // turns the install into a global install of the package itself with bin
+    // shims. Nothing a package needs at runtime lives in it (DOR-1341).
+    const source = await mkdtemp(path.join(tmpdir(), 'stage-npmrc-src-'));
+    const dest = path.join(await mkdtemp(path.join(tmpdir(), 'stage-npmrc-dst-')), 'staged');
+    cleanupDirs.push(source, path.dirname(dest));
+    await writeFile(path.join(source, '.npmrc'), 'global=true\n', 'utf-8');
+    await writeFile(path.join(source, 'README.md'), 'hello', 'utf-8');
+    const logger = buildLogger();
+
+    await stagePackageContents(source, dest, logger);
+
+    expect(await exists(path.join(dest, '.npmrc'))).toBe(false);
+    expect(await exists(path.join(dest, 'README.md'))).toBe(true);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('.npmrc'));
+  });
+
+  it('leaves a nested .npmrc alone — only the root one is npm config', async () => {
+    // A copy deeper in the tree is inert content: npm reads the project config
+    // from the directory it runs in, which is the package root.
+    const source = await mkdtemp(path.join(tmpdir(), 'stage-nested-npmrc-src-'));
+    const dest = path.join(await mkdtemp(path.join(tmpdir(), 'stage-nested-npmrc-dst-')), 'staged');
+    cleanupDirs.push(source, path.dirname(dest));
+    await mkdir(path.join(source, 'templates'), { recursive: true });
+    await writeFile(path.join(source, 'templates', '.npmrc'), 'registry=https://x.test\n', 'utf-8');
+
+    await stagePackageContents(source, dest, buildLogger());
+
+    expect(await exists(path.join(dest, 'templates', '.npmrc'))).toBe(true);
+  });
 });
