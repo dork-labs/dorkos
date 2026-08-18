@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { ShieldAlert, ShieldCheck, TriangleAlert } from 'lucide-react';
@@ -169,12 +169,17 @@ export function ApprovalsIndicator() {
   // Somebody pressed the shortcut with nothing on screen to jump to. Opening
   // here is the whole of "opens whatever surface holds it" for a route that was
   // showing none of them.
-  const lastRequestRef = useRef(trayRequest);
-  useEffect(() => {
-    if (trayRequest === lastRequestRef.current) return;
-    lastRequestRef.current = trayRequest;
+  //
+  // Adjusted during RENDER rather than in an effect — the shape the live lane
+  // uses for the same class of problem, and the reason is the same: a `setState`
+  // inside an effect is the cascading render the lint rule is right to object
+  // to, and React re-runs this component before committing anything, so the
+  // correction costs a render pass rather than a frame of the wrong thing.
+  const [seenRequest, setSeenRequest] = useState(trayRequest);
+  if (seenRequest !== trayRequest) {
+    setSeenRequest(trayRequest);
     setOpen(true);
-  }, [trayRequest]);
+  }
 
   const count = approvals.length + asks.length;
   const trustedCount = permissions.length;

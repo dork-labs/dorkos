@@ -11,6 +11,14 @@ covers:
   - 'test(server): P3.9 — the authority table, the projector seam, the ledger and the ordering (DOR-1330)'
   - 'test(client,e2e): P3.10 — the store, the headline, the card, and answering from another route (DOR-1330)'
   - 'feat(client): P3.11 — the whole Ask family in the Dev Playground (DOR-1330)'
+  # The review fixes. Same feature, same fragment: none of them is a separate
+  # thing a person would read about, and three of them are the difference
+  # between the bullets above being true and being nearly true.
+  - 'fix(shared,server,client): the fleet card names what it is asking for, and its clock starts when the prompt did (DOR-1330)'
+  - 'fix(client): a refused answer puts the card back instead of stranding a receipt (DOR-1330)'
+  - 'fix(client): the tray names the agent, offers the session, keeps its receipt, and stops calling a question an approval (DOR-1330)'
+  - 'fix(client): the Ask gets its own chord, ⌘⇧Y, always listening (DOR-1330)'
+  - 'fix(client): the session stops drawing one prompt three times, the burst answers through the shared mutation, and a card is no longer born dim (DOR-1330)'
 ---
 
 ### Added

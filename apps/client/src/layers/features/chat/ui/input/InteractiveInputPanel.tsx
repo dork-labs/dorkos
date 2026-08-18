@@ -70,7 +70,11 @@ export function InteractiveInputPanel({
         interaction: {
           type: 'approval' as const,
           id: call.toolCallId,
-          startedAt: call.approvalStartedAt ?? Date.now(),
+          // Zero rather than a clock read: only the ids reach the transport
+          // from here, and a `Date.now()` in a render body is an unstable value
+          // the rules of React are right to object to. The burst card in the
+          // TRAY draws from real envelopes and has real times.
+          startedAt: call.approvalStartedAt ?? 0,
           remainingMs: call.timeoutMs ?? 0,
           toolName: call.toolName,
           input: call.input ?? '',
