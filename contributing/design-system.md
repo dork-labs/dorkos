@@ -215,6 +215,8 @@ Animation should feel like physics, not decoration. Things should move because t
 
 **New messages pill:** Fade in + slide up 8px, 200ms ease-out. Fade out on exit (150ms). Centered horizontally in message area overlay wrapper. Appears when new messages arrive while user is scrolled up; dismissed on click or reaching bottom.
 
+**Live lane crossfade:** 150–200ms opacity crossfade between lane states, keyed on the state's discriminant plus its label — so `turn-streaming` re-keys only when the verb itself changes, not every render. Nothing else in the lane moves except the working dot's own breathing. Reduced motion swaps instantly with no crossfade.
+
 **Identity surfaces have their own named grammar** — three speeds, two curves, three tiers — under [Identity → The interaction grammar](#the-interaction-grammar--what-an-identity-says-when-you-point-at-it). Anything that draws an avatar, a mention pill or a roster card follows that section rather than picking numbers from the table above.
 
 ### What NOT to Animate
@@ -252,6 +254,58 @@ Animation should feel like physics, not decoration. Things should move because t
 - Tool name in `font-mono`
 - Expandable with smooth height animation
 - Hover: border darkens slightly, subtle shadow appears
+
+### Live lane
+
+`Conversation.LiveLane` (`features/conversation/ui/LiveLane.tsx`) is the one reserved line
+above every composer — a session's and a channel's alike — that says what is happening here.
+Replaces `ChatStatusStrip` and the room's under-composer `RoomPresenceLine`, unifying two
+formerly separate lines into one component every surface renders.
+
+**The reserved height is the feature.** Fixed at `h-6` (24px), **never `min-h`**, mounted
+whether or not there is anything to say. A room going from quiet to busy moves nothing else on
+screen — the line it replaces came and went, which pushed the last message a reader was looking
+at. It sits as a flex sibling of the scroller, never inside it: a height change inside the
+scrolling element would move `scrollHeight` under the timeline's own scroll-position tracking
+and un-pin a reader who never scrolled.
+
+**One status vocabulary — the priority stack.** Nine rungs, evaluated top to bottom, first
+match wins, each gated by the capability that makes it possible:
+
+1. **`ask`** (`capabilities.asks`) — a prompt somebody can answer. Grows into the Ask card.
+2. **`stalled`** (`capabilities.streamHealth`) — this client cannot read the stream.
+3. **`presence`** (`capabilities.presence`) — somebody else is working here.
+4. **`turn-waiting`** (`capabilities.turnStatus`) — this turn is parked, with no prompt object
+   in hand.
+5. **`turn-progress`** (`capabilities.turnStatus`) — a long operation is running.
+6. **`turn-system`** (`capabilities.turnStatus`) — an informational runtime event.
+7. **`turn-streaming`** (`capabilities.turnStatus`) — a turn in flight.
+8. **`turn-complete`** (`capabilities.turnStatus`) — the summary, auto-dismissing.
+9. **`empty`** — nothing to say, and the lane looks like it.
+
+Three orderings are decisions, not accidents, and none may be collapsed: **`ask` beats
+`stalled`** (a live Ask's countdown runs off `startedAt`, not the stream, so it stays true and
+answerable even while the wire is quiet); **`stalled` beats `presence`** (a client that cannot
+read the stream must not claim to know who is working — `specs/room-presence` §5.4); and
+**`turn-waiting` survives even though `ask` outranks it** (a parked turn with no prompt object —
+a capability hold, a runtime that said `blocked` and sent nothing else — is a different fact
+from a prompt in hand, and collapsing the two makes the second silently invisible). There is
+deliberately **no `queued` rung**: a queue only exists because a turn is already in flight, so
+it would never win against `turn-streaming` and would hide what the agent is doing in order to
+report a number. Held drafts live in the composer's own queue panel instead (see Composer,
+below).
+
+**The announcer rule: one live region, counts not verbs** — the same principle §Zones already
+states for the Heads up zone's badge, applied to the lane. `role="status" aria-live="polite"`
+wraps the lane's own text, so a change in WHAT it says (presence count, stalled, ask headline)
+is announced, but a `turn-streaming` verb changing every couple of seconds while a turn works is
+not — a screen reader is not a siren. The Ask card that grows out of rung 1 is announced
+separately, through `Conversation.Timeline`'s own `approvalAnnouncement` slot (`role="status"`),
+because answering a prompt is a distinct event from the lane's own presence chatter.
+
+**Motion:** the lane crossfades between states in 150–200ms, keyed on the state's discriminant
+plus its label (`turn-streaming:${verbKey}` for a changing verb, so it animates only on a real
+change) — see the Animation Catalog below. Reduced motion swaps instantly, no crossfade.
 
 ### Scroll Overlays
 
