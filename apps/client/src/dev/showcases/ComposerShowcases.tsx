@@ -134,6 +134,7 @@ function ComposerDemo({
   target,
   asks,
   note,
+  showQueueItems = false,
 }: {
   label: string;
   surface: 'session' | 'room' | 'dm';
@@ -141,6 +142,14 @@ function ComposerDemo({
   target: ConversationTarget;
   asks?: ReactNode;
   note?: string;
+  /**
+   * Draw the queue panel with its sample items. Distinct from `target.queue`
+   * existing: every session target carries the method (that presence is what
+   * the capability gate reads), but only the "Queue depth" demo should
+   * actually show held drafts — an idle or typing demo with a queue panel
+   * already in it would misdescribe its own label.
+   */
+  showQueueItems?: boolean;
 }) {
   const [value, setValue] = useState('');
   return (
@@ -153,19 +162,20 @@ function ComposerDemo({
             value={value}
             onChange={setValue}
             onSubmit={() => {}}
-            {...(target.queue !== undefined && {
-              queue: (
-                <QueuePanel
-                  queue={SAMPLE_QUEUE}
-                  editingId={null}
-                  onEdit={() => {}}
-                  onRemove={() => {}}
-                  onSend={() => {}}
-                  onMoveUp={() => {}}
-                  statusNote="Sending one at a time as the agent finishes"
-                />
-              ),
-            })}
+            {...(target.queue !== undefined &&
+              showQueueItems && {
+                queue: (
+                  <QueuePanel
+                    queue={SAMPLE_QUEUE}
+                    editingId={null}
+                    onEdit={() => {}}
+                    onRemove={() => {}}
+                    onSend={() => {}}
+                    onMoveUp={() => {}}
+                    statusNote="Sending one at a time as the agent finishes"
+                  />
+                ),
+              })}
             {...(asks !== undefined && { asks })}
             input={{ placeholder: target.placeholder, isStreaming: false }}
           />
@@ -304,6 +314,7 @@ export function ComposerShowcases() {
         surface="session"
         capabilities={SESSION_CAPABILITIES}
         target={sessionQueued}
+        showQueueItems
       />
 
       <TransportProvider transport={playgroundTransport}>
