@@ -57,7 +57,7 @@ import {
 } from '@/layers/features/entry-actions';
 import { entryRowArticleProps } from '../lib/entry-row-article';
 import { entrySummary } from '../lib/entry-summary';
-import { toMessageAuthor, type RosterAuthor } from '../lib/room-timeline';
+import { roomEntryRowKind, toMessageAuthor, type RosterAuthor } from '../lib/room-timeline';
 import { useAgentInfo, useRoomAgentFaces } from '../model/agent-info-context';
 import { useEntryReactions } from '../model/use-entry-reactions';
 import { useEntryRowKeys } from '../model/use-entry-row-keys';
@@ -239,20 +239,24 @@ export function RoomMessage({
   const subjectRef = authors.get(subjectId);
   const subjectAgent = useAgentInfo(subjectRef?.agentRef);
 
-  if (entry.kind === 'notice') {
+  // Which of the three lines this is — read once, from `roomEntryRowKind`,
+  // which is also what `conversation-row-kinds.test.ts` puts every kind of
+  // entry through. A moment is a POST, so `kind` alone cannot tell it apart
+  // from somebody talking; the rule lives in one place rather than here and
+  // in the test's idea of here.
+  const rowKind = roomEntryRowKind(entry);
+
+  if (rowKind.kind === 'notice') {
     return <NoticeRow entry={entry} feedPosition={feedPosition} rowId={rowId} />;
   }
 
-  // A moment is a POST that marks something that really happened, so `kind`
-  // cannot tell it apart from an ordinary message — `body.moment` is the tell,
-  // and a client that only read `kind` would draw a milestone as somebody
-  // talking. Everything else about the row still applies: it is on the same
-  // log, at the same seq, in the same feed.
-  if (entry.body.moment) {
+  // Everything else about a moment's row still applies: it is on the same log,
+  // at the same seq, in the same feed.
+  if (rowKind.kind === 'moment') {
     return (
       <MomentRow
         entry={entry}
-        moment={entry.body.moment}
+        moment={rowKind.moment}
         subject={subjectId === entry.authorId ? author : toMessageAuthor(subjectId, authors, faces)}
         subjectIdentity={{
           handle: subjectRef?.handle ?? undefined,

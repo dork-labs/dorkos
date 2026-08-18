@@ -3,10 +3,55 @@
  *
  * @module widgets/room-view/lib/room-timeline
  */
+import type { RoomMoment } from '@dorkos/shared/room-schemas';
 import type { AuthorOrigin, AuthorRef, RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { threadRootIdOf } from '@/layers/entities/room';
+import type { ConversationRow } from '@/layers/features/conversation';
 import { resolveIdentityFace, type IdentityFaceOverride } from '@/layers/shared/lib';
 import type { MessageAuthor } from '@/layers/shared/model';
+
+/**
+ * Which kind of {@link ConversationRow} one room entry becomes, and what the
+ * row it becomes needs from the entry.
+ *
+ * A discriminated result rather than a bare string, because the caller that
+ * asks is the caller that renders: `moment` carries the moment it found, so
+ * `RoomMessage` narrows to it instead of reading `body.moment` a second time
+ * and asserting it is there.
+ *
+ * The three names are pinned to the shared union by `Extract`, so a kind
+ * renamed or dropped in `features/conversation` fails to compile here rather
+ * than leaving a room drawing a row nothing else in the app has a name for.
+ */
+export type RoomRowKind =
+  | { kind: Extract<ConversationRow['kind'], 'notice'> }
+  | { kind: Extract<ConversationRow['kind'], 'moment'>; moment: RoomMoment }
+  | { kind: Extract<ConversationRow['kind'], 'message'> };
+
+/**
+ * Read what kind of line an entry is off the entry itself.
+ *
+ * **Only `kind` and `body` decide it, and they are not the same tell.** A
+ * `notice` is the room speaking about itself, and the server says so on the
+ * entry's `kind`. A MOMENT is an ordinary post — same log, same seq, same feed
+ * — whose `body.moment` says what it marks, which is why `kind` cannot tell it
+ * apart and a client reading only `kind` would draw a milestone as somebody
+ * talking.
+ *
+ * Extracted from `RoomMessage`'s own branches so the rule has one statement and
+ * `conversation-row-kinds.test.ts` can put every kind of entry through it. Two
+ * copies of "what makes a moment a moment" is precisely the drift that test
+ * exists to catch.
+ *
+ * @param entry - One entry from the room's log.
+ * @returns Which row it draws as, and the moment when it draws as one.
+ */
+export function roomEntryRowKind(entry: RoomEntry): RoomRowKind {
+  if (entry.kind === 'notice') return { kind: 'notice' };
+  const moment = entry.body.moment;
+  if (moment) return { kind: 'moment', moment };
+  return { kind: 'message' };
+}
 
 /**
  * A roster member's `AuthorRef` paired back up with its `origin` — the two
