@@ -78,7 +78,9 @@ export interface PageConfig {
  * component from both pages and borrowing its entry for this page's TOC. The
  * accepted cost: these sections still group under their own page in ⌘K, and
  * their canonical anchor stays where it was. That is the trade for not breaking
- * a single existing `/dev/components#…`, `/dev/rooms#…` or `/dev/conversation#…` link.
+ * a single existing `/dev/components#…`, `/dev/rooms#…` or `/dev/conversation#…`
+ * link. (The one path this programme did retire, `/dev/chat`, keeps working
+ * through {@link PATH_ALIASES} rather than falling through to Overview.)
  */
 export const IDENTITY_CROSS_LISTED: readonly string[] = [
   'identityavatar',
@@ -380,11 +382,24 @@ export const AGENTS_NAV = PAGE_CONFIGS.filter((c) => c.group === 'agents');
 export const APP_SHELL_NAV = PAGE_CONFIGS.filter((c) => c.group === 'app-shell');
 
 /**
+ * Retired paths, and the page that answers them now.
+ *
+ * A path that no longer exists falls back to Overview with the URL unchanged —
+ * no redirect, no notice — so a bookmark to a renamed page silently lands
+ * somewhere else and takes its `#anchor` with it. One entry per rename is
+ * cheaper than that. `/dev/chat` became `/dev/conversation` in DOR-1332 (P5).
+ */
+const PATH_ALIASES: Readonly<Record<string, string>> = { chat: 'conversation' };
+
+/**
  * Resolve the current page from the URL pathname.
  *
- * Falls back to `'overview'` for unrecognized paths.
+ * Checks the live `path` of every page first, then {@link PATH_ALIASES} for a
+ * path a rename retired. Falls back to `'overview'` for anything else.
  */
 export function getPageFromPath(pathname: string): string {
   const match = PAGE_CONFIGS.find((c) => pathname.startsWith(`/dev/${c.path}`));
-  return match?.id ?? 'overview';
+  if (match) return match.id;
+  const alias = Object.keys(PATH_ALIASES).find((path) => pathname.startsWith(`/dev/${path}`));
+  return alias === undefined ? 'overview' : PATH_ALIASES[alias]!;
 }

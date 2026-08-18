@@ -27,7 +27,13 @@ import {
   SIDEBAR_MODEL_SECTIONS,
 } from '../playground-registry';
 import { slugify } from '../lib/slugify';
-import { PAGE_CONFIGS, PAGE_ORDER, PAGE_LABELS, IDENTITY_CROSS_LISTED } from '../playground-config';
+import {
+  PAGE_CONFIGS,
+  PAGE_ORDER,
+  PAGE_LABELS,
+  IDENTITY_CROSS_LISTED,
+  getPageFromPath,
+} from '../playground-config';
 
 describe('playground-registry', () => {
   it('has no duplicate section IDs across the full registry', () => {
@@ -118,6 +124,16 @@ describe('playground-config', () => {
         expect(PLAYGROUND_REGISTRY).toContainEqual(section);
       }
     }
+  });
+
+  it('resolves a live page path, and the one path a rename retired', () => {
+    expect(getPageFromPath('/dev/conversation')).toBe('conversation');
+    // `/dev/chat` was the Conversation page until DOR-1332. Without the alias
+    // it falls through to Overview with the URL unchanged, so every saved
+    // `/dev/chat#…` link lands on the wrong page without saying so.
+    expect(getPageFromPath('/dev/chat')).toBe('conversation');
+    expect(getPageFromPath('/dev/chat#composer')).toBe('conversation');
+    expect(getPageFromPath('/dev/nothing-here')).toBe('overview');
   });
 });
 
