@@ -15,7 +15,7 @@ import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events'
 import type { PendingInteractionDTO } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { clearAskReceipts } from '@/layers/entities/attention';
+import { clearAskReceipts, useAskReceipt } from '@/layers/entities/attention';
 import { useAnswerAsk } from '../model/use-answer-ask';
 
 const NOW = Date.parse('2026-08-18T10:00:00.000Z');
@@ -105,6 +105,24 @@ describe('useAnswerAsk', () => {
 
     expect(transport.batchApprove).toHaveBeenCalledWith('session-1', ['tc-1', 'tc-2']);
     expect(transport.approveTool).not.toHaveBeenCalled();
+  });
+
+  it('takes the receipt back when the server refuses, so the card is answerable again', async () => {
+    // The optimistic receipt is written before the server agrees. A refusal
+    // means it never did, and a receipt left behind reads "You allowed this"
+    // over a request still sitting there waiting. Seeded defect: drop the
+    // `forgetAskReceipt` loop and this finds the stale receipt.
+    const { result } = mount();
+    vi.mocked(transport.approveTool).mockRejectedValue(
+      Object.assign(new Error('Only a person signed in to DorkOS can answer this'), {
+        code: 'operator_cookie_required',
+      })
+    );
+
+    await act(async () => await result.current.answer(ask(APPROVAL), 'allow'));
+
+    const { result: receipt } = renderHook(() => useAskReceipt('tc-1'));
+    expect(receipt.current).toBeUndefined();
   });
 
   it('surfaces a refusal in words a person can act on', async () => {

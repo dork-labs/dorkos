@@ -33,6 +33,7 @@ export {
 export { describeInteraction, agentNameFromCwd } from './model/describe-interaction';
 export {
   recordAskReceipt,
+  forgetAskReceipt,
   useAskReceipt,
   settleAsk,
   useSettlingAsks,

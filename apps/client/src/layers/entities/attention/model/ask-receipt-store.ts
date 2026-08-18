@@ -116,6 +116,30 @@ export function recordAskReceipt(interactionId: string, receipt: AskReceipt): vo
 }
 
 /**
+ * Take back a receipt that turned out not to be true.
+ *
+ * The window that answers writes its receipt optimistically, before the server
+ * has agreed. When the server refuses — the 403 from the answer guard is the
+ * case that matters — the card has to become answerable again, and a receipt
+ * left behind would leave it saying "You allowed this" over a request still
+ * sitting there waiting (DOR-1330 review). Drops the held envelope too, so the
+ * card stops being drawn by the settling hold.
+ *
+ * @param interactionId - The prompt whose receipt was premature.
+ */
+export function forgetAskReceipt(interactionId: string): void {
+  useAskReceiptStore.setState((state) => {
+    const receipts = { ...state.receipts };
+    delete receipts[interactionId];
+    return {
+      receipts,
+      order: state.order.filter((id) => id !== interactionId),
+      settling: state.settling.filter((held) => held.interaction.id !== interactionId),
+    };
+  });
+}
+
+/**
  * Keep an answered prompt on screen long enough to say how it ended.
  *
  * Called by whichever half learns first — the window that answered, or the

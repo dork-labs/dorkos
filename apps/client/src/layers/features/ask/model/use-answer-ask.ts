@@ -14,6 +14,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import {
   PENDING_INTERACTIONS_QUERY_KEY,
+  forgetAskReceipt,
   recordAskReceipt,
   settleAsk,
 } from '@/layers/entities/attention';
@@ -61,7 +62,6 @@ export function useAnswerAsk(): AnswerAskState {
       run: () => Promise<unknown>,
       decision: AskAnswer
     ) => {
-      const ids = answered.map((ask) => ask.interaction.id);
       setIsAnswering(true);
       setError(null);
       const resolvedAt = new Date().toISOString();
@@ -80,12 +80,17 @@ export function useAnswerAsk(): AnswerAskState {
       try {
         await run();
       } catch (err) {
+        // Put the card back. The receipt was written before the server agreed,
+        // and a refusal means it never did — leaving it would show "You allowed
+        // this" over a request still sitting there answerable.
+        for (const ask of answered) forgetAskReceipt(ask.interaction.id);
         setError(describeDecisionRefusal(err, false).message);
       } finally {
         setIsAnswering(false);
         // The stream's own `interaction_resolved` is what normally retires the
-        // entry. Re-reading here covers the refusal — where nothing resolved and
-        // the card has to come back — and costs one request per answer.
+        // entry. Re-reading here is what brings the card BACK after a refusal:
+        // the receipt is already forgotten above, so the restored row draws its
+        // buttons again rather than a sentence about an answer nobody took.
         void queryClient.invalidateQueries({ queryKey: PENDING_INTERACTIONS_QUERY_KEY });
       }
     },
