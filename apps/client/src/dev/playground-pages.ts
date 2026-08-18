@@ -15,9 +15,9 @@
  * @module dev/playground-pages
  */
 import type { ComponentType } from 'react';
-import { ChatPage } from './pages/ChatPage';
 import { CommandPalettePage } from './pages/CommandPalettePage';
 import { ComponentsPage } from './pages/ComponentsPage';
+import { ConversationPage } from './pages/ConversationPage';
 import { EntryActionsPage } from './pages/EntryActionsPage';
 import { ErrorStatesPage } from './pages/ErrorStatesPage';
 import { FeaturesPage } from './pages/FeaturesPage';
@@ -56,7 +56,7 @@ export const PAGE_COMPONENTS: Record<string, ComponentType<PlaygroundPageProps>>
   tokens: TokensPage,
   forms: FormsPage,
   components: ComponentsPage,
-  chat: ChatPage,
+  conversation: ConversationPage,
   'entry-actions': EntryActionsPage,
   features: FeaturesPage,
   identity: IdentityPage,

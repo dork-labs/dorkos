@@ -488,6 +488,8 @@ The `EventStreamProvider` manages a single connection to `/api/events` shared ac
 - `relay_message` — inbound relay message
 - `relay_backpressure` — relay backpressure signal
 - `relay_signal` — relay control signal
+- `interaction_pending` — an agent is parked on something only a person can answer (a tool approval, a question, or an MCP elicitation), fired once when the prompt appears — see `specs/unified-conversation` §3
+- `interaction_resolved` — that prompt was answered, cancelled, or timed out
 
 **Example** (from `use-tunnel-sync.ts`):
 

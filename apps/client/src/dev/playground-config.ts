@@ -27,7 +27,7 @@ import {
   TOKENS_SECTIONS,
   FORMS_SECTIONS,
   COMPONENTS_SECTIONS,
-  CHAT_SECTIONS,
+  CONVERSATION_SECTIONS,
   ENTRY_ACTIONS_SECTIONS,
   FEATURES_SECTIONS,
   IDENTITY_SECTIONS,
@@ -78,7 +78,9 @@ export interface PageConfig {
  * component from both pages and borrowing its entry for this page's TOC. The
  * accepted cost: these sections still group under their own page in ⌘K, and
  * their canonical anchor stays where it was. That is the trade for not breaking
- * a single existing `/dev/components#…`, `/dev/rooms#…` or `/dev/chat#…` link.
+ * a single existing `/dev/components#…`, `/dev/rooms#…` or `/dev/conversation#…`
+ * link. (The one path this programme did retire, `/dev/chat`, keeps working
+ * through {@link PATH_ALIASES} rather than falling through to Overview.)
  */
 export const IDENTITY_CROSS_LISTED: readonly string[] = [
   'identityavatar',
@@ -89,8 +91,19 @@ export const IDENTITY_CROSS_LISTED: readonly string[] = [
   'agentidentitychip',
   'roomavatar',
   'roommemberrow',
-  'live-lane',
 ];
+
+/**
+ * The one section Subsystems owns that the Conversation page also renders
+ * (DOR-1332, P5). Same shape as {@link IDENTITY_CROSS_LISTED}: the
+ * capability-approval card (`ApprovalCard`) answers "may this agent do X at
+ * all", a different question from the Ask card family the Asks section holds,
+ * but a reader of that section still wants it beside the rest of the family.
+ * Its registry entry — and its canonical `/dev/features#approvalcard` anchor —
+ * stays on Subsystems; Conversation borrows it by rendering, never by
+ * registering it a second time.
+ */
+export const CONVERSATION_CROSS_LISTED: readonly string[] = ['approvalcard'];
 
 /**
  * Look up borrowed sections by id, in the order given.
@@ -172,14 +185,17 @@ export const PAGE_CONFIGS: PageConfig[] = [
   },
   // ── Session ──
   {
-    id: 'chat',
-    label: 'Chat Components',
+    id: 'conversation',
+    label: 'Conversation',
     description:
-      'Visual testing gallery for chat UI — messages, tool calls, input, status indicators, and misc.',
+      'The Conversation compound every messaging surface composes — session, room and DM side by side from one fixture, the Message.* row matrix, the timeline, the live lane and its Asks, and the composer against both targets.',
     icon: MessageSquare,
     group: 'session',
-    sections: CHAT_SECTIONS,
-    path: 'chat',
+    // Owned sections first, then the one this page renders but Subsystems
+    // owns — see CONVERSATION_CROSS_LISTED for why cross-listing works this
+    // way.
+    sections: [...CONVERSATION_SECTIONS, ...crossListed(CONVERSATION_CROSS_LISTED)],
+    path: 'conversation',
   },
   {
     id: 'entry-actions',
@@ -366,11 +382,24 @@ export const AGENTS_NAV = PAGE_CONFIGS.filter((c) => c.group === 'agents');
 export const APP_SHELL_NAV = PAGE_CONFIGS.filter((c) => c.group === 'app-shell');
 
 /**
+ * Retired paths, and the page that answers them now.
+ *
+ * A path that no longer exists falls back to Overview with the URL unchanged —
+ * no redirect, no notice — so a bookmark to a renamed page silently lands
+ * somewhere else and takes its `#anchor` with it. One entry per rename is
+ * cheaper than that. `/dev/chat` became `/dev/conversation` in DOR-1332 (P5).
+ */
+const PATH_ALIASES: Readonly<Record<string, string>> = { chat: 'conversation' };
+
+/**
  * Resolve the current page from the URL pathname.
  *
- * Falls back to `'overview'` for unrecognized paths.
+ * Checks the live `path` of every page first, then {@link PATH_ALIASES} for a
+ * path a rename retired. Falls back to `'overview'` for anything else.
  */
 export function getPageFromPath(pathname: string): string {
   const match = PAGE_CONFIGS.find((c) => pathname.startsWith(`/dev/${c.path}`));
-  return match?.id ?? 'overview';
+  if (match) return match.id;
+  const alias = Object.keys(PATH_ALIASES).find((path) => pathname.startsWith(`/dev/${path}`));
+  return alias === undefined ? 'overview' : PATH_ALIASES[alias]!;
 }

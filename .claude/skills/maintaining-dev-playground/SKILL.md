@@ -230,7 +230,7 @@ A new page is **seven** touch points, not six. The seventh is a test file, and m
 3. Export it from `dev/playground-registry.ts` — the named re-export **and** the aliased import spread into `PLAYGROUND_REGISTRY`
 4. Add a `PageConfig` entry in `dev/playground-config.ts` (group, icon, description, path)
 5. Create `dev/pages/NewPage.tsx` using `PlaygroundPageLayout`
-6. Add the page component to `PAGE_COMPONENTS` in `dev/DevPlayground.tsx` (plus its import)
+6. Add the page component to `PAGE_COMPONENTS` in `dev/playground-pages.ts` (plus its import)
 7. **Add the array to `dev/__tests__/playground-registry.test.ts`** — both its import and the hardcoded union in _"PLAYGROUND_REGISTRY equals the union of all page-level arrays"_. That assertion lists every section array by name, so a new one that is not there fails the test even though the page works.
 
 Then run `pnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts` — green there proves union membership, unique ids, `id === slugify(title)`, and that every rendered section is registered and every registered section is rendered.
@@ -247,17 +247,18 @@ When reviewing an existing playground showcase, verify:
 
 ## Files to Know
 
-| File                                        | Purpose                                               |
-| ------------------------------------------- | ----------------------------------------------------- |
-| `dev/playground-config.ts`                  | Page metadata — add new pages here                    |
-| `dev/playground-registry.ts`                | Section type, Page type, full registry                |
-| `dev/sections/*.ts`                         | Section entries per page (drives TOC + search)        |
-| `dev/showcases/*.tsx`                       | Showcase components (the actual demos)                |
-| `dev/pages/*.tsx`                           | Page components that compose showcases                |
-| `dev/PlaygroundSection.tsx`                 | Section card wrapper                                  |
-| `dev/ShowcaseDemo.tsx`                      | Demo container with responsive viewport toggle        |
-| `dev/ShowcaseLabel.tsx`                     | Label for distinguishing variants                     |
-| `dev/mock-factories.ts`                     | Mock data factory functions                           |
-| `dev/mock-samples.ts`                       | Sample data constants                                 |
-| `dev/DevPlayground.tsx`                     | Root component with page routing                      |
-| `dev/__tests__/playground-registry.test.ts` | The drift gate — lists every page-level array by name |
+| File                                        | Purpose                                                   |
+| ------------------------------------------- | --------------------------------------------------------- |
+| `dev/playground-config.ts`                  | Page metadata — add new pages here                        |
+| `dev/playground-registry.ts`                | Section type, Page type, full registry                    |
+| `dev/sections/*.ts`                         | Section entries per page (drives TOC + search)            |
+| `dev/showcases/*.tsx`                       | Showcase components (the actual demos)                    |
+| `dev/pages/*.tsx`                           | Page components that compose showcases                    |
+| `dev/PlaygroundSection.tsx`                 | Section card wrapper                                      |
+| `dev/ShowcaseDemo.tsx`                      | Demo container with responsive viewport toggle            |
+| `dev/ShowcaseLabel.tsx`                     | Label for distinguishing variants                         |
+| `dev/mock-factories.ts`                     | Mock data factory functions                               |
+| `dev/mock-samples.ts`                       | Sample data constants                                     |
+| `dev/playground-pages.ts`                   | `PAGE_COMPONENTS` — maps page IDs to their page component |
+| `dev/DevPlayground.tsx`                     | Root component with page routing                          |
+| `dev/__tests__/playground-registry.test.ts` | The drift gate — lists every page-level array by name     |

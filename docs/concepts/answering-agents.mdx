@@ -1,0 +1,77 @@
+---
+title: Answer your agents from anywhere
+description: When an agent needs your OK to keep going, DorkOS puts the question in front of you wherever you are, not just in the chat where it came up
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Answer your agents from anywhere
+
+Sometimes an agent stops and waits for you. Maybe it wants to edit a file and needs your OK
+first. Maybe it's asking you a question it can't answer on its own, like which test runner to
+use. DorkOS calls this an **Ask**.
+
+You don't have to be looking at that agent's chat to see it. An Ask shows up everywhere in
+DorkOS at once, so you can answer it from wherever you happen to be.
+
+## What an Ask looks like
+
+An Ask always says what the agent actually wants, in plain words:
+
+> **Meeting Notes wants to edit standup.md**
+
+Not "waiting on you." Not a vague notice. You always know what you're being asked to allow
+before you allow it.
+
+## Where you'll see it
+
+The same Ask shows up in four places at once:
+
+- **The header**, on every page. A small badge counts how many things are waiting on you.
+- **The sidebar**, under Heads up.
+- **The home screen**, at the top, if anything needs you.
+- **The channel or session it came from**, on the line right above where you type. If an agent
+  is asking you something in a room, that room's line turns to a question you can answer on the
+  spot.
+
+Open any one of them and you're looking at the same card. Answer it from any of the four, and it
+disappears from all the others in the same moment.
+
+## Answering it
+
+Click **Allow** or **Deny**. That's it.
+
+If you'd rather use the keyboard: press `Cmd/Ctrl+Shift+Y` to jump straight to the next thing
+waiting on you. Once the card has your focus, `A` allows it and `D` denies it.
+
+If an agent asks several similar things at once, like reading five files, they arrive as one
+card instead of five. Answer once and you're done with all of them.
+
+## The ten-minute window
+
+An Ask waits ten minutes for you. If nobody answers in that time, DorkOS answers it for the
+agent: the request is refused, and the agent carries on without it, the same as if you'd
+clicked Deny yourself.
+
+Nothing is lost when this happens. It just means the agent didn't get to do that one thing.
+
+Once an Ask is answered, one way or another, it leaves behind a short record: what you chose,
+or that it was already answered and when, or that time ran out. You can always find that record
+later, in the same place the question first appeared.
+
+## Answering in a shared room
+
+The question itself is never posted to the channel. Everyone in the room sees only a much
+shorter notice, something like:
+
+> Meeting Notes is waiting for you to approve something before it can carry on.
+
+No file name. No command. No countdown. The full question, with the file it wants to touch and
+the buttons to answer it, goes to your DorkOS cockpit and nowhere else.
+
+<Callout title="What DorkOS doesn't do yet">
+  An Ask only reaches you while your DorkOS cockpit is open. Nothing is pushed to your phone or sent
+  as a notification when the cockpit is closed. If nobody's there to see it, the ten-minute clock
+  still runs out and the request is refused for you. And DorkOS today answers to one person, so
+  there's no way yet to say who else may approve things, or for which agents.
+</Callout>

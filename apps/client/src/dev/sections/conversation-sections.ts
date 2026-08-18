@@ -1,17 +1,37 @@
 import type { PlaygroundSection } from '../playground-registry';
 
 /**
- * Chat component sections from ChatPage.
+ * Conversation component sections from ConversationPage.
  *
- * Sources: MessageShowcases, ToolShowcases, InputShowcases,
- * StatusShowcases, MiscShowcases.
+ * Sources: SurfacesShowcases, MessageShowcases, TimelineShowcases,
+ * ToolShowcases, AsksShowcases, ComposerShowcases, StatusShowcases,
+ * MiscShowcases.
  */
-export const CHAT_SECTIONS: PlaygroundSection[] = [
+export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
+  // SurfacesShowcases — session, room and DM side by side from one fixture
+  // (DOR-1332, P5).
+  {
+    id: 'surfaces',
+    title: 'Surfaces',
+    page: 'conversation',
+    category: 'Messages',
+    keywords: [
+      'surfaces',
+      'session',
+      'room',
+      'dm',
+      'direct message',
+      'side by side',
+      'capabilities',
+      'unification',
+      'fixture',
+    ],
+  },
   // MessageShowcases
   {
-    id: 'message-matrix',
-    title: 'Message.* matrix',
-    page: 'chat',
+    id: 'message-row',
+    title: 'Message row',
+    page: 'conversation',
     category: 'Messages',
     keywords: [
       'message',
@@ -31,49 +51,69 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'conversation-dividers',
     title: 'Conversation dividers',
-    page: 'chat',
+    page: 'conversation',
     category: 'Messages',
     keywords: ['divider', 'day', 'unread', 'new messages', 'separator', 'rule', 'boundary'],
+  },
+  // TimelineShowcases (DOR-1332, P5)
+  {
+    id: 'timeline',
+    title: 'Timeline',
+    page: 'conversation',
+    category: 'Messages',
+    keywords: [
+      'timeline',
+      'virtualized',
+      'virtualization',
+      'scroller',
+      'feed',
+      'loading',
+      'empty',
+      'grouping',
+      'pending',
+      'thread',
+      'long run',
+    ],
   },
   {
     id: 'permissiondeniedchip',
     title: 'PermissionDeniedChip',
-    page: 'chat',
+    page: 'conversation',
     category: 'Messages',
     keywords: ['permission', 'denied', 'chip', 'classifier', 'blocked', 'auto', 'safety', 'tool'],
   },
   {
     id: 'usermessagecontent',
     title: 'UserMessageContent',
-    page: 'chat',
+    page: 'conversation',
     category: 'Messages',
     keywords: ['user', 'message', 'content', 'text', 'command', 'compaction'],
   },
   {
     id: 'assistantmessagecontent',
     title: 'AssistantMessageContent',
-    page: 'chat',
+    page: 'conversation',
     category: 'Messages',
     keywords: ['assistant', 'message', 'content', 'markdown', 'code', 'tool', 'approval'],
   },
   {
     id: 'sessionmessage',
     title: 'SessionMessage',
-    page: 'chat',
+    page: 'conversation',
     category: 'Messages',
     keywords: ['message', 'item', 'grouping', 'position', 'bubble'],
   },
   {
     id: 'stagedcontextnote',
     title: 'StagedContextNote',
-    page: 'chat',
+    page: 'conversation',
     category: 'Messages',
     keywords: ['staged', 'context', 'add', 'note', 'fold', 'next', 'reply', 'disposition'],
   },
   {
     id: 'messageauthoravatar',
     title: 'MessageAuthorAvatar',
-    page: 'chat',
+    page: 'conversation',
     category: 'Messages',
     keywords: [
       'author',
@@ -95,28 +135,28 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'toolcallcard',
     title: 'ToolCallCard',
-    page: 'chat',
+    page: 'conversation',
     category: 'Tools',
     keywords: ['tool', 'call', 'card', 'status', 'running', 'complete', 'error', 'pending'],
   },
   {
     id: 'toolcallcard-extended-labels',
     title: 'ToolCallCard — Extended Labels',
-    page: 'chat',
+    page: 'conversation',
     category: 'Tools',
     keywords: ['tool', 'call', 'label', 'task', 'notebook', 'mcp', 'plan'],
   },
   {
     id: 'toolcallcard-hook-lifecycle',
     title: 'ToolCallCard — Hook Lifecycle',
-    page: 'chat',
+    page: 'conversation',
     category: 'Tools',
     keywords: ['tool', 'hook', 'lifecycle', 'running', 'success', 'error', 'cancelled'],
   },
   {
     id: 'subagentblock',
     title: 'SubagentBlock',
-    page: 'chat',
+    page: 'conversation',
     category: 'Tools',
     keywords: [
       'subagent',
@@ -134,7 +174,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'backgroundtaskbar',
     title: 'BackgroundTaskBar',
-    page: 'chat',
+    page: 'conversation',
     category: 'Tools',
     keywords: [
       'background',
@@ -153,100 +193,89 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'taskdotsection',
     title: 'TaskDotSection',
-    page: 'chat',
+    page: 'conversation',
     category: 'Tools',
     keywords: ['task', 'dot', 'bash', 'tasks', 'animation', 'background', 'running'],
   },
   {
     id: 'taskdetailpanel',
     title: 'TaskDetailPanel',
-    page: 'chat',
+    page: 'conversation',
     category: 'Tools',
     keywords: ['task', 'detail', 'panel', 'expand', 'row', 'chip', 'kill', 'stop', 'background'],
   },
   {
     id: 'inlinekillbutton',
     title: 'InlineKillButton',
-    page: 'chat',
+    page: 'conversation',
     category: 'Tools',
     keywords: ['kill', 'stop', 'button', 'inline', 'confirm', 'agent', 'bash', 'background'],
   },
   {
     id: 'errormessageblock',
     title: 'ErrorMessageBlock',
-    page: 'chat',
+    page: 'conversation',
     category: 'Tools',
     keywords: ['error', 'message', 'block', 'failure', 'category', 'execution'],
   },
   {
     id: 'thinkingblock',
     title: 'ThinkingBlock',
-    page: 'chat',
+    page: 'conversation',
     category: 'Tools',
     keywords: ['thinking', 'reasoning', 'extended', 'streaming', 'collapsed', 'chain of thought'],
   },
   {
     id: 'collapsiblerun',
     title: 'CollapsibleRun',
-    page: 'chat',
+    page: 'conversation',
     category: 'Tools',
     keywords: ['collapse', 'run', 'n more', 'steps', 'dense', 'tool', 'thinking', 'group'],
   },
+  // AsksShowcases — the whole card family in one section (DOR-1332, P5):
+  // AskCard.* in three kinds, AskStack, AskList, the countdown, five receipt
+  // lines, the inline ApprovalPrompt and the transcript AskReceipt. The
+  // capability-approval card is cross-listed onto the PAGE (see
+  // CONVERSATION_CROSS_LISTED), not folded into this entry.
   {
-    id: 'approvalprompt',
-    title: 'ApprovalPrompt',
-    page: 'chat',
+    id: 'asks',
+    title: 'Asks',
+    page: 'conversation',
     category: 'Tools',
-    keywords: ['approval', 'tool', 'approve', 'deny', 'pending', 'interactive', 'timeout'],
-  },
-  {
-    id: 'askreceipt',
-    title: 'AskReceipt',
-    page: 'chat',
-    category: 'Tools',
-    keywords: ['receipt', 'approval', 'allowed', 'denied', 'expired', 'record', 'transcript'],
-  },
-  // AskShowcases — the card family every surface draws (DOR-1330)
-  {
-    id: 'ask-card',
-    title: 'Ask card',
-    page: 'chat',
-    category: 'Tools',
-    keywords: ['ask', 'prompt', 'approval', 'question', 'elicitation', 'answer', 'card'],
-  },
-  {
-    id: 'ask-countdown',
-    title: 'Ask countdown',
-    page: 'chat',
-    category: 'Tools',
-    keywords: ['countdown', 'timeout', 'time left', 'urgent', 'warning', 'auto-deny'],
-  },
-  {
-    id: 'ask-burst',
-    title: 'Ask burst',
-    page: 'chat',
-    category: 'Tools',
-    keywords: ['burst', 'batch', 'allow all', 'deny all', 'stack', 'several'],
-  },
-  {
-    id: 'ask-receipts',
-    title: 'Ask receipts',
-    page: 'chat',
-    category: 'Tools',
-    keywords: ['receipt', 'answered', 'expired', 'cancelled', 'already', 'no longer needed'],
-  },
-  {
-    id: 'ask-tray',
-    title: 'Ask tray',
-    page: 'chat',
-    category: 'Tools',
-    keywords: ['tray', 'list', 'waiting on you', 'nothing needs you', 'header', 'pill'],
+    keywords: [
+      'ask',
+      'asks',
+      'prompt',
+      'approval',
+      'question',
+      'elicitation',
+      'answer',
+      'card',
+      'countdown',
+      'timeout',
+      'urgent',
+      'warning',
+      'burst',
+      'stack',
+      'allow all',
+      'deny all',
+      'receipt',
+      'answered',
+      'expired',
+      'cancelled',
+      'tray',
+      'waiting on you',
+      'nothing needs you',
+      'header',
+      'pill',
+      'capability',
+    ],
   },
   // ChipShowcases
   {
     id: 'touchchip-every-verb-live',
     title: 'TouchChip — every verb, live',
-    page: 'chat',
+    page: 'conversation',
     category: 'Chips',
     keywords: [
       'chip',
@@ -266,7 +295,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'touchchip-every-verb-settled',
     title: 'TouchChip — every verb, settled',
-    page: 'chat',
+    page: 'conversation',
     category: 'Chips',
     keywords: [
       'chip',
@@ -285,109 +314,75 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'touchchip-failures-and-tombstones',
     title: 'TouchChip — failures and tombstones',
-    page: 'chat',
+    page: 'conversation',
     category: 'Chips',
     keywords: ['chip', 'touch', 'error', 'failed', 'tombstone', 'deleted', 'destructive'],
   },
   {
     id: 'chippile-where-a-chip-goes-when-it-ages-out',
     title: 'ChipPile — where a chip goes when it ages out',
-    page: 'chat',
+    page: 'conversation',
     category: 'Chips',
     keywords: ['chip', 'pile', 'facepile', 'stack', 'absorb', 'wobble', 'count', 'overflow'],
   },
   {
     id: 'chiptray-the-full-roster',
     title: 'ChipTray — the full roster',
-    page: 'chat',
+    page: 'conversation',
     category: 'Chips',
     keywords: ['chip', 'tray', 'roster', 'filter', 'order', 'chronological', 'kind', 'disclosure'],
   },
   {
     id: 'touchchipstrip-a-turn-working-and-finished',
     title: 'TouchChipStrip — a turn, working and finished',
-    page: 'chat',
+    page: 'conversation',
     category: 'Chips',
     keywords: ['chip', 'strip', 'turn', 'summary', 'live row', 'settled', 'show all', 'touched'],
   },
-  // InputShowcases
+  // ComposerShowcases (replaces InputShowcases, DOR-1332 P5) — the one host,
+  // benched against both ConversationTarget adapters.
   {
-    id: 'composer-root',
-    title: 'Composer.Root',
-    page: 'chat',
-    category: 'Input',
-    keywords: ['composer', 'card', 'dropzone', 'chrome', 'attach', 'drag', 'drop'],
-  },
-  {
-    id: 'composer-input',
-    title: 'Composer.Input',
-    page: 'chat',
-    category: 'Input',
-    keywords: [
-      'input',
-      'textarea',
-      'chat',
-      'composer',
-      'send',
-      'streaming',
-      'stop',
-      'queue',
-      'rich text',
-      'markdown',
-      'lexical',
-      'formatting',
-    ],
-  },
-  {
-    id: 'composer-dispositions',
-    title: 'Composer dispositions',
-    page: 'chat',
+    id: 'composer',
+    title: 'Composer',
+    page: 'conversation',
     category: 'Input',
     keywords: [
       'composer',
+      'conversation.composer',
+      'card',
+      'target',
+      'adapter',
+      'idle',
+      'typing',
+      'attachments',
+      'attach',
+      'drag',
+      'drop',
+      'mentions',
       'queue',
       'steer',
       'add context',
-      'stage',
-      'disposition',
-      'busy',
-      'mid-turn',
-      'downgrade',
-      'capability',
+      'ask',
+      'takeover',
+      'archived',
+      'cansend',
+      'canSend',
+      'rich text',
+      'streaming',
+      'stop',
     ],
-  },
-  {
-    id: 'composer-attachments',
-    title: 'Composer.Attachments',
-    page: 'chat',
-    category: 'Input',
-    keywords: ['file', 'attachment', 'chip', 'upload', 'remove', 'composer'],
-  },
-  {
-    id: 'queuepanel',
-    title: 'QueuePanel',
-    page: 'chat',
-    category: 'Input',
-    keywords: ['queue', 'message', 'panel', 'pending', 'edit'],
   },
   {
     id: 'commandpalette',
     title: 'CommandPalette',
-    page: 'chat',
+    page: 'conversation',
     category: 'Input',
     keywords: ['command', 'palette', 'slash', 'autocomplete', 'dropdown', 'namespace'],
   },
   {
-    id: 'filepalette',
-    title: 'FilePalette',
-    page: 'chat',
-    category: 'Input',
-    keywords: ['file', 'palette', 'mention', 'autocomplete', 'dropdown', 'fuzzy', 'at'],
-  },
-  {
     id: 'questionprompt',
     title: 'QuestionPrompt',
-    page: 'chat',
+    page: 'conversation',
     category: 'Input',
     keywords: [
       'question',
@@ -404,7 +399,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'live-status-dots',
     title: 'Live status dots',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'status',
@@ -422,14 +417,14 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'streamingtext',
     title: 'StreamingText',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: ['streaming', 'text', 'markdown', 'cursor', 'render'],
   },
   {
     id: 'live-lane',
     title: 'Live lane',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'lane',
@@ -439,8 +434,8 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
       'working',
       'stalled',
       'streaming',
-      'queued',
       'ask',
+      'receipt',
       'compaction',
       'permission',
       'elapsed',
@@ -452,7 +447,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'live-peek',
     title: 'Live peek',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'peek',
@@ -470,7 +465,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'usagestatusitem',
     title: 'UsageStatusItem',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'usage',
@@ -485,14 +480,14 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'transport-error-errormessageblock',
     title: 'Transport error (ErrorMessageBlock)',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: ['transport', 'error', 'banner', 'connection', 'retry', 'network', 'timeout'],
   },
   {
     id: 'tasklistpanel',
     title: 'TaskListPanel',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: ['task', 'list', 'panel', 'progress', 'collapse', 'checklist'],
   },
@@ -500,7 +495,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'trust-dial-one-question-three-stops',
     title: 'Trust Dial — one question, three stops',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'trust',
@@ -521,7 +516,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'trust-dial-the-awkward-states',
     title: 'Trust Dial — the awkward states',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'trust',
@@ -538,7 +533,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'trust-dial-the-door-into-a-mode-that-never-asks',
     title: 'Trust Dial — the door into a mode that never asks',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'trust',
@@ -556,7 +551,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'trust-dial-the-surfaces-nobody-is-watching',
     title: 'Trust Dial — the surfaces nobody is watching',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'trust',
@@ -576,7 +571,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'trust-dial-where-new-sessions-start',
     title: 'Trust Dial — where new sessions start',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'trust',
@@ -596,7 +591,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'plan-a-way-of-working-beside-the-composer',
     title: 'Plan — a way of working, beside the composer',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: ['plan', 'planning', 'composer', 'toggle', 'switch', 'working', 'mode'],
   },
@@ -604,7 +599,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'statusline-density-tiers',
     title: 'StatusLine — density tiers',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'status',
@@ -623,7 +618,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'statusline-promoted-set',
     title: 'StatusLine — promoted set',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'status',
@@ -640,7 +635,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'statusline-what-a-pin-does',
     title: 'StatusLine — what a pin does',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'status',
@@ -659,7 +654,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'sessionpopover',
     title: 'SessionPopover',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'session',
@@ -677,7 +672,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'sessioninspector',
     title: 'SessionInspector',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'session',
@@ -697,7 +692,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'agentidentitychip',
     title: 'AgentIdentityChip',
-    page: 'chat',
+    page: 'conversation',
     category: 'Status',
     keywords: [
       'agent',
@@ -714,7 +709,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'celebrationoverlay',
     title: 'CelebrationOverlay',
-    page: 'chat',
+    page: 'conversation',
     category: 'Misc',
     keywords: ['celebration', 'confetti', 'overlay', 'task', 'complete', 'fireworks'],
   },

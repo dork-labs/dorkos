@@ -133,6 +133,8 @@ interface UseInteractiveShortcutsOptions {
 
 It has its own chord rather than sharing `Cmd+Shift+A` with the Profile. Sharing was tried: "Answer while something is waiting, Profile otherwise" makes the `?` panel list one combo with two labels, and a reader discovers which meaning they got by watching the screen. `Y` is free in this registry and unbound in Chrome, Firefox and Safari.
 
+**With the card focused, `A` allows it and `D` refuses it.** `AskCardRoot`'s own `onKeyDown` (`features/ask/ui/AskCard.tsx`) — a component-level listener, not a document one, and deliberately so: a plain letter as a global hotkey would fire while someone is typing "a" or "d" into the composer, which `typingInto(event.target)` also guards against directly. Neither key does anything unless the card already has focus, which only `Cmd+Shift+Y` (or a click) ever gives it.
+
 `Cmd+Shift+A` toggles rather than opens: with the right panel already showing the `profile` tab it closes the panel; anything else switches to that tab and opens it. Same document-level listener pattern as `useRightPanelShortcut`, mounted from both `App.tsx` and `AppShell.tsx`.
 
 **It does not land on the profile everywhere, and the handler is not what decides.** The store write always happens, but `profile`'s `visibleWhen` (`app/init-extensions.ts`) admits it only on `/session` or an explicit agent path, and never under `/marketplace`. When the requested tab is not visible, `RightPanelContainer`'s reconciler re-selects the first visible contextual contribution, falling back to the always-present global one — so on Tasks, Activity, Marketplace and Home the chord opens the right panel on **Pulse**. Fix that by changing `visibleWhen`, not the shortcut.

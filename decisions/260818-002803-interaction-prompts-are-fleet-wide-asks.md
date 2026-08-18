@@ -1,7 +1,7 @@
 ---
 id: 260818-002803
 title: An agent's prompt is a fleet-wide Ask, broadcast from the projector and answerable only by a person
-status: draft
+status: accepted
 created: 2026-08-18
 spec: unified-conversation
 superseded-by: null
@@ -11,7 +11,16 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: unified-conversation)
+Accepted. Shipped in P3 (`#1093`) and confirmed against the tree at P5
+(DOR-1332): `interaction_pending` / `interaction_resolved` ride the global
+stream from `SessionStateProjector`, `GET /api/sessions/pending-interactions`
+answers the fleet-wide list, `requirePersonToAnswer` gates all six answer
+routes, and `features/ask`'s card family (`AskCard`, `AskStack`, `AskList`)
+draws the same prompt in the header, sidebar, home and the room/session lane.
+Known gaps are named honestly rather than silently: the ten-minute timeout
+still auto-denies (approvals tier C is the follow-on), and `resolvedBy` is
+never populated on a single-identity install — both carried forward in
+`specs/unified-conversation/04-implementation.md`'s closing follow-up list.
 
 ## Context
 

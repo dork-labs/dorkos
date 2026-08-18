@@ -107,52 +107,75 @@ describe('the status showcases render the real components', () => {
   });
 });
 
-describe('the composer disposition showcase renders the real components', () => {
-  // The "Composer dispositions" section (DOR-1198) is where the split action's
-  // states get eyes on them: idle Send, busy-with-steer, busy-without-steer, and
-  // the downgraded chip. It MUST render the real Composer.Input and the real
-  // QueuePanel — a replica would be a second drawing of the exact thing this
-  // section exists to prove, and would drift the moment the composer moves.
-  const source = showcaseSource('showcases', 'InputShowcases.tsx');
+describe('the Composer showcase renders the real components', () => {
+  // The "Composer" section (DOR-1332, P5) is where every composer disposition
+  // gets eyes on it: idle, typing, attachments, mentions, queue depth, an Ask
+  // takeover, and the archived refusal. It MUST render the real
+  // Conversation.Composer (which itself renders the real Composer.Input) and
+  // the real QueuePanel — a replica would be a second drawing of the exact
+  // thing this section exists to prove, and would drift the moment the
+  // composer moves. Carries forward the DOR-1186 guarantee `InputShowcases.tsx`
+  // used to make about `ComposerInputDemo`.
+  const source = showcaseSource('showcases', 'ComposerShowcases.tsx');
 
   /** The body of one top-level `function <name>(` in the file, up to the next one. */
   function functionBody(name: string): string {
     const start = source.indexOf(`function ${name}(`);
-    expect(start, `${name} is gone from InputShowcases`).toBeGreaterThan(-1);
+    expect(start, `${name} is gone from ComposerShowcases`).toBeGreaterThan(-1);
     const rest = source.slice(start + `function ${name}(`.length);
     const next = rest.indexOf('\nfunction ');
     return next === -1 ? rest : rest.slice(0, next);
   }
 
-  /** Just the "Composer dispositions" PlaygroundSection block. */
-  const dispositionSection = (() => {
-    const start = source.indexOf('title="Composer dispositions"');
-    expect(start, 'the Composer dispositions section is gone').toBeGreaterThan(-1);
+  /** Just the "Composer" PlaygroundSection block. */
+  const composerSection = (() => {
+    const start = source.indexOf('title="Composer"');
+    expect(start, 'the Composer section is gone').toBeGreaterThan(-1);
     const rest = source.slice(start);
     return rest.slice(0, rest.indexOf('</PlaygroundSection>'));
   })();
 
-  it('imports the real Composer.Input and QueuePanel', () => {
-    expect(source).toMatch(/import \{ Composer \} from '@\/layers\/features\/composer'/);
+  it('imports the real Conversation.Composer and QueuePanel', () => {
+    expect(source).toMatch(/import \{ Conversation \} from '@\/layers\/features\/conversation'/);
     expect(source).toMatch(
       /import \{ QueuePanel \} from '@\/layers\/features\/chat\/ui\/input\/QueuePanel'/
     );
   });
 
-  it('drives its busy states through the real Composer.Input, not a hand-rolled replica', () => {
-    // The section mounts its composer states through ComposerInputDemo, whose one
-    // job is to render the REAL Composer.Input with mock state. If that wrapper is
-    // ever rebuilt as a replica — a raw <textarea> and fake send buttons — this
-    // reds, which is the whole point (DOR-1186).
-    expect(dispositionSection).toContain('<ComposerInputDemo');
-    const demo = functionBody('ComposerInputDemo');
-    expect(demo, 'ComposerInputDemo no longer renders the real Composer.Input').toContain(
-      '<Composer.Input'
+  it('drives every disposition through the real Conversation.Composer, not a hand-rolled replica', () => {
+    // The section mounts its states through ComposerDemo, whose one job is to
+    // render the REAL Conversation.Composer with a fixture target. If that
+    // wrapper is ever rebuilt as a replica — a raw <textarea> and fake send
+    // buttons — this reds, which is the whole point.
+    expect(composerSection).toContain('<ComposerDemo');
+    const demo = functionBody('ComposerDemo');
+    expect(demo, 'ComposerDemo no longer renders the real Conversation.Composer').toContain(
+      '<Conversation.Composer'
     );
-    expect(demo, 'ComposerInputDemo hand-rolls a <textarea> replica').not.toContain('<textarea');
+    expect(demo, 'ComposerDemo hand-rolls a <textarea> replica').not.toContain('<textarea');
   });
 
-  it('draws the downgraded chip with the real QueuePanel, not a copy of its rows', () => {
-    expect(dispositionSection).toContain('<QueuePanel');
+  it('draws queue depth with the real QueuePanel, not a copy of its rows', () => {
+    // The queue slot is built inside ComposerDemo (a session target's `queue`
+    // prop), not inline in the PlaygroundSection block itself.
+    const demo = functionBody('ComposerDemo');
+    expect(demo).toContain('<QueuePanel');
+  });
+
+  it('draws the mentions demo with the real MentionPalette, not the file palette', () => {
+    // The failure this catches is one step sideways from a replica: a REAL
+    // component under a label promising a different one. It shipped — the
+    // "Mentions — the `@` picker" demo handed `mentionPicker` a `FilePalette`,
+    // so a listbox of file paths rendered under a draft reading `Loop in @au`,
+    // while the shipped consumer (`ChannelComposer`) passes `MentionPalette`.
+    // A render test cannot see it: both palettes render fine.
+    const demo = functionBody('MentionPickerDemo');
+    expect(demo, 'the mentions demo no longer draws the real MentionPalette').toContain(
+      '<MentionPalette'
+    );
+    expect(demo, 'the mentions demo draws a FilePalette under a mentions label').not.toContain(
+      '<FilePalette'
+    );
+    expect(source).toMatch(/import \{ MentionPalette.*\} from '@\/layers\/features\/mentions'/);
   });
 });

@@ -325,6 +325,14 @@
       "patterns": ["apps/server/src/services/", "transport.ts"]
     },
     {
+      "doc": "docs/concepts/sidebar.mdx",
+      "description": "Sidebar concepts: Heads up, Today, Library, and the phone tabs",
+      "patterns": [
+        "apps/client/src/layers/features/dashboard-sidebar/",
+        "apps/client/src/layers/widgets/mobile-tabs/"
+      ]
+    },
+    {
       "doc": "docs/concepts/sessions.mdx",
       "description": "Session model concepts",
       "patterns": ["transcript-reader", "apps/server/src/routes/sessions"]
@@ -338,6 +346,16 @@
         "apps/client/src/layers/entities/room",
         "apps/client/src/layers/widgets/room-view",
         "apps/client/src/layers/features/dashboard-sidebar/ui/rooms"
+      ]
+    },
+    {
+      "doc": "docs/concepts/answering-agents.mdx",
+      "description": "Answering an Ask (a tool approval, a question, or an MCP elicitation) from the header, sidebar, home, or the room/session lane it came from",
+      "patterns": [
+        "apps/client/src/layers/features/ask/",
+        "apps/client/src/layers/features/conversation/ui/LiveLane.tsx",
+        "apps/server/src/services/session/pending-interactions",
+        "specs/unified-conversation"
       ]
     },
     {

@@ -274,6 +274,29 @@ DorkOS dialogs (Settings, Agent, Tasks, Relay, Mesh) are URL-addressable via sea
 
 `RegistryDialog` reads BOTH the URL signal and the existing store flag (`storeOpen || urlSignal.isOpen`) so legacy store-based opens continue to work. Closing the dialog clears both signals. Use the URL hooks for any new cross-page open.
 
+## Namespace compounds (`Composer`, `Conversation`)
+
+Two client slices export their public surface as a namespace object — `Composer.Root` /
+`Composer.Input` / `Composer.Attachments` (`features/composer`), then `Conversation.Root` /
+`Conversation.Timeline` / `Conversation.LiveLane` / `Conversation.Composer` /
+`Conversation.Footer` (`features/conversation`, the second compound built this way) — rather
+than loose exports. A host writes `<Conversation.Timeline>` beside `<Conversation.Composer>`
+and reads the tree it is building; there is one spelling of each part in the codebase, not
+several.
+
+`Conversation` is what a session's transcript, a room's channel and a direct message all
+compose from — the row family (`Message.*`), the timeline, the reserved live lane and the
+composer host. **The rule, stated once so no host has to rediscover it: behaviour branches on
+`ConversationCapabilities`, never on `surface`.** `ConversationSurface` (`'session' | 'room' |
+'dm'`) exists only to name which presentation this is for a reader and for `Conversation.Root`,
+which is the one file in the slice allowed to compare against it —
+`features/conversation/__tests__/no-surface-switches.test.ts` scans every other source file in
+`ui/`, `lib/` and `model/` for a `surface ===` comparison or switch and fails on a hit. A room
+has reactions and no "Run this with…"; a session has the opposite; the component is identical
+either way. See `specs/unified-conversation/02-specification.md` for the full design — the
+capability tables, the target/attachment ports, and the live lane's priority stack
+(`contributing/design-system.md` → Components → Live lane carries the vocabulary itself).
+
 Example URLs:
 
 - `/?settings=tools` — Settings on Home, Tools tab

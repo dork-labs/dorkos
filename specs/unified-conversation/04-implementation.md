@@ -1,14 +1,16 @@
 # Implementation Summary: Unified conversation surfaces — one tree, approvals anywhere, a live lane
 
 **Created:** 2026-08-18
-**Last Updated:** 2026-08-18 (session 5 — P3 review fixes)
+**Last Updated:** 2026-08-18 (session 8 — P5, Dev Playground and docs)
 **Spec:** specs/unified-conversation/02-specification.md
 **Tracker:** DOR-1327 (umbrella) — phases DOR-1328 (P1) · DOR-1329 (P2) · DOR-1330 (P3) · DOR-1331 (P4) · DOR-1332 (P5)
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 40 / 48
+**Status:** Complete
+**Tasks Completed:** 48 / 48
+
+**Pull requests, by phase:** P1 `#1091` · P2 `#1092` · P3 `#1093` · P4 `#1102` · P5 `#1108`.
 
 ## Tasks Completed
 
@@ -239,7 +241,7 @@ Two independent reviews — spec compliance, then adversarial per `REVIEW.md`, t
   - Seeded defects run and confirmed red, then reverted: notify before `this.interactions.set` (11 projector cases red, including the ordering one); the guard removed from `batch-deny` (exactly that route's two refusal rows red); the key handler moved off the card (both focus cases red).
 
 - Task #3.11 / #3.12: Playground and changelog — worker: p3-builder
-  - Five sections on `/dev/chat` drawing the real components over fixture events, with the clock pinned against a frozen `now` so the countdown does not flap.
+  - Five sections on `/dev/chat` drawing the real components over fixture events, each ask measured against a `now` read once at module load rather than per render. (P5's review found the constant had been written out as a fixed date instead, which made every deadline a past one — see Known Issues → P5.)
   - One fragment for the phase, plus P1's squash subject claimed on P1's own fragment — `main` landed P1 as one commit no fragment named, so the gate read it as uncovered on every branch downstream.
 
 - Task #3.13: Phase 3 acceptance — the reviewer's browser check — worker: p3-builder
@@ -403,6 +405,74 @@ Two independent reviews (spec compliance, then adversarial) found two must-fixes
   - **Checked and found already correct:** the channel's textarea sets `aria-controls` and `aria-activedescendant` whenever its picker is open (`ChannelComposer.tsx` passes `isPaletteOpen` / `paletteListboxId`), so `aria-expanded="false"` with no `aria-controls` is the closed state, which is valid ARIA 1.2. Nothing changed.
   - **`Conversation.Composer` stamps no `data-slot`, and that is why:** it renders no element of its own. `Composer.Root` is the element, and it already carries `data-composer-card`, which is the hook both shipped browser suites resolve by. Threading a second attribute through `features/composer`'s public props for a test hook that exists would be API churn.
 
+### Session 8 - 2026-08-18 (P5, DOR-1332)
+
+**Worktree:** `~/.dork/workspaces/dorkos/DOR-1332` · branch `DOR-1332` (based on `DOR-1331`, PR #1102, still open at review as this phase ran)
+**Workers:** `p5-builder` on the **fast tier (sonnet)**, then `p5-fixer` on **opus** for the review fixes. A deliberate deviation from the orchestration model recorded under Session 1 (implementation = opus), forced rather than chosen: the opus workhorse was killed by API 529s four times before committing anything, so the phase was built on sonnet and the two reviews' findings were fixed by an opus worker afterwards. The builder inventoried the worktree first (empty, confirmed) rather than trusting a stale progress file. Two of the four blocking review findings — an inert composer and a picker under the wrong label — are the kind a fast-tier builder ships and a browser pass catches, which is the argument for keeping the browser pass a gate rather than a formality.
+
+- Task #5.1: Rename the playground page — worker: p5-builder
+  - Seven touch points, all confirmed against the tree rather than assumed from the task brief: the `Page` union member, the named re-export + aliased import spread in `playground-registry.ts`, the `PageConfig` in `playground-config.ts` (`label: 'Conversation'`, `group` stays `session`), the `PAGE_COMPONENTS` key in `playground-pages.ts`, `chat-sections.ts` → `conversation-sections.ts` (51 entries, `page: 'chat'` → `'conversation'`), `ChatPage.tsx` → `ConversationPage.tsx`, and the hardcoded union in `playground-registry.test.ts`. Also repointed the one e2e spec that navigated to `/dev/chat` (`status-line-fit.spec.ts`) and two test assertions that named the old label (`PlaygroundSearch.test.tsx`, `ChipShowcases.test.tsx`).
+  - Fixed the skill's stale line: `.claude/skills/maintaining-dev-playground/SKILL.md:233` named `dev/DevPlayground.tsx` for `PAGE_COMPONENTS`, which moved to `dev/playground-pages.ts` in DOR-1117. Corrected the numbered step and the Files-to-Know table row. No `.agents/skills/` mirror exists for this skill, so nothing else to sync.
+  - `getPageFromPath()` needed no edit — it matches `path` generically, exactly as the spec said.
+
+- Tasks #5.2–#5.4: The five sections — worker: p5-builder
+  - **Surfaces (new):** `dev/showcases/SurfacesShowcases.tsx`. Session, room and DM side by side from **one** fixture (four turns of a conversation), each column a genuine `Conversation.Root` holding a genuine `Timeline`, `LiveLane` and `Composer` — never a recreation of any of the four. The DM column reads `ROOM_CAPABILITIES` with `surface="dm"`, exactly what P4's Known Issue 3 recommended once `DM_CAPABILITIES` was dropped as a duplicate export.
+  - **Message row:** verified, not rewritten. `MessageRowShowcases.tsx` already carried the full anchor × role × density × capability matrix from task 1.7, benched against the real `Message.*` parts. `threads` and `tool cards` are deliberately absent from the row-level capability toggle — the file's own doc comment already explains why (threads shows as the reply line, benched on Rooms; there is no `toolCards` flag, per P4's Known Issue 22 closure) — so "checked for completeness" meant confirming that absence is documented, not adding toggles that would misrepresent the API.
+  - **Timeline (new):** `dev/showcases/TimelineShowcases.tsx`. There was no Timeline showcase before this phase — the compound shipped in P4 with no bench of its own. Loading (the real `Feed` + `TypingDots`), empty (the real `ChatEmptyState`), grouped history with day/unread dividers, thread grouping (the real `ThreadReplyRow`), the pending list (a real `PendingPost[]` through the real `RoomMessage`), and a 400-row virtualized run.
+  - **Composer:** `InputShowcases.tsx` deleted; `dev/showcases/ComposerShowcases.tsx` rewrites it against the real `Conversation.Composer` and two fixture `ConversationTarget` adapters (`buildSessionTarget`/`buildRoomTarget`, exported so Surfaces could reuse them) — idle, typing, attachments, mentions, queue depth (labelled: a room target has no `queue` method, so it draws no queue chrome at all), an Ask takeover through the `asks` slot, and the archived/`canSend: false` refusal. `CommandPalette` and `QuestionPrompt` stayed their own sections in the same file rather than folding into the one "Composer" section, since neither is part of the target/adapter matrix the spec's "Shows" column names.
+  - **Asks:** `AskShowcases.tsx` → `AsksShowcases.tsx`, consolidating what were five separate registry entries (the card's three kinds, its countdown, a burst, five receipt endings, the tray) into **one** "Asks" section, plus the inline `ApprovalPrompt` (moved out of `ToolShowcases.tsx`, which drew it as a tool-call-adjacent section but it is an Ask surface) and the transcript `AskReceipt` (`AskReceiptShowcases.tsx` deleted, folded in). The capability-approval `ApprovalCard` — a different question (may this agent do X at all, not answer this one interaction) — was extracted into its own exported `ApprovalCardShowcase`, stays registered on Subsystems (`features` page, id `approvalcard`), and is cross-listed onto Conversation by rendering, via a new `CONVERSATION_CROSS_LISTED` array in `playground-config.ts` that mirrors `IDENTITY_CROSS_LISTED`'s established pattern — never re-registered.
+  - **Identity page loses its borrowed presence content:** removed `'live-lane'` from `IDENTITY_CROSS_LISTED` (and its render call, and the `CROSS_LISTED_RENDERERS` test map entry) — the identity page's task-2.7-era borrow of the lane as a presence-only bench is redundant now that Conversation's own Live lane section is the one comprehensive bench for every `LaneState`.
+  - **Deliberately not moved:** `StatusLineShowcases`, `TrustDialShowcases`, `SessionInspectorShowcases`, `ChipShowcases`, `MiscShowcases` stay their own sections, per the spec's own table (`StatusLineShowcases` is `ChatStatusSection`'s line, not the lane — §1.1). `RoomsShowcases.tsx` and `RoomDeliveryShowcases.tsx` stay on Rooms. `LiveLaneShowcases.tsx` (`LiveLaneShowcase`, `LivePeekShowcase`) already carried every `LaneState` from tasks 2.7/3.11 — presence at 1/2/3/4+, `working_late`, `stalled`, every `turn-*` state, the Ask (single and stacked), reduced motion, and the peek. **P5's review found the one thing spec §6.1 asks for that it did not have: the receipt set**, so the section now benches the three endings the lane's own grown card settles into (answered here, answered in another window, answered by the clock) through the real `AskReceiptLine` inside a real resolved `AskCard.Root` — the exact pair `InteractionAsk` renders once a receipt exists. The transcript's separate one-line `AskReceipt` stays benched on Asks, beside the prompts it records.
+  - **Scope trims, stated rather than hidden:** the standalone `FilePalette` section was retired (the same real component now renders inside Composer's mentions demo, a more realistic context); the `QuestionPrompt` multi-select and arrow-key-interactive sub-demos were dropped to control scope; `RoomThreadShowcases.tsx`'s "row-rendering demos" retirement named by the task brief was investigated and not found — the file holds `ThreadReplyRow`, `RoomThreadPanel` and arrival-animation sections, none of which duplicate what Surfaces now shows, so nothing was removed there.
+  - `showcase-no-replicas.test.ts` was updated for the file rename (its "composer disposition" describe block now reads `ComposerShowcases.tsx` and asserts `<Conversation.Composer` / `<QueuePanel` inside `ComposerDemo`, carrying forward the same DOR-1186 guarantee against a hand-rolled `<textarea>` replica).
+
+- Task #5.5: Docs — worker: p5-builder
+  - `contributing/design-system.md`: new **Live lane** subsection under Components — the reserved `h-6` height (never `min-h`), the nine-rung priority stack as the one status vocabulary (with the three ordering decisions that may not be collapsed), the announcer rule (one live region, counts not verbs; Asks announced separately through the approval announcer, echoing the same principle §Zones already states for the Heads up badge), and the lane crossfade added to the Animation Catalog. No `RoomPresenceLine` prose existed anywhere in `contributing/` or `docs/` to amend — grepped and confirmed empty, so that sub-instruction was moot.
+  - `contributing/architecture.md`: new **Namespace compounds (Composer, Conversation)** section — neither compound had prior documentation there (grepped and confirmed), so this is the first write-up of the pattern, not an amendment. States the capability-flag rule once and points at the spec.
+  - `contributing/state-management.md`: `interaction_pending` / `interaction_resolved` added to the `KnownEvent` list, verified present in `GENERIC_EVENTS` (`stream-manager.ts`) before documenting them.
+  - `contributing/keyboard-shortcuts.md`: `Cmd+Shift+Y` was already documented in full; added the `A`/`D` focused-card allow/deny keys, which were not (verified against `AskCard.tsx`'s own `onKeyDown` before writing it up).
+  - `docs/concepts/answering-agents.mdx` (new): "Answer your agents from anywhere" for a non-developer, per `writing-for-humans` — what an Ask is, the four places it shows up, answering with a click or the keyboard, the ten-minute window, and who can answer for a shared room. An honesty callout states plainly that nothing reaches you while the cockpit is closed and there is no scope-widening control yet. Registered in `docs/concepts/meta.json` and both `contributing/INDEX.md` tables; `docs-coverage-map.json` regenerated to match. **The regeneration picked up a second entry, `docs/concepts/sidebar.mdx`** — not this phase's page, but a row that had been in `contributing/INDEX.md` since 2026-08-11 while the generated JSON lagged behind it. It is a correction of pre-existing drift rather than scope creep, and dropping it would fail `docs-coverage-map.mjs --check`, so it stays.
+  - `docs/concepts/rooms.mdx`: "a line under the message box" corrected to "above," and the click-to-open-the-peek behaviour added.
+  - `pnpm docs:export-api` produced no diff — the two routes and three schemas the task names were already exported in P2/P3. `pnpm --filter @dorkos/site build` prerendered the new page cleanly.
+  - The three draft ADRs were confirmed against the shipped tree and moved to `accepted`: `260818-002803` (fleet-wide Asks — confirmed, with its own known gaps named rather than hidden), `260818-002805` (the Conversation compound — confirmed exactly as decided), `260818-002806` (the reserved live lane — confirmed, but its Decision prose still says "ten states" and names a queue rung; P4's session 7 deleted the `queued` rung outright rather than reordering it, so the shipped stack is **nine**. Left uncorrected in the Decision section itself — an ADR records the reasoning at the time, not a living spec — with a note added to the Status section pointing at the accurate count in `design-system.md` and `lane-state.ts`). `node .claude/scripts/adr-drift-check.mjs` clean afterward.
+
+- Task #5.6: This record, and the manifest — worker: p5-builder
+  - Progress → Complete, 48/48. PR numbers named per phase. This section.
+  - `specs/unified-conversation/manifest.json` promoted to `implemented` via `.claude/scripts/spec-manifest-ops.ts`.
+
+- Task #5.7: The changelog fragment — worker: p5-builder
+  - This phase is a Dev Playground restructure plus docs; per `writing-changelogs`' audience test, none of it is something an operator notices except the new docs page. One fragment, `changelog/unreleased/260818-191049-answer-your-agents-from-anywhere-guide.md`, `covers:` naming every P5 commit subject so `changelog_backfill.py --check` accounts for the phase without inventing prose for a playground rename. Two hook-auto-generated fragments from the 5.1 and 5.2–5.4 commits were deleted first (session note: neither was user-facing), as were the six the review-fix commits generated.
+
+- Task #5.8: Phase 5 acceptance — worker: p5-builder
+  - **The builder's own ladder:** `pnpm --filter @dorkos/client typecheck` clean, `lint` 0 errors / 119 warnings (P1's baseline, unchanged), `pnpm format:check` clean, `pnpm vitest run apps/client/src/dev` green (139 tests, all drift gates). Neither `pnpm knip` nor `pnpm verify` was run, though task 5.8 asks for both; both were run at the review-fix session below.
+  - **The builder's browser pass claimed more than the tree did.** Its "Live lane shows every state including the Ask stack and receipts" was not true: the section had no receipt bench at all, which is the first thing the spec-compliance review found. Recorded here rather than quietly repaired, because a browser-pass claim that survives into a closing record is worse than a missing one — the next reader believes it.
+
+### Session 9 - 2026-08-18 (P5 review fixes, DOR-1332)
+
+**Workers:** `p5-fixer` on opus (the builder could not be resumed)
+
+Two independent reviews — spec compliance, then adversarial per `REVIEW.md` — found five blocking items and six nits. All fixed, one commit per item group. The five blocking ones, because each is a shape worth recognising:
+
+- **Every Asks countdown read `expired`.** `NOW` was a date written out in the source, and the card's deadline is `startedAt + timeoutMs`, so all eight cards were past their deadline before the page opened — the three colour bands the section exists to show were unreachable, while Allow and Deny stayed live beside the word. Now read once at module load. The same constant was in `LiveLaneShowcases.tsx`, so the lane's grown card had it too; both fixed.
+- **The Live lane had no receipts** while spec §6.1, task 5.4 and this record all said it did. Three endings benched now, through the real `AskReceiptLine` inside a real resolved `AskCard.Root`.
+- **The "Mentions" demo drew `FilePalette`.** A real component under a label promising a different one — the no-replicas failure one step sideways, invisible to a render test. `MentionPalette` now, with a source assertion beside the `QueuePanel` one (seeded defect run: swapping it back is red). `FilePalette` kept a bench in the place it actually ships, the `overlays` slot of a session composer.
+- **All three Surfaces composers were inert** — controlled fields pinned to `''` with a noop `onChange`, in the section whose own copy promises "never a recreation". Each column holds its own draft now. The one-fixture claim was also half true: the two row builders each fell back to their own default timestamp, so the session column printed an afternoon and the room and DM columns a morning. Each turn carries its own time now.
+- **`answering-agents.mdx` promised two things this tree does not do** — a per-agent approver list, and a receipt naming who else answered (`resolvedBy` is never populated). Both cut to what ships.
+  Nits: the `/dev/chat` → `/dev/conversation` alias (a saved link landed silently on Overview); the `Message.* matrix` section renamed to the spec's **Message row**; the cross-listed approval card hoisted from inside the Asks section to page level; `initialValue` so the two "Typing" demos are not pixel-identical to the two "Idle" ones; `specs/manifest.json` restored to a one-line diff after the manifest-ops writer re-serialized 103 unrelated entries; ADR `260818-002806`'s Status stopped saying the stale count was left uncorrected while correcting it; plus four stale prose references.
+
+  **Verification:** `pnpm format:check` exit 0 · `pnpm --filter @dorkos/client typecheck` clean · `lint` 0 errors / 119 warnings (the bar, unchanged) · `pnpm vitest run apps/client/src/dev` green (141 tests, +2 for the new drift gates) · `pnpm verify` exit 0 · `adr-drift-check.mjs` clean · **knip: unused exports 554, unused exported types 579, duplicates 2** (P4: 552 / 580 / 2 — two more exports and one fewer type, all of them the fixture builders and the new demo components this phase's showcases needed).
+
+  `pnpm verify` failed once on the way there, and it is worth naming so nobody chases it: `apps/server/src/routes/__tests__/read-cursors.test.ts` timed out at 5 s under load while a dev server and a browser were running beside it. That file passes in isolation (23/23) and this branch does not touch `apps/server`. The clean re-run is the exit 0 above. `pnpm verify --concurrency=1` is **not** the fallback it looks like — the flag reaches the test command rather than turbo, and `@dorkos/e2e`'s vitest rejects it outright.
+
+  **Browser pass, cockpit from this worktree (client `:4542`, server `:4392`, `DORK_HOME=~/.dork-verify-p5b`), driving the real page and reading the DOM back:**
+  - **The three Surfaces composers accept typing.** Thirteen characters into each of the three `textarea`s, read back: `["typed in column 0", "typed in column 1", "typed in column 2"]`. The three columns now print one clock (`09:02 AM` / `09:03 AM` / `09:04 AM`, the four turns' own times) instead of an afternoon in one column and a morning in the other two.
+  - **The Asks countdowns reach all three bands.** Thirteen live cards, none reading `expired`; the class on the reading is what proves the band rather than the colour being described: `text-muted-foreground` at 6/8/9 min, `text-status-warning` at 1 min, `text-status-error` at 39 s.
+  - **The Mentions demo draws the mention picker.** `[role="listbox"][aria-label="Mentions"]` reads `People · Ana Ruiz @ana · Aurora Vance @aurora · Agents · 🔍 Audit Bot @audit-bot · 📓 August No @name`. No file paths.
+  - **The Live lane shows its receipts:** `You allowed this`, `Already answered at 3:24 PM`, `Nobody answered in time`.
+  - **`/dev/chat` lands on Conversation** — `h1` reads "Conversation" with the URL left as the reader typed it.
+  - Console: four `ERR_FILE_NOT_FOUND` from the attachment fixtures' `blob:` URLs, pre-existing and not this phase's.
+  - Screenshots in the session scratchpad: `p5fix-01-surfaces-typed.png`, `p5fix-02-asks-countdown.png`, `p5fix-03-composer-mentions.png`, `p5fix-04-lane-receipts.png`, `p5fix-05-dev-chat-alias.png`. Servers stopped afterwards; 4542 and 4392 answer nothing, `pgrep -f DOR-1332` empty, `~/.dork-verify-p5b` removed.
+
 ## Files Modified/Created
 
 108 files against `spec/unified-conversation`, by area. Client paths are relative to `apps/client/src/`.
@@ -489,16 +559,40 @@ Two independent reviews (spec compliance, then adversarial) found two must-fixes
 
 **Docs + artifacts:** `contributing/keyboard-shortcuts.md`, `contributing/interactive-tools.md`, `changelog/unreleased/260818-083627-answer-your-agents-from-anywhere.md`, this file
 
+### P4 (DOR-1331)
+
+Not written up by session 6/7 — a gap in this record rather than in the work; the files are enumerated in PR `#1102`'s own diff.
+
+### P5 (DOR-1332)
+
+**Dev Playground — `apps/client/src/dev/` (new: 4 files):** `showcases/SurfacesShowcases.tsx`, `showcases/TimelineShowcases.tsx`, `showcases/ComposerShowcases.tsx` (replaces `InputShowcases.tsx`), `showcases/AsksShowcases.tsx` (renamed from `AskShowcases.tsx`, absorbing `AskReceiptShowcases.tsx` and the approval half of `ToolShowcases.tsx`)
+
+**Deleted:** `showcases/InputShowcases.tsx`, `showcases/AskReceiptShowcases.tsx`
+
+**Modified:** `playground-registry.ts` (`Page` union, exports), `playground-config.ts` (the `conversation` `PageConfig`, `CONVERSATION_CROSS_LISTED`), `playground-pages.ts`, `sections/chat-sections.ts` → `sections/conversation-sections.ts` (renamed + restructured), `pages/ChatPage.tsx` → `pages/ConversationPage.tsx` (renamed), `pages/IdentityPage.tsx` (drops the borrowed `live-lane` section), `showcases/ApprovalsShowcases.tsx` (extracts `ApprovalCardShowcase`), `showcases/ToolShowcases.tsx` (drops the approval section, moved to Asks)
+
+**Tests:** `__tests__/playground-registry.test.ts`, `__tests__/PlaygroundSearch.test.tsx`, `__tests__/ChipShowcases.test.tsx`, `__tests__/showcase-no-replicas.test.ts`
+
+**Browser:** `apps/e2e/tests/chat/status-line-fit.spec.ts` (repointed at `/dev/conversation`)
+
+**Docs:** `contributing/design-system.md`, `contributing/architecture.md`, `contributing/state-management.md`, `contributing/keyboard-shortcuts.md`, `contributing/INDEX.md`, `docs/concepts/answering-agents.mdx` (new), `docs/concepts/meta.json`, `docs/concepts/rooms.mdx`, `.claude/scripts/docs-coverage-map.json` (regenerated)
+
+**Skill:** `.claude/skills/maintaining-dev-playground/SKILL.md`
+
+**ADRs:** `decisions/260818-002803-interaction-prompts-are-fleet-wide-asks.md`, `decisions/260818-002805-one-conversation-compound-with-capability-flags.md`, `decisions/260818-002806-a-reserved-live-lane-above-every-composer.md` (all `draft` → `accepted`), `decisions/manifest.json`
+
+**Artifacts:** `changelog/unreleased/260818-191049-answer-your-agents-from-anywhere-guide.md`, `specs/unified-conversation/manifest.json` (`implemented`), this file
+
 ## Known Issues
 
 Six things this phase decided rather than finished. Each names who picks it up.
 
 1. **`SESSION_CAPABILITIES` and `render-session-body.tsx` are in the wrong layer, deliberately — P4's to move.** The spec puts both in `widgets/session/`; ESLint refused it (`no-restricted-imports`, four test files), because `ChatPanel`, `MessageList`, the row and their tests are all in `features/chat` and a feature may not import a widget's model. They sit at `features/chat/config/session-capabilities.ts` and `features/chat/ui/render-session-body.tsx` until P4's composer host lands in `widgets/session`, at which point both move up with it. `config/` rather than `model/` only because the `dir-size` hook errors at 25 files in `features/chat/model`. Both files say this in their own TSDoc, and so does `widgets/room-view/model/room-capabilities.ts`.
 2. **`capabilities.toolCards` is declared by both hosts and read by nothing — P4 owns proving it.** Each host's body renderer is fixed in P1, so there is no branch for the flag to switch and no check that can go red on it today. Inventing one would be a check that cannot discriminate. P4's renderer map is where it goes live, and P4 is where the first honest test of it can be written.
-3. **`DM_CAPABILITIES` does not exist, and P5 task 5.1 names it.** It was dropped as a duplicate export of `ROOM_CAPABILITIES` — a second name for the identical object costs a reader the question "how do these two differ?" whose answer is "they do not". **What P5 should do instead: render the DM column from `ROOM_CAPABILITIES` with `surface="dm"`.** If DMs ever diverge, `room-capabilities.ts` splits into two tables at that point.
+3. ~~**`DM_CAPABILITIES` does not exist, and P5 task 5.1 names it.**~~ **CLOSED (P5, session 8): the Surfaces section's DM column renders `ROOM_CAPABILITIES` with `surface="dm"`**, exactly as this issue recommended. `room-capabilities.ts` is untouched — DMs have not diverged from channels.
 4. **Run-with is a bar SLOT, and is absent from the right-click menu and the long-press drawer.** It is reachable on hover and by keyboard only, which is what it was before this phase — `EntryActionMenu` has nowhere to put a menu that opens a second menu, and its own TSDoc says so. **P4 must not assume the menu path carries it.** Its trigger keeps its own tab stop for exactly this reason: a capsule holding only run-with is still reachable by every reader.
 5. **The `showTimestamps` preference now governs channels, which it silently ignored before.** A behaviour unified rather than preserved twice — the same preference, one gutter. It defaults to `false`, so nothing changes for a reader who has not turned it on, and the changelog fragment says so. Flagged here because it is the one place P1 changed what a person sees rather than only how it is drawn.
-6. **The Dev Playground row matrix lives on `/dev/chat`, not on a page of its own.** `dev/showcases/MessageRowShowcases.tsx` renders both sections (`message-matrix`, `conversation-dividers`), `MessageShowcases` draws it, and `dev/sections/chat-sections.ts` registers it. `NoticeRow`, `MomentRow` and `ThreadReplyRow` stay benched on `/dev/rooms` against real room fixtures rather than being drawn a second time here. **The page rename and the five-section restructure are P5's** — this phase deliberately added to the existing page rather than pre-empting that.
+6. ~~**The Dev Playground row matrix lives on `/dev/chat`, not on a page of its own.**~~ **CLOSED (P5, session 8): the page is `/dev/conversation` now, restructured into five sections** (Surfaces, Message row, Timeline, Live lane, Composer, plus Asks as the card-family section). `NoticeRow`, `MomentRow` and `ThreadReplyRow` stayed benched on `/dev/rooms` as this issue anticipated.
 
 ### P2 (DOR-1329)
 
@@ -614,11 +708,75 @@ Four things this phase decided rather than finished. Issues 22, 24, 25 and 26 ar
 25. ~~**The lane's `queued` rung cannot light on a session.**~~ **CLOSED (session 7): the rung is deleted.** Neither shipped surface could reach it — a session's turn always outranked it, and `RoomLiveLane` passes `queueDepth: 0` by construction — and reordering it above the turn would hide what the agent is doing in order to report a number. Held drafts live in the composer's queue panel. `ConversationTarget.queueDepth`, its only consumer, went with it.
 26. ~~**The mock browser leg has a cold-start race in `global-setup`.**~~ **CLOSED (session 7):** the first `GET /api/config` is a bounded retry (30s, 500ms apart) instead of a single shot. A genuinely dead API still fails the run, and says what it last saw.
 27. **Three files are still over 500 lines, each for the same reason and none of them a hiding place.** `ChatPanel.tsx` (571) is the session's whole composition root — every hook the surface reads, wired once, with the `Conversation.Root` declaration at the bottom; `ChannelComposer.tsx` (527) and `SessionComposer.tsx` (503) are what is LEFT of the two 536/604-line composers after the card came out, and what is left is each surface's own keyboard, palettes and draft wiring, which is the part the programme deliberately did not merge. Splitting any of the three would mean cutting a wiring block in half rather than lifting a decision out, which is the split that makes a file harder to read. `Timeline.tsx` and `RoomThreadPanel.tsx` had genuine decisions to lift, and both are under the bar. **Revisit when one of them next grows**, not before.
-28. **A session's `ConversationTarget.send` and `.queue` are not the session's live path.** A channel presses Enter and lands in `target.send`; a session still funnels through `SessionComposer`'s own `handleSubmit` (which rewrites the message with saved attachment paths and dismisses its palettes on the way) and through `useChatQueue`, so the card reads only the PRESENCE of `queue` off the object. Both functions are real and covered — they are what the session routes through when that funnel moves down — but until it does, one port has two send paths behind it. **P5.** `session-target.ts` says so at the call site.
-29. **`render-session-body.tsx` is freed by one change, and it is not this programme's.** Issue 19 records why it cannot move: `SessionMessage`, the row that calls it, is rendered by `features/onboarding` for its scripted narration, and a feature may not import a widget. **What frees it:** onboarding composing `Message.*` directly (features ← features is legal), after which both the row and its renderer come up to `widgets/session` with the rest of the host. **P5 follow-up**; do not touch onboarding from inside this phase.
+28. **A session's `ConversationTarget.send` and `.queue` are not the session's live path.** A channel presses Enter and lands in `target.send`; a session still funnels through `SessionComposer`'s own `handleSubmit` (which rewrites the message with saved attachment paths and dismisses its palettes on the way) and through `useChatQueue`, so the card reads only the PRESENCE of `queue` off the object. Both functions are real and covered — they are what the session routes through when that funnel moves down — but until it does, one port has two send paths behind it. `session-target.ts` says so at the call site. **Named "P5" here, and P5 did not do it.** P5 (DOR-1332) is the Dev Playground and docs phase — its own task list is explicit that no new product code is written in it. This is real client wiring work and stays open for whatever phase picks it up next; see the follow-up list below.
+29. **`render-session-body.tsx` is freed by one change, and it is not this programme's.** (P4) Issue 19 records why it cannot move: `SessionMessage`, the row that calls it, is rendered by `features/onboarding` for its scripted narration, and a feature may not import a widget. **What frees it:** onboarding composing `Message.*` directly (features ← features is legal), after which both the row and its renderer come up to `widgets/session` with the rest of the host. **P5 follow-up**; do not touch onboarding from inside this phase.
+
+### P5 (DOR-1332)
+
+Two things this phase decided rather than finished. Everything else its two reviews found was fixed in session 9 and needs no entry here.
+
+30. **A pinned showcase clock is a trap, and the guard against it is a browser pass.** The Asks and Live lane fixtures both measured their countdowns against a date written out in the source, which the card turns into a deadline permanently in the past — so every card read `expired` and the three colour bands were unreachable. Nothing red: typecheck, lint and 139 unit tests were all green over it, because the defect is what a component _says_ once mounted, and the drift gates read source rather than pixels. Both now read the clock once at module load. **What still has no gate** is the general case: any future fixture that computes a time can make the same mistake, and the only thing that catches it is somebody opening the page. Worth remembering before trusting a green ladder on a showcase change.
+31. **`/dev/conversation#message-row` replaces `#message-matrix`, and no alias covers it.** `PATH_ALIASES` in `playground-config.ts` keeps the retired `/dev/chat` **path** working; anchors have no such map, and the section rename (to the spec's own vocabulary, §6.1) moved this one. Only one section is affected and the playground is a dev surface, so the rename won over the anchor. **If anchors start being linked from outside the playground**, they need the same treatment paths just got.
 
 ## Implementation Notes
 
 ### Session 1
 
 Orchestration model (operator override of the per-task batching in `executing-specs`, logged as an assumption): one named, resumable builder agent per phase in that phase's worktree, executing the phase's tasks in dependency order and committing per task; then a two-stage review (spec compliance, then adversarial code quality per `REVIEW.md`) by separate agents; fixes return to the builder (resume ladder rung 1); the PR opens only after the review converges. Model tiers per `.dork/plugins/flow/config/config.json`: implementation/review = opus, mechanical = sonnet.
+
+---
+
+## What Shipped, By Phase
+
+| Phase         | What it built                                                                                                                                                                                                                                                     | PR                                 |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| P1 (DOR-1328) | The `features/conversation` slice; `Message.*` as the one row family for a session and a room; both hosts wired to it; the two old rows deleted                                                                                                                   | `#1091`                            |
+| P2 (DOR-1329) | `deriveLaneState` and `Conversation.LiveLane`; the `GET /api/rooms/:id/sessions` route and `LivePeek`; both surfaces mounted on the lane; `ChatStatusStrip`, `RoomPresenceLine` and `RoomStalledNotice` deleted                                                   | `#1092`                            |
+| P3 (DOR-1330) | The interaction-events wire (`interaction_pending`/`interaction_resolved`); the projector's interaction seam; the fleet-wide pending-interactions route and store; `features/ask` (the Ask card family); the Ask live on five surfaces plus the lane's amber rung | `#1093`                            |
+| P4 (DOR-1331) | `Conversation.Timeline` (one virtualized list); the two `ConversationTarget` adapters; `Conversation.Composer` + `Conversation.Footer`; `MessageList`, `RoomTimeline` and both old composers deleted                                                              | `#1102` (open at review as P5 ran) |
+| P5 (DOR-1332) | The Dev Playground's Conversation page, five sections, restructured from the P1–P4 showcases; the docs the whole programme owed; this record finalized; the manifest promoted to `implemented`; the three draft ADRs confirmed and accepted                       | `#1108`                            |
+
+## What Was Deliberately Not Done
+
+Carried forward verbatim from the spec's own "What is not done" (§ same name), with each item's status as of P5. None of these are P5's to close — they are named here so a cold reader of this closing record sees them without re-opening the spec.
+
+1. **The ten-minute timeout still auto-denies.** Unchanged. Park-instead-of-deny is approvals tier C and remains the single most valuable follow-on (`design-decisions.md` §2).
+2. **No notification actions.** Unchanged. Nothing reaches you when the cockpit is closed; desktop/Telegram/Slack Allow-Deny buttons are tier C.
+3. **No scope options.** Unchanged. "Allow & don't ask again" still does nothing; tier C.
+4. **No verb glimpse in a room.** Unchanged. The lane says "is working on it," never "is reading `standup.md`" — presence tier 3, deferred with tier C.
+5. **No per-agent Stop in a room.** Unchanged, and P4's Known Issue 27's file-size note is adjacent context, not a fix: a per-author halt still needs its own notice copy and a scoped gather-buffer drop.
+6. **Bridged DMs still drop the waiting notice.** Unchanged. `services/relay/chat-bridge/deliver.ts:78` delivers only `turn_failed` and `halted`.
+7. **Codex and OpenCode timeout parity is DOR-803.** Unchanged; that item's question, not this programme's.
+8. **Human typing indicators do not exist.** Unchanged; `specs/room-presence` §5.2 keeps it a separate question, if ever.
+9. **The room's durable waiting notice is unchanged, on purpose.** Still vague, late and damped.
+10. **`RoomTurnWaiting` gains no fields.** Still true; `sessionId`/`interactionId` were the two candidates considered and declined in the spec's Open Questions.
+
+## What The Spec Got Wrong
+
+Line anchors in the spec and its P5 tasks were read at `d7e4768e6`. What P5 found, verifying rather than assuming:
+
+- **`RoomPresenceShowcases.tsx` and a `RoomPresenceLine` section on the identity page do not exist.** Task 5.4 named both, with a line anchor (`identity-sections.ts:95`). Neither ever existed under those names in this tree — the actual borrowed content was the `'live-lane'` id, cross-listed from the chat/Conversation page via `IDENTITY_CROSS_LISTED`, which P5 removed instead (see Known Issue closures above). The design intent behind the task item was correct even though its file names were not.
+- **"`StatusShowcases.tsx`'s strip half also lands here" names content that is not in that file.** Grepped for "strip" in `StatusShowcases.tsx`: zero hits. `StatusShowcases` covers status dots, `StreamingText`, `UsageStatusItem` and the transport-error banner — none of it a "strip." Not acted on; treated as brief drift rather than a real instruction.
+- **"`RoomThreadShowcases.tsx`'s row-rendering demos are retired" does not match what is in the file.** It holds `ThreadReplyRow`, `RoomThreadPanel` and a "Thread arrival animations" section — none of them a duplicate of what the Surfaces section now shows. Nothing was removed there; the claim may describe an earlier draft of the file or a different one entirely.
+- **ADR `260818-002806`'s own Decision prose says "ten states" and names a queue rung as the lowest.** P4's session 7 deleted the `queued` rung outright (Known Issue 25's closure) rather than reordering it, so the shipped stack is nine rungs. The ADR's Status section now flags this rather than silently leaving a wrong number in an accepted record.
+- **What held up:** every other line-numbered file reference in task 5.1 (`playground-registry.ts:7`, `playground-config.ts:173-182`, `playground-pages.ts:59`, the SKILL.md stale line at :233) matched the tree exactly.
+
+## Follow-ups Worth Filing
+
+In Linear-ready form — one bullet each, owner named where the record above already settled it.
+
+- **Approvals tier C: park-instead-of-deny for the ten-minute timeout.** The single most valuable follow-on named in the spec's "What is not done" #1. Owner: whoever picks up `design-decisions.md` §2.
+- **The per-author room halt (spec §5.3.4).** The peek's Stop is single-agent-or-everyone today because a per-author halt needs its own notice copy and a scoped gather-buffer drop without re-opening the 2026-08-15 interrupt race. Owner: a future room-lane phase.
+- **`render-session-body.tsx` stays a feature export because `features/onboarding` renders `SessionMessage` for its scripted narration.** Frees only if onboarding is changed to compose `Message.*` directly (Known Issue 29). Owner: whoever next touches onboarding's narration renderer.
+- **A session's `ConversationTarget.send`/`.queue` are not the session's live send path** (Known Issue 28) — `SessionComposer`'s own `handleSubmit` and `useChatQueue` are what a session actually routes through; the target's two methods are real but unused by the shipped surface. Owner: whoever moves that funnel down into the target.
+- **Three files still exceed the 500-line guideline** — `ChatPanel.tsx` (571), `ChannelComposer.tsx` (527), `SessionComposer.tsx` (503) — each for a stated reason (Known Issue 27). Revisit when one of them next grows, not before.
+- **`resolvedBy` is never populated on a receipt.** Unreachable on a single-identity install; every cross-window receipt reads "Already answered at 2:01" rather than naming who. Wiring it belongs with the bridged-approver work (P3 Known Issue 22).
+- **No multi-person Ask entitlement filter.** The list route and the global fan-out both answer this cockpit's one operator; if DorkOS ever has more than one person, both need a per-caller filter, which is a change to `eventFanOut`'s addressing model (P3 Known Issue 23).
+- **`GET /api/rooms/:id/sessions` and `requirePersonToAnswer` disagree about an unresolved agent header.** The rooms route treats an unverifiable token as "no agent presented" (200); the Ask's answer routes refuse it. P3's rule is the one that should win long-term, but aligning the room route is a rooms-domain decision with its own review (P2/P3 Known Issues 9/19).
+- **The `room-row-menu` e2e spec has an order-dependent flake** (`apps/e2e/manifest.json`'s own run history: 2 passed / 1 failed of 3 runs). Unrelated to this programme's own suites, which are all green; worth its own investigation rather than being carried silently.
+- **Codex/OpenCode timeout parity is DOR-803**, unchanged by this programme.
+- **Presence tier 3 (the verb glimpse) and the remaining approvals tiers** are the two open "What is not done" items with the clearest next shape, per the spec's own §Not Done.
+- **`data-testid="room-stalled"` and `room-presence` name a room inside a surface-neutral slice** (P2 Known Issue 10, which named this phase's docs pass as where it could be reconsidered). **Closed here, deliberately: they stay.** They are the hooks two shipped browser suites resolve by (`RoomsPage.stalledNotice`, `.presenceLine`), so renaming them is a rename with no reader plus a suite edit, and the docs pass turned up nothing that reads them. Revisit only if a session-side browser test ever needs to resolve the same rung, at which point one hook serving two surfaces under a room's name is a real problem rather than a cosmetic one.
+- **The timeline's prop is `renderRow`, not the spec's `renderBody`** (P4 Known Issue 20). The spec's shape would need `SessionMessage` and `RoomMessage`'s surface knowledge lifted into props, undoing P1's own seam. Owner: whoever revisits `ConversationBodyRenderer`, if anybody does — otherwise the spec is what is wrong, not the code.
+- **`ConversationTarget` has no mention port** (P4 Known Issue 21), so `capabilities.mentions` is the only fact about the `@` picker in the neutral tree and the picker itself rides the host's slot. The consequence to watch is a third surface wanting mentions and finding nothing shared to reuse. Owner: whoever adds that surface.
+- **No unit test can see a virtualization bug** (P4 Known Issue 23): `@tanstack/react-virtual` is mocked globally in `test-setup.ts`, without which the room and chat suites could assert nothing. The nets that do see them are named in the issue, both in `apps/e2e`. Owner: a testing-infrastructure pass, not a feature phase — and not worth opening until a virtualization regression actually escapes.
