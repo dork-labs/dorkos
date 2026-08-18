@@ -42,7 +42,7 @@ import { Feed } from '@/layers/shared/ui';
 import type { PendingPost } from '@/layers/entities/room';
 import type { ConversationRow } from '../lib/row-kinds';
 import { useConversation } from '../model/conversation-context';
-import { forgetTimelinePosition, useTimelineScroll } from '../model/use-timeline-scroll';
+import { useTimelineScroll } from '../model/use-timeline-scroll';
 import { PendingRow } from './rows/PendingRow';
 import { ScrollThumb } from './ScrollThumb';
 
@@ -141,6 +141,22 @@ export interface ConversationTimelineProps {
    */
   landOn?: 'unread' | 'end';
   /**
+   * The row this conversation was left on, asked for at landing time.
+   *
+   * A GETTER, and the HOST holds the answer — which is what makes it work at
+   * all. On a phone the thread panel is a full-screen push that unmounts this
+   * whole component, so the memory has to live somewhere that survives it, and
+   * the host is the only thing that does. A getter rather than a value because
+   * the host is told on every scroll: a prop would re-render the host, and its
+   * own state would re-render the room under the reader's finger.
+   */
+  resumeRow?: () => string | undefined;
+  /**
+   * Told which row is at the top of the viewport, or `undefined` while the
+   * reader is caught up at the bottom — which is the host's cue to forget.
+   */
+  onTopRow?: (rowId: string | undefined) => void;
+  /**
    * Whether the landing decision can be made yet.
    *
    * A session reads its cursor over the wire, so landing on the first render
@@ -224,6 +240,8 @@ export function ConversationTimeline({
   domIdOf,
   landOn = 'end',
   landingReady = true,
+  resumeRow,
+  onTopRow,
   pending,
   viewerAuthorId,
   loading,
@@ -249,9 +267,8 @@ export function ConversationTimeline({
     rowCount: rows.length + pendingRows.length,
   });
 
-  // One element, two consumers: the hook needs to be TOLD when the scroller
-  // comes and goes (only a callback ref hears that), and the thumb needs an
-  // object it can read the geometry off during its own effects.
+  // One element, two consumers: the hook reads the geometry off it, and so does
+  // the thumb.
   const { scrollRef: attachScroller } = scroll;
   const setScroller = useCallback(
     (el: HTMLDivElement | null) => {
@@ -331,44 +348,99 @@ export function ConversationTimeline({
   // the very cursor that drew the rule. Otherwise land on the newest row,
   // exactly as every chat surface does. (anchorTo/followOnAppend only engage
   // after the first mount.)
-  const anchoredRef = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    if (!landingReady || anchoredRef.current === conversationId || rows.length === 0) return;
-    anchoredRef.current = conversationId;
-    if (scroll.restoredPosition) return;
-    const unreadIndex =
-      landOn === 'unread' ? rows.findIndex((row) => row.kind === 'unread-divider') : -1;
-    if (unreadIndex === -1) {
-      virtualizer.scrollToEnd();
-      return;
-    }
-    // One row of context above the rule, so the last already-seen message is
-    // still on screen. Landing the rule flush at the viewport top loses the
-    // "here is what you already read" edge that makes it legible.
-    virtualizer.scrollToIndex(Math.max(0, unreadIndex - 1), { align: 'start' });
-  }, [landingReady, conversationId, rows, virtualizer, landOn, scroll.restoredPosition]);
-
-  // TRAP: `isAtEnd()` is vacuously TRUE on the first commit. It derives from
-  // `getMaxScrollOffset()`, which returns 0 while `virtualizer.scrollElement`
-  // is still null — and the scroll element is only attached by the
-  // virtualizer's own layout effect, after the first render has already been
-  // read. So a first-render `isAtEnd()` says "pinned to the bottom" for a
-  // 500-message transcript the landing effect above just scrolled to the middle
-  // of. Anything that WRITES on the strength of being pinned has to wait for a
-  // commit with real geometry; `measured` is that wait.
-  //
-  // Declared AFTER the landing effect on purpose: layout effects run in
-  // declaration order, so the re-render this schedules reads a scroll element
-  // that is both attached and already scrolled.
+  // TRAP: the virtualizer knows nothing on the first commit. Its scroll element
+  // is attached by its own layout effect and its rows are measured after that,
+  // so a `scrollToIndex` issued from the first commit is aimed at a list with no
+  // geometry — it lands at zero and the settle silently carries it there.
+  // Measured in a browser on a phone: asked for the row the reader was on,
+  // arrived at the oldest message of the loaded page. `measured` is the wait,
+  // and it is declared BEFORE the landing so the landing runs on the commit
+  // after it.
   const [measured, setMeasured] = useState(false);
   useLayoutEffect(() => {
     setMeasured(true);
   }, []);
 
+  const anchoredRef = useRef<string | null>(null);
+  const [landed, setLanded] = useState(false);
+  /**
+   * What the landing decided, published on the wrapper.
+   *
+   * A `data-` attribute rather than a log, because the question it answers —
+   * "did this conversation come back to the row the reader was on, or open at
+   * its newest message?" — is only answerable in a browser, and a browser test
+   * needs something to read. `null` until the landing has run.
+   */
+  const [landedOn, setLandedOn] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    if (!measured || !landingReady || anchoredRef.current === conversationId) return;
+    if (rows.length === 0) return;
+    anchoredRef.current = conversationId;
+    // A reader coming back belongs on the row they were reading. Asked for by
+    // INDEX rather than by offset, because the virtualizer's total height is an
+    // estimate on the first commit and settles over the next few frames — see
+    // a remembered PIXEL cannot survive that, and this was measured: restored
+    // to 900px, the list settled from an estimated 16 000px to a measured
+    // 4 159px, and `anchorTo: 'end'` carried the offset down past zero.
+    setLanded(true);
+    const remembered = resumeRow?.();
+    if (remembered !== undefined) {
+      const index = rows.findIndex((row) => row.id === remembered);
+      if (index !== -1) {
+        setLandedOn('remembered');
+        virtualizer.scrollToIndex(index, { align: 'start' });
+        return;
+      }
+    }
+    const unreadIndex =
+      landOn === 'unread' ? rows.findIndex((row) => row.kind === 'unread-divider') : -1;
+    if (unreadIndex === -1) {
+      setLandedOn(remembered === undefined ? 'end' : 'end-row-gone');
+      virtualizer.scrollToEnd();
+      return;
+    }
+    setLandedOn('unread');
+    // One row of context above the rule, so the last already-seen message is
+    // still on screen. Landing the rule flush at the viewport top loses the
+    // "here is what you already read" edge that makes it legible.
+    virtualizer.scrollToIndex(Math.max(0, unreadIndex - 1), { align: 'start' });
+  }, [measured, landingReady, conversationId, rows, virtualizer, landOn, resumeRow]);
+
+  /**
+   * Tell the host which row is at the top, so a scroller that comes back can
+   * land on it.
+   *
+   * `undefined` while the reader is caught up at the bottom: a conversation
+   * left at its newest message opens at its newest message, and a remembered
+   * row already on screen would be a landing with nothing to do. Read off the
+   * ref rather than the state, because this runs inside the scroll handler and
+   * the state is one render behind it.
+   */
+  const { atBottomRef } = scroll;
+  const handleScroll = useCallback(() => {
+    scroll.onScroll();
+    // The first VISIBLE row, not the first DRAWN one: the virtualizer keeps a
+    // few rows of overscan above the viewport, and remembering one of those
+    // put a returning reader five messages higher than they had been. Read off
+    // the virtual items rather than the DOM — a `getBoundingClientRect` per
+    // scroll event is exactly the cost virtualizing was for.
+    const top = scrollerRef.current?.scrollTop ?? 0;
+    const visible = virtualizer.getVirtualItems().find((item) => item.end > top);
+    const id = visible === undefined ? undefined : rows[visible.index]?.id;
+    onTopRow?.(atBottomRef.current ? undefined : id);
+  }, [scroll, virtualizer, rows, onTopRow, atBottomRef]);
+
+  // `isAtEnd()` is vacuously TRUE before the virtualizer has geometry: it
+  // derives from `getMaxScrollOffset()`, which is 0 while `scrollElement` is
+  // null. So a first-commit read says "pinned to the bottom" for a 500-message
+  // transcript the landing has just taken to the middle — and reading a session
+  // as pinned is what marks it read. `landed` is the wait: it is set by the
+  // landing effect above, on the commit where the list has both a scroll
+  // element and a decision.
   const isAtEnd = virtualizer.isAtEnd();
   useEffect(() => {
-    if (measured && isAtEnd) onReachedBottom?.();
-  }, [measured, isAtEnd, onReachedBottom]);
+    if (landed && isAtEnd) onReachedBottom?.();
+  }, [landed, isAtEnd, onReachedBottom]);
 
   // Page Down at the edge of the rendered window. Only a few rows either side
   // of the viewport exist in the DOM, so without this a reader crossing a long
@@ -450,16 +522,6 @@ export function ConversationTimeline({
     [focusRowElement, domIdOf, rows, virtualizer, scroll]
   );
 
-  // Leaving takes the memory with it when the reader is at the bottom: a
-  // conversation left at its newest message opens at its newest message, and
-  // remembering an offset that IS the bottom would fight the landing effect the
-  // next time this mounts.
-  useEffect(() => {
-    return () => {
-      if (scroll.isAtBottom) forgetTimelinePosition(conversationId);
-    };
-  }, [conversationId, scroll.isAtBottom]);
-
   const rowContext = useMemo(
     () => ({ onOpenThread: capabilities.threads ? onOpenThread : undefined }),
     [capabilities.threads, onOpenThread]
@@ -469,10 +531,14 @@ export function ConversationTimeline({
   if (empty !== undefined && rows.length === 0 && pendingRows.length === 0) return <>{empty}</>;
 
   return (
-    <div data-testid={testId} className={cn('relative min-h-0 flex-1', className)}>
+    <div
+      data-testid={testId}
+      data-landed-on={landedOn ?? undefined}
+      className={cn('relative min-h-0 flex-1', className)}
+    >
       <div
         ref={setScroller}
-        onScroll={scroll.onScroll}
+        onScroll={handleScroll}
         data-testid="conversation-scroller"
         className="chat-scroll-area h-full scrollbar-none overflow-y-auto"
         style={{ overflowAnchor: 'none' }}

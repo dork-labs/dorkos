@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { forgetTimelinePosition, useTimelineScroll } from '../use-timeline-scroll';
+import { useTimelineScroll } from '../use-timeline-scroll';
 
 /** Total content height and viewport height of the stand-in container. */
 const SCROLL_HEIGHT = 1000;
@@ -66,13 +66,6 @@ function mountWith(scrollTop: number, conversationId = 'room-1', rowCount = 10) 
 }
 
 describe('useTimelineScroll', () => {
-  beforeEach(() => {
-    // The remembered positions outlive any one component on purpose (the
-    // phone's thread push unmounts the whole timeline), so they outlive a test
-    // too unless it says otherwise.
-    for (const id of ['room-1', 'room-2', 'session-1']) forgetTimelinePosition(id);
-  });
-
   it('reports the reader as away from the bottom once they scroll up', () => {
     const { result } = mountWith(200);
 
@@ -126,53 +119,6 @@ describe('useTimelineScroll', () => {
     expect(result.current.hasNewRows).toBe(false);
   });
 
-  it('puts the reader back where they were when the scroller remounts', () => {
-    // The phone's thread panel is a full-screen push, so opening a thread
-    // UNMOUNTS the room column, timeline and all. Coming back mounts a brand
-    // new element at scrollTop 0, and no prop has changed — so nothing else
-    // would ever put the reader back. Measured on a real 390x844 viewport
-    // before the room's retired hook existed: 1148px before, 0px after.
-    const { result } = mountWith(200);
-
-    act(() => result.current.scrollRef(null));
-    const remounted = scrollContainer(0);
-    act(() => result.current.scrollRef(remounted));
-
-    expect(remounted.scrollTop).toBe(200);
-  });
-
-  it('tells the timeline when it has restored a position, so the landing stands down', () => {
-    mountWith(200);
-
-    // A second mount of the same conversation — what a returning thread panel
-    // produces. The timeline's own landing effect reads this and does nothing.
-    const second = renderHook((props: Props) => useTimelineScroll(props), {
-      initialProps: { conversationId: 'room-1', rowCount: 10 } as Props,
-    });
-
-    expect(second.result.current.restoredPosition).toBe(true);
-  });
-
-  it('reports no restored position on a first landing', () => {
-    const { result } = mountWith(200, 'session-1');
-
-    expect(result.current.restoredPosition).toBe(false);
-  });
-
-  it('leaves a first landing alone, so the timeline can put it on the unread rule', () => {
-    // Nothing is remembered for this conversation, so attaching must write no
-    // `scrollTop` at all: the timeline scrolls to the unread rule one frame
-    // later, and a pin here would fight it.
-    const el = scrollContainer(0);
-    const view = renderHook((props: Props) => useTimelineScroll(props), {
-      initialProps: { conversationId: 'session-1', rowCount: 10 } as Props,
-    });
-
-    act(() => view.result.current.scrollRef(el));
-
-    expect(el.scrollTop).toBe(0);
-  });
-
   it('opens the next conversation at its newest message, however the last was left', () => {
     const { el, rerender } = mountWith(200);
 
@@ -181,22 +127,18 @@ describe('useTimelineScroll', () => {
     expect(el.scrollTop).toBe(MAX_SCROLL_TOP);
   });
 
-  it('forgets a conversation that was switched away from and back to', () => {
-    // Switching rooms is a request to go somewhere else, and every chat surface
-    // opens at the newest message. Only a REMOUNT of the same conversation is a
-    // return.
-    const { el, rerender } = mountWith(200);
-    rerender({ conversationId: 'room-2', rowCount: 10 });
-    rerender({ conversationId: 'room-1', rowCount: 10 });
+  it('reports where the reader is from a ref, so an unmount can read it', () => {
+    // The timeline forgets a conversation left at the bottom, and it does that
+    // from a cleanup — where state is whatever the last render closed over, and
+    // the last render is not the moment the reader left.
+    const { el, result } = mountWith(200);
+    expect(result.current.atBottomRef.current).toBe(false);
 
     act(() => {
-      el.scrollTop = 0;
+      el.scrollTop = MAX_SCROLL_TOP;
+      result.current.onScroll();
     });
-    const remounted = scrollContainer(0);
-    renderHook((props: Props) => useTimelineScroll(props), {
-      initialProps: { conversationId: 'room-1', rowCount: 10 } as Props,
-    }).result.current.scrollRef(remounted);
 
-    expect(remounted.scrollTop).toBe(0);
+    expect(result.current.atBottomRef.current).toBe(true);
   });
 });

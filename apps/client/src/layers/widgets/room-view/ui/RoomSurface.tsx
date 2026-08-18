@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Skeleton } from '@/layers/shared/ui';
 import { useIsMobile, useVisualViewportBottomInset } from '@/layers/shared/model';
@@ -195,6 +195,34 @@ export function RoomSurface({
   // The timeline's own handle, so the lane's peek can take a reader to a row —
   // including one virtualization has left out of the document.
   const timelineRef = useRef<ConversationTimelineHandle>(null);
+  /**
+   * The row the reader was on, held HERE because this component is what
+   * survives a thread.
+   *
+   * On a phone the thread panel is a full-screen push: it unmounts the room
+   * column, timeline and all, and coming back mounts a brand new one at the
+   * top. Measured on a 390x844 viewport: 1148px before opening a thread, 0px
+   * after closing it — the room silently jumped to its oldest message. The
+   * timeline cannot remember this for itself, and neither can a module-level
+   * map: the answer has to be a ROW rather than an offset (the virtualizer's
+   * total height is an estimate until it settles), and it has to be forgotten
+   * when the reader switches rooms — both of which are facts this component
+   * holds and that one does not.
+   *
+   * A ref rather than state: it is written on every scroll, and re-rendering
+   * the room under the reader's finger to store it would be the cost the
+   * virtualizer was added to avoid.
+   */
+  const resumeRowRef = useRef<string | undefined>(undefined);
+  const noteTopRow = useCallback((rowId: string | undefined) => {
+    resumeRowRef.current = rowId;
+  }, []);
+  const resumeRow = useCallback(() => resumeRowRef.current, []);
+  // A room you SWITCHED to opens at its newest message, the way every chat
+  // surface does — only a return to the same room is a return.
+  useEffect(() => {
+    resumeRowRef.current = undefined;
+  }, [roomId]);
   const scrollToRow = useCallback((domId: string) => {
     timelineRef.current?.scrollToRow(domId);
   }, []);
@@ -281,6 +309,8 @@ export function RoomSurface({
         onAddAgents={() => setDetailsFocus('add')}
         openThreadId={openThreadId}
         onOpenThread={onOpenThread}
+        resumeRow={resumeRow}
+        onTopRow={noteTopRow}
       />
       {/* The host's chrome for the composer — see `RoomSurfaceProps.aboveComposer`. */}
       {aboveComposer}

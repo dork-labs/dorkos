@@ -98,6 +98,15 @@ interface RoomFlowProps {
   openThreadId?: string;
   /** Open one thread's panel. */
   onOpenThread: (rootEntryId: string) => void;
+  /**
+   * The row this room was left on, asked for when the flow lands.
+   *
+   * The HOST holds it, because on a phone the thread panel unmounts this whole
+   * component and `RoomSurface` is what survives.
+   */
+  resumeRow?: () => string | undefined;
+  /** Told which row is at the top, or `undefined` when the reader is caught up. */
+  onTopRow?: (rowId: string | undefined) => void;
   /** The timeline's handle, so the lane's peek can take a reader to a row. */
   ref?: Ref<ConversationTimelineHandle>;
 }
@@ -174,6 +183,8 @@ export function RoomFlow({
   onAddAgents,
   openThreadId,
   onOpenThread,
+  resumeRow,
+  onTopRow,
   ref,
 }: RoomFlowProps) {
   const authors = useMemo(() => authorsById(members), [members]);
@@ -401,6 +412,8 @@ export function RoomFlow({
         renderRow={renderRow}
         onOpenThread={onOpenThread}
         domIdOf={domIdOf}
+        {...(resumeRow === undefined ? {} : { resumeRow })}
+        {...(onTopRow === undefined ? {} : { onTopRow })}
         pending={pending}
         viewerAuthorId={viewerAuthorId}
         loading={isLoading ? <RoomHistorySkeleton roomName={roomName} /> : undefined}

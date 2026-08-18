@@ -911,10 +911,59 @@ test.describe('Rooms — a thread on a phone', () => {
     await expect(roomsPage.entries).toHaveCount(0);
 
     await roomsPage.backToRoom(`#${slug}`).click();
-    await expect(roomsPage.entries).toHaveCount(30);
+    await roomsPage.waitForHistory(30, SERVER_ROUND_TRIP_MS);
 
     // Back at the newest message, not thrown to the top of the history.
     await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
     expect(await roomsPage.scrollTop()).toBeGreaterThan(0);
+  });
+
+  test('coming back from a thread leaves a reader who had scrolled BACK where they were', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The other half, and the harder one: the test above leaves at the bottom,
+    // where "put me back" and "open at the newest message" are the same answer.
+    // A reader who has scrolled INTO the history has to come back to the message
+    // they were reading — which the timeline can only do by remembering a ROW,
+    // because its own total height is an estimate until it settles (measured on
+    // this viewport: a remembered 900px offset was carried to 0 by the
+    // end-anchor as the list shrank from 16 000px to 4 159px).
+    const slug = `e2e-thread-resume-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(
+      room.id,
+      Array.from({ length: 40 }, (_, i) => `resume line ${i + 1}`)
+    );
+    const ids = await roomsApi.entryIds(room.id);
+    // The thread hangs off a message in the MIDDLE, so opening it neither
+    // scrolls the room nor needs the reader to be at either end.
+    const middle = ids[Math.floor(ids.length / 2)]!;
+    await roomsApi.postThreadReply(room.id, middle, 'answering one from the middle');
+
+    await page.goto(`/channels?id=${room.id}`);
+    await roomsPage.waitForHistory(40, SERVER_ROUND_TRIP_MS);
+    await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
+
+    // Read back into the history and settle there.
+    await roomsPage.scroller.evaluate((el) => {
+      el.scrollTop = Math.round(el.scrollHeight / 2);
+    });
+    await expect.poll(() => roomsPage.isAtBottom()).toBe(false);
+    const topBefore = await roomsPage.topVisibleEntryText();
+
+    await roomsPage.replyRow(roomsPage.entry('resume line 21')).click();
+    await expect(roomsPage.threadPanel).toBeVisible();
+    await expect(roomsPage.entries).toHaveCount(0);
+
+    await roomsPage.backToRoom(`#${slug}`).click();
+    await roomsPage.waitForHistory(40, SERVER_ROUND_TRIP_MS);
+
+    // The same message at the top of the viewport, and the room did NOT decide
+    // to open at its newest message instead. The second assertion names the
+    // mechanism: `remembered` is the landing that read the row back.
+    await expect.poll(() => roomsPage.timeline.getAttribute('data-landed-on')).toBe('remembered');
+    expect(await roomsPage.topVisibleEntryText()).toBe(topBefore);
   });
 });

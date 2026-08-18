@@ -715,6 +715,38 @@ export class RoomsPage {
       .toBeGreaterThanOrEqual(total * MIN_ROW_PX);
   }
 
+  /**
+   * The timeline's own box, which publishes what its landing decided.
+   *
+   * `data-landed-on` is `remembered` when the list put a returning reader back
+   * on the row they were on, `unread` when it landed on the rule, and `end`
+   * when it opened at the newest message. Only a browser can tell those apart,
+   * which is why the component says so out loud.
+   */
+  get timeline(): Locator {
+    return this.page.locator('[data-landed-on]');
+  }
+
+  /**
+   * The text of the message at the top of the viewport.
+   *
+   * Not `entries.first()`: the list is virtualized and keeps a few rows of
+   * overscan ABOVE the viewport, so the first drawn row is not the first
+   * visible one — a claim about where a reader is standing has to be measured,
+   * not counted.
+   */
+  async topVisibleEntryText(): Promise<string | null> {
+    return this.page.evaluate(() => {
+      const scroller = document.querySelector('.chat-scroll-area');
+      if (scroller === null) return null;
+      const top = scroller.getBoundingClientRect().top;
+      for (const row of document.querySelectorAll('[data-testid="room-entry"]')) {
+        if (row.getBoundingClientRect().bottom > top + 1) return row.textContent;
+      }
+      return null;
+    });
+  }
+
   /** How far the room's history is scrolled, in pixels from the top. */
   async scrollTop(): Promise<number> {
     return this.scroller.evaluate((el) => el.scrollTop);

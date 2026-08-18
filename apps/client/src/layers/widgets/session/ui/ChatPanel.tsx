@@ -459,6 +459,8 @@ export function ChatPanel({
     operationProgress,
     systemStatus,
     activity,
+    connection: syncConnectionState,
+    queueDepth: waiting.length,
   });
 
   return (

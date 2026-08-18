@@ -8,7 +8,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 31 / 48
+**Tasks Completed:** 40 / 48
 
 ## Tasks Completed
 
@@ -308,6 +308,57 @@ back exact. Nine blocking items and eight nits, all fixed:
 
 - `generate:api-docs` no diff · the browser check re-run for the two visible
   fixes (see the screenshots below).
+
+### Session 6 - 2026-08-18 (P4, DOR-1331)
+
+**Worktree:** `~/.dork/workspaces/dorkos/DOR-1331` · branch `DOR-1331` (based on `DOR-1330`, merged again at the task-6 boundary once P3's review fixes landed)
+**Workers:** `p4-builder` (P4, DOR-1331)
+
+- Task #4.1: One scroll hook for every conversation — worker: p4-builder
+  - Created `features/conversation/model/use-timeline-scroll.ts`. Moved `use-unread-cursor.ts` (`features/chat/model/view/` → `features/conversation/model/`) and `ScrollThumb.tsx` (`features/chat/ui/` → `features/conversation/ui/`), both with `git mv`.
+  - **The merged hook does NOT follow the tail, and that is the one place the spec's plan met the tree.** §2.4 says the contract is `use-stick-to-bottom`'s. Most of it is: the near-bottom slack is the room's 64px verbatim, the settle-frames rule and the "a scroller with nothing to scroll has not landed" guard came over whole. But the FOLLOW half is the virtualizer's — `MessageList` retired its own copy for `anchorTo: 'end'` + `followOnAppend` long before this phase, and the merged list is virtualized, so writing `scrollTop` on every arrival would fight it one frame apart on every streamed token. What the hook keeps is what the virtualizer cannot answer: where the reader is, whether anything arrived while they were away, and where they were standing the last time this scroller existed.
+  - **The position memory is module-level**, keyed by conversation, because the component holding it is exactly what disappears: on a phone the thread panel is a full-screen push that unmounts the room column, timeline and all. The retired hook survived that by living in the page above.
+  - Three seeded defects, each run and each red: slack 64 → 0 (the part-rendered-row case); dropping the forget-on-switch (the room-switch case); pinning on a first landing (the unread-rule case).
+
+- Task #4.2: `Conversation.Timeline` — worker: p4-builder
+  - Created `features/conversation/ui/Timeline.tsx`; moved `RoomPendingRow.tsx` → `ui/rows/PendingRow.tsx` (the LIST is gone — the timeline takes `pending` and draws one row per message).
+  - **Deviation, recorded: the prop is `renderRow`, not `renderBody`.** §2.4 gives the timeline a `ConversationBodyRenderer`, which would mean the timeline composed `Message.*` itself. It cannot: the two row wrappers are where each surface's own knowledge lives — a session's `MessageProvider` and its run-with action, a room's reactions, roster join, article summary and its notice/moment branches — and P1 deliberately kept them as host components. So the timeline draws the scroller, the virtualizer, the feed, the thumb, the affordances and the pending rows, and calls the host back for every row. `ConversationBodyRenderer` is untouched and still the §2.6 seam INSIDE those rows.
+  - **`ConversationRow` gained a `label` and lost two fields it could not be given.** `day-divider` now carries the label rather than `at` (the shared `buildTimelineRows` phrases it once, against the `now` it was handed, so both surfaces say the same words on the same day), and `unread-divider` lost `count`, which neither producer computes and `UnreadDivider` does not draw.
+  - Two seeded defects, run and red: handing `onOpenThread` down ungated (a session grows a reply row); mounting both live regions unconditionally (a channel gains two silent ones, and the lane's single announcer stops being single).
+
+- Task #4.3: Both surfaces mount it; `MessageList`, `RoomTimeline` and both scroll hooks deleted — worker: p4-builder
+  - Deleted: `features/chat/ui/MessageList.tsx` (531), `features/chat/model/view/use-scroll-overlay.ts` (49), `widgets/room-view/ui/RoomTimeline.tsx` (339), `widgets/room-view/model/use-stick-to-bottom.ts` (223) + its suite, `features/chat/ui/ChatMessageArea.tsx`.
+  - Created `widgets/room-view/ui/RoomFlow.tsx` (what is left of `RoomTimeline` once the list is shared) and `widgets/session/ui/SessionTranscript.tsx` (what is left of `MessageList` + `ChatMessageArea`).
+  - **The session HOST moved to `widgets/session`** — `ChatPanel.tsx`, the transcript, `session-capabilities.ts` and `use-session-lane-state.ts`, plus eleven suites. `features/chat`'s barrel widened to what the widget composes; `App.tsx` and `SessionPage` import it from the widget now.
+  - **P1's Known Issue 1 is half done, and the other half is answered rather than deferred.** `SESSION_CAPABILITIES` moved. `render-session-body.tsx` did NOT, and cannot: the row that calls it is `SessionMessage`, which `features/onboarding` renders for its scripted narration (`OnboardingConversation.tsx:378`) — a feature, which may not import a widget. So the row stays a feature export and its renderer stays beside it. Both files say so.
+  - **The virtualizer is stood in for globally, in `apps/client/src/test-setup.ts`.** jsdom lays nothing out, so a real one measures every row at 0 and answers with an empty window — every room and chat assertion about WHICH rows are drawn would have gone vacuous at once. Same reasoning and same place as the `motion/react` stand-in above it.
+  - The peek's `scrollToRow` is `ConversationTimelineHandle`'s now: `RoomLiveLane` takes an `onScrollToRow` prop, both hosts hand it the timeline's handle, and the handle scrolls a row into existence before landing on it — which virtualization made necessary. `entryRowId` / `threadPanelRowId` / `threadRowId` are unchanged, so P2's tests still resolve.
+
+- Task #4.4: The two `ConversationTarget` adapters — worker: p4-builder
+  - `widgets/session/model/session-target.ts` (has `queue`), `widgets/room-view/model/room-target.ts` (does not, and `canSend: false` for an archived room, with the sentence saying why).
+  - **`ConversationAttachmentPort` was reshaped and `ConversationMentionPort` was removed.** P1 declared `upload(file): Promise<string>`; neither surface works that way and neither could — a room mints its attachment ids in the same breath as the post, a session rewrites the message text with saved PATHS at submit. Both stage at the keystroke, so the port is the staging state `Composer.Attachments` already renders from. The mention port went because the `@` picker is a keyboard controller over the field, not a data source; `capabilities.mentions` stays the single fact. `target.ts` carries both arguments in full.
+
+- Task #4.5: `Conversation.Composer` + `Conversation.Footer`; both hosts deleted — worker: p4-builder
+  - Created `features/conversation/ui/ComposerHost.tsx` and `ui/ConversationFooter.tsx`. `ChatInputContainer.tsx` (536) → `widgets/session/ui/SessionComposer.tsx`, `RoomComposer.tsx` (604) → `widgets/room-view/ui/ChannelComposer.tsx`, `InteractiveInputPanel.tsx` → `widgets/session/ui/SessionAsks.tsx`. All three names are gone from the tree.
+  - **What the card owns and what the surface owns.** The card owns the arrangement (head, overlay lane, chip bar, queue chrome, above-input, field, footer) and three rules read off the target: no queue chrome at all when `target.queue` is undefined; `canSend: false` drawn with the target's own sentence; the chip bar and paperclip from the attachment port. Each surface keeps its own palettes, its own Enter, its own draft store, and its own `Composer.Input` wiring through one `input` prop.
+  - **The DOM baselines held, and they are the evidence.** `session-composer.*.json` (9 trees) and `ChannelComposer-chrome-delta.test.tsx` compare the two cards node for node against the pre-migration recordings; both pass unchanged. Two things came out of that: `Conversation.Footer` takes `asChild` (a wrapper would be a node the baseline does not have), and the card invents NO refusal sentence for a failed upload — the two surfaces answer that state differently on purpose and each keeps its own answer.
+  - The takeover slot distinguishes `undefined` (this surface is never taken over — a channel draws its Asks in the lane) from `null` (it can be and is not right now), which is what keeps the exit animation able to play.
+  - Three seeded defects, run and red: gating the queue slot on depth alone; rendering the takeover branch on `capabilities.asks`; passing `canSubmit` through without reading `canSend`.
+
+- Task #4.6: `AssistantMessageContent` split — worker: p4-builder
+  - 594 → 386 lines, split BY PART KIND rather than at a line count: `ui/message/auto-hiding-parts.tsx` (187 — the tool card and the thinking block, which are the same shape with a different inside) and `ui/message/CollapsibleRun.tsx` (54 — the run of them). Behaviour identical; its own suite and `approval-receipts.test.tsx` pass unchanged.
+
+- Task #4.7: Tests, knip and the browser suites — worker: p4-builder
+  - Created `features/conversation/__tests__/Timeline.test.tsx` (14) and `__tests__/ComposerHost.test.tsx` (11); extended `no-surface-switches.test.ts`'s guard to name `ui/Timeline.tsx` and `ui/ComposerHost.tsx` (the glob already covered them — read, not assumed).
+  - **knip: totals fell.** Unused exports 558 → 552, unused exported types 585 → 580, unused files 3 (all pre-existing and unrelated). Eleven exports this phase introduced or widened were trimmed rather than accepted.
+  - **The room's browser suites needed one honest change, and it is the port's finding rather than a test being bent.** `expect(entries).toHaveCount(30)` is a claim virtualization makes impossible — the room draws about nineteen of them and always will. `RoomsPage.waitForHistory(total)` replaces it: the virtualizer sizes the scroller for every row it knows about, so "the history has landed" is a question about the scroller. Three specs use it. `RoomsPage.replyRow` steps up to the virtual row box before looking for its sibling, for the same reason.
+  - **Two real regressions the suites caught, both fixed here.** The timeline moved every row with its own `position: absolute` + `transform`, which made each row a containing block: a message's sticky action rail stopped riding the viewport edge (measured 66px low) and a row's reply line stopped being its DOM sibling. It now moves ONE box holding the drawn window, and the rows are in ordinary flow.
+
+- Task #4.8: The phase changelog fragment — worker: p4-builder
+  - `changelog/unreleased/260818-121139-long-channels-scroll-smoothly.md`, covering all eight commits. Two bullets, both things a person sees: long channels scroll smoothly, and a message arriving while you read back gives you a button instead of taking the view.
+
+- Task #4.9: Phase acceptance — worker: p4-builder
+  - **A third real bug, found only in the browser.** On a phone, coming back from a thread landed the room at `scrollTop: 0` — 900px before, 0px after, the exact defect the room's retired hook existed to prevent. Cause: the forget-on-leave effect read the `isAtBottom` STATE with that state in its dependency list, so its cleanup ran on every flip holding the PREVIOUS value — scrolling away from the bottom forgot the position the reader had just moved to. Fixed by moving it into the hook as a mount-only cleanup reading the ref, and pinned by two new cases (the seeded defect run and red on three).
 
 ## Files Modified/Created
 

@@ -10,7 +10,7 @@
  * @module widgets/session/model/use-session-lane-state
  */
 import { useEffect, useRef, useState } from 'react';
-import type { PermissionMode } from '@dorkos/shared/types';
+import type { ConnectionState, PermissionMode } from '@dorkos/shared/types';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import {
   deriveLaneState,
@@ -55,6 +55,28 @@ export interface SessionLaneInput {
   systemStatus?: SystemStatusState | null;
   /** What this session is doing, from the fleet-wide reading. */
   activity: SessionActivity | null;
+  /**
+   * How this window's connection to the session's stream is doing.
+   *
+   * Rung 2. P2 left it hard-coded `false` and gave the decision to P4, because
+   * `ChatStatusSection` already reports the connection inside the composer card
+   * and two lines saying one thing is the duplication this programme removes.
+   * P4's answer: they are not the same sentence. The status line says what the
+   * CONNECTION is doing, as one chip among the model, the mode and the branch;
+   * the lane says the conversation has stopped hearing, in the one place a
+   * reader looks before pressing Enter. A room draws exactly that, from the same
+   * rung, and a session that stayed silent about it would be the odd one out.
+   */
+  connection: ConnectionState;
+  /**
+   * How many messages are waiting on the server's queue.
+   *
+   * Rung 5, and P4 is where its source arrived: `ConversationTarget.queueDepth`.
+   * It outlives the composer's own queue panel, which is unmounted for the whole
+   * time a prompt has taken the box — the one moment a person most wants to know
+   * their queued messages are still there.
+   */
+  queueDepth: number;
 }
 
 /** Format a token count for display (e.g. 3200 -> "~3.2k tokens"). */
@@ -77,14 +99,13 @@ function formatTokens(count: number): string {
  * each has a reason rather than a gap:
  *
  * - `ask` — its input does not exist until P3 (DOR-1330); see `LaneAsk`.
- * - `stalled` — a session already reports its connection in `ChatStatusSection`,
- *   inside the composer card, which P2 deliberately does not fold. Wiring a
- *   second line for it here would be two places saying one thing, which is the
- *   duplication this programme exists to remove. P4 decides which of them owns
- *   it when the footer lands.
- * - `queued` — its source is `ConversationTarget.queueDepth`, and the composer
- *   host that supplies one is P4's (DOR-1331). Today the composer draws its own
- *   queue chips.
+ * **One of the ten rungs is deliberately dark on this surface.** `ask` draws
+ * nothing here: the prompt already has a live card in the composer's own slot,
+ * which is where a person answers it, and a receipt row in the transcript where
+ * it was asked. A third line six pixels above the card it duplicates is the
+ * noise this programme exists to remove — see `ChatPanel`, which passes
+ * `NO_ASKS` and says so at length. The room's lane, which has no inline card,
+ * draws it.
  *
  * @param input - The session's own state.
  * @returns What the lane should say right now.
@@ -137,9 +158,11 @@ export function useSessionLaneState(input: SessionLaneInput): LaneState {
   return deriveLaneState({
     capabilities: SESSION_CAPABILITIES,
     asks: input.asks ?? NO_ASKS,
-    stalled: false,
+    // A connection that has given up, or is trying to come back. `connecting`
+    // is the opening handshake and says nothing worth a line.
+    stalled: input.connection === 'disconnected' || input.connection === 'reconnecting',
     presence: NO_PRESENCE,
-    queueDepth: 0,
+    queueDepth: input.queueDepth,
     turn: {
       status: input.status,
       isWaitingForUser: input.isWaitingForUser,
