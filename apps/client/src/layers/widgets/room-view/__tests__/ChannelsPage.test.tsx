@@ -2,7 +2,7 @@
 /**
  * Room switching, asserted at the page — the only level that can see it.
  *
- * `RoomComposer` in isolation always looks correct: it is mounted once per
+ * `ChannelComposer` in isolation always looks correct: it is mounted once per
  * test, with one room. The bug these cover is that the PAGE re-renders the same
  * composer instance for a different room, so a draft (and an in-flight latch)
  * outlive the conversation they belong to. Nothing inside the component can
@@ -112,7 +112,7 @@ function roomWith(id: string, slug: string): RoomWithRoster {
     ambientMaxEntries: 30,
     createdAt: '2026-07-26T09:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
-    // The viewer themselves, on the roster — `RoomComposer` now reads
+    // The viewer themselves, on the roster — `ChannelComposer` now reads
     // membership to decide whether to offer a live composer at all
     // (DOR-1233), and every test below assumes one.
     members: [

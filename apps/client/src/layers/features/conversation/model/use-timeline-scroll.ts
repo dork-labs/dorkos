@@ -264,6 +264,7 @@ export function useTimelineScroll(input: TimelineScrollInput): TimelineScroll {
     if (conversationId !== null) forgetTimelinePosition(conversationId);
     atBottomRef.current = true;
     pinPendingRef.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a switch is an event: the reader asked for somewhere else, and this is the only place that hears it
     setRestoredPosition(false);
     setIsAtBottom(true);
     setHasNewRows(false);

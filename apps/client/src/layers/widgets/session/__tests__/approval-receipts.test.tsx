@@ -18,15 +18,18 @@ import { useSessionStreamStore } from '@/layers/entities/session';
 import {
   projectSessionMessages,
   projectInProgressTurn,
-} from '../model/stream/project-session-turn';
-import { collectApprovalReceipts, applyApprovalReceipts } from '../lib/carry-approval-receipts';
-import { AssistantMessageContent } from '../ui/message/AssistantMessageContent';
-import { MessageProvider } from '../ui/message/MessageContext';
-import { InteractiveInputPanel } from '../ui/input/InteractiveInputPanel';
+} from '@/layers/features/chat/model/stream/project-session-turn';
+import {
+  collectApprovalReceipts,
+  applyApprovalReceipts,
+} from '@/layers/features/chat/lib/carry-approval-receipts';
+import { AssistantMessageContent } from '@/layers/features/chat/ui/message/AssistantMessageContent';
+import { MessageProvider } from '@/layers/features/chat/ui/message/MessageContext';
+import { SessionAsks } from '../ui/SessionAsks';
 
 // Streamdown and the argument formatter are irrelevant to receipts and pull in
 // heavy trees; everything else in the path is the real component.
-vi.mock('../ui/message/StreamingText', () => ({
+vi.mock('@/layers/features/chat/ui/message/StreamingText', () => ({
   StreamingText: ({ content }: { content: string }) => <span>{content}</span>,
 }));
 vi.mock('@/layers/shared/lib/tool-arguments-formatter', () => ({
@@ -135,7 +138,7 @@ function Lifecycle({ initialEvents }: { initialEvents: SessionEvent[] }) {
         {assistant && <AssistantMessageContent message={assistant} />}
       </MessageProvider>
       {active && (
-        <InteractiveInputPanel
+        <SessionAsks
           sessionId="session-1"
           activeInteraction={active}
           pendingApprovals={pending}

@@ -4,7 +4,7 @@
  *
  * Chat is the REFERENCE chrome for the composer family, so its markup is the
  * one thing the migration is not allowed to touch. The baselines in
- * `__baselines__/` were captured from the UNMIGRATED `ChatInputContainer` and
+ * `__baselines__/` were captured from the UNMIGRATED `SessionComposer` and
  * committed before the move (`247ac851a`); this file now renders the MIGRATED
  * container — composing `Composer.Root` and `Composer.OverlayLane` — against
  * them, and every one of the five states diffs EMPTY (spec `composer-parity`,
@@ -83,7 +83,7 @@ function beyondTheComposerCardAttr(diff: readonly DomDiffEntry[]): string {
   );
 }
 
-vi.mock('../ui/status/ChatStatusSection', () => ({
+vi.mock('@/layers/features/chat/ui/status/ChatStatusSection', () => ({
   ChatStatusSection: () => <div data-testid="chat-status" />,
 }));
 
@@ -100,7 +100,9 @@ vi.mock('@/layers/features/ask', () => ({
 vi.mock('@/layers/features/commands', () => ({ CommandPalette: () => null }));
 vi.mock('@/layers/features/files', () => ({ FilePalette: () => null }));
 
-vi.mock('../model/use-background-tasks', () => ({ useBackgroundTasks: () => [] }));
+vi.mock('@/layers/features/chat/model/use-background-tasks', () => ({
+  useBackgroundTasks: () => [],
+}));
 
 vi.mock('@/layers/entities/agent', () => ({
   useCurrentAgent: () => ({ data: null }),
@@ -132,11 +134,11 @@ vi.mock('@/layers/entities/runtime', () => ({
   useCapabilitiesForRuntime: () => ({ supportsSteer: true, supportsContextStaging: true }),
 }));
 
-import { ChatInputContainer } from '../ui/input/ChatInputContainer';
+import { SessionComposerBench } from '@/test-helpers/session-composer';
 import { useSessionStreamStore } from '@/layers/entities/session';
 import { configKeys } from '@/layers/entities/config';
 import { TransportProvider } from '@/layers/shared/model';
-import type { ToolCallState } from '../model/chat-types';
+import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
 import type { PendingFile } from '@/layers/features/composer';
 
 const SESSION_ID = 'parity-session';
@@ -250,7 +252,7 @@ function mount(props: Props, richText = false) {
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <ChatInputContainer {...props} />
+        <SessionComposerBench {...props} />
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -302,13 +304,13 @@ afterEach(() => {
   useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
 });
 
-describe('ChatInputContainer — serialized-DOM parity against the pre-migration baselines', () => {
+describe('SessionComposer — serialized-DOM parity against the pre-migration baselines', () => {
   it('1. idle — nothing pending, nothing queued, nothing streaming', () => {
     const { container } = mount(baseProps());
 
     const diff = matchDomBaseline(
       import.meta.url,
-      'chat-input-container.idle',
+      'session-composer.idle',
       serializeDom(container)
     );
     expect(beyondTheComposerCardAttr(diff)).toBe('');
@@ -331,7 +333,7 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
 
     const diff = matchDomBaseline(
       import.meta.url,
-      'chat-input-container.streaming-queue',
+      'session-composer.streaming-queue',
       serializeDom(container)
     );
     expect(beyondTheComposerCardAttr(diff)).toBe('');
@@ -358,7 +360,7 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
 
     const diff = matchDomBaseline(
       import.meta.url,
-      'chat-input-container.failed-attachment',
+      'session-composer.failed-attachment',
       serializeDom(container)
     );
     expect(beyondTheComposerCardAttr(diff)).toBe('');
@@ -374,13 +376,13 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
 
     const diff = matchDomBaseline(
       import.meta.url,
-      'chat-input-container.clear-armed',
+      'session-composer.clear-armed',
       serializeDom(container)
     );
     expect(beyondTheComposerCardAttr(diff)).toBe('');
   });
 
-  it('5. an active interaction — the InteractiveInputPanel branch', () => {
+  it('5. an active interaction — the SessionAsks branch', () => {
     const props = baseProps();
     const active: ToolCallState = {
       toolCallId: 'tc-parity',
@@ -401,7 +403,7 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
 
     const diff = matchDomBaseline(
       import.meta.url,
-      'chat-input-container.interactive',
+      'session-composer.interactive',
       serializeDom(container)
     );
     expect(beyondTheComposerCardAttr(diff)).toBe('');
@@ -509,7 +511,7 @@ beforeAll(async () => {
  * difference inside a large serialized diff. This file would be the worse
  * instrument for it, so it defers rather than duplicating.
  */
-describe('ChatInputContainer — the flag-on reference tree', () => {
+describe('SessionComposer — the flag-on reference tree', () => {
   it('1. idle, formatting on', async () => {
     const { container } = await mountRich(baseProps());
 
@@ -529,7 +531,7 @@ describe('ChatInputContainer — the flag-on reference tree', () => {
 
     const diff = matchDomBaseline(
       import.meta.url,
-      'chat-input-container.rich-text.idle',
+      'session-composer.rich-text.idle',
       serializeDom(container)
     );
     expect(formatDomDiff(diff)).toBe('');
@@ -550,7 +552,7 @@ describe('ChatInputContainer — the flag-on reference tree', () => {
 
     const diff = matchDomBaseline(
       import.meta.url,
-      'chat-input-container.rich-text.streaming-queue',
+      'session-composer.rich-text.streaming-queue',
       serializeDom(container)
     );
     // The queue rows are exempt here for the same reviewed reason as in the
@@ -583,7 +585,7 @@ describe('ChatInputContainer — the flag-on reference tree', () => {
 
     const diff = matchDomBaseline(
       import.meta.url,
-      'chat-input-container.rich-text.failed-attachment',
+      'session-composer.rich-text.failed-attachment',
       serializeDom(container)
     );
     expect(formatDomDiff(diff)).toBe('');
@@ -601,18 +603,18 @@ describe('ChatInputContainer — the flag-on reference tree', () => {
 
     const diff = matchDomBaseline(
       import.meta.url,
-      'chat-input-container.rich-text.clear-armed',
+      'session-composer.rich-text.clear-armed',
       serializeDom(container)
     );
     expect(formatDomDiff(diff)).toBe('');
   });
 
   // There is deliberately no flag-on twin of the flag-off "interactive" case:
-  // that branch renders the InteractiveInputPanel and no composer at all, so a
+  // that branch renders the SessionAsks and no composer at all, so a
   // rich-text baseline of it would photograph the same tree under a second name.
 });
 
-describe('ChatInputContainer — the keyboard ladder, against the live component', () => {
+describe('SessionComposer — the keyboard ladder, against the live component', () => {
   // Deliberately NOT read off a snapshot: a serialized tree cannot tell you
   // what Enter does. These drive the mounted composer.
 

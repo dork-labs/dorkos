@@ -181,7 +181,7 @@ import { useChatSession } from '@/layers/features/chat';
 // the one caller with a reason to reach them.
 import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import { useSidebarState } from '@/layers/features/dashboard-sidebar/model/use-sidebar-state';
-import { RoomComposer } from '@/layers/widgets/room-view/ui/RoomComposer';
+import { ChannelComposerBench } from '@/test-helpers/channel-composer';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { usePendingPostStore, useRoomDraftStore } from '@/layers/entities/room';
 import {
@@ -294,7 +294,7 @@ describe('a submitted prompt reaches Today', () => {
 
 describe('a posted message reaches Today', () => {
   // A desktop pointer, so Enter sends the message rather than inserting a
-  // newline — the same setup `RoomComposer.test.tsx` runs on.
+  // newline — the same setup `ChannelComposer.test.tsx` runs on.
   beforeAll(() => {
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -349,7 +349,7 @@ describe('a posted message reaches Today', () => {
       ],
       viewerAuthorId: 'author-you',
     };
-    render(<RoomComposer room={withRoster as unknown as RoomWithRoster} />, {
+    render(<ChannelComposerBench room={withRoster as unknown as RoomWithRoster} />, {
       wrapper: wrapper(transport),
     });
     const field = screen.getByRole('combobox');

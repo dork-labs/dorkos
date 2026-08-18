@@ -2,7 +2,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, act, fireEvent, waitFor } from '@testing-library/react';
-// Mock child components to isolate ChatInputContainer behavior
+// Mock child components to isolate SessionComposer behavior
 // The composer barrel is mocked as one object: `Composer.Input` and
 // `Composer.Attachments` are stand-ins so this file tests the container's
 // orchestration, while `Composer.ClearArmedHint` stays REAL — the armed-clear
@@ -29,11 +29,11 @@ vi.mock('@/layers/features/composer', async (importActual) => {
   };
 });
 
-vi.mock('../ui/status/ChatStatusSection', () => ({
+vi.mock('@/layers/features/chat/ui/status/ChatStatusSection', () => ({
   ChatStatusSection: () => <div data-testid="chat-status">ChatStatusSection</div>,
 }));
 
-vi.mock('../ui/input/QueuePanel', () => ({
+vi.mock('@/layers/features/chat/ui/input/QueuePanel', () => ({
   QueuePanel: vi.fn(() => <div data-testid="queue-panel">QueuePanel</div>),
 }));
 
@@ -68,7 +68,7 @@ vi.mock('react-dropzone', () => ({
 // that can write the composer, so stubbing it made the cross-session-leak guard
 // below unfalsifiable — it asserted that a function nothing could call was never
 // called. The real hook runs against the real session stores (below).
-vi.mock('../model/use-background-tasks', () => ({
+vi.mock('@/layers/features/chat/model/use-background-tasks', () => ({
   useBackgroundTasks: () => [],
 }));
 
@@ -128,11 +128,11 @@ vi.mock('@/layers/entities/runtime', () => ({
   useCapabilitiesForRuntime: () => mockCapabilities.value,
 }));
 
-import { ChatInputContainer } from '../ui/input/ChatInputContainer';
+import { SessionComposerBench } from '@/test-helpers/session-composer';
 import { Composer } from '@/layers/features/composer';
-import { QueuePanel } from '../ui/input/QueuePanel';
+import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
 import { useSessionStreamStore, useSessionChatStore } from '@/layers/entities/session';
-import type { ToolCallState } from '../model/chat-types';
+import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
 import { createRef } from 'react';
 
 /** Props the (mocked) `Composer.Input` was last rendered with. */
@@ -246,13 +246,13 @@ afterEach(() => {
   useSessionChatStore.setState({ sessions: {} });
 });
 
-describe('ChatInputContainer mode switching', () => {
+describe('SessionComposer mode switching', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('renders normal mode when no activeInteraction', () => {
-    render(<ChatInputContainer {...baseProps} />);
+    render(<SessionComposerBench {...baseProps} />);
     expect(screen.getByTestId('chat-input')).toBeInTheDocument();
     expect(screen.getByTestId('chat-status')).toBeInTheDocument();
     expect(screen.queryByTestId('tool-approval')).not.toBeInTheDocument();
@@ -264,7 +264,7 @@ describe('ChatInputContainer mode switching', () => {
     ['on', true],
   ])('passes richText through from the preference when it is %s', (_label, stored) => {
     mockComposerRichText.mockReturnValue(stored);
-    render(<ChatInputContainer {...baseProps} />);
+    render(<SessionComposerBench {...baseProps} />);
     expect(lastChatInputProps().richText).toBe(stored);
   });
 
@@ -277,7 +277,7 @@ describe('ChatInputContainer mode switching', () => {
       interactiveType: 'approval',
     };
     render(
-      <ChatInputContainer
+      <SessionComposerBench
         {...baseProps}
         interaction={{ ...baseProps.interaction, active: toolCall }}
       />
@@ -304,7 +304,7 @@ describe('ChatInputContainer mode switching', () => {
       ],
     };
     render(
-      <ChatInputContainer
+      <SessionComposerBench
         {...baseProps}
         interaction={{ ...baseProps.interaction, active: toolCall }}
       />
@@ -323,7 +323,7 @@ describe('ChatInputContainer mode switching', () => {
       interactiveType: 'approval',
     };
     render(
-      <ChatInputContainer
+      <SessionComposerBench
         {...baseProps}
         interaction={{ ...baseProps.interaction, active: toolCall }}
       />
@@ -355,10 +355,10 @@ describe('ChatInputContainer mode switching', () => {
 
     // Session A: draft typed, then an interaction card swaps the composer out.
     const { rerender } = render(
-      <ChatInputContainer {...baseProps} input="session-A draft" setInput={setInput} />
+      <SessionComposerBench {...baseProps} input="session-A draft" setInput={setInput} />
     );
     rerender(
-      <ChatInputContainer
+      <SessionComposerBench
         {...baseProps}
         input="session-A draft"
         setInput={setInput}
@@ -368,20 +368,20 @@ describe('ChatInputContainer mode switching', () => {
     // Operator switches to session B (no interaction, empty composer) while
     // A's interaction is still pending.
     rerender(
-      <ChatInputContainer {...baseProps} sessionId="other-session" input="" setInput={setInput} />
+      <SessionComposerBench {...baseProps} sessionId="other-session" input="" setInput={setInput} />
     );
 
     expect(setInput).not.toHaveBeenCalled();
   });
 });
 
-describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)', () => {
+describe('SessionComposer — a failed attachment blocks the send (DOR-480)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('leaves the send enabled while every attachment is healthy', () => {
-    render(<ChatInputContainer {...baseProps} input="have a look at this" />);
+    render(<SessionComposerBench {...baseProps} input="have a look at this" />);
     expect(lastChatInputProps().canSubmit).toBe(true);
   });
 
@@ -390,7 +390,7 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
     // disabled, Enter does not submit, and the textarea stays typeable — so the
     // person keeps their words instead of watching them go out attachment-less.
     render(
-      <ChatInputContainer
+      <SessionComposerBench
         {...baseProps}
         input="have a look at this"
         fileUpload={{ ...baseProps.fileUpload, hasFailedUpload: true }}
@@ -404,7 +404,7 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
     // aria-label — so in the single mode whose behavior differs (Enter saves)
     // the composer announced nothing at all.
     seedQueue('first queued', 'second queued');
-    render(<ChatInputContainer {...baseProps} />);
+    render(<SessionComposerBench {...baseProps} />);
 
     expect(lastChatInputProps().placeholder).toBe('Send a message...');
 
@@ -424,7 +424,7 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
     // out of a queue the flush pump cannot drain. The lane floats above the
     // whole card, so nothing it contains can cover a control.
     seedQueue('queued while armed');
-    const { container } = render(<ChatInputContainer {...baseProps} />);
+    const { container } = render(<SessionComposerBench {...baseProps} />);
 
     expect(screen.queryByTestId('clear-armed-hint')).not.toBeInTheDocument();
 
@@ -445,12 +445,12 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
   it('keeps the queue panel out of the tree entirely when nothing is queued', () => {
     // The presence guard lives at the call site so AnimatePresence can watch the
     // panel leave; a panel that merely renders null never animates out.
-    render(<ChatInputContainer {...baseProps} />);
+    render(<SessionComposerBench {...baseProps} />);
     expect(vi.mocked(QueuePanel)).not.toHaveBeenCalled();
   });
 });
 
-describe('ChatInputContainer — sending takes the palette down with it (DOR-479)', () => {
+describe('SessionComposer — sending takes the palette down with it (DOR-479)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -464,7 +464,7 @@ describe('ChatInputContainer — sending takes the palette down with it (DOR-479
     const dismissPalettes = vi.fn();
     const handleSubmit = vi.fn();
     render(
-      <ChatInputContainer
+      <SessionComposerBench
         {...baseProps}
         autocomplete={{ ...(baseProps.autocomplete as object), dismissPalettes } as never}
         handleSubmit={handleSubmit}
@@ -481,7 +481,7 @@ describe('ChatInputContainer — sending takes the palette down with it (DOR-479
   it('dismisses the palettes when the composer queues mid-stream', () => {
     const dismissPalettes = vi.fn();
     render(
-      <ChatInputContainer
+      <SessionComposerBench
         {...baseProps}
         autocomplete={{ ...(baseProps.autocomplete as object), dismissPalettes } as never}
         status="streaming"
@@ -495,14 +495,14 @@ describe('ChatInputContainer — sending takes the palette down with it (DOR-479
   });
 });
 
-describe('ChatInputContainer — the composer only gets the verbs the runtime honours', () => {
+describe('SessionComposer — the composer only gets the verbs the runtime honours', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCapabilities.value = { supportsSteer: true, supportsContextStaging: true };
   });
 
   it('passes Steer and Add context when the runtime declares both (claude-code)', () => {
-    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    render(<SessionComposerBench {...baseProps} status="streaming" input="Also check the tests" />);
     const props = lastChatInputProps();
     expect(props.onSteer).toBeInstanceOf(Function);
     expect(props.onStage).toBeInstanceOf(Function);
@@ -510,7 +510,7 @@ describe('ChatInputContainer — the composer only gets the verbs the runtime ho
 
   it('withholds BOTH on a queue-only runtime (codex / opencode)', () => {
     mockCapabilities.value = { supportsSteer: false, supportsContextStaging: false };
-    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    render(<SessionComposerBench {...baseProps} status="streaming" input="Also check the tests" />);
     const props = lastChatInputProps();
     // Absent, not a no-op function the composer would then have to hide itself.
     expect(props.onSteer).toBeUndefined();
@@ -519,7 +519,7 @@ describe('ChatInputContainer — the composer only gets the verbs the runtime ho
 
   it('withholds each verb independently', () => {
     mockCapabilities.value = { supportsSteer: true, supportsContextStaging: false };
-    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    render(<SessionComposerBench {...baseProps} status="streaming" input="Also check the tests" />);
     const props = lastChatInputProps();
     expect(props.onSteer).toBeInstanceOf(Function);
     expect(props.onStage).toBeUndefined();
@@ -527,7 +527,7 @@ describe('ChatInputContainer — the composer only gets the verbs the runtime ho
 
   it('withholds both while the capabilities map is still loading', () => {
     mockCapabilities.value = undefined;
-    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    render(<SessionComposerBench {...baseProps} status="streaming" input="Also check the tests" />);
     const props = lastChatInputProps();
     expect(props.onSteer).toBeUndefined();
     expect(props.onStage).toBeUndefined();
@@ -538,7 +538,7 @@ describe('ChatInputContainer — the composer only gets the verbs the runtime ho
     // fresh agent process per message still has nothing to cut into. Offering
     // Steer here promised a cut-in and delivered an ordinary follow-up turn.
     seedSteerable(false);
-    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    render(<SessionComposerBench {...baseProps} status="streaming" input="Also check the tests" />);
     const props = lastChatInputProps();
     expect(props.onSteer).toBeUndefined();
     // Add context is untouched by this — it needs no open turn to join.
@@ -547,14 +547,14 @@ describe('ChatInputContainer — the composer only gets the verbs the runtime ho
 
   it('offers Steer when the session says it can cut in', () => {
     seedSteerable(true);
-    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    render(<SessionComposerBench {...baseProps} status="streaming" input="Also check the tests" />);
     expect(lastChatInputProps().onSteer).toBeInstanceOf(Function);
   });
 
   it('falls back to the runtime flag when the session gives no answer', () => {
     // A runtime whose steering is uniform across sessions never sets the field.
     // Reading its silence as "no" would hide a capability that works.
-    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    render(<SessionComposerBench {...baseProps} status="streaming" input="Also check the tests" />);
     expect(lastChatInputProps().onSteer).toBeInstanceOf(Function);
   });
 
@@ -562,7 +562,7 @@ describe('ChatInputContainer — the composer only gets the verbs the runtime ho
     const steerContent = vi.fn().mockResolvedValue(true);
     const setInput = vi.fn();
     render(
-      <ChatInputContainer
+      <SessionComposerBench
         {...baseProps}
         steerContent={steerContent}
         setInput={setInput}
@@ -577,7 +577,7 @@ describe('ChatInputContainer — the composer only gets the verbs the runtime ho
   });
 });
 
-describe('ChatInputContainer — Stop clears the queue (task 4.7)', () => {
+describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -585,7 +585,7 @@ describe('ChatInputContainer — Stop clears the queue (task 4.7)', () => {
   it('asks first and names the count when messages are queued, and does not stop yet', async () => {
     seedQueue('one', 'two', 'three');
     const stop = vi.fn().mockResolvedValue([]);
-    render(<ChatInputContainer {...baseProps} stop={stop} status="streaming" />);
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
       lastChatInputProps().onStop!();
@@ -598,7 +598,7 @@ describe('ChatInputContainer — Stop clears the queue (task 4.7)', () => {
 
   it('stops immediately with no dialog when nothing is queued', async () => {
     const stop = vi.fn().mockResolvedValue([]);
-    render(<ChatInputContainer {...baseProps} stop={stop} status="streaming" />);
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
       lastChatInputProps().onStop!();
@@ -616,7 +616,7 @@ describe('ChatInputContainer — Stop clears the queue (task 4.7)', () => {
     ]);
     const setInput = vi.fn();
     render(
-      <ChatInputContainer {...baseProps} stop={stop} setInput={setInput} status="streaming" />
+      <SessionComposerBench {...baseProps} stop={stop} setInput={setInput} status="streaming" />
     );
 
     await act(async () => {
@@ -652,7 +652,7 @@ describe('ChatInputContainer — Stop clears the queue (task 4.7)', () => {
     });
     const setInput = vi.fn();
     render(
-      <ChatInputContainer {...baseProps} stop={stop} setInput={setInput} status="streaming" />
+      <SessionComposerBench {...baseProps} stop={stop} setInput={setInput} status="streaming" />
     );
 
     await act(async () => {

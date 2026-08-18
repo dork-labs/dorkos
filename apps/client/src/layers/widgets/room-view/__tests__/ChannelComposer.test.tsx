@@ -16,7 +16,7 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { useRoom, usePendingPostStore, useRoomDraftStore } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
-import { RoomComposer } from '../ui/RoomComposer';
+import { ChannelComposerBench } from '@/test-helpers/channel-composer';
 
 const { toastError, toastSuccess } = vi.hoisted(() => ({
   toastError: vi.fn(),
@@ -113,7 +113,7 @@ function mountComposer(
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
-  return render(<RoomComposer room={room} {...props} />, { wrapper });
+  return render(<ChannelComposerBench room={room} {...props} />, { wrapper });
 }
 
 function renderComposer(
@@ -149,7 +149,7 @@ function type(field: HTMLTextAreaElement, text: string) {
   fireEvent.change(field, { target: { value: text } });
 }
 
-describe('RoomComposer — the post records the interaction (DOR-1156)', () => {
+describe('ChannelComposer — the post records the interaction (DOR-1156)', () => {
   it('records the room on Enter, and nothing before it', async () => {
     const transport = createMockTransport();
     const field = renderComposer(transport);
@@ -179,7 +179,7 @@ describe('RoomComposer — the post records the interaction (DOR-1156)', () => {
   });
 });
 
-describe('RoomComposer', () => {
+describe('ChannelComposer', () => {
   it('posts the typed message on Enter', async () => {
     const transport = createMockTransport();
     const field = renderComposer(transport);
@@ -393,7 +393,7 @@ describe('RoomComposer', () => {
   });
 });
 
-describe('RoomComposer — a room you left (DOR-1233)', () => {
+describe('ChannelComposer — a room you left (DOR-1233)', () => {
   // A room the operator sees but is not a member of is real and reachable —
   // they left it — and posting into one was a DEFINITE server refusal
   // (`MEMBER_NOT_FOUND`) with no gate on it client-side at all, before this.
@@ -455,7 +455,7 @@ describe('RoomComposer — a room you left (DOR-1233)', () => {
     // DIAGNOSTIC — routed through a real `useRoom()` rather than a static
     // `room` prop, which is what `RoomSurface` actually does and what every
     // other test in this file (including the ones above) does NOT: they hand
-    // `RoomComposer` a fixed prop, so none of them can tell whether
+    // `ChannelComposer` a fixed prop, so none of them can tell whether
     // invalidating `roomKeys.detail` actually reaches this component through
     // the query cache. This is the one that can.
     const initial = leftRoom();
@@ -501,7 +501,7 @@ describe('RoomComposer — a room you left (DOR-1233)', () => {
     function Harness() {
       const query = useRoom('room-1');
       if (!query.data) return null;
-      return <RoomComposer room={query.data} />;
+      return <ChannelComposerBench room={query.data} />;
     }
     render(<Harness />, { wrapper });
 
@@ -517,7 +517,7 @@ describe('RoomComposer — a room you left (DOR-1233)', () => {
   });
 });
 
-describe('RoomComposer — clearing a draft you can see coming', () => {
+describe('ChannelComposer — clearing a draft you can see coming', () => {
   it('shows the armed readout on the first Escape over a draft', async () => {
     // The double-Escape wipe has always worked here; what was missing is the
     // half that makes it a shortcut rather than a trap. A reader with a draft
@@ -556,10 +556,10 @@ describe('RoomComposer — clearing a draft you can see coming', () => {
   });
 });
 
-describe('RoomComposer — the card it now sits in', () => {
+describe('ChannelComposer — the card it now sits in', () => {
   // The one deliberate visual change in the composer-parity spec, stated
   // positively rather than as a deleted assertion. The serialized before/after
-  // proof lives in `RoomComposer-chrome-delta.test.tsx`; this block is the
+  // proof lives in `ChannelComposer-chrome-delta.test.tsx`; this block is the
   // same delta in words, beside the behavior it must not disturb.
 
   it('is the floating card chat sits in, not a strip ruled off by a border', () => {
@@ -624,7 +624,7 @@ describe('RoomComposer — the card it now sits in', () => {
   });
 });
 
-describe('RoomComposer — attaching a file', () => {
+describe('ChannelComposer — attaching a file', () => {
   /** One stored attachment, as the room's upload route answers it. */
   function attachment(id: string, name: string): RoomAttachment {
     return {
@@ -812,7 +812,7 @@ describe('RoomComposer — attaching a file', () => {
   });
 });
 
-describe('RoomComposer — "Jump back in" is offered on one surface and read on one', () => {
+describe('ChannelComposer — "Jump back in" is offered on one surface and read on one', () => {
   /**
    * Every read the recents panel is built out of.
    *

@@ -1,22 +1,40 @@
+/**
+ * The session's wiring for `Conversation.Composer`.
+ *
+ * What is left of the retired `ChatInputContainer` once the card itself is
+ * shared: which palettes this surface opens, what Enter means to it while a
+ * turn is running, what Stop costs, and what the status line under the box
+ * says. The card's SHAPE — the overlay lane, the chip bar, the queue chrome,
+ * the field, the honest disabled state — is `Conversation.Composer`, and a
+ * channel's composer is the same code.
+ *
+ * @module widgets/session/ui/SessionComposer
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import type { RefObject } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
-import { Composer, type ComposerInputHandle } from '@/layers/features/composer';
-import { InteractiveInputPanel } from './InteractiveInputPanel';
-import { StopConfirmDialog } from './StopConfirmDialog';
-import type {
-  FileUploadProps,
-  InteractionProps,
-  SyncPresenceProps,
-} from './chat-input-container-types';
-import { ChatStatusSection } from '../status/ChatStatusSection';
-import { BackgroundTaskBar } from '../tasks/BackgroundTaskBar';
-import { useBackgroundTasks } from '../../model/use-background-tasks';
-import { useChatQueue } from '../../model/use-chat-queue';
-import type { NativeCommandResult } from '../../model/native-commands';
-import { QueuePanel } from './QueuePanel';
+import type { ComposerInputHandle } from '@/layers/features/composer';
+import { Conversation, useConversation } from '@/layers/features/conversation';
+import { SessionAsks } from './SessionAsks';
+import {
+  BackgroundTaskBar,
+  ChatStatusSection,
+  QueuePanel,
+  StopConfirmDialog,
+  AnimatedPlaceholder,
+  placeholderHints,
+  selectRenderedMessages,
+  sessionContextKey,
+  useBackgroundTasks,
+  useChatQueue,
+  useRotatingPlaceholder,
+  type NativeCommandResult,
+  type InteractionProps,
+  type SyncPresenceProps,
+  type useInputAutocomplete,
+} from '@/layers/features/chat';
 import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
@@ -33,22 +51,13 @@ import {
   useSessionAwaitingDecision,
   useSessionChatState,
   useSessionChatStore,
-  useSessionQueue,
   useSessionRuntime,
   useSessionSteerable,
-  useSessionStreamLifecycle,
   useSessionStreamState,
 } from '@/layers/entities/session';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
-import { selectRenderedMessages } from '../../model/stream/derive-rendered-state';
-import { useRotatingPlaceholder } from '../../model/use-rotating-placeholder';
-import { AnimatedPlaceholder } from './AnimatedPlaceholder';
-import placeholderHints from '../../config/placeholder-hints.json';
-import type { useInputAutocomplete } from '../../model/use-input-autocomplete';
-import { sessionContextKey } from '../../lib/session-context-key';
-import { selectWaitingQueue } from '../../lib/queue-chips';
 
-interface ChatInputContainerProps {
+interface SessionComposerProps {
   chatInputRef: RefObject<ComposerInputHandle | null>;
   input: string;
   autocomplete: ReturnType<typeof useInputAutocomplete>;
@@ -94,7 +103,14 @@ interface ChatInputContainerProps {
   setInput: (value: string) => void;
   sessionId: string;
   sessionStatus: SessionStatusEvent | null;
-  fileUpload: FileUploadProps;
+  /**
+   * The server-held queue, narrowed to the messages genuinely WAITING.
+   *
+   * Passed in rather than read here because the host already reads it: the same
+   * number drives the lane's "1 queued" rung through the target, and one fact
+   * has one source.
+   */
+  waiting: QueuedMessage[];
   interaction: InteractionProps;
   sync: SyncPresenceProps;
 }
@@ -122,8 +138,13 @@ function getPlaceholder(
   return defaultText;
 }
 
-/** Container for chat input, autocomplete palettes, drag-and-drop, and status chips. */
-export function ChatInputContainer({
+/**
+ * Draw the session's composer.
+ *
+ * @param props - The draft, the send funnel, and everything a session's field
+ *   decides that a channel's does not.
+ */
+export function SessionComposer({
   chatInputRef,
   input,
   autocomplete,
@@ -138,10 +159,10 @@ export function ChatInputContainer({
   setInput,
   sessionId,
   sessionStatus,
-  fileUpload,
+  waiting,
   interaction,
   sync,
-}: ChatInputContainerProps) {
+}: SessionComposerProps) {
   const {
     active: activeInteraction,
     pendingApprovals,
@@ -149,15 +170,6 @@ export function ChatInputContainer({
     onToolRef,
     onToolDecided,
   } = interaction;
-  const {
-    pendingFiles,
-    onFilesSelected,
-    onFileRemove,
-    onFileRetry,
-    onUploadCancel,
-    isUploading,
-    hasFailedUpload,
-  } = fileUpload;
   const isStreaming = status === 'streaming';
   const isTextStreaming = useAppStore((s) => s.isTextStreaming);
   const [selectedCwd] = useDirectoryState();
@@ -165,17 +177,11 @@ export function ChatInputContainer({
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
   const agentVisual = useAgentVisual(currentAgent ?? null, selectedCwd ?? '');
   const agentName = currentAgent ? getAgentDisplayName(currentAgent) : undefined;
-  const defaultPlaceholder = agentName ? `Message ${agentName}...` : 'Send a message...';
-
-  // The queue lives on the server; this window reads it out of the session
-  // projection and narrows it to the messages that are genuinely waiting.
-  const serverQueue = useSessionQueue(sessionId);
-  const lifecycle = useSessionStreamLifecycle(sessionId);
+  // The box's own words, and how many are held behind it — both read off the
+  // conversation's target, which is the one place either fact lives.
+  const { target } = useConversation();
+  const defaultPlaceholder = target?.placeholder ?? 'Send a message...';
   const awaitingDecision = useSessionAwaitingDecision(sessionId);
-  const waiting = useMemo(
-    () => selectWaitingQueue(serverQueue, lifecycle),
-    [serverQueue, lifecycle]
-  );
 
   // What THIS session's runtime can do with a message sent mid-task. Steer and
   // Add context appear only when the runtime declares them (claude-code does,
@@ -292,12 +298,6 @@ export function ChatInputContainer({
     enabled: isIdle && input === '',
   });
 
-  // The composer owns WHEN the double-Escape is armed (it owns the keyboard);
-  // this component owns WHERE that reads out, because the lane it belongs in
-  // floats above the queue panel and the attachment chips, which are rendered
-  // here.
-  const [clearArmed, setClearArmed] = useState(false);
-
   // Whether the message box formats as you type (`ui.composer.richText`,
   // DOR-948). `false` until config loads, so the box is briefly plain rather
   // than briefly the wrong field.
@@ -330,207 +330,174 @@ export function ChatInputContainer({
   }, [autocomplete, chatQueue]);
 
   return (
-    // `chat-input-container` is not decoration: it is the hook for the
-    // safe-area rule in `index.css`, and it rides on the card element itself.
-    // Root never bakes it in — chat passes it, because chat is the only surface
-    // that sits against the bottom of a notched screen.
-    <Composer.Root
+    <Conversation.Composer
+      // `chat-input-container` is not decoration: it is the hook for the
+      // safe-area rule in `index.css`, and it rides on the card element itself.
+      // The composer host never bakes it in — a session passes it, because a
+      // session is the only surface that sits against the bottom of a notched
+      // screen.
       className="chat-input-container"
-      onFilesDropped={onFilesSelected}
       // A file dragged out of the Files panel is already on this machine, so it
       // becomes a reference in the message rather than an upload.
       onPathDropped={(path) => insertIntoComposer(composerFileReference(path))}
-    >
-      {/* Chat-only, so it arrives as a child rather than living in Root. */}
-      <AnimatePresence>
-        {isStreaming && (
-          <ScanLine color={agentVisual.color} isTextStreaming={isTextStreaming} edge="top" />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence mode="wait">
-        {activeInteraction ? (
-          <motion.div
-            key="interactive"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-          >
-            <InteractiveInputPanel
-              sessionId={sessionId}
-              activeInteraction={activeInteraction}
-              pendingApprovals={pendingApprovals}
-              focusedOptionIndex={focusedOptionIndex}
-              onToolRef={onToolRef}
-              onToolDecided={onToolDecided}
-              // The queue panel is unmounted for the whole time a card is up
-              // (this branch replaces the entire composer), so the only mark
-              // that queued messages still exist would vanish at exactly the
-              // moment it reassures. The messages survive — say so.
-              queueDepth={chatQueue.queue.length}
-            />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="normal"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-          >
-            {/* Stacking is child order: palettes first, the armed-clear hint
-                last, so the hint never lands on the queue rows' controls. */}
-            <Composer.OverlayLane>
-              <AnimatePresence>
-                {autocomplete.commands.show && (
-                  <CommandPalette
-                    filteredCommands={autocomplete.commands.filtered}
-                    selectedIndex={autocomplete.commands.selectedIndex}
-                    onSelect={autocomplete.handleCommandSelect}
-                  />
-                )}
-                {autocomplete.files.show && (
-                  <FilePalette
-                    filteredFiles={autocomplete.files.filtered}
-                    selectedIndex={autocomplete.files.selectedIndex}
-                    onSelect={autocomplete.handleFileSelect}
-                  />
-                )}
-              </AnimatePresence>
-              {clearArmed && <Composer.ClearArmedHint />}
-            </Composer.OverlayLane>
-
-            {pendingFiles.length > 0 && (
-              <Composer.Attachments
-                files={pendingFiles}
-                onRemove={onFileRemove}
-                onRetry={onFileRetry}
-                onCancel={onUploadCancel}
+      inputRef={chatInputRef}
+      value={input}
+      onChange={autocomplete.handleInputChange}
+      onSubmit={submitAndDismiss}
+      head={
+        /* Chat-only, so it arrives as a slot rather than living in the card. */
+        <AnimatePresence>
+          {isStreaming && (
+            <ScanLine color={agentVisual.color} isTextStreaming={isTextStreaming} edge="top" />
+          )}
+        </AnimatePresence>
+      }
+      asks={
+        /* `null` rather than omitted while nothing is waiting: a session CAN be
+           taken over, and saying so is what lets the card animate the prompt out
+           again. A channel omits the slot entirely. */
+        activeInteraction ? (
+          <SessionAsks
+            sessionId={sessionId}
+            activeInteraction={activeInteraction}
+            pendingApprovals={pendingApprovals}
+            focusedOptionIndex={focusedOptionIndex}
+            onToolRef={onToolRef}
+            onToolDecided={onToolDecided}
+            // The queue panel is unmounted for the whole time a card is up (the
+            // prompt replaces the entire composer), so the only mark that queued
+            // messages still exist would vanish at exactly the moment it
+            // reassures. The messages survive — say so.
+            queueDepth={chatQueue.queue.length}
+          />
+        ) : null
+      }
+      overlays={
+        <>
+          <AnimatePresence>
+            {autocomplete.commands.show && (
+              <CommandPalette
+                filteredCommands={autocomplete.commands.filtered}
+                selectedIndex={autocomplete.commands.selectedIndex}
+                onSelect={autocomplete.handleCommandSelect}
               />
             )}
-            {/* The presence guard lives here, not inside the panel: a component
-                that returns null is still mounted, so AnimatePresence never saw
-                it leave and the panel's exit animation never ran — it popped out
-                at the exact moment the last queued message flushed. */}
-            <AnimatePresence>
-              {chatQueue.queue.length > 0 && (
-                <QueuePanel
-                  queue={chatQueue.queue}
-                  editingId={chatQueue.editingId}
-                  onEdit={chatQueue.handleQueueEdit}
-                  onRemove={chatQueue.handleQueueRemove}
-                  onSend={chatQueue.handleQueueSend}
-                  onMoveUp={chatQueue.handleQueueMoveUp}
-                  // The server dispatches the head the moment the session frees
-                  // up, so the only thing that genuinely holds the line is the
-                  // agent parked on a person — which it will not leave until
-                  // that question is answered.
-                  statusNote={
-                    awaitingDecision
-                      ? 'Waiting for your answer above'
-                      : 'Sending one at a time as the agent finishes'
-                  }
-                />
-              )}
-            </AnimatePresence>
-            <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
-
-            <Composer.Input
-              ref={chatInputRef}
-              value={input}
-              onChange={autocomplete.handleInputChange}
-              onSubmit={submitAndDismiss}
-              isStreaming={isStreaming}
-              isUploading={isUploading}
-              onCancelUpload={onUploadCancel}
-              commandPending={commandPending}
-              onStop={handleStop}
-              onEscape={autocomplete.dismissPalettes}
-              onClear={() => {
-                setInput('');
-                autocomplete.dismissPalettes();
-              }}
-              isPaletteOpen={autocomplete.isPaletteOpen}
-              paletteHasResults={autocomplete.paletteHasResults}
-              onArrowUp={autocomplete.handleArrowUp}
-              onArrowDown={autocomplete.handleArrowDown}
-              onCommandSelect={autocomplete.handleKeyboardSelect}
-              activeDescendantId={autocomplete.activeDescendantId}
-              paletteListboxId={autocomplete.paletteListboxId}
-              onCursorChange={autocomplete.handleCursorChange}
-              // Chat is the only surface that reads this, and passing it HERE
-              // rather than defaulting it inside `Composer.Input` is what keeps
-              // that true: rooms, the dashboard and onboarding pass nothing, so
-              // they stay plain until they graduate. Which surface has
-              // formatting is visible in the JSX, exactly as
-              // `features/composer`'s barrel doctrine asks.
-              richText={richText}
-              onAttach={onFilesSelected}
-              // A failed attachment blocks the send outright. Sending anyway
-              // delivered a message with no attachment and then wiped the error
-              // chips, leaving the person waiting on an answer about a file the
-              // agent never received (DOR-480). The red chip above states the
-              // reason and offers both ways out — try again, or remove it.
-              canSubmit={!hasFailedUpload}
-              editingQueueItem={chatQueue.editingIndex !== null}
-              editingPosition={
-                chatQueue.editingIndex === null ? undefined : chatQueue.editingIndex + 1
-              }
-              queueDepth={chatQueue.queue.length}
-              onQueue={queueAndDismiss}
-              // Present ONLY when the runtime can honour them, so the composer
-              // hides Steer / Add context (never greys them) on a runtime that
-              // can only queue. Presence of the callback IS the capability.
-              onSteer={canSteer ? steerAndDismiss : undefined}
-              onStage={canAddContext ? addContextAndDismiss : undefined}
-              onSaveEdit={chatQueue.handleQueueSaveEdit}
-              onCancelEdit={chatQueue.handleQueueCancelEdit}
-              onQueueNavigateUp={chatQueue.handleQueueNavigateUp}
-              onQueueNavigateDown={chatQueue.handleQueueNavigateDown}
-              queueHasItems={chatQueue.queue.length > 0}
-              // The SAME key the queue and the parked draft are scoped by, so a
-              // pending double-Escape dies on exactly the boundary its draft
-              // does. This composer is re-rendered rather than remounted on a
-              // session switch, so an arm would otherwise survive into the next
-              // session's text.
-              contextKey={sessionContextKey(sessionId, selectedCwd) ?? undefined}
-              onClearArmedChange={setClearArmed}
-              placeholder={getPlaceholder(
-                chatQueue.editingIndex,
-                isStreaming,
-                chatQueue.queue.length,
-                defaultPlaceholder
-              )}
-              placeholderOverlay={
-                isIdle ? (
-                  <AnimatedPlaceholder
-                    text={rotatingPlaceholder.text}
-                    animationKey={rotatingPlaceholder.key}
-                  />
-                ) : null
+            {autocomplete.files.show && (
+              <FilePalette
+                filteredFiles={autocomplete.files.filtered}
+                selectedIndex={autocomplete.files.selectedIndex}
+                onSelect={autocomplete.handleFileSelect}
+              />
+            )}
+          </AnimatePresence>
+        </>
+      }
+      queue={
+        /* The presence guard lives here, not inside the panel: a component that
+           returns null is still mounted, so AnimatePresence never saw it leave
+           and the panel's exit animation never ran — it popped out at the exact
+           moment the last queued message flushed. */
+        <AnimatePresence>
+          {chatQueue.queue.length > 0 && (
+            <QueuePanel
+              queue={chatQueue.queue}
+              editingId={chatQueue.editingId}
+              onEdit={chatQueue.handleQueueEdit}
+              onRemove={chatQueue.handleQueueRemove}
+              onSend={chatQueue.handleQueueSend}
+              onMoveUp={chatQueue.handleQueueMoveUp}
+              // The server dispatches the head the moment the session frees up,
+              // so the only thing that genuinely holds the line is the agent
+              // parked on a person — which it will not leave until that question
+              // is answered.
+              statusNote={
+                awaitingDecision
+                  ? 'Waiting for your answer above'
+                  : 'Sending one at a time as the agent finishes'
               }
             />
-
-            <ChatStatusSection
-              sessionId={sessionId}
-              sessionStatus={sessionStatus}
-              isStreaming={isStreaming}
-              syncConnectionState={sync.connectionState}
-              agentName={agentName}
-              agentColor={agentVisual.color}
-              agentEmoji={agentVisual.emoji}
-              agentPath={selectedCwd ?? undefined}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
+      }
+      aboveInput={<BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />}
+      footer={
+        /* `asChild`, so the status line stays a direct child of the card exactly
+           as it was — the serialized-DOM baseline holds it to that. */
+        <Conversation.Footer asChild>
+          <ChatStatusSection
+            sessionId={sessionId}
+            sessionStatus={sessionStatus}
+            isStreaming={isStreaming}
+            syncConnectionState={sync.connectionState}
+            agentName={agentName}
+            agentColor={agentVisual.color}
+            agentEmoji={agentVisual.emoji}
+            agentPath={selectedCwd ?? undefined}
+          />
+        </Conversation.Footer>
+      }
+      input={{
+        isStreaming,
+        commandPending,
+        onStop: handleStop,
+        onEscape: autocomplete.dismissPalettes,
+        onClear: () => {
+          setInput('');
+          autocomplete.dismissPalettes();
+        },
+        isPaletteOpen: autocomplete.isPaletteOpen,
+        paletteHasResults: autocomplete.paletteHasResults,
+        onArrowUp: autocomplete.handleArrowUp,
+        onArrowDown: autocomplete.handleArrowDown,
+        onCommandSelect: autocomplete.handleKeyboardSelect,
+        activeDescendantId: autocomplete.activeDescendantId,
+        paletteListboxId: autocomplete.paletteListboxId,
+        onCursorChange: autocomplete.handleCursorChange,
+        // Chat is the only surface that reads this, and passing it HERE rather
+        // than defaulting it inside `Composer.Input` is what keeps that true:
+        // rooms, the dashboard and onboarding pass nothing, so they stay plain
+        // until they graduate.
+        richText: richText,
+        editingQueueItem: chatQueue.editingIndex !== null,
+        ...(chatQueue.editingIndex === null ? {} : { editingPosition: chatQueue.editingIndex + 1 }),
+        queueDepth: chatQueue.queue.length,
+        onQueue: queueAndDismiss,
+        // Present ONLY when the runtime can honour them, so the composer hides
+        // Steer / Add context (never greys them) on a runtime that can only
+        // queue. Presence of the callback IS the capability.
+        ...(canSteer ? { onSteer: steerAndDismiss } : {}),
+        ...(canAddContext ? { onStage: addContextAndDismiss } : {}),
+        onSaveEdit: chatQueue.handleQueueSaveEdit,
+        onCancelEdit: chatQueue.handleQueueCancelEdit,
+        onQueueNavigateUp: chatQueue.handleQueueNavigateUp,
+        onQueueNavigateDown: chatQueue.handleQueueNavigateDown,
+        queueHasItems: chatQueue.queue.length > 0,
+        // The SAME key the queue and the parked draft are scoped by, so a
+        // pending double-Escape dies on exactly the boundary its draft does.
+        // This composer is re-rendered rather than remounted on a session
+        // switch, so an arm would otherwise survive into the next session's
+        // text.
+        contextKey: sessionContextKey(sessionId, selectedCwd) ?? undefined,
+        placeholder: getPlaceholder(
+          chatQueue.editingIndex,
+          isStreaming,
+          chatQueue.queue.length,
+          defaultPlaceholder
+        ),
+        placeholderOverlay: isIdle ? (
+          <AnimatedPlaceholder
+            text={rotatingPlaceholder.text}
+            animationKey={rotatingPlaceholder.key}
+          />
+        ) : null,
+      }}
+    >
       <StopConfirmDialog
         open={stopConfirmOpen}
         onOpenChange={setStopConfirmOpen}
         queuedCount={waiting.length}
         onConfirm={confirmStop}
       />
-    </Composer.Root>
+    </Conversation.Composer>
   );
 }

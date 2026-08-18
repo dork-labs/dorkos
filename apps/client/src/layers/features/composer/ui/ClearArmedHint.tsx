@@ -18,7 +18,7 @@ import { motion, useReducedMotion } from 'motion/react';
  * (`clearReachable` in `ComposerInput.tsx`) — otherwise this would hand sighted
  * people a destructive shortcut and nobody else.
  *
- * Rendered by `ChatInputContainer` into the overlay lane it shares with the
+ * Rendered by `Conversation.Composer` into the overlay lane it shares with the
  * command and file palettes, floating above the whole composer card, and NOT by
  * the text field that owns the state. Anchored to the field it would sit
  * directly on top of whatever is stacked above it: measured in a browser, it

@@ -1,10 +1,21 @@
+/**
+ * The prompt that takes the session's composer while it waits for an answer.
+ *
+ * `Conversation.Composer`'s `asks` slot, filled by the one surface that has one:
+ * a session's inline prompt REPLACES the box, because there is nothing to type
+ * into while the agent is parked on a question. A channel draws its Asks in the
+ * lane instead — one card, in the place the work is happening (§4.1's dedupe
+ * rule).
+ *
+ * @module widgets/session/ui/SessionAsks
+ */
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import type { ToolCallState } from '../../model/chat-types';
+import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
 import { ApprovalPrompt, AskStack, QuestionPrompt } from '@/layers/features/ask';
 import { useTransport } from '@/layers/shared/model';
 import { getToolLabel } from '@/layers/shared/lib';
-import type { InteractiveToolHandle } from '../message';
+import type { InteractiveToolHandle } from '@/layers/features/chat';
 
 /**
  * The next queued card rises into the slot the answered one vacated. The short
@@ -16,7 +27,7 @@ const NEXT_CARD_TRANSITION = { duration: 0.16, delay: 0.08, ease: [0.16, 1, 0.3,
 /** Reduced motion swaps the card with no travel and no time. */
 const INSTANT_TRANSITION = { duration: 0 } as const;
 
-interface InteractiveInputPanelProps {
+interface SessionAsksProps {
   sessionId: string;
   /** The active tool call — guaranteed non-null by the parent's mode check. */
   activeInteraction: ToolCallState;
@@ -33,8 +44,12 @@ interface InteractiveInputPanelProps {
   queueDepth?: number;
 }
 
-/** Renders the interactive input zone (tool approval or question prompt). */
-export function InteractiveInputPanel({
+/**
+ * Draw the prompt this session is parked on.
+ *
+ * @param props - The active prompt, the burst behind it, and what is queued.
+ */
+export function SessionAsks({
   sessionId,
   activeInteraction,
   pendingApprovals,
@@ -42,7 +57,7 @@ export function InteractiveInputPanel({
   onToolRef,
   onToolDecided,
   queueDepth = 0,
-}: InteractiveInputPanelProps) {
+}: SessionAsksProps) {
   // Forward submitted question answers so they're persisted onto the tool-call
   // part immediately — otherwise the inline answered row briefly shows the
   // generic "N questions answered" until history reloads. (Approvals pass none.)

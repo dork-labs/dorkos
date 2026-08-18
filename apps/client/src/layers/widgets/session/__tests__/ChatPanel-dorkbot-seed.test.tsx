@@ -15,7 +15,7 @@
  * button. Everything under test — the seed hook, the shim, `useChatSession`,
  * `useSessionSubmit`, the transport call — is the real thing; only the surface
  * a finger would touch is replaced, because "typing into the composer" is
- * already `ChatInputContainer`'s own suite's job.
+ * already `SessionComposer`'s own suite's job.
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -87,13 +87,14 @@ vi.mock('@/layers/features/status', () => ({
 vi.mock('@/layers/features/chat/ui/status', () => ({
   TurnFailedNotice: () => null,
   TerminalReasonChip: () => null,
+  ChatStatusSection: () => null,
 }));
 
 // The composer, reduced to the two things this test needs: a way to put text in
 // and a way to send it. `handleSubmit` is the panel's own — the same callback
 // Enter reaches — so the send path under test is untouched.
-vi.mock('@/layers/features/chat/ui/input/ChatInputContainer', () => ({
-  ChatInputContainer: ({
+vi.mock('../ui/SessionComposer', () => ({
+  SessionComposer: ({
     input,
     setInput,
     handleSubmit,

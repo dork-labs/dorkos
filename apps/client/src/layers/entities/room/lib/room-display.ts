@@ -136,7 +136,7 @@ export function hasUnread(room: RoomSummary): boolean {
  * Whether an author sits on a room's roster right now.
  *
  * The one check every "can this reader write here" gate needs — the composer
- * (`RoomComposer`), a message's reactions and its thread panel all read a room
+ * (`ChannelComposer`), a message's reactions and its thread panel all read a room
  * they may not be a member of (the owner sees every room on the install,
  * DOR-1233), and posting or reacting is `MEMBER_NOT_FOUND` for a non-member on
  * the server regardless of what the client offers. One function so all three

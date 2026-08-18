@@ -16,10 +16,11 @@ import type { ConversationTimelineHandle } from '@/layers/features/conversation'
 import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
 import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
+import { useRoomTarget } from '../model/room-target';
 import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
 import { useRestoreThreadFocus } from '../model/use-restore-thread-focus';
 import { useThreadUrlSync, type ThreadRoute } from '../model/use-thread-url-sync';
-import { RoomComposer } from './RoomComposer';
+import { ChannelComposer } from './ChannelComposer';
 import { RoomFlow, RoomHistorySkeleton } from './RoomFlow';
 import { RoomHeader } from './RoomHeader';
 import { RoomLiveLane } from './RoomLiveLane';
@@ -70,7 +71,7 @@ export interface RoomSurfaceProps {
   /**
    * Told when the caret enters and leaves the ROOM composer's text field.
    *
-   * A pass-through to `RoomComposer.onFocusChange`, and deliberately nothing
+   * A pass-through to `ChannelComposer.onFocusChange`, and deliberately nothing
    * more: this component does not act on it. It exists because the two things
    * that have to agree — the composer down here and a host's chrome up in
    * {@link RoomSurfaceProps.aboveTimeline} — are siblings with no way to reach
@@ -149,6 +150,11 @@ export function RoomSurface({
 
   const room = roomQuery.data;
   const entries = useMemo(() => entriesQuery.data ?? [], [entriesQuery.data]);
+  // Where this room's words go, and the chip bar the send shares with the
+  // composer. Built here rather than inside the composer so the whole
+  // conversation can publish it — the lane reads the target's id, and the
+  // thread panel builds its own.
+  const roomTarget = useRoomTarget({ room });
 
   // Placed after the history, because it needs it: a link naming a reply is
   // resolved to that reply's thread, and only the loaded entries can say which
@@ -306,9 +312,10 @@ export function RoomSurface({
           this React reuses the instance and the input's own internals — focus,
           height, a part-typed IME composition — carry across. The DRAFT is safe
           either way; it belongs to the room, not to this element. */}
-      <RoomComposer
+      <ChannelComposer
         key={room.id}
         room={room}
+        attachments={roomTarget.attachments}
         offerJumpBackIn={offerJumpBackIn}
         onFocusChange={onComposerFocusChange}
       />
@@ -333,6 +340,7 @@ export function RoomSurface({
   const conversation = {
     surface: room.kind === 'dm' ? ('dm' as const) : ('room' as const),
     capabilities: ROOM_CAPABILITIES,
+    target: roomTarget.target,
     // A room's messages run long, so its action capsule rides a sticky rail
     // rather than being pinned to a corner that scrolls away.
     anchor: 'rail' as const,

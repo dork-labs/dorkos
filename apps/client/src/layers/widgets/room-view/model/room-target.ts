@@ -26,8 +26,16 @@ import { useRoomAttachments } from './use-room-attachments';
 
 /** What a room's composer is pointed at. */
 export interface RoomTargetInput {
-  /** The room on screen, with the roster the membership answer comes from. */
-  room: RoomWithRoster;
+  /**
+   * The room on screen, with the roster the membership answer comes from, or
+   * `undefined` while it is still being read.
+   *
+   * Nullable because a host resolves its room with a query and cannot call a
+   * hook conditionally. Nothing consumes the target in that window — a room
+   * that has not arrived draws a skeleton, not a composer — so it answers
+   * `canSend: false` and says so, rather than pretending.
+   */
+  room: RoomWithRoster | undefined;
   /**
    * The thread this composer writes into, when it is a thread panel's rather
    * than the room's own. Absent for the room's composer.
@@ -63,9 +71,9 @@ export function useRoomTarget(input: RoomTargetInput): RoomTarget {
   const { room, threadRootId } = input;
   const post = usePostToRoom();
   const reply = useReplyInThread();
-  const attachments = useRoomAttachments(room.id);
+  const attachments = useRoomAttachments(room?.id ?? '');
 
-  const isMember = isRoomMember(room.members, room.viewerAuthorId);
+  const isMember = room !== undefined && isRoomMember(room.members, room.viewerAuthorId);
 
   const port = useMemo<ConversationAttachmentPort>(
     () => ({
@@ -83,19 +91,24 @@ export function useRoomTarget(input: RoomTargetInput): RoomTarget {
   const target = useMemo<ConversationTarget>(
     () => ({
       kind: 'room',
-      id: room.id,
+      id: room?.id ?? '',
       // Already phrased for the destination, which is also the box's accessible
       // name — so "which conversation is this for?" is a question the
       // accessibility tree can answer, not just a screenshot.
       placeholder:
-        threadRootId === undefined ? `Message ${roomDisplayTitle(room)}…` : 'Reply in this thread…',
-      canSend: !room.archived && isMember,
-      ...(room.archived
+        room === undefined
+          ? 'Message…'
+          : threadRootId === undefined
+            ? `Message ${roomDisplayTitle(room)}…`
+            : 'Reply in this thread…',
+      canSend: room !== undefined && !room.archived && isMember,
+      ...(room?.archived === true
         ? { canSendReason: 'This conversation is archived. You can read it, but not add to it.' }
         : !isMember
           ? { canSendReason: 'You left this channel. You can read it, but not add to it.' }
           : {}),
       async send(draft: ConversationDraft): Promise<void> {
+        if (room === undefined) throw new Error('That conversation is not loaded yet.');
         if (room.archived) throw new Error('This conversation is archived.');
         // **Posting into a room is an interaction with it** (DOR-1156). Today is
         // ordered by `max(userLastMessageAt, userLastOpenedAt)` and the client

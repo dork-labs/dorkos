@@ -1397,7 +1397,7 @@ describe('ComposerInput', () => {
 
   describe('the armed-to-clear signal', () => {
     /**
-     * ComposerInput owns WHEN the double-Escape is armed; ChatInputContainer owns
+     * ComposerInput owns WHEN the double-Escape is armed; the composer host owns
      * where that reads out (the overlay lane, clear of the queue rows). So the
      * state machine is pinned here and the pill itself in the container's test.
      */

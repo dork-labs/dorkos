@@ -72,4 +72,12 @@ export const Composer = {
 };
 
 export type { ComposerInputHandle } from './ui/ComposerInput';
+/**
+ * The field's own props, for the ONE consumer that composes `Composer.Input` on
+ * behalf of somebody else: `Conversation.Composer`, which lays out one composer
+ * card for a session and a channel and lets each pass its own field wiring
+ * through. Nothing else should name this type — a surface writes
+ * `<Composer.Input …>` and TypeScript infers it.
+ */
+export type { ComposerInputProps } from './ui/ComposerInput';
 export type { PendingFile } from './model/pending-file';

@@ -1,9 +1,21 @@
+/**
+ * Say something in a room — the room's wiring for `Conversation.Composer`.
+ *
+ * What is left of the retired `RoomComposer` once the card itself is shared:
+ * which palettes this surface opens, what Enter means to it, where its draft
+ * lives, and who is allowed to write here. The card's SHAPE — the overlay lane,
+ * the chip bar, the field, the honest disabled state — is
+ * `Conversation.Composer`, and a session's composer is the same code.
+ *
+ * @module widgets/room-view/ui/ChannelComposer
+ */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { Button } from '@/layers/shared/ui';
-import { Composer, type ComposerInputHandle } from '@/layers/features/composer';
+import type { ComposerInputHandle } from '@/layers/features/composer';
+import { Conversation, useConversation } from '@/layers/features/conversation';
 import {
   JumpBackInPopover,
   isComposerField,
@@ -14,23 +26,19 @@ import {
   useMentionAutocomplete,
   type MentionRow,
 } from '@/layers/features/mentions';
-import { useInteractionStore } from '@/layers/entities/interactions';
 import {
   isRoomMember,
-  newPendingId,
   roomDisplayTitle,
   threadDraftKey,
   useAddRoomMember,
   useComposerFocusRequest,
   useRoomDraft,
   useRoomDraftStore,
-  usePostToRoom,
-  useReplyInThread,
   type RoomWithRoster,
 } from '@/layers/entities/room';
-import { useRoomAttachments } from '../model/use-room-attachments';
+import type { useRoomAttachments } from '../model/use-room-attachments';
 
-interface RoomComposerProps {
+interface ChannelComposerProps {
   /** The room on screen. Its archived flag decides whether posting is offered. */
   room: RoomWithRoster;
   /**
@@ -71,6 +79,14 @@ interface RoomComposerProps {
    * keyboard (measured at 375×812 in spec task 2.7's browser gate).
    */
   onFocusChange?: (focused: boolean) => void;
+  /**
+   * The staged files, as the host's own `useRoomTarget` holds them.
+   *
+   * Passed in rather than read here because the TARGET already holds it — the
+   * send has to upload and clear the same batch it took — and two calls to
+   * `useRoomAttachments` would be two independent chip bars for one box.
+   */
+  attachments: ReturnType<typeof useRoomAttachments>;
 }
 
 /**
@@ -117,19 +133,22 @@ interface RoomComposerProps {
  * in over the box while it is still empty. The home surface asks for it and
  * nothing else does — see the prop.
  */
-export function RoomComposer({
+export function ChannelComposer({
   room,
   threadRootId,
   focusOnMount,
   offerJumpBackIn,
   onFocusChange,
-}: RoomComposerProps) {
+  attachments,
+}: ChannelComposerProps) {
   // The one key that decides everything about this composer: which draft it
   // holds, which caret requests are its own, and where refused words go back.
   const draftKey = threadRootId === undefined ? room.id : threadDraftKey(room.id, threadRootId);
   const text = useRoomDraft(draftKey);
-  const post = usePostToRoom();
-  const reply = useReplyInThread();
+  // Where this box's words go. `Conversation.Composer` is what refuses loudly
+  // when a host forgot to publish one; here it is only read, so the send simply
+  // has nothing to call.
+  const { target } = useConversation();
   const rejoin = useAddRoomMember();
   const focusRequest = useComposerFocusRequest(draftKey);
   const inputRef = useRef<ComposerInputHandle>(null);
@@ -152,11 +171,6 @@ export function RoomComposer({
    * exactly the stale-closure window it exists to close.
    */
   const uploading = useRef(false);
-  // The chip bar. Keyed to nothing: this composer's files are this composer's,
-  // because the state is its own — see `useRoomAttachments`. None of it reaches
-  // `Composer.Input`, which holds no attachment state at all, so DOR-948's swap
-  // of that component's internals for Lexical stays a swap.
-  const attachments = useRoomAttachments(room.id);
 
   const mentions = useMentionAutocomplete({
     members: room.members,
@@ -237,25 +251,6 @@ export function RoomComposer({
    */
   const [pendingCaret, setPendingCaret] = useState<{ pos: number } | null>(null);
 
-  /**
-   * Whether a second Escape would wipe what is in the box.
-   *
-   * The wipe is `Composer.Input`'s and has always worked here; what was missing is
-   * the half that makes it a shortcut rather than a trap. A reader with a draft
-   * in a thread pressed Escape expecting the panel to close — the panel stays,
-   * deliberately, because a keystroke aimed at a draft must not also throw away
-   * the place it was being written — and nothing on screen said what the press
-   * had done or what the next one would do. Two taps later the draft was gone.
-   *
-   * The same readout session chat draws, in the same lane above the box, from
-   * the same state inside the same component. `Composer.Input` folds in whether the
-   * labelled Clear button is reachable before raising this, which is why the
-   * button below is wired at all: the hint is hidden from assistive tech, so
-   * without a labelled equivalent it would hand sighted people a destructive
-   * shortcut and nobody else.
-   */
-  const [clearArmed, setClearArmed] = useState(false);
-
   useLayoutEffect(() => {
     if (pendingCaret === null) return;
     // Also returns focus to the composer, which is what a click on a row costs:
@@ -284,68 +279,18 @@ export function RoomComposer({
   );
 
   /**
-   * Finish a send whose files still have to reach the server.
+   * Send what is in the box.
    *
-   * Split from `handleSubmit` so everything that must happen AT the keystroke —
-   * emptying the box, minting the id, reading the names — stays synchronous.
-   * Only the wait for the bytes is asynchronous, and it happens after the box is
-   * already free for the next sentence.
+   * Everything that must happen AT the keystroke stays synchronous — the box is
+   * emptied, the picker comes down, the words are read out of the STORE rather
+   * than out of a render closure that is one render stale for a second Enter in
+   * the same tick. Everything after that is the target's: it mints the pending
+   * row's id, uploads the files, clears exactly the batch it took, and posts.
    */
-  const deliver = async (
-    body: string,
-    clientId: string,
-    attachmentNames: string[],
-    sentFileIds: string[]
-  ) => {
-    let attachmentIds: string[];
-    // Only a send that actually carries files can be re-entered destructively,
-    // and only that kind arms the guard: two text-only messages in one tick are
-    // ordinary and must both go.
-    const carriesFiles = attachmentNames.length > 0;
-    if (carriesFiles) uploading.current = true;
-    try {
-      attachmentIds = await attachments.uploadAndGetIds();
-    } catch {
-      // The post was never made, so there is no pending row holding these words
-      // — the box is the only place they can survive, and it is the box they
-      // were typed in. Restored only while it is still empty: merging them into
-      // a sentence typed since is the exact failure DOR-783 removed from the
-      // refusal path, and one sentence lost to a sub-second race is better than
-      // two sentences with a claim on one field. The chips stay, in error, with
-      // their reason on the bar and in the composer's own refusal line.
-      const store = useRoomDraftStore.getState();
-      if ((store.drafts[draftKey] ?? '') === '') store.set(draftKey, body);
-      return;
-    } finally {
-      // Released whichever way it went, so a failed upload does not wedge the
-      // composer shut.
-      if (carriesFiles) uploading.current = false;
-    }
-    // Cleared only once the ids are safely in the message: a chip removed before
-    // that would take a file out of a send that had not gone yet. Scoped to the
-    // batch this send took, so a file dropped in DURING the upload survives —
-    // clearing the bar wholesale silently ate it.
-    attachments.clearFiles(sentFileIds);
-    // No per-call callbacks: a refusal is handled by the mutation itself, which
-    // still runs when this composer is gone. See `usePostToRoom`.
-    if (threadRootId !== undefined) {
-      reply.mutate({
-        roomId: room.id,
-        rootEntryId: threadRootId,
-        text: body,
-        clientId,
-        attachmentIds,
-        attachmentNames,
-      });
-      return;
-    }
-    post.mutate({ roomId: room.id, text: body, clientId, attachmentIds, attachmentNames });
-  };
-
   const handleSubmit = () => {
-    if (room.archived) return;
-    // **One send at a time while files are still going up.** `pendingFiles` is
-    // cleared only once the ids are safely in a message, so a second Enter
+    if (target === null || !target.canSend) return;
+    // **One send at a time while files are still going up.** Staged files are
+    // cleared only once their ids are safely in a message, so a second Enter
     // arriving during that await would read the SAME files and upload them
     // again — posting duplicates, or taking a 409 for ids the first send had
     // already claimed. The draft is deliberately NOT taken here: refusing early
@@ -359,35 +304,30 @@ export function RoomComposer({
     // there was no row to pick, and nothing else would close a "No one by that
     // name." panel until the next keystroke.
     mentions.dismiss();
-    // Read-and-clear straight from the store, never from `text` above. That
-    // render closure is one render stale for a second Enter arriving in the
-    // same tick, and would send the same sentence twice; the store has already
-    // been emptied by then, so the second submit finds nothing and stops.
     const body = useRoomDraftStore.getState().take(draftKey).trim();
     if (body === '') return;
-    // **Posting into a room is an interaction with it** (DOR-1156). Today is
-    // ordered by `max(userLastMessageAt, userLastOpenedAt)` (BC-16) and the
-    // client half was only written by opening a row — so the home surface,
-    // which IS #team and is arrived at rather than opened, could be written in
-    // all morning and still hold no record at all.
-    //
-    // Recorded here rather than in `usePostToRoom`, and not only because an
-    // entity may not import a sibling entity: this is the keystroke, and the
-    // post is still one upload away from being made. A thread reply records the
-    // ROOM, matching `SidebarChrome.openTarget` — a thread reads its room's
-    // cursor, so one place has one record.
-    useInteractionStore.getState().recordOpened('room', room.id);
-    // The id is minted here, at the keystroke, because that is when the row has
-    // to appear — before there is any server id to call it by.
-    const clientId = newPendingId();
-    // The names are read here for the same reason: the pending row has to show
-    // the files from the keystroke, and an upload still in flight has no ids to
-    // draw them from yet.
-    const attachmentNames = attachments.pendingFiles.map((f) => f.file.name);
-    // The batch identity, read in the same breath as the names: what this send
-    // is sending, and therefore exactly what it may clear when it lands.
-    const sentFileIds = attachments.pendingFiles.map((f) => f.id);
-    void deliver(body, clientId, attachmentNames, sentFileIds);
+    // Only a send that actually carries files can be re-entered destructively,
+    // and only that kind arms the guard: two text-only messages in one tick are
+    // ordinary and must both go.
+    const carriesFiles = attachments.pendingFiles.length > 0;
+    if (carriesFiles) uploading.current = true;
+    void target
+      .send({ text: body })
+      .catch(() => {
+        // The post was never made, so there is no pending row holding these
+        // words — the box is the only place they can survive, and it is the box
+        // they were typed in. Restored only while it is still empty: merging
+        // them into a sentence typed since is the exact failure DOR-783 removed
+        // from the refusal path. The chips stay, in error, with their reason on
+        // the bar and in the composer's own refusal line.
+        const store = useRoomDraftStore.getState();
+        if ((store.drafts[draftKey] ?? '') === '') store.set(draftKey, body);
+      })
+      .finally(() => {
+        // Released whichever way it went, so a failed upload does not wedge the
+        // composer shut.
+        if (carriesFiles) uploading.current = false;
+      });
   };
 
   // Checked before the composer is built at all, not passed down as a reason
@@ -421,129 +361,99 @@ export function RoomComposer({
   }
 
   const card = (
-    // Passing `onFilesDropped` is the whole attach declaration: it is what
-    // mounts the dropzone, the hidden file input and the "Drop files to attach"
-    // overlay. There is no flag to set — see `features/composer`'s doctrine.
-    <Composer.Root onFilesDropped={attachments.addFiles}>
-      {/* Mounted whether or not the picker is open, and empty until it has
-          something to say. The picker itself cannot carry this: it arrives with
-          its "No one by that name." already in it, which is the classic case
-          assistive technology does not announce — the region has to be watched
-          BEFORE the words land in it. Same shape as `Conversation.LiveLane`'s
-          announcer, and the same reason.
+    <Conversation.Composer
+      inputRef={inputRef}
+      value={text}
+      onChange={(next) => {
+        setDraft(next);
+        // Records the text only. `onCursorChange` fires immediately after with
+        // the REAL caret, and that is what runs trigger detection — guessing
+        // the caret here is wrong for any edit not at the end.
+        mentions.noteTextChange(next);
+      }}
+      onSubmit={handleSubmit}
+      head={
+        /* Mounted whether or not the picker is open, and empty until it has
+           something to say. The picker itself cannot carry this: it arrives with
+           its "No one by that name." already in it, which is the classic case
+           assistive technology does not announce — the region has to be watched
+           BEFORE the words land in it. Same shape as `Conversation.LiveLane`'s
+           announcer, and the same reason.
 
-          Only the empty answer is spoken. A picker with rows in it already
-          reports itself: the composer publishes the highlighted row as its
-          `aria-activedescendant`, so a screen reader reads that row on every
-          keystroke. Silence was only ever the answer for the one case where
-          there is no row to read. */}
-      <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-        {mentions.isOpen && mentions.rows.length === 0 ? 'No one by that name.' : ''}
-      </span>
-      <Composer.OverlayLane>
-        <AnimatePresence>
-          {mentions.isOpen && (
-            <MentionPalette
-              rows={mentions.rows}
-              selectedIndex={mentions.selectedIndex}
-              onSelect={takeRow}
+           Only the empty answer is spoken. A picker with rows in it already
+           reports itself: the composer publishes the highlighted row as its
+           `aria-activedescendant`, so a screen reader reads that row on every
+           keystroke. Silence was only ever the answer for the one case where
+           there is no row to read. */
+        <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+          {mentions.isOpen && mentions.rows.length === 0 ? 'No one by that name.' : ''}
+        </span>
+      }
+      overlays={
+        <>
+          <AnimatePresence>
+            {mentions.isOpen && (
+              <MentionPalette
+                rows={mentions.rows}
+                selectedIndex={mentions.selectedIndex}
+                onSelect={takeRow}
+              />
+            )}
+          </AnimatePresence>
+          {/* Never up at the same time as the picker above it: the recents panel
+              yields to `@`, and typing at all takes it down. */}
+          {jumpBackIn.isOpen && (
+            <JumpBackInPopover
+              rows={jumpBackIn.rows}
+              selectedIndex={jumpBackIn.selectedIndex}
+              agents={jumpBackIn.agents}
+              displayNames={jumpBackIn.displayNames}
+              visualOf={jumpBackIn.visualOf}
+              onSelect={jumpBackIn.selectRow}
             />
           )}
-        </AnimatePresence>
-        {/* Never up at the same time as the picker above it: the recents panel
-            yields to `@`, and typing at all takes it down. */}
-        {jumpBackIn.isOpen && (
-          <JumpBackInPopover
-            rows={jumpBackIn.rows}
-            selectedIndex={jumpBackIn.selectedIndex}
-            agents={jumpBackIn.agents}
-            displayNames={jumpBackIn.displayNames}
-            visualOf={jumpBackIn.visualOf}
-            onSelect={jumpBackIn.selectRow}
-          />
-        )}
-        {/* Above the box, in the lane the picker uses, for the reason
-            `ClearArmedHint` sets out: anchored to the field it lands on top of
-            whatever is stacked over the composer. */}
-        {clearArmed && <Composer.ClearArmedHint />}
-      </Composer.OverlayLane>
-      {/* Between the lane and the box, which is where chat puts it, so a file
-          waiting to be sent sits in the same place on every surface. */}
-      {attachments.pendingFiles.length > 0 && (
-        <Composer.Attachments
-          files={attachments.pendingFiles}
-          onRemove={attachments.removeFile}
-          onRetry={attachments.retryFile}
-          onCancel={attachments.cancelUpload}
-        />
-      )}
-      <Composer.Input
-        ref={inputRef}
-        value={text}
-        onChange={(next) => {
-          setDraft(next);
-          // Records the text only. `onCursorChange` fires immediately after
-          // with the REAL caret, and that is what runs trigger detection —
-          // guessing the caret here is wrong for any edit not at the end.
-          mentions.noteTextChange(next);
-        }}
-        onCursorChange={mentions.handleCursorChange}
-        onSubmit={handleSubmit}
-        isStreaming={false}
+        </>
+      }
+      input={{
+        onCursorChange: mentions.handleCursorChange,
+        isStreaming: false,
         // One field, one keyboard, and whichever panel is up owns it. The two
         // cannot both be open — the recents panel yields to `@` and closes on
         // the first keystroke — so this is a dispatch, not an arbitration.
-        isPaletteOpen={mentions.isOpen || jumpBackIn.isOpen}
-        paletteHasResults={jumpBackIn.isOpen ? jumpBackIn.hasRows : mentions.hasSelectableRows}
-        onArrowUp={jumpBackIn.isOpen ? jumpBackIn.moveUp : mentions.moveUp}
-        onArrowDown={jumpBackIn.isOpen ? jumpBackIn.moveDown : mentions.moveDown}
-        onCommandSelect={jumpBackIn.isOpen ? jumpBackIn.selectHighlighted : takeHighlighted}
-        onEscape={jumpBackIn.isOpen ? jumpBackIn.dismiss : mentions.dismiss}
-        // Tab picks a row of a palette you ASKED for by typing `@`, and does
-        // not pick one from a panel that floated up because the caret landed in
-        // an empty box — there, tabbing on has to move focus.
-        tabPicks={!jumpBackIn.isOpen}
+        isPaletteOpen: mentions.isOpen || jumpBackIn.isOpen,
+        paletteHasResults: jumpBackIn.isOpen ? jumpBackIn.hasRows : mentions.hasSelectableRows,
+        onArrowUp: jumpBackIn.isOpen ? jumpBackIn.moveUp : mentions.moveUp,
+        onArrowDown: jumpBackIn.isOpen ? jumpBackIn.moveDown : mentions.moveDown,
+        onCommandSelect: jumpBackIn.isOpen ? jumpBackIn.selectHighlighted : takeHighlighted,
+        onEscape: jumpBackIn.isOpen ? jumpBackIn.dismiss : mentions.dismiss,
+        // Tab picks a row of a palette you ASKED for by typing `@`, and does not
+        // pick one from a panel that floated up because the caret landed in an
+        // empty box — there, tabbing on has to move focus.
+        tabPicks: !jumpBackIn.isOpen,
         // Wiring this is what puts a labelled "Clear message" button on the
-        // composer — and `Composer.Input` refuses to raise the armed readout at all
-        // without one, because a destructive shortcut that only sighted people
-        // are told about is worse than no shortcut.
-        onClear={() => {
+        // composer — and `Composer.Input` refuses to raise the armed readout at
+        // all without one, because a destructive shortcut that only sighted
+        // people are told about is worse than no shortcut.
+        onClear: () => {
           setDraft('');
           mentions.dismiss();
-        }}
-        onClearArmedChange={setClearArmed}
-        activeDescendantId={
-          jumpBackIn.isOpen ? jumpBackIn.activeDescendantId : mentions.activeDescendantId
-        }
-        paletteListboxId={jumpBackIn.isOpen ? jumpBackIn.listboxId : mentions.listboxId}
-        // Deliberately NOT gated on a post being in flight. Sending is a
-        // fire-and-forget 202, and closing the submit path for its duration
-        // would block the second sentence of anyone who types faster than the
-        // network — silently, since a refused submit says nothing.
-        canSubmit={!room.archived && !attachments.hasFailedUpload}
-        canSubmitReason={
-          room.archived
-            ? 'This conversation is archived. You can read it, but not add to it.'
-            : attachments.hasFailedUpload
-              ? 'A file didn’t upload. Try it again or remove it, then send.'
-              : undefined
-        }
-        // The paperclip. Same handler as the dropzone, so clicking, dragging and
-        // pasting a file all land in the same bar.
-        onAttach={attachments.addFiles}
+        },
+        activeDescendantId: jumpBackIn.isOpen
+          ? jumpBackIn.activeDescendantId
+          : mentions.activeDescendantId,
+        paletteListboxId: jumpBackIn.isOpen ? jumpBackIn.listboxId : mentions.listboxId,
         // Ties the pending double-Escape wipe to this room, so an arm raised in
         // one conversation cannot clear the draft of the next one.
-        contextKey={draftKey}
-        // The placeholder names the destination, which is also this composer's
-        // accessible name — so "which conversation is this box for?" is a
-        // question the accessibility tree can answer, not just a screenshot.
-        placeholder={
-          threadRootId === undefined
-            ? `Message ${roomDisplayTitle(room)}…`
-            : 'Reply in this thread…'
-        }
-      />
-    </Composer.Root>
+        contextKey: draftKey,
+        // A room says why a failed attachment closed its send, in a line beside
+        // the box; a session answers the same state with the red chip above it.
+        // Each surface keeps its own answer, which is why the reason comes from
+        // here rather than from the shared card.
+        ...(attachments.hasFailedUpload
+          ? { canSubmitReason: 'A file didn’t upload. Try it again or remove it, then send.' }
+          : {}),
+      }}
+    />
   );
 
   // Nothing to host: the card is the composer, node for node, exactly as it

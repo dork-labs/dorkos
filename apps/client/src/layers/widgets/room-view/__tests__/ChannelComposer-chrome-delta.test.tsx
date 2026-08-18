@@ -37,7 +37,7 @@
  * non-class difference exists at all. A node added, removed, retagged,
  * reordered, or reattributed lands in that second bucket and fails.
  *
- * The same delta is stated positively, in words, in `RoomComposer.test.tsx`
+ * The same delta is stated positively, in words, in `ChannelComposer.test.tsx`
  * beside the behavior it must not disturb. That file keeps every behavioral
  * claim; nothing here duplicates one.
  */
@@ -61,7 +61,7 @@ import {
   type SerializedElement,
   type SerializedNode,
 } from '@/test-helpers/dom-parity';
-import { RoomComposer } from '../ui/RoomComposer';
+import { ChannelComposerBench } from '@/test-helpers/channel-composer';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
@@ -144,7 +144,7 @@ function renderComposer(
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
-  return render(<RoomComposer room={room} />, { wrapper });
+  return render(<ChannelComposerBench room={room} />, { wrapper });
 }
 
 /** Type into the composer the way a person does — one controlled change. */
@@ -302,7 +302,7 @@ function expectIntendedChromeDelta(diff: readonly DomDiffEntry[]) {
   ]);
 }
 
-describe('RoomComposer — serialized-DOM delta against the pre-migration baselines', () => {
+describe('ChannelComposer — serialized-DOM delta against the pre-migration baselines', () => {
   it('idle — the resting composer', () => {
     const { container } = renderComposer();
 

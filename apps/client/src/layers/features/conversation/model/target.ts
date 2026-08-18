@@ -17,8 +17,14 @@ import type { PendingFile } from '@/layers/features/composer';
 export interface ConversationDraft {
   /** What was typed. */
   text: string;
-  /** Files already uploaded and staged against this draft. */
-  attachmentIds: readonly string[];
+  /**
+   * Ids of files already uploaded and bound to this draft.
+   *
+   * Optional, and usually absent: both shipped surfaces STAGE at the keystroke
+   * and upload at send, so the ids do not exist until the target is already
+   * sending. A surface that genuinely holds ids in hand passes them.
+   */
+  attachmentIds?: readonly string[];
   /** Set when the draft is a thread reply. */
   parentEntryId?: string;
 }
@@ -93,7 +99,7 @@ export interface ConversationTarget {
  * `@` picker is not a data source, though — it is a keyboard controller over the
  * field: it owns when it is open, which row is highlighted, what Arrow and Tab
  * and Escape mean while it is, and where the caret lands after an insert
- * (`useMentionAutocomplete`, and the caret rule `RoomComposer` documented at
+ * (`useMentionAutocomplete`, and the caret rule the room composer documented at
  * length). A port that answered "who matches `an`" would leave every one of
  * those decisions somewhere else, so the composer host would need both — two
  * sources for one picker.

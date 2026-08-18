@@ -30,8 +30,18 @@ export { MessageProvider } from './ui/message/MessageContext';
 export { ErrorMessageBlock, SessionMessage, StagedContextNote } from './ui/message';
 export type { InteractiveToolHandle } from './ui/message';
 export { renderSessionBody } from './ui/render-session-body';
-export { ChatInputContainer } from './ui/input/ChatInputContainer';
 export { TaskListPanel } from './ui/tasks/TaskListPanel';
+export { BackgroundTaskBar } from './ui/tasks/BackgroundTaskBar';
+export { QueuePanel } from './ui/input/QueuePanel';
+export { StopConfirmDialog } from './ui/input/StopConfirmDialog';
+export { AnimatedPlaceholder } from './ui/input/AnimatedPlaceholder';
+export { ChatStatusSection } from './ui/status';
+export { default as placeholderHints } from './config/placeholder-hints.json';
+export type {
+  FileUploadProps,
+  InteractionProps,
+  SyncPresenceProps,
+} from './ui/input/composer-slots';
 export { TerminalReasonChip, TurnFailedNotice } from './ui/status';
 
 export { useChatSession } from './model/use-chat-session';
@@ -46,4 +56,11 @@ export { useLaunchPrompt } from './model/launch/use-launch-prompt';
 export { useDorkBotSeed } from './model/launch/use-dorkbot-seed';
 export { shouldShowTurnFailedNotice } from './model/stream/turn-failure';
 export { useApprovalAnnouncer } from './model/stream/use-approval-announcer';
+export { useBackgroundTasks } from './model/use-background-tasks';
+export { useChatQueue } from './model/use-chat-queue';
+export { useRotatingPlaceholder } from './model/use-rotating-placeholder';
+export { selectRenderedMessages } from './model/stream/derive-rendered-state';
+export { selectWaitingQueue } from './lib/queue-chips';
+export { sessionContextKey } from './lib/session-context-key';
+export type { NativeCommandResult } from './model/native-commands';
 export { useStreamingAnnouncer } from './model/stream/use-streaming-announcer';

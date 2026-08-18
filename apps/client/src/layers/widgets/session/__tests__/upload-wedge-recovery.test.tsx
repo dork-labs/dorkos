@@ -20,11 +20,11 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UploadResult } from '@dorkos/shared/types';
 
-vi.mock('../ui/status/ChatStatusSection', () => ({
+vi.mock('@/layers/features/chat/ui/status/ChatStatusSection', () => ({
   ChatStatusSection: () => <div data-testid="chat-status" />,
 }));
 
-vi.mock('../model/use-background-tasks', () => ({
+vi.mock('@/layers/features/chat/model/use-background-tasks', () => ({
   useBackgroundTasks: () => [],
 }));
 
@@ -81,8 +81,8 @@ vi.mock('@/layers/entities/runtime', () => ({
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { UPLOAD_CANCELED_MESSAGE, UPLOAD_STALLED_MESSAGE } from '@/layers/shared/lib';
-import { ChatInputContainer } from '../ui/input/ChatInputContainer';
-import { useFileUpload } from '../model/use-file-upload';
+import { SessionComposerBench } from '@/test-helpers/session-composer';
+import { useFileUpload } from '@/layers/features/chat/model/use-file-upload';
 import { configKeys } from '@/layers/entities/config';
 
 beforeAll(() => {
@@ -128,7 +128,7 @@ function Composer({ attachment }: { attachment: File }) {
       <button type="button" onClick={() => fileUpload.addFiles([attachment])}>
         attach
       </button>
-      <ChatInputContainer
+      <SessionComposerBench
         chatInputRef={React.createRef()}
         input={input}
         setInput={setInput}

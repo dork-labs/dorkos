@@ -64,3 +64,5 @@ export type { RosterAgentInfo } from './lib/agent-details';
  * divergence this directory exists to prevent.
  */
 export { agentFacesByRef } from './lib/agent-details';
+export { ChannelComposer } from './ui/ChannelComposer';
+export { useRoomTarget } from './model/room-target';

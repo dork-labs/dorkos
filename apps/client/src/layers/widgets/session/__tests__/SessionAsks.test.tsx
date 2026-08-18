@@ -3,8 +3,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render as renderBare, screen, fireEvent, cleanup } from '@testing-library/react';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import type { ToolCallState } from '../../../model/chat-types';
-import { InteractiveInputPanel } from '../InteractiveInputPanel';
+import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
+import { SessionAsks } from '../ui/SessionAsks';
 
 // The panel answers a whole burst itself — the batch bar's two transport calls,
 // now behind the stacked card — so it needs a transport the way it always did.
@@ -52,11 +52,11 @@ const approvalInteraction: ToolCallState = {
   interactiveType: 'approval',
 };
 
-describe('InteractiveInputPanel', () => {
+describe('SessionAsks', () => {
   it('forwards submitted question answers to onToolDecided', () => {
     const onToolDecided = vi.fn();
     render(
-      <InteractiveInputPanel
+      <SessionAsks
         sessionId="session-1"
         activeInteraction={questionInteraction}
         pendingApprovals={[]}
@@ -76,7 +76,7 @@ describe('InteractiveInputPanel', () => {
   it('calls onToolDecided without answers for tool approvals', () => {
     const onToolDecided = vi.fn();
     render(
-      <InteractiveInputPanel
+      <SessionAsks
         sessionId="session-1"
         activeInteraction={approvalInteraction}
         pendingApprovals={[]}
@@ -97,7 +97,7 @@ describe('InteractiveInputPanel', () => {
     // that said so vanished at exactly the moment it reassures.
     function renderWithQueue(queueDepth: number) {
       render(
-        <InteractiveInputPanel
+        <SessionAsks
           sessionId="session-1"
           activeInteraction={approvalInteraction}
           pendingApprovals={[]}

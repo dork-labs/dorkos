@@ -52,6 +52,7 @@ export type {
   ConversationRowRenderer,
   ConversationTimelineHandle,
 } from './ui/Timeline';
+export type { ConversationComposerInputProps } from './ui/ComposerHost';
 // `LiveLaneProps`, `LivePeekProps` and `ConversationTimelineProps` stay inside
 // the slice: a host writes `<Conversation.Timeline …>` and TypeScript infers
 // them, so exporting the interfaces would be more things to keep in step for no
@@ -79,6 +80,8 @@ export { attachmentsSummary } from './ui/message/MessageAttachments';
 // and TypeScript infers them. Exporting nine interfaces nothing names would be
 // nine more things to keep in step for no reader's benefit.
 
+import { ConversationComposer } from './ui/ComposerHost';
+import { ConversationFooter } from './ui/ConversationFooter';
 import { ConversationRoot } from './ui/ConversationRoot';
 import { LiveLane } from './ui/LiveLane';
 import { LivePeek } from './ui/LivePeek';
@@ -94,8 +97,8 @@ import { MessageRoot } from './ui/message/MessageRoot';
 /**
  * The conversation compound, as a host composes it.
  *
- * `Root`, `Timeline`, `LiveLane` and the peek are what it holds after P4's list
- * merge; `Composer` and `Footer` join them in the same phase. It is a namespace
+ * Six parts after P4: the provider, the one list, the reserved lane, its peek,
+ * the one composer card and the strip under it. It is a namespace
  * object rather than loose exports for the reason `Composer.*` already is one: a
  * host writes `<Conversation.Timeline>` beside `<Conversation.Composer>` and reads
  * the tree it is building. It is also the ONLY way in — neither the provider nor
@@ -107,6 +110,8 @@ export const Conversation = {
   Timeline: ConversationTimeline,
   LiveLane,
   LivePeek,
+  Composer: ConversationComposer,
+  Footer: ConversationFooter,
 };
 
 /**

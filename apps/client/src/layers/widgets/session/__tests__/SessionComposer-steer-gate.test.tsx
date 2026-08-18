@@ -2,7 +2,7 @@
 /**
  * The Steer row, end to end, in the DOM (DOR-1268).
  *
- * `ChatInputContainer.test.tsx` proves what the container DECIDES — it reads the
+ * `SessionComposer.test.tsx` proves what the container DECIDES — it reads the
  * props handed to a stubbed `Composer.Input`. That is the right shape for a
  * container test and it cannot see the thing a person actually experiences:
  * whether a Steer row is in the menu. So this file stubs nothing between the
@@ -47,10 +47,10 @@ vi.mock('@/layers/shared/ui', async (importActual) => {
   };
 });
 
-vi.mock('../ui/status/ChatStatusSection', () => ({
+vi.mock('@/layers/features/chat/ui/status/ChatStatusSection', () => ({
   ChatStatusSection: () => <div data-testid="chat-status" />,
 }));
-vi.mock('../ui/input/QueuePanel', () => ({ QueuePanel: () => null }));
+vi.mock('@/layers/features/chat/ui/input/QueuePanel', () => ({ QueuePanel: () => null }));
 vi.mock('@/layers/features/ask', () => ({
   ApprovalPrompt: () => null,
   QuestionPrompt: () => null,
@@ -62,7 +62,9 @@ vi.mock('@/layers/features/files', () => ({ FilePalette: () => null }));
 vi.mock('react-dropzone', () => ({
   useDropzone: () => ({ getRootProps: () => ({}), getInputProps: () => ({}), isDragActive: false }),
 }));
-vi.mock('../model/use-background-tasks', () => ({ useBackgroundTasks: () => [] }));
+vi.mock('@/layers/features/chat/model/use-background-tasks', () => ({
+  useBackgroundTasks: () => [],
+}));
 // Partial: the real composer reads pointer/viewport hooks from this barrel, and
 // replacing the whole thing would take the component under test down with it.
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
@@ -100,7 +102,7 @@ vi.mock('@/layers/entities/runtime', () => ({
   useCapabilitiesForRuntime: () => ({ supportsSteer: true, supportsContextStaging: true }),
 }));
 
-import { ChatInputContainer } from '../ui/input/ChatInputContainer';
+import { SessionComposerBench } from '@/test-helpers/session-composer';
 import { useSessionStreamStore, useSessionChatStore } from '@/layers/entities/session';
 
 // A plain desktop — the composer reads pointer capabilities to decide what Enter
@@ -196,7 +198,7 @@ function addContextRow() {
 describe('the Steer row is in the DOM only when this chat could really cut in', () => {
   it('is absent on a steer-capable runtime whose session cannot cut in (DOR-1268)', () => {
     seedSteerable(false);
-    render(<ChatInputContainer {...baseProps} />);
+    render(<SessionComposerBench {...baseProps} />);
 
     // The caret is still there — Add context needs no open turn to join, so the
     // menu is not empty. What is gone is the promise that could not be kept.
@@ -207,7 +209,7 @@ describe('the Steer row is in the DOM only when this chat could really cut in', 
 
   it('is present when the session says it can cut in', () => {
     seedSteerable(true);
-    render(<ChatInputContainer {...baseProps} />);
+    render(<SessionComposerBench {...baseProps} />);
     expect(steerRow()).toBeTruthy();
   });
 
@@ -215,7 +217,7 @@ describe('the Steer row is in the DOM only when this chat could really cut in', 
     // Absent means "no per-session answer" — a runtime whose steering is uniform
     // never sets the field, and reading its silence as "no" would hide a row
     // that works.
-    render(<ChatInputContainer {...baseProps} />);
+    render(<SessionComposerBench {...baseProps} />);
     expect(steerRow()).toBeTruthy();
   });
 });
@@ -230,7 +232,7 @@ describe('the Add context row stays offered on both paths (DOR-1307)', () => {
   // if a later change gates Add context on the same per-session answer as Steer.
   it('is offered on the resume path, where a stage folds into the next turn', () => {
     seedSteerable(false);
-    render(<ChatInputContainer {...baseProps} />);
+    render(<SessionComposerBench {...baseProps} />);
 
     expect(addContextRow()).toBeTruthy();
     // The pairing is the point: same session, same instant, one row gone and the
@@ -240,7 +242,7 @@ describe('the Add context row stays offered on both paths (DOR-1307)', () => {
 
   it('is offered on a session holding its agent open, where a stage lands natively', () => {
     seedSteerable(true);
-    render(<ChatInputContainer {...baseProps} />);
+    render(<SessionComposerBench {...baseProps} />);
 
     expect(addContextRow()).toBeTruthy();
     expect(steerRow()).toBeTruthy();

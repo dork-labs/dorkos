@@ -20,7 +20,7 @@ import type { AuthorRef, RoomRosterEntry, RoomWithRoster } from '@dorkos/shared/
 import { useRoomDraftStore } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
-import { RoomComposer } from '../ui/RoomComposer';
+import { ChannelComposerBench } from '@/test-helpers/channel-composer';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
@@ -117,7 +117,7 @@ function renderComposer(
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
-  render(<RoomComposer room={roomWith({ members })} />, { wrapper });
+  render(<ChannelComposerBench room={roomWith({ members })} />, { wrapper });
   return { field: screen.getByRole('combobox') as HTMLTextAreaElement, transport };
 }
 
@@ -140,7 +140,7 @@ function announcedRow(field: HTMLTextAreaElement): HTMLElement {
   return el;
 }
 
-describe('RoomComposer — the @ picker opens', () => {
+describe('ChannelComposer — the @ picker opens', () => {
   it('opens on a bare @ with People before Agents', () => {
     const { field } = renderComposer();
     type(field, '@');
@@ -170,7 +170,7 @@ describe('RoomComposer — the @ picker opens', () => {
   });
 });
 
-describe('RoomComposer — one cursor across two sections', () => {
+describe('ChannelComposer — one cursor across two sections', () => {
   it('announces the first person, then crosses into Agents on one ArrowDown', () => {
     const { field } = renderComposer();
     type(field, '@');
@@ -248,7 +248,7 @@ describe('RoomComposer — one cursor across two sections', () => {
   });
 });
 
-describe('RoomComposer — what is announced is what is inserted', () => {
+describe('ChannelComposer — what is announced is what is inserted', () => {
   it('inserts the handle of the row aria-activedescendant named', () => {
     const { field } = renderComposer();
     type(field, '@');
@@ -338,7 +338,7 @@ describe('RoomComposer — what is announced is what is inserted', () => {
   });
 });
 
-describe('RoomComposer — Enter still sends when there is nothing to pick', () => {
+describe('ChannelComposer — Enter still sends when there is nothing to pick', () => {
   it('sends rather than swallowing Enter on a query nobody matches', async () => {
     const { field, transport } = renderComposer();
     type(field, 'ping @zzz');
@@ -407,7 +407,7 @@ describe('RoomComposer — Enter still sends when there is nothing to pick', () 
   });
 });
 
-describe('RoomComposer — Escape', () => {
+describe('ChannelComposer — Escape', () => {
   it('closes the picker without clearing the draft', async () => {
     const { field } = renderComposer();
     type(field, 'hey @an');

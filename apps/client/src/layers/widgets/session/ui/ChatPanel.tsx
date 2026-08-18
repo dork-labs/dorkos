@@ -21,12 +21,16 @@ import { PromptSuggestionChips } from '@/layers/shared/ui';
 import { useCommands } from '@/layers/entities/command';
 import {
   useSessionId,
+  useSessionQueue,
   useSessionStatus,
+  useSessionStreamLifecycle,
   useSessionToolActivity,
   useDirectoryState,
   sessionKeys,
 } from '@/layers/entities/session';
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { useCurrentAgent } from '@/layers/entities/agent';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { usePendingInteractions } from '@/layers/entities/attention';
 import { useRuntimeChip } from '@/layers/features/status';
 import { useFiles } from '@/layers/features/files';
@@ -36,7 +40,6 @@ import type { ComposerInputHandle } from '@/layers/features/composer';
 import {
   BirthCertificate,
   CelebrationOverlay,
-  ChatInputContainer,
   ErrorMessageBlock,
   TaskListPanel,
   TerminalReasonChip,
@@ -45,6 +48,7 @@ import {
   buildPaletteCommands,
   compactComposerGate,
   resolveTransportRetryText,
+  selectWaitingQueue,
   shouldShowTurnFailedNotice,
   useChatSession,
   useChatStatusSync,
@@ -58,6 +62,8 @@ import {
 } from '@/layers/features/chat';
 import { SESSION_CAPABILITIES } from '../model/session-capabilities';
 import { useSessionLaneState } from '../model/use-session-lane-state';
+import { useSessionTarget } from '../model/session-target';
+import { SessionComposer } from './SessionComposer';
 import { SessionTranscript } from './SessionTranscript';
 
 interface ChatPanelProps {
@@ -411,6 +417,35 @@ export function ChatPanel({
     [interactions, sessionId]
   );
 
+  // The queue lives on the server; this window reads it out of the session
+  // projection and narrows it to the messages that are genuinely waiting. Read
+  // HERE rather than in the composer because it is what the lane's "1 queued"
+  // rung counts too, and one fact has one source.
+  const serverQueue = useSessionQueue(sessionId ?? '');
+  const lifecycle = useSessionStreamLifecycle(sessionId ?? '');
+  const waiting = useMemo(
+    () => selectWaitingQueue(serverQueue, lifecycle),
+    [serverQueue, lifecycle]
+  );
+  // What the empty box says. The agent registered at the working directory
+  // names it; without one it is the generic invitation.
+  const { data: composerAgent } = useCurrentAgent(cwd);
+  const defaultPlaceholder = composerAgent
+    ? `Message ${getAgentDisplayName(composerAgent)}...`
+    : 'Send a message...';
+
+  // Where this session's words go, and the files staged against them. Built
+  // here rather than inside the composer so the whole conversation can publish
+  // it — the lane reads the queue's depth off the same object.
+  const sessionTarget = useSessionTarget({
+    sessionId: sessionId ?? '',
+    placeholder: defaultPlaceholder,
+    submit: submitContent,
+    enqueue: enqueueContent,
+    queueDepth: waiting.length,
+    files: fileUpload,
+  });
+
   const laneState = useSessionLaneState({
     asks: sessionAsks,
     status,
@@ -428,7 +463,7 @@ export function ChatPanel({
     // The session's conversation, declared once by the surface every session
     // mounts — the route, the Obsidian embed and the dev simulator alike. Every
     // row, and from P2 the live lane, reads what it can do from here.
-    <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
+    <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES} target={sessionTarget}>
       <div data-testid="chat-panel" className="flex h-full w-full flex-col">
         <BirthCertificate sessionId={sessionId} />
 
@@ -506,7 +541,7 @@ export function ChatPanel({
           </div>
         )}
 
-        <ChatInputContainer
+        <SessionComposer
           chatInputRef={chatInputRef}
           input={input}
           autocomplete={autocomplete}
@@ -521,15 +556,7 @@ export function ChatPanel({
           setInput={setInput}
           sessionId={sessionId ?? ''}
           sessionStatus={sessionStatus}
-          fileUpload={{
-            pendingFiles: fileUpload.pendingFiles,
-            onFilesSelected: fileUpload.addFiles,
-            onFileRemove: fileUpload.removeFile,
-            onFileRetry: fileUpload.retryFile,
-            onUploadCancel: fileUpload.cancelUpload,
-            isUploading: fileUpload.isUploading,
-            hasFailedUpload: fileUpload.hasFailedUpload,
-          }}
+          waiting={waiting}
           interaction={{
             active: activeInteraction,
             pendingApprovals: pendingInteractions.filter((tc) => tc.interactiveType === 'approval'),

@@ -12,6 +12,9 @@
 export { SessionPage } from './ui/SessionPage';
 export { ChatPanel } from './ui/ChatPanel';
 export { SessionTranscript, findLastWidgetFenceIndex } from './ui/SessionTranscript';
+export { SessionComposer } from './ui/SessionComposer';
+export { SessionAsks } from './ui/SessionAsks';
+export { useSessionTarget } from './model/session-target';
 /**
  * What an agent session's conversation can do — the one table that says how
  * this surface differs from a channel's.
