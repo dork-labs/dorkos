@@ -866,7 +866,7 @@ Since SDK 0.2.113 the Agent SDK ships Claude Code as a per-platform native binar
 4. Fall back to a `claude` on PATH (resilience for when the bundled optional dependency failed to install)
 5. Otherwise `undefined` (let the SDK resolve)
 
-The readiness probe (`resolveClaudeBinaryPath`) walks the same rungs, differing only in using the bounded async PATH lookup, so what the setup screen reports and what a session spawns can never disagree (DOR-1334).
+The readiness probe (`resolveClaudeBinaryPath`) walks the same rungs, differing only in using the bounded async PATH lookup, so the setup screen and a session resolve by one rule rather than two (DOR-1334). A live runtime keeps the binary it resolved and re-checks rungs 1–3 only while it has none, which is what lets a one-click install reach the next session without a restart.
 
 The resolved path is passed via `pathToClaudeCodeExecutable` in SDK options.
 

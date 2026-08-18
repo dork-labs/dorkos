@@ -5,6 +5,7 @@ import {
   runBinaryProbe,
   findBinaryOnPath,
   logProbeFailure,
+  logLocatorFailure,
   resetProbeFailureNotices,
 } from '../run-probe.js';
 import { logger } from '../../../../lib/logger.js';
@@ -100,6 +101,39 @@ describe('findBinaryOnPath', () => {
     const promise = findBinaryOnPath('codex', TIMEOUT);
     await vi.advanceTimersByTimeAsync(TIMEOUT + 1);
     await expect(promise).resolves.toBeNull();
+  });
+});
+
+describe('logLocatorFailure', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Purpose: "not installed" is ordinary. It must not shout, or every honest
+  // `missing` would come with a warning nobody can act on.
+  it('logs at debug when the locator ran and reported nothing', () => {
+    logLocatorFailure(
+      'claude',
+      Object.assign(new Error('Command failed: which claude'), { code: 1 })
+    );
+    logLocatorFailure(
+      'claude',
+      Object.assign(new Error('Command failed: which claude'), { status: 1 })
+    );
+
+    expect(logger.debug).toHaveBeenCalledTimes(2);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  // Purpose: a locator that was killed at the bound never established "not
+  // found" — that is how a present binary reads as missing on a loaded machine
+  // (the reviewer hit exactly this).
+  it('warns when the locator never answered (timed out or could not spawn)', () => {
+    logLocatorFailure('claude', new Error('probe timed out after 5000ms: which'));
+    logLocatorFailure('codex', Object.assign(new Error('spawn which ENOENT'), { code: 'ENOENT' }));
+
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+    expect(String(vi.mocked(logger.warn).mock.calls[0][0])).toContain('could not establish');
   });
 });
 

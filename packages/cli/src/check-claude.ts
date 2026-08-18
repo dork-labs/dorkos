@@ -1,54 +1,25 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
-
-/** Resolve modules relative to this file — ESM has no ambient `require`. */
-const requireFrom = createRequire(import.meta.url);
-
-/** npm name of the SDK whose bundled native binary powers agent sessions. */
-const SDK_PKG = '@anthropic-ai/claude-agent-sdk';
+import { resolveClaudeCliPath } from '../server/services/runtimes/claude-code/sdk/sdk-utils.js';
 
 /**
- * Resolve a runnable Claude Code binary: the SDK's bundled per-platform native
- * binary (shipped as an optional dependency since SDK 0.2.113), else a `claude`
- * on PATH.
+ * Resolve a runnable Claude Code binary, through the SERVER's resolver — the one
+ * ladder a session actually spawns down: the `DORKOS_CLAUDE_CLI_PATH` override,
+ * the SDK's bundled per-platform binary (asar-aware), a provisioned install
+ * under `~/.dork/runtimes/claude-code`, then a `claude` on PATH.
  *
- * This deliberately mirrors the server runtime resolver
- * (`apps/server/src/services/runtimes/claude-code/sdk-utils.ts` →
- * `resolveClaudeCliPath`) so the install check agrees with how sessions actually
- * spawn. It is kept self-contained here because the SDK-confinement boundary
- * (ADR-0089) keeps the runtime resolver inside `services/runtimes/claude-code/`,
- * which this standalone CLI utility can't import without coupling to the server
- * module graph. Keep the two in sync.
+ * This used to be a second, hand-maintained copy of that ladder, and it had
+ * already drifted: no env rung, no provisioned rung, no asar remap, so `dorkos`
+ * start-up and `dorkos doctor` could warn "Claude Code CLI not found" about a
+ * binary the server was about to spawn happily (DOR-1334 review). The CLI
+ * bundle reaches narrow server modules through the `../server/**` specifiers
+ * `scripts/build.ts` rewrites (mirrored for tsc in `packages/cli/server/`), and
+ * `sdk-utils` imports no runtime SDK, so the confinement boundary (ADR-0089) is
+ * untouched.
+ *
+ * @returns Absolute path to a Claude Code binary, or `null` when none resolves.
  */
 export function findClaudeBinary(): string | null {
-  const { platform, arch } = process;
-  const ext = platform === 'win32' ? '.exe' : '';
-  // Only one variant is ever installed on a given host; try each, take the first.
-  const candidates =
-    platform === 'linux'
-      ? [`${SDK_PKG}-linux-${arch}`, `${SDK_PKG}-linux-${arch}-musl`]
-      : platform === 'android'
-        ? [`${SDK_PKG}-linux-${arch}-android`]
-        : [`${SDK_PKG}-${platform}-${arch}`];
-
-  for (const pkg of candidates) {
-    try {
-      const resolved = requireFrom.resolve(`${pkg}/claude${ext}`);
-      if (existsSync(resolved)) return resolved;
-    } catch {
-      /* optional dependency not installed for this variant */
-    }
-  }
-
-  const locator = platform === 'win32' ? 'where' : 'which';
-  try {
-    const found = execFileSync(locator, ['claude'], { encoding: 'utf-8' }).split(/\r?\n/)[0].trim();
-    if (found && existsSync(found)) return found;
-  } catch {
-    /* not on PATH */
-  }
-  return null;
+  return resolveClaudeCliPath() ?? null;
 }
 
 /**

@@ -965,7 +965,7 @@ export class CodexRuntime implements AgentRuntime {
    */
   private async warmMcpStatus(): Promise<void> {
     try {
-      const servers = await enumerateCodexMcpServers();
+      const servers = await enumerateCodexMcpServers(this.resolveBinary);
       if (servers !== null) {
         this.mcpStatusCache = servers;
         this.mcpStatusWarmedAt = Date.now();

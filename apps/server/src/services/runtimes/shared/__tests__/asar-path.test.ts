@@ -59,4 +59,33 @@ describe('resolveAsarUnpacked', () => {
     const archiveFile = path.join(root, 'resources', 'app.asar');
     expect(resolveAsarUnpacked(archiveFile)).toBe(archiveFile);
   });
+
+  // Purpose: a directory whose name CONTAINS `.asar` is not an archive. Matching
+  // it would rewrite `my.asar.backup/x` to a path nobody has ever written.
+  it('ignores a segment that only contains .asar in the middle', () => {
+    const backup = path.join(root, 'my.asar.backup', 'claude');
+    fs.mkdirSync(path.dirname(backup), { recursive: true });
+    fs.writeFileSync(backup, '');
+    // Even with a plausible twin on disk, this must not be remapped.
+    fs.mkdirSync(path.join(root, 'my.asar.unpacked'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'my.asar.unpacked', 'claude'), '');
+
+    expect(resolveAsarUnpacked(backup)).toBe(backup);
+  });
+
+  // Purpose: the Windows build hands this backslash paths. The remap is pure
+  // string surgery, so it can be exercised on a POSIX host — a backslash is a
+  // legal character in a POSIX filename, so the "twin" below is a real file
+  // whose NAME happens to contain the separators a Windows path would use.
+  it('remaps across backslash separators too', () => {
+    const winish = `${root}\\app.asar\\node_modules\\pkg\\claude.exe`;
+    const winishTwin = `${root}\\app.asar.unpacked\\node_modules\\pkg\\claude.exe`;
+    fs.writeFileSync(winishTwin, '');
+
+    expect(resolveAsarUnpacked(winish)).toBe(winishTwin);
+  });
+
+  it('leaves a backslash path with no asar segment untouched', () => {
+    expect(resolveAsarUnpacked('C:\\bin\\claude.exe')).toBe('C:\\bin\\claude.exe');
+  });
 });

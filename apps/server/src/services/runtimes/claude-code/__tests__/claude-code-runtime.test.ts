@@ -31,10 +31,17 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 }));
 // Mock createIdlePrompt so the warm-probe teardown (close on the held prompt)
 // can be spied; resolveClaudeCliPath is preserved for the runtime constructor.
-const { _mockCreateIdlePrompt } = vi.hoisted(() => ({ _mockCreateIdlePrompt: vi.fn() }));
+// `_binary` also steers the two resolvers the runtime spawns through, so a test
+// can say "nothing resolved at boot, then a one-click install landed one".
+const { _mockCreateIdlePrompt, _binary } = vi.hoisted(() => ({
+  _mockCreateIdlePrompt: vi.fn(),
+  _binary: { atBoot: undefined as string | undefined, beforePath: null as string | null },
+}));
 vi.mock('../sdk/sdk-utils.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../sdk/sdk-utils.js')>()),
   createIdlePrompt: _mockCreateIdlePrompt,
+  resolveClaudeCliPath: () => _binary.atBoot,
+  resolveClaudeBinaryBeforePath: () => _binary.beforePath,
 }));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: {
@@ -146,6 +153,57 @@ describe('ClaudeCodeRuntime', () => {
       agentManager.ensureSession('s1', { permissionMode: 'bypassPermissions' });
       // Should still be 'default' since the first call created it
       expect(agentManager.hasSession('s1')).toBe(true);
+    });
+  });
+
+  // DOR-1334 review, MUST-FIX 1. The requirements ladder and the SDK spawn seam
+  // are one ladder now, but the runtime resolved it ONCE at construction — so a
+  // successful "Install Claude" flipped the card to Ready while every session
+  // started afterwards still spawned with no executable path and the SDK threw,
+  // until somebody restarted the server.
+  describe('the binary a spawn is pointed at', () => {
+    /** Drive one full turn and hand back the options the SDK was called with. */
+    async function turnOptions(
+      runtime: InstanceType<typeof import('../claude-code-runtime.js').ClaudeCodeRuntime>,
+      sessionId: string
+    ): Promise<Record<string, unknown>> {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(sdkSimpleText('ok')));
+      runtime.ensureSession(sessionId, { permissionMode: 'default' });
+      for await (const event of runtime.sendMessage(sessionId, 'hello')) void event;
+      const lastCall = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+      return (lastCall[0] as { options: Record<string, unknown> }).options;
+    }
+
+    it('picks up a binary that only appeared after startup (a one-click install)', async () => {
+      // Boot on a host with no `claude` anywhere.
+      _binary.atBoot = undefined;
+      _binary.beforePath = null;
+      const mod = await import('../claude-code-runtime.js');
+      const runtime = new mod.ClaudeCodeRuntime('/tmp/dorkos-test');
+
+      const before = await turnOptions(runtime, 'no-binary');
+      expect(before.pathToClaudeCodeExecutable).toBeUndefined();
+
+      // The provisioner installs one — the same rung `resolveClaudeBinaryBeforePath`
+      // reports, which is what the requirements payload just re-walked.
+      _binary.beforePath = '/dork-home/runtimes/claude-code/claude';
+
+      const after = await turnOptions(runtime, 'after-install');
+      expect(after.pathToClaudeCodeExecutable).toBe('/dork-home/runtimes/claude-code/claude');
+    });
+
+    it('keeps the binary it resolved at startup without re-walking the ladder', async () => {
+      _binary.atBoot = '/bundled/claude';
+      // A ladder that would answer differently must not be consulted at all once
+      // a binary is in hand — a resolved binary does not move under a live server.
+      _binary.beforePath = '/somewhere/else/claude';
+      const mod = await import('../claude-code-runtime.js');
+      const runtime = new mod.ClaudeCodeRuntime('/tmp/dorkos-test');
+
+      const options = await turnOptions(runtime, 'bundled');
+
+      expect(options.pathToClaudeCodeExecutable).toBe('/bundled/claude');
     });
   });
 

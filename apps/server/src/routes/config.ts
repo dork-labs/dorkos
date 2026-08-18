@@ -113,10 +113,12 @@ router.get('/', async (_req, res) => {
         ?.dismissedUpgradeVersions ?? [],
     port: env.DORKOS_PORT,
     uptime: process.uptime(),
-    // The resolved, boundary-clamped default (lib/resolve-root.js) — the same
+    // The resolved default working directory (lib/resolve-root.js) — the same
     // value `GET /api/directory/default` reports, and for the same reason: a
     // Finder-launched Mac app runs with `process.cwd()` at `/`, which every
-    // boundary-enforced route then refuses (DOR-1334 / F11).
+    // boundary-enforced route then refuses (DOR-1334 / F11). Resolved, not
+    // clamped: `DORKOS_DEFAULT_CWD` is validated against the boundary by
+    // whoever sets it (the CLI does; the desktop shell will).
     workingDirectory: DEFAULT_CWD,
     platform: `${process.platform}-${process.arch}`,
     runtimes: configuredRuntimes(),

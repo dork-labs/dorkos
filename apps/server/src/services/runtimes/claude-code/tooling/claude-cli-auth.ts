@@ -39,9 +39,14 @@ const AUTH_PROBE_LABEL = 'Claude Code authentication';
  * This is the SAME ladder the SDK spawn seam walks — literally the same rungs
  * ({@link resolveClaudeBinaryBeforePath}), differing only in the final `PATH`
  * lookup, which is the bounded ASYNC one here so a stalled `PATH` mount can
- * never block the event loop. The two must never disagree: when they did, the
- * packaged Mac app ran sessions on a binary this probe called missing
- * (DOR-1334 / F2).
+ * never block the event loop. When the two walked DIFFERENT rungs, the packaged
+ * Mac app ran sessions on a binary this probe called missing (DOR-1334 / F2).
+ *
+ * One ladder is not the same as one answer at one moment: this probe re-walks it
+ * on every poll, while a live `ClaudeCodeRuntime` keeps the binary it resolved
+ * and only re-checks while it has none (see its `spawnBinaryPath`). So a `claude`
+ * that appears on `PATH` mid-run can read `satisfied` here before a running
+ * runtime picks it up; a provisioned one is picked up immediately.
  *
  * @returns Absolute path to the binary, or `null` when unresolvable.
  */

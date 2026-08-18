@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import type { UUID } from 'node:crypto';
 import { resolveAsarUnpacked } from '../../shared/asar-path.js';
+import { logLocatorFailure } from '../../shared/run-probe.js';
 import { claudePlatformPackages, resolveProvisionedClaudePath } from '../tooling/provision.js';
 
 /** Resolve modules relative to this file — ESM has no ambient `require`. */
@@ -349,8 +350,11 @@ function findClaudeOnPath(): string | null {
       .split(/\r?\n/)[0] // `where` may return multiple matches
       .trim();
     if (found && existsSync(found)) return found;
-  } catch {
-    /* not on PATH */
+  } catch (err) {
+    // Never silent: a locator that was KILLED at the timeout never established
+    // "not found" at all, and that is how a present binary reads as missing on
+    // a stalled mount or a loaded machine (DOR-1334 review).
+    logLocatorFailure('claude', err);
   }
   return null;
 }
@@ -367,7 +371,8 @@ function findClaudeOnPath(): string | null {
  * loop. They used to differ in the rungs too, and that is precisely how the
  * packaged Mac app came to run sessions on a binary its own readiness ladder
  * called missing (DOR-1334 / F2): the spawn seam honored the env override, the
- * probe did not.
+ * probe did not. Callers that CACHE a result can still drift from a fresh walk —
+ * `ClaudeCodeRuntime` re-checks these rungs precisely because of that.
  *
  * @returns The first existing binary from those three rungs, or `null`.
  */
