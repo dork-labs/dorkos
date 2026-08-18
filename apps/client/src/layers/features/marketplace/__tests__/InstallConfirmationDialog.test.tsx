@@ -104,6 +104,7 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    npmDependencies: [],
     schedules: [],
     secrets: [],
     externalHosts: [],
@@ -222,7 +223,7 @@ describe('InstallConfirmationDialog', () => {
     setMeshAgents();
     // Default: mutateAsync resolves with a stub result. Individual tests
     // override with `.mockRejectedValueOnce(...)` to exercise the error path.
-    installMutateAsync.mockResolvedValue({ success: true });
+    installMutateAsync.mockResolvedValue({ success: true, warnings: [] });
   });
 
   afterEach(cleanup);
@@ -351,7 +352,7 @@ describe('InstallConfirmationDialog', () => {
     const user = userEvent.setup();
     useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ data: makeDetail() });
-    installMutateAsync.mockResolvedValueOnce({ success: true });
+    installMutateAsync.mockResolvedValueOnce({ success: true, warnings: [] });
 
     render(<InstallConfirmationDialog />);
 

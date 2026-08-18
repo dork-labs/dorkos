@@ -323,6 +323,25 @@ export interface PreviewSchedule {
 }
 
 /**
+ * One npm library a package will fetch from the registry when it installs.
+ *
+ * Mirrors `NpmDependency` in
+ * `apps/server/src/services/marketplace/lib/npm-dependencies.ts`.
+ */
+export interface PreviewNpmDependency {
+  /** Package name on the npm registry (e.g. `zod`). */
+  name: string;
+  /** Version range exactly as the package declared it (e.g. `^4.3.6`). */
+  range: string;
+  /**
+   * True for an `optionalDependencies` entry. npm installs these by default, so
+   * they are disclosed like any other; the flag only says this one is allowed
+   * to fail without failing the install.
+   */
+  optional?: boolean;
+}
+
+/**
  * A preview of every effect a package install will have — surfaced to the user
  * before any disk mutation occurs.
  *
@@ -341,6 +360,15 @@ export interface PermissionPreview {
   schedules: PreviewSchedule[];
   /** Secrets the package will request from the user. */
   secrets: { key: string; required: boolean; description?: string }[];
+  /**
+   * npm libraries the install will download, read from the `dependencies` and
+   * `optionalDependencies` maps of the package's own `package.json`. Disclosed
+   * so the install dialog can name the network fetch before a person approves
+   * it. These are the DECLARED libraries — each brings its own dependencies,
+   * so the number actually downloaded is this many or more, and the UI copy
+   * says so rather than implying an exact count.
+   */
+  npmDependencies: PreviewNpmDependency[];
   /** External hosts the package will contact. */
   externalHosts: string[];
   /** Other packages this package depends on. */
@@ -408,6 +436,12 @@ export interface InstallResult {
   installPath: string;
   manifest: MarketplaceManifestSummary;
   warnings: string[];
+  /**
+   * The subset of `warnings` describing npm dependency problems (DOR-1341).
+   * Persisted to the package's install-metadata sidecar, so the installed-package
+   * view keeps reporting an incomplete package after the toast is gone.
+   */
+  dependencyWarnings?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -523,6 +557,12 @@ export interface InstalledPackage {
   agentName?: string;
   /** Capability counts — populated by the single-package endpoint only. */
   provides?: PackageProvides;
+  /**
+   * Problems installing this package's npm libraries (DOR-1341). Present only
+   * when something went wrong, so the installed-package view can say the
+   * package is on disk but incomplete, and name the command that fixes it.
+   */
+  dependencyWarnings?: string[];
 }
 
 // ---------------------------------------------------------------------------

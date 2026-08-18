@@ -40,6 +40,14 @@ export interface UnreadablePreviewHook {
   event?: string;
 }
 
+/** One npm library the install will fetch from the registry. */
+export interface PreviewNpmDependency {
+  name: string;
+  range: string;
+  /** True for an `optionalDependencies` entry — installed, but allowed to fail. */
+  optional?: boolean;
+}
+
 /** A scheduled job the install will create, and what it may do unattended. */
 export interface PreviewSchedule {
   name: string;
@@ -57,6 +65,7 @@ export interface PreviewPayload {
   extensions: { id: string; slots: string[] }[];
   hooks: PreviewHook[];
   unreadableHooks: UnreadablePreviewHook[];
+  npmDependencies: PreviewNpmDependency[];
   schedules: PreviewSchedule[];
   secrets: { key: string; required: boolean; description?: string }[];
   externalHosts: string[];
@@ -104,6 +113,18 @@ export function renderPreview(
     for (const ext of preview.extensions) {
       const slots = ext.slots.length > 0 ? ` [${ext.slots.join(', ')}]` : '';
       lines.push(`  ${ext.id}${slots}`);
+    }
+    lines.push('');
+  }
+
+  // Named before the commands section, because this is the one effect that
+  // reaches the network — and it happens during the install itself, not later.
+  // The heading says "and everything they depend on" because these are the
+  // DECLARED libraries; one of them routinely pulls in dozens more.
+  if (preview.npmDependencies.length > 0) {
+    lines.push('npm libraries this install will download, and everything they depend on:');
+    for (const dep of preview.npmDependencies) {
+      lines.push(`  ${dep.name}@${dep.range}${dep.optional ? ' (optional)' : ''}`);
     }
     lines.push('');
   }

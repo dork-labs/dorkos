@@ -288,8 +288,14 @@ function formatFileChanges(
 }
 
 /**
- * Format the `fileChanges` and `extensions` fields of a `PermissionPreview`
- * into the `effects` group.
+ * Format the `fileChanges`, `npmDependencies`, and `extensions` fields of a
+ * `PermissionPreview` into the `effects` group.
+ *
+ * The npm row sits here rather than under "Dependencies" — that group is other
+ * marketplace packages this one needs, which are a different thing from
+ * third-party libraries fetched off the npm registry. It says "download"
+ * because that is the part a person is consenting to: an install that reaches
+ * the network before the package has run a single line.
  *
  * @param preview - Full permission preview from the server.
  * @param installBase - Folder every path is expected to stay inside, if known.
@@ -299,6 +305,24 @@ function formatEffects(
   installBase: string | undefined
 ): FormattedPermission[] {
   const rows: FormattedPermission[] = formatFileChanges(preview.fileChanges, installBase);
+
+  if (preview.npmDependencies.length > 0) {
+    const count = preview.npmDependencies.length;
+    rows.push({
+      icon: 'globe',
+      // "and everything they depend on" is doing real work: `count` is what the
+      // package declared, and one declared library routinely pulls dozens more
+      // (`express` alone is 68 packages). A bare "Download 1 npm library" would
+      // be a number a person could reasonably rely on, and it would be wrong.
+      label: `Download ${count} npm ${count === 1 ? 'library' : 'libraries'}, and everything they depend on`,
+      // Every declared library is named, not just the first few: this is the
+      // row that tells a person what code is about to be fetched onto their
+      // machine, and a truncated list would hide the one that matters.
+      description: preview.npmDependencies
+        .map((dep) => `${dep.name}@${dep.range}${dep.optional ? ' (optional)' : ''}`)
+        .join(', '),
+    });
+  }
 
   for (const ext of preview.extensions) {
     rows.push({

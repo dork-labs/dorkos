@@ -18,6 +18,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
 import { atomicMove } from '../lib/atomic-move.js';
 import { installRootDirForType } from '../lib/install-roots.js';
+import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
@@ -64,11 +65,22 @@ export class AdapterInstallFlow {
       installPath,
     });
 
+    // Filled during `stage` by the npm dependency step; read after the
+    // transaction commits, so a rolled-back install reports nothing.
+    const dependencyWarnings: string[] = [];
+
     const transactionResult = await runTransaction({
       name: `install-adapter:${manifest.name}`,
       target: installPath,
       stage: async (staging) => {
         await stageAdapterPackage(packagePath, staging.path, logger);
+        dependencyWarnings.push(
+          ...(await installStagedNpmDependencies({
+            stagingDir: staging.path,
+            installPath,
+            logger,
+          }))
+        );
       },
       activate: async (staging) => {
         await activateAdapterPackage(staging.path, installPath);
@@ -86,7 +98,11 @@ export class AdapterInstallFlow {
       type: 'adapter',
       installPath: transactionResult.installPath,
       manifest,
-      warnings: [`Configure secrets via dorkos relay-adapters set ${manifest.name}`],
+      warnings: [
+        `Configure secrets via dorkos relay-adapters set ${manifest.name}`,
+        ...dependencyWarnings,
+      ],
+      dependencyWarnings: [...dependencyWarnings],
     };
   }
 }

@@ -18,6 +18,7 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    npmDependencies: [],
     schedules: [],
     secrets: [],
     externalHosts: [],
@@ -52,6 +53,51 @@ describe('PermissionPreviewSection', () => {
     expect(container.firstChild).not.toBeNull();
   });
 
+  it('names every npm library the install will download, with its version', () => {
+    // The person is consenting to a network fetch of third-party code before
+    // the package runs at all, so the row names each library rather than
+    // counting them (DOR-1341).
+    const preview = makePreview({
+      npmDependencies: [
+        { name: 'zod', range: '^4.3.6' },
+        { name: 'cronstrue', range: '~2.0.0' },
+      ],
+    });
+
+    render(<PermissionPreviewSection preview={preview} />);
+
+    expect(
+      screen.getByText(/download 2 npm libraries, and everything they depend on/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/zod@\^4\.3\.6, cronstrue@~2\.0\.0/)).toBeInTheDocument();
+  });
+
+  it('says "library", singular, when there is exactly one', () => {
+    render(
+      <PermissionPreviewSection
+        preview={makePreview({ npmDependencies: [{ name: 'zod', range: '^4.3.6' }] })}
+      />
+    );
+
+    expect(
+      screen.getByText(/download 1 npm library, and everything they depend on/i)
+    ).toBeInTheDocument();
+  });
+
+  it('marks an optionalDependency as optional', () => {
+    // npm installs these by default, so they are disclosed like any other; the
+    // marker only says this one is allowed to fail.
+    render(
+      <PermissionPreviewSection
+        preview={makePreview({
+          npmDependencies: [{ name: 'fsevents', range: '^2.3.3', optional: true }],
+        })}
+      />
+    );
+
+    expect(screen.getByText(/fsevents@\^2\.3\.3 \(optional\)/)).toBeInTheDocument();
+  });
+
   it('shows the literal hook command, not a summary of it', () => {
     const preview = makePreview({
       hooks: [
@@ -73,6 +119,7 @@ describe('PermissionPreviewSection', () => {
   it('says a hook declaration was unreadable rather than showing nothing', () => {
     const preview = makePreview({
       unreadableHooks: [{ path: 'hooks/hooks.json' }],
+      npmDependencies: [],
     });
 
     render(<PermissionPreviewSection preview={preview} />);

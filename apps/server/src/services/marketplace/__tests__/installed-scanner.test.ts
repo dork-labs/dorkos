@@ -109,6 +109,54 @@ describe('scanInstalledPackages', () => {
     });
   });
 
+  it('surfaces a dependency warning the sidecar recorded, so it outlives the toast (DOR-1341)', async () => {
+    // A package whose npm libraries failed to install is on disk and usable but
+    // incomplete. The install toast said so once; this is the surface that can
+    // still say it tomorrow.
+    const pluginDir = join(dorkHome, 'plugins', 'needs-zod');
+    await writeManifest(pluginDir, {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'needs-zod',
+      version: '1.0.0',
+    });
+    await writeMetadata(pluginDir, {
+      name: 'needs-zod',
+      version: '1.0.0',
+      installedAt: '2026-08-18T12:00:00.000Z',
+      type: 'plugin',
+      dependencyWarnings: ["DorkOS could not install this package's npm libraries."],
+    });
+
+    const [installed] = await scanInstalledPackages(dorkHome);
+
+    expect(installed?.dependencyWarnings).toEqual([
+      "DorkOS could not install this package's npm libraries.",
+    ]);
+  });
+
+  it('reports no dependencyWarnings key at all for a clean install', async () => {
+    // Absence is the common case and must not render as an empty warning row.
+    const pluginDir = join(dorkHome, 'plugins', 'clean');
+    await writeManifest(pluginDir, {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'clean',
+      version: '1.0.0',
+    });
+    await writeMetadata(pluginDir, {
+      name: 'clean',
+      version: '1.0.0',
+      installedAt: '2026-08-18T12:00:00.000Z',
+      type: 'plugin',
+      dependencyWarnings: [],
+    });
+
+    const [installed] = await scanInstalledPackages(dorkHome);
+
+    expect(installed).not.toHaveProperty('dependencyWarnings');
+  });
+
   it('walks the shapes directory so installed Shapes are visible (DOR-355 regression)', async () => {
     // A Shape installs to `<dorkHome>/shapes/<name>`, a root the scanner
     // originally never walked — so installed Shapes never appeared at

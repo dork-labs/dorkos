@@ -241,6 +241,10 @@ export class MarketplaceInstaller implements InstallerLike {
           sourceRepo: provenance.sourceRepo,
           sourceRef: provenance.sourceRef,
           commitSha: staged.commitSha,
+          ...(result.dependencyWarnings !== undefined &&
+            result.dependencyWarnings.length > 0 && {
+              dependencyWarnings: result.dependencyWarnings,
+            }),
         });
       } catch (metaErr) {
         this.deps.logger.warn('[marketplace-installer] failed to write install-metadata.json', {
