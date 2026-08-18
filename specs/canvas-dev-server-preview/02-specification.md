@@ -1,7 +1,7 @@
 ---
 slug: canvas-dev-server-preview
 created: 2026-08-16
-status: specified
+status: implemented
 tracker: DOR-1258
 ---
 
@@ -165,3 +165,41 @@ New ADR (id from `.claude/scripts/id.ts`): **"Dev-server previews get their own 
 
 - Worktree per phase from `origin/main` (`working-in-worktrees`); builder + separate adversarial reviewer per `REVIEW.md` **before** the PR opens; PR body `Closes DOR-<n>`; changelog fragment; `pnpm verify`; OpenAPI regen when `packages/shared/src/schemas.ts` changes: `pnpm turbo build --filter="./packages/*"` → `pnpm docs:export-api` → `pnpm --filter=@dorkos/site generate:api-docs` → `git add -A docs/api` → re-run to confirm zero diff.
 - Real-browser proof at the end of each phase: the video app (`http://localhost:5178/`) or the e2e fixture renders in the canvas of a running cockpit; screenshot in the PR.
+
+---
+
+## 5) Closeout (2026-08-17) — what shipped, where, and what is deliberately not done
+
+Read this section first if you are picking the spec up cold. Filesystem + tracker are ground truth; nothing below depends on chat history.
+
+### 5.1 Where the work landed
+
+| Phase | Ticket   | PR                                                     | Merged as   | Key files                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----- | -------- | ------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P1    | DOR-1259 | [#1084](https://github.com/dork-labs/dorkos/pull/1084) | `4c2eb3912` | `apps/client/src/layers/features/canvas/lib/{browser-url,probe-direct}.ts`, `ui/CanvasBrowserContent.tsx`, `model/use-devtools-bridge.ts`; `apps/server/src/services/workbench-serve/{probe,devtools-shim}.ts`, `routes/workbench-serve.ts` (`POST /probe`); `apps/e2e/tests/workbench/dev-server-preview.spec.ts`; ADR 260708-185519 Status note                                                                                                                                                                        |
+| P2    | DOR-1260 | [#1086](https://github.com/dork-labs/dorkos/pull/1086) | `4996b1b83` | `apps/server/src/services/workbench-serve/{preview-listener,proxy-headers}.ts` (+ `devtools-shim` tsx fix, `devtools-shim-page.test.ts`), `routes/workbench-serve.ts` (`/sign` → preview origin), `session-gate.ts` (proxy exemption removed), `env.ts` (`DORKOS_PREVIEW_PORT_RANGE`); `apps/client/src/layers/features/canvas/model/use-resolved-frame.ts` (the cascade); ADR `260817-152705`; `docs/guides/workbench.mdx`; the path-prefixed `/api/workbench/proxy/:token/*` route and `proxyToLocalhost` are **gone** |
+
+Evidence kept in `./evidence/`: the Video pipeline app at a deep path rendering through the listener on merged `main`; the dead-port message; P1's forwarded-port fallback; P2's "connection doesn't reach port" message. Fuller proof (mutation tables, e2e red/green logs, screenshots a–i) is in each PR body.
+
+### 5.2 Decisions made during execution (not in §1–§2 as originally written)
+
+- **The client asks the browser what it can reach.** A server-side probe cannot license a client-side framing decision (`docker -p`, `ssh -L`: the viewer's hostname is `localhost` but the viewer is not the machine). `probeDirect` (no-cors, no-store, 2 s): a **rejection** is "unreachable" (~62 ms on a refused port); an **abort** is "still thinking" and frames anyway (a compiling dev server must not be demoted). §2.4's amended cascade is the contract; `use-resolved-frame.ts` implements it, including `no-port` and mint-failure falling through to the direct step. `tunnel` is terminal.
+- **Listener is primary even on a loopback cockpit** (console relay everywhere); direct framing is the fallback.
+- **Cookies are filtered in both directions** (`isDorkosCookieName`: `better-auth.`/`better-auth-`/`__Secure-…` prefixes and `dorkos_preview_`) — outbound so a dev server never sees DorkOS cookies, inbound so a dev server can never plant one for the cockpit (same-site, cookies aren't port-scoped).
+- **Idle-reap only when no upgraded sockets are open**; the idle clock restarts when the last one closes; `close()` destroys tracked sockets so shutdown never hangs; every adopted socket has an error listener before any `await` (an unauthenticated WS + RST used to `process.exit(1)` the server).
+- **Anchored-prefix cookie names, not exact names** (Better Auth chunks `session_data` into `.0/.1`, 7 names × 2 secure spellings + a legacy hyphen fallback).
+- **No client-side TTL re-bootstrap**: a preview open past the 30-min token TTL gets the listener's plain 401 page ("This preview link has expired. Reload the canvas to open a fresh one."); reload re-mints. The listener's idle TTL and the token TTL are different clocks (comment in `config/constants.ts`).
+- **The DevTools shim is built to survive `tsx`** (esbuild `keepNames` `__name` wrappers made it dead under `pnpm dev`); `devtools-shim-page.test.ts` spawns the real `tsx` and asserts a `hello` reaches the parent.
+- **OpenAPI was not regenerated** — the whole workbench domain is unregistered in `openapi-registry.ts` (DOR-1306); registering only these routes would ship a misleading partial surface.
+
+### 5.3 Deliberately not done (do not "improve" these back into bugs)
+
+- **Previews through a tunnel or an HTTPS reverse proxy in front of DorkOS.** The listener is plain HTTP on its own port; a tunnel doesn't carry it and an HTTPS cockpit can't frame it. The canvas says so and offers Open in system browser. A real fix needs a per-preview public hostname — a separate spec.
+- **`DORKOS_PREVIEW_PORT_RANGE` is opt-in**, ephemeral by default. Docker/ssh users forward the range; the docs guide names it.
+- **The `serve` (local file) path keeps the opaque origin** — that is where ADR 260708-185519's threat model lives.
+- **No URL rewriting**, ever (01 §5 A).
+
+### 5.4 Follow-ups filed
+
+- **DOR-1305** — DevTools capture relay is inert in the standalone web cockpit: `use-devtools-bridge` gates on `app-store.sessionId`, which only embedded mode writes; router mode keeps the id in search params. Pre-existing; measured zero ingest POSTs with a live shim. `resource-error` counting is unaffected. (Not a gap: the agent-side read tools `browser_read_console/network` exist and read the buffer in-process.)
+- **DOR-1306** — workbench routes absent from the OpenAPI registry / `/api/docs`.

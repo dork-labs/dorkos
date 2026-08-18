@@ -44,6 +44,15 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     expect(notice).not.toMatch(/next message|first|front/i);
   });
 
+  it('says NOTHING for not-stageable — the transcript already said it (DOR-1307)', () => {
+    // A stage that folded joins no queue, so there is no row for a chip to sit
+    // on, and the person has already been told in the place they are looking:
+    // `StagedContextNote` renders "Added context for the next reply" above their
+    // own words. A second sentence here would either duplicate that or imply a
+    // failure, and nothing failed — the words land on the next reply either way.
+    expect(queueDowngradeNotice(downgraded('not-stageable'))).toBeNull();
+  });
+
   it('explains a turn that closed first', () => {
     expect(queueDowngradeNotice(downgraded('no-open-turn'))).toBe(
       'Queued. The task had already finished.'

@@ -200,6 +200,11 @@ export class PersistentDispatch {
    * already holds a process keeps the path it started on, whatever the setting
    * says now. See the module doc for what that means in each direction.
    *
+   * Asked by every route that could put a process under a session — a turn
+   * ({@link dispatch}), a stage ({@link stage}), and the runtime's per-session
+   * answers for steering and staging — so all four agree by construction rather
+   * than by four copies of the same condition.
+   *
    * @param sessionId - The session about to dispatch
    */
   shouldDispatch(sessionId: string): boolean {
@@ -464,11 +469,21 @@ export class PersistentDispatch {
    *   there is no window to tag and nothing to correlate: the receipt is the whole
    *   of it. Legal during the owner's own running turn too; the caller's write
    *   authorization gate has already settled who may write.
-   * - **A COLD session warms first**, because the message has to REACH a
-   *   transcript and a cold session has none live. The process is booted under
-   *   the resolved plan — the same launch the turn path builds — and then the
-   *   message is appended. This is the one case where staging starts a process;
-   *   it still opens no turn.
+   * - **A COLD session that has OPTED IN warms first**, because the message has
+   *   to REACH a transcript and a cold session has none live. The process is
+   *   booted under the resolved plan — the same launch the turn path builds — and
+   *   then the message is appended. This is the one case where staging starts a
+   *   process; it still opens no turn.
+   * - **A COLD session that has NOT opted in is refused**, `unsupported`, before
+   *   anything is acquired or launched. {@link shouldDispatch} is the same
+   *   question a turn asks, so the module's one promise holds without exception:
+   *   a process starts only where the operator turned the setting on. Staging did
+   *   not ask it, so "Add context" quietly booted an agent AND moved the session
+   *   onto this path for good, since a registry entry makes every later message
+   *   dispatch here (DOR-1307). The server reads the same answer through
+   *   `canStageSession` and folds the words into the next turn instead, so
+   *   reaching this refusal at all means the server asked when it should not
+   *   have.
    *
    * Unlike {@link steer}, this takes the `session` and the sender/message options,
    * because warming a cold session needs the launch plan that a bare
@@ -507,6 +522,13 @@ export class PersistentDispatch {
     if (live) {
       bundle = existing;
     } else {
+      // Nothing below this line may run for a session that would not have been
+      // dispatched here anyway: `acquire` registers the session and `warm()`
+      // boots a real CLI subprocess, and both are the operator's decision, not a
+      // side effect of adding a note (DOR-1307).
+      if (!this.shouldDispatch(sessionId)) {
+        return { delivered: false, reason: 'unsupported' };
+      }
       const effectiveCwd = resolveEffectiveCwd(senderOpts, messageOpts);
       try {
         // Warming boots a process in this cwd, so the boundary that gates the
