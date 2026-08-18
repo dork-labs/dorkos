@@ -138,6 +138,34 @@ describe('PackageCard', () => {
   // -------------------------------------------------------------------------
   // Compact variant
   // -------------------------------------------------------------------------
+  // Source label — which marketplace this package came from
+  // -------------------------------------------------------------------------
+
+  describe('source label', () => {
+    it('names the marketplace the package came from', () => {
+      const pkg = makePackage({ marketplace: 'claude-plugins-official' });
+      render(<PackageCard pkg={pkg} onClick={() => {}} />);
+
+      expect(screen.getByText('claude-plugins-official')).toBeInTheDocument();
+    });
+
+    it('shows the author and the source side by side, not one instead of the other', () => {
+      const pkg = makePackage({ author: 'Test Author', marketplace: 'dorkos-community' });
+      render(<PackageCard pkg={pkg} onClick={() => {}} />);
+
+      expect(screen.getByText('Test Author')).toBeInTheDocument();
+      expect(screen.getByText('dorkos-community')).toBeInTheDocument();
+    });
+
+    it('hides the source on the compact variant', () => {
+      const pkg = makePackage({ marketplace: 'claude-plugins-official' });
+      render(<PackageCard pkg={pkg} onClick={() => {}} variant="compact" />);
+
+      expect(screen.queryByText('claude-plugins-official')).not.toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
 
   describe('variant="compact"', () => {
     it('uses p-4 padding instead of p-6', () => {

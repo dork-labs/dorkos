@@ -5,6 +5,7 @@ import {
   CATEGORY_DESCRIPTIONS,
   CATEGORY_LABELS,
   CONNECTOR_ADAPTER_TYPE,
+  DORKOS_MARKETPLACE_SOURCE_NAME,
   MARKETPLACE_CATEGORIES,
   PackageTypeSchema,
 } from '@dorkos/marketplace';
@@ -60,14 +61,16 @@ const CATEGORY_COLLAPSE_THRESHOLD = 8;
  * Marketplace filter panel that takes over the app-shell sidebar body on
  * `/marketplace` routes (registered as a `sidebar.body` contribution).
  *
- * It owns the two filter axes that used to sit in the page header: a
- * single-select package-type facet (All + the five types + a Connectors
- * refinement of Adapters, each with a live result count and a hue swatch
- * matching its card badge) and a multi-select,
+ * It owns the three filter axes that used to sit in the page header (or nowhere
+ * at all): a single-select package-type facet (All + the five types + a
+ * Connectors refinement of Adapters, each with a live result count and a hue
+ * swatch matching its card badge), a multi-select OR-combined **source** facet
+ * naming every marketplace the catalog was aggregated from, and a multi-select,
  * OR-combined category facet (the present categories in canonical order, each
- * with a count). Both write the same URL params the browse page reads, so the
- * grid, the Featured rail, and shared links all stay in sync — the panel holds
- * no local filter state of its own. A back affordance returns to the dashboard.
+ * with a count). All three write the same URL params the browse page reads, so
+ * the grid, the Featured rail, and shared links all stay in sync — the panel
+ * holds no local filter state of its own. A back affordance returns to the
+ * dashboard.
  *
  * Counts are computed client-side from the cached, unfiltered catalog (the same
  * TanStack Query cache the grid uses — no extra fetch), so they report how many
@@ -76,8 +79,18 @@ const CATEGORY_COLLAPSE_THRESHOLD = 8;
 export function MarketplaceSidebar() {
   const navigate = useNavigate();
   const { data: packages } = useMarketplacePackages();
-  const { type, setType, categories, toggleCategory, clearCategories } = useMarketplaceParams();
+  const {
+    type,
+    setType,
+    categories,
+    toggleCategory,
+    clearCategories,
+    sources,
+    toggleSource,
+    clearSources,
+  } = useMarketplaceParams();
   const selectedCategories = useMemo(() => new Set(categories), [categories]);
+  const selectedSources = useMemo(() => new Set(sources), [sources]);
 
   // Type counts: mirror the filter's rule that a missing `type` reads as
   // `'plugin'`; `all` is the raw total. A package whose type is outside the
@@ -118,6 +131,27 @@ export function MarketplaceSidebar() {
     () => MARKETPLACE_CATEGORIES.filter((slug) => (categoryCounts.get(slug) ?? 0) > 0),
     [categoryCounts]
   );
+
+  // Source counts, ordered DorkOS-first and then by size. Most of the catalog is
+  // mirrored from other registries, so "where did this come from?" is the
+  // question the browse page most needs to answer — and DorkOS's own source
+  // leads the list for the same reason the default sort ranks it first.
+  const presentSources = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const pkg of packages ?? []) {
+      if (!pkg.marketplace) continue;
+      counts.set(pkg.marketplace, (counts.get(pkg.marketplace) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => {
+        const an = a.name === DORKOS_MARKETPLACE_SOURCE_NAME ? 1 : 0;
+        const bn = b.name === DORKOS_MARKETPLACE_SOURCE_NAME ? 1 : 0;
+        if (an !== bn) return bn - an;
+        if (a.count !== b.count) return b.count - a.count;
+        return a.name.localeCompare(b.name);
+      });
+  }, [packages]);
 
   const [expanded, setExpanded] = useState(false);
   const collapsible = presentCategories.length > CATEGORY_COLLAPSE_THRESHOLD;
@@ -181,6 +215,43 @@ export function MarketplaceSidebar() {
             ))}
           </div>
         </SidebarGroup>
+
+        {/* Source — multi-select, OR-combined. Hidden when the whole catalog
+            comes from one place: a facet that cannot narrow anything is chrome
+            the data has not earned. */}
+        {presentSources.length > 1 && (
+          <SidebarGroup className="p-0">
+            <SidebarGroupLabel className="justify-between">
+              <span>Source</span>
+              {selectedSources.size > 0 && (
+                <button
+                  type="button"
+                  onClick={clearSources}
+                  className="text-muted-foreground hover:text-foreground focus-ring rounded-sm text-[10px] font-medium tracking-wide uppercase transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </SidebarGroupLabel>
+            <div role="group" aria-label="Filter by source" className="flex flex-col gap-0.5">
+              {presentSources.map(({ name, count }) => (
+                <FacetButton
+                  key={name}
+                  label={name}
+                  title={
+                    name === DORKOS_MARKETPLACE_SOURCE_NAME
+                      ? "DorkOS's own marketplace"
+                      : `Packages mirrored from ${name}`
+                  }
+                  count={count}
+                  active={selectedSources.has(name)}
+                  multi
+                  onClick={() => toggleSource(name)}
+                />
+              ))}
+            </div>
+          </SidebarGroup>
+        )}
 
         {/* Category — multi-select, OR-combined */}
         {presentCategories.length > 0 && (

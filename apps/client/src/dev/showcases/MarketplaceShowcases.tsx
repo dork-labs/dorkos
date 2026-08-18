@@ -49,6 +49,9 @@ import {
   MOCK_PERMISSION_PREVIEW_MINIMAL,
   MOCK_PERMISSION_PREVIEW_FULL,
   MOCK_PERMISSION_PREVIEW_BLOCKING,
+  MOCK_PERMISSION_PREVIEW_MANY_FILES,
+  MOCK_PERMISSION_PREVIEW_ESCAPES,
+  MOCK_DORK_HOME,
   MOCK_INSTALLED_PACKAGES,
   MOCK_SOURCES,
 } from './marketplace-mocks';
@@ -377,26 +380,51 @@ function InstallConfirmationDialogShowcase() {
 // PermissionPreviewSection showcase
 // ---------------------------------------------------------------------------
 
-/** PermissionPreviewSection in three states: minimal, full, blocking conflicts. */
+/** PermissionPreviewSection across its five states, file effects first. */
 function PermissionPreviewSectionShowcase() {
   return (
     <PlaygroundSection
       title="PermissionPreviewSection"
-      description="Human-readable breakdown of everything a package will do on install. Three variants: minimal, fully populated, and with blocking conflicts."
+      description="Human-readable breakdown of everything a package will do on install. The file effects name the folder, count each action, and hide the paths behind a disclosure; the containment line only appears when the caller says which folder the install targets."
     >
       <ShowcaseLabel>Minimal (no secrets, no hosts, no conflicts)</ShowcaseLabel>
       <ShowcaseDemo>
-        <PermissionPreviewSection preview={MOCK_PERMISSION_PREVIEW_MINIMAL} />
+        <PermissionPreviewSection
+          preview={MOCK_PERMISSION_PREVIEW_MINIMAL}
+          installBase={MOCK_DORK_HOME}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Large install (134 files, scrolling path list)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PermissionPreviewSection
+          preview={MOCK_PERMISSION_PREVIEW_MANY_FILES}
+          installBase={MOCK_DORK_HOME}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Writes outside the DorkOS folder (warning line)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PermissionPreviewSection
+          preview={MOCK_PERMISSION_PREVIEW_ESCAPES}
+          installBase={MOCK_DORK_HOME}
+        />
       </ShowcaseDemo>
 
       <ShowcaseLabel>Full (all sections populated)</ShowcaseLabel>
       <ShowcaseDemo>
-        <PermissionPreviewSection preview={MOCK_PERMISSION_PREVIEW_FULL} />
+        <PermissionPreviewSection
+          preview={MOCK_PERMISSION_PREVIEW_FULL}
+          installBase={MOCK_DORK_HOME}
+        />
       </ShowcaseDemo>
 
       <ShowcaseLabel>Blocking conflict (error-level)</ShowcaseLabel>
       <ShowcaseDemo>
-        <PermissionPreviewSection preview={MOCK_PERMISSION_PREVIEW_BLOCKING} />
+        <PermissionPreviewSection
+          preview={MOCK_PERMISSION_PREVIEW_BLOCKING}
+          installBase={MOCK_DORK_HOME}
+        />
       </ShowcaseDemo>
     </PlaygroundSection>
   );
@@ -503,7 +531,7 @@ function MarketplaceSidebarShowcase() {
   return (
     <PlaygroundSection
       title="MarketplaceSidebar"
-      description="Sidebar takeover panel for the /marketplace routes: a single-select type facet and a multi-select, OR-combined category facet, each with live result counts derived from the cached catalog. Writes the same URL params the browse grid reads."
+      description="Sidebar takeover panel for the /marketplace routes: a single-select type facet plus multi-select, OR-combined source and category facets, each with live result counts derived from the cached catalog. The source facet only appears once the catalog spans more than one marketplace. Writes the same URL params the browse grid reads."
     >
       <ShowcaseDemo>
         <div className="bg-sidebar text-sidebar-foreground flex h-[32rem] w-72 flex-col overflow-hidden rounded-lg border">

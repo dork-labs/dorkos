@@ -59,14 +59,14 @@ export function PackageGrid() {
   const { data: installed } = useInstalledPackages();
   const prefersReducedMotion = useReducedMotion();
 
-  const { type, categories, search, sort, resetFilters, clearCategories, openDetail } =
+  const { type, categories, sources, search, sort, resetFilters, clearCategories, openDetail } =
     useMarketplaceParams();
   const requestInstall = useRequestInstall();
 
   const visible = useMemo(() => {
     if (!data) return [];
-    return sortPackages(filterPackages(data, { type, categories, search }), sort);
-  }, [data, type, categories, search, sort]);
+    return sortPackages(filterPackages(data, { type, categories, sources, search }), sort);
+  }, [data, type, categories, sources, search, sort]);
 
   const installedNames = useMemo(() => new Set((installed ?? []).map((p) => p.name)), [installed]);
 

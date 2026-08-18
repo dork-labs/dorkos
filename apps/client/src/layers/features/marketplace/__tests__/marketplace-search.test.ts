@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CONNECTOR_ADAPTER_TYPE } from '@dorkos/marketplace';
-import { marketplaceSearchSchema, normalizeCategoryParam } from '../model/marketplace-search';
+import { marketplaceSearchSchema, normalizeFacetParam } from '../model/marketplace-search';
 
 // The schema is wired into the /marketplace route via `zodValidator`, which
 // calls `.parse`. These tests exercise that same parse so a stale shared link
@@ -64,32 +64,51 @@ describe('marketplaceSearchSchema — category facet (single + multi migration)'
   });
 });
 
-describe('normalizeCategoryParam', () => {
+describe('marketplaceSearchSchema — source facet', () => {
+  it('accepts a single source name (?source=claude-plugins-official)', () => {
+    expect(marketplaceSearchSchema.parse({ source: 'claude-plugins-official' }).source).toBe(
+      'claude-plugins-official'
+    );
+  });
+
+  it('accepts several source names', () => {
+    expect(
+      marketplaceSearchSchema.parse({ source: ['dorkos-community', 'my-registry'] }).source
+    ).toEqual(['dorkos-community', 'my-registry']);
+  });
+
+  it('degrades garbage to undefined rather than throwing', () => {
+    expect(() => marketplaceSearchSchema.parse({ source: 42 })).not.toThrow();
+    expect(marketplaceSearchSchema.parse({ source: 42 }).source).toBeUndefined();
+  });
+});
+
+describe('normalizeFacetParam', () => {
   it('wraps a single string in an array', () => {
-    expect(normalizeCategoryParam('security')).toEqual(['security']);
+    expect(normalizeFacetParam('security')).toEqual(['security']);
   });
 
   it('drops an empty string', () => {
-    expect(normalizeCategoryParam('')).toEqual([]);
+    expect(normalizeFacetParam('')).toEqual([]);
   });
 
   it('passes an array through, dropping empties and de-duplicating', () => {
-    expect(normalizeCategoryParam(['security', '', 'security', 'code-review'])).toEqual([
+    expect(normalizeFacetParam(['security', '', 'security', 'code-review'])).toEqual([
       'security',
       'code-review',
     ]);
   });
 
   it('filters non-string array entries', () => {
-    expect(normalizeCategoryParam(['security', 42, null, 'docs'] as unknown[])).toEqual([
+    expect(normalizeFacetParam(['security', 42, null, 'docs'] as unknown[])).toEqual([
       'security',
       'docs',
     ]);
   });
 
   it('returns an empty array for undefined and non-string/array values', () => {
-    expect(normalizeCategoryParam(undefined)).toEqual([]);
-    expect(normalizeCategoryParam(123)).toEqual([]);
-    expect(normalizeCategoryParam({ junk: true })).toEqual([]);
+    expect(normalizeFacetParam(undefined)).toEqual([]);
+    expect(normalizeFacetParam(123)).toEqual([]);
+    expect(normalizeFacetParam({ junk: true })).toEqual([]);
   });
 });

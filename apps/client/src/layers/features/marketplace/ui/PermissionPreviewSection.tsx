@@ -25,6 +25,7 @@ import { cn } from '@/layers/shared/lib';
 import {
   formatPermissionPreview,
   type FormattedPermission,
+  type PermissionDetailItem,
   type PermissionSeverity,
 } from '../lib/format-permissions';
 
@@ -63,7 +64,53 @@ const SEVERITY_CLASS: Record<PermissionSeverity, string> = {
 // ---------------------------------------------------------------------------
 
 /**
- * A single permission row with an icon, label, and optional description.
+ * The expandable path list on a row. A native `<details>` gives keyboard and
+ * screen-reader access for free, and the list scrolls inside a fixed height so
+ * a plugin with a hundred-plus files never pushes the Install button off the
+ * dialog.
+ *
+ * @param items - Detail lines to reveal.
+ * @param label - Text of the disclosure trigger.
+ */
+function PermissionDetails({ items, label }: { items: PermissionDetailItem[]; label: string }) {
+  return (
+    <details className="group/details mt-1.5">
+      <summary
+        className={cn(
+          'text-muted-foreground hover:text-foreground focus-ring inline-flex cursor-pointer',
+          'list-none items-center gap-1 rounded-sm text-xs select-none',
+          '[&::-webkit-details-marker]:hidden'
+        )}
+      >
+        <ChevronRight className="size-3 shrink-0 transition-transform duration-200 group-open/details:rotate-90" />
+        {label}
+      </summary>
+      <ul className="bg-muted/40 mt-1.5 max-h-64 space-y-0.5 overflow-y-auto rounded-md p-2">
+        {items.map((detail, index) => (
+          <li key={index} className="flex items-baseline gap-2 font-mono text-[11px]">
+            {detail.tag && (
+              <span
+                className={cn(
+                  'w-14 shrink-0',
+                  detail.severity ? SEVERITY_CLASS[detail.severity] : SEVERITY_CLASS.info
+                )}
+              >
+                {detail.tag}
+              </span>
+            )}
+            <span className="text-foreground min-w-0 break-all" data-testid="file-change-path">
+              {detail.text}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
+ * A single permission row with an icon, label, optional description, and an
+ * optional inline disclosure holding its detail lines.
  *
  * @param item - The formatted permission row to display.
  */
@@ -85,6 +132,9 @@ function PermissionItem({ item }: { item: FormattedPermission }) {
         {item.description && (
           <p className="text-muted-foreground mt-0.5 text-xs">{item.description}</p>
         )}
+        {item.details && item.details.length > 0 && (
+          <PermissionDetails items={item.details} label={item.detailsLabel ?? 'Show details'} />
+        )}
       </div>
     </li>
   );
@@ -97,6 +147,12 @@ interface SectionProps {
   tone?: 'warning';
   /** Start expanded. Defaults to true for sections with ≤3 items. */
   defaultOpen?: boolean;
+  /**
+   * Drop the row count from the heading. Set for the effects section, whose
+   * rows are summary sentences: "What this package will do (2)" alongside a row
+   * reading "135 files" invites the reader to think two files are involved.
+   */
+  hideCount?: boolean;
 }
 
 /**
@@ -106,7 +162,7 @@ interface SectionProps {
  * Uses the native `<details>/<summary>` element for accessible,
  * zero-JS progressive disclosure with CSS transitions.
  */
-function PermissionSection({ title, items, tone, defaultOpen }: SectionProps) {
+function PermissionSection({ title, items, tone, defaultOpen, hideCount }: SectionProps) {
   if (items.length === 0) return null;
 
   const open = defaultOpen ?? items.length <= 3;
@@ -122,9 +178,11 @@ function PermissionSection({ title, items, tone, defaultOpen }: SectionProps) {
       >
         <ChevronRight className="size-3 shrink-0 transition-transform duration-200 group-open/perm:rotate-90" />
         {title}
-        <span className="text-muted-foreground font-normal tracking-normal normal-case">
-          ({items.length})
-        </span>
+        {!hideCount && (
+          <span className="text-muted-foreground font-normal tracking-normal normal-case">
+            ({items.length})
+          </span>
+        )}
       </summary>
       <ul className="mt-2 space-y-1.5">
         {items.map((item, index) => (
@@ -142,6 +200,14 @@ function PermissionSection({ title, items, tone, defaultOpen }: SectionProps) {
 interface PermissionPreviewSectionProps {
   /** Raw permission preview as returned by the server preview endpoint. */
   preview: PermissionPreview;
+  /**
+   * The folder this install targets — the DorkOS data directory for a global
+   * install, the project's `.dork` folder for an agent-local one. Given it, the
+   * effects section says whether every file stays inside. Omit it and no
+   * containment claim is made, because an unchecked reassurance is worse than
+   * none.
+   */
+  installBase?: string;
 }
 
 /**
@@ -162,16 +228,22 @@ interface PermissionPreviewSectionProps {
  * amber/warning tone where relevant, because they are what a person needs to
  * see before trusting a stranger's package.
  *
+ * The effects section names the folder the files land in, counts each action
+ * separately, and puts every path behind a disclosure. A file count on its own
+ * is not consent: the thing a person most needs before approving an install is
+ * which existing files disappear, and that is the first group in the list.
+ *
  * Used by both the package detail sheet and the install confirmation dialog.
  *
  * @param preview - Raw `PermissionPreview` from the server.
+ * @param installBase - Folder the install targets, when the caller knows it.
  */
-export function PermissionPreviewSection({ preview }: PermissionPreviewSectionProps) {
-  const groups = formatPermissionPreview(preview);
+export function PermissionPreviewSection({ preview, installBase }: PermissionPreviewSectionProps) {
+  const groups = formatPermissionPreview(preview, { installBase });
 
   return (
     <div className="space-y-6">
-      <PermissionSection title="What this package will do" items={groups.effects} />
+      <PermissionSection title="What this package will do" items={groups.effects} hideCount />
       <PermissionSection
         title="Commands this package declares"
         items={groups.commands}

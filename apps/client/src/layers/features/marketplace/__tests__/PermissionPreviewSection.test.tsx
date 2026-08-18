@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { PermissionPreview } from '@dorkos/shared/marketplace-schemas';
 
 import { PermissionPreviewSection } from '../ui/PermissionPreviewSection';
@@ -131,6 +132,98 @@ describe('PermissionPreviewSection', () => {
     render(<PermissionPreviewSection preview={preview} />);
 
     expect(screen.getByText(/what this package will do/i)).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // File effects — where the files go, and which ones disappear
+  // -------------------------------------------------------------------------
+
+  it('names the folder and a count per action instead of a bare file total', () => {
+    const preview = makePreview({
+      fileChanges: [
+        { path: '/Users/kai/.dork/plugins/flow/commands/flow.md', action: 'create' },
+        { path: '/Users/kai/.dork/plugins/flow/config/config.json', action: 'modify' },
+        { path: '/Users/kai/.dork/plugins/flow/scripts/stale.ts', action: 'delete' },
+      ],
+    });
+
+    render(<PermissionPreviewSection preview={preview} />);
+
+    expect(
+      screen.getByText('3 files under /Users/kai/.dork/plugins/flow: 1 new, 1 changed, 1 removed')
+    ).toBeInTheDocument();
+    // The old count-only phrasing must be gone.
+    expect(screen.queryByText(/will be created, modified, or deleted/i)).not.toBeInTheDocument();
+  });
+
+  it('hides the path list behind a keyboard-reachable disclosure', async () => {
+    const user = userEvent.setup();
+    const preview = makePreview({
+      fileChanges: [
+        { path: '/Users/kai/.dork/plugins/flow/commands/flow.md', action: 'create' },
+        { path: '/Users/kai/.dork/plugins/flow/scripts/stale.ts', action: 'delete' },
+      ],
+    });
+
+    render(<PermissionPreviewSection preview={preview} />);
+
+    const disclosure = screen.getByText('Show 2 files');
+    const list = disclosure.closest('details') as HTMLDetailsElement;
+    expect(list.open).toBe(false);
+
+    // A native <summary> is focusable and toggles on Enter — no custom handlers.
+    await user.click(disclosure);
+    expect(list.open).toBe(true);
+
+    expect(screen.getByText('scripts/stale.ts')).toBeInTheDocument();
+    expect(screen.getByText('commands/flow.md')).toBeInTheDocument();
+  });
+
+  it('lists what disappears before what arrives', () => {
+    const preview = makePreview({
+      fileChanges: [
+        { path: '/root/pkg/new.md', action: 'create' },
+        { path: '/root/pkg/gone.md', action: 'delete' },
+      ],
+    });
+
+    render(<PermissionPreviewSection preview={preview} />);
+
+    const paths = screen.getAllByTestId('file-change-path').map((el) => el.textContent);
+    expect(paths).toEqual(['gone.md', 'new.md']);
+  });
+
+  it('says everything stays inside the install folder when it does', () => {
+    const preview = makePreview({
+      fileChanges: [{ path: '/Users/kai/.dork/plugins/flow/a.md', action: 'create' }],
+    });
+
+    render(<PermissionPreviewSection preview={preview} installBase="/Users/kai/.dork" />);
+
+    expect(screen.getByText('Every file stays inside /Users/kai/.dork.')).toBeInTheDocument();
+  });
+
+  it('warns in amber when a file lands outside the install folder', () => {
+    const preview = makePreview({
+      fileChanges: [{ path: '/Users/kai/.claude/settings.json', action: 'modify' }],
+    });
+
+    render(<PermissionPreviewSection preview={preview} installBase="/Users/kai/.dork" />);
+
+    const warning = screen.getByText('1 file lands outside /Users/kai/.dork.');
+    expect(warning).toBeInTheDocument();
+    expect(warning.closest('li')?.className).toMatch(/amber/);
+  });
+
+  it('makes no containment claim when no install folder is given', () => {
+    const preview = makePreview({
+      fileChanges: [{ path: '/Users/kai/.dork/plugins/flow/a.md', action: 'create' }],
+    });
+
+    render(<PermissionPreviewSection preview={preview} />);
+
+    expect(screen.queryByText(/stays inside/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/lands outside/i)).not.toBeInTheDocument();
   });
 
   it('renders the secrets section with required/optional keys', () => {

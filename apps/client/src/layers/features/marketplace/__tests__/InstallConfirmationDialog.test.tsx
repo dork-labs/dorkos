@@ -36,6 +36,12 @@ vi.mock('@/layers/entities/mesh', () => ({
   useMeshAgentPaths: vi.fn().mockReturnValue({ data: { agents: [] } }),
 }));
 
+// The install preview names the folder the files land in, so the dialog reads
+// `dorkHome` from the server config. A fixed value keeps the assertion stable.
+vi.mock('@/layers/entities/config', () => ({
+  useConfig: () => ({ data: { dorkHome: '/Users/kai/.dork' } }),
+}));
+
 // ---------------------------------------------------------------------------
 // Mock sonner — `useInstallWithToast` calls toast.loading/success/error/dismiss.
 // We don't assert on the toast calls here; we only need to silence them.
