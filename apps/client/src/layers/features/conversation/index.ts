@@ -52,6 +52,11 @@ export type { LivePeekRow } from './ui/LivePeek';
 // `LiveLaneProps` and `LivePeekProps` stay inside the slice: a host writes
 // `<Conversation.LiveLane …>` and TypeScript infers them, so exporting the two
 // interfaces would be two more things to keep in step for no reader's benefit.
+// The scroller's two moved pieces. Exported while `features/chat`'s retiring
+// `MessageList` still draws them; task 4.3 deletes that list, and both become
+// internal to `Conversation.Timeline`.
+export { ScrollThumb } from './ui/ScrollThumb';
+export { useUnreadCursor } from './model/use-unread-cursor';
 export { messageItem, toolStatus } from './ui/message/message-variants';
 export { MessageAuthorAvatar } from './ui/message/MessageAuthorAvatar';
 export { formatTime } from './lib/format-entry-time';

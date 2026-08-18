@@ -18,17 +18,20 @@ import { Feed } from '@/layers/shared/ui';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { useSessionRuntime } from '@/layers/entities/session';
 import { WIDGET_FENCE_MARKER } from '@/layers/features/gen-ui';
-import { DayDivider, UnreadDivider } from '@/layers/features/conversation';
+import {
+  DayDivider,
+  ScrollThumb,
+  UnreadDivider,
+  useUnreadCursor,
+} from '@/layers/features/conversation';
 import { SessionMessage, StagedContextNote } from './message';
 import type { InteractiveToolHandle } from './message';
 import { buildListRows } from '../lib/build-list-rows';
 import type { ListRow } from '../lib/build-list-rows';
 import { resolveMessageAuthor } from '../lib/resolve-message-author';
 import type { MessageAuthorContext } from '../lib/resolve-message-author';
-import { useUnreadCursor } from '../model/view/use-unread-cursor';
 import { useStreamingAnnouncer } from '../model/stream/use-streaming-announcer';
 import { useApprovalAnnouncer } from '../model/stream/use-approval-announcer';
-import { ScrollThumb } from './ScrollThumb';
 
 /**
  * What the transcript is called when a screen reader lands in it.

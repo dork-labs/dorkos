@@ -6,7 +6,14 @@
  * every screen this person reads from. It used to live in this browser's
  * `localStorage`, which is exactly why two devices disagreed about what was new.
  *
- * @module features/chat/model/view/use-unread-cursor
+ * It sits in the neutral slice because the one list that reads it is
+ * `Conversation.Timeline`, which draws a session and a channel from the same
+ * code. What it reads is still a SESSION cursor — the room's own rule is placed
+ * against the `(member, room)` cursor its roster carries — so the two surfaces
+ * arrive at the same rule from different stores, which is why the timeline takes
+ * the placement as input rather than resolving it.
+ *
+ * @module features/conversation/model/use-unread-cursor
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReadCursor } from '@dorkos/shared/read-cursor-schemas';

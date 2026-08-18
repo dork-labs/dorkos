@@ -1,3 +1,11 @@
+/**
+ * The thin scrollbar a conversation draws over its own scroller.
+ *
+ * Moved out of `features/chat` with the list it belonged to: one timeline draws
+ * a session and a channel, so one thumb tracks both.
+ *
+ * @module features/conversation/ui/ScrollThumb
+ */
 import { useRef, useEffect, useCallback, useState } from 'react';
 
 const FADE_DELAY_MS = 800;

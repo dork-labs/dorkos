@@ -53,7 +53,10 @@ vi.mock('../ui/message', () => ({
   },
 }));
 
-vi.mock('../ui/ScrollThumb', () => ({ ScrollThumb: () => null }));
+vi.mock('@/layers/features/conversation', async () => ({
+  ...(await vi.importActual<object>('@/layers/features/conversation')),
+  ScrollThumb: () => null,
+}));
 
 vi.mock('@/layers/entities/agent/model/use-current-agent', () => ({
   useCurrentAgent: () => ({ data: null }),

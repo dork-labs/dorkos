@@ -104,7 +104,8 @@ vi.mock('@/layers/features/entry-actions/ui/EntryRunWithMenu', () => ({
 }));
 
 // Mock ScrollThumb to avoid scroll measurement in unit tests
-vi.mock('../ui/ScrollThumb', () => ({
+vi.mock('@/layers/features/conversation', async () => ({
+  ...(await vi.importActual<object>('@/layers/features/conversation')),
   ScrollThumb: () => null,
 }));
 
