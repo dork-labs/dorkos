@@ -53,6 +53,7 @@ import { sniffImageContentType } from '../services/identity/image-sniff.js';
 import { storedExtension } from '../services/rooms/attachments/attachment-paths.js';
 import { sweepUnboundAttachments } from '../services/rooms/attachments/unbound-sweep.js';
 import { configManager } from '../services/core/config-manager.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { parseBody, sendError } from '../lib/route-utils.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import { resolveCaller } from './room-caller.js';
@@ -169,11 +170,28 @@ router.patch('/:id', (req, res) => {
  *
  * - **A room you cannot see answers 404**, exactly as `GET /:id` does, so this
  *   route discloses nothing about a room that reading it would not.
- * - **Only a person may ask.** A caller resolved as an agent is refused 403
- *   (`PEOPLE_ONLY`), the same boundary reacting and read state already draw. An
- *   agent enumerating its room-mates' sessions is arbitration this domain has
- *   declined; a person asking "where is that work running" is the reason the
- *   route exists.
+ * - **Only a person may ask.** A caller that presented `X-DorkOS-Agent` is
+ *   refused 403 (`PEOPLE_ONLY`). An agent enumerating its room-mates' sessions
+ *   is arbitration this domain has declined; a person asking "where is that work
+ *   running" is the reason the route exists.
+ *
+ * **A header that did not resolve is refused too, and that is what DOR-1357
+ * changed.** The gate used to be `caller.kind !== 'human'`, which asks who the
+ * caller resolved TO — and `resolveCaller` treats an unverifiable token as "no
+ * agent presented", so `curl -H 'X-DorkOS-Agent: garbage'` read this route as
+ * the operator. {@link presentsAgentIdentity} is the same predicate the Ask's
+ * answer routes already refuse on (`requirePersonToAnswer`, `routes/sessions.ts`),
+ * and it is strictly WIDER than the check it replaces: `resolveCaller` returns an
+ * agent only when `getRequestAgentIdentity` resolved, which is this predicate's
+ * first disjunct, so everything the old gate refused is still refused — plus the
+ * token that went nowhere. A revoked agent is still an agent, and this route is
+ * a read no person loses by DorkOS being strict about it.
+ *
+ * The sibling room routes (attachments, read cursors, and every route that only
+ * takes `resolveCaller`) still take the lenient reading. That is deliberate here
+ * rather than overlooked: changing them is a change to every room route's caller
+ * model, and this route is the one the record singled out (P2/P3 Known Issues
+ * 9/19).
  *
  * **Visibility is checked first, and the order is deliberate.** `POST
  * /:id/attachments` asks the other way round, for a reason that does not apply
@@ -197,10 +215,10 @@ router.get('/:id/sessions', (req, res) => {
     // Throws `ROOM_NOT_FOUND` for a room this caller may not see, whoever they
     // are — see the note above on why that comes first.
     const bindings = getRoomService().listRoomSessions(req.params.id, caller.id);
-    if (caller.kind !== 'human') {
-      // A 403 rather than a 404: this caller IS in the room, so there is nothing
-      // left to hide, and telling an agent "this is not yours to read" is more
-      // useful than pretending the route does not exist.
+    if (presentsAgentIdentity(req, res)) {
+      // A 403 rather than a 404: whoever this resolved to IS in the room, so
+      // there is nothing left to hide, and telling an agent "this is not yours
+      // to read" is more useful than pretending the route does not exist.
       throw new RoomError('PEOPLE_ONLY', "Only a person can see where a room's work runs.");
     }
     res.json({ bindings });
