@@ -4,12 +4,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { TopologyView, TopologyAgent } from '@dorkos/shared/mesh-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { OPEN_MESH_LABEL } from '@/layers/entities/mesh';
 import { TopologyPanel } from '../TopologyPanel';
 
 // ---------------------------------------------------------------------------
@@ -51,6 +53,18 @@ const TOPOLOGY_WITH_DEFAULT_AND_EXPLICIT_RULES: TopologyView = {
     // A user-configured explicit grant — must keep its delete affordance.
     { sourceNamespace: 'ns-a', targetNamespace: 'ns-b', action: 'allow', origin: 'explicit' },
   ],
+  openMesh: false,
+};
+
+/** The same topology with the mesh-wide switch on. */
+const TOPOLOGY_OPEN_MESH: TopologyView = {
+  ...TOPOLOGY_WITH_DEFAULT_AND_EXPLICIT_RULES,
+  accessRules: [
+    ...TOPOLOGY_WITH_DEFAULT_AND_EXPLICIT_RULES.accessRules,
+    // How the server reports the switch alongside the flag.
+    { sourceNamespace: '*', targetNamespace: '*', action: 'allow', origin: 'explicit' },
+  ],
+  openMesh: true,
 };
 
 function renderPanel(transportOverrides: Partial<Transport>) {
@@ -105,5 +119,99 @@ describe('TopologyPanel — default vs explicit access rule affordances (DOR-336
     expect(
       await screen.findByRole('button', { name: 'Remove access from ns-a to ns-b' })
     ).toBeInTheDocument();
+  });
+});
+
+describe('TopologyPanel — the mesh-wide switch (DOR-1338)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('renders the switch off, above the per-pair machinery', async () => {
+    renderPanel({
+      getMeshTopology: vi.fn().mockResolvedValue(TOPOLOGY_WITH_DEFAULT_AND_EXPLICIT_RULES),
+    });
+
+    const meshSwitch = await screen.findByRole('switch', { name: OPEN_MESH_LABEL });
+    expect(meshSwitch).toBeInTheDocument();
+    expect(meshSwitch).not.toBeChecked();
+
+    // Off: the pair-grant form is live and says nothing about the switch.
+    expect(screen.getByRole('button', { name: /Allow Access/ })).toBeInTheDocument();
+    expect(screen.queryByText(/Already allowed by the switch above/)).not.toBeInTheDocument();
+  });
+
+  it('turns the switch on with a * -> * allow rule', async () => {
+    const updateMeshAccessRule = vi.fn().mockResolvedValue({
+      sourceNamespace: '*',
+      targetNamespace: '*',
+      action: 'allow',
+      origin: 'explicit',
+    });
+    renderPanel({
+      getMeshTopology: vi.fn().mockResolvedValue(TOPOLOGY_WITH_DEFAULT_AND_EXPLICIT_RULES),
+      updateMeshAccessRule,
+    });
+
+    await userEvent.click(await screen.findByRole('switch', { name: OPEN_MESH_LABEL }));
+
+    expect(updateMeshAccessRule).toHaveBeenCalledWith({
+      sourceNamespace: '*',
+      targetNamespace: '*',
+      action: 'allow',
+    });
+  });
+
+  it('turns the switch off with a * -> * deny rule', async () => {
+    const updateMeshAccessRule = vi.fn().mockResolvedValue({
+      sourceNamespace: '*',
+      targetNamespace: '*',
+      action: 'deny',
+      origin: 'explicit',
+    });
+    renderPanel({
+      getMeshTopology: vi.fn().mockResolvedValue(TOPOLOGY_OPEN_MESH),
+      updateMeshAccessRule,
+    });
+
+    const meshSwitch = await screen.findByRole('switch', { name: OPEN_MESH_LABEL });
+    expect(meshSwitch).toBeChecked();
+
+    await userEvent.click(meshSwitch);
+
+    expect(updateMeshAccessRule).toHaveBeenCalledWith({
+      sourceNamespace: '*',
+      targetNamespace: '*',
+      action: 'deny',
+    });
+  });
+
+  it('makes the pair-grant controls informational while on, keeping stored rules visible', async () => {
+    renderPanel({ getMeshTopology: vi.fn().mockResolvedValue(TOPOLOGY_OPEN_MESH) });
+
+    expect(await screen.findByText(/Already allowed by the switch above/)).toBeInTheDocument();
+    // The namespace pickers are inert — they are disabled by the switch alone,
+    // unlike the submit button, which an empty form disables anyway.
+    expect(screen.getByRole('combobox', { name: 'Source' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Target' })).toBeDisabled();
+
+    // The stored pair rule is still listed and still removable — turning the
+    // switch off has to put the operator back exactly where they were.
+    expect(
+      screen.getByRole('button', { name: 'Remove access from ns-a to ns-b' })
+    ).toBeInTheDocument();
+  });
+
+  it('does not list the * -> * rule as a removable row (the switch is its control)', async () => {
+    renderPanel({ getMeshTopology: vi.fn().mockResolvedValue(TOPOLOGY_OPEN_MESH) });
+
+    await screen.findByRole('switch', { name: OPEN_MESH_LABEL });
+    expect(
+      screen.queryByRole('button', { name: 'Remove access from * to *' })
+    ).not.toBeInTheDocument();
   });
 });

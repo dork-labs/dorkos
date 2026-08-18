@@ -84,6 +84,7 @@ const TOPOLOGY: TopologyView = {
   callerNamespace: '*',
   namespaces: [],
   accessRules: [],
+  openMesh: false,
 };
 
 const TASK: Task = {

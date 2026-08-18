@@ -842,4 +842,63 @@ describe('CreateAgentDialog', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(useAgentCreationStore.getState().seed).toBeNull();
   });
+
+  // ---- The mesh-wide switch, surfaced where the wall gets hit (DOR-1338) ----
+
+  /** A transport whose mesh already holds one of the person's own agents. */
+  function transportWithOneOwnAgent(openMesh: boolean) {
+    const transport = createMockTransport();
+    vi.mocked(transport.listMeshAgents).mockResolvedValue({
+      agents: [{ id: 'agent-existing', name: 'scout' }],
+    } as never);
+    vi.mocked(transport.getMeshTopology).mockResolvedValue({
+      callerNamespace: '*',
+      namespaces: [],
+      accessRules: [],
+      openMesh,
+    });
+    return transport;
+  }
+
+  it('warns on the naming step that a new agent cannot reach the existing ones', async () => {
+    const user = userEvent.setup();
+    renderDialog(transportWithOneOwnAgent(false));
+    await reachNamingViaDesign(user);
+
+    expect(
+      await screen.findByRole('switch', { name: 'Let all my agents talk to each other' })
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing on the naming step once the switch is already on', async () => {
+    const user = userEvent.setup();
+    renderDialog(transportWithOneOwnAgent(true));
+    await reachNamingViaDesign(user);
+
+    await waitFor(() => expect(screen.getByLabelText('Name')).toBeInTheDocument());
+    expect(
+      screen.queryByRole('switch', { name: 'Let all my agents talk to each other' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('says nothing when this is the first agent (nobody to be cut off from)', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await reachNamingViaDesign(user);
+
+    await waitFor(() => expect(screen.getByLabelText('Name')).toBeInTheDocument());
+    expect(
+      screen.queryByRole('switch', { name: 'Let all my agents talk to each other' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('never interrupts the gallery step', async () => {
+    renderDialog(transportWithOneOwnAgent(false));
+    useAgentCreationStore.getState().open();
+
+    await screen.findByTestId('agent-gallery-mock');
+    expect(
+      screen.queryByRole('switch', { name: 'Let all my agents talk to each other' })
+    ).not.toBeInTheDocument();
+  });
 });

@@ -366,7 +366,13 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     return res.json(enriched);
   });
 
-  // PUT /topology/access — Create or remove cross-namespace access rules
+  // PUT /topology/access — Create or remove cross-namespace access rules.
+  //
+  // `'*'` on BOTH sides is the mesh-wide "Let all my agents talk to each other"
+  // switch (allow turns it on, deny turns it off); the schema rejects a
+  // wildcard on one side only. It routes to the same verbs as a namespace pair
+  // — Mesh stores it in the same rule store and projects it into Relay as
+  // `relay.agent.> -> relay.agent.>`.
   router.put('/topology/access', (req, res) => {
     const result = UpdateAccessRuleRequestSchema.safeParse(req.body);
     if (!result.success) {
@@ -375,10 +381,18 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     const { sourceNamespace, targetNamespace, action } = result.data;
-    if (action === 'allow') {
-      meshCore.allowCrossNamespace(sourceNamespace, targetNamespace);
-    } else {
-      meshCore.denyCrossNamespace(sourceNamespace, targetNamespace);
+    try {
+      if (action === 'allow') {
+        meshCore.allowCrossNamespace(sourceNamespace, targetNamespace);
+      } else {
+        meshCore.denyCrossNamespace(sourceNamespace, targetNamespace);
+      }
+    } catch (err) {
+      // Mesh enforces the same wildcard invariant the schema does, plus any
+      // future rule validation — a rejected rule is the caller's mistake (400),
+      // never a server fault (500).
+      const message = err instanceof Error ? err.message : 'Access rule rejected';
+      return res.status(400).json({ error: message });
     }
     // This endpoint only ever writes user-configured grants — bridge-written
     // defaults are never created or removed here — so origin is always 'explicit'.

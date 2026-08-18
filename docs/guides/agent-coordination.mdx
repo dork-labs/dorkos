@@ -98,6 +98,21 @@ curl -X PUT http://localhost:4242/api/mesh/topology/access \
 
 Rules are one-directional. For two-way communication, add a second rule with the namespaces swapped.
 
+### Let all my agents talk to each other
+
+Pairs add up fast: five namespaces need twenty rules for everyone to reach everyone. If you'd rather not think about walls at all, Team → Access has a single switch, **Let all my agents talk to each other**. Turn it on and every agent on this machine can message every other one, whatever project it lives in. Turn it off and you are back to the defaults, with any pairs you added still exactly where you left them.
+
+It is off when you install DorkOS — agents stay in their own project until you say otherwise. Behind the scenes it is one more rule, at the same priority 50, using `*` on both sides:
+
+```bash
+# The switch, from the command line
+curl -X PUT http://localhost:4242/api/mesh/topology/access \
+  -H 'Content-Type: application/json' \
+  -d '{"sourceNamespace": "*", "targetNamespace": "*", "action": "allow"}'
+```
+
+`GET /api/mesh/topology` reports it as `openMesh`, and so does an agent's own `mesh_query_topology` tool. `*` has to be on both sides or neither — a half-wildcard is rejected.
+
 ### Direct messaging
 
 Every Claude session an agent runs has an MCP tool server injected into it (MCP is the standard that lets AI tools call functions like this one). That's what exposes `relay_send`:
