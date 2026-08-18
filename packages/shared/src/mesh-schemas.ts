@@ -515,6 +515,15 @@ export const NamespaceInfoSchema = z
 
 export type NamespaceInfo = z.infer<typeof NamespaceInfoSchema>;
 
+/**
+ * The wildcard namespace. On BOTH sides of a cross-namespace access rule it is
+ * the mesh-wide "Let all my agents talk to each other" switch; as a rule's
+ * `targetNamespace` alone it is also the sentinel the bridge-written catch-all
+ * deny uses for "every namespace". A user-writable rule may never use it on one
+ * side only — see {@link UpdateAccessRuleRequestSchema}.
+ */
+export const OPEN_MESH_NAMESPACE = '*';
+
 export const CrossNamespaceRuleSchema = z
   .object({
     sourceNamespace: z.string(),
@@ -527,6 +536,9 @@ export const CrossNamespaceRuleSchema = z
      * catch-all cross-namespace deny using the `targetNamespace: '*'` sentinel).
      * Defaults appear so the topology view reflects the rules actually enforced,
      * not just the ones a user added on top of them.
+     *
+     * One explicit rule uses `'*'` on BOTH sides: the mesh-wide switch (see
+     * {@link TopologyViewSchema}'s `openMesh`).
      */
     origin: z.enum(['default', 'explicit']).default('explicit'),
   })
@@ -539,6 +551,14 @@ export const TopologyViewSchema = z
     callerNamespace: z.string(),
     namespaces: z.array(NamespaceInfoSchema),
     accessRules: z.array(CrossNamespaceRuleSchema),
+    /**
+     * Whether the mesh-wide `* -> *` allow rule is on — the "Let all my agents
+     * talk to each other" switch. True means every agent may message every
+     * other agent on this machine regardless of namespace; false means the
+     * default applies (same namespace allowed, cross-namespace denied unless a
+     * pair rule allows it).
+     */
+    openMesh: z.boolean().default(false),
   })
   .openapi('TopologyView');
 
@@ -640,13 +660,32 @@ export const UpdateAgentConventionsSchema = z
 
 export type UpdateAgentConventions = z.infer<typeof UpdateAgentConventionsSchema>;
 
-/** Request body for PUT /api/mesh/topology/access */
+/** Message for a rule with the `'*'` wildcard on only one side. */
+export const WILDCARD_NAMESPACE_BOTH_SIDES_MESSAGE =
+  'Use "*" on both sides (the mesh-wide switch) or on neither (a namespace pair).';
+
+/**
+ * Request body for PUT /api/mesh/topology/access.
+ *
+ * `'*'` on BOTH sides is the mesh-wide "Let all my agents talk to each other"
+ * switch (`allow` turns it on, `deny` turns it off). Any other pair is a
+ * directional grant between two concrete namespaces. A wildcard on one side
+ * only is rejected — it would open far more traffic than the caller asked for.
+ */
 export const UpdateAccessRuleRequestSchema = z
   .object({
     sourceNamespace: z.string().min(1),
     targetNamespace: z.string().min(1),
     action: z.enum(['allow', 'deny']),
   })
+  .refine(
+    (r) =>
+      (r.sourceNamespace === OPEN_MESH_NAMESPACE) === (r.targetNamespace === OPEN_MESH_NAMESPACE),
+    {
+      message: WILDCARD_NAMESPACE_BOTH_SIDES_MESSAGE,
+      path: ['targetNamespace'],
+    }
+  )
   .openapi('UpdateAccessRuleRequest');
 
 export type UpdateAccessRuleRequest = z.infer<typeof UpdateAccessRuleRequestSchema>;

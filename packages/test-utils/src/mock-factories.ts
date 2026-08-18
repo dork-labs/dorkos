@@ -654,9 +654,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getMeshAgentHealth: vi.fn().mockResolvedValue(undefined),
     sendMeshHeartbeat: vi.fn().mockResolvedValue({ success: true }),
     // Mesh Topology
-    getMeshTopology: vi
-      .fn()
-      .mockResolvedValue({ callerNamespace: '*', namespaces: [], accessRules: [] }),
+    getMeshTopology: vi.fn().mockResolvedValue({
+      callerNamespace: '*',
+      namespaces: [],
+      accessRules: [],
+      openMesh: false,
+    }),
     updateMeshAccessRule: vi.fn().mockResolvedValue({
       sourceNamespace: '',
       targetNamespace: '',

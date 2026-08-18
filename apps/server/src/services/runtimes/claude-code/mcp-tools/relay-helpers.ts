@@ -177,13 +177,17 @@ export function requireRelay(deps: McpToolDeps) {
  *
  * Cross-namespace messaging is denied by default (ADR-0033); the denial must
  * tell the agent (and through it, the user) how to open the path rather than
- * failing opaquely.
+ * failing opaquely. Two remedies, cheapest first: the mesh-wide switch (one
+ * click, opens every pair) or a single directional grant.
  */
 export const ACCESS_DENIED_HINT =
-  'Cross-namespace agent messaging is denied by default. Ask the user to allow it from the ' +
-  'Team page Access view (or PUT /api/mesh/topology/access with ' +
-  '{ sourceNamespace, targetNamespace, action: "allow" }). Use mesh_query_topology() to see ' +
-  'current namespaces and rules.';
+  'Cross-namespace agent messaging is denied by default. Ask the user to turn on ' +
+  '"Let all my agents talk to each other" in Team → Access, which opens every pair at once ' +
+  '(or to allow just this namespace pair in the same view). Either can also be done with ' +
+  'PUT /api/mesh/topology/access — { sourceNamespace: "*", targetNamespace: "*", ' +
+  'action: "allow" } for the switch, or the two concrete namespaces for the pair. Use ' +
+  'mesh_query_topology() to see current namespaces, rules, and whether the switch (openMesh) ' +
+  'is on.';
 
 /**
  * Map a relay publish failure to an MCP error response, attaching the
