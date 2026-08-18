@@ -10,6 +10,7 @@ import type {
   PackageType,
   ShapePackageManifest,
 } from '@dorkos/marketplace';
+import type { NpmDependency } from './lib/npm-dependencies.js';
 
 /**
  * How much a scheduled job may do on its own once it fires.
@@ -127,6 +128,13 @@ export interface PermissionPreview {
   schedules: PreviewSchedule[];
   /** Secrets the package will request */
   secrets: { key: string; required: boolean; description?: string }[];
+  /**
+   * npm libraries the install will download from the registry, read from the
+   * `dependencies` map of the package's own `package.json`. Disclosed because
+   * the install fetches them over the network before the package ever runs, and
+   * a person approving an install deserves to know that in advance (DOR-1341).
+   */
+  npmDependencies: NpmDependency[];
   /** External hosts the package will contact */
   externalHosts: string[];
   /** Other packages this depends on */
@@ -167,4 +175,13 @@ export interface InstallResult {
   installPath: string;
   manifest: MarketplacePackageManifest;
   warnings: string[];
+  /**
+   * The subset of {@link InstallResult.warnings} describing npm dependency
+   * problems (DOR-1341). Carried separately because these are the warnings
+   * that outlive the install: the installer persists them to the package's
+   * `install-metadata.json` sidecar, and the installed-package view keeps
+   * showing them until a reinstall clears them. A toast the person dismissed
+   * is not a record of a package that is still missing its libraries.
+   */
+  dependencyWarnings?: string[];
 }

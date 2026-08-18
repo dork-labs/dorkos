@@ -144,6 +144,7 @@ function buildEmptyPermissionPreview(): PermissionPreview {
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    npmDependencies: [],
     schedules: [],
     secrets: [],
     externalHosts: [],

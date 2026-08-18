@@ -29,6 +29,7 @@ const EMPTY_PREVIEW = {
   extensions: [],
   hooks: [],
   unreadableHooks: [],
+  npmDependencies: [],
   schedules: [],
   secrets: [],
   externalHosts: [],

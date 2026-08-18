@@ -5,9 +5,10 @@ import { MockServerProcess, type SpawnOptions } from './server-child-mock';
  * Test double for `node:child_process`, mounted via
  * `vi.mock('node:child_process', () => import('./child-process-mock'))`.
  *
- * Covers the dev spawn path only (`fork` under tsx). Every forked child is
- * recorded in {@link forkedChildren} in spawn order, so a test can drive the
- * first child's exit and then inspect the replacement a restart spawned.
+ * Covers the dev spawn path (`fork` under tsx) and the one-shot login-shell
+ * probe (`spawnSync`, see `shell-path.ts`). Every forked child is recorded in
+ * {@link forkedChildren} in spawn order, so a test can drive the first child's
+ * exit and then inspect the replacement a restart spawned.
  */
 
 /** Every child `fork()` has returned, in spawn order. */
@@ -44,10 +45,52 @@ export const fork = vi.fn((entry: string, _args: string[], options: SpawnOptions
   return child;
 });
 
+/**
+ * What a synchronous child process reported, narrowed to what `shell-path.ts`
+ * reads. `error` models a spawn that never ran (a missing shell) or one the
+ * timeout killed; `signal` is set when it was killed.
+ */
+export interface SpawnSyncResult {
+  status: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+  error?: Error;
+}
+
+/**
+ * Test double for `spawnSync`, used only by the login-shell PATH probe.
+ *
+ * The default models a shell that started and printed nothing — the branch
+ * where the probe gives up and passes the inherited PATH through untouched.
+ * That keeps every test that does not care about PATH resolution (the whole of
+ * `server-process.test.ts`) on the behaviour it had before the probe existed;
+ * tests that do care call `.mockReturnValue(...)` with a real payload.
+ */
+/** The `spawnSync` options `shell-path.ts` passes, narrowed to what tests assert on. */
+export interface SpawnSyncOptions {
+  encoding?: string;
+  /** How long the child may run before it is killed. */
+  timeout?: number;
+  /** Signal used to kill it when the timeout fires. */
+  killSignal?: string;
+  stdio?: unknown;
+}
+
+export const spawnSync = vi.fn(
+  (_command: string, _args: string[], _options: SpawnSyncOptions): SpawnSyncResult => ({
+    status: 0,
+    signal: null,
+    stdout: '',
+    stderr: '',
+  })
+);
+
 /** Reset all mock state between tests — call from `beforeEach`. */
 export function resetChildProcessMock(): void {
   forkedChildren.length = 0;
   forkError = null;
   forkErrorIsPersistent = false;
   fork.mockClear();
+  spawnSync.mockReset();
 }

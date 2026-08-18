@@ -10,15 +10,20 @@ mac:
   # zip must accompany dmg: electron-updater (Squirrel.Mac) can only install
   # updates from the zip artifact; the dmg is the human-facing installer.
   #
-  # mac is arm64-only. The Claude Code binary ships as a per-arch optional
-  # dependency (see apps/desktop/package.json's optionalDependencies). Every
-  # packaged platform/arch needs BOTH its matching
-  # `@anthropic-ai/claude-agent-sdk-<platform>-<arch>` package there AND an
+  # mac is arm64-only. THREE separate binaries ship as per-arch optional
+  # dependencies (see apps/desktop/package.json's optionalDependencies):
+  # Claude Code (`@anthropic-ai/claude-agent-sdk-<platform>-<arch>`), the Codex
+  # CLI (`@openai/codex-<platform>-<arch>`) and esbuild
+  # (`@esbuild/<platform>-<arch>`, which the extension host compiles with).
+  # Every packaged platform/arch needs BOTH its matching package there AND an
   # asarUnpack glob for it below — otherwise the packaged app for that target
-  # silently ships without a runnable Claude Code (the bug this config fixes).
+  # silently ships without that tool. The Claude half is the bug this config
+  # originally fixed; the Codex and esbuild halves are DOR-1335, where the
+  # shipped 0.61.0 Mac app had no Codex runtime at all and failed to compile
+  # its own bundled marketplace extension on every boot.
   # Wired so far: darwin-arm64 (this block) and win32-x64 (the `win` block
   # below). Adding another target (mac x64, win32-arm64, linux) means repeating
-  # both additions for it.
+  # all six additions for it.
   target:
     - target: dmg
       arch:
@@ -140,6 +145,34 @@ asarUnpack:
   # server-spawn.ts resolves the per-platform path (…-win32-x64/claude.exe)
   # and hands it to the bundled server via DORKOS_CLAUDE_CLI_PATH.
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**'
+  # The Codex CLI, the same story one runtime over: @openai/codex-sdk locates
+  # the real executable through @openai/codex's per-platform optional
+  # dependency, at vendor/<target-triple>/bin/codex. It is a nested optional
+  # dependency, which electron-builder's production-tree copier does NOT reach
+  # on its own — 0.61.0 shipped with @openai/codex present and this package
+  # absent, so the SDK threw "Unable to locate Codex CLI binaries" at boot and
+  # the Codex runtime never registered at all. Declaring it directly in
+  # package.json is what puts it in the tree; unpacking it is what makes the
+  # binary runnable. Keep it version-locked to @openai/codex there.
+  - '**/node_modules/@openai/codex-darwin-arm64/**'
+  # Windows counterpart of the Codex vendor package above.
+  - '**/node_modules/@openai/codex-win32-x64/**'
+  # esbuild's compiler binary. The server compiles every extension's source
+  # with esbuild on boot, and esbuild shells out to this native executable —
+  # so without it the bundled marketplace extension failed to compile on every
+  # launch of 0.61.0 ("The package \"@esbuild/darwin-arm64\" could not be
+  # found"), for the same nested-optional-dependency reason as Codex above.
+  # Unpacked because it is spawned: esbuild finds it with require.resolve,
+  # which inside a packaged app answers with an app.asar path, and Electron's
+  # asar shim covers execFile but NOT spawn. server-spawn.ts therefore hands
+  # the server the unpacked path via ESBUILD_BINARY_PATH. esbuild refuses to
+  # run a binary whose version differs from its own, so keep this pinned to
+  # exactly the esbuild version the lockfile resolves — scripts/build-server.ts
+  # fails the build if they ever drift.
+  - '**/node_modules/@esbuild/darwin-arm64/**'
+  # Windows counterpart of the esbuild binary above (esbuild.exe at the
+  # package root there, not under bin/).
+  - '**/node_modules/@esbuild/win32-x64/**'
   # express.static (app.ts's production SPA serving) cannot reliably read
   # range-requested static assets from inside app.asar — the packaged
   # window now loads the renderer via the bundled server's own

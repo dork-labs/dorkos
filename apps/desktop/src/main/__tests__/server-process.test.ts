@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import type { MockServerProcess } from './server-child-mock';
 import type { ShowMessageBox } from './electron-mock';
 import { SERVER_READY_PARENT_TIMEOUT_MS } from '../../shared/boot-timeouts';
@@ -140,10 +142,12 @@ async function startReadyServer(
  * enough: the packaged spawn path also reads `process.resourcesPath`, which
  * only Electron defines.
  */
-function stubPackagedPaths(): () => void {
+function stubPackagedPaths(
+  resourcesPath = '/Applications/DorkOS.app/Contents/Resources'
+): () => void {
   const original = (process as { resourcesPath?: string }).resourcesPath;
   Object.defineProperty(process, 'resourcesPath', {
-    value: '/Applications/DorkOS.app/Contents/Resources',
+    value: resourcesPath,
     configurable: true,
   });
   return () => {
@@ -657,6 +661,145 @@ describe('the environment handed to the server child', () => {
     } finally {
       restorePaths();
     }
+  });
+});
+
+describe('what a packaged server child is told about the machine it runs on', () => {
+  /**
+   * A throwaway `.app` payload: a home directory the app pretends to own, and
+   * a `Contents/Resources` tree with the unpacked binaries a real build ships.
+   *
+   * Real files, because every path under test is guarded by an `existsSync` —
+   * the whole point of handing the server these paths is that they are files
+   * that actually exist, and a stub could only ever agree with itself.
+   */
+  let home: string;
+  let resources: string;
+  let restorePaths: () => void;
+
+  /** Where the packaged esbuild binary lives for the platform running the suite. */
+  function esbuildBinaryPath(): string {
+    const leaf = process.platform === 'win32' ? ['esbuild.exe'] : ['bin', 'esbuild'];
+    return join(
+      resources,
+      'app.asar.unpacked',
+      'node_modules',
+      '@esbuild',
+      `${process.platform}-${process.arch}`,
+      ...leaf
+    );
+  }
+
+  beforeEach(async () => {
+    // Canonicalized: the working-directory resolver returns realpaths (it has
+    // to, because the server's boundary check compares canonical paths), and
+    // macOS hands out temp directories under `/var`, which is a symlink to
+    // `/private/var`. Realpathing the fixture keeps these assertions about the
+    // shell rather than about that symlink.
+    home = realpathSync(mkdtempSync(join(tmpdir(), 'dorkos-packaged-home-')));
+    mkdirSync(join(home, '.dork'), { recursive: true });
+    resources = mkdtempSync(join(tmpdir(), 'dorkos-packaged-resources-'));
+    mkdirSync(dirname(esbuildBinaryPath()), { recursive: true });
+    writeFileSync(esbuildBinaryPath(), '#!/bin/sh\n', 'utf8');
+    restorePaths = stubPackagedPaths(resources);
+    // Unset, not blank: both now steer the resolver, and a blank one would
+    // still be spread into the child's environment by `...process.env`.
+    vi.stubEnv('DORKOS_DEFAULT_CWD', undefined);
+    vi.stubEnv('DORKOS_BOUNDARY', undefined);
+
+    const { app } = await getElectronMock();
+    app.isPackaged = true;
+    app.getPath = vi.fn(() => home);
+  });
+
+  afterEach(() => {
+    restorePaths();
+    rmSync(home, { recursive: true, force: true });
+    rmSync(resources, { recursive: true, force: true });
+  });
+
+  /** Start a packaged server and hand back the child it forked. */
+  async function startPackagedServer(): Promise<MockServerProcess> {
+    const { startServer } = await import('../server-process');
+    const started = startServer();
+    const child = await utilityChildAt(0);
+    child.emitReady();
+    await started;
+    return child;
+  }
+
+  it('opens in the home directory, and starts the process there too', async () => {
+    // Left unset, the server derived its default working directory from its own
+    // file location — `…/DorkOS.app/Contents/Resources`, outside the boundary —
+    // so every boot logged "Access denied: path outside directory boundary" and
+    // the session list came up empty (DOR-1335). `process.cwd()` was no better:
+    // a Finder-launched app inherits `/`.
+    const child = await startPackagedServer();
+
+    expect(child.env.DORKOS_DEFAULT_CWD).toBe(home);
+    expect(child.options.cwd).toBe(home);
+    // The server defaults the boundary to home on its own; saying so here would
+    // turn its default into a setting somebody made.
+    expect(child.env.DORKOS_BOUNDARY).toBeUndefined();
+  });
+
+  it('honours server.cwd from config.json, and passes a configured boundary through', async () => {
+    const projects = join(home, 'projects');
+    mkdirSync(projects);
+    writeFileSync(
+      join(home, '.dork', 'config.json'),
+      JSON.stringify({ server: { cwd: projects, boundary: home } }),
+      'utf8'
+    );
+
+    const child = await startPackagedServer();
+
+    expect(child.env.DORKOS_DEFAULT_CWD).toBe(projects);
+    expect(child.options.cwd).toBe(projects);
+    expect(child.env.DORKOS_BOUNDARY).toBe(home);
+  });
+
+  it('hands over the login-shell PATH, not the four directories launchd gave it', async () => {
+    const { spawnSync } = await getChildProcessMock();
+    const { LOGIN_SHELL_PATH_MARKER } = await import('../../shared/login-shell-path');
+    const loginPath = `${home}/.local/bin:/opt/homebrew/bin:/usr/bin:/bin`;
+    // The probe asks the shell for its whole `env`, so the answer is a dump
+    // with the PATH one line among several — see PROBE_SCRIPT in shell-path.ts.
+    const dump = `SHLVL=1\nPATH=${loginPath}\nHOME=${home}\n`;
+    spawnSync.mockReturnValue({
+      status: 0,
+      signal: null,
+      stdout: `${LOGIN_SHELL_PATH_MARKER}${dump}${LOGIN_SHELL_PATH_MARKER}`,
+      stderr: '',
+    });
+    vi.stubEnv('SHELL', '/bin/zsh');
+    vi.stubEnv('PATH', '/usr/bin:/bin:/usr/sbin:/sbin');
+
+    const child = await startPackagedServer();
+
+    // The tester's `claude` and `codex` both lived in ~/.local/bin, which the
+    // packaged app could not see at all.
+    expect(child.env.PATH).toBe(`${loginPath}:/usr/sbin:/sbin`);
+  });
+
+  it('points the extension compiler at the unpacked esbuild binary', async () => {
+    // esbuild finds its own binary by require.resolve, which inside a packaged
+    // app answers with an app.asar path — and spawning one of those fails with
+    // ENOTDIR, because Electron's asar shim covers execFile but not spawn. That
+    // is why the bundled marketplace extension failed to compile on every boot.
+    const child = await startPackagedServer();
+
+    expect(child.env.ESBUILD_BINARY_PATH).toBe(esbuildBinaryPath());
+  });
+
+  it('says so loudly when the esbuild binary was left out of the package', async () => {
+    rmSync(esbuildBinaryPath());
+    const { default: log } = await getLogMock();
+
+    const child = await startPackagedServer();
+
+    expect(child.env.ESBUILD_BINARY_PATH).toBeUndefined();
+    expect(log.error).toHaveBeenCalledWith(expect.stringContaining('esbuild'), esbuildBinaryPath());
   });
 });
 

@@ -9,6 +9,7 @@ import {
   guardNamespaceCollision,
   RUNTIME_TYPES,
 } from '../subjects.js';
+import { AGENT_SUBJECT_FORMAT } from '@dorkos/shared/relay-schemas';
 
 const UUID = '550e8400-e29b-41d4-a716-446655440000';
 const ULID = '01JKABC0000000000000000000';
@@ -60,6 +61,18 @@ describe('subject builders', () => {
 
   it('legacyAgentSubject builds a 3-token subject', () => {
     expect(legacyAgentSubject(UUID)).toBe(`relay.agent.${UUID}`);
+  });
+
+  // The prose contract (DOR-1337). `AGENT_SUBJECT_FORMAT` is the shape shown to
+  // people and to agents — in the cockpit's context preview, in the docs, in
+  // the system prompt — and it lives in `@dorkos/shared` because the client
+  // cannot import this package. That makes it a SECOND statement of a grammar
+  // defined here, so it is checked against the real builder rather than trusted:
+  // teaching the wrong shape is exactly the defect this ticket fixed.
+  it('matches the format string every human-facing surface quotes', () => {
+    expect(AGENT_SUBJECT_FORMAT.replace('{namespace}', 'ns-a').replace('{agentId}', ULID)).toBe(
+      agentSubject('ns-a', ULID)
+    );
   });
 });
 

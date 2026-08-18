@@ -112,6 +112,28 @@ describe('SkillPackInstallFlow', () => {
     }
   });
 
+  it('ignores a SKILL.md inside node_modules, however broken (DOR-1341)', async () => {
+    // The npm step runs BEFORE SKILL.md validation, so a vendored dependency
+    // shipping any file by that name used to be validated as if the package
+    // author had written it — and a file the parser rejects threw, rolling the
+    // whole install back over something nobody involved can fix. Dependencies
+    // are also thousands of files to stat for nothing.
+    const packagePath = await buildValidPackage();
+    cleanupRoots.push(packagePath);
+    const vendored = path.join(packagePath, 'node_modules', 'some-dep', 'docs');
+    await mkdir(vendored, { recursive: true });
+    await writeFile(path.join(vendored, 'SKILL.md'), 'not frontmatter at all\n', 'utf-8');
+
+    const flow = new SkillPackInstallFlow({ dorkHome, logger: noopLogger });
+    const result = await flow.install(packagePath, baseManifest, { name: baseManifest.name });
+
+    expect(result.ok).toBe(true);
+    const installRoot = path.join(dorkHome, 'plugins', baseManifest.name);
+    expect(await exists(path.join(installRoot, '.dork/skills/first-skill/SKILL.md'))).toBe(true);
+    // The vendored file rode along as ordinary content, unvalidated.
+    expect(await exists(path.join(installRoot, 'node_modules/some-dep/docs/SKILL.md'))).toBe(true);
+  });
+
   it('installs a valid skill-pack into the global plugins directory', async () => {
     const packagePath = await buildValidPackage();
     cleanupRoots.push(packagePath);

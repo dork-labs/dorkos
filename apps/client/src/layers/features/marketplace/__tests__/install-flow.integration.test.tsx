@@ -243,6 +243,7 @@ const EMPTY_PREVIEW: PermissionPreview = {
   extensions: [],
   hooks: [],
   unreadableHooks: [],
+  npmDependencies: [],
   schedules: [],
   secrets: [],
   externalHosts: [],

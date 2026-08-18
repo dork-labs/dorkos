@@ -13,6 +13,17 @@ superseded-by: null
 
 Accepted (supersedes the rollback approach of ADR-0231).
 
+**Amended 2026-08-18 (DOR-1341).** This ADR calls the design "git-free" and counts "no git subprocess calls" among its wins. That still holds of the engine — `runTransaction` shells out to nothing. But the install pipeline as a whole is no longer subprocess-free: a package that declares npm dependencies in its own `package.json` now gets one bounded `npm install` run inside each flow's `stage` callback, before the backup is taken and before the atomic move.
+
+The rollback property this ADR is about is preserved and extended: because npm runs on the staged tree, the `node_modules` it creates rides the same single atomic move as the package files, so an install that rolls back leaves neither behind. But a subprocess is not confined by a filesystem transaction, and npm in particular takes instructions from the very directory being installed — so the containment is explicit rather than inherited:
+
+- **The argv carries the guarantees**, because a command-line flag is the only npm setting a config file cannot override: `--ignore-scripts` (no lifecycle code, from the package or any dependency), `--global=false` (npm may only write inside the staging directory) and `--no-workspaces` (only the package root, matching what the preview disclosed). Plus `--omit=dev --no-audit --no-fund --loglevel=error`.
+- **The package's own `.npmrc` is stripped**, at staging time and again before the spawn. It is not a preference file: `global=true` in it turns a plain `npm install` into a global install of the package itself with bin shims — a shim named `git` or `claude` running attacker code, npm exiting 0, and nothing inside the staging tree for a rollback to undo — and `registry=`/`cache=` redirect where bytes come from and go. The user's own `~/.npmrc` is untouched; private-registry auth lives there.
+- **Symlinks npm re-introduces are stripped after it returns.** `stage-package.ts` strips links as it copies (DOR-279), but a `file:` dependency makes npm mint a new one to anywhere on the machine, readable for as long as the staged tree lives. Every link under the staged `node_modules` whose real path leaves the staging directory is removed; npm's own `.bin` shims resolve inside the tree and survive.
+- **Failure warns rather than rolling back**, since a missing `npm` or an offline registry must not take away a package whose own files are fine — and the half-written `node_modules` is removed first, so the state is a clean "not installed". The warning is persisted to the package's `install-metadata.json` sidecar and re-shown on the installed-package view, because a package that is on disk but incomplete outlives the toast that said so.
+
+The step is bounded at 120 s with `SIGKILL`. See `contributing/marketplace-installs.md` §5.1.
+
 ## Context
 
 ADR-0231 established the shared `runTransaction({ name, rollbackBranch, stage, activate })` engine that every marketplace install flow runs through. Its real transactional guarantee (an isolated `mkdtemp` staging directory plus a single atomic `rename` onto the install root via `atomicMove`) was sound and remains. Its optional rollback safety net was not:

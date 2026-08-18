@@ -24,6 +24,13 @@ const POLITE_CHILD = 'process.stdin.on("end", () => process.exit(0)); process.st
 /** A child that ignores stdin EOF and has to be killed — a wedged CLI. */
 const WEDGED_CHILD = 'process.stdin.resume(); setInterval(() => {}, 1000);';
 
+/**
+ * The registry's id resolver, standing in for `SessionStore.sessionKeyOf` —
+ * this suite invents its own ids and never aliases them, so each is already
+ * its own answer.
+ */
+const identity = (sessionId: string): string => sessionId;
+
 /** Is this pid still a live process? Signal 0 tests existence without signalling. */
 function isAlive(pid: number): boolean {
   try {
@@ -121,7 +128,7 @@ afterEach(async () => {
 
 describe('shutdownServices leaves no warm claude-code subprocess behind', () => {
   it('kills a child that exits on stdin close, and one that refuses to', async () => {
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const polite = registry.acquire('polite', {
       maxWarmSessions: 12,
       warmIdleMs: 5 * 60 * 1000,
@@ -150,7 +157,7 @@ describe('shutdownServices leaves no warm claude-code subprocess behind', () => 
   });
 
   it('reaping one session leaves the process gone and the record untouched', async () => {
-    const registry = new SessionPumpRegistry();
+    const registry = new SessionPumpRegistry(identity);
     const pump = registry.acquire('s1', {
       maxWarmSessions: 12,
       warmIdleMs: 5 * 60 * 1000,

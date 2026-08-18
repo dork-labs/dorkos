@@ -12964,6 +12964,12 @@
                               "skills",
                               "hooks"
                             ]
+                          },
+                          "dependencyWarnings": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
                           }
                         },
                         "required": [
@@ -13397,6 +13403,27 @@
                             ]
                           }
                         },
+                        "npmDependencies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "range": {
+                                "type": "string"
+                              },
+                              "optional": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "range"
+                            ]
+                          }
+                        },
                         "externalHosts": {
                           "type": "array",
                           "items": {
@@ -13473,6 +13500,7 @@
                         "unreadableHooks",
                         "schedules",
                         "secrets",
+                        "npmDependencies",
                         "externalHosts",
                         "requires",
                         "conflicts"
@@ -13699,6 +13727,27 @@
                             ]
                           }
                         },
+                        "npmDependencies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "range": {
+                                "type": "string"
+                              },
+                              "optional": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "range"
+                            ]
+                          }
+                        },
                         "externalHosts": {
                           "type": "array",
                           "items": {
@@ -13775,6 +13824,7 @@
                         "unreadableHooks",
                         "schedules",
                         "secrets",
+                        "npmDependencies",
                         "externalHosts",
                         "requires",
                         "conflicts"
@@ -13957,6 +14007,12 @@
                       "additionalProperties": {}
                     },
                     "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "dependencyWarnings": {
                       "type": "array",
                       "items": {
                         "type": "string"
@@ -14279,6 +14335,12 @@
                             "additionalProperties": {}
                           },
                           "warnings": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "dependencyWarnings": {
                             "type": "array",
                             "items": {
                               "type": "string"

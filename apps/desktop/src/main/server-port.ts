@@ -1,8 +1,8 @@
-import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import log from 'electron-log';
 import { resolveDataDirectory } from './dork-home';
+import { readUserConfig } from './user-config';
 
 /**
  * Choosing the port the desktop app's server listens on.
@@ -172,9 +172,9 @@ function parsePortEnv(raw: string | undefined): number | null {
  *
  * This is the same `server.port` key the CLI reads (`packages/cli/src/cli.ts`),
  * on purpose: pinning a port is one setting with one meaning, whichever way
- * DorkOS was started. It is read straight off disk rather than through the
- * server's config manager, which lives in the child process and has not started
- * yet when the port has to be chosen.
+ * DorkOS was started. It is read straight off disk (see `user-config.ts`)
+ * rather than through the server's config manager, which lives in the child
+ * process and has not started yet when the port has to be chosen.
  *
  * **Present in the file is not the same as chosen.** `conf` materializes
  * defaults to disk — `config-manager.ts` hands it both `defaults` and
@@ -206,15 +206,10 @@ function parsePortEnv(raw: string | undefined): number | null {
  * @returns The chosen port, or `null` when nobody chose one.
  */
 function readPinnedPort(dorkHome: string): number | null {
-  let port: unknown;
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(path.join(dorkHome, 'config.json'), 'utf8'));
-    port = (parsed as { server?: { port?: unknown } } | null)?.server?.port;
-  } catch {
-    // No config file yet (first launch), or one nothing can parse. Neither is a
-    // reason to refuse to start, and the default is a good answer.
-    return null;
-  }
+  // No config file yet (first launch), or one nothing can parse, both come back
+  // as null here. Neither is a reason to refuse to start, and the default is a
+  // good answer.
+  const port = readUserConfig(dorkHome)?.server?.port;
   if (typeof port !== 'number' || !isValidPort(port)) return null;
   // The schema default, however it got onto disk: no opinion, so no pin.
   if (port === PREFERRED_SERVER_PORT) return null;

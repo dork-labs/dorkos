@@ -51,6 +51,7 @@ import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { resolveToolConfig } from '../tooling/tool-filter.js';
+import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import { mcpToolTimeoutFloorEnv } from './mcp-tool-timeout-env.js';
@@ -162,7 +163,22 @@ export async function resolveLaunch(args: {
     isCommandDispatch = knownCommands === null || knownCommands.includes(`/${commandName}`);
   }
 
-  const baseAppend = await buildSystemPromptAppend(effectiveCwd, toolConfig);
+  // Whether this turn's prompt already carries the six agent-to-agent tools
+  // (DOR-1337 / F8). Decided by the SAME rule the tool server applies —
+  // `loadsAgentToAgentTools` — over the SAME input: `session.cwd`, which is the
+  // cwd `mcpServerFactory` hands `createDorkOsToolServer` a few lines below,
+  // and which `resolveSenderIdentity` resolves this session's relay identity
+  // from. Deliberately NOT `effectiveCwd`: a per-message `cwd` override moves
+  // the turn's directory but not the session's identity, so keying the prose
+  // there would claim the tools are loaded for a session whose tool server had
+  // already decided otherwise — the failure inverted, and worse than the
+  // original, because a wrong "no lookup needed" costs the whole turn.
+  const baseAppend = await buildSystemPromptAppend(effectiveCwd, toolConfig, {
+    agentSession: loadsAgentToAgentTools(
+      !!(session.cwd && opts.meshCore?.getByPath(session.cwd)),
+      isRelayEnabled()
+    ),
+  });
   // Concatenate caller-supplied append (e.g. Tasks scheduler context) after the base
   const systemPromptAppend = messageOpts?.systemPromptAppend
     ? `${baseAppend}\n\n${messageOpts.systemPromptAppend}`

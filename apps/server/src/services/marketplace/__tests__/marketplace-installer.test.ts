@@ -151,6 +151,7 @@ function buildEmptyPreview(overrides: Partial<PermissionPreview> = {}): Permissi
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    npmDependencies: [],
     schedules: [],
     secrets: [],
     externalHosts: [],

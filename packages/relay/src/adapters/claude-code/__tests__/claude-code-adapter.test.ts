@@ -842,6 +842,185 @@ describe('ClaudeCodeAdapter', () => {
       expect(hasTextDelta).toBe(false);
     });
 
+    // DOR-1337 (F6). An upstream API failure surfaces as an in-stream `error`
+    // event followed by a normal `done` — the iterator does not throw, so the
+    // crashed-turn guard in the `finally` never fires. The inbox branch used to
+    // forward neither, and published `{ type: 'agent_result', text: '', done: true }`:
+    // a caller could not tell "answered nothing" from "crashed", which on an
+    // unattended schedule is a silent no-op.
+    it('carries the failure on the agent_result when the turn errors and still ends with done', async () => {
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+          yield { type: 'error', data: { message: 'API Error: 500' } } as StreamEvent;
+          yield { type: 'done', data: {} } as StreamEvent;
+        })()
+      );
+
+      await adapter.start(relay);
+      const envelope = createTestEnvelope({ replyTo: 'relay.inbox.sender' });
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      const calls = vi.mocked(relay.publish).mock.calls;
+      const final = calls[calls.length - 1];
+      expect(final[0]).toBe('relay.inbox.sender');
+      expect(final[1]).toMatchObject({
+        type: 'agent_result',
+        done: true,
+        error: 'API Error: 500',
+      });
+      // Whatever was streamed before the failure still travels, as partial work.
+      expect((final[1] as { text: string }).text).toBe('partial');
+    });
+
+    // The other half of the same rule. The claude-code runtime escalates ANY
+    // non-tool hook that exits non-zero — Stop, SubagentStop, SessionStart, all
+    // three configured in this repo — to a stream `error` with
+    // `code: 'hook_failure'`, and the turn then finishes normally with the whole
+    // answer. Folding that in would turn a correct reply into an AGENT_ERROR
+    // whose partialText is the answer nobody reads.
+    it('ignores a failed hook: the operator script is not the turn', async () => {
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'the whole answer' } } as StreamEvent;
+          yield {
+            type: 'error',
+            data: { message: 'Hook "notify" failed (Stop)', code: 'hook_failure' },
+          } as StreamEvent;
+          yield { type: 'done', data: {} } as StreamEvent;
+        })()
+      );
+
+      await adapter.start(relay);
+      await adapter.deliver(
+        'relay.agent.session-abc',
+        createTestEnvelope({ replyTo: 'relay.inbox.sender' })
+      );
+
+      const calls = vi.mocked(relay.publish).mock.calls;
+      const final = calls[calls.length - 1];
+      expect(final[1]).toMatchObject({
+        type: 'agent_result',
+        text: 'the whole answer',
+        done: true,
+      });
+      expect((final[1] as { error?: string }).error).toBeUndefined();
+    });
+
+    it('still fails the turn on an error that carries an unrecognised code', async () => {
+      // The denylist direction: an error nobody has classified is a failure, so
+      // a new fatal code is reported rather than silently passed off as an
+      // answer. Getting this backwards is the original bug.
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+          yield {
+            type: 'error',
+            data: { message: 'Something new went wrong', code: 'error_during_execution' },
+          } as StreamEvent;
+          yield { type: 'done', data: {} } as StreamEvent;
+        })()
+      );
+
+      await adapter.start(relay);
+      await adapter.deliver(
+        'relay.agent.session-abc',
+        createTestEnvelope({ replyTo: 'relay.inbox.sender' })
+      );
+
+      const calls = vi.mocked(relay.publish).mock.calls;
+      const final = calls[calls.length - 1];
+      expect((final[1] as { error?: string }).error).toBe('Something new went wrong');
+    });
+
+    it('names the failure honestly when the error event carries no message', async () => {
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'error', data: {} } as StreamEvent;
+          yield { type: 'done', data: {} } as StreamEvent;
+        })()
+      );
+
+      await adapter.start(relay);
+      await adapter.deliver(
+        'relay.agent.session-abc',
+        createTestEnvelope({ replyTo: 'relay.inbox.sender' })
+      );
+
+      const calls = vi.mocked(relay.publish).mock.calls;
+      const final = calls[calls.length - 1];
+      expect((final[1] as { error?: string }).error).toBeTruthy();
+    });
+
+    it('leaves a clean turn error-free, so success is still distinguishable', async () => {
+      await adapter.start(relay);
+      await adapter.deliver(
+        'relay.agent.session-abc',
+        createTestEnvelope({ replyTo: 'relay.inbox.sender' })
+      );
+
+      const calls = vi.mocked(relay.publish).mock.calls;
+      const final = calls[calls.length - 1];
+      expect(final[1]).toMatchObject({ type: 'agent_result', done: true });
+      expect((final[1] as { error?: string }).error).toBeUndefined();
+    });
+
+    // The other two ways a turn can fail also have to reach the ONE payload a
+    // poller is told is terminal. Both publish a separate error event as well,
+    // which the synchronous waiter settles on first — but `relay_inbox` reads a
+    // list and is told `done:true` ends it, so a clean-looking result next to an
+    // error event would leave it guessing.
+    it('carries a thrown-iterator failure on the agent_result too', async () => {
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+          throw new Error('SDK stream error');
+        })()
+      );
+
+      await adapter.start(relay);
+      await adapter.deliver(
+        'relay.agent.session-abc',
+        createTestEnvelope({ replyTo: 'relay.inbox.sender' })
+      );
+
+      const calls = vi.mocked(relay.publish).mock.calls;
+      const final = calls[calls.length - 1];
+      expect(final[1]).toMatchObject({ type: 'agent_result', done: true });
+      expect((final[1] as { error?: string }).error).toMatch(/SDK stream error/);
+    });
+
+    it('carries a TTL abort on the agent_result too', async () => {
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          yield { type: 'text_delta', data: { text: 'never seen' } } as StreamEvent;
+        })()
+      );
+
+      await adapter.start(relay);
+      await adapter.deliver(
+        'relay.agent.session-abc',
+        createTestEnvelope({
+          replyTo: 'relay.inbox.sender',
+          budget: {
+            hopCount: 1,
+            maxHops: 5,
+            ancestorChain: [],
+            ttl: Date.now() + 20,
+            callBudgetRemaining: 10,
+          },
+        })
+      );
+
+      const calls = vi.mocked(relay.publish).mock.calls;
+      const final = calls[calls.length - 1];
+      expect(final[1]).toMatchObject({ type: 'agent_result', done: true });
+      expect((final[1] as { error?: string }).error).toMatch(/TTL budget expired/);
+    });
+
     it('streams individual events to relay.human.console.* (not aggregated)', async () => {
       vi.mocked(agentManager.sendMessage).mockReturnValue(
         (async function* () {

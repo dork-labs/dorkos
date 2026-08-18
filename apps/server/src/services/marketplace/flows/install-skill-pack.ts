@@ -18,6 +18,7 @@ import { SkillFrontmatterSchema } from '@dorkos/skills';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { atomicMove } from '../lib/atomic-move.js';
 import { installRootDirForType } from '../lib/install-roots.js';
+import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
@@ -58,13 +59,17 @@ export class SkillPackInstallFlow {
     opts: InstallRequest
   ): Promise<InstallResult> {
     const installRoot = computeInstallRoot(this.deps.dorkHome, manifest.name, opts.projectPath);
+    // Filled during `stage` by the npm dependency step; read after the
+    // transaction commits, so a rolled-back install reports nothing.
+    const warnings: string[] = [];
     await runTransaction({
       name: `install-skill-pack-${manifest.name}`,
       target: installRoot,
-      stage: (staging) => stageSkillPack(packagePath, staging.path, this.deps.logger),
+      stage: (staging) =>
+        stageSkillPack(packagePath, staging.path, installRoot, warnings, this.deps.logger),
       activate: (staging) => activateSkillPack(staging.path, installRoot),
     });
-    return buildInstallResult(manifest, installRoot);
+    return buildInstallResult(manifest, installRoot, warnings);
   }
 }
 
@@ -87,20 +92,34 @@ function computeInstallRoot(
 }
 
 /**
- * Copy the package into the staging directory, then re-validate every
- * SKILL.md against the `@dorkos/skills` parser. Throws a clear error
- * naming the offending file if any frontmatter fails validation. The copy
- * strips symlinks ({@link stagePackageContents}) so a malicious package cannot
- * smuggle a link that escapes the install root (DOR-279).
+ * Copy the package into the staging directory, install any npm dependencies it
+ * declares, then re-validate every SKILL.md against the `@dorkos/skills`
+ * parser. Throws a clear error naming the offending file if any frontmatter
+ * fails validation. The copy strips symlinks ({@link stagePackageContents}) so
+ * a malicious package cannot smuggle a link that escapes the install root
+ * (DOR-279).
+ *
+ * The npm step runs on the staged tree so its `node_modules` is activated by
+ * the same atomic move as the package files (DOR-1341); it never throws, and
+ * appends any problem to `warnings` instead.
  *
  * @internal
  */
 async function stageSkillPack(
   packagePath: string,
   stagingPath: string,
+  installRoot: string,
+  warnings: string[],
   logger: Logger
 ): Promise<void> {
   await stagePackageContents(packagePath, stagingPath, logger);
+  warnings.push(
+    ...(await installStagedNpmDependencies({
+      stagingDir: stagingPath,
+      installPath: installRoot,
+      logger,
+    }))
+  );
   const skillFiles = await findSkillFiles(stagingPath);
   for (const absFile of skillFiles) {
     await validateSkillFile(absFile);
@@ -132,7 +151,8 @@ async function activateSkillPack(
  */
 function buildInstallResult(
   manifest: SkillPackPackageManifest,
-  installPath: string
+  installPath: string,
+  warnings: string[]
 ): InstallResult {
   return {
     ok: true,
@@ -141,7 +161,8 @@ function buildInstallResult(
     type: 'skill-pack',
     installPath,
     manifest,
-    warnings: [],
+    warnings: [...warnings],
+    dependencyWarnings: [...warnings],
   };
 }
 
@@ -160,9 +181,28 @@ async function findSkillFiles(root: string): Promise<string[]> {
     // `entry.parentPath` is preferred (Node 20.12+); fall back to `entry.path`
     // for older runtimes used in CI matrices.
     const parent = entry.parentPath ?? (entry as { path?: string }).path ?? root;
+    if (isUnderNodeModules(path.relative(root, parent))) continue;
     matches.push(path.join(parent, entry.name));
   }
   return matches;
+}
+
+/**
+ * True when a package-relative directory path sits inside a `node_modules`
+ * tree at any depth.
+ *
+ * Vendored dependencies are not the package's skills, and treating them as
+ * such is actively harmful in two ways. A dependency shipping any file named
+ * `SKILL.md` that DorkOS's parser rejects would make {@link validateSkillFile}
+ * throw, rolling the whole install back over a file the package author neither
+ * wrote nor can fix — the exact opposite of the warn-don't-fail policy the npm
+ * step is built on. And a real dependency tree is thousands of files to stat
+ * for nothing. The filter lives here rather than in the call order so it holds
+ * however the flow is later rearranged.
+ */
+function isUnderNodeModules(relativeDir: string): boolean {
+  if (relativeDir === '') return false;
+  return relativeDir.split(path.sep).includes('node_modules');
 }
 
 /**

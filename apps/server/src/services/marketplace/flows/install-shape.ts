@@ -24,6 +24,7 @@ import type { ShapePackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { atomicMove } from '../lib/atomic-move.js';
 import { installRootDirForType } from '../lib/install-roots.js';
+import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import { compileStagedExtensions, type StagedExtensionCompiler } from '../lib/staged-extensions.js';
 import { runTransaction } from '../transaction.js';
@@ -91,19 +92,27 @@ export class ShapeInstallFlow {
       installRootDirForType(manifest.type),
       manifest.name
     );
-    const warnings = opts.projectPath ? [SHAPE_PROJECT_PATH_IGNORED_WARNING] : [];
+    const scopeWarnings = opts.projectPath ? [SHAPE_PROJECT_PATH_IGNORED_WARNING] : [];
+    // Kept apart from `scopeWarnings`: only the dependency notes are persisted
+    // to the sidecar and re-shown on the installed-package view (DOR-1341).
+    const dependencyWarnings: string[] = [];
 
     return runTransaction<InstallResult>({
       name: `install-shape-${manifest.name}`,
       target: installRoot,
-      stage: (staging) => this.stage(staging.path, packagePath),
-      activate: (staging) => this.activate(staging.path, installRoot, manifest, warnings),
+      stage: (staging) => this.stage(staging.path, packagePath, installRoot, dependencyWarnings),
+      activate: (staging) =>
+        this.activate(staging.path, installRoot, manifest, scopeWarnings, dependencyWarnings),
     });
   }
 
   /**
-   * Copy the package into the staging directory and compile every bundled
-   * inline extension. Throws on any compile error so the transaction wrapper
+   * Copy the package into the staging directory, install any npm dependencies
+   * it declares (DOR-1341 — on the staged tree, so its `node_modules` rides the
+   * same atomic move as the package files and a rolled-back install leaves
+   * neither behind; a dependency problem appends to `warnings` rather than
+   * failing the install), and compile every bundled inline extension. Throws on
+   * any compile error so the transaction wrapper
    * tears the staging dir down before {@link activate} ever runs — a malformed
    * inline extension never lands on disk (a compile failure is recorded per
    * spec §7's "Bundled inline extension failed to compile" row at *apply* time,
@@ -111,8 +120,20 @@ export class ShapeInstallFlow {
    * copy strips symlinks ({@link stagePackageContents}) so a malicious package
    * cannot smuggle a link that escapes the install root (DOR-279).
    */
-  private async stage(stagingDir: string, packagePath: string): Promise<void> {
+  private async stage(
+    stagingDir: string,
+    packagePath: string,
+    installRoot: string,
+    warnings: string[]
+  ): Promise<void> {
     await stagePackageContents(packagePath, stagingDir, this.deps.logger);
+    warnings.push(
+      ...(await installStagedNpmDependencies({
+        stagingDir,
+        installPath: installRoot,
+        logger: this.deps.logger,
+      }))
+    );
     await compileStagedExtensions(
       stagingDir,
       this.deps.extensionCompiler,
@@ -132,7 +153,8 @@ export class ShapeInstallFlow {
     stagingDir: string,
     installRoot: string,
     manifest: ShapePackageManifest,
-    warnings: string[]
+    scopeWarnings: string[],
+    dependencyWarnings: string[]
   ): Promise<InstallResult> {
     await mkdir(path.dirname(installRoot), { recursive: true });
     await atomicMove(stagingDir, installRoot);
@@ -144,7 +166,8 @@ export class ShapeInstallFlow {
       type: 'shape',
       installPath: installRoot,
       manifest,
-      warnings,
+      warnings: [...scopeWarnings, ...dependencyWarnings],
+      dependencyWarnings: [...dependencyWarnings],
     };
   }
 }

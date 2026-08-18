@@ -1,17 +1,22 @@
 import { execFileSync, spawn, spawnSync } from 'child_process';
 import {
+  chmodSync,
   closeSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   openSync,
   readFileSync,
   readSync,
   readdirSync,
+  realpathSync,
   rmSync,
+  writeFileSync,
 } from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { LOGIN_SHELL_PATH_MARKER } from '../src/shared/login-shell-path';
 import { TRAY_IMAGE_FILES } from '../src/shared/tray-images';
 
 /**
@@ -26,8 +31,19 @@ import { TRAY_IMAGE_FILES } from '../src/shared/tray-images';
  * port after a restart, a stale renderer URL, a wrong window state), all
  * invisible to every other gate in the repo.
  *
- * So: launch the packaged app, prove its server answers, prove it shuts down
- * without orphaning that server. Any failure exits non-zero.
+ * So: launch the packaged app, prove its server answers, prove it can see the
+ * machine it is running on, and prove it shuts down without orphaning that
+ * server. Any failure exits non-zero.
+ *
+ * That middle part is the newest and the least obvious (DOR-1335). A packaged
+ * app that starts is not a packaged app that works: 0.61.0 launched perfectly
+ * while reporting its own bundled Claude Code as missing, registering no Codex
+ * runtime at all, opening on a directory its own boundary check refused, and
+ * failing to compile its bundled marketplace extension every single time. All
+ * four are packaging and environment faults, all four are invisible to a health
+ * probe, and all four are asserted in {@link assertAppSeesItsMachine} — under a
+ * launchd-style environment, because inheriting a developer's PATH would let
+ * the machine's own tools answer for the ones the app was supposed to ship.
  *
  * Run it after packaging (`electron-builder --dir` is enough — no signing
  * needed):
@@ -70,12 +86,64 @@ const POLL_INTERVAL_MS = 1_000;
 const HEALTH_PROBE_TIMEOUT_MS = 2_000;
 
 /**
+ * Timeout for the API reads the runtime assertions make.
+ *
+ * Much longer than the health probe, because these do real work:
+ * `/api/system/requirements` runs every runtime's dependency probe, each of
+ * which spawns a binary under its own ~5s cap. Two seconds would abort a
+ * healthy answer and read as a broken app.
+ */
+const API_READ_TIMEOUT_MS = 30_000;
+
+/**
  * Lines of app output to print when the smoke fails. The app logs steadily
  * while it runs, so an uncapped dump buries the interesting part (a crash, a
  * stack trace) under minutes of routine chatter — and the interesting part is
  * almost always at the end.
  */
 const FAILURE_OUTPUT_LINES = 200;
+
+/**
+ * The PATH a Finder-, Dock- or Spotlight-launched app inherits.
+ *
+ * launchd hands out exactly these four directories, and this smoke launches the
+ * app with nothing else so the run reproduces a real double-click rather than
+ * the terminal it happens to be started from. Every runtime assertion below is
+ * only meaningful under this PATH: with the developer's own PATH inherited, a
+ * `claude` on it would satisfy the Claude check no matter what the app packaged.
+ */
+const LAUNCHD_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+
+/** Version the fake `opencode` reports — distinctive, so nothing else can produce it. */
+const FAKE_OPENCODE_VERSION = '0.0.0-dorkos-smoke';
+
+/**
+ * Runtimes the packaged app has to register — all three, every launch.
+ *
+ * 0.61.0 shipped with two: `@openai/codex`'s per-platform binary package was
+ * missing from `app.asar`, the SDK threw at construction, and
+ * `registerOptionalRuntime` swallowed it, so the Codex card in the app was
+ * drawn entirely from config and the payload never mentioned it.
+ */
+const EXPECTED_RUNTIMES = ['claude-code', 'codex', 'opencode'];
+
+/**
+ * Log lines that are a failed boot on their own, whatever else went right.
+ *
+ * Both were on every launch of 0.61.0, and neither made the app fail to start —
+ * which is exactly why they need asserting here rather than being left to
+ * whoever reads the log.
+ */
+const FORBIDDEN_LOG_LINES: ReadonlyArray<{ pattern: string; why: string }> = [
+  {
+    pattern: 'Compilation failed for marketplace',
+    why: "the bundled marketplace extension could not be compiled — esbuild's per-platform binary is missing or unspawnable",
+  },
+  {
+    pattern: 'runtime listing degraded',
+    why: 'the session list was refused — almost always a default working directory outside the boundary (DORKOS_DEFAULT_CWD)',
+  },
+];
 
 /** The `/api/health` payload this smoke asserts against (apps/server/src/routes/health.ts). */
 interface HealthResponse {
@@ -85,13 +153,56 @@ interface HealthResponse {
   version?: string;
 }
 
+/** One dependency probe result (packages/shared/src/agent-runtime.ts's `DependencyCheck`). */
+interface DependencyCheck {
+  /** Human-readable name, e.g. `Claude Code CLI`. */
+  name: string;
+  /** `satisfied` | `missing` | `outdated`. */
+  status: string;
+  /** The version the binary reported, when it ran. */
+  version?: string;
+}
+
+/** `GET /api/system/requirements` (apps/server/src/routes/system.ts's `SystemRequirements`). */
+interface SystemRequirementsResponse {
+  /** Keyed by runtime type. */
+  runtimes?: Record<string, { dependencies?: DependencyCheck[]; state?: string }>;
+}
+
+/** `GET /api/directory/default`. */
+interface DirectoryDefaultResponse {
+  /** The server's boundary-clamped default working directory. */
+  path?: string;
+}
+
+/** `GET /api/sessions` — the `{ sessions, warnings? }` envelope (ADR-0310). */
+interface SessionListResponse {
+  /** Per-runtime degradation notices. Absent when every runtime answered. */
+  warnings?: string[];
+}
+
 /** Sleep for `ms` milliseconds. */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
+ * The bundle name electron-builder produces, from `productName` in
+ * `electron-builder.yml`. Hardcoded rather than parsed: unlike `appId`, this
+ * one is already asserted against the packaged `Info.plist` further down, so a
+ * rename shows up as a clear mismatch rather than a silent miss.
+ */
+const PACKAGED_APP_BUNDLE = 'DorkOS.app';
+
+/**
  * Locate the packaged `.app` bundle electron-builder produced.
+ *
+ * Matches `DorkOS.app` by name rather than taking the first `*.app` it finds.
+ * electron-builder copies the Electron template in as `Electron.app` and
+ * renames it at the end, so a pack that was interrupted — or one still running
+ * — leaves an `Electron.app` sitting in the same directory. Taking the first
+ * match launched THAT: a bare Electron with no app, which fails minutes later
+ * as "no /api/health response" and reads exactly like a broken build.
  *
  * @returns Absolute path to the `.app` bundle.
  * @throws If no packaged app is present.
@@ -105,11 +216,19 @@ function findPackagedApp(): string {
         .map((entry) => path.join(RELEASE_DIR, entry.name))
     : [];
   for (const dir of archDirs) {
-    const bundle = readdirSync(dir).find((name) => name.endsWith('.app'));
-    if (bundle) return path.join(dir, bundle);
+    const bundle = path.join(dir, PACKAGED_APP_BUNDLE);
+    if (existsSync(bundle)) return bundle;
   }
+  const strays = archDirs.flatMap((dir) =>
+    readdirSync(dir).filter((name) => name.endsWith('.app'))
+  );
   throw new Error(
-    `No packaged .app found under ${RELEASE_DIR}. Package one first:\n` +
+    `No ${PACKAGED_APP_BUNDLE} found under ${RELEASE_DIR}` +
+      (strays.length > 0
+        ? ` (found ${strays.join(', ')} — an interrupted or still-running pack leaves ` +
+          `Electron.app behind; let it finish, or delete the release directory and repack)`
+        : '') +
+      `. Package one first:\n` +
       `  cd apps/desktop && CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --dir`
   );
 }
@@ -385,6 +504,58 @@ interface LaunchedApp {
   terminate(signal: NodeJS.Signals): void;
 }
 
+/** A stand-in for the user's login shell, and the tool only it can reveal. */
+interface FakeLoginShell {
+  /** Path to hand the app as `$SHELL`. */
+  shell: string;
+  /** The directory the shell's PATH adds, holding the fake `opencode`. */
+  binDir: string;
+}
+
+/**
+ * Build a fake login shell whose PATH exposes a tool nothing else can see.
+ *
+ * This is what makes the PATH fix observable from outside the app. A packaged
+ * app inherits launchd's four system directories and nothing more, so it used
+ * to be blind to everything under `~/.local/bin`, `/opt/homebrew/bin` or
+ * `~/.nvm` — the reason a tester's `claude` and `codex` both read as "missing"
+ * in the Mac app while his terminal found them instantly. The shell here prints
+ * a PATH containing one directory holding one executable named `opencode`; if
+ * the app reports that fake version back through
+ * `GET /api/system/requirements`, the login-shell PATH reached the server.
+ *
+ * The shell ignores its arguments on purpose: it is standing in for the whole
+ * `$SHELL -ilc …` protocol, and what is under test is that the app runs it and
+ * reads what it prints, not that a real zsh parses the flags. What it does NOT
+ * fake is the answer's shape — it exports a PATH and then runs the real `env`,
+ * so the app parses a genuine environment dump exactly as it would from a real
+ * shell (see `PROBE_SCRIPT` in `src/main/shell-path.ts` for why the probe asks
+ * that way).
+ *
+ * @param dir - A throwaway directory to build the fixture in.
+ */
+function createFakeLoginShell(dir: string): FakeLoginShell {
+  const binDir = path.join(dir, 'bin');
+  mkdirSync(binDir, { recursive: true });
+
+  const opencode = path.join(binDir, 'opencode');
+  writeFileSync(opencode, `#!/bin/sh\necho "${FAKE_OPENCODE_VERSION}"\n`, 'utf-8');
+  chmodSync(opencode, 0o755);
+
+  const shell = path.join(dir, 'login-shell');
+  writeFileSync(
+    shell,
+    `#!/bin/sh\n` +
+      `PATH="${binDir}:${LAUNCHD_PATH}"\n` +
+      `export PATH\n` +
+      `printf %s '${LOGIN_SHELL_PATH_MARKER}'; env; printf %s '${LOGIN_SHELL_PATH_MARKER}'\n`,
+    'utf-8'
+  );
+  chmodSync(shell, 0o755);
+
+  return { shell, binDir };
+}
+
 /**
  * Launch the packaged app against a throwaway home directory.
  *
@@ -416,10 +587,18 @@ interface LaunchedApp {
  * {@link assertDataDirIsolated} proves this actually held, every run. Do not
  * drop either variable or that assertion.
  *
+ * The environment is also cut down to what launchd hands a double-clicked app:
+ * {@link LAUNCHD_PATH} and a `$SHELL` pointing at {@link createFakeLoginShell}'s
+ * stand-in. That is not incidental tidying — it is what gives the runtime
+ * assertions their meaning. Inheriting this machine's PATH would let a `claude`
+ * or `codex` installed on the runner satisfy the checks no matter what the app
+ * actually packaged, which is the failure mode a green smoke must not have.
+ *
  * @param appPath - Absolute path to the `.app` bundle.
  * @param home - Absolute path to the throwaway home directory.
+ * @param loginShell - The fake login shell to hand the app as `$SHELL`.
  */
-function launchApp(appPath: string, home: string): LaunchedApp {
+function launchApp(appPath: string, home: string, loginShell: FakeLoginShell): LaunchedApp {
   const executable = path.join(appPath, 'Contents', 'MacOS', path.basename(appPath, '.app'));
   const child = spawn(executable, [], {
     env: {
@@ -427,6 +606,8 @@ function launchApp(appPath: string, home: string): LaunchedApp {
       HOME: home,
       CFFIXED_USER_HOME: home,
       ELECTRON_ENABLE_LOGGING: '1',
+      PATH: LAUNCHD_PATH,
+      SHELL: loginShell.shell,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -484,7 +665,7 @@ async function waitForHealthyServer(
       `If the app produced NO output at all above and sat at 0% CPU, suspect the macOS ` +
       `Gatekeeper consent dialog rather than a code defect — it blocks launch until a human ` +
       `clicks Open, and is indistinguishable from a hang here. See ` +
-      `contributing/desktop-app-development.md §7; this script already runs \`xattr -cr\`, ` +
+      `contributing/desktop-app-development.md §6; this script already runs \`xattr -cr\`, ` +
       `which is the fix.`
   );
 }
@@ -543,6 +724,153 @@ function assertDataDirIsolated(home: string): void {
   );
 }
 
+/** One thing this smoke claims about the running app. */
+interface Assertion {
+  /** What is being claimed, phrased as the passing case. */
+  label: string;
+  /** `null` when it held; otherwise what was found instead. */
+  failure: string | null;
+}
+
+/** Record an assertion from a condition and the detail to print when it fails. */
+function claim(label: string, ok: boolean, detail: () => string): Assertion {
+  return { label, failure: ok ? null : detail() };
+}
+
+/**
+ * Fetch and parse one JSON endpoint on the running app.
+ *
+ * @param endpoint - The socket the server is serving on.
+ * @param apiPath - Path to request, e.g. `/api/sessions`.
+ * @throws If the request fails or the response is not 2xx — an endpoint that
+ *   cannot be read is a failure of the app, not of this helper.
+ */
+async function getJson<T>(endpoint: Endpoint, apiPath: string): Promise<T> {
+  const url = `http://${endpoint.host}:${endpoint.port}${apiPath}`;
+  const response = await fetch(url, { signal: AbortSignal.timeout(API_READ_TIMEOUT_MS) });
+  if (!response.ok) throw new Error(`GET ${url} answered ${response.status}`);
+  return (await response.json()) as T;
+}
+
+/** The dependency check whose name reads as a CLI probe, mirroring `deriveRuntimeReadiness`. */
+function cliCheck(checks: DependencyCheck[] | undefined): DependencyCheck | undefined {
+  return checks?.find((check) => /\bCLI\b/i.test(check.name));
+}
+
+/** Compare two paths as the filesystem sees them (`/var` is a symlink to `/private/var`). */
+function samePathTree(child: string, parent: string): boolean {
+  const real = (value: string): string => {
+    try {
+      return realpathSync(value);
+    } catch {
+      return path.resolve(value);
+    }
+  };
+  const [childReal, parentReal] = [real(child), real(parent)];
+  return childReal === parentReal || childReal.startsWith(parentReal + path.sep);
+}
+
+/**
+ * Assert the packaged app can actually see the machine it is running on.
+ *
+ * Everything here failed, silently, in the shipped 0.61.0 Mac app: it reported
+ * its own bundled Claude Code as missing, registered no Codex runtime at all,
+ * opened on a directory its own boundary check then refused, and failed to
+ * compile its bundled marketplace extension on every launch. None of it stopped
+ * the app from starting, so none of it was caught by anything — which is what
+ * these assertions are for. They are only meaningful because {@link launchApp}
+ * strips the environment down to what launchd gives a double-clicked app.
+ *
+ * Every claim is printed, pass or fail, so a green run says what it proved
+ * rather than only that nothing threw.
+ *
+ * @param endpoint - The socket the server is serving on.
+ * @param home - The throwaway home the app was launched against.
+ * @param output - Everything the app has written so far.
+ * @throws If any claim does not hold, naming all of them and the payloads.
+ */
+async function assertAppSeesItsMachine(
+  endpoint: Endpoint,
+  home: string,
+  output: string[]
+): Promise<void> {
+  const requirements = await getJson<SystemRequirementsResponse>(
+    endpoint,
+    '/api/system/requirements'
+  );
+  const runtimes = requirements.runtimes ?? {};
+  const registered = Object.keys(runtimes).sort();
+  const claudeCli = cliCheck(runtimes['claude-code']?.dependencies);
+  const codexCli = cliCheck(runtimes['codex']?.dependencies);
+  const openCodeCli = cliCheck(runtimes['opencode']?.dependencies);
+
+  const defaultDirectory = await getJson<DirectoryDefaultResponse>(
+    endpoint,
+    '/api/directory/default'
+  );
+  const sessions = await getJson<SessionListResponse>(endpoint, '/api/sessions');
+  // The app's output reaches this process through a pipe, so a line written
+  // while the requests above were in flight can still be in transit. One poll
+  // interval closes that gap; the payload assertions above do not depend on it.
+  await delay(POLL_INTERVAL_MS);
+  const logs = output.join('\n');
+
+  const assertions: Assertion[] = [
+    claim(
+      `every runtime registered (${EXPECTED_RUNTIMES.join(', ')})`,
+      EXPECTED_RUNTIMES.every((type) => registered.includes(type)),
+      () => `got ${registered.join(', ') || '(none)'}`
+    ),
+    claim(
+      'Claude Code CLI satisfied from the bundled binary',
+      claudeCli?.status === 'satisfied' && Boolean(claudeCli.version),
+      () =>
+        `${JSON.stringify(claudeCli ?? null)} — with no claude on PATH this can only pass ` +
+        `through the unpacked @anthropic-ai/claude-agent-sdk-<platform> binary`
+    ),
+    claim(
+      'Codex CLI satisfied from the vendored binary',
+      codexCli?.status === 'satisfied',
+      () =>
+        `${JSON.stringify(codexCli ?? null)} — with no codex on PATH this can only pass ` +
+        `through the unpacked @openai/codex-<platform> vendor binary`
+    ),
+    claim(
+      'the login-shell PATH reached the server',
+      openCodeCli?.status === 'satisfied' && openCodeCli.version === FAKE_OPENCODE_VERSION,
+      () =>
+        `${JSON.stringify(openCodeCli ?? null)} — the fake login shell put an opencode ` +
+        `reporting ${FAKE_OPENCODE_VERSION} on the PATH, and only a server that read that ` +
+        `PATH could find it`
+    ),
+    claim(
+      'the default working directory is inside the home directory',
+      Boolean(defaultDirectory.path) && samePathTree(defaultDirectory.path!, home),
+      () => `${JSON.stringify(defaultDirectory)} is not inside ${home}`
+    ),
+    claim(
+      'the session list came back without warnings',
+      (sessions.warnings ?? []).length === 0,
+      () => JSON.stringify(sessions.warnings)
+    ),
+    ...FORBIDDEN_LOG_LINES.map(({ pattern, why }) =>
+      claim(`no "${pattern}" in the app's output`, !logs.includes(pattern), () => why)
+    ),
+  ];
+
+  for (const { label, failure } of assertions) {
+    console.log(`      ${failure ? '✗' : '✓'} ${label}${failure ? ` — ${failure}` : ''}`);
+  }
+  const failed = assertions.filter((assertion) => assertion.failure !== null);
+  if (failed.length > 0) {
+    throw new Error(
+      `The packaged app started, but ${failed.length} of ${assertions.length} checks about ` +
+        `what it can see failed:\n` +
+        failed.map(({ label, failure }) => `  ✗ ${label} — ${failure}`).join('\n')
+    );
+  }
+}
+
 /**
  * Assert the server port stops answering once the app is gone.
  *
@@ -580,7 +908,7 @@ async function main(): Promise<void> {
   const expectedVersion = (
     JSON.parse(readFileSync(path.join(DESKTOP_PKG, 'package.json'), 'utf-8')) as { version: string }
   ).version;
-  console.log(`[1/5] Packaged app: ${appPath}`);
+  console.log(`[1/6] Packaged app: ${appPath}`);
   console.log(`      Bundle id: ${assertBundleIdMatchesConfig(appPath)} (matches appId)`);
   assertTrayImagesPackaged(appPath);
   console.log(`      Tray images: all ${TRAY_IMAGE_FILES.length} present in app.asar`);
@@ -590,22 +918,25 @@ async function main(): Promise<void> {
   // blocking launch, which looks exactly like a hang from here) costs hours to
   // diagnose. `-cr` clears ALL attributes: `-dr com.apple.quarantine` alone
   // misses com.apple.macl / com.apple.provenance, which re-trigger the dialog.
-  // See contributing/desktop-app-development.md §7.
+  // See contributing/desktop-app-development.md §6.
   execFileSync('xattr', ['-cr', appPath]);
   const resigned = relaxAdhocLibraryValidation(appPath);
   console.log(
-    `[2/5] Cleared extended attributes (Gatekeeper insurance)` +
+    `[2/6] Cleared extended attributes (Gatekeeper insurance)` +
       `${resigned ? '; re-signed ad-hoc so an unsigned build can load its own framework' : ''}.`
   );
 
   const home = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-home-'));
-  const app = launchApp(appPath, home);
-  console.log(`[3/5] Launched (pid ${app.pid}) against throwaway home ${home}`);
+  const fixtures = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-shell-'));
+  const loginShell = createFakeLoginShell(fixtures);
+  const app = launchApp(appPath, home, loginShell);
+  console.log(`[3/6] Launched (pid ${app.pid}) against throwaway home ${home}`);
+  console.log(`      PATH is launchd's (${LAUNCHD_PATH}); $SHELL is ${loginShell.shell}`);
 
   try {
     const { endpoint, health } = await waitForHealthyServer(app);
     console.log(
-      `[4/5] Server healthy on ${endpoint.host}:${endpoint.port} — version ${health.version}`
+      `[4/6] Server healthy on ${endpoint.host}:${endpoint.port} — version ${health.version}`
     );
 
     // The packaged server bundle carries the desktop package's version, baked
@@ -620,6 +951,9 @@ async function main(): Promise<void> {
     }
 
     assertDataDirIsolated(home);
+
+    console.log('[5/6] What the app can see from a launchd-style launch:');
+    await assertAppSeesItsMachine(endpoint, home, app.output);
 
     await quitApp(app);
     // Assert the (code, signal) PAIR, not the code alone. `child.on('exit')`
@@ -644,8 +978,9 @@ async function main(): Promise<void> {
     // Only on success: a failed run's throwaway home holds the DB and logs of
     // whatever went wrong, and the path is printed above.
     rmSync(home, { recursive: true, force: true });
+    rmSync(fixtures, { recursive: true, force: true });
     console.log(
-      '[5/5] Data dir isolated, quit cleanly (exit 0), port released. Packaged smoke PASSED.'
+      '[6/6] Data dir isolated, quit cleanly (exit 0), port released. Packaged smoke PASSED.'
     );
   } catch (err) {
     // The app's own output is the only diagnosis material for a packaged

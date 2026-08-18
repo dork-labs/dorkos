@@ -13,6 +13,7 @@ vi.mock('../model/use-agent-context-config', () => ({
   })),
 }));
 
+import { AGENT_SUBJECT_FORMAT } from '@dorkos/shared/relay-schemas';
 import { ContextTab } from '../ui/ContextTab';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useAgentContextConfig } from '../model/use-agent-context-config';
@@ -24,6 +25,11 @@ import { useAgentContextConfig } from '../model/use-agent-context-config';
 function renderTab() {
   const { container } = render(<ContextTab />);
   return within(container);
+}
+
+/** Escape a literal string for use inside a RegExp. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 describe('ContextTab', () => {
@@ -53,7 +59,7 @@ describe('ContextTab', () => {
   it('shows preview when toggle is on and feature is available', () => {
     const view = renderTab();
     // Relay preview should contain subject hierarchy
-    expect(view.getByText(/relay\.agent\.\{agentId\}/)).toBeInTheDocument();
+    expect(view.getByText(new RegExp(escapeRegExp(AGENT_SUBJECT_FORMAT)))).toBeInTheDocument();
     // Mesh preview should contain lifecycle steps
     expect(view.getByText(/mesh_discover/)).toBeInTheDocument();
     // Adapter preview should contain binding info
@@ -67,7 +73,9 @@ describe('ContextTab', () => {
     });
     const view = renderTab();
     // Relay preview should be hidden
-    expect(view.queryByText(/relay\.agent\.\{agentId\}/)).not.toBeInTheDocument();
+    expect(
+      view.queryByText(new RegExp(escapeRegExp(AGENT_SUBJECT_FORMAT)))
+    ).not.toBeInTheDocument();
     // Mesh preview should still show
     expect(view.getByText(/mesh_discover/)).toBeInTheDocument();
   });
@@ -140,5 +148,38 @@ describe('ContextTab', () => {
     expect(view.getByLabelText('Toggle Relay Tools context')).toBeInTheDocument();
     expect(view.getByLabelText('Toggle Mesh Tools context')).toBeInTheDocument();
     expect(view.getByLabelText('Toggle Adapter Tools context')).toBeInTheDocument();
+  });
+
+  // DOR-1337. These previews are a SECOND telling of blocks the server owns, and
+  // the client cannot import server code to render the real ones — so the two
+  // facts that made the first telling actively wrong are pinned here instead.
+  describe('the previews teach what the runtime actually accepts', () => {
+    it('shows the agent subject in the shape access rules match, never the two-segment one', () => {
+      const view = renderTab();
+      expect(view.getByText(new RegExp(escapeRegExp(AGENT_SUBJECT_FORMAT)))).toBeInTheDocument();
+      // The shape that shipped for a release and matched no rule.
+      expect(view.queryByText(/relay\.agent\.\{agentId\}/)).not.toBeInTheDocument();
+    });
+
+    it('names every tool the only way the runtime can call it', () => {
+      const { container } = render(<ContextTab />);
+      const text = container.textContent ?? '';
+      const PREFIX = 'mcp__dorkos__';
+
+      // Every DorkOS tool named in these previews must carry the prefix: a bare
+      // name is not a tool at all on claude-code, and teaching one to a person
+      // teaches it to their agent (DOR-1292). Scanned over the raw text, so a
+      // name buried mid-line cannot slip past an element query.
+      const unprefixed = [...text.matchAll(/(?:relay|mesh|binding)_[a-z_]+/g)]
+        .filter(
+          (match) => text.slice(Math.max(0, match.index - PREFIX.length), match.index) !== PREFIX
+        )
+        .map((match) => match[0]);
+
+      expect(
+        [...new Set(unprefixed)],
+        'these tool names are written bare in an operator-facing preview'
+      ).toEqual([]);
+    });
   });
 });

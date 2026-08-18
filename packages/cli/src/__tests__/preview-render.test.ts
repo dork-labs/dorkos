@@ -16,6 +16,7 @@ function makePreview(overrides: Partial<PreviewPayload> = {}): PreviewPayload {
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    npmDependencies: [],
     schedules: [],
     secrets: [],
     externalHosts: [],
@@ -30,6 +31,36 @@ function makePreview(overrides: Partial<PreviewPayload> = {}): PreviewPayload {
 const stripAnsi = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, '');
 
 describe('renderPreview', () => {
+  it('names every npm library the install will download, with its version range', () => {
+    // The terminal is a consent surface too: `dorkos install` reaches the npm
+    // registry before the package runs a line, and the person agreeing needs to
+    // know which third-party code that pulls onto their machine (DOR-1341).
+    const out = stripAnsi(
+      renderPreview(
+        'flow',
+        '0.5.0',
+        makePreview({
+          npmDependencies: [
+            { name: 'zod', range: '^4.3.6' },
+            { name: 'cronstrue', range: '~2.0.0' },
+          ],
+        })
+      )
+    );
+
+    expect(out).toContain(
+      'npm libraries this install will download, and everything they depend on:'
+    );
+    expect(out).toContain('zod@^4.3.6');
+    expect(out).toContain('cronstrue@~2.0.0');
+  });
+
+  it('omits the npm section entirely for a package that needs no libraries', () => {
+    const out = stripAnsi(renderPreview('plain', '1.0.0', makePreview()));
+
+    expect(out).not.toContain('npm libraries');
+  });
+
   it('prints the hook command exactly as the package wrote it', () => {
     const out = stripAnsi(
       renderPreview(

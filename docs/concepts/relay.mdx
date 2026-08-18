@@ -38,7 +38,7 @@ You don't need Telegram to see Relay working, either: your own console session i
 
 ## Addresses, in plain terms
 
-Every message travels to a named address, like `relay.human.telegram.{chatId}` for one specific Telegram chat, or `relay.agent.{agentId}` for one specific agent (yes, that includes `relay.agent.dorkbot`, should you ever want to message the mascot directly). You rarely need to write these yourself. DorkOS and its adapters generate them for you; the pattern is here mostly so log lines make sense when you're troubleshooting.
+Every message travels to a named address, like `relay.human.telegram.{chatId}` for one specific Telegram chat, or `relay.agent.{namespace}.{agentId}` for one specific agent. You rarely need to write these yourself. DorkOS and its adapters generate them for you, and each agent's own address is shown as its `relaySubject`; the pattern is here mostly so log lines make sense when you're troubleshooting.
 
 If you want to know how these addresses are matched, wildcarded, stored, and secured, the reference section below covers all of it.
 
@@ -54,7 +54,7 @@ Relay organizes communication around **subjects**: hierarchical, dot-separated n
 
 Common patterns:
 
-- `relay.agent.{agentId}`: messages addressed to a specific agent
+- `relay.agent.{namespace}.{agentId}`: messages addressed to a specific agent (its `relaySubject`)
 - `relay.human.console.{clientId}`: messages destined for a human's console
 - `relay.human.telegram.{chatId}`: messages routed to a Telegram chat
 - `relay.system.tasks.{scheduleId}`: system messages from the Task scheduler
