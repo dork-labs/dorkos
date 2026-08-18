@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createRef } from 'react';
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
-import { QuestionPrompt, type QuestionPromptHandle } from '../ui/tools/QuestionPrompt';
+import { QuestionPrompt, type QuestionPromptHandle } from '../ui/QuestionPrompt';
 import type { QuestionItem } from '@dorkos/shared/types';
 
 // Mock Radix RadioGroup for jsdom
@@ -610,7 +610,10 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
         <QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} isActive={false} />
       );
       const wrapper = container.firstElementChild as HTMLElement;
-      expect(wrapper.className).not.toContain('ring-2');
+      // The ACTIVE ring, specifically. The card also carries a `focus-visible:`
+      // twin of it — the design system's parity rule — which contains the same
+      // `ring-2` substring and is not what this case is about.
+      expect(wrapper.className).not.toContain('ring-ring/30');
     });
   });
 

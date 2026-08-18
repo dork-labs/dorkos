@@ -87,16 +87,14 @@ vi.mock('../ui/status/ChatStatusSection', () => ({
   ChatStatusSection: () => <div data-testid="chat-status" />,
 }));
 
-vi.mock('../ui/tools/ToolApproval', () => ({
-  ToolApproval: ({ toolCallId }: { toolCallId: string }) => (
+vi.mock('@/layers/features/ask', () => ({
+  ApprovalPrompt: ({ toolCallId }: { toolCallId: string }) => (
     <div data-testid="tool-approval">{toolCallId}</div>
   ),
-}));
-
-vi.mock('../ui/tools/QuestionPrompt', () => ({
   QuestionPrompt: ({ toolCallId }: { toolCallId: string }) => (
     <div data-testid="question-prompt">{toolCallId}</div>
   ),
+  AskStack: () => null,
 }));
 
 vi.mock('@/layers/features/commands', () => ({ CommandPalette: () => null }));

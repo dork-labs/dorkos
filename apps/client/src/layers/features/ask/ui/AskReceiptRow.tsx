@@ -1,16 +1,17 @@
 import type { ReactNode } from 'react';
-import type { MessagePart } from '@dorkos/shared/types';
+import type { MessagePart, ToolApprovalOutcome } from '@dorkos/shared/types';
 import { getToolLabel } from '@/layers/shared/lib';
-import { ApprovalReceipt } from './ApprovalReceipt';
-import { TruncatedOutput } from '../primitives';
-import type { ApprovalReceiptGroup } from '../../lib/group-approval-receipts';
+import { AskReceipt } from './AskReceipt';
+import { TruncatedOutput } from '@/layers/shared/ui';
 
 /** The `tool_call` member of {@link MessagePart}. */
 type ToolCallPart = Extract<MessagePart, { type: 'tool_call' }>;
 
-interface ApprovalReceiptRowProps {
-  /** The grouped decision — its outcome, and whether a reason was carried. */
-  group: ApprovalReceiptGroup;
+interface AskReceiptRowProps {
+  /** How the grouped decision was answered. */
+  outcome: ToolApprovalOutcome;
+  /** Whether every ask in the group carried the person's words to the agent. */
+  reasonGiven: boolean;
   /** Every answered ask the receipt speaks for, in transcript order. */
   members: ToolCallPart[];
   /** The group's lead part, which carries the timestamps and the result text. */
@@ -52,27 +53,33 @@ interface ApprovalReceiptRowProps {
  * here is transmitted anywhere. A surface that leaves the machine — a shared
  * artifact, a bridged room — would owe this a different answer.
  */
-export function ApprovalReceiptRow({ group, members, lead, children }: ApprovalReceiptRowProps) {
+export function AskReceiptRow({
+  outcome,
+  reasonGiven,
+  members,
+  lead,
+  children,
+}: AskReceiptRowProps) {
   return (
     <div className="flex flex-col">
-      <ApprovalReceipt
-        outcome={group.outcome}
+      <AskReceipt
+        outcome={outcome}
         items={members.map((member) => ({
           toolCallId: member.toolCallId,
           label: member.approvalDisplayName || getToolLabel(member.toolName, member.input ?? ''),
         }))}
         resolvedAt={lead.approvalResolvedAt}
         startedAt={lead.approvalStartedAt}
-        reasonGiven={group.reasonGiven}
+        reasonGiven={reasonGiven}
       />
-      {group.outcome !== 'allowed' && lead.result && (
+      {outcome !== 'allowed' && lead.result && (
         <TruncatedOutput
           data-testid="approval-receipt-result"
           content={lead.result}
           className="text-muted-foreground mt-0.5 ml-6"
         />
       )}
-      {group.outcome === 'allowed' && children}
+      {outcome === 'allowed' && children}
     </div>
   );
 }

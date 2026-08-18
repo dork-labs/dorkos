@@ -9,12 +9,14 @@ import { groupApprovalReceipts } from '../../lib/group-approval-receipts';
 import { isSettledQuestion, questionEnding } from '../../lib/question-state';
 import { StreamingText } from './StreamingText';
 import { ToolCallCard } from '../tools/ToolCallCard';
-import { ToolApproval } from '../tools/ToolApproval';
-import type { ToolApprovalHandle } from '../tools/ToolApproval';
-import { ApprovalReceiptRow } from '../tools/ApprovalReceiptRow';
-import { QuestionPrompt } from '../tools/QuestionPrompt';
-import type { QuestionPromptHandle } from '../tools/QuestionPrompt';
-import { ElicitationPrompt } from '../tools/ElicitationPrompt';
+import {
+  ApprovalPrompt,
+  AskReceiptRow,
+  QuestionPrompt,
+  ElicitationPrompt,
+  type ApprovalPromptHandle,
+  type QuestionPromptHandle,
+} from '@/layers/features/ask';
 import { useMessageContext } from './MessageContext';
 import { SubagentBlock } from './SubagentBlock';
 import { ThinkingBlock } from './ThinkingBlock';
@@ -235,7 +237,7 @@ export function CollapsibleRun({ children }: { children: React.ReactNode[] }) {
 /**
  * Renders assistant message content by mapping over message parts.
  * Handles text parts (via StreamingText), tool call parts (via AutoHideToolCall),
- * approval parts (via ToolApproval), and question parts (via QuestionPrompt).
+ * approval parts (via ApprovalPrompt), and question parts (via QuestionPrompt).
  * Reads session/interaction state from MessageContext instead of props.
  */
 export function AssistantMessageContent({ message }: { message: ChatMessage }) {
@@ -256,7 +258,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
   const parts = message.parts ?? [];
 
   const approvalRefCallback = useCallback(
-    (handle: ToolApprovalHandle | null) => {
+    (handle: ApprovalPromptHandle | null) => {
       onToolRef?.(handle);
     },
     [onToolRef]
@@ -413,7 +415,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
       }
       const isActive = toolPart.toolCallId === activeToolCallId;
       return (
-        <ToolApproval
+        <ApprovalPrompt
           key={toolPart.toolCallId}
           ref={isActive ? approvalRefCallback : undefined}
           sessionId={sessionId}
@@ -444,9 +446,10 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         .map((index) => parts[index])
         .filter((member) => member.type === 'tool_call');
       return (
-        <ApprovalReceiptRow
+        <AskReceiptRow
           key={`approval-receipt-${toolPart.toolCallId}`}
-          group={receipt}
+          outcome={receipt.outcome}
+          reasonGiven={receipt.reasonGiven}
           members={members}
           lead={toolPart}
         >
@@ -459,7 +462,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
               expandToolCalls={expandToolCalls}
             />
           ))}
-        </ApprovalReceiptRow>
+        </AskReceiptRow>
       );
     }
     // Gated on `interactiveType` ALONE. A question whose `questions` array

@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import { Check, Clock, HelpCircle, MinusCircle, X } from 'lucide-react';
-import { CompactResultRow, TruncatedOutput } from '../primitives';
+import { CompactResultRow, TruncatedOutput } from '@/layers/shared/ui';
 import type { QuestionItem, QuestionOutcome } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 

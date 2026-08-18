@@ -5,17 +5,17 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { Badge } from '@/layers/shared/ui';
 import { CollapsibleCard } from '@/layers/features/chat/ui/primitives/CollapsibleCard';
-import { InteractiveCard } from '@/layers/features/chat/ui/primitives/InteractiveCard';
-import { OptionRow } from '@/layers/features/chat/ui/primitives/OptionRow';
+import { AskCard } from '@/layers/features/ask';
+import { OptionRow } from '@/layers/shared/ui';
 import { CompactPendingRow } from '@/layers/features/chat/ui/primitives/CompactPendingRow';
-import { CompactResultRow } from '@/layers/features/chat/ui/primitives/CompactResultRow';
+import { CompactResultRow } from '@/layers/shared/ui';
 
-/** Chat primitive component showcases: CollapsibleCard, InteractiveCard, OptionRow, CompactPendingRow, CompactResultRow. */
+/** Chat primitive component showcases: CollapsibleCard, AskCard.Root, OptionRow, CompactPendingRow, CompactResultRow. */
 export function ChatPrimitivesShowcases() {
   return (
     <>
       <CollapsibleCardShowcase />
-      <InteractiveCardShowcase />
+      <AskCardShowcase />
       <OptionRowShowcase />
 
       <PlaygroundSection
@@ -129,40 +129,40 @@ function CollapsibleCardShowcase() {
   );
 }
 
-function InteractiveCardShowcase() {
+function AskCardShowcase() {
   return (
     <PlaygroundSection
-      title="InteractiveCard"
+      title="AskCard.Root"
       description="Container with active/inactive/resolved visual states."
     >
       <ShowcaseLabel>Active</ShowcaseLabel>
       <ShowcaseDemo>
-        <InteractiveCard isActive>
+        <AskCard.Root isActive>
           <div className="flex items-center gap-2 p-3">
             <ShieldCheck className="text-primary size-4" />
             <span className="text-sm">Waiting for approval — active focus ring</span>
           </div>
-        </InteractiveCard>
+        </AskCard.Root>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Inactive (default)</ShowcaseLabel>
       <ShowcaseDemo>
-        <InteractiveCard>
+        <AskCard.Root>
           <div className="flex items-center gap-2 p-3">
             <MessageCircleQuestion className="text-muted-foreground size-4" />
             <span className="text-muted-foreground text-sm">Inactive — dimmed appearance</span>
           </div>
-        </InteractiveCard>
+        </AskCard.Root>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Resolved</ShowcaseLabel>
       <ShowcaseDemo>
-        <InteractiveCard isResolved>
+        <AskCard.Root isResolved>
           <div className="flex items-center gap-2 p-3">
             <Check className="size-4 text-emerald-500" />
             <span className="text-sm">Resolved — no dimming</span>
           </div>
-        </InteractiveCard>
+        </AskCard.Root>
       </ShowcaseDemo>
     </PlaygroundSection>
   );

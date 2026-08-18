@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Composer } from '@/layers/features/composer';
 import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
-import { QuestionPrompt } from '@/layers/features/chat/ui/tools/QuestionPrompt';
+import { QuestionPrompt } from '@/layers/features/ask';
 import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import { TransportProvider } from '@/layers/shared/model';

@@ -51,8 +51,12 @@ vi.mock('../ui/status/ChatStatusSection', () => ({
   ChatStatusSection: () => <div data-testid="chat-status" />,
 }));
 vi.mock('../ui/input/QueuePanel', () => ({ QueuePanel: () => null }));
-vi.mock('../ui/tools/ToolApproval', () => ({ ToolApproval: () => null }));
-vi.mock('../ui/tools/QuestionPrompt', () => ({ QuestionPrompt: () => null }));
+vi.mock('@/layers/features/ask', () => ({
+  ApprovalPrompt: () => null,
+  QuestionPrompt: () => null,
+  AskStack: () => null,
+  groupAsks: () => [],
+}));
 vi.mock('@/layers/features/commands', () => ({ CommandPalette: () => null }));
 vi.mock('@/layers/features/files', () => ({ FilePalette: () => null }));
 vi.mock('react-dropzone', () => ({

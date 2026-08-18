@@ -5,18 +5,18 @@ import type { ToolApprovalOutcome } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 
 /** One answered request inside a receipt. */
-export interface ApprovalReceiptItem {
+export interface AskReceiptItem {
   /** The interaction's tool-call id — the stable key. */
   toolCallId: string;
   /** Human summary of what was asked for, e.g. `Run "npm test"`. */
   label: string;
 }
 
-interface ApprovalReceiptProps {
+interface AskReceiptProps {
   /** How the request(s) were answered. */
   outcome: ToolApprovalOutcome;
   /** The answered requests. More than one renders the combined line. */
-  items: ApprovalReceiptItem[];
+  items: AskReceiptItem[];
   /** Server epoch ms when the answer landed. Omitted when the runtime cannot say. */
   resolvedAt?: number;
   /** Server epoch ms when the request was made — with `resolvedAt`, how long it waited. */
@@ -77,14 +77,14 @@ function actionCount(n: number): string {
  * gated and puts it back into history, so reopening the conversation tomorrow
  * shows the same line in the same place.
  */
-export function ApprovalReceipt({
+export function AskReceipt({
   outcome,
   items,
   resolvedAt,
   startedAt,
   reasonGiven,
   className,
-}: ApprovalReceiptProps) {
+}: AskReceiptProps) {
   const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState(false);
 

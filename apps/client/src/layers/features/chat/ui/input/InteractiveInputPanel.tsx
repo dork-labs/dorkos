@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { ToolCallState } from '../../model/chat-types';
-import { ToolApproval } from '../tools/ToolApproval';
-import { BatchApprovalBar } from '../tools/BatchApprovalBar';
-import { QuestionPrompt } from '../tools/QuestionPrompt';
+import { ApprovalPrompt, AskStack, QuestionPrompt } from '@/layers/features/ask';
+import { useTransport } from '@/layers/shared/model';
+import { getToolLabel } from '@/layers/shared/lib';
 import type { InteractiveToolHandle } from '../message';
 
 /**
@@ -50,9 +51,40 @@ export function InteractiveInputPanel({
 
   const reducedMotion = useReducedMotion();
 
+  // The burst form, in place of the batch bar it replaced: two or more
+  // approvals queued in this session read as one decision and are answered
+  // once. Behaviour is the bar's, verbatim — the same two transport calls over
+  // the same ids — and only the chrome changed.
+  const transport = useTransport();
+  const [answeringAll, setAnsweringAll] = useState(false);
+  const answerAll = async (allow: boolean) => {
+    if (answeringAll) return;
+    setAnsweringAll(true);
+    try {
+      const ids = pendingApprovals.map((call) => call.toolCallId);
+      await (allow ? transport.batchApprove(sessionId, ids) : transport.batchDeny(sessionId, ids));
+    } catch (err) {
+      console.error('Answering the whole burst failed:', err);
+    } finally {
+      setAnsweringAll(false);
+    }
+  };
+
   return (
     <>
-      <BatchApprovalBar sessionId={sessionId} pendingApprovals={pendingApprovals} />
+      {pendingApprovals.length >= 2 && (
+        <AskStack
+          className="mb-1.5"
+          headline={`${pendingApprovals.length} tools are waiting on you`}
+          items={pendingApprovals.map((call) => ({
+            id: call.toolCallId,
+            line: getToolLabel(call.toolName, call.input ?? ''),
+          }))}
+          onAllowAll={() => void answerAll(true)}
+          onDenyAll={() => void answerAll(false)}
+          isAnswering={answeringAll}
+        />
+      )}
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={activeInteraction.toolCallId}
@@ -61,7 +93,7 @@ export function InteractiveInputPanel({
           transition={reducedMotion ? INSTANT_TRANSITION : NEXT_CARD_TRANSITION}
         >
           {activeInteraction.interactiveType === 'approval' ? (
-            <ToolApproval
+            <ApprovalPrompt
               ref={onToolRef}
               sessionId={sessionId}
               toolCallId={activeInteraction.toolCallId}

@@ -6,7 +6,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { ElicitationPrompt } from '../ElicitationPrompt';
+import { ElicitationPrompt } from '../ui/ElicitationPrompt';
 
 const submitElicitation = vi.fn().mockResolvedValue(undefined);
 const transport = Object.assign(createMockTransport(), { submitElicitation });

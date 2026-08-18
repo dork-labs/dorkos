@@ -37,16 +37,15 @@ vi.mock('../ui/input/QueuePanel', () => ({
   QueuePanel: vi.fn(() => <div data-testid="queue-panel">QueuePanel</div>),
 }));
 
-vi.mock('../ui/tools/ToolApproval', () => ({
-  ToolApproval: vi.fn(({ toolCallId }: { toolCallId: string }) => (
+vi.mock('@/layers/features/ask', () => ({
+  ApprovalPrompt: vi.fn(({ toolCallId }: { toolCallId: string }) => (
     <div data-testid="tool-approval">ToolApproval-{toolCallId}</div>
   )),
-}));
-
-vi.mock('../ui/tools/QuestionPrompt', () => ({
   QuestionPrompt: vi.fn(({ toolCallId }: { toolCallId: string }) => (
     <div data-testid="question-prompt">QuestionPrompt-{toolCallId}</div>
   )),
+  AskStack: () => null,
+  groupAsks: () => [],
 }));
 
 vi.mock('@/layers/features/commands', () => ({

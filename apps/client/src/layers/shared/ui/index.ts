@@ -361,4 +361,11 @@ export { SidebarRow, SIDEBAR_ROW_INSET } from './sidebar-row';
 export { TOUCH_TARGET_MIN_H } from './touch-target';
 export type { RowDragBindings, SidebarRowMenu, SidebarRowProps } from './sidebar-row';
 export { SectionHeader } from './section-header';
+// Three small rows the transcript and the Ask card both draw. They lived inside
+// `features/chat/ui/primitives` until `features/ask` needed them too — and a
+// feature reaching into another feature's internals is the cycle P1 already
+// refused once, so they moved DOWN rather than sideways.
+export { OptionRow } from './option-row';
+export { CompactResultRow } from './compact-result-row';
+export { TruncatedOutput } from './truncated-output';
 export type { SectionHeaderProps } from './section-header';

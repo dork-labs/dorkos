@@ -1,22 +1,31 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render as renderBare, screen, fireEvent, cleanup } from '@testing-library/react';
+import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider } from '@/layers/shared/model';
 import type { ToolCallState } from '../../../model/chat-types';
 import { InteractiveInputPanel } from '../InteractiveInputPanel';
 
+// The panel answers a whole burst itself — the batch bar's two transport calls,
+// now behind the stacked card — so it needs a transport the way it always did.
+const transport = createMockTransport();
+const render = (ui: React.ReactElement) =>
+  renderBare(<TransportProvider transport={transport}>{ui}</TransportProvider>);
+
 // Stub the heavy children so the test focuses on the panel's callback wiring.
-vi.mock('../../tools/BatchApprovalBar', () => ({ BatchApprovalBar: () => null }));
-vi.mock('../../tools/ToolApproval', () => ({
-  ToolApproval: ({ onDecided }: { onDecided?: () => void }) => (
+// One mock now, because the whole card family lives in one slice.
+vi.mock('@/layers/features/ask', () => ({
+  ApprovalPrompt: ({ onDecided }: { onDecided?: () => void }) => (
     <button data-testid="approve" onClick={() => onDecided?.()} />
   ),
-}));
-vi.mock('../../tools/QuestionPrompt', () => ({
   QuestionPrompt: ({ onDecided }: { onDecided?: (a: Record<string, string>) => void }) => (
     <button data-testid="submit-answers" onClick={() => onDecided?.({ '0': 'Blue' })} />
   ),
+  AskStack: () => null,
 }));
 
+// Nothing is waiting on the fleet in these cases: the panel reads the shared
+// list only to decide whether to draw the burst card above the active one.
 afterEach(cleanup);
 
 const questionInteraction: ToolCallState = {

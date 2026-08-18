@@ -10,7 +10,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
-import { describeDecisionRefusal } from '../lib/decision-refusal';
+import { describeDecisionRefusal } from '../decision-refusal';
 
 /** Build the error shape `fetchJSON` throws: server sentence plus its code. */
 function serverError(message: string, code?: string): Error & { code?: string } {

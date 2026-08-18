@@ -302,7 +302,9 @@ describe('approval receipts', () => {
     render(<Lifecycle initialEvents={twoAsks} />);
 
     // The first ask owns the input zone; the second waits in the transcript.
-    expect(screen.getByText(/2 tools awaiting approval/)).toBeDefined();
+    // The burst card speaks for both of them — the batch bar's line, in the
+    // card family's own words.
+    expect(screen.getByText(/2 tools are waiting on you/)).toBeDefined();
 
     // Only the input-zone card is the keyboard target, so only its Approve
     // carries the Enter hint — that is the ask the person is being shown.
@@ -329,7 +331,7 @@ describe('approval receipts', () => {
     ];
     render(<Lifecycle initialEvents={threeAsks} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /approve all/i }));
+    fireEvent.click(screen.getByRole('button', { name: /allow all/i }));
 
     const receipt = await screen.findByTestId('approval-receipt');
     expect(receipt.textContent).toContain('You allowed 3 actions');

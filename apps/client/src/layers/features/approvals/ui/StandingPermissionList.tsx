@@ -2,7 +2,7 @@ import type { StandingPermission } from '@dorkos/shared/approval-schemas';
 import { Button } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
 import { cn, shortenHomePath } from '@/layers/shared/lib';
-import { formatTimeLeft } from '../lib/format-time-left';
+import { formatTimeLeft } from '@/layers/features/ask';
 import { useRevokeStandingPermission } from '../model/use-standing-permissions';
 
 export interface StandingPermissionListProps {
