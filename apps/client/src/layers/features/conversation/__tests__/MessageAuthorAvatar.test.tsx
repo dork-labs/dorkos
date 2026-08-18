@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { MessageAuthor } from '@/layers/shared/model';
-import { MessageAuthorAvatar } from '../MessageAuthorAvatar';
+import { MessageAuthorAvatar } from '../ui/message/MessageAuthorAvatar';
 
 afterEach(cleanup);
 

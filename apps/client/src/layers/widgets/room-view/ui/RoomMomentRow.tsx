@@ -24,7 +24,7 @@ import { feedArticleProps, type FeedPosition } from '@/layers/shared/model';
 import type { MessageAuthor } from '@/layers/shared/model';
 import { IdentityHoverCard } from '@/layers/shared/ui';
 import type { RoomEntry } from '@/layers/entities/room';
-import { MessageAuthorAvatar } from '@/layers/features/chat';
+import { MessageAuthorAvatar } from '@/layers/features/conversation';
 import { formatAbsoluteTime, formatTime } from '../lib/entry-time';
 import { toMessageAuthor, type RosterAuthor } from '../lib/room-timeline';
 import { useAgentInfo, useRoomAgentFaces } from '../model/agent-info-context';

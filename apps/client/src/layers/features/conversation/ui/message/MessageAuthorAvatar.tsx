@@ -1,7 +1,7 @@
 /**
  * The avatar that opens an author group in the message list's identity gutter.
  *
- * @module features/chat/ui/message/MessageAuthorAvatar
+ * @module features/conversation/ui/message/MessageAuthorAvatar
  */
 import type { KeyboardEvent } from 'react';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';

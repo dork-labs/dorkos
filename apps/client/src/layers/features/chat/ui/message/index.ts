@@ -4,7 +4,6 @@
  * @module features/chat/ui/message
  */
 export { MessageItem } from './MessageItem';
-export { MessageAuthorAvatar } from './MessageAuthorAvatar';
 export type { InteractiveToolHandle } from './types';
 export { StreamingText } from './StreamingText';
 export { ThinkingBlock } from './ThinkingBlock';

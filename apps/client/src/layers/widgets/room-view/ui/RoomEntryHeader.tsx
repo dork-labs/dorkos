@@ -18,7 +18,7 @@
 import { cn } from '@/layers/shared/lib';
 import type { MessageAuthor } from '@/layers/shared/model';
 import { OriginMark } from '@/layers/entities/room';
-import { MessageAuthorAvatar } from '@/layers/features/chat';
+import { MessageAuthorAvatar } from '@/layers/features/conversation';
 import type { RosterAuthor } from '../lib/room-timeline';
 
 interface RoomEntryGutterProps {

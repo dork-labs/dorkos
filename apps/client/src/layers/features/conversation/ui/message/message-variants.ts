@@ -1,7 +1,7 @@
 import { tv } from 'tailwind-variants';
 
 /**
- * Multi-slot variant definition for MessageItem layout and styling.
+ * Multi-slot variant definition for the one message row's layout and styling.
  *
  * Every author renders in the same left-gutter layout (spec
  * `multi-participant-message-list`, D1): a fixed-width identity column holding

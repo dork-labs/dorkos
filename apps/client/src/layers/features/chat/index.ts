@@ -8,13 +8,9 @@ export { ChatPanel } from './ui/ChatPanel';
 // scripted onboarding conversation renders real message bubbles, the typing
 // indicator, the first-light arrival, and the composer without a live session).
 export { MessageItem } from './ui/message';
-// The identity gutter and the two list-level rules, surfaced so the room view
-// renders the same marks and separators session chat does (spec `rooms` §7).
-export { MessageAuthorAvatar, DayDivider, UnreadDivider } from './ui/message';
-// The message row's layout contract (identity gutter + content column, group
-// rhythm). Shared rather than re-declared so a room's rows sit on exactly the
-// grid session chat does and stay there when one of them is tuned.
-export { messageItem } from './ui/message/message-variants';
+// The two list-level rules, surfaced so the room view renders the same
+// separators session chat does (spec `rooms` §7).
+export { DayDivider, UnreadDivider } from './ui/message';
 export { resolveMessageAuthor } from './lib/resolve-message-author';
 export type { MessageAuthorAgent, MessageAuthorContext } from './lib/resolve-message-author';
 export { TypingDots } from './ui/primitives';

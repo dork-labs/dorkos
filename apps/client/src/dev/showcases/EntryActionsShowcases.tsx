@@ -2,7 +2,7 @@ import { AtSign, Copy, Reply } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { MessageAuthor, MessageGrouping } from '@/layers/shared/model';
 import type { AuthorRef, RoomEntry } from '@/layers/entities/room';
-import { messageItem } from '@/layers/features/chat';
+import { messageItem } from '@/layers/features/conversation';
 import { EntryActionBar, type EntryAction } from '@/layers/features/entry-actions';
 import { RoomEntryRow } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';

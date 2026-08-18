@@ -1,5 +1,5 @@
 import { MessageItem } from '@/layers/features/chat/ui/message/MessageItem';
-import { MessageAuthorAvatar } from '@/layers/features/chat/ui/message/MessageAuthorAvatar';
+import { MessageAuthorAvatar } from '@/layers/features/conversation';
 import { UserMessageContent } from '@/layers/features/chat/ui/message/UserMessageContent';
 import { AssistantMessageContent } from '@/layers/features/chat/ui/message/AssistantMessageContent';
 import { MessageProvider } from '@/layers/features/chat/ui/message/MessageContext';

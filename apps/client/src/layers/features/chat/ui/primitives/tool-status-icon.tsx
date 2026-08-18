@@ -1,6 +1,6 @@
 import { Loader2, Check, X, MinusCircle } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { toolStatus } from '../message/message-variants';
+import { toolStatus } from '@/layers/features/conversation';
 
 /**
  * Tool execution lifecycle states for status icon rendering.

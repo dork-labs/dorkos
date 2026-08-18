@@ -19,7 +19,7 @@ import {
 } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { profileMemberIdOf, type RoomEntry } from '@/layers/entities/room';
-import { messageItem } from '@/layers/features/chat';
+import { messageItem } from '@/layers/features/conversation';
 import {
   EntryActionMenu,
   EntryReactionRow,
