@@ -1,7 +1,12 @@
 import { useCallback } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useIsMobile } from '@/layers/shared/model';
-import { usePendingApprovals, usePendingInteractions } from '@/layers/entities/attention';
+import {
+  useAskAgentNames,
+  usePendingApprovals,
+  usePendingInteractions,
+  useSettlingAsks,
+} from '@/layers/entities/attention';
 import {
   useAttentionItems,
   DeadLetterDetailSheet,
@@ -78,6 +83,8 @@ export function PinnedTriageHeader({
 }: PinnedTriageHeaderProps) {
   const { approvals, isError, retry } = usePendingApprovals();
   const { interactions } = usePendingInteractions();
+  const settlingAsks = useSettlingAsks();
+  const askAgentNames = useAskAgentNames(interactions);
   const { items } = useAttentionItems();
   const search = useSearch({ strict: false }) as Partial<HomeSearch>;
   const navigate = useNavigate();
@@ -92,6 +99,11 @@ export function PinnedTriageHeader({
       <PinnedTriageHeaderView
         approvals={approvals}
         asks={interactions}
+        settlingAsks={settlingAsks}
+        askAgentNames={askAgentNames}
+        onOpenSession={(sessionId) => {
+          void navigate({ to: '/session', search: { session: sessionId } });
+        }}
         // A failed read only speaks for itself while it has nothing to show:
         // stale cards still on screen are better evidence than an error card.
         approvalsUnavailable={isError && approvals.length === 0}
