@@ -15,7 +15,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { ChipShowcases } from '../showcases/ChipShowcases';
 import { SETTLED_PARTS, WORKING_PARTS } from '../showcases/chip-showcase-data';
-import { CHAT_SECTIONS } from '../sections/chat-sections';
+import { CONVERSATION_SECTIONS } from '../sections/conversation-sections';
 
 describe('ChipShowcases', () => {
   afterEach(() => cleanup());
@@ -23,7 +23,7 @@ describe('ChipShowcases', () => {
   it('renders every section the registry advertises under Chips', () => {
     render(<ChipShowcases />);
 
-    const registered = CHAT_SECTIONS.filter((section) => section.category === 'Chips');
+    const registered = CONVERSATION_SECTIONS.filter((section) => section.category === 'Chips');
     // Six: the verbs live, the verbs settled, failures and tombstones, the
     // pile, the tray, and the whole strip.
     expect(registered).toHaveLength(6);

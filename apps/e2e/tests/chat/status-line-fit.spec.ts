@@ -344,7 +344,7 @@ test.describe('Status line — the tier floors, under a degraded session', () =>
   const MIN_ROWS = 9;
 
   test('no item paints over its neighbour at any tier floor', async ({ page }) => {
-    await page.goto('/dev/chat', { waitUntil: 'domcontentloaded' });
+    await page.goto('/dev/conversation', { waitUntil: 'domcontentloaded' });
     await page.locator('[data-testid="status-line"]').first().waitFor({ timeout: 30_000 });
     // The rows mount progressively as the playground's sections render, and the
     // items animate in. Settle on a stable count before measuring, so a run can
@@ -419,7 +419,7 @@ test.describe('Status line — the tier floors, under a degraded session', () =>
   test("the make-default offer's actions stay inside their row and hittable (DOR-1270)", async ({
     page,
   }) => {
-    await page.goto('/dev/chat', { waitUntil: 'domcontentloaded' });
+    await page.goto('/dev/conversation', { waitUntil: 'domcontentloaded' });
 
     // Scope to the ONE showcase that renders `MakeDefaultStopLine` — its
     // `ShowcaseLabel` and `ShowcaseDemo` are siblings under the same

@@ -27,7 +27,7 @@ import {
   TOKENS_SECTIONS,
   FORMS_SECTIONS,
   COMPONENTS_SECTIONS,
-  CHAT_SECTIONS,
+  CONVERSATION_SECTIONS,
   ENTRY_ACTIONS_SECTIONS,
   FEATURES_SECTIONS,
   IDENTITY_SECTIONS,
@@ -78,7 +78,7 @@ export interface PageConfig {
  * component from both pages and borrowing its entry for this page's TOC. The
  * accepted cost: these sections still group under their own page in ⌘K, and
  * their canonical anchor stays where it was. That is the trade for not breaking
- * a single existing `/dev/components#…`, `/dev/rooms#…` or `/dev/chat#…` link.
+ * a single existing `/dev/components#…`, `/dev/rooms#…` or `/dev/conversation#…` link.
  */
 export const IDENTITY_CROSS_LISTED: readonly string[] = [
   'identityavatar',
@@ -172,14 +172,14 @@ export const PAGE_CONFIGS: PageConfig[] = [
   },
   // ── Session ──
   {
-    id: 'chat',
-    label: 'Chat Components',
+    id: 'conversation',
+    label: 'Conversation',
     description:
-      'Visual testing gallery for chat UI — messages, tool calls, input, status indicators, and misc.',
+      'The Conversation compound every messaging surface composes — session, room and DM side by side from one fixture, the Message.* row matrix, the timeline, the live lane and its Asks, and the composer against both targets.',
     icon: MessageSquare,
     group: 'session',
-    sections: CHAT_SECTIONS,
-    path: 'chat',
+    sections: CONVERSATION_SECTIONS,
+    path: 'conversation',
   },
   {
     id: 'entry-actions',

@@ -1,5 +1,5 @@
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
-import { CHAT_SECTIONS } from '../playground-registry';
+import { CONVERSATION_SECTIONS } from '../playground-registry';
 import { MessageShowcases } from '../showcases/MessageShowcases';
 import { ToolShowcases } from '../showcases/ToolShowcases';
 import { AskShowcases } from '../showcases/AskShowcases';
@@ -12,13 +12,13 @@ import { TrustDialShowcases } from '../showcases/TrustDialShowcases';
 import { SessionInspectorShowcases } from '../showcases/SessionInspectorShowcases';
 import { MiscShowcases } from '../showcases/MiscShowcases';
 
-/** Chat component showcase page for the dev playground. */
-export function ChatPage() {
+/** Conversation compound showcase page for the dev playground. */
+export function ConversationPage() {
   return (
     <PlaygroundPageLayout
-      title="Chat Components"
-      description="Visual testing gallery for chat UI components."
-      sections={CHAT_SECTIONS}
+      title="Conversation"
+      description="The Conversation compound every messaging surface composes — session, room and DM."
+      sections={CONVERSATION_SECTIONS}
     >
       <MessageShowcases />
       <ToolShowcases />
