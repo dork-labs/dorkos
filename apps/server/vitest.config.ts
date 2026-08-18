@@ -245,6 +245,22 @@ export default defineConfig({
         ),
       },
       {
+        // Not a drift guard — a memory guard. `interaction-events` imports
+        // `./schemas.js`, and `schemas` is aliased to SOURCE above; left on
+        // `dist/`, this subpath drags in a SECOND copy of the whole `schemas`
+        // module (the dist one), and every `vi.resetModules()` re-evaluates
+        // both. `routes/__tests__/config.test.ts` re-imports the router 91
+        // times and went from 91 green to a heap OOM at test 90 the day
+        // `session-list-broadcaster` gained this import (DOR-1330 landing).
+        // The rule this entry states: a shared subpath whose module imports
+        // another aliased subpath's file must be aliased to source too, or the
+        // two resolutions load the same module twice.
+        find: '@dorkos/shared/interaction-events',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/interaction-events.ts', import.meta.url)
+        ),
+      },
+      {
         find: '@dorkos/marketplace/package-types',
         replacement: fileURLToPath(
           new URL('../../packages/marketplace/src/package-types.ts', import.meta.url)
