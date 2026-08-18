@@ -12,9 +12,7 @@
  * **These are the REAL components.** Every card below is `InteractionAsk`,
  * `AskStack`, `ApprovalPrompt`, `AskReceipt` or the cross-listed
  * `ApprovalCardShowcase` over fixture data, so a recreation cannot drift from
- * what a person actually answers. The clock is pinned rather than live:
- * `startedAt` is measured against a frozen `NOW`, because a showcase whose
- * countdown ticks against the wall clock flaps every time the page is opened.
+ * what a person actually answers.
  *
  * @module dev/showcases/AsksShowcases
  */
@@ -41,13 +39,19 @@ import { ApprovalCardShowcase } from './ApprovalsShowcases';
 const playgroundTransport = createPlaygroundTransport();
 
 /**
- * The instant every fixture below is measured against.
+ * The instant every fixture below is measured against — read once, at module
+ * load, never per render (`Date.now()` during render is impure,
+ * `react-hooks/purity`). Same shape as `TimelineShowcases`' `PENDING_AT`.
  *
- * FROZEN, like the lane's own fixtures: with a live `Date.now()` the urgent
- * demo reads "expired" forty-five seconds after the page is opened, and a
- * showcase that cannot show what it claims is worse than none.
+ * It has to be a real wall-clock reading rather than a written-out date. The
+ * card computes its deadline as `startedAt + timeoutMs` (`InteractionAsk.tsx`),
+ * so a date pinned in the source is a deadline permanently in the past: every
+ * card reads `expired`, and the three countdown bands this section exists to
+ * show are unreachable. Opening the page starts each fixture at the reading its
+ * label promises; leaving it open long enough will run the short ones down,
+ * which is the honest behaviour of a countdown.
  */
-const NOW = Date.parse('2026-08-18T10:00:00.000Z');
+const NOW = Date.now();
 
 /** A subheading inside the one Asks section — not its own registry entry. */
 function Subhead({ children }: { children: string }) {
