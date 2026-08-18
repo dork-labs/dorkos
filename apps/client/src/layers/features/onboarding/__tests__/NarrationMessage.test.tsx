@@ -122,6 +122,20 @@ describe('NarrationMessage', () => {
     expect(row).not.toHaveAttribute('aria-labelledby');
   });
 
+  it('neutralizes the hover background, so a narrated line is not a row you can act on', () => {
+    renderNarration(
+      <NarrationMessage
+        message={buildScriptMessage('ob-line-0', 'assistant', 'Nothing to press here.')}
+        grouping={{ position: 'only' }}
+        author={DORKBOT}
+      />
+    );
+
+    // The other half of what `SessionMessage`'s retired `presentation` prop
+    // did. Onboarding owns it now, so it is asserted where it is decided.
+    expect(screen.getByTestId('message-item').className).toContain('hover:bg-transparent');
+  });
+
   it('shows no clock reading, so a story line never reads as something just typed', () => {
     renderNarration(
       <NarrationMessage

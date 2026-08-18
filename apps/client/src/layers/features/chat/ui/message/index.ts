@@ -1,11 +1,15 @@
 /**
- * Message sub-component module — the session transcript's row and the blocks
- * its body renderer draws.
+ * Message sub-component module — the blocks the session's body renderer draws,
+ * and the context they read.
+ *
+ * The ROW that hosts them, and the renderer that picks between them, live in
+ * `widgets/session`: a conversation's host is a widget. These are what that
+ * host is built out of.
  *
  * @module features/chat/ui/message
  */
-export { SessionMessage } from './SessionMessage';
 export type { InteractiveToolHandle } from './types';
+export { MessageProvider } from './MessageContext';
 export { StreamingText } from './StreamingText';
 export { ThinkingBlock } from './ThinkingBlock';
 export { MemoryRecallBlock } from './MemoryRecallBlock';

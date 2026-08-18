@@ -18,10 +18,9 @@ import {
   ThreadReplyRow,
   type ConversationRow,
 } from '@/layers/features/conversation';
-import { SessionMessage } from '@/layers/features/chat/ui/message/SessionMessage';
 import { ChatEmptyState, TypingDots } from '@/layers/features/chat';
 import { Feed } from '@/layers/shared/ui';
-import { SESSION_CAPABILITIES } from '@/layers/widgets/session';
+import { SESSION_CAPABILITIES, SessionMessage } from '@/layers/widgets/session';
 import { ROOM_CAPABILITIES, RoomMessage } from '@/layers/widgets/room-view';
 import type { PendingPost } from '@/layers/entities/room';
 import { PlaygroundSection } from '../PlaygroundSection';

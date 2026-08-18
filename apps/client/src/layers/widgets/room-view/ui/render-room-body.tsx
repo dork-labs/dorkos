@@ -2,7 +2,7 @@
  * The room's body renderer — what a channel entry actually SAYS.
  *
  * One of the two implementations of {@link ConversationBodyRenderer}; the
- * session's is `features/chat/ui/render-session-body.tsx`. Neither knows about
+ * session's is `widgets/session/ui/render-session-body.tsx`. Neither knows about
  * the other, and `features/conversation` imports neither.
  *
  * Everything here is derived from the entry's own words, which is what makes it
