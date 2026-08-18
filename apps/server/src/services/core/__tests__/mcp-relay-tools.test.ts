@@ -538,6 +538,11 @@ describe('relay_send_and_wait terminal error handling', () => {
     expect(parsed.error).toContain('SDK stream error');
     expect(parsed.progress).toHaveLength(1);
     expect(parsed.reply).toBeUndefined();
+    // The prompt block promises partialText on AGENT_ERROR without qualifying
+    // it, so this branch owes it too. The terminal error event carries no text
+    // of its own — the message progress steps ARE what the caller was streamed.
+    expect(parsed.partialText).toBe('p');
+    expect(parsed.replyMessageId).toBe('e2');
   });
 
   // DOR-1337 (F6). The other terminal shape: the turn hit an upstream failure

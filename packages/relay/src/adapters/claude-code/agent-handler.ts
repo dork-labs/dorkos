@@ -49,6 +49,42 @@ interface ResponseContext {
   formattingInstructions?: string;
 }
 
+/**
+ * `error` events that do NOT mean the turn failed.
+ *
+ * A DENYLIST, not an allowlist, and the direction is the whole decision. Most
+ * genuinely fatal errors reaching this adapter carry no `code` at all — a
+ * boundary violation, an empty stream, a crashed sender all publish
+ * `{ type: 'error', data: { message } }` — so an allowlist of "fatal codes"
+ * would silently pass every one of them off as a successful empty answer, which
+ * is precisely the bug this whole change exists to fix (DOR-1337 / F6). A
+ * denylist fails the other way: an error nobody has classified yet is reported
+ * as a failure, and being told about a failure that was survivable costs a
+ * retry, while being told nothing about a real one costs the answer.
+ *
+ * `hook_failure` is on it because a hook is the OPERATOR'S own script, not the
+ * agent's work. The claude-code runtime escalates any non-tool hook that exits
+ * non-zero (Stop, SubagentStop, SessionStart — this repo configures all three)
+ * to a stream `error` event, and the turn then ends with a normal `done`
+ * carrying the complete answer. Folding that in would turn a correct reply into
+ * an `AGENT_ERROR` whose `partialText` is the whole answer nobody reads.
+ *
+ * Runtime-neutral by construction: this module receives `StreamEvent`s from any
+ * `AgentRuntimeLike`, so the rule is about the code's MEANING, not about which
+ * runtime emitted it. A new runtime that invents a non-fatal error code adds it
+ * here; until then its errors are treated as failures, which is the safe half.
+ */
+const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure']);
+
+/**
+ * Whether an `error` event's code marks it as survivable rather than turn-fatal.
+ *
+ * @param code - The `data.code` of an `error` StreamEvent, when it has one.
+ */
+function isNonFatalErrorCode(code: string | undefined): boolean {
+  return code !== undefined && NON_FATAL_ERROR_CODES.has(code);
+}
+
 /** StreamEvent types that are skipped to prevent infinite loops (Bug 1 guard). */
 const STREAM_EVENT_TYPES = new Set([
   'text_delta',
@@ -240,10 +276,12 @@ export async function handleAgentMessage(
       if (envelope.replyTo && relay) {
         if (isInboxReplyTo) {
           if (event.type === 'error') {
-            const data = event.data as { message?: string } | undefined;
-            // First failure wins: a turn that reports several is described by
-            // the one that started it, not by whatever landed last.
-            inStreamError ??= data?.message ?? 'Agent turn reported an error';
+            const data = event.data as { message?: string; code?: string } | undefined;
+            if (!isNonFatalErrorCode(data?.code)) {
+              // First failure wins: a turn that reports several is described by
+              // the one that started it, not by whatever landed last.
+              inStreamError ??= data?.message ?? 'Agent turn reported an error';
+            }
           }
           if (event.type === 'text_delta') {
             const data = event.data as { text: string };

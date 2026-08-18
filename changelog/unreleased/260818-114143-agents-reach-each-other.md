@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,relay,mesh,shared): agents can reach each other, and a failed one says so (DOR-1337)'
+  - 'fix(server,relay,client,shared): review fixes — a failed hook is not a failed turn (DOR-1337)'
 ---
 
 ### Fixed

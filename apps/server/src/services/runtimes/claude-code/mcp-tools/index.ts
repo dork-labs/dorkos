@@ -6,7 +6,12 @@
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import type { McpToolDeps } from './types.js';
-import { DORKOS_MCP_SERVER_NAME, toolExposure, alwaysLoadedToolsFor } from './tool-exposure.js';
+import {
+  DORKOS_MCP_SERVER_NAME,
+  toolExposure,
+  alwaysLoadedToolsFor,
+  loadsAgentToAgentTools,
+} from './tool-exposure.js';
 import { getCoreTools } from './core-tools.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
@@ -147,13 +152,13 @@ export function handRegisteredInSessionTools(
   const resolveDevtoolsSessionId =
     session || sessionId ? () => session?.sdkSessionId || sessionId || undefined : undefined;
 
-  // Which tools ride this session's turn-1 prompt. A session whose working
-  // directory hosts a registered agent AND has Relay wired can reach peers, so
-  // it gets the six agent-to-agent tools eagerly; every other session sees the
-  // standing five (DOR-1337 / F8). `relayIdentity.agentId` is set only by the
-  // registry lookup above, so this cannot be asserted by the model.
+  // Which tools ride this session's turn-1 prompt (DOR-1337 / F8). The rule
+  // lives in `loadsAgentToAgentTools` because `context-builder.ts` reads the
+  // same one to decide whether to TELL the agent they are loaded, and the two
+  // must not drift. `relayIdentity.agentId` comes from the registry lookup
+  // above, keyed on `session.cwd`, so the model cannot assert its way in here.
   const alwaysLoaded = alwaysLoadedToolsFor(
-    relayIdentity.agentId !== undefined && deps.relayCore !== undefined
+    loadsAgentToAgentTools(relayIdentity.agentId !== undefined, deps.relayCore !== undefined)
   );
 
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each

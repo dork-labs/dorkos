@@ -604,17 +604,37 @@ describe('buildRelayToolsBlock', () => {
   // `relay.agent.{namespace}.{agentId}`. An agent following its own
   // documentation addressed a subject no rule could match and was refused,
   // with the operator's grant sitting there correct and unmatched.
-  it('teaches the four-segment agent subject and never the two-segment one', () => {
+  it('teaches the four-segment agent subject', () => {
     const result = _buildRelayToolsBlock();
     expect(result).toContain('relay.agent.{namespace}.{agentId}');
-    expect(result).not.toContain('relay.agent.{agentId}');
-    expect(result).not.toContain('relay.agent.{theirAgentId}');
+    // The old placeholder is gone entirely; the two-segment form now appears
+    // only in the sentence explaining that it gets rewritten, never as a
+    // template to fill in.
+    expect(result).not.toContain('{theirAgentId}');
+  });
+
+  it('never hands the agent a two-segment subject to fill in and send', () => {
+    const result = _buildRelayToolsBlock();
+    // Every place the block shows what to PUT in a subject argument. The bare
+    // form is described once, in prose, as the thing the server canonicalizes —
+    // so the check is about the example lines, not about the string appearing.
+    const subjectArguments = result
+      .split('\n')
+      .filter((line) => /(to_subject|subject)=/.test(line));
+    expect(subjectArguments.length).toBeGreaterThan(0);
+    for (const line of subjectArguments) {
+      expect(line, `this line tells the agent to build a subject: ${line}`).not.toMatch(
+        /relay\.agent\.\{[a-zA-Z]+\}(?!\.)/
+      );
+    }
   });
 
   it('sends the agent to relaySubject rather than to a subject it assembles', () => {
-    const result = _buildRelayToolsBlock();
+    // Whitespace-normalized: the block is hand-wrapped, so the sentence spans
+    // lines and a raw substring check would pin the wrapping instead of the words.
+    const result = _buildRelayToolsBlock().replace(/\s+/g, ' ');
     expect(result).toContain('relaySubject');
-    expect(result).toContain('never');
+    expect(result).toContain('rather than building it by hand');
   });
 
   // DOR-1337 (F6). A failed target used to arrive as an empty success.

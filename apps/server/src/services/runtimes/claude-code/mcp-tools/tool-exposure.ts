@@ -125,12 +125,40 @@ export const AGENT_TO_AGENT_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The one rule that decides whether a session gets {@link AGENT_TO_AGENT_TOOLS}.
+ *
+ * Two call sites read it and they MUST agree, because they are two halves of
+ * one claim: `mcp-tools/index.ts` decides what is actually loaded, and
+ * `messaging/context-builder.ts` writes the sentence telling the agent so. A
+ * prompt that says "already in your tool list" about a deferred tool spends the
+ * turn it was written to save, and one that stays silent about a loaded tool
+ * spends a `ToolSearch` for nothing. Written here, once, so the two cannot
+ * drift by editing one of them.
+ *
+ * Both inputs are derived from the SESSION'S OWN working directory — the same
+ * `session.cwd` the MCP factory is handed. Not the turn's effective cwd, which
+ * a per-message override can move: the relay identity these tools publish as is
+ * resolved from `session.cwd` too, so keying exposure anywhere else would load
+ * six tools for a session whose sends are then refused as a non-agent.
+ *
+ * @param hasRegisteredAgentAtSessionCwd - Whether Mesh knows an agent at the
+ *   session's working directory.
+ * @param relayWired - Whether Relay is available to this process at all; with
+ *   no bus the six tools can only answer RELAY_DISABLED, so preloading their
+ *   schemas would be prompt spent on nothing.
+ */
+export function loadsAgentToAgentTools(
+  hasRegisteredAgentAtSessionCwd: boolean,
+  relayWired: boolean
+): boolean {
+  return hasRegisteredAgentAtSessionCwd && relayWired;
+}
+
+/**
  * The always-loaded set for one session.
  *
- * @param agentToAgent - True when this session's working directory hosts a
- *   registered mesh agent AND Relay is enabled, i.e. when the session can
- *   actually reach a peer. False for every plain session, which then sees
- *   exactly {@link ALWAYS_LOADED_TOOLS}.
+ * @param agentToAgent - The answer from {@link loadsAgentToAgentTools}. False
+ *   for every plain session, which then sees exactly {@link ALWAYS_LOADED_TOOLS}.
  */
 export function alwaysLoadedToolsFor(agentToAgent: boolean): ReadonlySet<string> {
   if (!agentToAgent) return ALWAYS_LOADED_TOOLS;

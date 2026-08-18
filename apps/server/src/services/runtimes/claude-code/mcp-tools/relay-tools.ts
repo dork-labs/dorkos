@@ -289,35 +289,41 @@ export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdent
         }
       );
 
-      // A terminal error StreamEvent means the target agent's turn crashed or
-      // was aborted — return an error result, never a success-shaped reply
-      // that would pass partial output off as a completed answer.
+      // A turn can fail in two shapes, and BOTH answer with the same object.
+      //
+      // 1. A terminal error StreamEvent — a crashed iterator or a TTL abort,
+      //    published from the adapter's `finally` before the aggregated result,
+      //    so it is what this waiter settles on.
+      // 2. An `agent_result` carrying `error` — the turn reported a failure
+      //    mid-stream and still ended normally, so there is no terminal error
+      //    event at all (DOR-1337 / F6).
+      //
+      // The prompt block promises `partialText` on `AGENT_ERROR` without
+      // qualification, so shape 1 has to carry it too. Its own text is not in
+      // the payload, but the caller has already been handed it: the message
+      // progress steps ARE the partial answer, streamed as it was produced.
       const replyPayload = reply.payload as Record<string, unknown> | null;
-      if (replyPayload?.type === 'error') {
-        const errData = replyPayload.data as { message?: string } | undefined;
-        return jsonContent(
-          {
-            error: `Agent turn failed: ${errData?.message ?? 'unknown error'}`,
-            code: 'AGENT_ERROR',
-            from: reply.from,
-            progress: progressEvents,
-            sentMessageId,
-          },
-          true
-        );
-      }
+      const agentFailure =
+        replyPayload?.type === 'error'
+          ? ((replyPayload.data as { message?: string } | undefined)?.message ?? 'unknown error')
+          : replyPayload?.type === 'agent_result' && typeof replyPayload.error === 'string'
+            ? replyPayload.error
+            : undefined;
 
-      // The other way a turn fails: it reported an error mid-stream and still
-      // ended normally, so there is no terminal error event — only the final
-      // agent_result, carrying the failure. Same answer, so the caller never
-      // reads a crash as an empty success (DOR-1337 / F6).
-      if (replyPayload?.type === 'agent_result' && typeof replyPayload.error === 'string') {
+      if (agentFailure !== undefined) {
+        const partialText =
+          replyPayload?.type === 'agent_result' && typeof replyPayload.text === 'string'
+            ? replyPayload.text
+            : progressEvents
+                .filter((step) => step.step_type === 'message')
+                .map((step) => step.text)
+                .join('');
         return jsonContent(
           {
-            error: `Agent turn failed: ${replyPayload.error}`,
+            error: `Agent turn failed: ${agentFailure}`,
             code: 'AGENT_ERROR',
             from: reply.from,
-            partialText: typeof replyPayload.text === 'string' ? replyPayload.text : '',
+            partialText,
             progress: progressEvents,
             sentMessageId,
             replyMessageId: reply.id,
@@ -495,9 +501,10 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
         subject: z
           .string()
           .describe(
-            'Target subject, e.g. "relay.agent.{namespace}.{agentId}" — use the relaySubject ' +
-              'from mesh_list rather than assembling one; a subject you build by hand matches ' +
-              'no access rule and comes back ACCESS_DENIED.'
+            'Target subject, e.g. "relay.agent.{namespace}.{agentId}" — prefer the relaySubject ' +
+              'from mesh_list rather than assembling one. A bare "relay.agent.{agentId}" is ' +
+              'canonicalized when that id is a registered agent; anything else you build by ' +
+              'hand may match no access rule and come back ACCESS_DENIED.'
           ),
         payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
         replyTo: z.string().optional().describe('Subject to send replies to'),
@@ -587,9 +594,10 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
         to_subject: z
           .string()
           .describe(
-            'Target subject, e.g. "relay.agent.{namespace}.{agentId}" — use the relaySubject ' +
-              'from mesh_list rather than assembling one; a subject you build by hand matches ' +
-              'no access rule and comes back ACCESS_DENIED.'
+            'Target subject, e.g. "relay.agent.{namespace}.{agentId}" — prefer the relaySubject ' +
+              'from mesh_list rather than assembling one. A bare "relay.agent.{agentId}" is ' +
+              'canonicalized when that id is a registered agent; anything else you build by ' +
+              'hand may match no access rule and come back ACCESS_DENIED.'
           ),
         payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
         timeout_ms: z
@@ -630,9 +638,10 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
         to_subject: z
           .string()
           .describe(
-            'Target subject, e.g. "relay.agent.{namespace}.{agentId}" — use the relaySubject ' +
-              'from mesh_list rather than assembling one; a subject you build by hand matches ' +
-              'no access rule and comes back ACCESS_DENIED.'
+            'Target subject, e.g. "relay.agent.{namespace}.{agentId}" — prefer the relaySubject ' +
+              'from mesh_list rather than assembling one. A bare "relay.agent.{agentId}" is ' +
+              'canonicalized when that id is a registered agent; anything else you build by ' +
+              'hand may match no access rule and come back ACCESS_DENIED.'
           ),
         payload: z.unknown().describe('Message payload'),
         budget: z

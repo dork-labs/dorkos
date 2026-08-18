@@ -183,6 +183,16 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
  * A `relaySubject` is omitted, never guessed, when the id resolves to nothing —
  * a row that raced with an unregister has no address, and an invented one would
  * be worse than none.
+ *
+ * COST: one `AgentRegistry.get` per listed agent, on top of the list query.
+ * Deliberately not folded into a single pass. A `listWithRelaySubjects` on
+ * `MeshCore` could do it for the plain path, but the namespace-scoped path goes
+ * through `TopologyManager` and gets back manifests with no registry entry
+ * attached, so it would need the per-id lookup anyway — leaving a second public
+ * list API, with its own filter semantics to keep in step, for one caller. The
+ * read is an indexed lookup against a table holding one row per agent on this
+ * machine, and this tool is not on any hot path; revisit if a mesh ever gets
+ * large enough for that to stop being true.
  */
 export function createMeshListHandler(deps: McpToolDeps) {
   return async (args: { runtime?: string; capability?: string; callerNamespace?: string }) => {
@@ -340,7 +350,7 @@ export function meshToolDefinitions(deps: McpToolDeps) {
       'mesh_list',
       'List all registered agents with optional filters. Each agent carries relaySubject — ' +
         'its full endpoint address, e.g. "relay.agent.{namespace}.{agentId}". Send to that exact ' +
-        'string; a shorter subject you assemble yourself matches no access rule and is refused.',
+        'string: it is the address every access rule is written against.',
       {
         runtime: z.string().optional().describe('Filter by runtime'),
         capability: z.string().optional().describe('Filter by capability'),

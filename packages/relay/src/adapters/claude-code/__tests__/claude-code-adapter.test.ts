@@ -874,6 +874,66 @@ describe('ClaudeCodeAdapter', () => {
       expect((final[1] as { text: string }).text).toBe('partial');
     });
 
+    // The other half of the same rule. The claude-code runtime escalates ANY
+    // non-tool hook that exits non-zero — Stop, SubagentStop, SessionStart, all
+    // three configured in this repo — to a stream `error` with
+    // `code: 'hook_failure'`, and the turn then finishes normally with the whole
+    // answer. Folding that in would turn a correct reply into an AGENT_ERROR
+    // whose partialText is the answer nobody reads.
+    it('ignores a failed hook: the operator script is not the turn', async () => {
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'the whole answer' } } as StreamEvent;
+          yield {
+            type: 'error',
+            data: { message: 'Hook "notify" failed (Stop)', code: 'hook_failure' },
+          } as StreamEvent;
+          yield { type: 'done', data: {} } as StreamEvent;
+        })()
+      );
+
+      await adapter.start(relay);
+      await adapter.deliver(
+        'relay.agent.session-abc',
+        createTestEnvelope({ replyTo: 'relay.inbox.sender' })
+      );
+
+      const calls = vi.mocked(relay.publish).mock.calls;
+      const final = calls[calls.length - 1];
+      expect(final[1]).toMatchObject({
+        type: 'agent_result',
+        text: 'the whole answer',
+        done: true,
+      });
+      expect((final[1] as { error?: string }).error).toBeUndefined();
+    });
+
+    it('still fails the turn on an error that carries an unrecognised code', async () => {
+      // The denylist direction: an error nobody has classified is a failure, so
+      // a new fatal code is reported rather than silently passed off as an
+      // answer. Getting this backwards is the original bug.
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+          yield {
+            type: 'error',
+            data: { message: 'Something new went wrong', code: 'error_during_execution' },
+          } as StreamEvent;
+          yield { type: 'done', data: {} } as StreamEvent;
+        })()
+      );
+
+      await adapter.start(relay);
+      await adapter.deliver(
+        'relay.agent.session-abc',
+        createTestEnvelope({ replyTo: 'relay.inbox.sender' })
+      );
+
+      const calls = vi.mocked(relay.publish).mock.calls;
+      const final = calls[calls.length - 1];
+      expect((final[1] as { error?: string }).error).toBe('Something new went wrong');
+    });
+
     it('names the failure honestly when the error event carries no message', async () => {
       vi.mocked(agentManager.sendMessage).mockReturnValue(
         (async function* () {

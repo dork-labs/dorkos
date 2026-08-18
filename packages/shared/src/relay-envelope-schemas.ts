@@ -10,6 +10,25 @@ import { PermissionModeSchema } from './schemas.js';
 
 extendZodWithOpenApi(z);
 
+// === Subject grammar (documentation) ===
+
+/**
+ * How an agent's Relay inbox address is spelled, as a template for prose.
+ *
+ * The address itself is BUILT by `agentSubject()` in
+ * `packages/relay/src/lib/subjects.ts`, which is the single authoritative
+ * grammar; this is only the shape, and it lives in `@dorkos/shared` because
+ * `@dorkos/relay` is a server-side package the client cannot import while the
+ * cockpit still shows this format to a person (the agent-settings context
+ * preview). `packages/relay/src/__tests__/subject-matcher.test.ts` asserts the
+ * built subject against this template, so the two cannot drift.
+ *
+ * Load-bearing, not decorative: every namespace access rule is written against
+ * this four-segment shape, and a two-segment `relay.agent.{agentId}` taught by
+ * prose is what sent agents into ACCESS_DENIED for a full release (DOR-1337).
+ */
+export const AGENT_SUBJECT_FORMAT = 'relay.agent.{namespace}.{agentId}' as const;
+
 // === Enums ===
 
 export const PerformativeSchema = z

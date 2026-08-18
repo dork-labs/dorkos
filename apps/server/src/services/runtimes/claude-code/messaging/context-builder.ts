@@ -59,9 +59,11 @@ const T = IN_SESSION_TOOL_PREFIX;
  * the way in. See `mcp-tools/tool-exposure.ts` for which and why.
  *
  * WHICH of the two sentences this renders is not cosmetic. The prompt claiming a
- * tool is loaded when it is deferred spends the turn it was written to save, so
- * the flag here is the same fact `mcp-tools/index.ts` decides exposure on, read
- * off the same registry (DOR-1337 / F8).
+ * tool is loaded when it is deferred spends the turn it was written to save. The
+ * flag is therefore decided by `loadsAgentToAgentTools` — the same function
+ * `mcp-tools/index.ts` decides exposure with — over the same input, the
+ * SESSION'S cwd rather than the turn's (see the call site in
+ * `launch-resolver.ts` for why the difference matters) (DOR-1337 / F8).
  *
  * @param agentToAgentToolsPreloaded - True when the six agent-to-agent tools ride
  *   this session's turn-1 prompt.
@@ -147,9 +149,12 @@ to inspect namespaces and rules.
 
 Subject hierarchy:
   relay.agent.{namespace}.{agentId}    — an agent's inbox; take it from the relaySubject
-                                         field of ${T}mesh_list / ${T}mesh_inspect, never
-                                         build it by hand. A subject you assemble yourself
-                                         matches no allow rule and comes back ACCESS_DENIED.
+                                         field of ${T}mesh_list / ${T}mesh_inspect rather
+                                         than building it by hand. A bare
+                                         relay.agent.{agentId} is rewritten to the real
+                                         address when that id is a registered agent; any
+                                         other subject you assemble may match no access
+                                         rule and come back ACCESS_DENIED.
   relay.inbox.query.{UUID}             — ephemeral inbox for ${T}relay_send_and_wait (auto-managed)
   relay.inbox.dispatch.{UUID}          — ephemeral inbox for ${T}relay_send_async (auto-expires after ~35 min)
   relay.inbox.{agentId}                — persistent agent reply inbox
@@ -255,7 +260,7 @@ Agent lifecycle:
 Workflows:
 - Find agents: ${T}mesh_list() then ${T}mesh_inspect(agentId) for details
 - Contact another agent: take their relaySubject from ${T}mesh_list (or ${T}mesh_inspect) and
-  send to that exact string — never shorten it, or the send is refused with ACCESS_DENIED
+  send to that exact string — it is the one address every access rule is written against
 - Register this project: ${T}mesh_register(path=cwd, name="project-name", runtime="claude-code")
 
 Runtimes: claude-code | cursor | codex | other
@@ -651,10 +656,10 @@ async function buildPeerAgentsBlock(
  * @param cwd - Working directory for the session
  * @param toolConfig - Optional resolved tool config for agent-aware block gating
  * @param options - Per-session facts the prose has to agree with. `agentSession`
- *   says this directory hosts a registered mesh agent and Relay is on — the same
- *   condition `mcp-tools/index.ts` uses to always-load the six agent-to-agent
- *   tools, so the prompt's "already in your tool list" is true when it says so
- *   (DOR-1337 / F8).
+ *   is `loadsAgentToAgentTools`'s answer for THIS session — the same function
+ *   and the same input `mcp-tools/index.ts` decides exposure with — so the
+ *   prompt's "already in your tool list" is true whenever it says so
+ *   (DOR-1337 / F8). Callers must not compute it themselves.
  */
 export async function buildSystemPromptAppend(
   cwd: string,
