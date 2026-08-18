@@ -2103,6 +2103,14 @@ async function start() {
     roomStore.resolveRoomOrigins(sessionIds);
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
 
+  // Which room an Ask came from, for the two surfaces that answer that question:
+  // the live fan-out of `interaction_pending`, and the list a window reads on
+  // mount. Both take the ledger as a PORT — neither the broadcaster nor the
+  // session routes may reach into the rooms domain — so this one line is where
+  // the rooms half of a fleet-wide prompt is decided.
+  app.locals.roomSessionBindings = roomStore.sessionLedger;
+  sessionListBroadcaster.setRoomBindings(roomStore.sessionLedger);
+
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list
   // stream (session_upserted/session_removed/session_status) onto /api/events

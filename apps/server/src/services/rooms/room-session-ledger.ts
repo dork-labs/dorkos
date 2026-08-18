@@ -99,6 +99,39 @@ export class RoomSessionLedger {
   }
 
   /**
+   * The room binding a session answers for, or `undefined` when it answers for
+   * none.
+   *
+   * One indexed read, and then — only on a miss — one more through
+   * {@link successorFor}. That second read is the point: an id is rekeyed
+   * mid-turn, and the rebind moves the binding onto the NEW id, so a caller
+   * holding the id the turn started under would otherwise be told this session
+   * belongs to no room. It is exactly the turn that most needs the answer,
+   * because the prompt it raised is live right now.
+   *
+   * Ordinary CRUD by `(room, agent)` still belongs to `RoomStore`; this is
+   * keyed the other way, like everything else in this file.
+   *
+   * @param sessionId - Either of the session's ids.
+   * @returns The binding, with the room and the agent's author id in it.
+   */
+  bindingForSession(sessionId: string): RoomSessionBinding | undefined {
+    const direct = this.db
+      .select(BINDING_COLUMNS)
+      .from(roomSessions)
+      .where(eq(roomSessions.sessionId, sessionId))
+      .get();
+    if (direct !== undefined) return direct;
+    const successor = this.successorFor(sessionId);
+    if (successor === undefined) return undefined;
+    return this.db
+      .select(BINDING_COLUMNS)
+      .from(roomSessions)
+      .where(eq(roomSessions.sessionId, successor))
+      .get();
+  }
+
+  /**
    * Move every binding that holds `oldSessionId` onto `newSessionId`, and
    * remember that `oldSessionId` is dead.
    *
