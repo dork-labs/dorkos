@@ -277,14 +277,19 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(roomsPage.entries.last()).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
     const entry = roomsPage.entries.last();
-    // The drawn window really is offset — otherwise this test is back to
-    // measuring the only case that cannot fail.
-    const windowTop = await page.evaluate(() => {
+    // The drawn window really is offset from the top of the list — otherwise
+    // this test is back to measuring the only case that cannot fail. Read as a
+    // RENDERED distance rather than off the `top` property, so the probe says
+    // nothing about how the offset is written and the assertion below is what
+    // has to catch a broken one.
+    const windowOffset = await page.evaluate(() => {
       const row = document.querySelector('[data-index]');
       const box = row?.parentElement;
-      return box === null || box === undefined ? 0 : Number.parseFloat(getComputedStyle(box).top);
+      const list = box?.parentElement;
+      if (box == null || list == null) return 0;
+      return box.getBoundingClientRect().top - list.getBoundingClientRect().top;
     });
-    expect(windowTop).toBeGreaterThan(0);
+    expect(windowOffset).toBeGreaterThan(0);
     const toolbar = roomsPage.actionsIn(entry);
 
     // The room opens at its newest, which for a single tall message means its
