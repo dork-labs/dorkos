@@ -21,15 +21,12 @@ import type { Session } from '@dorkos/shared/types';
 import { useNow } from '@/layers/shared/model';
 import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import {
-  useRecentSessions,
-  useSessionListStore,
-  useSessionStreamStore,
-} from '@/layers/entities/session';
+import { useRecentSessions, useSessionListStore } from '@/layers/entities/session';
 import type { AttentionSignal } from './attention-signal';
-import { deriveAttentionSignals, type AttentionInteraction } from './derive-attention-signals';
+import { deriveAttentionSignals } from './derive-attention-signals';
 import { useIdleNudgeStore } from './idle-nudge-store';
 import { usePendingApprovals } from './use-pending-approvals';
+import { usePendingInteractions } from './use-pending-interactions';
 
 /**
  * How often the idle threshold is re-evaluated.
@@ -70,21 +67,10 @@ export function useAttentionSignals(): readonly AttentionSignal[] {
     })
   );
 
-  // What each ATTACHED session is blocked on. `useShallow` holds across status
-  // churn because the store is immer-backed: a `session_status` replaces the
-  // session's own record but leaves `pendingInteractions` — and the DTO objects
-  // inside it — structurally shared, so the values this selector picks out keep
-  // their identity until an interaction actually opens or closes.
-  const interactions = useSessionStreamStore(
-    useShallow((state): Record<string, AttentionInteraction> => {
-      const out: Record<string, AttentionInteraction> = {};
-      for (const [id, session] of Object.entries(state.sessions)) {
-        const first = session.pendingInteractions[0];
-        if (first !== undefined) out[id] = first;
-      }
-      return out;
-    })
-  );
+  // What every session in the fleet is blocked on — not just the one this window
+  // attached to. `usePendingInteractions` holds a query cache, so the array
+  // keeps its identity between renders and the memo below survives status churn.
+  const { interactions } = usePendingInteractions();
 
   // The roster, for the one thing a signal needs from it: what to call the
   // agent. Both queries are ones the cockpit already holds, so this is a cache

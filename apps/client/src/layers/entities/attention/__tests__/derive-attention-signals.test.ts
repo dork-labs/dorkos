@@ -6,8 +6,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import type { Session } from '@dorkos/shared/types';
+import type { PendingInteractionDTO, Session } from '@dorkos/shared/types';
 import {
   deriveAttentionSignals,
   IDLE_NUDGE_AFTER_MS,
@@ -35,6 +36,36 @@ function session(overrides: Partial<Session> & Pick<Session, 'id'>): Session {
   };
 }
 
+/**
+ * One prompt on the fleet-wide stream.
+ *
+ * Every case below builds these WITHOUT attaching the session to anything,
+ * which is the point: the kind used to be knowable only for an attached
+ * session, and now it is knowable for all of them.
+ *
+ * @param sessionId - The session that raised it.
+ * @param interaction - What it is asking.
+ */
+function pending(sessionId: string, interaction: PendingInteractionDTO): InteractionPendingEvent {
+  return { sessionId, cwd: ALPHA, interaction };
+}
+
+/** A permission prompt, with the fields a case does not care about filled in. */
+function approvalPrompt(
+  overrides: Partial<Extract<PendingInteractionDTO, { type: 'approval' }>> = {}
+): PendingInteractionDTO {
+  return {
+    type: 'approval',
+    id: 'tc-1',
+    startedAt: NOW,
+    remainingMs: 9 * MINUTE,
+    toolName: 'Edit',
+    input: JSON.stringify({ file_path: '/projects/alpha/standup.md' }),
+    hasSuggestions: false,
+    ...overrides,
+  };
+}
+
 /** A capability approval waiting on a person. */
 function approval(overrides: Partial<PendingApproval> = {}): PendingApproval {
   return {
@@ -58,7 +89,7 @@ function sources(overrides: Partial<AttentionSources> = {}): AttentionSources {
     approvals: [],
     sessions: [],
     lifecycles: {},
-    interactions: {},
+    interactions: [],
     agentNames: { [ALPHA]: 'alpha' },
     dismissed: new Set<string>(),
     ...overrides,
@@ -108,29 +139,63 @@ describe('deriveAttentionSignals — membership (BC-5)', () => {
     });
   });
 
-  it('reads it as a QUESTION when the attached session says so (BC-39)', () => {
+  it('reads it as a QUESTION for a session this window never attached to (BC-39)', () => {
     const signals = deriveAttentionSignals(
       sources({
         ...oneSession('blocked'),
-        interactions: {
-          'ses-1': { type: 'question', id: 'q-7', startedAt: NOW - 4 * MINUTE },
-        },
+        interactions: [
+          pending('ses-1', {
+            type: 'question',
+            id: 'q-7',
+            startedAt: NOW - 4 * MINUTE,
+            remainingMs: 6 * MINUTE,
+            questions: [],
+          }),
+        ],
       })
     );
     expect(signals).toHaveLength(1);
     expect(signals[0]).toMatchObject({
       id: 'blocked:q-7',
       kind: 'question',
-      secondary: 'Has a question',
+      secondary: 'has a question',
       since: ago(4 * MINUTE),
     });
+  });
+
+  it('says what the agent actually asked for, not "Waiting on you"', () => {
+    const [signal] = deriveAttentionSignals(
+      sources({
+        ...oneSession('blocked'),
+        interactions: [pending('ses-1', approvalPrompt())],
+      })
+    );
+    expect(signal?.secondary).toBe('wants to edit standup.md');
+  });
+
+  it('falls back to "Waiting on you" only when no prompt is in hand', () => {
+    // A capability hold parks a turn on a person without raising one of these,
+    // and a runtime can report `blocked` before its prompt arrives. Neither is a
+    // reason to invent a sentence.
+    const [signal] = deriveAttentionSignals(sources(oneSession('blocked')));
+    expect(signal?.secondary).toBe('Waiting on you');
+    expect(signal?.kind).toBe('permission-prompt');
   });
 
   it('reads an MCP elicitation as a permission prompt, not a question', () => {
     const [signal] = deriveAttentionSignals(
       sources({
         ...oneSession('blocked'),
-        interactions: { 'ses-1': { type: 'elicitation', id: 'e-1', startedAt: NOW } },
+        interactions: [
+          pending('ses-1', {
+            type: 'elicitation',
+            id: 'e-1',
+            startedAt: NOW,
+            remainingMs: 10 * MINUTE,
+            serverName: 'linear',
+            message: 'Pick a team',
+          }),
+        ],
       })
     );
     expect(signal?.kind).toBe('permission-prompt');
@@ -285,7 +350,15 @@ describe('deriveAttentionSignals — what can never get in (BC-5, BC-39, P2 AC-5
           session({ id: 'c', updatedAt: ago(45 * MINUTE) }),
         ],
         lifecycles: { a: 'blocked', b: 'error', c: 'idle' },
-        interactions: { a: { type: 'question', id: 'q', startedAt: NOW } },
+        interactions: [
+          pending('a', {
+            type: 'question',
+            id: 'q',
+            startedAt: NOW,
+            remainingMs: 10 * MINUTE,
+            questions: [],
+          }),
+        ],
       })
     );
     expect(new Set(signals.map((s) => s.kind))).toEqual(
