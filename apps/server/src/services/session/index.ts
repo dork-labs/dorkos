@@ -138,6 +138,7 @@ export { countSessionsPerDay } from './session-daily-counts.js';
 
 // --- Global session-list discovery → unified SSE fan-out (Task #7, ADR-0265) ---
 export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-broadcaster.js';
+export type { RoomBindingsPort } from './session-list-broadcaster.js';
 
 // --- Session-origin overlays, room then Pulse (session-origin-legibility,
 // team-room-home §D2.3, ADR 260808-140954). The composite is the only seam:

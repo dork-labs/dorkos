@@ -271,6 +271,242 @@
           "error"
         ]
       },
+      "PendingInteractionsResponse": {
+        "type": "object",
+        "properties": {
+          "interactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InteractionPendingEvent"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "interactions"
+        ]
+      },
+      "InteractionPendingEvent": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cwd": {
+            "type": "string",
+            "minLength": 1
+          },
+          "interaction": {
+            "$ref": "#/components/schemas/PendingInteractionDTO"
+          },
+          "roomId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "roomAuthorId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sessionId",
+          "cwd",
+          "interaction"
+        ]
+      },
+      "PendingInteractionDTO": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "approval"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "number"
+              },
+              "remainingMs": {
+                "type": "number"
+              },
+              "timeoutMs": {
+                "type": "number"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "input": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "blockedPath": {
+                "type": "string"
+              },
+              "decisionReason": {
+                "type": "string"
+              },
+              "hasSuggestions": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "startedAt",
+              "remainingMs",
+              "toolName",
+              "input",
+              "hasSuggestions"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "question"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "number"
+              },
+              "remainingMs": {
+                "type": "number"
+              },
+              "questions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/QuestionItem"
+                }
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "startedAt",
+              "remainingMs",
+              "questions"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "elicitation"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "number"
+              },
+              "remainingMs": {
+                "type": "number"
+              },
+              "serverName": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/ElicitationMode"
+              },
+              "url": {
+                "type": "string"
+              },
+              "elicitationId": {
+                "type": "string"
+              },
+              "requestedSchema": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "startedAt",
+              "remainingMs",
+              "serverName",
+              "message"
+            ]
+          }
+        ]
+      },
+      "QuestionItem": {
+        "type": "object",
+        "properties": {
+          "header": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestionOption"
+            }
+          },
+          "multiSelect": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "header",
+          "question",
+          "options",
+          "multiSelect"
+        ]
+      },
+      "QuestionOption": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ]
+      },
+      "ElicitationMode": {
+        "type": "string",
+        "enum": [
+          "form",
+          "url"
+        ]
+      },
       "RecentSessionsResponse": {
         "type": "object",
         "properties": {
@@ -494,46 +730,6 @@
           "toolCallId",
           "toolName",
           "status"
-        ]
-      },
-      "QuestionItem": {
-        "type": "object",
-        "properties": {
-          "header": {
-            "type": "string"
-          },
-          "question": {
-            "type": "string"
-          },
-          "options": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/QuestionOption"
-            }
-          },
-          "multiSelect": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "header",
-          "question",
-          "options",
-          "multiSelect"
-        ]
-      },
-      "QuestionOption": {
-        "type": "object",
-        "properties": {
-          "label": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "label"
         ]
       },
       "TextPart": {
@@ -933,13 +1129,6 @@
           "serverName",
           "message",
           "status"
-        ]
-      },
-      "ElicitationMode": {
-        "type": "string",
-        "enum": [
-          "form",
-          "url"
         ]
       },
       "ElicitationAction": {
@@ -3499,146 +3688,6 @@
         },
         "required": [
           "toolName"
-        ]
-      },
-      "PendingInteractionDTO": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "approval"
-                ]
-              },
-              "id": {
-                "type": "string"
-              },
-              "startedAt": {
-                "type": "number"
-              },
-              "remainingMs": {
-                "type": "number"
-              },
-              "timeoutMs": {
-                "type": "number"
-              },
-              "toolName": {
-                "type": "string"
-              },
-              "input": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              },
-              "displayName": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "blockedPath": {
-                "type": "string"
-              },
-              "decisionReason": {
-                "type": "string"
-              },
-              "hasSuggestions": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "type",
-              "id",
-              "startedAt",
-              "remainingMs",
-              "toolName",
-              "input",
-              "hasSuggestions"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "question"
-                ]
-              },
-              "id": {
-                "type": "string"
-              },
-              "startedAt": {
-                "type": "number"
-              },
-              "remainingMs": {
-                "type": "number"
-              },
-              "questions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/QuestionItem"
-                }
-              }
-            },
-            "required": [
-              "type",
-              "id",
-              "startedAt",
-              "remainingMs",
-              "questions"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "elicitation"
-                ]
-              },
-              "id": {
-                "type": "string"
-              },
-              "startedAt": {
-                "type": "number"
-              },
-              "remainingMs": {
-                "type": "number"
-              },
-              "serverName": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "mode": {
-                "$ref": "#/components/schemas/ElicitationMode"
-              },
-              "url": {
-                "type": "string"
-              },
-              "elicitationId": {
-                "type": "string"
-              },
-              "requestedSchema": {
-                "type": "object",
-                "additionalProperties": {}
-              }
-            },
-            "required": [
-              "type",
-              "id",
-              "startedAt",
-              "remainingMs",
-              "serverName",
-              "message"
-            ]
-          }
         ]
       },
       "UpdateSessionRequest": {
@@ -8344,6 +8393,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/pending-interactions": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Every prompt waiting on a person",
+        "description": "One envelope per prompt any live session is parked on — a tool approval, a question, or an MCP elicitation — with server-authoritative time left and expired entries already dropped. `roomId` is present only for a session bound to a room. This is the seed a window reads on mount; after that the `interaction_pending` and `interaction_resolved` events on `/api/events` keep it current, so it is never polled. Bounded to live sessions: a projector lives until its session is evicted or the server restarts, so this answers for the recent fleet and not for all history.",
+        "responses": {
+          "200": {
+            "description": "Every pending prompt, with the room each belongs to when it has one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingInteractionsResponse"
                 }
               }
             }

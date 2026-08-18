@@ -117,6 +117,7 @@ import {
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
 import { ROOM_EXPORT_CONTENT_TYPE, RoomExportLineSchema } from '@dorkos/shared/room-export-schemas';
+import { PendingInteractionsResponseSchema } from '@dorkos/shared/interaction-events';
 import {
   ReadCursorParamsSchema,
   ReadCursorResponseSchema,
@@ -402,6 +403,21 @@ registry.registerPath({
     400: {
       description: 'Validation error',
       content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/pending-interactions',
+  tags: ['Sessions'],
+  summary: 'Every prompt waiting on a person',
+  description:
+    'One envelope per prompt any live session is parked on — a tool approval, a question, or an MCP elicitation — with server-authoritative time left and expired entries already dropped. `roomId` is present only for a session bound to a room. This is the seed a window reads on mount; after that the `interaction_pending` and `interaction_resolved` events on `/api/events` keep it current, so it is never polled. Bounded to live sessions: a projector lives until its session is evicted or the server restarts, so this answers for the recent fleet and not for all history.',
+  responses: {
+    200: {
+      description: 'Every pending prompt, with the room each belongs to when it has one',
+      content: { 'application/json': { schema: PendingInteractionsResponseSchema } },
     },
   },
 });
