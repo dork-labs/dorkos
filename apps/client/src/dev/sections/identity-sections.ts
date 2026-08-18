@@ -89,24 +89,6 @@ export const IDENTITY_SECTIONS: PlaygroundSection[] = [
     category: 'Identity',
     keywords: ['agent', 'avatar', 'color', 'emoji', 'picker', 'grid', 'swatch', 'preset'],
   },
-  // RoomPresenceShowcases
-  {
-    id: 'live-lane-presence',
-    title: 'Live lane presence',
-    page: 'identity',
-    category: 'Identity',
-    keywords: [
-      'room',
-      'presence',
-      'working',
-      'line',
-      'live',
-      'composer',
-      'elapsed',
-      'late',
-      'announcer',
-    ],
-  },
   // TeamShowcases
   {
     id: 'team-roster',
