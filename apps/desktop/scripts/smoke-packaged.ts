@@ -86,6 +86,16 @@ const POLL_INTERVAL_MS = 1_000;
 const HEALTH_PROBE_TIMEOUT_MS = 2_000;
 
 /**
+ * Timeout for the API reads the runtime assertions make.
+ *
+ * Much longer than the health probe, because these do real work:
+ * `/api/system/requirements` runs every runtime's dependency probe, each of
+ * which spawns a binary under its own ~5s cap. Two seconds would abort a
+ * healthy answer and read as a broken app.
+ */
+const API_READ_TIMEOUT_MS = 30_000;
+
+/**
  * Lines of app output to print when the smoke fails. The app logs steadily
  * while it runs, so an uncapped dump buries the interesting part (a crash, a
  * stack trace) under minutes of routine chatter — and the interesting part is
@@ -704,7 +714,7 @@ function claim(label: string, ok: boolean, detail: () => string): Assertion {
  */
 async function getJson<T>(endpoint: Endpoint, apiPath: string): Promise<T> {
   const url = `http://${endpoint.host}:${endpoint.port}${apiPath}`;
-  const response = await fetch(url, { signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS) });
+  const response = await fetch(url, { signal: AbortSignal.timeout(API_READ_TIMEOUT_MS) });
   if (!response.ok) throw new Error(`GET ${url} answered ${response.status}`);
   return (await response.json()) as T;
 }
@@ -766,6 +776,10 @@ async function assertAppSeesItsMachine(
     '/api/directory/default'
   );
   const sessions = await getJson<SessionListResponse>(endpoint, '/api/sessions');
+  // The app's output reaches this process through a pipe, so a line written
+  // while the requests above were in flight can still be in transit. One poll
+  // interval closes that gap; the payload assertions above do not depend on it.
+  await delay(POLL_INTERVAL_MS);
   const logs = output.join('\n');
 
   const assertions: Assertion[] = [
