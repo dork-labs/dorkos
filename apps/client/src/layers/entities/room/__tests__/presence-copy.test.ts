@@ -3,7 +3,6 @@ import {
   PRESENCE_NAME_LIMIT,
   presenceCountSentence,
   presenceDetail,
-  presenceListRow,
   presenceRow,
   presenceSentence,
 } from '../lib/presence-copy';
@@ -50,20 +49,6 @@ describe('presenceCountSentence', () => {
   it('carries the long wait into the count', () => {
     expect(presenceCountSentence(4, 'working_late')).toBe(
       '4 agents are still working — this is taking longer than usual'
-    );
-  });
-});
-
-describe('presenceListRow', () => {
-  it('prints a name and how long it has been going', () => {
-    expect(presenceListRow('Kai', 'working', '3m')).toBe('Kai · 3m');
-  });
-
-  it('marks the row that has outrun the room', () => {
-    // The expanded list dropped state entirely, so four agents with one of them
-    // twenty minutes late read exactly like four healthy ones.
-    expect(presenceListRow('Kai', 'working_late', '20m')).toBe(
-      'Kai · 20m · taking longer than usual'
     );
   });
 });

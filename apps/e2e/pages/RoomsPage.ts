@@ -116,9 +116,10 @@ export class RoomsPage {
     this.notices = page.getByTestId('room-notice');
     this.presenceLine = page.getByTestId('room-presence');
     this.presenceAnnouncer = page.getByTestId('room-presence-announcer');
-    // The visible banner. Its sentence also lives in a screen-reader-only
-    // announcer twin (`room-stalled-announcer`), so matching by text resolves
-    // to two elements — target the banner's own testid.
+    // The visible banner. Its sentence also lives in the live lane's own
+    // screen-reader announcer (`room-presence-announcer` — one live region per
+    // lane, whatever it is saying), so matching by text resolves to two
+    // elements — target the banner's own testid.
     this.stalledNotice = page.getByTestId('room-stalled');
     this.reconnectButton = page.getByRole('button', { name: 'Reconnect' });
   }

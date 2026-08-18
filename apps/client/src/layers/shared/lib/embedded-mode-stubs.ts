@@ -57,6 +57,7 @@ import type {
   RoomEntry,
   RoomEvent,
   RoomMember,
+  RoomSessionsResponse,
   AuthorRef,
   RoomRosterEntry,
   RoomSummary,
@@ -858,6 +859,10 @@ export const roomStubs = {
   },
 
   async haltRoom(_id: string): Promise<HaltRoomResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async listRoomSessions(_id: string): Promise<RoomSessionsResponse> {
     throw new Error('Rooms are not supported in embedded mode');
   },
 

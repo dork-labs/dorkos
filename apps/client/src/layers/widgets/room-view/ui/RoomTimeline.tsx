@@ -76,6 +76,42 @@ interface RoomTimelineProps {
 const SKELETON_ROWS = 4;
 
 /**
+ * Take the reader to one row, and leave them standing on it.
+ *
+ * The interim shape of `ConversationTimelineHandle.scrollToRow`, which lands
+ * with `Conversation.Timeline` in P4 (DOR-1331). It is a module function rather
+ * than an imperative handle because neither list owns its own scroller —
+ * `RoomSurface` and `RoomThreadPanel` do — and `scrollIntoView` needs neither:
+ * it walks to whatever scrollable ancestor the row happens to have.
+ *
+ * **It takes a DOM id, not an entry id, and that is what makes the caller
+ * honest.** An entry can be perfectly quotable and still have no row on screen:
+ * a reply lives in the thread panel and never in the room's flow, and on a
+ * phone the room column is unmounted entirely while a thread is open. So the
+ * caller decides which element it is aiming at, and asks this whether it exists
+ * — see `RoomLiveLane`, which draws no "replying to" link at all when the
+ * answer would be nothing.
+ *
+ * **Focus IS the flash**, and deliberately so. Every room row is already a tab
+ * stop with a focus ring (`RoomMessage`), so landing the caret on the row marks
+ * it, keeps it marked while the reader looks, and puts a keyboard reader in the
+ * same place a mouse reader is — which a fading highlight does for neither. It
+ * is also how `useRestoreThreadFocus` already returns somebody to a row.
+ *
+ * @param rowId - The DOM id of the row to go to.
+ * @returns Whether a row with that id was on the page.
+ */
+export function scrollToRow(rowId: string): boolean {
+  const row = document.getElementById(rowId);
+  if (row === null) return false;
+  row.scrollIntoView({ block: 'center' });
+  // `preventScroll`, because the line above has already put the row exactly
+  // where it should be and the browser's own focus scroll would move it again.
+  row.focus({ preventScroll: true });
+  return true;
+}
+
+/**
  * What a room looks like before it has arrived.
  *
  * Its own component because two different waits render it — the room itself

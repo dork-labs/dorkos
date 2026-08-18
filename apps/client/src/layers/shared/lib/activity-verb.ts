@@ -39,7 +39,7 @@ export const WAITING_ON_YOU_VERB = 'waiting on you';
  * 1. `blocked` — "waiting on you". The strongest reading there is, and the only
  *    one that is about the reader rather than the agent.
  * 2. `streaming` with a recognizable tool — the specific verb, from
- *    {@link formatActivityLabel} ("Editing strip-state.ts…", "Using Slack…").
+ *    {@link formatActivityLabel} ("Editing lane-state.ts…", "Using Slack…").
  * 3. `streaming` with nothing known — "Working…", which is all a streaming
  *    lifecycle on its own can honestly support. Guaranteed on every runtime by
  *    the lifecycle contract, which is why the sidebar can always say something

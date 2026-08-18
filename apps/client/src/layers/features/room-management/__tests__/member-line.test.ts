@@ -12,7 +12,7 @@ const JOINED = '2026-07-26T10:00:00.000Z';
 const NOW = new Date('2026-07-26T15:00:00.000Z');
 
 function claim(state: RoomPresenceAuthor['state'], elapsedMs: number): RoomPresenceAuthor {
-  return { authorId: 'author-Ana', state, since: JOINED, elapsedMs };
+  return { authorId: 'author-Ana', entryId: 'entry-1', state, since: JOINED, elapsedMs };
 }
 
 describe('memberSecondaryLine', () => {

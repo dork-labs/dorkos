@@ -77,6 +77,7 @@ function claim(overrides: Partial<RoomPresenceClaim> = {}): RoomPresenceClaim {
   return {
     roomId: 'room-1',
     authorId: 'author-1',
+    entryId: 'entry-1',
     state: 'working',
     since: '2026-08-08T00:00:00.000Z',
     ...overrides,
