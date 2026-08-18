@@ -48,7 +48,9 @@ test.describe('Conversation — the live lane never moves the page', () => {
 
     await tapRoomStream(page);
     await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.entries).toHaveCount(40, { timeout: SERVER_ROUND_TRIP_MS });
+    // The list is virtualized, so it never holds all forty at once — see
+    // `RoomsPage.waitForHistory`.
+    await roomsPage.waitForHistory(40, SERVER_ROUND_TRIP_MS);
 
     // The lane is already there, holding its 24 pixels open with nothing in it.
     // That is the whole mechanism: the space is reserved before it is needed.

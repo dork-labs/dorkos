@@ -899,7 +899,7 @@ test.describe('Rooms — a thread on a phone', () => {
     await roomsApi.postThreadReply(room.id, ids[ids.length - 1]!, 'answering the last one');
 
     await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.entries).toHaveCount(30, { timeout: SERVER_ROUND_TRIP_MS });
+    await roomsPage.waitForHistory(30, SERVER_ROUND_TRIP_MS);
 
     // A room opens at its newest message, so it is already scrolled down.
     await expect.poll(() => roomsPage.isAtBottom()).toBe(true);

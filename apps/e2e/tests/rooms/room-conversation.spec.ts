@@ -274,15 +274,16 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
   }) => {
     const slug = `e2e-scroll-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug);
-    // Enough history to scroll through. The room view has no virtualizer, so
-    // every one of these is a real laid-out row.
+    // Enough history to scroll through. The list is virtualized, so only the
+    // rows on screen are ever laid out — which is exactly why the assertions
+    // below read the SCROLLER rather than counting elements.
     await roomsApi.postEntries(
       room.id,
       Array.from({ length: 30 }, (_, i) => `history line ${i + 1}`)
     );
 
     await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.entries).toHaveCount(30, { timeout: SERVER_ROUND_TRIP_MS });
+    await roomsPage.waitForHistory(30, SERVER_ROUND_TRIP_MS);
     // A room opens at its newest message, the way every chat surface does. The
     // scroll runs in an effect after the rows commit, so this polls rather than
     // reading once and racing it.
@@ -295,10 +296,17 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     });
     expect(await roomsPage.scrollTop()).toBe(0);
 
-    // A message arrives on the live stream while the reader is up here.
+    // A message arrives on the live stream while the reader is up here. It is
+    // NOT in the document — a virtualized list draws the rows on screen, and
+    // the reader is thirty messages above it — so the list GROWING is what says
+    // it landed.
+    const before = await roomsPage.scroller.evaluate((el) => el.scrollHeight);
     await roomsApi.postEntries(room.id, ['arrived while reading history']);
-    await expect(roomsPage.entries).toHaveCount(31, { timeout: SERVER_ROUND_TRIP_MS });
-    await expect(roomsPage.entry('arrived while reading history')).toBeAttached();
+    await expect
+      .poll(() => roomsPage.scroller.evaluate((el) => el.scrollHeight), {
+        timeout: SERVER_ROUND_TRIP_MS,
+      })
+      .toBeGreaterThan(before);
     // The whole point: the view did not move. Asserting `scrollTop === 0` names
     // the subject — "still near the top" would pass on a jump of a screenful.
     expect(await roomsPage.scrollTop()).toBe(0);
@@ -310,7 +318,11 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
       el.dispatchEvent(new Event('scroll'));
     });
     await roomsApi.postEntries(room.id, ['arrived while caught up']);
-    await expect(roomsPage.entries).toHaveCount(32, { timeout: SERVER_ROUND_TRIP_MS });
+    // Caught up, so the newest message really is on screen — and the list is
+    // still pinned to it.
+    await expect(roomsPage.entry('arrived while caught up')).toBeVisible({
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
     await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
   });
 

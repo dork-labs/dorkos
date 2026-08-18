@@ -490,22 +490,37 @@ export function ConversationTimeline({
               width: '100%',
             }}
           >
-            {virtualizer.getVirtualItems().map((virtualRow) => (
-              <div
-                key={rows[virtualRow.index]!.id}
-                data-index={virtualRow.index}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                {renderRow(rows[virtualRow.index]!, { ...rowContext, index: virtualRow.index })}
-              </div>
-            ))}
+            {/*
+              ONE transformed box holding the drawn window, rather than a
+              transform on every row — and the difference is not cosmetic. A
+              per-row `position: absolute` makes each row its own containing
+              block, which is what a message's sticky action rail is measured
+              against: on a message taller than the window the bar stopped
+              riding the viewport edge and sat at the row's own top instead
+              (`room-entry-actions.spec.ts` measured it 66px low). It also made
+              a row's reply line stop being its DOM sibling. One box moves the
+              whole window and leaves the rows in ordinary flow, where both of
+              those are true again.
+            */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualizer.getVirtualItems()[0]?.start ?? 0}px)`,
+              }}
+            >
+              {virtualizer.getVirtualItems().map((virtualRow) => (
+                <div
+                  key={rows[virtualRow.index]!.id}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                >
+                  {renderRow(rows[virtualRow.index]!, { ...rowContext, index: virtualRow.index })}
+                </div>
+              ))}
+            </div>
           </div>
         </Feed>
         {/* Below the log, at the tail, where the message is about to appear —
