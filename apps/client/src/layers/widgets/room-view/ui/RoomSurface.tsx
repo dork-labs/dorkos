@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Skeleton } from '@/layers/shared/ui';
 import { useIsMobile, useVisualViewportBottomInset } from '@/layers/shared/model';
@@ -220,7 +220,13 @@ export function RoomSurface({
   const resumeRow = useCallback(() => resumeRowRef.current, []);
   // A room you SWITCHED to opens at its newest message, the way every chat
   // surface does — only a return to the same room is a return.
-  useEffect(() => {
+  //
+  // A LAYOUT effect, and that ordering is the whole point: the timeline's
+  // landing is itself a layout effect, so a passive clear ran AFTER it and the
+  // landing asked for the previous room's row. It never found one, so the switch
+  // reported `data-landed-on="end-row-gone"` — the right place by luck, for the
+  // wrong reason, and one row shift away from being the wrong place.
+  useLayoutEffect(() => {
     resumeRowRef.current = undefined;
   }, [roomId]);
   const scrollToRow = useCallback((domId: string) => {

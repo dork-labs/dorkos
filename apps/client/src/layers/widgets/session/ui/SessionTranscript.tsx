@@ -339,7 +339,9 @@ export function SessionTranscript({
       onReachedBottom={markSeen}
       transcriptAnnouncement={announcement}
       approvalAnnouncement={approvalAnnouncement}
-      className="pt-12"
+      // The pad the session's own chrome needs, and the matching start for the
+      // scroll thumb's track — one fact, said once (`ScrollThumb`).
+      className="pt-12 [--conversation-thumb-top:3rem]"
       loading={
         isLoadingHistory ? (
           // The same feed the loaded conversation renders, saying it is BUSY —

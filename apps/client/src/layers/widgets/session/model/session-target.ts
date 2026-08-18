@@ -53,6 +53,18 @@ export interface SessionTargetInput {
  * draw queue chrome on one surface and none at all on the other — rather than a
  * disabled button explaining a feature the surface does not have.
  *
+ * **`send` and `queue` are not yet the session's live path, and that is
+ * recorded rather than hidden.** A channel presses Enter and lands in
+ * `target.send`; a session still funnels through `SessionComposer`'s own
+ * `handleSubmit` (which rewrites the message with saved attachment paths and
+ * dismisses its palettes on the way) and through `useChatQueue`. So today the
+ * composer reads only the PRESENCE of `queue` off this object. Both functions
+ * are real, correct and covered — they are what the session routes through when
+ * that funnel moves down here — but until it does, one port has two send paths
+ * behind it. Filed as a P5 follow-up in `specs/unified-conversation`; do not
+ * "simplify" them away in the meantime, because the room half of the port is
+ * defined by them.
+ *
  * @param input - The session's own send path, queue and staged files.
  * @returns The target the conversation publishes to its composer.
  */

@@ -167,13 +167,17 @@ export function ConversationComposer({
   // (DOR-480).
   const blockedByUpload = attachments?.hasFailed === true;
   const canSubmit = target.canSend && !blockedByUpload && (input.canSubmit ?? true);
-  // The REASON is never invented here. A conversation that cannot be written to
-  // says why through its target; a surface that refuses a send for its own
-  // reason says so through its field. Writing a sentence for the failed-upload
-  // case would put a refusal line on a surface whose design answers it with the
-  // red chip above the box instead — the two shipped composers disagree about
-  // that on purpose, and this is not the place to settle it.
-  const canSubmitReason = !target.canSend ? target.canSendReason : input.canSubmitReason;
+  // The REASON is never invented here, and it always belongs to the refusal that
+  // is actually in force. A conversation that cannot be written to says why
+  // through its target; a surface that refuses for its own reason says so
+  // through its field; and a failed attachment says nothing here at all — the
+  // red chip above the box is that design's answer, and passing the field's
+  // unrelated sentence through instead was a line about the wrong problem.
+  const canSubmitReason = blockedByUpload
+    ? undefined
+    : !target.canSend
+      ? target.canSendReason
+      : input.canSubmitReason;
 
   const body = (
     <>

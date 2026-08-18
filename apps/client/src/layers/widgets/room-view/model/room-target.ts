@@ -181,11 +181,17 @@ export function useRoomTarget(input: RoomTargetInput): RoomTarget {
             ? `Message ${roomDisplayTitle(room)}…`
             : 'Reply in this thread…',
       canSend: room !== undefined && !room.archived && isMember,
-      ...(room?.archived === true
-        ? { canSendReason: 'This conversation is archived. You can read it, but not add to it.' }
-        : !isMember
-          ? { canSendReason: 'You left this channel. You can read it, but not add to it.' }
-          : {}),
+      // Three refusals, three sentences, and the FIRST one matters most: a room
+      // still being read is not a room you left, and answering "You left this
+      // channel" while it loads told people they had lost access to somewhere
+      // they were about to be standing in.
+      ...(room === undefined
+        ? { canSendReason: 'Still opening this conversation…' }
+        : room.archived
+          ? { canSendReason: 'This conversation is archived. You can read it, but not add to it.' }
+          : !isMember
+            ? { canSendReason: 'You left this channel. You can read it, but not add to it.' }
+            : {}),
       send,
       // No `queue`: a room has no queue, and the composer draws no queue chrome
       // at all rather than a disabled one.

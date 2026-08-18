@@ -297,16 +297,12 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     expect(await roomsPage.scrollTop()).toBe(0);
 
     // A message arrives on the live stream while the reader is up here. It is
-    // NOT in the document — a virtualized list draws the rows on screen, and
-    // the reader is thirty messages above it — so the list GROWING is what says
-    // it landed.
-    const before = await roomsPage.scroller.evaluate((el) => el.scrollHeight);
+    // NOT in the document — a virtualized list draws the rows on screen, and the
+    // reader is thirty messages above it — so what says it landed is the list
+    // having been SIZED for thirty-one. Named by its count rather than as "the
+    // height grew", which any row growth would satisfy, a notice row included.
     await roomsApi.postEntries(room.id, ['arrived while reading history']);
-    await expect
-      .poll(() => roomsPage.scroller.evaluate((el) => el.scrollHeight), {
-        timeout: SERVER_ROUND_TRIP_MS,
-      })
-      .toBeGreaterThan(before);
+    await roomsPage.waitForHistory(31, SERVER_ROUND_TRIP_MS);
     // The whole point: the view did not move. Asserting `scrollTop === 0` names
     // the subject — "still near the top" would pass on a jump of a screenful.
     expect(await roomsPage.scrollTop()).toBe(0);

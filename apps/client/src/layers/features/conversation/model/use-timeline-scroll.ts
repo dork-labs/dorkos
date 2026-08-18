@@ -3,9 +3,9 @@
  *
  * The merge of two hooks that solved halves of the same problem: the room's
  * `use-stick-to-bottom` (follow the newest message unless the reader has
- * scrolled away, and put them back when the scroller re-attaches) and the
- * session's `use-scroll-overlay` (when to offer the jump-to-latest button and
- * the new-messages pill). Both are gone; this is what replaces them.
+ * scrolled away) and the session's `use-scroll-overlay` (when to offer the
+ * jump-to-latest button and the new-messages pill). Both are gone; this is what
+ * replaces them.
  *
  * **The room's contract won, and so did its numbers.** Where the two disagreed
  * on a threshold, the room's is the one kept — see {@link AT_BOTTOM_SLACK_PX}.
@@ -19,8 +19,9 @@
  * reader is, and whether anything arrived while they were away.
  *
  * **Nor does it put a returning reader back.** That needs a ROW rather than an
- * offset, and therefore the list's own row model — see `timeline-position.ts`,
- * which says what a remembered pixel cost when it was tried here.
+ * offset, and therefore the list's own row model — see
+ * `use-timeline-landing.ts`, which owns the landing and says what a remembered
+ * pixel cost when it was tried here.
  *
  * @module features/conversation/model/use-timeline-scroll
  */
@@ -58,9 +59,10 @@ export interface TimelineScroll {
   /**
    * Attach to the scrolling element.
    *
-   * A callback ref rather than a ref object, and that is load-bearing: the
-   * scroller can unmount and come back while the conversation has not changed,
-   * and only a callback ref is TOLD when that happens.
+   * A callback ref rather than a ref object: the timeline hands the same element
+   * to this hook and to the thumb, and one callback is where that fan-out is
+   * written. It is deliberately NOT told to do anything on re-attach — putting a
+   * returning reader back needs a row, and `use-timeline-landing.ts` owns that.
    */
   scrollRef: (el: HTMLDivElement | null) => void;
   /** Attach to that element's `onScroll`. */
@@ -82,7 +84,7 @@ export interface TimelineScroll {
 }
 
 /**
- * Track where a reader is in a conversation, and put them back when it returns.
+ * Track where a reader is in a conversation.
  *
  * Two answers, and each has a consumer that cannot get it anywhere else:
  *

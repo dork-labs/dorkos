@@ -141,7 +141,14 @@ export function ScrollThumb({ scrollRef }: ScrollThumbProps) {
       ref={trackRef}
       role="presentation"
       onClick={handleTrackClick}
-      className="pointer-events-auto absolute top-12 right-0 bottom-0 z-10 w-2.5"
+      // Where the track starts is the HOST's to say, because it is a fact about
+      // the host's own chrome: a session pads the top of its transcript by 3rem
+      // and its thumb has to clear that pad, while a room has no pad at all.
+      // Inherited as `top-12` from the session's copy of this file, the room's
+      // thumb could never reach the top of its own track and read ~8% low
+      // across the range.
+      style={{ top: 'var(--conversation-thumb-top, 0px)' }}
+      className="pointer-events-auto absolute right-0 bottom-0 z-10 w-2.5"
     >
       <div
         ref={thumbRef}

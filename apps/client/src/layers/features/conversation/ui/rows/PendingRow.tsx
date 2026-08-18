@@ -114,6 +114,7 @@ export function PendingRow({ post, viewerAuthorId }: PendingRowProps) {
 
   return (
     <div
+      data-slot="pending-row"
       data-testid="room-pending"
       data-status={post.status}
       className={cn(
