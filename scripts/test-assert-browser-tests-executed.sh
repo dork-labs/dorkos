@@ -38,7 +38,8 @@ fail=0
 make_workspace() {
   local root=$1
   mkdir -p "$root/apps/e2e/tests/settings" "$root/apps/e2e/tests/chat" \
-    "$root/apps/e2e/tests/dashboard-sidebar" "$root/apps/e2e/test-results"
+    "$root/apps/e2e/tests/conversation" "$root/apps/e2e/tests/dashboard-sidebar" \
+    "$root/apps/e2e/test-results"
   : >"$root/apps/e2e/tests/alpha.spec.ts"
   : >"$root/apps/e2e/tests/beta.spec.ts"
   : >"$root/apps/e2e/tests/settings/auth-login.spec.ts"
@@ -49,6 +50,7 @@ make_workspace() {
   : >"$root/apps/e2e/tests/chat/live-turn-visibility.ts"
   : >"$root/apps/e2e/tests/chat/runtime-capability-parity.ts"
   : >"$root/apps/e2e/tests/chat/session-read-state.ts"
+  : >"$root/apps/e2e/tests/conversation/ask-anywhere.ts"
   : >"$root/apps/e2e/tests/dashboard-sidebar/now-survives-reload.ts"
   : >"$root/apps/e2e/tests/dashboard-sidebar/send-lands-in-today.ts"
   cat >"$root/apps/e2e/test-results/results.json" <<'JSON'
@@ -84,12 +86,15 @@ make_workspace() {
     { "title": "dashboard-sidebar/send-lands-in-today.ts", "file": "dashboard-sidebar/send-lands-in-today.ts",
       "specs": [ { "title": "the third module's suite runs", "file": "dashboard-sidebar/send-lands-in-today.ts",
                    "tests": [ { "status": "expected" } ] } ] },
+    { "title": "conversation/ask-anywhere.ts", "file": "conversation/ask-anywhere.ts",
+      "specs": [ { "title": "the ask-anywhere module's suite runs", "file": "conversation/ask-anywhere.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
     { "title": "settings", "file": "settings/auth-login.spec.ts", "specs": [],
       "suites": [ { "title": "Auth", "file": "settings/auth-login.spec.ts",
                     "specs": [ { "title": "auth runs", "file": "settings/auth-login.spec.ts",
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
-  "stats": { "expected": 10, "unexpected": 0, "flaky": 0, "skipped": 1 }
+  "stats": { "expected": 11, "unexpected": 0, "flaky": 0, "skipped": 1 }
 }
 JSON
 }
@@ -131,7 +136,7 @@ make_workspace "$tmp/healthy"
 # The count is the FIXTURE's, not the real suite's — two ordinary specs plus one
 # test per registered module — so it moves when make_workspace does and never
 # because somebody added a browser test.
-check 'a healthy run passes' "$tmp/healthy" 0 '10 test(s) executed'
+check 'a healthy run passes' "$tmp/healthy" 0 '11 test(s) executed'
 
 # A spec on disk that the run never collected — the testIgnore/testMatch hole.
 make_workspace "$tmp/uncollected"
