@@ -1905,8 +1905,14 @@ describe('onProjectorInteractionChange (the Ask, fleet-wide)', () => {
 
     projector.ingest(approvalRequired('tc-1'));
 
-    expect(changes).toHaveLength(1);
-    expect(changes[0]).toMatchObject({
+    // Filtered to THIS session: the projector registry is a module singleton,
+    // so a neighbouring file's parked session is announced to every listener
+    // registered while it runs — including this one.
+    const mine = changes.filter(
+      (change) => change.type === 'pending' && change.sessionId === 'ask-1'
+    );
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({
       type: 'pending',
       sessionId: 'ask-1',
       cwd: '/work/alpha',
@@ -2056,7 +2062,12 @@ describe('listPendingInteractionsAcrossSessions', () => {
     raise(stale, 'tc-stale', now - TIMEOUT_MS - 1_000);
     raise(nameless, 'tc-nameless', now);
 
-    const listed = listPendingInteractionsAcrossSessions(now);
+    // Scoped to the three sessions this case created. The registry is a module
+    // singleton shared with every other file in this worker, so asserting over
+    // the whole fleet would pass or fail on what a neighbour left behind.
+    const listed = listPendingInteractionsAcrossSessions(now).filter((row) =>
+      row.sessionId.startsWith('fleet-')
+    );
 
     expect(listed.map((row) => row.interaction.id)).toEqual(['tc-live']);
     expect(listed[0]).toMatchObject({ sessionId: 'fleet-live', cwd: '/work/alpha' });
