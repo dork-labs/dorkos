@@ -1,0 +1,336 @@
+<style>
+  .dk { font-size: 13px; line-height: 1.45; color: var(--text-primary); }
+  .dk .room { border:1px solid var(--border); border-radius:12px; background:var(--bg-secondary); overflow:hidden; position:relative; }
+  .dk .room-h { padding:8px 14px; border-bottom:1px solid var(--border); font-weight:600; display:flex; align-items:center; gap:8px; }
+  .dk .msgs { padding:12px 14px 6px; display:flex; flex-direction:column; gap:12px; }
+  .dk .msg { display:flex; gap:10px; }
+  .dk .av { width:26px; height:26px; border-radius:7px; flex:none; display:grid; place-items:center; color:#fff; font-size:11px; font-weight:700; }
+  .dk .av.g { background:linear-gradient(135deg,#34c759,#0a84ff); }
+  .dk .av.p { background:linear-gradient(135deg,#ff2d55,#af52de); }
+  .dk .av.o { background:linear-gradient(135deg,#ff9f0a,#ff375f); }
+  .dk .av.u { background:#3a3a3c; }
+  .dk .av.sm { width:18px; height:18px; border-radius:5px; font-size:8px; }
+  .dk .who { font-weight:600; margin-right:6px; }
+  .dk .t { color:var(--text-tertiary); font-size:11px; }
+  .dk .sys { color:var(--text-secondary); font-size:12px; display:flex; gap:8px; align-items:flex-start; }
+  .dk .composer { margin:8px 14px 14px; border:1px solid var(--border); border-radius:10px; padding:10px 12px; color:var(--text-tertiary); }
+  .dk .lane { height:22px; margin:0 14px; display:flex; align-items:center; gap:8px; color:var(--text-secondary); font-size:12px; }
+  .dk .lane.empty { border:1px dashed var(--border); border-radius:6px; color:var(--text-tertiary); justify-content:center; font-size:10px; }
+  .dk .dot { width:7px; height:7px; border-radius:50%; background:var(--success); box-shadow:0 0 0 3px rgba(52,199,89,.18); flex:none; }
+  .dk .dot.amber { background:var(--warning); box-shadow:0 0 0 3px rgba(255,159,10,.18); }
+  .dk .pill { position:absolute; left:14px; bottom:64px; display:inline-flex; align-items:center; gap:8px; padding:4px 10px 4px 6px; border-radius:99px; background:var(--bg-secondary); border:1px solid var(--border); box-shadow:0 2px 10px rgba(0,0,0,.08); font-size:12px; color:var(--text-secondary); }
+  .dk .pill b { color:var(--text-primary); font-weight:600; }
+  .dk .pill.amber { border-color:rgba(255,159,10,.6); background:rgba(255,159,10,.08); }
+  .dk .stack { display:inline-flex; }
+  .dk .stack .av { margin-left:-6px; box-shadow:0 0 0 2px var(--bg-secondary); }
+  .dk .stack .av:first-child { margin-left:0; }
+  .dk .strip { margin:0 14px; padding:5px 10px; border:1px solid var(--border); border-bottom:0; border-radius:10px 10px 0 0; background:var(--bg-tertiary); font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:8px; }
+  .dk .strip + .composer { margin-top:0; border-radius:0 0 10px 10px; }
+  .dk .peek { border:1px solid var(--border); border-radius:12px; background:var(--bg-secondary); box-shadow:0 8px 30px rgba(0,0,0,.14); width:360px; max-width:100%; overflow:hidden; }
+  .dk .peek-row { display:flex; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); align-items:flex-start; }
+  .dk .peek-row:last-child { border-bottom:0; }
+  .dk .peek .n { font-weight:600; }
+  .dk .peek .s { color:var(--text-secondary); font-size:12px; }
+  .dk .acts { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
+  .dk .b { border:1px solid var(--border); border-radius:7px; padding:3px 9px; font-size:11.5px; background:var(--bg-secondary); white-space:nowrap; }
+  .dk .b.pri { background:var(--text-primary); color:var(--bg-secondary); border-color:transparent; }
+  .dk .b.q { border-color:transparent; color:var(--text-secondary); }
+  .dk .b.danger { color:var(--error); }
+  .dk .kbd { font-size:10px; opacity:.6; margin-left:4px; }
+  .dk .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11.5px; background:var(--bg-tertiary); padding:1px 5px; border-radius:4px; }
+  .dk .verb { color:var(--text-secondary); }
+  .dk .ask { border:1px solid rgba(255,159,10,.55); background:rgba(255,159,10,.07); border-radius:10px; padding:10px 12px; }
+  .dk .ask-h { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .dk .tag { font-size:11px; padding:1px 7px; border-radius:99px; background:var(--bg-tertiary); color:var(--text-secondary); }
+  .dk .bar { height:3px; background:var(--bg-tertiary); border-radius:2px; margin-top:10px; overflow:hidden; }
+  .dk .bar > div { height:100%; width:62%; background:var(--warning); }
+  .dk .side { border:1px solid var(--border); border-radius:12px; background:var(--bg-secondary); padding:10px; width:230px; flex:none; }
+  .dk .side h5 { margin:0 0 6px; font-size:11px; color:var(--text-secondary); font-weight:500; }
+  .dk .row { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:8px; }
+  .dk .row.hot { background:rgba(255,159,10,.10); }
+  .dk .row .n { font-weight:600; font-size:12px; }
+  .dk .row .s { color:var(--text-secondary); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dk .badge { margin-left:auto; background:var(--warning); color:#fff; font-size:10px; font-weight:700; border-radius:99px; padding:0 6px; }
+  .dk .topbar { display:flex; justify-content:flex-end; align-items:center; gap:10px; padding:6px 10px; border:1px solid var(--border); border-radius:10px; background:var(--bg-secondary); margin-bottom:8px; }
+  .dk .bell { position:relative; width:22px; height:22px; border-radius:6px; background:var(--bg-tertiary); }
+  .dk .bell::after { content:"2"; position:absolute; top:-6px; right:-6px; background:var(--warning); color:#fff; font-size:9px; font-weight:700; border-radius:99px; padding:0 4px; }
+  .dk .pop { border:1px solid var(--border); border-radius:12px; background:var(--bg-secondary); box-shadow:0 8px 30px rgba(0,0,0,.12); width:340px; max-width:100%; overflow:hidden; }
+  .dk .pop-h { padding:8px 12px; border-bottom:1px solid var(--border); font-weight:600; display:flex; justify-content:space-between; }
+  .dk .pop-h span { font-weight:400; color:var(--text-secondary); font-size:12px; }
+  .dk .pop .ask { border-radius:0; border-left:0; border-right:0; border-top:0; }
+  .dk .toast { border:1px solid var(--border); border-radius:12px; background:var(--bg-secondary); padding:10px 12px; width:320px; max-width:100%; box-shadow:0 8px 30px rgba(0,0,0,.12); }
+  .dk .toast .app { font-size:10px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; }
+  .dk .muted { color:var(--text-secondary); }
+  .dk .flow { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+  .states { display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:12px; }
+  .state { border:1px solid var(--border); border-radius:10px; background:var(--bg-secondary); padding:10px 12px; }
+  .state h5 { margin:0 0 6px; font-size:11px; color:var(--text-secondary); font-weight:500; text-transform:uppercase; letter-spacing:.04em; }
+  .state .line { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-secondary); min-height:22px; flex-wrap:wrap; }
+  .state .line b { color:var(--text-primary); font-weight:600; }
+  .state .why { font-size:11px; color:var(--text-tertiary); margin-top:6px; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:start; }
+  .grid3 { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; }
+  @media (max-width: 900px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+  .toc { display:flex; gap:8px; flex-wrap:wrap; margin: 6px 0 22px; }
+  .toc a { font-size:12px; padding:4px 10px; border:1px solid var(--border); border-radius:99px; color:var(--text-primary); text-decoration:none; background:var(--bg-secondary); }
+  .part { border-top:1px solid var(--border); padding-top:22px; margin-top:34px; }
+  .arch { display:grid; grid-template-columns: 1fr; gap:6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; }
+  .arch .box { border:1px solid var(--border); border-radius:8px; padding:8px 10px; background:var(--bg-secondary); }
+  .arch .box.shared { border-color:var(--success); }
+  .arch .box.slot { border-style:dashed; color:var(--text-secondary); }
+  .arch .box .k { color:var(--text-secondary); font-family: system-ui, sans-serif; font-size:11px; margin-left:8px; }
+  .arch .indent { margin-left:22px; }
+  .arch .indent2 { margin-left:44px; }
+  .legend { font-size:11px; color:var(--text-secondary); margin-top:8px; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:3px; border:1px solid var(--border); vertical-align:middle; margin-right:4px; }
+  .legend i.s { border-color:var(--success); }
+  .legend i.d { border-style:dashed; }
+</style>
+
+<div class="dk">
+<h2>Messaging surfaces — three explorations, one page</h2>
+<p class="subtitle">Scroll through all three, click an option in each group you have a view on, then talk to me in the terminal. Each group records its own choice.</p>
+<div class="toc"><a href="#p1">1 · One component tree, three surfaces</a><a href="#p2">2 · Approvals: answer where you are</a><a href="#p3">3 · “Working on it”: above the composer, clickable</a></div>
+
+<!-- ============================================================ PART 1 -->
+<div id="p1">
+<h3>1 · One component tree, three surfaces</h3>
+<p class="subtitle">What I found: DMs are already rooms (same route, same widget, <code>kind:'dm'</code> only changes the name). So it is really <strong>two</strong> surfaces to unify: <em>session chat</em> and <em>room</em>. Today they share the composer primitives (<code>Composer.*</code>), the row layout tokens (<code>messageItem</code> tailwind-variants, <code>anchor: corner|rail</code>), grouping math and the a11y feed — and duplicate the row, the list, the composer host, hover actions, markdown, scroll-pinning, and the “busy” and “waiting on you” vocabularies. Nine duplicates; the seam is already there.</p>
+
+<div class="grid2">
+  <div>
+    <div class="label">Proposed shape — a <code>Conversation</code> compound</div>
+    <div class="arch dk" style="margin-top:6px">
+      <div class="box shared">&lt;Conversation.Root surface="session|room|dm" density="…"&gt; <span class="k">context: who am I, capabilities, target</span></div>
+      <div class="box slot indent">&lt;Conversation.Header&gt; <span class="k">slot — breadcrumbs (session) / room header (room)</span></div>
+      <div class="box shared indent">&lt;Conversation.Timeline items={…} renderBody={…}&gt; <span class="k">ONE virtualized list, ScrollThumb, unread cursor, thread grouping</span></div>
+      <div class="box shared indent2">&lt;Message.Root anchor="corner|rail" role position density&gt; <span class="k">ONE row — Gutter · Author · Body · Attachments · Reactions · Actions</span></div>
+      <div class="box slot indent2">body renderers <span class="k">session: parts (text/tool/thinking) · room: markdown + mentions — pluggable, not forked</span></div>
+      <div class="box shared indent2">Divider.Day · Divider.Unread · Notice · Moment · ThreadReply <span class="k">shared row kinds</span></div>
+      <div class="box shared indent">&lt;Conversation.LiveLane&gt; <span class="k">the space above the composer: presence pill · Ask card · stalled notice · queue — one component for both surfaces (parts 2 &amp; 3)</span></div>
+      <div class="box shared indent">&lt;Composer.Root&gt;… <span class="k">already shared; the two HOSTS collapse into one with a `target` adapter (session vs room)</span></div>
+      <div class="box slot indent">&lt;Conversation.Footer&gt; <span class="k">slot — session’s model/mode line; rooms none</span></div>
+    </div>
+    <div class="legend"><i class="s"></i> shared, one implementation &nbsp; <i class="d"></i> slot the host fills &nbsp; — variants via <code>cva</code>/<code>tv</code> for look, capability flags (reactions, threads, run-with) for behaviour. Surface never switches rendering; capabilities do.</div>
+  </div>
+  <div>
+    <div class="label">How I’d sequence it</div>
+    <ol style="font-size:13px; line-height:1.6; padding-left:18px; margin-top:6px">
+      <li><strong>Row</strong> — merge <code>MessageItem</code> + <code>RoomEntryRow</code> into <code>Message.*</code>; one hover-action system driven by capability flags.</li>
+      <li><strong>Live lane</strong> — presence pill + Ask + stalled + queue as one component both surfaces mount (this is where parts 2 and 3 land).</li>
+      <li><strong>Timeline</strong> — one virtualized list; rooms gain virtualization + ScrollThumb, sessions gain thread grouping.</li>
+      <li><strong>Composer host</strong> — one host, a <code>ConversationTarget</code> adapter for submit / queue / attachments / mentions.</li>
+    </ol>
+    <div class="label" style="margin-top:12px">Dev Playground</div>
+    <p style="font-size:13px; margin-top:4px">Rename <em>Chat Components</em> → <strong>Conversation</strong>: sections <em>Surfaces</em> (session / room / DM side by side, same data), <em>Message row</em> (every anchor × role × density × capability), <em>Timeline</em>, <em>Live lane</em> (every presence + ask + stalled state), <em>Composer</em>. <em>Rooms</em> keeps what is room-only (header, roster, delivery). Retire the room-thread showcase copies that re-render rows.</p>
+  </div>
+</div>
+
+<div class="options" style="margin-top:12px">
+  <div class="option" data-choice="unify-A" onclick="toggleSelect(this)"><div class="letter">A</div><div class="content"><h3>Row + Live lane first, then list, then composer host</h3><p>Ship the visible wins (parts 2 &amp; 3) on a shared foundation early. Recommended.</p></div></div>
+  <div class="option" data-choice="unify-B" onclick="toggleSelect(this)"><div class="letter">B</div><div class="content"><h3>Whole tree in one programme</h3><p>One big refactor, one PR train, everything lands together. Cleaner end state, longer before anything is felt.</p></div></div>
+  <div class="option" data-choice="unify-C" onclick="toggleSelect(this)"><div class="letter">C</div><div class="content"><h3>Only the Live lane now</h3><p>Do parts 2 &amp; 3 as the shared piece; leave rows/lists for later. Fastest, least clean.</p></div></div>
+</div>
+</div>
+
+<!-- ============================================================ PART 2 -->
+<div id="p2" class="part">
+<h3>2 · Approvals: answer where you are</h3>
+<p class="subtitle">
+  Today the room shows a dead line: <em>“Meeting Notes is waiting for you to approve something… Open Meeting Notes’s session to answer.”</em>
+  You go hunting. Ten minutes later it auto-denies and the agent guesses.<br/><br/>
+  Two things I found in the code that change the plan: <strong>(a)</strong> DorkOS already has a global approvals queue — the header pill + <code>ApprovalCard</code>/<code>ApprovalList</code> — but it only carries <em>capability</em> approvals (2-hour window), <em>not</em> the SDK “may I read/write/run” prompts (10-minute window, session-only). Two systems, one meaning. <strong>(b)</strong> The room notice deliberately hides the file path / command, because a shared room might have people who shouldn’t see one member’s approval decisions. So: <strong>the Ask becomes one object; detail shows only to who can answer.</strong>
+</p>
+
+<div class="">
+  <div class="label">The one card (rendered the same everywhere)</div>
+  <div class="mockup" style="margin-top:6px">
+    <div class="mockup-header">Ask card — compact first line; everything else is progressive disclosure</div>
+    <div class="mockup-body">
+      <div class="ask" style="max-width:640px">
+        <div class="ask-h">
+          <div class="av g">MN</div>
+          <div><b>Meeting Notes</b> wants to <b>edit</b> <span class="code">notes/2026-08-17-standup.md</span></div>
+          <span class="tag">from #mio</span>
+          <span class="t" style="margin-left:auto">6:12 left</span>
+        </div>
+        <div class="muted" style="margin:6px 0 0 34px">“Adding today’s decisions and the two open questions Dan raised.” <span class="t">· +14 −2 lines · <u>preview</u></span></div>
+        <div class="acts" style="margin-left:34px">
+          <span class="b pri">Allow <span class="kbd">A</span></span>
+          <span class="b">Allow &amp; don’t ask again ▾</span>
+          <span class="b">Deny <span class="kbd">D</span></span>
+          <span class="b q">Open session →</span>
+        </div>
+        <div class="bar"><div></div></div>
+      </div>
+      <p class="t" style="margin-top:8px">who · verb · target · origin · time left · the agent’s reason · a preview · Allow / Allow-with-scope / Deny / escape hatch. Non-approvers in a shared room see today’s vague line instead of this card.</p>
+    </div>
+  </div>
+</div>
+
+<h4 style="margin-top:18px">Where the Ask lives — pick the ambition (each includes the ones before it)</h4>
+<div class="options">
+  <div class="option" data-choice="ask-A" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Inline, in the room where the agent is talking</h3>
+      <p>The Ask appears live in the room’s <em>live lane</em> the moment it’s raised (today the durable notice waits a grace minute — keep that for the log; the live card is instant). Answer there. It collapses to a one-line receipt when resolved.</p>
+      <div class="room" style="margin-top:10px;max-width:640px">
+        <div class="room-h"># mio</div>
+        <div class="msgs">
+          <div class="msg"><div class="av p">PM</div><div><span class="who">Mio Clicker PM</span><span class="t">01:58 PM</span><div>Meeting Notes, can you log today’s decisions?</div></div></div>
+        </div>
+        <div style="margin:0 14px 6px" class="ask">
+          <div class="ask-h"><div class="av g">MN</div><div><b>Meeting Notes</b> wants to <b>edit</b> <span class="code">standup.md</span></div><span class="t" style="margin-left:auto">6:12 left</span></div>
+          <div class="acts" style="margin-left:34px"><span class="b pri">Allow</span><span class="b">Deny</span><span class="b q">Details ▾</span></div>
+        </div>
+        <div class="composer">Message #mio…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="ask-B" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>+ One global “Needs you” tray — extend the header pill that already exists</h3>
+      <p>Put SDK tool prompts into the same queue as capability approvals: header pill (exists), sidebar <em>Heads up</em> row (exists, but today only knows “blocked”, not what for), home triage header (exists), one card. Answer from any route. <span class="code">⌘⇧A</span> jumps to the next Ask. Server side this is one honest change: broadcast the pending prompt on the global stream (today only the per-session stream carries it) plus a list-on-mount endpoint — the exact pattern capability approvals already use.</p>
+      <div class="flow" style="margin-top:10px">
+        <div class="side">
+          <h5>Heads up</h5>
+          <div class="row hot"><div class="av g sm">MN</div><div><div class="n">Meeting Notes</div><div class="s">wants to edit standup.md</div></div><span class="badge">6m</span></div>
+          <div class="row"><div class="av p sm">D</div><div><div class="n">DorkOS</div><div class="s">Went quiet</div></div></div>
+        </div>
+        <div>
+          <div class="topbar"><span class="muted" style="font-size:12px">2 need you</span><div class="bell"></div></div>
+          <div class="pop">
+            <div class="pop-h">Needs you <span>2 pending</span></div>
+            <div class="ask"><div class="ask-h"><div class="av g">MN</div><div><b>Meeting Notes</b> wants to <b>edit</b> <span class="code">standup.md</span></div><span class="t" style="margin-left:auto">6:12</span></div><div class="acts" style="margin-left:34px"><span class="b pri">Allow</span><span class="b">Deny</span><span class="b q">#mio →</span></div></div>
+            <div class="ask" style="background:transparent"><div class="ask-h"><div class="av p">PM</div><div><b>Mio Clicker PM</b> wants to <b>run</b> <span class="code">pnpm test</span></div><span class="t" style="margin-left:auto">9:40</span></div><div class="acts" style="margin-left:34px"><span class="b pri">Allow</span><span class="b">Deny</span><span class="b q">session →</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="ask-C" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>+ Reach you off-screen, and change what a timeout means</h3>
+      <p>Desktop notification (and Telegram/Slack where bridged) with <strong>Allow / Deny</strong> actions. And on timeout the agent <strong>parks</strong> instead of auto-denying and guessing: the room says “Meeting Notes is paused, waiting on you — <u>Answer now</u>”, and answering later resumes the turn. Scope options (“don’t ask again for this file / folder / this agent in this room”) so the third Ask never happens.</p>
+      <div class="flow" style="margin-top:10px">
+        <div class="toast"><div class="app">DorkOS · #mio</div><div style="margin-top:2px"><b>Meeting Notes</b> wants to edit <span class="code">standup.md</span></div><div class="acts"><span class="b pri">Allow</span><span class="b">Deny</span><span class="b q">Open</span></div></div>
+        <div class="room" style="flex:1;min-width:280px"><div class="msgs"><div class="sys"><span>⏸</span><div><b>Meeting Notes</b> is paused, waiting on you to allow an edit to <span class="code">standup.md</span>. <u>Answer now</u> — it picks up where it left off.</div></div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h4 style="margin-top:16px">Edge cases to get right, whatever we pick</h4>
+<div class="grid3 dk">
+  <div class="mockup"><div class="mockup-header">Two people in the room</div><div class="mockup-body muted">First answer wins; others see “Dorian allowed this”. Only an eligible approver sees the card at all — everyone else sees the vague notice (privacy rule already in the code).</div></div>
+  <div class="mockup"><div class="mockup-header">Ask arrives while you’re typing</div><div class="mockup-body muted">Never steal focus. <span class="code">A</span>/<span class="code">D</span> fire only when the card is focused. Draft untouched.</div></div>
+  <div class="mockup"><div class="mockup-header">Burst of asks</div><div class="mockup-body muted">Same agent, five reads → one stacked card “wants to read 5 files ▾ · Allow all”. Different agents → separate cards.</div></div>
+  <div class="mockup"><div class="mockup-header">Answered elsewhere</div><div class="mockup-body muted">Card morphs into a receipt with who/when. Second answer gets “already allowed by Dorian at 2:01”.</div></div>
+  <div class="mockup"><div class="mockup-header">Session gone / agent restarted</div><div class="mockup-body muted">Ask goes stale → “no longer needed”. Never a button that does nothing.</div></div>
+  <div class="mockup"><div class="mockup-header">Mobile</div><div class="mockup-body muted">Full-width card, two buttons per row, details in a sheet, long-press for scope.</div></div>
+</div>
+<p class="subtitle" style="margin-top:12px">My pick: <strong>B first</strong> — it removes the hunting and reuses the queue that exists. C is the follow-on that removes the lunch-break failure.</p>
+</div>
+
+<!-- ============================================================ PART 3 -->
+<div id="p3" class="part">
+<h3>3 · “Meeting Notes is working on it” — 10x the little line</h3>
+<p class="subtitle">
+  Today: a grey sentence <em>under</em> the composer; honest and calm — keep that. You want it <strong>above</strong> and clickable. One thing to know: the spec put it below on purpose —
+  <em>“putting it above would push the last message every time an agent picked something up.”</em> So the real question is <strong>how to sit above the composer without shoving the conversation.</strong>
+</p>
+
+<h4>3a · Where it sits</h4>
+<div class="options">
+  <div class="option" data-choice="place-A" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Reserved lane above the composer (Slack)</h3>
+      <p>Fixed height, always there, empty when nobody works. Zero layout shift. Cost: ~22px of blank in every quiet room.</p>
+      <div class="room" style="margin-top:10px">
+        <div class="msgs"><div class="msg"><div class="av p">PM</div><div><span class="who">Mio Clicker PM</span><span class="t">01:58 PM</span><div>Meeting Notes, can you log today’s decisions?</div></div></div></div>
+        <div class="lane"><span class="dot"></span><span><b style="color:var(--text-primary)">Meeting Notes</b> is working on it · 42s</span></div>
+        <div class="composer">Message #mio…</div>
+      </div>
+      <div class="room" style="margin-top:8px"><div class="msgs" style="padding-bottom:0"><div class="t">quiet room ↓</div></div><div class="lane empty">reserved, empty</div><div class="composer">Message #mio…</div></div>
+    </div>
+  </div>
+  <div class="option" data-choice="place-B" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Floating pill over the bottom edge of the timeline</h3>
+      <p>Out of the flow — hovers over the last message’s bottom padding, on the avatar rail. No reserved space, no push. Cousin of the “new messages” pill; grows in place into the peek (Dynamic-Island move). When the reply lands, the pill’s avatar slides up into the new message’s avatar slot.</p>
+      <div class="room" style="margin-top:10px">
+        <div class="msgs" style="padding-bottom:36px"><div class="msg"><div class="av p">PM</div><div><span class="who">Mio Clicker PM</span><span class="t">01:58 PM</span><div>Meeting Notes, can you log today’s decisions?</div></div></div></div>
+        <div class="pill"><span class="stack"><span class="av g sm">MN</span></span><span><b>Meeting Notes</b> is working on it · 42s</span></div>
+        <div class="composer">Message #mio…</div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="place-C" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>A status strip that is part of the composer</h3>
+      <p>The composer grows a thin top strip when someone works — where the <em>session</em> chat already puts its <code>ChatStatusStrip</code>. All three surfaces then share one strip and one vocabulary. Push happens, but reads as “the composer told me something”.</p>
+      <div class="room" style="margin-top:10px">
+        <div class="msgs"><div class="msg"><div class="av p">PM</div><div><span class="who">Mio Clicker PM</span><span class="t">01:58 PM</span><div>Meeting Notes, can you log today’s decisions?</div></div></div></div>
+        <div class="strip"><span class="dot"></span><span><b style="color:var(--text-primary)">Meeting Notes</b> is working on it</span><span class="t" style="margin-left:auto">42s</span></div>
+        <div class="composer">Message #mio…</div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="subtitle">My pick: <strong>B</strong>. It answers the spec’s objection, keeps quiet rooms quiet, and gives the click somewhere to grow. (We still make the pill the one shared component across session / room / DM.)</p>
+
+<h4 style="margin-top:16px">3b · Every state</h4>
+<p class="subtitle">Green dot = the one animated thing (existing “working” vocabulary). Amber = needs you. Copy stays plain.</p>
+<div class="states dk">
+  <div class="state"><h5>Idle</h5><div class="line" style="color:var(--text-tertiary)">— nothing rendered —</div><div class="why">A quiet room looks quiet.</div></div>
+  <div class="state"><h5>Just started (&lt; 10s)</h5><div class="line"><span class="dot"></span><span class="av g sm">MN</span><span><b>Meeting Notes</b> is working on it</span></div><div class="why">No timer yet — a number starting at 0s draws the eye for nothing.</div></div>
+  <div class="state"><h5>Working (≥ 10s)</h5><div class="line"><span class="dot"></span><span class="av g sm">MN</span><span><b>Meeting Notes</b> is working on it · 42s</span></div><div class="why">Ticks locally. Same as today.</div></div>
+  <div class="state"><h5>Doing something specific <span style="text-transform:none">(new signal)</span></h5><div class="line"><span class="dot"></span><span class="av g sm">MN</span><span><b>Meeting Notes</b> <span class="verb">is reading</span> <span class="code">standup.md</span> · 1m 04s</span></div><div class="why">The session strip already knows the current activity; the room presence would carry a verb + target. Verb, not tool name.</div></div>
+  <div class="state"><h5>Taking longer than usual</h5><div class="line"><span class="dot"></span><span class="av g sm">MN</span><span><b>Meeting Notes</b> is still working — this is taking longer than usual · 12m</span></div><div class="why">Server’s late threshold. Same words.</div></div>
+  <div class="state"><h5>Needs you</h5><div class="line"><span class="dot amber"></span><span class="av g sm">MN</span><span><b>Meeting Notes</b> needs your OK to edit <span class="code">standup.md</span> · <u>Answer</u></span></div><div class="why">The bridge to part 2: the pill turns amber and grows into the Ask. One place to look, busy or blocked.</div></div>
+  <div class="state"><h5>Two or three agents</h5><div class="line"><span class="dot"></span><span class="stack"><span class="av g sm">MN</span><span class="av p sm">PM</span></span><span><b>Meeting Notes</b> and <b>Mio Clicker PM</b> are working on it · 42s</span></div><div class="why">Oldest claim’s time. Avatars stack.</div></div>
+  <div class="state"><h5>Four or more</h5><div class="line"><span class="dot"></span><span class="stack"><span class="av g sm">MN</span><span class="av p sm">PM</span><span class="av o sm">DB</span><span class="av u sm">+2</span></span><span><b>5 agents</b> are working on it ▾</span></div><div class="why">Expands to names + each one’s time (exists today as text).</div></div>
+  <div class="state"><h5>Hand-off (reply lands)</h5><div class="line" style="opacity:.55"><span class="dot"></span><span class="av g sm">MN</span><span><b>Meeting Notes</b> is working on it · 42s</span></div><div class="why">Fades 160ms while the avatar rides up into the new message. The indicator visibly becomes the answer (spec §5.4, made literal).</div></div>
+  <div class="state"><h5>Stream stalled</h5><div class="line" style="color:var(--text-tertiary)">— hidden; the stalled notice speaks —</div><div class="why">A client that can’t read the stream doesn’t claim to know. Same as today.</div></div>
+  <div class="state"><h5>Thread scope</h5><div class="line"><span class="dot"></span><span class="av g sm">MN</span><span><b>Meeting Notes</b> is replying in a thread · 20s</span></div><div class="why">Work inside an open thread is announced in the thread panel — one claim, one line.</div></div>
+  <div class="state"><h5>Reduced motion</h5><div class="line"><span class="dot" style="box-shadow:none"></span><span class="av g sm">MN</span><span><b>Meeting Notes</b> is working on it · 42s</span></div><div class="why">No pulse, no slide.</div></div>
+</div>
+
+<h4 style="margin-top:16px">3c · What the click does — the peek</h4>
+<div class="grid2 dk">
+  <div>
+    <p class="subtitle" style="margin-bottom:8px">Hover: tooltip with per-agent times. Click / Enter: the pill grows in place into a small card. Esc closes. Never steals focus from the composer.</p>
+    <div class="peek">
+      <div class="peek-row"><div class="av g">MN</div><div style="flex:1"><div class="n">Meeting Notes <span class="t" style="font-weight:400">· working · 1m 04s</span></div><div class="s">Reading <span class="code">standup.md</span> — replying to <u>“can you log today’s decisions?”</u></div><div class="acts"><span class="b">Open its session →</span><span class="b q danger">Stop</span></div></div></div>
+      <div class="peek-row"><div class="av p">PM</div><div style="flex:1"><div class="n">Mio Clicker PM <span class="t" style="font-weight:400">· working · 12s</span></div><div class="s">Replying to <u>your last message</u></div><div class="acts"><span class="b">Open its session →</span><span class="b q danger">Stop</span></div></div></div>
+    </div>
+  </div>
+  <div>
+    <p class="subtitle" style="margin-bottom:8px">People want to know <em>who</em>, <em>how long</em>, <em>what are they answering</em>, and <em>can I do anything</em>. So, per agent, exactly:</p>
+    <ul style="font-size:13px; line-height:1.6; padding-left:18px">
+      <li><strong>Who + how long</strong> — have it.</li>
+      <li><strong>What it’s answering</strong> — link scrolls to the triggering message (we carry <code>entryId</code>).</li>
+      <li><strong>What it’s doing now</strong> — the verb glimpse, if we add the signal.</li>
+      <li><strong>Two actions</strong> — <em>Open its session</em> and <em>Stop</em>. Steering stays in the composer via @mention.</li>
+    </ul>
+    <p class="subtitle">Delight budget, spent carefully: the avatar breathes (soft halo, only while working); the pill grows into the peek instead of popping a menu; the hand-off when the reply arrives. That’s the list.</p>
+  </div>
+</div>
+
+<h4 style="margin-top:16px">3d · How much of the peek ships first?</h4>
+<div class="options">
+  <div class="option" data-choice="peek-1" onclick="toggleSelect(this)"><div class="letter">1</div><div class="content"><h3>Move + click → names, times, jump-to-message, Open session</h3><p>No new server data. Ships fast.</p></div></div>
+  <div class="option" data-choice="peek-2" onclick="toggleSelect(this)"><div class="letter">2</div><div class="content"><h3>1 + Stop + the amber “needs you” state</h3><p>Stop needs a room-level halt on the pill; “needs you” shares the pill with part 2.</p></div></div>
+  <div class="option" data-choice="peek-3" onclick="toggleSelect(this)"><div class="letter">3</div><div class="content"><h3>2 + the verb glimpse (“is reading standup.md”)</h3><p>New presence field: current verb + target, republished with the claim. Small wire change.</p></div></div>
+</div>
+<p class="subtitle">My pick: <strong>B placement, tier 2</strong>; the verb glimpse rides with approvals tier C.</p>
+</div>
+</div>

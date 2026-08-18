@@ -1,0 +1,883 @@
+{
+  "spec": "specs/unified-conversation/02-specification.md",
+  "slug": "unified-conversation",
+  "generatedAt": "2026-08-18T00:45:29Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Row and row kinds",
+      "subject": "[unified-conversation] [P1] Create the features/conversation slice and its model contract",
+      "description": "Create the neutral slice `apps/client/src/layers/features/conversation/` and the model contract every later task in P1–P5 imports. Nothing renders a conversation yet; this task is the types, the context and the moved variants.\n\n## Files to create\n\n- `apps/client/src/layers/features/conversation/model/capabilities.ts`\n- `apps/client/src/layers/features/conversation/model/target.ts`\n- `apps/client/src/layers/features/conversation/model/conversation-context.ts`\n- `apps/client/src/layers/features/conversation/lib/row-kinds.ts`\n- `apps/client/src/layers/features/conversation/ui/ConversationRoot.tsx`\n- `apps/client/src/layers/features/conversation/ui/message/message-variants.ts` — **moved wholesale** from `apps/client/src/layers/features/chat/ui/message/message-variants.ts` (both `messageItem` at :18 and `toolStatus` at :151). Variants are unchanged: `role: user|assistant`, `position: first|middle|last|only`, `density: comfortable|compact`, `anchor: corner|rail`; defaults `assistant / only / comfortable / corner`. No new variant is added in this programme.\n- `apps/client/src/layers/features/conversation/ui/message/message-styles-context.tsx` — a new provider + hook carrying **only** the `messageItem` slot classNames (`root · gutter · avatarTimestamp · body · header · authorName · timestamp · actions · content`). `Message.Root` computes `messageItem({ role, position, density, anchor })` once and publishes the result here; each part reads its own slot.\n- `apps/client/src/layers/features/conversation/index.ts` — the barrel. Every consumer imports from here, never from an internal path.\n\n## The exported types, verbatim\n\n```ts\n/** Which of the three presentations this conversation is. */\nexport type ConversationSurface = 'session' | 'room' | 'dm';\n\n/** What this conversation can do. Behaviour branches on these, never on `surface`. */\nexport interface ConversationCapabilities {\n  /** Emoji reactions on a row. */\n  reactions: boolean;\n  /** Rows can open a thread, and a thread panel exists. */\n  threads: boolean;\n  /** The \"run this with…\" action on a row (session only today). */\n  runWith: boolean;\n  /** The composer accepts files. */\n  attachments: boolean;\n  /** Bodies may contain tool cards, thinking blocks and inline prompts. */\n  toolCards: boolean;\n  /** The composer offers an @mention picker and bodies render mention pills. */\n  mentions: boolean;\n  /** The lane may show presence for other authors. */\n  presence: boolean;\n  /** The lane may show this conversation's own turn status (elapsed, tokens, mode). */\n  turnStatus: boolean;\n  /** The lane may grow an Ask card. */\n  asks: boolean;\n}\n\nexport interface ConversationContextValue {\n  surface: ConversationSurface;\n  capabilities: ConversationCapabilities;\n  target: ConversationTarget;\n  density: 'comfortable' | 'compact';\n  anchor: 'corner' | 'rail';\n}\n\n/** Read the conversation this part belongs to. Throws outside `Conversation.Root`. */\nexport function useConversation(): ConversationContextValue;\n```\n\n`model/target.ts` declares the full `ConversationTarget` interface now, even though `Conversation.Composer` is not built until P4 — the row tasks need `target.id` and the lane needs `target.queueDepth`:\n\n```ts\n/** What the composer needs to send into this conversation. */\nexport interface ConversationTarget {\n  readonly kind: 'session' | 'room';\n  /** Session id or room id. */\n  readonly id: string;\n  /** Placeholder, already phrased for this surface (\"Message #mio…\"). */\n  readonly placeholder: string;\n  /** False while the conversation cannot accept input (archived room, gone session). */\n  readonly canSend: boolean;\n  /** Send now. Rejects rather than silently dropping. */\n  send(draft: ConversationDraft): Promise<void>;\n  /**\n   * Hold for the current turn instead of sending. Absent when the surface has no\n   * queue — a room does not, and `Conversation.Composer` shows no queue chrome\n   * when this is undefined rather than showing a disabled one.\n   */\n  queue?(draft: ConversationDraft): Promise<void>;\n  /** How many drafts are already held. `0` when `queue` is absent. */\n  readonly queueDepth: number;\n  /** Attachment upload + removal, or `null` when `capabilities.attachments` is false. */\n  readonly attachments: ConversationAttachmentPort | null;\n  /** Mention search + insertion, or `null` when `capabilities.mentions` is false. */\n  readonly mentions: ConversationMentionPort | null;\n}\n\nexport interface ConversationDraft {\n  text: string;\n  attachmentIds: readonly string[];\n  /** Set when the draft is a thread reply. */\n  parentEntryId?: string;\n}\n```\n\n`lib/row-kinds.ts` declares the union both surfaces share:\n\n```ts\nexport type ConversationRow =\n  | {\n      kind: 'message';\n      id: string;\n      payload: unknown;\n      grouping: MessageGrouping;\n      author: MessageAuthor;\n      at: string;\n    }\n  | { kind: 'day-divider'; id: string; at: string }\n  | { kind: 'unread-divider'; id: string; count: number }\n  | { kind: 'notice'; id: string; at: string; body: ReactNode }\n  | { kind: 'moment'; id: string; at: string; body: ReactNode }\n  | { kind: 'thread-reply'; id: string; rootId: string; replyCount: number; lastAt: string };\n```\n\n`payload` stays `unknown` on purpose and is only ever handed back to the host's own `renderBody`. Do **not** widen it to a union of `ChatMessage` (`apps/client/src/layers/shared/model/chat-message-types.ts:18`) and `RoomEntry` (`packages/shared/src/room-schemas.ts:850`) — the chrome unifies, the content stays typed at its own end.\n\n## Invariants\n\n- **Layer rule.** This slice may import `entities/room`, `entities/session`, `entities/attention`, `shared/*`, and (for UI composition only) `features/composer`, `features/entry-actions`, `features/ask`. It imports **no widget** and **no other feature's model**. `.claude/rules/fsd-layers.md` makes a violation a lint error.\n- `MessageContext` stays in `features/chat` — it is the session renderer's own context (tool handles, `activeToolCallId`), consumed only by `AssistantMessageContent.tsx:254`. Do not move it.\n- TSDoc on every export (Hard Rule 4, `eslint-plugin-jsdoc`).\n- `features/chat` keeps compiling: re-export `messageItem`/`toolStatus` from the new home for the duration of this task only if `features/chat` still needs them; task 1.5 removes `messageItem`'s export from `apps/client/src/layers/features/chat/index.ts:17`.\n\n## Acceptance\n\n- `pnpm --filter @dorkos/client typecheck` and `pnpm --filter @dorkos/client lint` pass.\n- `pnpm vitest run apps/client/src/layers/features/chat` — existing chat tests unchanged and green after the variants move.\n- `useConversation()` outside a `Conversation.Root` throws with a named message (assert it in 1.6's `Message.test.tsx`).",
+      "activeForm": "Creating the features/conversation slice and its model contract",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": "DOR-1328",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Row and row kinds",
+      "subject": "[unified-conversation] [P1] Build the seven Message.* parts as the one row",
+      "description": "Build the one message row as seven composable parts in `apps/client/src/layers/features/conversation/ui/message/`. `apps/client/src/layers/features/chat/ui/message/MessageItem.tsx` (component at :96, 228 lines) and `apps/client/src/layers/widgets/room-view/ui/RoomEntryRow.tsx` (component at :157, 400 lines) plus its four part files (`RoomEntryHeader.tsx` 171, `RoomEntryBody.tsx` 166, `RoomEntryAttachments.tsx` 137, `RoomEntryActions.tsx` 149) are the two parents. Read all six before writing.\n\n## Files to create\n\n`MessageRoot.tsx`, `MessageGutter.tsx`, `MessageAuthor.tsx`, `MessageBody.tsx`, `MessageAttachments.tsx`, `MessageReactions.tsx`, `MessageActions.tsx` — exported from the slice barrel as:\n\n```ts\nexport const Message = {\n  Root: MessageRoot,\n  Gutter: MessageGutter,\n  Author: MessageAuthor,\n  Body: MessageBody,\n  Attachments: MessageAttachments,\n  Reactions: MessageReactions,\n  Actions: MessageActions,\n};\n```\n\nThe composition a host writes:\n\n```tsx\n<Message.Root role=\"assistant\" position=\"first\" id={row.id}>\n  <Message.Gutter /> {/* avatar rail or corner avatar+timestamp */}\n  <Message.Author /> {/* name + timestamp; hidden when position ≠ first */}\n  <Message.Body>{renderBody(row.payload)}</Message.Body>\n  <Message.Attachments items={row.attachments} />\n  <Message.Reactions /> {/* renders null unless capabilities.reactions */}\n  <Message.Actions /> {/* one hover-action system */}\n</Message.Root>\n```\n\n## Invariants — these are the point of the task\n\n- **No `if (surface === 'room')` and no `surface === 'session'` anywhere under `Conversation.Root`.** Behaviour branches on `useConversation().capabilities` only. Task 1.6 adds a source scan that fails on any hit in `features/conversation/ui/` outside `ConversationRoot.tsx`.\n- `Message.Root` computes `messageItem({ role, position, density, anchor })` **once** and provides the slot classNames through `message-styles-context.tsx`. No part re-computes the variant.\n- `anchor: corner | rail` carries the whole visual difference between the session's corner avatar and the room's avatar rail. `Message.Gutter` reads `anchor` from context; it does not read `surface`.\n- `Message.Reactions` renders `null` when `capabilities.reactions` is false.\n- `Message.Body` renders a tool card only when `capabilities.toolCards`.\n- Every part takes `asChild` (the repo has 188 uses; `Message.Root` and `Message.Author` are the single-element parts that must) and stamps `data-slot` named for the part (`data-slot=\"message-gutter\"`, `\"message-author\"`, `\"message-body\"`, …) — 728 uses in the repo and mandated by `contributing/design-system.md`.\n- TSDoc on every export.\n\n## Acceptance\n\n- `pnpm --filter @dorkos/client typecheck` and `lint` pass.\n- A throwaway render of all seven parts under a `Conversation.Root` with `ROOM_CAPABILITIES` and with `SESSION_CAPABILITIES` produces the two looks. The permanent assertions land in task 1.6 (`Message.test.tsx`) and task 1.7 (the playground matrix); do not leave a scratch file behind.\n- `grep -rn \"surface ===\" apps/client/src/layers/features/conversation/ui/` returns nothing.",
+      "activeForm": "Building the seven Message.* parts",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.3",
+        "1.4"
+      ],
+      "issue": "DOR-1328",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — Row and row kinds",
+      "subject": "[unified-conversation] [P1] Merge the two hover-action systems into features/entry-actions",
+      "description": "There are two hover-action systems today. Merge them into one, with `features/entry-actions` as the survivor.\n\n- Survivor: `apps/client/src/layers/features/entry-actions/` — it already has `EntryActionBar`, `EntryActionMenu`, `EntryReactionRow`, `EntryReactionPicker`, `EntryReactionGrid`, `useEntryActions`, `ENTRY_ACTION_ORDER` and `RovingGroup`, which is the roving keyboard group, the long-press path and the mobile alternates the design system requires.\n- Deleted: `apps/client/src/layers/features/chat/ui/message/RunWithMenu.tsx` (component at :55, 141 lines).\n\n## What to build\n\n1. Add **one** action id, `run-with`, to `ENTRY_ACTION_ORDER` and the action model. Its availability is `capabilities.runWith` — read from `useConversation()` by `Message.Actions`, passed into `useEntryActions` as availability, never derived from a surface string.\n2. `RunWithMenu.tsx`'s popover body becomes that action's content. Move the markup and its handlers across unchanged; do not re-design the menu in this task.\n3. `Message.Actions` (task 1.2) composes its menu from the capabilities: `runWith` adds the `run-with` item, `threads` adds \"Reply in thread\", `reactions` adds the emoji row. Nothing else decides what is in the menu.\n4. Delete `RunWithMenu.tsx` and its export from `features/chat`'s barrel in this task, not later.\n\n## Invariants\n\n- The link-safety context menu behaviour that `RoomEntryActions.tsx` and `MessageItem.tsx` rely on must survive — the reviewer's browser check for this phase right-clicks a link in each surface.\n- Mobile alternates and the long-press path come from `features/entry-actions` and are not re-implemented.\n- `features/conversation` may import `features/entry-actions` for UI composition; it must not import its model into a `features/conversation/model/*` file.\n\n## Acceptance\n\n- `pnpm vitest run apps/client/src/layers/features/entry-actions` green, extended with a case asserting `run-with` is present when `runWith: true` and absent when false.\n- `grep -rn \"RunWithMenu\" apps/client/src` returns nothing.\n- `pnpm --filter @dorkos/client typecheck` and `lint` pass.",
+      "activeForm": "Merging the two hover-action systems",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.2",
+        "1.4"
+      ],
+      "issue": "DOR-1328",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P1 — Row and row kinds",
+      "subject": "[unified-conversation] [P1] Move the non-message rows and the one time formatter into the slice",
+      "description": "Bring the five non-message row kinds and the single time formatter into `features/conversation`, deleting both old homes.\n\n## Files to create\n\n`apps/client/src/layers/features/conversation/ui/rows/`:\n\n- `DayDivider.tsx` and `UnreadDivider.tsx` — moved from `apps/client/src/layers/features/chat/ui/message/{DayDivider,UnreadDivider}.tsx`.\n- `NoticeRow.tsx` — from `apps/client/src/layers/widgets/room-view/ui/RoomNoticeRow.tsx` (component at :171, 198 lines).\n- `MomentRow.tsx` — from `RoomMomentRow.tsx` (component at :84, 160 lines).\n- `ThreadReplyRow.tsx` — from `RoomThreadReplyRow.tsx` (component at :44, 140 lines).\n\n`apps/client/src/layers/features/conversation/lib/format-entry-time.ts` — the one time formatter, from `apps/client/src/layers/widgets/room-view/lib/entry-time.ts` (`formatTime` :20, `formatAbsoluteTime` :39). Every consumer of the old module moves to this one.\n\n`PendingRow.tsx` is **not** in this task — it lands in P4 with the timeline's `pending` prop.\n\n## Deletions in this task\n\n`features/chat/ui/message/DayDivider.tsx`, `features/chat/ui/message/UnreadDivider.tsx`, `widgets/room-view/ui/RoomNoticeRow.tsx`, `widgets/room-view/ui/RoomMomentRow.tsx`, `widgets/room-view/ui/RoomThreadReplyRow.tsx`, `widgets/room-view/lib/entry-time.ts` — plus their barrel exports. Nothing is left behind a flag or kept \"just in case\".\n\n## Invariants\n\n- The rows render the copy they render today, word for word. This is a move, not a rewrite: no notice sentence, moment sentence or divider label changes in P1.\n- Each row reads `capabilities` where it must (`ThreadReplyRow` is only ever rendered when `capabilities.threads`), never `surface`.\n- `data-slot` on each row's root, named for the row (`data-slot=\"notice-row\"` …), and any `data-testid` the shipped browser tests already target is preserved exactly — `tests/rooms/room-conversation.spec.ts` and `room-sheet.spec.ts` must stay green unchanged.\n\n## Acceptance\n\n- `grep -rn \"entry-time\" apps/client/src` resolves only to `features/conversation/lib/format-entry-time.ts`.\n- `pnpm vitest run apps/client/src/layers/widgets/room-view apps/client/src/layers/features/chat` green.\n- `pnpm --filter @dorkos/client typecheck` and `lint` pass.",
+      "activeForm": "Moving the non-message rows and the time formatter",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.2",
+        "1.3"
+      ],
+      "issue": "DOR-1328",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "P1 — Row and row kinds",
+      "subject": "[unified-conversation] [P1] Wire both hosts to Message.* and delete the two old rows",
+      "description": "Make `widgets/session` and `widgets/room-view` render `Message.*` inside their **existing** lists (`MessageList.tsx` and `RoomTimeline.tsx` both stay until P4), and delete everything the shared row replaces.\n\n## Capability objects — declared by each host, as module constants\n\n`apps/client/src/layers/widgets/session/model/session-capabilities.ts`:\n\n```ts\nexport const SESSION_CAPABILITIES: ConversationCapabilities = {\n  reactions: false,\n  threads: false,\n  runWith: true,\n  attachments: true,\n  toolCards: true,\n  mentions: false,\n  presence: false,\n  turnStatus: true,\n  asks: true,\n};\n```\n\n`apps/client/src/layers/widgets/room-view/model/room-capabilities.ts`:\n\n```ts\nexport const ROOM_CAPABILITIES: ConversationCapabilities = {\n  reactions: true,\n  threads: true,\n  runWith: false,\n  attachments: true,\n  toolCards: false,\n  mentions: true,\n  presence: true,\n  turnStatus: false,\n  asks: true,\n};\n/** A DM is a room whose kind changes naming only, so it shares the room's capabilities. */\nexport const DM_CAPABILITIES = ROOM_CAPABILITIES;\n```\n\nThat table is the whole of \"what is different between the surfaces\". Nothing else in the tree may encode it.\n\n## The body renderers\n\nTwo implementations, each owned by its host widget, both new files:\n\n- `apps/client/src/layers/widgets/session/ui/render-session-body.tsx` — renders `MessagePartSchema` parts (`packages/shared/src/schemas.ts:2370`) through the existing `features/chat` components: `AssistantMessageContent`, `UserMessageContent`, `StreamingText`, `ThinkingBlock`, `ToolCallCard`, `SubagentBlock`, `MemoryRecallBlock`, `McpSigninCard`, `ErrorMessageBlock`, `CompactBoundaryRow`, `OutputRenderer`, and the three inline prompts (which move to `features/ask` in P3 — leave the current imports alone here).\n- `apps/client/src/layers/widgets/room-view/ui/render-room-body.tsx` — renders `RoomEntrySchema.body` through `MarkdownContent` (`shared/ui`, imported at `RoomEntryBody.tsx:20`, rendered :141) plus `buildMentionComponents` (`MentionPillRenderer`, :29) and `widgets/room-view/lib/mention-markup.ts`.\n\nBoth satisfy:\n\n```ts\n/** Turns one message row's opaque payload into its rendered body. */\nexport type ConversationBodyRenderer = (payload: unknown, ctx: BodyRenderContext) => ReactNode;\n\nexport interface BodyRenderContext {\n  /** The row this body belongs to. */\n  rowId: string;\n  /** True while this row is the streaming tail. */\n  isStreaming: boolean;\n}\n```\n\nNeither renderer knows about the other, and `features/conversation` imports neither.\n\n## Deletions — all in this task\n\n`features/chat/ui/message/MessageItem.tsx` (228), `widgets/room-view/ui/RoomEntryRow.tsx` (400), `RoomEntryHeader.tsx` (171), `RoomEntryAttachments.tsx` (137), `RoomEntryActions.tsx` (149), `RoomEntryBody.tsx` (166, replaced by `render-room-body.tsx`), and `messageItem`'s export from `apps/client/src/layers/features/chat/index.ts:17`. Note that rooms never imported `messageItem` — `MessageItem.tsx:143` was its one consumer — so this unification **creates** the shared row rather than completing it.\n\n## Invariants\n\n- Rows must look **exactly** as they do today on both surfaces. This phase is a refactor with no visual delta; a pixel change is a bug in this task, not an improvement.\n- Every `data-testid` the shipped browser suites target keeps its name and its position in the tree.\n- No `surface ===` check enters `features/conversation`.\n\n## Acceptance\n\n- `pnpm vitest run apps/client/src/layers/widgets/room-view apps/client/src/layers/features/chat apps/client/src/layers/widgets/session` green.\n- `pnpm --filter @dorkos/client typecheck` and `lint` pass.\n- `pnpm knip` reports no new orphan.\n- `grep -rn \"RoomEntryRow\\|MessageItem\" apps/client/src` returns nothing.",
+      "activeForm": "Wiring both hosts to Message.* and deleting the old rows",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2",
+        "1.3",
+        "1.4"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1328",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "1.6",
+      "phase": 1,
+      "phaseName": "P1 — Row and row kinds",
+      "subject": "[unified-conversation] [P1] Test the row: capability gating, data-slots, row kinds, and the surface-switch scan",
+      "description": "Three test files, each with a named seeded defect that turns it red. House rule `.claude/rules/testing.md`: a check that cannot fail is worse than none.\n\n## 1. `apps/client/src/layers/features/conversation/__tests__/Message.test.tsx` (RTL + jsdom)\n\n- With `capabilities.reactions: false`, the reactions slot renders nothing. **Seeded defect:** make `Message.Reactions` render unconditionally → red.\n- With `capabilities.runWith: false`, the `run-with` action is absent from the menu; with `true` it is present. **Seeded defect:** hard-code the action in → red.\n- Every part stamps its `data-slot` (`message-root`, `message-gutter`, `message-author`, `message-body`, `message-attachments`, `message-reactions`, `message-actions`).\n- `useConversation()` outside `Conversation.Root` throws.\n- `anchor: 'rail'` and `anchor: 'corner'` produce different gutter class output from the same `messageItem` call.\n\n## 2. `apps/client/src/layers/features/conversation/__tests__/no-surface-switches.test.ts` (source scan)\n\nA source scan in the manner of `apps/server/src/services/core/__tests__/sse-event-allowlist.test.ts`: read every file under `apps/client/src/layers/features/conversation/ui/`, grep for `surface ===`, and fail on any hit outside `ConversationRoot.tsx`. This is the one mechanical guarantee that the capability-flag decision survives contact. **Seeded defect:** add `surface === 'room'` to a row → red.\n\n## 3. `apps/client/src/layers/features/conversation/lib/__tests__/row-kinds.test.ts`\n\n`buildTimelineRows` (`apps/client/src/layers/shared/lib/group-timeline.ts:219`, already surface-neutral) output maps to the six `ConversationRow` kinds; day and unread dividers land where `unreadPlacement` (:96) says. **Seeded defect:** change `GROUP_GAP_MS` (:22) → the grouping assertions go red.\n\n## Regression net\n\nThe existing room and chat suites must be green **unchanged** — no test edited to accommodate the refactor. If a test needs editing, the refactor moved something it should not have.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/client/src/layers/features/conversation\npnpm vitest run apps/client/src/layers/features/chat apps/client/src/layers/widgets/room-view\npnpm --filter @dorkos/client typecheck\n```",
+      "activeForm": "Testing the row and the surface-switch scan",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.5"
+      ],
+      "parallelWith": [
+        "1.7",
+        "1.8"
+      ],
+      "issue": "DOR-1328",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "1.7",
+      "phase": 1,
+      "phaseName": "P1 — Row and row kinds",
+      "subject": "[unified-conversation] [P1] Show the Message.* matrix in the Dev Playground",
+      "description": "The `maintaining-dev-playground` skill requires playground parity on every UI change. P1 replaces the row on both surfaces, so the row's showcase is rewritten against `Message.*` **on the existing `chat` page** — the page rename and the five-section restructure are P5's work and must not be started here.\n\n## What to change\n\n- Rewrite `apps/client/src/dev/showcases/MessageShowcases.tsx` against `Message.*` rendered inside a `Conversation.Root`. Delete the recreations of the old row; render the real parts.\n- Show the matrix: `anchor` (corner × rail) × `role` (user × assistant) × `density` (comfortable × compact) × capabilities (reactions on/off, threads on/off, run-with on/off, tool cards on/off). One `Conversation.Root` per capability object; the same fixture rows through each.\n- Add showcases for the moved rows: `DayDivider`, `UnreadDivider`, `NoticeRow`, `MomentRow`, `ThreadReplyRow`.\n- Register every new section in `apps/client/src/dev/sections/chat-sections.ts` (each entry keeps `page: 'chat'` for now) and, where a room-only row's showcase already lives on the Rooms page, retire the duplicate rather than keeping two.\n- Reuse existing fixtures from `apps/client/src/dev/mock-chat-data.ts`, `mock-factories.ts`, `mock-samples.ts` and `showcases/rooms-showcase-data.ts`. Do not invent a second fixture set.\n\n## Invariants\n\n- Each section's `id` must equal `slugify(title)` and be unique — `apps/client/src/dev/__tests__/playground-registry.test.ts` asserts both, plus that every rendered section is registered and every registered section is rendered.\n- The showcase renders the **actual** component, never a recreation. A recreation here would hide exactly the regression this section exists to catch.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts\npnpm vitest run apps/client/src/dev/__tests__\n```\n\nAnd open `/dev/chat` in the running cockpit: the matrix renders, the room capability column shows reactions and no Run with, the session column shows Run with and no reactions.",
+      "activeForm": "Showing the Message.* matrix in the Dev Playground",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "1.5"
+      ],
+      "parallelWith": [
+        "1.6",
+        "1.8"
+      ],
+      "issue": "DOR-1328",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "1.8",
+      "phase": 1,
+      "phaseName": "P1 — Row and row kinds",
+      "subject": "[unified-conversation] [P1] Write the phase 1 changelog fragment",
+      "description": "One fragment per phase, per `changelog/README.md`.\n\n## The rule (do not pre-allocate the id)\n\n- Mint the id **at execution time**: `node --experimental-strip-types .claude/scripts/id.ts` prints a `YYMMDD-HHMMSS` UTC timestamp id.\n- File: `changelog/unreleased/<id>-<kebab-slug>.md`. The slug is 2–6 words, lowercase with hyphens.\n- Body: optional `covers:` frontmatter, then one or more Keep a Changelog headings (`### Added`, `### Changed`, `### Removed`, `### Fixed`, `### Security`) with markdown bullets.\n- `covers:` items name commits by exact subject line (quoted, because a subject contains `: ` which YAML would read as a key) or by SHA. The `post-commit` hook usually writes this for you; curate the prose, leave the frontmatter alone.\n- Never edit `CHANGELOG.md`.\n\n## What this fragment says\n\nP1 is a refactor: one row implementation instead of two, with no visual change. Judge it by the `writing-changelogs` audience test — does someone **operating** DorkOS notice? If the honest answer for this PR is no, the right move is the `skip-changelog` label rather than an invented user benefit. If any behaviour did change for a user (for example, the room and session hover menus becoming one system with the same keyboard handling), say that in plain words: benefit first, no jargon, no em dashes, per `.claude/rules/user-facing-writing.md` and the `writing-for-humans` skill.\n\nExample shape only — write your own bullets:\n\n```markdown\n### Changed\n\n- Message rows in channels and sessions now share one hover menu, so the same keys work in both (#<pr>)\n```\n\n## Acceptance (run it)\n\n```\npython3 .claude/scripts/changelog_backfill.py --check\n```\n\nGreen, with no fragment reported unaccounted for on this branch.",
+      "activeForm": "Writing the phase 1 changelog fragment",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "1.5"
+      ],
+      "parallelWith": [
+        "1.6",
+        "1.7"
+      ],
+      "issue": "DOR-1328",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "1.9",
+      "phase": 1,
+      "phaseName": "P1 — Row and row kinds",
+      "subject": "[unified-conversation] [P1] Phase 1 acceptance: the reviewer's browser check",
+      "description": "The phase is not done until this passes in a real browser against a running cockpit, and the whole verification ladder is green.\n\n## The spec's Reviewer's browser check for P1, verbatim\n\n> Open `/channels` and `/session` side by side. Rows look exactly as they did. Hover a room row: reactions, thread reply and the kebab all work. Hover a session row: **Run with** works and there is no reactions row. Right-click a link in each: the link-safety menu is intact.\n\nRun it as written. \"Rows look exactly as they did\" is the load-bearing claim of this phase: compare against `main` in a second window rather than from memory.\n\n## Also required before the PR opens\n\n```\npnpm verify\npnpm knip\npnpm vitest run apps/client/src/layers/features/conversation\npnpm --filter @dorkos/e2e test -- tests/rooms/room-conversation.spec.ts tests/rooms/room-entry-actions.spec.ts tests/rooms/room-reactions.spec.ts\n```\n\n- `pnpm knip` reports **no new orphan** — a phase is not done while it does.\n- The deletion list for P1 is complete: `grep -rn \"MessageItem\\|RoomEntryRow\\|RoomEntryHeader\\|RoomEntryAttachments\\|RoomEntryActions\\|RoomEntryBody\\|RunWithMenu\\|RoomNoticeRow\\|RoomMomentRow\\|RoomThreadReplyRow\" apps/client/src` returns nothing.\n- The changelog fragment exists (task 1.8) or the PR carries `skip-changelog`.\n- An adversarial review against `REVIEW.md` has run on the branch **before** the PR opens.\n\n## The one thing a reviewer should try to break\n\nFind a behaviour difference between the two surfaces that is not explained by an entry in `SESSION_CAPABILITIES` / `ROOM_CAPABILITIES`. If one exists, a surface check survived somewhere the source scan does not reach.",
+      "activeForm": "Running the phase 1 acceptance check",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "1.6",
+        "1.7",
+        "1.8"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1328",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — The live lane, the peek, and the placement move",
+      "subject": "[unified-conversation] [P2] Build deriveLaneState, absorbing the session's strip-state",
+      "description": "`apps/client/src/layers/features/conversation/model/lane-state.ts` — a pure function, no React, modelled on `deriveStripState` (`apps/client/src/layers/features/chat/ui/status/strip-state.ts`), which it absorbs and which is deleted in task 2.5.\n\n## The type, verbatim\n\n```ts\nexport type LaneState =\n  | { kind: 'ask'; ask: InteractionPendingEvent; count: number }\n  | { kind: 'stalled' }\n  | {\n      kind: 'presence';\n      sentence: string;\n      authorIds: readonly string[];\n      since: string;\n      late: boolean;\n    }\n  | { kind: 'turn-waiting'; waitingType: 'approval' | 'question'; elapsed: string }\n  | { kind: 'turn-progress'; message: string; determinate: boolean; percent: number | null }\n  | { kind: 'turn-system'; message: string }\n  | {\n      kind: 'turn-streaming';\n      verb: string;\n      verbKey: string;\n      elapsed: string;\n      tokens: string;\n      isBypass: boolean;\n    }\n  | { kind: 'turn-complete'; elapsed: string; tokens: string }\n  | { kind: 'queued'; depth: number }\n  | { kind: 'empty' };\n\nexport function deriveLaneState(input: LaneStateInput): LaneState;\n```\n\n`InteractionPendingEvent` does not exist until P3. In P2, type the `ask` rung against a local placeholder that P3 replaces with the real import from `@dorkos/shared/interaction-events`, and leave the rung unreachable (its input is always empty) — the rung goes live in P3 task 3.8. Say so in a TSDoc line so a cold reader does not read it as dead code.\n\n## Priority, first match wins\n\n| #   | State            | Gate                      | Source                                                                                                    |\n| --- | ---------------- | ------------------------- | --------------------------------------------------------------------------------------------------------- |\n| 1   | `ask`            | `capabilities.asks`       | `usePendingInteractions()` filtered to this conversation (`sessionId` for a session, `roomId` for a room) |\n| 2   | `stalled`        | always                    | the surface's own stream state (`use-room-stream`'s `stalled`; the session's `syncConnectionState`)       |\n| 3   | `presence`       | `capabilities.presence`   | `useRoomPresence(roomId, scope)` (`entities/room/model/use-room-presence.ts:341`)                          |\n| 4   | `turn-waiting`   | `capabilities.turnStatus` | today's `deriveStripState` priority 1                                                                     |\n| 5   | `turn-progress`  | `capabilities.turnStatus` | priority 2 (compaction and friends)                                                                       |\n| 6   | `turn-system`    | `capabilities.turnStatus` | priority 3                                                                                                |\n| 7   | `turn-streaming` | `capabilities.turnStatus` | priority 4 — verb through `activityVerb`, elapsed, tokens, the bypass warning                             |\n| 8   | `turn-complete`  | `capabilities.turnStatus` | priority 5, auto-dismisses                                                                                |\n| 9   | `queued`         | `target.queueDepth > 0`   | the composer's own queue                                                                                  |\n| 10  | `empty`          | —                         | —                                                                                                         |\n\nThree rungs are deliberate and must not be collapsed:\n\n- **`stalled` beats `presence`** — a client that cannot read the stream must not claim to know who is working (`specs/room-presence` §5.4). The presence store is **cleared**, not merely hidden.\n- **`ask` beats `stalled`** — an Ask already in hand is still true and still answerable when the stream goes quiet; its countdown runs off `startedAt`, not off the wire.\n- **`turn-waiting` survives even though rung 1 exists** — rung 1 is \"there is an Ask object here you can answer\"; rung 4 is \"this session's turn is parked\" with no DTO in hand (a capability hold, or a runtime that reported `blocked` without a prompt). Collapsing them makes the second silently invisible.\n\n## Presence content, unchanged in words\n\n`presenceSentence(names, state)` (`entities/room/lib/presence-copy.ts:71-76`) at one to three names; `presenceCountSentence(count, state)` (:89-92) above that; elapsed from the oldest claim's `since`; **no timer under 10 s**.\n\n## Acceptance\n\n`apps/client/src/layers/features/conversation/model/__tests__/lane-state.test.ts` is written in task 2.6, but this task must leave the function testable: pure, no hooks, no clock read except an injected `now`.\n\n```\npnpm --filter @dorkos/client typecheck\npnpm --filter @dorkos/client lint\n```",
+      "activeForm": "Building deriveLaneState",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.9"
+      ],
+      "parallelWith": [
+        "2.2"
+      ],
+      "issue": "DOR-1329",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "P2 — The live lane, the peek, and the placement move",
+      "subject": "[unified-conversation] [P2] Build Conversation.LiveLane with its fixed height and one live region",
+      "description": "`apps/client/src/layers/features/conversation/ui/LiveLane.tsx` — one reserved, fixed-height line, mounted by the host as a **flex sibling of the scroller**, directly above `Conversation.Composer`. Never inside the scrolling element: `apps/client/src/layers/widgets/room-view/ui/RoomSurface.tsx:36-46` documents why in full — a height change inside the scroller moves `scrollHeight` under `useStickToBottom`, which un-pins a reader who never scrolled.\n\n## Geometry — the guarantee is that the number is constant\n\n| Property   | Value                                                                            | Why                                                                                                                                                                                               |\n| ---------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Height     | **fixed `h-6` (24 px), never `min-h`**                                           | 24 px is the smallest step on the spacing scale that gives a 12 px line a 4 px optical gutter either side; the mockup's ~22 px is not on the scale                                                |\n| Typography | `text-xs` (12/16), `text-secondary`, agent names `text-primary font-medium`      | matches `ChatStatusStrip` and `RoomPresenceLine` today                                                                                                                                            |\n| Padding    | `px-3`, matching the composer's own inset                                        | the lane reads as the composer's shoulder, not a band                                                                                                                                             |\n| Overflow   | `flex items-center gap-2 overflow-hidden`, the text node `truncate`              | **it never wraps**; the peek carries what is cut                                                                                                                                                  |\n| Empty      | an empty div of the same height, `aria-hidden=\"true\"`, no border, no placeholder | a quiet room looks quiet                                                                                                                                                                          |\n| Mobile     | identical height and rules                                                       | a lane that grew on a phone would break the one property it exists for                                                                                                                            |\n\nMounted **once per conversation surface**. `RoomThreadPanel.tsx` composes its own `Conversation.Root` and therefore its own lane, scoped to the thread.\n\n## Motion budget — nothing new is invented\n\n- Lane content changes: `AnimatePresence mode=\"wait\"` crossfade, **150–200 ms**, keyed on the state's discriminant **plus its label** (`verbKey`'s existing trick, so it animates on a real change and stays still otherwise).\n- Working dot: the shipped `STATUS_DOT_PULSE` (`shared/ui/status-dot.ts`), `motion-safe:animate-pulse`. Nothing else in the lane moves.\n- Reply hand-off: lane content fades **160 ms** while the reply rises.\n- Reduced motion: `useReducedMotion()` and branch **off**, not shorter. The end states all read statically.\n\n## Accessibility — these are hard requirements\n\n- The lane is `role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"` **on its text node only**, replacing `RoomPresenceLine`'s announcer (:103-107) one for one — same politeness, same atomicity, and the same `data-testid` split by scope (`room-presence-announcer` / `thread-presence-announcer`) so the shipped browser tests keep their handles.\n- **Asks are announced by the existing approval announcer**, not by the lane (`useApprovalAnnouncer`, region at `MessageList.tsx:522-527`). Two live regions both announcing an Ask is the siren the sidebar's contract forbids.\n- **Counts, not verbs.** The lane announces the sentence it shows and nothing more; it never announces elapsed ticks.\n- **One tab stop.** Enter or Space opens the peek (or the Ask card); Escape closes and returns focus to the lane. When `empty` it is `tabIndex={-1}` and `aria-hidden` and out of the tab order.\n- Focus-visible parity: the hover tint step has an explicit `focus-visible:` twin.\n- Colour is never the sole indicator: the amber Ask state carries the word **Answer**; the working dot is paired with the sentence.\n\n## Performance\n\nThe elapsed tick re-renders the lane once a second while a turn runs, as `ChatStatusStrip` does today. It is a leaf: the tick lives **inside the lane's text node**, not in `Conversation.Root`, so the timeline never re-renders for it.\n\n## Copy — new strings only\n\n`{agent} needs your OK to {verb} {target}` · `Answer` · `1 queued` / `{n} queued`. Everything else is existing copy, verbatim.\n\n## Acceptance\n\n```\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\n```\n\nLane rendering is asserted for **content**, never for height — jsdom reports every element as 0 × 0, and a unit test that implied otherwise would be one of the vacuous shapes `.claude/rules/testing.md` catalogues. The height claim is the browser test in task 2.6.",
+      "activeForm": "Building Conversation.LiveLane",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.3"
+      ],
+      "issue": "DOR-1329",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "P2 — The live lane, the peek, and the placement move",
+      "subject": "[unified-conversation] [P2] Add GET /api/rooms/:id/sessions and its client query",
+      "description": "The one server change in P2. \"Open its session\" in the peek needs the room-author → session mapping, which `GET /api/rooms/:id` does **not** carry (verified: `RoomWithRoster` has no `sessionId` on the room, the member, or the roster entry), and which `specs/room-presence` §15 deliberately kept off the presence signal — _\"the in-flight version waits for a design that checks the caller's right to it.\"_ This is that design.\n\n## The route\n\n```\nGET /api/rooms/:id/sessions\n→ 200 { bindings: { authorId: string; sessionId: string }[] }\n```\n\n- Registered in `apps/server/src/routes/rooms.ts`, beside `GET /:id` (:138).\n- Resolve the caller with `resolveCaller(res)`, then `requireVisibleRoom(roomId, caller.id)` — so a room the caller cannot see answers **404**, exactly as `getRoom` does — and then `requirePersonAuthor(caller.id, \"see where a room's work runs\")`, so an agent cannot enumerate other agents' sessions.\n- Body from `RoomSessionLedger.list()` (`apps/server/src/services/rooms/room-session-ledger.ts:97`) filtered to the room. **Ids only**: no session content, no cwd, no status. That is the minimum that makes a link, and the security claim of the route.\n- Add the response schema with `.openapi(...)` alongside the other room schemas so `pnpm docs:export-api` picks it up. Regenerating `docs/api/openapi.json` may be left to P5's docs task; if you regenerate here, do it in the same commit as the route.\n\n## The client query\n\n`apps/client/src/layers/entities/room/api/use-room-sessions.ts` — a TanStack Query keyed `['room-sessions', roomId]`, **fetched when the peek opens, not on room mount**: it is only ever needed by that affordance, and it is cached per room. Export it from `entities/room`'s barrel.\n\nThe link is `/session?session={sessionId}` and is **absent, not disabled**, for an author with no binding.\n\n## Invariants\n\n- No new field goes on the presence wire. `RoomSignalEventSchema` is unchanged by this task and by this whole spec.\n- Express 5 routing: this is a `/:id/…`-shaped route so it does not collide with `GET /:id`; do not reorder existing routes.\n\n## Acceptance\n\nThe route test is task 2.6's `apps/server/src/routes/__tests__/rooms-sessions.test.ts`. This task must leave it writable:\n\n```\npnpm --filter @dorkos/server typecheck\npnpm --filter @dorkos/server lint\npnpm --filter @dorkos/client typecheck\n```",
+      "activeForm": "Adding the room-sessions route and its client query",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.9"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2"
+      ],
+      "issue": "DOR-1329",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "P2 — The live lane, the peek, and the placement move",
+      "subject": "[unified-conversation] [P2] Build the LivePeek, with the honest Stop",
+      "description": "`apps/client/src/layers/features/conversation/ui/LivePeek.tsx`, opened by clicking or pressing Enter on the lane's presence content. Built on `ResponsivePopover` (`apps/client/src/layers/shared/ui/responsive-popover.tsx`) so it is a popover on a desktop and a bottom sheet on a phone, with no second implementation.\n\nOne row per working agent:\n\n```\n[face]  Meeting Notes · working · 1m 04s\n        Replying to \"can you log today's decisions?\"        ← link, scrolls to the entry\n        [ Open its session → ]  [ Stop ]\n```\n\n## Where each piece comes from\n\n- **Who, state, elapsed** — the presence store's `summarize` (`entities/room/model/use-room-presence.ts:297`), which already collapses several claims per author into one row at the oldest `since`. No new data.\n- **\"Replying to …\"** — the presence record carries `entryId`. The **host widget** passes `resolveRowExcerpt(entryId)` (it already holds the timeline rows) and the link calls `timelineRef.current.scrollToRow(entryId, { flash: true })`. In P2 the timeline is still `RoomTimeline`/`MessageList`; expose the same `scrollToRow(rowId, { flash })` handle from whichever list is mounted, so P4's `ConversationTimelineHandle` is a drop-in. No server data.\n- **\"Open its session\"** — `useRoomSessions(roomId)` from task 2.3, fetched on open. Absent, not disabled, when the author has no binding.\n\n## Stop — honest, and why it is the room-wide halt\n\nA per-agent stop cannot be built honestly in this phase:\n\n- Calling `POST /api/sessions/:id/interrupt` (`routes/sessions.ts:943`) directly would bypass the room's halt bookkeeping. `RoomTriggerDispatcher.halt` (`apps/server/src/services/rooms/room-trigger.ts:2386`) marks `haltedTurns` **before its first `await`** precisely because a turn whose stream closes while halt is still delivering interrupts must find the mark already there, or it posts the answer Stop was pressed to prevent — the two-second race measured on 2026-08-15.\n- A genuine per-author halt is not a filter on that function: `halt` also writes one `halted` notice for the whole room (`reportHalted(room, claims.length)`) and drops the room's entire gather buffer.\n\nSo:\n\n| Working agents | What the peek offers                                                                                  |\n| -------------- | ----------------------------------------------------------------------------------------------------- |\n| exactly one    | a **Stop** button on that row. It calls `haltRoom` and stops that agent, because it is the only one.  |\n| two or more    | no per-row Stop. One footer action, **Stop everything in this room**, with the count (\"Stops all 3\"). |\n\nStop is wired to the shipped `entities/room/model/use-halt-room.ts`. The **session** surface's peek has **no** Stop: the session composer already has one, and a second would be two buttons for one verb.\n\n## Copy, verbatim\n\n`working` · `still working` · `Open its session` · `Stop` · `Stop everything in this room` (`Stops all {n}`).\n\n## Motion and focus\n\n`ResponsivePopover`'s own entrance; nothing added. The peek **never steals focus from the composer**. Escape closes it and returns focus to the lane.\n\n## Acceptance\n\nBrowser assertions land in task 2.6 (`peek.spec.ts`).\n\n```\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\n```",
+      "activeForm": "Building the LivePeek",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.2",
+        "2.3"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1329",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "2.5",
+      "phase": 2,
+      "phaseName": "P2 — The live lane, the peek, and the placement move",
+      "subject": "[unified-conversation] [P2] Mount the lane on both surfaces and delete the two old status lines",
+      "description": "Move the \"what is happening\" line to one place on both surfaces, and delete everything it replaces. This is the task that makes P2 visible.\n\n## Mounting\n\n- `apps/client/src/layers/widgets/room-view/ui/RoomSurface.tsx` (component :108, 378 lines) mounts `Conversation.LiveLane` as a flex sibling of the scroller, directly above the composer. Its `aboveTimeline` (:47) and `aboveComposer` (:61) slots keep their documented rule — chrome is a flex sibling, never inside the scroller.\n- `apps/client/src/layers/widgets/room-view/ui/RoomThreadPanel.tsx` mounts its own lane, scoped to the thread (the `thread-presence-announcer` testid).\n- `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` — the session mounts the lane where `ChatStatusStrip` is mounted today (:416), with `SESSION_CAPABILITIES`, so it carries elapsed, tokens, the permission-mode warning, operation progress and the completed flash.\n\n## Deletions — all in this task\n\n- `apps/client/src/layers/features/chat/ui/status/ChatStatusStrip.tsx` (171)\n- `apps/client/src/layers/features/chat/ui/status/strip-state.ts` (absorbed by `lane-state.ts` in task 2.1)\n- `apps/client/src/layers/widgets/room-view/ui/RoomPresenceLine.tsx` (165)\n- `apps/client/src/layers/widgets/room-view/ui/RoomStalledNotice.tsx`\n- the under-composer placement **and its comments** in `RoomSurface.tsx:283-310` and `RoomThreadPanel.tsx:419,438`\n\n**`ChatStatusSection` is NOT deleted and NOT folded into the lane.** `apps/client/src/layers/features/chat/ui/status/ChatStatusSection.tsx` (component :84, 571 lines) is the composer's model / permission-mode / git / runtime-chip status **line**, built on `features/status`' `StatusLine` and mounted inside the composer card at `ChatInputContainer.tsx:515`. It is not a busy indicator. It stays exactly where it is in P2 and becomes `Conversation.Footer` content, unchanged, in P4.\n\n## The placement move is a supersession, recorded\n\n`specs/room-presence` §5.1 put the presence line **under** the composer on purpose. That clause is superseded here, and ADR `260818-002806` carries the supersession machine-readably. Do not edit `specs/room-presence/02-specification.md`.\n\n## Invariants\n\n- The announcer moves one for one: same politeness (`polite`), same `aria-atomic`, same `data-testid` per scope. `tests/rooms/room-presence.spec.ts` and `room-presence-sidebar.spec.ts` must stay green **unchanged**.\n- Presence is **cleared**, not hidden, when the stream stalls.\n- No `surface ===` check enters `features/conversation`.\n\n## Acceptance\n\n```\npnpm vitest run apps/client/src/layers/widgets/room-view apps/client/src/layers/features/chat\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\npnpm knip\ngrep -rn \"ChatStatusStrip\\|RoomPresenceLine\\|RoomStalledNotice\\|strip-state\" apps/client/src   # returns nothing\n```",
+      "activeForm": "Mounting the lane and deleting the old status lines",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.2"
+      ],
+      "parallelWith": [
+        "2.4"
+      ],
+      "issue": "DOR-1329",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "2.6",
+      "phase": 2,
+      "phaseName": "P2 — The live lane, the peek, and the placement move",
+      "subject": "[unified-conversation] [P2] Test the lane: the full priority table, the route, and the two browser claims",
+      "description": "Four test files. Every one names the seeded defect that turns it red.\n\n## 1. `apps/client/src/layers/features/conversation/model/__tests__/lane-state.test.ts`\n\nThe full priority table of the spec's §5.2, **rung by rung**, including `ask` over `stalled` and `stalled` over `presence`, plus each capability flag gating its rung (`presence` returns `empty` when `capabilities.presence` is false; the five `turn-*` rungs return `empty` when `capabilities.turnStatus` is false; `queued` needs `target.queueDepth > 0`). **Seeded defect:** swap rungs 2 and 3 → the stalled-beats-presence case goes red.\n\nAlso assert: no timer under 10 s in the presence sentence; `presenceCountSentence` above three names; elapsed taken from the **oldest** claim's `since`.\n\n## 2. `apps/server/src/routes/__tests__/rooms-sessions.test.ts` (new)\n\n`GET /api/rooms/:id/sessions`:\n\n- answers bindings for a member,\n- **404s** for a room the caller cannot see,\n- refuses an agent caller. **Seeded defect:** drop `requirePersonAuthor` → the agent row goes red.\n\n## 3. `apps/e2e/tests/conversation/lane-no-shift.spec.ts` (new)\n\nThe browser-only claim; the reserved lane is exactly the property jsdom cannot see. Open a room with history, scroll to a known offset, record `scrollTop` **and the first visible row's bounding box**, publish a presence signal using the injector in `apps/e2e/tests/rooms/room-signals.ts`, then assert **both are unchanged** while the lane's text node is non-empty.\n\n## 4. `apps/e2e/tests/conversation/peek.spec.ts` (new)\n\nTwo agents working. Open the peek; assert two rows with names and elapsed times; click \"replying to…\" and assert the timeline scrolled to that entry and flashed it; assert the footer reads \"Stop everything in this room · Stops all 2\"; press it and assert the `halted` notice lands and the lane clears.\n\nAll browser flows run on the **mock leg** (test-mode runtime). Follow `apps/e2e/tests/chat/interactive-prompts.ts`'s lock: register a flow that parks a turn from a `*.spec.ts` so the shared test server is not torn down mid-park.\n\n## Regression net — green unchanged\n\n`tests/rooms/room-conversation.spec.ts`, `room-entry-actions.spec.ts`, `room-reactions.spec.ts`, `room-presence.spec.ts`, `room-presence-sidebar.spec.ts`, `room-sheet.spec.ts`, `room-sheet-phone.spec.ts`, `tests/streams/multi-window.spec.ts`.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/client/src/layers/features/conversation/model/__tests__/lane-state.test.ts\npnpm vitest run apps/server/src/routes/__tests__/rooms-sessions.test.ts\npnpm --filter @dorkos/e2e test -- tests/conversation tests/rooms\n```",
+      "activeForm": "Testing the lane, the route and the two browser claims",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.4",
+        "2.5"
+      ],
+      "parallelWith": [
+        "2.7",
+        "2.8"
+      ],
+      "issue": "DOR-1329",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "2.7",
+      "phase": 2,
+      "phaseName": "P2 — The live lane, the peek, and the placement move",
+      "subject": "[unified-conversation] [P2] Show every LaneState and the peek in the Dev Playground",
+      "description": "P2 introduces a component with ten states and a popover. The `maintaining-dev-playground` skill requires parity, and the lane is the single best case for it: every state in one place is how a regression in the priority stack becomes visible in one glance.\n\nStay on the **existing pages** — the page rename and the five-section restructure are P5.\n\n## What to change\n\n- Add a **Live lane** group of showcases rendering `Conversation.LiveLane` for **every** `LaneState`: `empty` · presence at 1 / 2 / 3 / 4+ · `working_late` · thread scope · `stalled` · `queued` · each of the five `turn-*` states · reduced-motion. The `ask` rung is not reachable until P3; add its showcase in P3 task 3.11.\n- Add the peek: one agent (with **Stop**) and several agents (with **Stop everything in this room · Stops all N**).\n- Fold `apps/client/src/dev/showcases/StatusShowcases.tsx`'s **strip half** into these showcases and delete the sections that render `ChatStatusStrip`, which no longer exists. `StatusLineShowcases.tsx` is **`ChatStatusSection`'s** line and is **not** the lane — leave it alone.\n- `apps/client/src/dev/showcases/RoomPresenceShowcases.tsx` renders `RoomPresenceLine`, which is deleted in task 2.5. Re-point its `RoomPresenceLine` section at the lane's presence content. Its registration currently sits on the **identity** page at `apps/client/src/dev/sections/identity-sections.ts:95`; it may stay registered there in P2 and moves to the Conversation page in P5.\n- Register every new section in the appropriate `dev/sections/*.ts` file with a unique `id` equal to `slugify(title)`.\n\n## Invariants\n\n- Showcases render the **real** `LiveLane`, driven by a `LaneState` fixture, not a recreation of the markup.\n- The empty state is shown as a bordered container in the showcase **only** — the shipped lane has no border and no placeholder. Say so in the showcase's label so nobody \"fixes\" the product to match.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts\npnpm vitest run apps/client/src/dev/__tests__\n```\n\nAnd open the playground page in a running cockpit: all ten states render, the peek opens in both shapes, and nothing anywhere shows `ChatStatusStrip`.",
+      "activeForm": "Showing every LaneState in the Dev Playground",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "2.5"
+      ],
+      "parallelWith": [
+        "2.6",
+        "2.8"
+      ],
+      "issue": "DOR-1329",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "2.8",
+      "phase": 2,
+      "phaseName": "P2 — The live lane, the peek, and the placement move",
+      "subject": "[unified-conversation] [P2] Write the phase 2 changelog fragment",
+      "description": "One fragment per phase, per `changelog/README.md`.\n\n## The rule (do not pre-allocate the id)\n\n- Mint the id **at execution time**: `node --experimental-strip-types .claude/scripts/id.ts` prints a `YYMMDD-HHMMSS` UTC timestamp id.\n- File: `changelog/unreleased/<id>-<kebab-slug>.md`, slug 2–6 words, lowercase with hyphens.\n- Body: optional `covers:` frontmatter (quote commit subjects; a bare SHA needs no quotes), then Keep a Changelog headings (`### Added`, `### Changed`, `### Removed`, …) with bullets.\n- Never edit `CHANGELOG.md`.\n\n## What this fragment says\n\nP2 is genuinely user-facing and the fragment should say so in plain words: the line that tells you who is working moved above the message box, it is always the same height so nothing jumps, and clicking it shows each agent, how long it has been going, what it is answering, and a way to open its session or stop the room. Benefit before mechanism; no jargon; no em dashes (`.claude/rules/user-facing-writing.md`, the `writing-for-humans` skill).\n\nDo **not** claim the Ask card works — it does not exist until P3. The honesty gate in `AGENTS.md` applies to changelog prose.\n\n## Acceptance (run it)\n\n```\npython3 .claude/scripts/changelog_backfill.py --check\n```",
+      "activeForm": "Writing the phase 2 changelog fragment",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "2.5"
+      ],
+      "parallelWith": [
+        "2.6",
+        "2.7"
+      ],
+      "issue": "DOR-1329",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "2.9",
+      "phase": 2,
+      "phaseName": "P2 — The live lane, the peek, and the placement move",
+      "subject": "[unified-conversation] [P2] Phase 2 acceptance: the reviewer's browser check",
+      "description": "The phase is not done until this passes in a real browser against a running cockpit.\n\n## The spec's Reviewer's browser check for P2, verbatim\n\n> Open a quiet room — a blank 24 px line sits above the composer and the room still looks quiet. Scroll up to the middle of the history and note where you are. Make an agent pick something up: the line fills in and **the page does not move**. Click it: the peek opens with the agent, its time, and what it is replying to; click that and the timeline jumps there. Kill the server: the line becomes the stalled notice. Open the session chat: the same line now carries elapsed, tokens and the mode warning.\n\nRun it as written, including killing the server — the stalled rung is the one most likely to be wrong, and it must **clear** presence rather than merely hide it.\n\n## Also required before the PR opens\n\n```\npnpm verify\npnpm knip\npnpm --filter @dorkos/e2e test -- tests/conversation tests/rooms tests/streams/multi-window.spec.ts\n```\n\n- `pnpm knip` reports no new orphan.\n- Deletions complete: `grep -rn \"ChatStatusStrip\\|RoomPresenceLine\\|RoomStalledNotice\\|strip-state\" apps/client/src` returns nothing.\n- The changelog fragment exists (task 2.8).\n- An adversarial review against `REVIEW.md` has run on the branch **before** the PR opens.\n\n## The one thing a reviewer should try to break\n\nMake the lane change height. Any state whose content is taller than 24 px, or any `min-h` that crept in, breaks the single property this phase exists for — and `lane-no-shift.spec.ts` only tests the presence transition, so try `turn-streaming` with a long verb, a four-agent presence sentence, and a phone viewport.",
+      "activeForm": "Running the phase 2 acceptance check",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "2.6",
+        "2.7",
+        "2.8"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1329",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Add the interaction-events wire module and the transport method",
+      "description": "New module `packages/shared/src/interaction-events.ts`, exported as `@dorkos/shared/interaction-events` — **add the subpath to the `exports` map in `packages/shared/package.json`** (46 subpaths today; a missing entry is an import that resolves in the editor and fails at build).\n\n## The module, verbatim\n\n```ts\nimport { z } from 'zod';\nimport { PendingInteractionDTOSchema } from './schemas.js';\n\n/**\n * One prompt an agent is parked on, addressed to whoever may answer it.\n *\n * The interaction itself is `PendingInteractionDTOSchema` **verbatim** — the same\n * object the per-session stream and the recovery snapshot already carry, so the\n * card that renders it cannot drift between the two paths and no second shape\n * has to be kept in step.\n */\nexport const InteractionPendingEventSchema = z\n  .object({\n    /** The session whose turn is parked. */\n    sessionId: z.string().min(1),\n    /** The session's working directory — the deep link, and the identity fallback. */\n    cwd: z.string().min(1),\n    /** What is being asked. Carries `type`, `id`, `startedAt`, `remainingMs`, and the kind's own fields. */\n    interaction: PendingInteractionDTOSchema,\n    /** The room this session answers in, when it is bound to one. */\n    roomId: z.string().min(1).optional(),\n    /** The agent's author id in that room, for correlating with the presence line. */\n    roomAuthorId: z.string().min(1).optional(),\n  })\n  .openapi('InteractionPendingEvent');\nexport type InteractionPendingEvent = z.infer<typeof InteractionPendingEventSchema>;\n\n/** How an Ask stopped being pending. */\nexport const InteractionOutcomeSchema = z.enum(['answered', 'cancelled', 'expired']);\n\nexport const InteractionResolvedEventSchema = z\n  .object({\n    sessionId: z.string().min(1),\n    /** The interaction id — the same id `InteractionPendingEvent.interaction.id` carried. */\n    interactionId: z.string().min(1),\n    outcome: InteractionOutcomeSchema,\n    /** ISO timestamp of the resolution, for the receipt line. */\n    resolvedAt: z.string(),\n    /**\n     * A label for whoever answered, when the server knows one — the operator's\n     * display name, or a bridged approver's handle. Absent for `expired` and for\n     * an install with no accounts, where \"you\" is the only possible answer.\n     */\n    resolvedBy: z.string().optional(),\n  })\n  .openapi('InteractionResolvedEvent');\nexport type InteractionResolvedEvent = z.infer<typeof InteractionResolvedEventSchema>;\n\nexport const PendingInteractionsResponseSchema = z\n  .object({\n    interactions: z.array(InteractionPendingEventSchema),\n    /** Per-source degradation, in the shape `GET /api/sessions` already uses (ADR-0310). */\n    warnings: z.array(z.string()).optional(),\n  })\n  .openapi('PendingInteractionsResponse');\nexport type PendingInteractionsResponse = z.infer<typeof PendingInteractionsResponseSchema>;\n```\n\n**Two things deliberately NOT on the wire — do not add them:**\n\n- **No denormalized identity** (`agentName`, `agentEmoji`, `agentColor`). Every client that renders this already holds the fleet session list off the same global stream, so `sessionId` joins to a `Session`. A name on a hot event goes stale the moment an agent is renamed. `cwd` is on the payload precisely so the fallback ladder (session not in the list yet → basename of `cwd`) works without one.\n- **No per-second countdown.** `startedAt` and `timeoutMs` ride inside the DTO; `remainingMs` is computed server-side at emit and at list, and the client ticks locally.\n\n## The transport method\n\nOne new method on the `Transport` interface in `packages/shared/src/transport.ts` (the interface spans 507–2382), beside `approveTool` (:733) … `submitElicitation` (:770). Answering reuses the six methods that already exist; only listing is new.\n\n```ts\n/**\n * Every prompt across the fleet that is waiting on a person, with\n * server-authoritative time left. The seed for the live stream; see\n * `GET /api/sessions/pending-interactions`.\n */\nlistPendingInteractions(): Promise<PendingInteractionsResponse>;\n```\n\nImplementations land in task 3.5; adding the interface method here will red the two implementations and the mock until then, so land 3.1 and 3.5 close together or stub-then-fill within the same branch.\n\n## Acceptance\n\n```\npnpm --filter @dorkos/shared build\npnpm --filter @dorkos/shared typecheck\nnode -e \"import('@dorkos/shared/interaction-events').then(m => console.log(Object.keys(m)))\"\n```\n\nRemember the stale-dist trap: outside a running `pnpm dev`, rebuild `@dorkos/shared` by hand before typechecking dependents.",
+      "activeForm": "Adding the interaction-events wire module",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.9"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Give the projector an interaction listener seam and a fleet-wide list function",
+      "description": "The Ask is broadcast from `apps/server/src/services/session/session-state-projector.ts` — the **runtime-agnostic** twin — not from the claude-code runtime. `session.pendingInteractions` at `apps/server/src/services/runtimes/claude-code/agent-types.ts:95` is one runtime's map. `trackInteraction` (:1101-1119) already folds every `BLOCKING_INTERACTION_EVENT_TYPES` event from **any** runtime into `this.interactions` and flips `lifecycle` to `blocked`; `resolveInteraction` already ingests the resolution through the same seq'd stream. Broadcasting from here means Codex and OpenCode get the Ask with no adapter work.\n\n**The projector must not import the fan-out.** It imports no transport today and is unit-tested in isolation. Use the seam it already has for exactly this, beside `onProjectorStatusChange` (:295):\n\n```ts\n/** Notified when a projector starts or stops holding a pending interaction. */\nexport type InteractionChangeListener = (change: InteractionChange) => void;\n\nexport type InteractionChange =\n  | { type: 'pending'; sessionId: string; cwd: string; interaction: PendingInteractionDTO }\n  | { type: 'resolved'; sessionId: string; interactionId: string; outcome: InteractionOutcome };\n\n/** Subscribe to interaction transitions across every live projector. */\nexport function onProjectorInteractionChange(listener: InteractionChangeListener): () => void;\n```\n\n`notifyInteractionChange` is **throw-isolated exactly like `notifyStatusChange` (:301-319)** — a listener that throws must not break the projector — and fires from three places:\n\n| Fired at                                                                | Emits                                                |\n| ----------------------------------------------------------------------- | ---------------------------------------------------- |\n| `trackInteraction` (:1101), **after** `this.interactions.set(id, …)`    | `pending`                                            |\n| `resolveInteraction`, on the ingested `interaction_resolved`            | `resolved` with `outcome: 'answered'`                |\n| the cancel/expiry path (`interaction_cancelled`, and `markInterrupted`) | `resolved` with `outcome: 'cancelled'` / `'expired'` |\n\nThe \"after the set\" ordering is load-bearing and is pinned by an SSE ordering test in task 3.9.\n\n## The fleet-wide list function\n\nA new module-level function beside `listProjectorStatuses()` (:1886):\n\n```ts\n/**\n * Every pending interaction across every live projector, with server-authoritative\n * `remainingMs` and expired entries excluded.\n *\n * Bounded exactly as {@link listProjectorStatuses} is: a projector lives until its\n * session is evicted or the process restarts, so this answers for the recent fleet\n * and never for all history. That is the same bound the live fan-out has always had.\n */\nexport function listPendingInteractionsAcrossSessions(\n  now: number = Date.now()\n): Array<{ sessionId: string; cwd: string; interaction: PendingInteractionDTO }>;\n```\n\nIt delegates per projector to `getPendingInteractions(now)` (:1372), which delegates to the canonical `listPendingInteractions` selector (`apps/server/src/services/session/pending-interactions.ts:61`), so the expiry semantics **cannot fork** — the rule that method's own TSDoc states. Do not re-implement expiry here.\n\n## Acceptance\n\nUnit assertions land in task 3.9. This task must leave them writable: the listener seam is exercised **directly**, not through a runtime, because it is runtime-agnostic and that is the point.\n\n```\npnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/server lint\npnpm vitest run apps/server/src/services/session/__tests__/session-state-projector.test.ts\n```",
+      "activeForm": "Adding the projector interaction seam",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "3.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Broadcast the Ask from session-list-broadcaster with an injected room-bindings port",
+      "description": "`apps/server/src/services/session/session-list-broadcaster.ts` already imports `eventFanOut` (:31) and `onProjectorStatusChange` (:32), so this is **one more subscription in `start()`**:\n\n```ts\nthis.unsubscribeInteractions = onProjectorInteractionChange((change) => {\n  if (change.type === 'pending') {\n    const binding = this.roomBindings?.bindingForSession(change.sessionId);\n    eventFanOut.broadcast('interaction_pending', InteractionPendingEventSchema.parse({\n      sessionId: change.sessionId,\n      cwd: change.cwd,\n      interaction: change.interaction,\n      ...(binding ? { roomId: binding.roomId, roomAuthorId: binding.authorId } : {}),\n    }));\n    return;\n  }\n  eventFanOut.broadcast('interaction_resolved', InteractionResolvedEventSchema.parse({ … }));\n});\n```\n\nUnsubscribe in `stop()` alongside the existing unsubscribes.\n\n## `roomBindings` is a port injected at `start()`, not an import\n\nThe broadcaster must **not** reach into `services/rooms/`. Declare a minimal port interface in the broadcaster's own module and inject the ledger at wiring time.\n\n`apps/server/src/services/rooms/room-session-ledger.ts` gains one method beside `list()` (:97):\n\n```ts\n/** The room binding a session answers for, or `undefined` when it answers for none. */\nbindingForSession(sessionId: string): RoomSessionBinding | undefined;\n```\n\nIt is a single indexed read on `room_sessions`, and it is **redirect-aware through the same `successorFor` (:202) path the ledger already uses**, so a session rekeyed mid-turn still resolves to its room. That redirect is the assertion task 3.9 seeds a defect against.\n\n`apps/server/src/index.ts` wires the ledger into the broadcaster where both already exist.\n\n## Invariants\n\n- Two events per parked turn for its whole life: `interaction_pending` once per prompt raised, `interaction_resolved` once per resolution. **No timer, no republish loop, no per-second countdown.** Payload is ~400 bytes.\n- `.parse(...)` on both broadcasts, so a malformed payload fails here rather than in a client.\n- `roomId` on a per-caller stream leaks nothing the caller's own room list does not already show. Nothing else about the room goes on the event.\n- **Zero change to the rooms service otherwise.** `RoomTurnWaiting` (`room-turn-port.ts:87-95`) keeps exactly its two fields; `WAITING_NOTICE_GRACE_MS = 60_000` (`room-turn-runner.ts:489`), the `WAITING_KINDS` map (:510-514), the grace-armed `bounds.onWaiting` (:625-636) and the three sentences at `notice-copy.ts:206-213` are untouched, word for word.\n\n## Acceptance\n\n```\npnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/server lint\npnpm vitest run apps/server/src/services/session apps/server/src/services/rooms\n```",
+      "activeForm": "Broadcasting the Ask from the session-list broadcaster",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "3.2"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.4",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Add the pending-interactions route and the fail-closed answer guard",
+      "description": "Two changes in `apps/server/src/routes/sessions.ts`.\n\n## 1. The list route\n\n```\nGET /api/sessions/pending-interactions\n→ 200 PendingInteractionsResponse\n```\n\nRegister it **above** `router.get('/:id', …)` (:169). Express 5 would otherwise match `pending-interactions` as an `:id`. This is the one ordering trap in the file and the reason the route is not `/:id/…`-shaped. Task 3.9 seeds exactly this defect.\n\nSource: `listPendingInteractionsAcrossSessions()` from task 3.2, joined per row with `bindingForSession` (task 3.3). `warnings` is present but empty today; it exists because the same route is the natural home for a future runtime that cannot answer, and adding the field later would be a breaking response change.\n\n**Authority on the read:** the list is scoped to the caller the same way `GET /api/sessions` is (`sessionGate`, mounted app-wide at `apps/server/src/app.ts:159`). It carries no more than the per-session stream already gives an attached client. It does **not** run the operator-cookie bar — reading that something needs a person is not deciding it, and the header pill must render for a cockpit that has not yet proven itself for a decision.\n\n## 2. `requirePersonToAnswer` on the six answer routes\n\nToday the six answer routes (`routes/sessions.ts:761, 782, 806, 828, 845, 897`) are protected by `sessionGate` alone. That was defensible while the only way to reach them was the session you were looking at. Broadcasting the Ask everywhere makes them reachable from everywhere.\n\nAdd one shared guard, modelled line for line on `apps/server/src/routes/approvals.ts:169-219`:\n\n```ts\n/**\n * Refuse anything that is not a person in the cockpit answering for themselves.\n *\n * Fail-closed and structural: an agent that presents its identity header can\n * never answer ANY prompt, its own included, because `readCallerAuthority`\n * reports `agentIdentityPresented` for a header that did not even resolve. Under\n * login-on, a caller holding a per-user API key is refused too — an agent\n * legitimately holds one of the person's keys, which is exactly the residual\n * DOR-474 closed for capability approvals and this closes for tool prompts.\n */\nfunction requirePersonToAnswer(req: Request, res: Response): OperatorCookieRefusal | undefined;\n```\n\nComposed from shipped pieces, **no new predicate**:\n\n1. `readCallerAuthority(req, res)` (`apps/server/src/lib/caller-authority.ts`) → `resolveDecisionAuthority(...)`. Refuse when the caller is not a person acting for themselves. `agentIdentityPresented` **is** the \"the requester never self-approves\" rule, made structural rather than by comparing ids: the answer path simply is not reachable by anything presenting an agent identity, so there is no id to compare and no way to spoof one.\n2. `requireOperatorCookieUnderLogin(res, 'whether a tool runs')`. With login off it allows (there is no cookie for anyone to present) — the named, documented residual, identical to capability approvals.\n\nRefusals answer **403** with the existing `OperatorCookieRefusal` shape (`{ status, code, error }`), so the client's `apps/client/src/layers/features/approvals/lib/decision-refusal.ts` copy path already renders them.\n\n## Eligible approver, stated exactly\n\n| Who                                           | Eligible when                                                                                       | Enforced by                                                                              |\n| --------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |\n| The local operator (cockpit, this machine)    | login off: always. login on: a browser session cookie, no agent identity header, no approval token. | `requirePersonToAnswer` on all six routes                                                |\n| A person in a bridged room (Telegram / Slack) | their platform user id is in that adapter's configured approver allowlist                           | `mayApprove`, `packages/relay/src/adapters/approver-allowlist.ts:75-80` — **unchanged** |\n| The requesting agent                          | never                                                                                               | (1) above; no exception exists                                                           |\n| Any other agent                               | never                                                                                               | (1) above                                                                                |\n\nThe two approver sets never merge, and an empty or malformed allowlist means nobody, never anyone.\n\n## Acceptance\n\nThe six-routes × three-callers table is task 3.9.\n\n```\npnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/server lint\npnpm vitest run apps/server/src/routes/__tests__\n```",
+      "activeForm": "Adding the pending-interactions route and the answer guard",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.3"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.5",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Add both events to the SSE allowlist and implement the transport method twice",
+      "description": "## Both ends of the allowlist, in this pull request\n\n`'interaction_pending'` and `'interaction_resolved'` are added to `GENERIC_EVENTS` in `apps/client/src/layers/shared/lib/transport/stream-manager.ts:202-264`, **in the same pull request that adds the broadcasts**, with a comment in the house style saying what they are. `apps/server/src/services/core/__tests__/sse-event-allowlist.test.ts` proves both directions and goes red if either half is missing. Neither name goes in `NOT_BROADCAST_BY_LITERAL` (:62-66) — both are literal broadcasts.\n\nWhile you are in that file: `stream-manager.ts:298-301` carries a stale docstring saying \"two durable streams\". The budget is **three connections** — one attached session (`attachedSessionId` :308), one global list stream, and one optional pinned (PiP) session (`pinnedSessionId` :318). Fix the docstring in passing; the spec calls this out as a passing fix of this programme.\n\n## Two real transport implementations\n\n| Implementation    | File                                                                                          | Behaviour                                                                     |\n| ----------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |\n| `HttpTransport`   | `apps/client/src/layers/shared/lib/transport/session-methods.ts` (beside :404-471)            | `fetchJSON(baseUrl, '/sessions/pending-interactions')`                        |\n| `DirectTransport` | `apps/client/src/layers/shared/lib/direct/session-methods.ts` (beside :296-337)               | in-process call to the same `listPendingInteractionsAcrossSessions` + ledger join |\n\n**`DirectTransport` gets a real implementation, not a stub.** The Obsidian embed already implements all six answer methods for real, so a stubbed list would be the only half-working half. `apps/client/src/layers/shared/lib/direct/embedded-mode-stubs.ts:474-497` (the capability-approval stubs) is **untouched**: capability approvals genuinely do not exist in the embed, and Asks genuinely do.\n\nAlso extend `createMockTransport` in `@dorkos/test-utils` with `listPendingInteractions`, since every client test mounts through it.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/server/src/services/core/__tests__/sse-event-allowlist.test.ts\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/server typecheck\n```\n\n**Seeded defect for the allowlist test:** drop either literal from `GENERIC_EVENTS` → red. Confirm you saw it red before you saw it green.",
+      "activeForm": "Adding the SSE allowlist entries and the transport implementations",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "3.4"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.6",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Add the fleet-wide pending store and give attention signals a real kind",
+      "description": "## The store lives in `entities/attention`, not `entities/session`\n\nThe forcing argument is the layer rule: `entities/attention` must read this store (its whole job is \"what needs me\"), and an entity may not import a sibling entity (`.claude/rules/fsd-layers.md`: _\"Entity importing sibling entity: WRONG\"_). Its twin `use-pending-approvals.ts` already lives there.\n\nNew file `apps/client/src/layers/entities/attention/model/use-pending-interactions.ts`, mirroring `use-pending-approvals.ts` exactly:\n\n```ts\nexport const PENDING_INTERACTIONS_QUERY_KEY = ['pending-interactions'] as const;\n\n/**\n * Every prompt anywhere in the fleet that is waiting on a person.\n *\n * Seeded on mount from `transport.listPendingInteractions()` and then kept live\n * by the global stream, so a window that opened after an Ask was raised shows it\n * as fast as one that was watching.\n */\nexport function usePendingInteractions(): {\n  interactions: readonly InteractionPendingEvent[];\n  isLoading: boolean;\n};\n```\n\nLive updates are two `useEventSubscription` calls writing through `queryClient.setQueryData` — the pattern `use-tunnel-sync.ts` establishes and `contributing/state-management.md` documents:\n\n- `interaction_pending` → **upsert by `interaction.id`**.\n- `interaction_resolved` → remove by `interactionId`, and hand the outcome to the receipt store so the card can morph rather than vanish.\n\n## Dedupe against the per-session store — the rule, stated once\n\n`apps/client/src/layers/entities/session/model/session-stream-store.ts:88` holds `pendingInteractions` for the one attached session, fed by the seq'd per-session stream (reducer :802-810, :820-825). Both hold the same `id` (the projector's).\n\n> The **global** store is the single source for the card family (header pill, sidebar, home, the room lane). The **per-session** store keeps owning the inline prompt inside the transcript. For an id present in both, `remainingMs` comes from the per-session DTO (it is seq'd and fresher) and `roomId` from the global one.\n\nSo the attached session shows exactly one card in the transcript and one entry in the tray, and answering either resolves both through `interaction_resolved`.\n\n## `derive-attention-signals.ts` gets the real kind\n\n`apps/client/src/layers/entities/attention/model/derive-attention-signals.ts` (:170) currently degrades a non-attached blocked session to `permission-prompt` with copy \"Waiting on you\", and the comment at **:193-208** says the fix is _\"the fleet-wide stream carrying the interaction kind, which is a server change.\"_ That comment is **deleted with the degradation**.\n\n- `AttentionSources` gains `interactions: readonly InteractionPendingEvent[]` from `usePendingInteractions()`, replacing the attached-session-only `interactions` record.\n- The `blocked` branch (:191-222) reads the interaction's real `type`: `approval` → `permission-prompt`; `question` → `question`; `elicitation` → `permission-prompt` (an MCP server's prompt is answered like a permission ask; that reading was already right and stays).\n- `secondary` becomes the Ask's own words — \"wants to edit `standup.md`\" from `displayName` / `blockedPath` — instead of the placeholder \"Waiting on you\".\n- `since` is `new Date(interaction.startedAt).toISOString()` for **every** session, not just attached ones.\n- `AttentionSignalKind` (`entities/attention/model/attention-signal.ts:26`) is **unchanged**. The four kinds were never the problem; not knowing which one was.\n\nDownstream, `apps/client/src/layers/features/dashboard-sidebar`'s `select-now-items.ts` stops giving a background agent's _question_ the shield glyph, which is the visible half of the same defect. Verify that follows from the kind alone; if it needs an edit there, make it here.\n\n## Acceptance\n\nTests are task 3.10.\n\n```\npnpm vitest run apps/client/src/layers/entities/attention\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\n```",
+      "activeForm": "Adding the fleet-wide pending store and real attention kinds",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.5"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.7",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Build features/ask: one card family, with the prompts and receipts moved in",
+      "description": "A **new `features/ask` slice owning the card chrome**, with `features/approvals` re-based onto it. Not \"extend `ApprovalCard`\", and not \"generalize `ToolApproval`\": the two are different objects and merging their **data** would be wrong — a capability approval is a persisted, ULID-keyed request with a two-hour window; an Ask is an in-memory hold on a live turn with a ten-minute one. What they share is entirely presentational, so the chrome is extracted and both adopt it.\n\n```\nlayers/features/ask/\n├── ui/\n│   ├── AskCard.tsx            AskCard.{Root,Face,Headline,Detail,Countdown,Actions,Receipt}\n│   ├── InteractionAsk.tsx     the adopter for an InteractionPendingEvent (all three kinds)\n│   ├── AskStack.tsx           the burst form (replaces BatchApprovalBar)\n│   ├── AskList.tsx            the tray body\n│   ├── ApprovalPrompt.tsx     ← moved from features/chat/ui/tools/ToolApproval.tsx\n│   ├── QuestionPrompt.tsx     ← moved\n│   ├── ElicitationPrompt.tsx  ← moved\n│   ├── AskReceipt.tsx         ← moved from ApprovalReceipt.tsx (+ AskReceiptRow)\n│   └── QuestionAnswerSummary.tsx ← moved\n├── model/\n│   ├── use-answer-ask.ts      one mutation, fans by kind to the six transport methods\n│   ├── use-ask-shortcut.ts    ⌘⇧A\n│   └── ask-exit-transition.ts ← moved from features/approvals/lib/approval-exit-transition.ts\n├── lib/\n│   ├── ask-headline.ts        the one sentence: \"<agent> wants to <verb> <target>\"\n│   └── format-time-left.ts    ← moved from features/approvals/lib/ (shared by both card kinds)\n└── index.ts\n```\n\nMoved sources, with today's sizes so you can tell a move from a rewrite: `features/chat/ui/tools/ToolApproval.tsx` (567), `QuestionPrompt.tsx` (530), `ElicitationPrompt.tsx` (238), `ApprovalReceipt.tsx` (172), `ApprovalReceiptRow.tsx` (78), `QuestionAnswerSummary.tsx`. `BatchApprovalBar.tsx` (70) is **deleted**, replaced by `AskStack`.\n\n## Headline copy — `lib/ask-headline.ts`, one function, unit-tested\n\n| Kind        | Line                                                                                                                                                                                       |\n| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |\n| approval    | `{agent} wants to {verb} {target}` — verb and target from `displayName` / `title` / `blockedPath`, falling back to `{agent} needs your OK to run {toolName}` when the prompt gives neither |\n| question    | `{agent} has a question`                                                                                                                                                                   |\n| elicitation | `{agent} needs something from {serverName}`                                                                                                                                                |\n\nThe card **never invents** a diff stat or a preview the prompt did not supply. The SDK prompt gives `title`, `displayName`, `description` and `blockedPath`; a diff stat is not among them. \"Allow & don't ask again ▾\" keeps its **slot** in the action row and is **not built** — it is scope options, tier C. The card ships with **Allow · Deny · Open session**.\n\n## Countdown\n\nFrom `startedAt + timeoutMs` inside the DTO, ticked locally at 1 s; `formatTimeLeft` reused. Thresholds from `research/20260316_tool_approval_timeout_visibility_ux.md`: neutral above 2 min, **warn at 2 min**, **urgent at 60 s**. The bar is a linear `<progress>`-shaped div with `aria-hidden`; the accessible countdown is the **text**.\n\n## Keyboard and focus\n\n- `A` allows and `D` denies **only when the card has focus** — never a document-level hotkey, because an Ask that lands while you are typing must not swallow a keystroke. Additive to `ToolApproval.tsx:505`'s existing in-card key handling.\n- `⌘⇧A` (`useAskShortcut`) moves focus to the next unanswered Ask, opening whatever surface holds it.\n- An arriving Ask **never steals focus**. It arrives with the message-entrance grammar (fade + 8 px, spring `stiffness: 320, damping: 28`) and announces itself once through the existing `useApprovalAnnouncer` live region — the card does not add a second announcer.\n\n## Bursts\n\nTwo or more pending Asks with the same `sessionId` **and** `interaction.type === 'approval'` **and** the same `toolName` collapse into one `AskStack`: _\"Meeting Notes wants to read 5 files ▾\"_, expandable to the list, with **Allow all** → `transport.batchApprove(sessionId, toolCallIds)` and **Deny all** → `batchDeny`. **Different agents never stack.**\n\n## Receipts — never a disappearance\n\nOn `interaction_resolved` the card morphs in place using the shipped exit transition (`RESOLVE_HOLD_S = 0.4`, `MELT_S = 0.2`, `approval-exit-transition.ts:10,13,37`):\n\n| Outcome                                                       | Line                                         |\n| ------------------------------------------------------------- | -------------------------------------------- |\n| answered by this window                                       | `You allowed this` / `You said no`           |\n| answered elsewhere, `resolvedBy` known                        | `Already allowed by {resolvedBy} at {hh:mm}` |\n| answered elsewhere, no name                                   | `Already answered at {hh:mm}`                |\n| `cancelled` (session gone, agent restarted, turn interrupted) | `No longer needed`                           |\n| `expired`                                                     | `Nobody answered in time`                    |\n\n\"Never a button that does nothing\" is implemented as: the actions are removed **in the same frame** the receipt text appears, and a click that races the resolution is answered by the server's own idempotent no-op (`services/runtimes/claude-code/sessions/session-store.ts:461` returns `false` for an unknown id) and shows the receipt.\n\n## Optimism\n\nAnswering writes the receipt immediately and removes the entry from the query cache, then waits for `interaction_resolved` to confirm. A rejected mutation restores the card and surfaces the refusal copy (`features/approvals/lib/decision-refusal.ts`) — including the **403** from the answer guard, which reads as one sentence about needing to be signed in on this machine.\n\n## `features/approvals` re-based\n\n`ApprovalCard` (288) keeps its own data and hooks; **its markup becomes `AskCard.*`**. `format-time-left.ts` and `approval-exit-transition.ts` move to `features/ask` and `features/approvals` imports them from there. FSD: `features/approvals` and `features/chat` rendering `features/ask` components is **UI composition across features**, explicitly allowed; neither imports the other's model.\n\n## Acceptance\n\n```\npnpm vitest run apps/client/src/layers/features/approvals apps/client/src/layers/features/chat\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\ngrep -rn \"BatchApprovalBar\\|features/chat/ui/tools/ToolApproval\" apps/client/src   # returns nothing\n```",
+      "activeForm": "Building the features/ask card family",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "3.6"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.8",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Render the Ask on all five surfaces and switch on the lane's ask rung",
+      "description": "Wire the one card family into every place an Ask should appear, and turn on rung 1 of the lane.\n\n| Surface                                                                                        | Renders                                                                                                                                            |\n| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Header pill — `apps/client/src/layers/widgets/approvals-indicator` (279 lines)                  | `AskList` — capability approvals **and** Asks in one list, ordered by time left. **Its count becomes both.**                                       |\n| Sidebar _Heads up_ — `features/dashboard-sidebar` (label at `build-sidebar-model.ts:390`)      | rows from `useAttentionSignals()`, now carrying the real kind from task 3.6                                                                        |\n| Home triage — `apps/client/src/layers/widgets/home/ui/PinnedTriageHeader.tsx` (117)            | `AskList`                                                                                                                                          |\n| The room / session live lane                                                                   | `InteractionAsk` grown from the lane                                                                                                               |\n| The session transcript, inline                                                                 | `ApprovalPrompt` / `QuestionPrompt` / `ElicitationPrompt` from `AssistantMessageContent.tsx:327, 416, 483` — same components, now built on `AskCard.*` |\n\n## The lane's ask rung goes live\n\nIn `apps/client/src/layers/features/conversation/model/lane-state.ts`, replace the P2 placeholder type with the real `InteractionPendingEvent` from `@dorkos/shared/interaction-events` and feed rung 1 from `usePendingInteractions()` **filtered to this conversation** — by `sessionId` for a session, by `roomId` for a room. Delete the \"not reachable yet\" TSDoc note.\n\n**Ask content in the lane, one line:** amber `needs-you` dot, the agent's face, `askHeadline(ask)`, and the word **Answer** as the affordance. Clicking or pressing Enter **grows the lane into the `InteractionAsk` card** — a height + opacity transition, **300 ms** ease-in-out, matching the tool-card expand. The lane's content is the card's collapsed state; it does not pop a detached menu.\n\n## Identity join, not denormalization\n\nThe event carries ids only. Join `sessionId` to the fleet session list — the same join `derive-attention-signals.ts`'s `sessionSignal` already does — for name, agent and colour. Fallback ladder when the session is not in the list yet: **basename of `cwd`**. Do not add identity to the event.\n\n## Invariants\n\n- Empty tray copy: `Nothing needs you`.\n- The room's durable notice is **untouched**: the live card is instant and ephemeral, the notice is late, vague and the log. A second-answered Ask still leaves no line, because the grace timer is still cleared by `interaction_resolved` (`room-turn-runner.ts:637`).\n- A person in a bridged room who is not on the approver allowlist sees none of this — the detail rides the per-caller global stream and never enters a room entry.\n\n## Acceptance\n\n```\npnpm vitest run apps/client/src/layers/widgets/approvals-indicator apps/client/src/layers/widgets/home apps/client/src/layers/features/dashboard-sidebar\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\n```\n\nAnd by hand in a running cockpit: park a turn on an approval and confirm the count in the header pill rises **on `/tasks`**, not only in the session.",
+      "activeForm": "Rendering the Ask on all five surfaces",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.7"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.9",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Server tests: the authority table, the projector seam, the ledger, the ordering",
+      "description": "The server half of P3's testing, all with named seeded defects.\n\n## `apps/server/src/routes/__tests__/sessions-pending-interactions.test.ts` (new)\n\nUsing `FakeAgentRuntime` and `@dorkos/test-utils` scenarios:\n\n- `GET /api/sessions/pending-interactions` returns one envelope per parked session, with `roomId` present **only** for room-bound ones and `remainingMs` **recomputed at read time**. **Seed:** freeze `remainingMs` at emit → the recompute assertion goes red.\n- The route resolves **ahead of** `GET /:id`. **Seed:** register it after → the request 404s as a session id.\n- **Authority, six routes × three callers.** For each of `approve`, `deny`, `batch-approve`, `batch-deny`, `submit-answers`, `submit-elicitation`: a person in the cockpit **succeeds**; a caller presenting `X-DorkOS-Agent` is **refused 403 even for an interaction it did not raise** (the requester-never-self-approves rule, made structural); a caller presenting a per-user API key under login-on is **refused 403**. **Seed:** remove `requirePersonToAnswer` from any one route → that row goes red. This table is the whole security surface of the answer guard and it is worth its length — write all eighteen cases.\n\n## `apps/server/src/services/session/__tests__/session-state-projector.test.ts` (extend)\n\n`trackInteraction` fires exactly one `pending`; a resolution fires one `resolved` with `answered`; expiry fires `expired`; **listeners are throw-isolated**. **Seed:** remove the notify call → red.\n\n## `apps/server/src/services/session/__tests__/pending-interactions.test.ts` (extend)\n\n`listPendingInteractionsAcrossSessions` **excludes expired entries** and spans several projectors. **Seed:** return the raw map → the expiry assertion goes red.\n\n## `apps/server/src/services/rooms/__tests__/room-session-ledger.test.ts` (extend)\n\n`bindingForSession` resolves a **retired id through `successorFor`**. **Seed:** drop the redirect → red.\n\n## SSE integration, via `collectDurableEvents`\n\nA turn that parks emits `interaction_pending` on the global fan-out **before** the per-session `approval_required` reaches a late subscriber, and the resolution emits **exactly one** `interaction_resolved`. **Seed:** notify before `this.interactions.set` → ordering goes red.\n\n## `apps/server/src/services/core/__tests__/sse-event-allowlist.test.ts`\n\nProves `interaction_pending` and `interaction_resolved` in **both** directions (task 3.5 added the entries; confirm the test covers them and that neither is in `NOT_BROADCAST_BY_LITERAL`).\n\n## Mocking\n\n`FakeAgentRuntime` plus the shared scenarios. The projector's listener seam is exercised **directly** rather than through a runtime, because it is runtime-agnostic and that is the point.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/server/src/routes/__tests__/sessions-pending-interactions.test.ts\npnpm vitest run apps/server/src/services/session apps/server/src/services/rooms apps/server/src/services/core\npnpm --filter @dorkos/server typecheck\n```\n\nFor every seeded defect above: introduce it, watch the named test go red, revert, watch it go green. Red-before, green-after — a check that cannot fail is worse than none.",
+      "activeForm": "Writing the server tests for the Ask",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "3.4",
+        "3.5"
+      ],
+      "parallelWith": [
+        "3.10"
+      ],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.10",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Client and browser tests: the store, the headline, the card, and answering from anywhere",
+      "description": "The client half of P3's testing. Client tests mount a mock `Transport` via `TransportProvider` (`createMockTransport` from `@dorkos/test-utils`, extended with `listPendingInteractions` in task 3.5).\n\n## Unit\n\n- `apps/client/src/layers/features/ask/lib/__tests__/ask-headline.test.ts` — one line per kind, plus the fallback when `displayName` and `blockedPath` are both absent. **Seed:** drop the fallback → red.\n- `apps/client/src/layers/features/ask/model/__tests__/use-answer-ask.test.ts` — each kind routes to the right transport method; a burst routes to `batchApprove`. **Seed:** route `question` to `approveTool` → red.\n- `apps/client/src/layers/entities/attention/__tests__/use-pending-interactions.test.tsx` — list-on-mount seeds; `interaction_pending` **upserts by id**; `interaction_resolved` removes; a duplicate id present in both sources yields **one** entry, with the per-session `remainingMs`. **Seed:** make the upsert append → the dedupe assertion goes red.\n- `apps/client/src/layers/entities/attention/__tests__/derive-attention-signals.test.ts` (extend) — a **non-attached** blocked session with a `question` interaction produces `kind: 'question'`, not `permission-prompt`. **Seed:** revert to the degradation → red. _This is the test the comment at :193-208 was waiting for._\n\n## RTL\n\n`apps/client/src/layers/features/ask/__tests__/AskCard.test.tsx`:\n\n- `A` / `D` fire **only when the card has focus** — assert a keydown on `document.body` does nothing.\n- The receipt **replaces the actions in the same commit** (query for the action buttons after the resolution and assert they are gone in the same render).\n- A burst of five same-tool approvals renders **one** stack with **Allow all**; five approvals from two different agents render **two** cards.\n\n## Browser (`apps/e2e`)\n\n`apps/e2e/tests/conversation/ask-anywhere.ts` — a **module registered by `chat-mock.spec.ts`**, following the lock `apps/e2e/tests/chat/interactive-prompts.ts` documents: register from a `*.spec.ts` so the shared test server is not torn down mid-park. Mock leg (test-mode runtime).\n\nFlow: a room-bound session parks on an approval. Assert the card appears **in the room's live lane** and in the **header pill on `/tasks`**. Answer from the header pill; assert the room lane clears to a **receipt in the same window**, and that the agent then streams the branch-naming sentence only an approval could produce (`APPROVED-BRANCH`) — so \"the card went away\" is never the assertion.\n\n## Regression net — green unchanged\n\n`tests/chat/interactive-prompts.ts`, `live-turn-visibility.ts`, `session-read-state.ts`, `tests/streams/multi-window.spec.ts`, and the room suites.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/client/src/layers/features/ask apps/client/src/layers/entities/attention\npnpm --filter @dorkos/e2e test -- tests/conversation tests/chat tests/streams/multi-window.spec.ts\n```",
+      "activeForm": "Writing the client and browser tests for the Ask",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.8"
+      ],
+      "parallelWith": [
+        "3.9"
+      ],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.11",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Show the AskCard family, the stack and the receipts in the Dev Playground",
+      "description": "P3 introduces a card family with three kinds, a burst form, five receipt lines and a countdown. Playground parity is required by the `maintaining-dev-playground` skill and this is the family most worth seeing in one place.\n\nStay on the **existing pages** — the Conversation page and its five sections are P5.\n\n## What to change\n\n- Add showcases for `AskCard.*` in all three kinds: **approval** (with and without `blockedPath`, so the headline fallback is visible), **question**, **elicitation**.\n- `AskStack`: five same-tool approvals from one agent collapsed to one stack with **Allow all**; two agents' approvals shown side by side, **not** stacked.\n- The countdown at all three thresholds: neutral (above 2 min), **warn** (2 min), **urgent** (60 s).\n- The **receipt set**, all five lines: `You allowed this` · `You said no` · `Already allowed by {name} at {hh:mm}` · `Already answered at {hh:mm}` · `No longer needed` · `Nobody answered in time`.\n- `AskList` — the tray body, including the empty state `Nothing needs you`.\n- The lane's **Ask** state (rung 1), which task 2.7 could not show, plus **the Ask card grown from the lane**.\n- Retire duplicates rather than leaving two: `apps/client/src/dev/showcases/ApprovalsShowcases.tsx`, `ApprovalReceiptShowcases.tsx` and the approval parts of `ToolShowcases.tsx` now render the shared chrome. Keep them registered on their current pages in P3; P5 merges them into one **Asks** section on the Conversation page, with the capability-approval card cross-listed from Subsystems per the skill's borrow pattern.\n\n## Invariants\n\n- Showcases render the real components against fixture `InteractionPendingEvent` objects, never a recreation.\n- The countdown fixtures must not tick against the wall clock in a way that makes the showcase flap; pin `startedAt` relative to a frozen `now`.\n- Section `id` equals `slugify(title)` and is unique.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts\npnpm vitest run apps/client/src/dev/__tests__\n```",
+      "activeForm": "Showing the AskCard family in the Dev Playground",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "3.8"
+      ],
+      "parallelWith": [
+        "3.9",
+        "3.10",
+        "3.12"
+      ],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.12",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Write the phase 3 changelog fragment",
+      "description": "One fragment per phase, per `changelog/README.md`.\n\n## The rule (do not pre-allocate the id)\n\n- Mint the id **at execution time**: `node --experimental-strip-types .claude/scripts/id.ts` prints a `YYMMDD-HHMMSS` UTC timestamp id.\n- File: `changelog/unreleased/<id>-<kebab-slug>.md`, slug 2–6 words, lowercase with hyphens.\n- Body: optional `covers:` frontmatter (quote commit subjects; `#` items must be quoted too), then Keep a Changelog headings with bullets.\n- Never edit `CHANGELOG.md`.\n\n## What this fragment says\n\nThis is the headline change of the whole programme and deserves the clearest prose in it: when an agent needs your OK, you can answer from wherever you are in the cockpit, and the answer lands everywhere at once. Mention the ten-minute window honestly. Mention that in a shared room, only people who are allowed to approve see the details.\n\nDo **not** claim a notification reaches you when the cockpit is closed — it does not (that is tier C). Do **not** claim the timeout is patient — it still auto-denies at ten minutes. The `AGENTS.md` honesty gate applies.\n\nBenefit before mechanism, one idea per sentence, no em dashes, every acronym glossed or cut (`.claude/rules/user-facing-writing.md`, the `writing-for-humans` skill). A `### Security` bullet is warranted too: an agent can never answer a prompt, its own included.\n\n## Acceptance (run it)\n\n```\npython3 .claude/scripts/changelog_backfill.py --check\n```",
+      "activeForm": "Writing the phase 3 changelog fragment",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "3.8"
+      ],
+      "parallelWith": [
+        "3.9",
+        "3.10",
+        "3.11"
+      ],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "3.13",
+      "phase": 3,
+      "phaseName": "P3 — The Ask, end to end",
+      "subject": "[unified-conversation] [P3] Phase 3 acceptance: the reviewer's browser check",
+      "description": "The phase is not done until this passes in a real browser against a running cockpit, including the `curl`.\n\n## The spec's Reviewer's browser check for P3, verbatim\n\n> In a room, make an agent ask to edit a file. The lane turns amber within a second and the header pill counts it — **on every route**. Navigate to `/tasks`, press `⌘⇧A`, answer there; go back to the room: a receipt, and the agent carries on. Do it again and answer from the room instead; the pill clears. Start typing in the composer and have an Ask arrive: the caret does not move and `A` types the letter `a`. Finally, `curl` the approve route with `X-DorkOS-Agent` set: 403.\n\nRun every clause. \"The agent carries on\" is the one that cannot be faked by the card disappearing.\n\n## Also required before the PR opens\n\n```\npnpm verify\npnpm knip\npnpm vitest run apps/server/src/routes/__tests__/sessions-pending-interactions.test.ts\npnpm --filter @dorkos/e2e test -- tests/conversation tests/chat tests/rooms\n```\n\n- **Both ends of the SSE allowlist are in this same PR** — the server broadcasts and `GENERIC_EVENTS`. `sse-event-allowlist.test.ts` green is the proof.\n- `pnpm knip` reports no new orphan.\n- Deletions complete: `grep -rn \"BatchApprovalBar\\|ApprovalReceiptRow\\|approval-exit-transition\" apps/client/src` resolves only inside `features/ask`.\n- The degradation comment at `derive-attention-signals.ts:193-208` is **gone**, not commented out.\n- The changelog fragment exists (task 3.12).\n- An adversarial review against `REVIEW.md` has run on the branch **before** the PR opens.\n\n## The two things a reviewer should try to break\n\n1. **Answer as a machine.** `curl` each of the six answer routes with `X-DorkOS-Agent` set, including one that resolves to no known agent — a header that did not resolve still means a machine is calling, and must still be refused.\n2. **Leak the detail into a room.** Confirm the room entry and the durable waiting notice still carry no tool name, no path and no countdown (`notice-copy.ts:206-213`, word for word), and that nothing new reaches `services/relay/chat-bridge/deliver.ts`.",
+      "activeForm": "Running the phase 3 acceptance check",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "3.9",
+        "3.10",
+        "3.11",
+        "3.12"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1330",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "P4 — Timeline and composer host",
+      "subject": "[unified-conversation] [P4] Merge the two scroll hooks into use-timeline-scroll",
+      "description": "`apps/client/src/layers/features/conversation/model/use-timeline-scroll.ts` — the **one** scroll/stick hook, merging:\n\n- `apps/client/src/layers/features/chat/model/view/use-scroll-overlay.ts:14` (49 lines, overlay visibility)\n- `apps/client/src/layers/widgets/room-view/model/use-stick-to-bottom.ts` (223 lines; `StickToBottom` :60, `useStickToBottom` :116)\n\n**The contract is `use-stick-to-bottom`'s**, because it is the one with the hard-won rules the room documented: a height change inside the scroller moves `scrollHeight` and un-pins a reader who never scrolled. The overlay hook's job — when to show the scroll-to-bottom button and the new-messages pill — becomes **two derived booleans on the same hook**. **The room's tuned thresholds win any disagreement.**\n\nAlso move `use-unread-cursor` from `features/chat/model/view/` to `features/conversation/model/use-unread-cursor.ts`, and `ScrollThumb.tsx` from `features/chat/ui/` to `features/conversation/ui/ScrollThumb.tsx`.\n\n## Invariants\n\n- `RoomSurface`'s slot rule is preserved: chrome is a **flex sibling** of the scroller, never inside it. `Conversation.Header`, `LiveLane`, `Composer` and `Footer` are all siblings of the scroller.\n- Do not \"improve\" a threshold while merging. If the two hooks disagree, take the room's number and say so in a comment.\n- Deletion of the two old hooks happens in task 4.3, with their last consumer.\n\n## Acceptance\n\n```\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\npnpm vitest run apps/client/src/layers/widgets/room-view apps/client/src/layers/features/chat\n```\n\nThe real gate is behavioural and lands in task 4.7: the full existing room + chat browser suites, unchanged.",
+      "activeForm": "Merging the two scroll hooks",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.13"
+      ],
+      "parallelWith": [
+        "4.4",
+        "4.6"
+      ],
+      "issue": "DOR-1331",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "phaseName": "P4 — Timeline and composer host",
+      "subject": "[unified-conversation] [P4] Build Conversation.Timeline, the one virtualized list",
+      "description": "`apps/client/src/layers/features/conversation/ui/Timeline.tsx` — built by **porting `MessageList.tsx`** (the virtualized one, component :128, 530 lines) and folding `RoomTimeline.tsx`'s three room-only behaviours into it (component :134, 298 lines, **not** virtualized today).\n\n## The API, verbatim\n\n```ts\nexport interface ConversationTimelineProps {\n  /** Ordered rows, already grouped. See `lib/row-kinds.ts`. */\n  rows: readonly ConversationRow[];\n  /** Turns a message row's payload into its body. */\n  renderBody: ConversationBodyRenderer;\n  /** Sequence the unread cursor is placed against; `null` when everything is read. */\n  lastReadSeq?: number | null;\n  /** Called when a row asks to open its thread. Required when `capabilities.threads`. */\n  onOpenThread?: (rootId: string) => void;\n  /** Rows the server has accepted but not yet committed (rooms' optimistic posts). */\n  pending?: readonly ConversationPendingRow[];\n  className?: string;\n}\n\nexport interface ConversationTimelineHandle {\n  /** Scroll a row into view and flash it. Used by the peek's \"replying to…\" link. */\n  scrollToRow(rowId: string, opts?: { flash?: boolean }): void;\n  scrollToBottom(opts?: { behavior?: ScrollBehavior }): void;\n}\n```\n\n## What it inherits from each parent\n\n| From `MessageList.tsx`                                        | From `RoomTimeline.tsx`                                                   |\n| ------------------------------------------------------------- | ------------------------------------------------------------------------- |\n| `useVirtualizer` (:238)                                       | thread grouping via `groupByThread` (:173) → produces `thread-reply` rows |\n| `ScrollThumb` (:30)                                           | the pending list (`RoomPendingList` :295) → `pending` prop                |\n| `useUnreadCursor` (:27)                                       | `useStickToBottom` semantics (:116)                                       |\n| the two announcers (:28-29, regions at :507-510 and :522-527) | the skeleton (`RoomTimelineSkeleton` :81)                                 |\n\nAlso create `apps/client/src/layers/features/conversation/ui/rows/PendingRow.tsx` from `widgets/room-view/ui/RoomPendingRow.tsx` (component :67 + `RoomPendingList` :229, 244 lines total) — the row moves, the list becomes the `pending` prop.\n\nKeep both live regions exactly as they are: `transcript-announcer` (:507-510) and `approval-announcer` (:522-527). The Ask card relies on the second one and must not gain its own.\n\n## Invariants\n\n- **Virtualizing the room timeline is the behavioural risk of this phase**, not a cost risk: `RoomTimeline` renders every row today. The gate is the browser suites in task 4.7, not a unit test.\n- No `surface ===` check. Thread grouping runs when `capabilities.threads`; the pending list renders when `pending` is non-empty.\n- The skeleton and the empty state both survive the port.\n\n## Acceptance\n\n```\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\npnpm vitest run apps/client/src/layers/features/conversation\n```",
+      "activeForm": "Building Conversation.Timeline",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "4.1"
+      ],
+      "parallelWith": [
+        "4.4",
+        "4.6"
+      ],
+      "issue": "DOR-1331",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "4.3",
+      "phase": 4,
+      "phaseName": "P4 — Timeline and composer host",
+      "subject": "[unified-conversation] [P4] Mount the one timeline on both surfaces and delete the two old lists",
+      "description": "Replace both lists with `Conversation.Timeline` and delete everything it supersedes.\n\n## Wiring\n\n- `apps/client/src/layers/widgets/room-view/ui/RoomSurface.tsx` mounts `<Conversation.Timeline rows={rows} renderBody={renderRoomBody} onOpenThread={openThread} pending={pendingRows} ref={timelineRef} />`.\n- `apps/client/src/layers/widgets/room-view/ui/RoomThreadPanel.tsx` mounts its own, scoped to the thread.\n- `widgets/session` mounts the same component with `renderSessionBody` and `SESSION_CAPABILITIES`.\n- The peek's `scrollToRow(entryId, { flash: true })` now goes through `ConversationTimelineHandle` — replace whatever P2 wired as the interim handle.\n\nThe hosts' composition, as the spec writes it:\n\n```tsx\n<Conversation.Root\n  surface={room.kind === 'dm' ? 'dm' : 'room'}\n  capabilities={ROOM_CAPABILITIES}\n  target={roomTarget}\n  anchor=\"corner\"\n  density=\"comfortable\"\n>\n  <Conversation.Header>\n    {aboveTimeline}\n    <RoomMasthead room={room} />\n  </Conversation.Header>\n  <Conversation.Timeline\n    rows={rows}\n    renderBody={renderRoomBody}\n    onOpenThread={openThread}\n    ref={timelineRef}\n  />\n  <Conversation.LiveLane\n    presence={roomPresence}\n    stalled={stream.stalled}\n    asks={asksForRoom}\n    onPeek={openPeek}\n  />\n  <Conversation.Composer />\n</Conversation.Root>\n```\n\n## Deletions in this task\n\n`apps/client/src/layers/features/chat/ui/MessageList.tsx` (530), `apps/client/src/layers/widgets/room-view/ui/RoomTimeline.tsx` (298), `apps/client/src/layers/features/chat/model/view/use-scroll-overlay.ts` (49), `apps/client/src/layers/widgets/room-view/model/use-stick-to-bottom.ts` (223), `apps/client/src/layers/widgets/room-view/ui/RoomPendingRow.tsx` (244) — and their barrel exports.\n\n## Invariants\n\n- Every `data-testid` the shipped room and chat browser suites target keeps its name and position.\n- Chrome stays a flex sibling of the scroller: `Header`, `LiveLane`, `Composer`, `Footer`.\n\n## Acceptance\n\n```\npnpm vitest run apps/client/src/layers/widgets/room-view apps/client/src/layers/features/chat apps/client/src/layers/widgets/session\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\npnpm knip\ngrep -rn \"MessageList\\|RoomTimeline\\|use-scroll-overlay\\|use-stick-to-bottom\\|RoomPendingRow\" apps/client/src   # returns nothing\n```",
+      "activeForm": "Mounting the one timeline and deleting the old lists",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "4.2"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1331",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "4.4",
+      "phase": 4,
+      "phaseName": "P4 — Timeline and composer host",
+      "subject": "[unified-conversation] [P4] Write the two ConversationTarget adapters",
+      "description": "Two small adapters, each owned by its host widget, implementing the `ConversationTarget` interface declared in task 1.1:\n\n- `apps/client/src/layers/widgets/session/model/session-target.ts`\n- `apps/client/src/layers/widgets/room-view/model/room-target.ts`\n\n```ts\nexport interface ConversationTarget {\n  readonly kind: 'session' | 'room';\n  readonly id: string;\n  readonly placeholder: string;\n  readonly canSend: boolean;\n  send(draft: ConversationDraft): Promise<void>;\n  queue?(draft: ConversationDraft): Promise<void>;\n  readonly queueDepth: number;\n  readonly attachments: ConversationAttachmentPort | null;\n  readonly mentions: ConversationMentionPort | null;\n}\n```\n\n## Session target\n\n- `kind: 'session'`, `id` the session id, `placeholder` the session's phrasing.\n- `send` posts through the shipped path — remember `POST /api/sessions/:id/messages` is **trigger-only (202)**; delivery rides the durable per-session SSE stream (ADR-0264). The adapter must not wait for content on the POST.\n- `queue` **is present**: the session has a queue. `queueDepth` reflects it, and it is what drives the lane's `queued` rung.\n- `attachments` is a real port (`capabilities.attachments: true`); `mentions` is `null` (`capabilities.mentions: false`).\n\n## Room target\n\n- `kind: 'room'`, `id` the room id, `placeholder` already phrased (\"Message #mio…\").\n- `canSend` is **false for an archived room** — this is the `canSend: false` state the playground shows and the composer must render honestly.\n- `queue` is **absent**: a room has no queue, and `Conversation.Composer` shows **no queue chrome** when it is undefined rather than showing a disabled one. `queueDepth` is `0`.\n- `attachments` and `mentions` are both real ports. `parentEntryId` on the draft is set when the draft is a thread reply.\n\n## Invariants\n\n- `send` **rejects rather than silently dropping**. A failed send surfaces; it never disappears.\n- The adapters live in the **widgets**, not in `features/conversation` — the neutral slice must not know how either surface sends.\n\n## Acceptance\n\n```\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\n```\n\nBehavioural acceptance rides task 4.5's composer host and task 4.7's browser suites.",
+      "activeForm": "Writing the two ConversationTarget adapters",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "3.13"
+      ],
+      "parallelWith": [
+        "4.1",
+        "4.2",
+        "4.6"
+      ],
+      "issue": "DOR-1331",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "4.5",
+      "phase": 4,
+      "phaseName": "P4 — Timeline and composer host",
+      "subject": "[unified-conversation] [P4] Build Conversation.Composer and Conversation.Footer, and delete both composer hosts",
+      "description": "One composer host over the shipped `Composer.*` primitives (`apps/client/src/layers/features/composer/index.ts:66-72` — `Composer = { Root, Input, OverlayLane, Attachments, ClearArmedHint }`, the one existing namespace compound), with the `ConversationTarget` adapters from task 4.4 carrying everything the two hosts do differently.\n\n## Files\n\n- `apps/client/src/layers/features/conversation/ui/ComposerHost.tsx` → `Conversation.Composer`\n- `apps/client/src/layers/features/conversation/ui/ConversationFooter.tsx` → `Conversation.Footer` (takes `asChild`)\n\n## What collapses\n\n`apps/client/src/layers/features/chat/ui/input/ChatInputContainer.tsx` (component :126, 536 lines) and `apps/client/src/layers/widgets/room-view/ui/RoomComposer.tsx` (component :120, 604 lines) collapse into `ComposerHost.tsx` plus the two adapters. Everything genuinely session-only that lived in `ChatInputContainer` becomes either a capability-gated slot on the host or `Conversation.Footer` content:\n\n| Was                                                    | Becomes                                                              |\n| ------------------------------------------------------ | -------------------------------------------------------------------- |\n| `InteractiveInputPanel` at `ChatInputContainer.tsx:360` | the host's **`asks` slot**, gated by `capabilities.asks`             |\n| the queue panel                                        | gated by `target.queueDepth > 0` and the presence of `target.queue`  |\n| `ChatStatusSection` at `ChatInputContainer.tsx:515`     | **`Conversation.Footer` content, unchanged**                         |\n\n**`ChatStatusSection` (`features/chat/ui/status/ChatStatusSection.tsx`, component :84, 571 lines) is not rewritten, not folded into the lane, and not split.** It is the composer's model / permission-mode / git / runtime-chip status line built on `features/status`' `StatusLine`. It moves as-is into the Footer slot. `widgets/session` composes `Conversation.Footer` holding it; `widgets/room-view` composes no Footer.\n\n## Deletions in this task\n\n`features/chat/ui/input/ChatInputContainer.tsx` (536), `widgets/room-view/ui/RoomComposer.tsx` (604), `features/chat/ui/input/InteractiveInputPanel.tsx` — and their barrel exports.\n\n## Invariants\n\n- No queue chrome at all when `target.queue` is undefined. A disabled queue button in a room is a bug.\n- `canSend: false` renders an honest, explained disabled state (archived room, gone session), not a silently dead input.\n- Attachments and the `@`-mention picker are driven by the target's ports, never by `surface`.\n- The composer is a **flex sibling of the scroller**, below the lane.\n\n## Acceptance\n\n```\npnpm vitest run apps/client/src/layers/features/conversation apps/client/src/layers/features/chat apps/client/src/layers/widgets/room-view\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\ngrep -rn \"ChatInputContainer\\|RoomComposer\\|InteractiveInputPanel\" apps/client/src   # returns nothing\n```",
+      "activeForm": "Building the composer host and footer",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "4.3",
+        "4.4"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1331",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "4.6",
+      "phase": 4,
+      "phaseName": "P4 — Timeline and composer host",
+      "subject": "[unified-conversation] [P4] Split AssistantMessageContent under 500 lines",
+      "description": "`apps/client/src/layers/features/chat/ui/AssistantMessageContent.tsx` is **591 lines**, over the repo's 500-line split threshold. Split it.\n\n## Context\n\nIt is the session body renderer's workhorse, reached from `widgets/session/ui/render-session-body.tsx` (task 1.5). It consumes `MessageContext` at :254 — **`MessageContext` stays in `features/chat`**; do not move it into `features/conversation`. Its three inline prompt mounts are at **:327** (elicitation), **:416** (approval) and **:483** (question), and after P3 those render `features/ask` components (`ElicitationPrompt`, `ApprovalPrompt`, `QuestionPrompt`) built on `AskCard.*`.\n\n## How to split\n\nSplit along the part kinds it renders, not arbitrarily at a line count. Each extracted file keeps its own TSDoc'd export and lives beside the parent in `features/chat/ui/`. Suggested seams, to be confirmed against the file as it stands after P3: the tool-call branch, the thinking/subagent branch, and the three prompt mounts.\n\n## Invariants\n\n- **Behaviour is identical.** This is a mechanical split; a rendering change here is a bug, not an improvement.\n- No new prop drilling: the extracted parts read `MessageContext` themselves rather than receiving a widened prop bag.\n- Every extracted file is under 500 lines, and so is the parent.\n- TSDoc on every new export.\n\n## Acceptance\n\n```\nwc -l apps/client/src/layers/features/chat/ui/AssistantMessageContent.tsx apps/client/src/layers/features/chat/ui/*.tsx\npnpm vitest run apps/client/src/layers/features/chat\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\n```\n\nEvery file touched is under 500 lines, and the chat suite is green **unchanged**.",
+      "activeForm": "Splitting AssistantMessageContent",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "3.13"
+      ],
+      "parallelWith": [
+        "4.1",
+        "4.2",
+        "4.4"
+      ],
+      "issue": "DOR-1331",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "4.7",
+      "phase": 4,
+      "phaseName": "P4 — Timeline and composer host",
+      "subject": "[unified-conversation] [P4] Test the timeline and composer, and run knip clean",
+      "description": "The unit tests for the merged list and host, plus the sweep that proves nothing was left behind.\n\n## Unit / RTL\n\n- Timeline: rows map to the six kinds and render in order; day and unread dividers land where `unreadPlacement` says; the `pending` prop renders `PendingRow`s after the committed rows; the skeleton renders while loading and the empty state when there are no rows; `onOpenThread` fires only when `capabilities.threads`; the `ConversationTimelineHandle`'s `scrollToRow` and `scrollToBottom` are callable through a ref. **Do not assert geometry** — jsdom reports every element as 0 × 0.\n- Composer: with `target.queue` **undefined**, no queue chrome is rendered at all (**seeded defect:** render a disabled queue button → red); with `queueDepth > 0` the queue panel renders; `canSend: false` renders the disabled state and `send` is never called; the `asks` slot renders only when `capabilities.asks`; `mentions: null` means no `@` picker.\n- Extend `features/conversation/__tests__/no-surface-switches.test.ts`'s scan to cover the new `ui/` files (it globs the directory, so confirm it does, rather than assuming).\n\n## The real gate: the full existing browser suites, unchanged\n\nThis phase rewrites the list and the composer under every shipped flow. The regression net is the gate, not the new unit tests:\n\n`tests/rooms/room-conversation.spec.ts`, `room-entry-actions.spec.ts`, `room-reactions.spec.ts`, `room-presence.spec.ts`, `room-presence-sidebar.spec.ts`, `room-sheet.spec.ts`, `room-sheet-phone.spec.ts`, `tests/chat/interactive-prompts.ts`, `live-turn-visibility.ts`, `session-read-state.ts`, `tests/streams/multi-window.spec.ts`, and the three `tests/conversation/` specs from P2 and P3.\n\nIf one of these needs an edit to pass, that is a finding about the port, not a test to update. Report it rather than editing it.\n\n## knip\n\n`pnpm knip` must be **clean** — a phase is not done while it reports a new orphan, and P4 is the phase with the largest deletion list.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/client/src/layers/features/conversation\npnpm test -- --run\npnpm knip\npnpm --filter @dorkos/e2e test -- tests/rooms tests/chat tests/conversation tests/streams/multi-window.spec.ts\n```",
+      "activeForm": "Testing the timeline and composer and running knip",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "4.5",
+        "4.6"
+      ],
+      "parallelWith": [
+        "4.8"
+      ],
+      "issue": "DOR-1331",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "4.8",
+      "phase": 4,
+      "phaseName": "P4 — Timeline and composer host",
+      "subject": "[unified-conversation] [P4] Write the phase 4 changelog fragment",
+      "description": "One fragment per phase, per `changelog/README.md`.\n\n## The rule (do not pre-allocate the id)\n\n- Mint the id **at execution time**: `node --experimental-strip-types .claude/scripts/id.ts` prints a `YYMMDD-HHMMSS` UTC timestamp id.\n- File: `changelog/unreleased/<id>-<kebab-slug>.md`, slug 2–6 words, lowercase with hyphens.\n- Body: optional `covers:` frontmatter, then Keep a Changelog headings with bullets.\n- Never edit `CHANGELOG.md`.\n\n## What this fragment says\n\nThere is one genuine user benefit to name: **long channels scroll smoothly now**, because a channel's message list is virtualized the way the session's already was. Say that in plain words. If nothing else in P4 changes what a user sees — and it should not, since the rest is one implementation replacing two — do not invent a benefit; a short fragment with one honest bullet is better than three padded ones.\n\nBenefit before mechanism, no jargon, no em dashes (`.claude/rules/user-facing-writing.md`, the `writing-for-humans` skill).\n\n## Acceptance (run it)\n\n```\npython3 .claude/scripts/changelog_backfill.py --check\n```",
+      "activeForm": "Writing the phase 4 changelog fragment",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "4.5"
+      ],
+      "parallelWith": [
+        "4.7"
+      ],
+      "issue": "DOR-1331",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "4.9",
+      "phase": 4,
+      "phaseName": "P4 — Timeline and composer host",
+      "subject": "[unified-conversation] [P4] Phase 4 acceptance: the reviewer's browser check",
+      "description": "The phase is not done until this passes in a real browser against a running cockpit.\n\n## The spec's Reviewer's browser check for P4, verbatim\n\n> In a busy channel, scroll fast — the thumb tracks, the unread cursor is where it was, opening a thread keeps the position, and posting while scrolled up shows the new-messages pill rather than yanking. Attach a file and `@`-mention in a room; queue two messages mid-turn in a session. Then open `/dev/conversation`: the _Surfaces_ section shows session, room and DM side by side from one fixture, and _Live lane_ shows every state including the Ask stack and the receipts.\n\n**This phase owns the first two sentences.** The third sentence — `/dev/conversation` and its five sections — is phase 5's work and is quoted here only because the spec states the check as one paragraph. Do not create the Conversation page in this phase; the playground still lives at `/dev/chat` until P5 renames it.\n\nRun the first two sentences as written, in a channel with real history. \"Rather than yanking\" is the clause most likely to regress from the scroll-hook merge.\n\n## Also required before the PR opens\n\n```\npnpm verify\npnpm knip\npnpm test -- --run\npnpm --filter @dorkos/e2e test -- tests/rooms tests/chat tests/conversation tests/streams/multi-window.spec.ts\n```\n\n- `pnpm knip` is **clean**.\n- Deletions complete: `grep -rn \"MessageList\\|RoomTimeline\\|use-scroll-overlay\\|use-stick-to-bottom\\|RoomComposer\\|ChatInputContainer\\|InteractiveInputPanel\\|RoomPendingRow\" apps/client/src` returns nothing.\n- No file touched in this phase is over 500 lines, `AssistantMessageContent.tsx` included.\n- The changelog fragment exists (task 4.8).\n- An adversarial review against `REVIEW.md` has run on the branch **before** the PR opens.\n\n## The one thing a reviewer should try to break\n\nUn-pin a reader. Open a long channel, scroll to the middle, and make the lane change state, a thread open, an attachment preview appear and a new message arrive. The scroll offset must not move for any of them. That is the property both the room's stick-to-bottom rules and the reserved lane exist to protect, and this phase is where it is most likely to be lost.",
+      "activeForm": "Running the phase 4 acceptance check",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "4.7",
+        "4.8"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1331",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "5.1",
+      "phase": 5,
+      "phaseName": "P5 — Dev Playground Conversation page and docs",
+      "subject": "[unified-conversation] [P5] Rename the chat playground page to Conversation, and fix the stale skill line",
+      "description": "Rename the Dev Playground page id `chat` → `conversation` and its section array `CHAT_SECTIONS` → `CONVERSATION_SECTIONS`. The spec verified this is **seven files**, not the five the skill's create-a-page count implies.\n\n## The seven touch points\n\n1. `apps/client/src/dev/playground-registry.ts:7` — the `Page` union member.\n2. `apps/client/src/dev/playground-registry.ts` — the named re-export **and** the aliased import spread into `PLAYGROUND_REGISTRY`.\n3. `apps/client/src/dev/playground-config.ts:173-182` — the `PageConfig` (`id`, `label`, `path`, `sections`). `label` becomes **\"Conversation\"**, `description` is rewritten, and `group` **stays** `session`.\n4. `apps/client/src/dev/playground-pages.ts:59` — the `PAGE_COMPONENTS` key.\n5. `apps/client/src/dev/sections/chat-sections.ts` → `conversation-sections.ts` — all **51** entries carry `page: 'chat'` and must be updated.\n6. `apps/client/src/dev/pages/ChatPage.tsx` → `ConversationPage.tsx`.\n7. `apps/client/src/dev/__tests__/playground-registry.test.ts` — the hardcoded union in _\"PLAYGROUND_REGISTRY equals the union of all page-level arrays\"_ lists every section array **by name**.\n\nThe other page-list assertions — `PAGE_ORDER`, `every-showcase-mounts.test.tsx`, `OverviewPage.test.tsx` — are all derived from `PAGE_CONFIGS` / `PAGE_COMPONENTS` and need **no edit**. **No router entry exists**: `getPageFromPath()` matches `path` generically.\n\n## Fix the skill, as part of this work\n\n`.claude/skills/maintaining-dev-playground/SKILL.md:233` says _\"Add the page component to `PAGE_COMPONENTS` in `dev/DevPlayground.tsx`\"_. `PAGE_COMPONENTS` moved to `dev/playground-pages.ts:54` (DOR-1117), so it can be imported without the shell. Correct **line 233 and the \"Files to Know\" table's `dev/DevPlayground.tsx` row** (that row is at :262 today — check both, and leave the row if it describes something still true, correcting only the `PAGE_COMPONENTS` claim).\n\nIf `.agents/skills/` carries a mirror of this skill, update it too — the `syncing-agent-skills` skill owns that rule.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts\npnpm vitest run apps/client/src/dev/__tests__\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\ngrep -rn \"'chat'\" apps/client/src/dev/sections/   # no page: 'chat' remains\n```\n\nAnd open `/dev/conversation` in a running cockpit: the page loads under the label **Conversation** in the `session` group.",
+      "activeForm": "Renaming the chat playground page to Conversation",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "4.9"
+      ],
+      "parallelWith": [
+        "5.5"
+      ],
+      "issue": "DOR-1332",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "5.2",
+      "phase": 5,
+      "phaseName": "P5 — Dev Playground Conversation page and docs",
+      "subject": "[unified-conversation] [P5] Build the Surfaces and Message row sections",
+      "description": "Two of the Conversation page's five sections. Both are restructures of showcases that already exist after P1–P4; no new product code is written in this phase.\n\n## Surfaces\n\n**Session, room and DM side by side from one fixture set** — the same rows rendered through the three capability objects (`SESSION_CAPABILITIES`, `ROOM_CAPABILITIES`, `DM_CAPABILITIES`). This is the section that makes a regression in the unification visible in one glance, and it is the single most valuable section on the page.\n\nBuild it from **one** fixture array rendered into three `Conversation.Root`s. If the three columns need different fixtures to look right, that is a finding about the unification, not a reason for three fixture sets.\n\n## Message row\n\nThe matrix: `anchor` (corner × rail) × `role` (user × assistant) × `density` (comfortable × compact) × capabilities (reactions on/off, threads on/off, run-with on/off, tool cards on/off). This is the rewrite of `apps/client/src/dev/showcases/MessageShowcases.tsx` that task 1.7 started; here it moves into the Conversation page's section list and is checked for completeness against the final `Message.*` API.\n\n## Retirements in this task\n\n`apps/client/src/dev/showcases/RoomThreadShowcases.tsx`'s **row-rendering demos** are retired — they re-render rows the _Surfaces_ section now shows for real. Keep anything in that file that is genuinely about the thread **panel** rather than the rows.\n\n`RoomsShowcases.tsx` and `RoomDeliveryShowcases.tsx` **stay on the Rooms page** (header, roster, delivery, bridge). Do not move them.\n\n## Invariants\n\n- Every section `id` equals `slugify(title)` and is unique; every rendered section is registered and every registered section is rendered (`playground-registry.test.ts` asserts all of it).\n- Showcases render the real components, never recreations.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/client/src/dev/__tests__\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\n```\n\nAnd open `/dev/conversation`: the three surfaces render side by side from one fixture, and the matrix covers all four axes.",
+      "activeForm": "Building the Surfaces and Message row sections",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "5.1"
+      ],
+      "parallelWith": [
+        "5.3",
+        "5.4"
+      ],
+      "issue": "DOR-1332",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "5.3",
+      "phase": 5,
+      "phaseName": "P5 — Dev Playground Conversation page and docs",
+      "subject": "[unified-conversation] [P5] Build the Timeline and Composer sections",
+      "description": "Two more of the Conversation page's five sections.\n\n## Timeline\n\nShows: day and unread dividers, grouping, the unread cursor, thread grouping, the pending list, the skeleton, the empty state, and **a long virtualized run** (long enough that virtualization is visibly doing something — the section is the cheapest place to notice a virtualizer regression).\n\n## Composer\n\nThe **one host against both `ConversationTarget` adapters**: idle, typing, attachments, mentions, queue depth, an Ask takeover (the `asks` slot), and the archived / `canSend: false` state.\n\nThe room column must show **no queue chrome at all** — a room target has no `queue` method. Label that in the showcase so the absence reads as deliberate.\n\n## Moves and retirements in this task\n\n- `apps/client/src/dev/showcases/InputShowcases.tsx` becomes the **Composer** section. Rewrite it against `Conversation.Composer` and the two adapters; delete recreations of the old `ChatInputContainer` / `RoomComposer` chrome, both of which no longer exist.\n- `StatusLineShowcases.tsx`, `TrustDialShowcases.tsx`, `SessionInspectorShowcases.tsx`, `ChipShowcases.tsx`, `MiscShowcases.tsx` **stay where they are**. `StatusLineShowcases` is `ChatStatusSection`'s line, which is **not** the lane — do not move it into Live lane.\n\n## Invariants\n\n- Section `id` equals `slugify(title)` and is unique.\n- Real components, not recreations.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/client/src/dev/__tests__\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\n```",
+      "activeForm": "Building the Timeline and Composer sections",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "5.1"
+      ],
+      "parallelWith": [
+        "5.2",
+        "5.4"
+      ],
+      "issue": "DOR-1332",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "5.4",
+      "phase": 5,
+      "phaseName": "P5 — Dev Playground Conversation page and docs",
+      "subject": "[unified-conversation] [P5] Build the Live lane and Asks sections and finish the showcase moves",
+      "description": "The last of the Conversation page's sections, plus the showcase moves the restructure owes.\n\n## Live lane\n\n**Every** `LaneState`: `empty` · presence at 1 / 2 / 3 / 4+ · `working_late` · thread scope · `stalled` · `queued` · each of the five `turn-*` states · **Ask (single)** · **Ask (stack)** · the receipt set · reduced-motion. Plus the peek (one agent, several agents) and **the Ask card grown from the lane**.\n\nThis consolidates the sections tasks 2.7 and 3.11 added on the old pages. Do not leave duplicates behind on the identity or subsystem pages.\n\n## Asks\n\nOne **Asks** section on the Conversation page holding the card family: `AskCard.*` in all three kinds, `AskStack`, `AskList` with its `Nothing needs you` empty state, the countdown at neutral / warn / urgent, and the five receipt lines. The **capability-approval** card is cross-listed from Subsystems per the skill's borrow pattern rather than duplicated.\n\nSources merged here: `apps/client/src/dev/showcases/ApprovalsShowcases.tsx`, `ApprovalReceiptShowcases.tsx`, and the **approval parts** of `ToolShowcases.tsx` (leave the rest of `ToolShowcases` where it is).\n\n## The identity page loses its presence entry\n\n`apps/client/src/dev/showcases/RoomPresenceShowcases.tsx`'s `RoomPresenceLine` section is registered on the **identity** page at `apps/client/src/dev/sections/identity-sections.ts:95`. The entry **moves to the Conversation page** as Live lane presence content, and the identity page loses it. `StatusShowcases.tsx`'s strip half also lands here.\n\n## Invariants\n\n- Section `id` equals `slugify(title)` and is unique; the registry test asserts the union of page-level arrays, so a moved array must be updated in `playground-registry.test.ts` too.\n- Real components driven by fixture `LaneState` / `InteractionPendingEvent` values, never recreations.\n- Pin `startedAt` against a frozen `now` so the countdown showcases do not flap.\n\n## Acceptance (run it)\n\n```\npnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts\npnpm vitest run apps/client/src/dev/__tests__\npnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint\n```\n\nAnd open `/dev/conversation`: every lane state renders, including the Ask stack and the receipts, and `/dev/identity` no longer shows a presence line.",
+      "activeForm": "Building the Live lane and Asks sections",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "5.1"
+      ],
+      "parallelWith": [
+        "5.2",
+        "5.3"
+      ],
+      "issue": "DOR-1332",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "5.5",
+      "phase": 5,
+      "phaseName": "P5 — Dev Playground Conversation page and docs",
+      "subject": "[unified-conversation] [P5] Write the docs: the live lane, one status vocabulary, and answering agents from anywhere",
+      "description": "The documentation the whole programme owes. Developer guides follow `writing-developer-guides`; the user-facing page follows `writing-for-humans` and `.claude/rules/user-facing-writing.md`.\n\n| File                               | Change                                                                                                                                                                                                                                    |\n| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |\n| `contributing/design-system.md`    | New **Live lane** subsection under Components: the reserved height (`h-6`, never `min-h`), the priority stack as **the one status vocabulary**, the announcer rule (one live region, counts not verbs, Asks announced by the approval announcer), and the motion budget. Amend §Motion's catalogue with the lane crossfade (150–200 ms, keyed on discriminant + label). Amend the `RoomPresenceLine` mentions — that component no longer exists. |\n| `contributing/architecture.md`     | A short note that `Conversation` is the **second namespace compound** after `Composer`, with the capability-flag rule stated once (behaviour branches on capabilities, never on `surface`) and a pointer to `specs/unified-conversation/02-specification.md`.                                                                                                                                                                              |\n| `contributing/state-management.md` | Add `interaction_pending` / `interaction_resolved` to the `KnownEvent` list in §Event Stream.                                                                                                                                             |\n| `docs/concepts/answering-agents.mdx` (new) | \"Answer your agents from anywhere\" — what an Ask is, where it shows up, the ten-minute window, and who can answer in a shared room. No jargon. **Register it in `contributing/INDEX.md`.**                                          |\n| `docs/concepts/rooms.mdx`          | Amend \"what you see while an agent works\": the line moved above the composer and is clickable.                                                                                                                                            |\n| `docs/api/openapi.json`            | Regenerate with `pnpm docs:export-api` for the two new routes (`GET /api/sessions/pending-interactions`, `GET /api/rooms/:id/sessions`) and three new schemas (`InteractionPendingEvent`, `InteractionResolvedEvent`, `PendingInteractionsResponse`). |\n\n## Honesty gate\n\nThe user page must not promise what is not built. State plainly that nothing reaches you when the cockpit is closed, and that a prompt nobody answers within ten minutes is refused for you. Both are true and both are named in the spec's \"What is not done\".\n\n## Deliberately not edited\n\n`specs/room-presence/02-specification.md` is **not edited**. Its §5.1 (presence under the composer) is superseded and its §5.4 (stalled hides presence) is preserved; ADR `260818-002806` carries the supersession machine-readably. Do not add a note to that spec.\n\n## Acceptance (run it)\n\n```\npnpm docs:export-api\npnpm --filter @dorkos/site build   # Fumadocs resolves the new page\n```\n\nAnd `contributing/INDEX.md` lists `docs/concepts/answering-agents.mdx` — `/docs:coverage` exists to check exactly this.",
+      "activeForm": "Writing the docs for the live lane and the Ask",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "4.9"
+      ],
+      "parallelWith": [
+        "5.1",
+        "5.2",
+        "5.3",
+        "5.4"
+      ],
+      "issue": "DOR-1332",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "5.6",
+      "phase": 5,
+      "phaseName": "P5 — Dev Playground Conversation page and docs",
+      "subject": "[unified-conversation] [P5] Write 04-implementation.md and promote the spec manifest to implemented",
+      "description": "Close the spec out on disk.\n\n## `specs/unified-conversation/04-implementation.md`\n\nThe write-up a cold reader consults in six months. Cover, honestly:\n\n- **What shipped, by phase**, with the five pull request numbers.\n- **What was deliberately not done** — carry the spec's ten-item \"What is not done\" list forward and mark anything that changed status. The ten-minute auto-deny, notification actions, scope options, the verb glimpse, the per-agent Stop, bridged DM waiting notices, Codex/OpenCode timeout parity (DOR-803), human typing indicators, the unchanged room notice, and `RoomTurnWaiting`'s two fields.\n- **What the spec got wrong**, if anything. Line anchors were read at `d7e4768e6`; record any that had moved and any design claim that did not survive contact. This section is the one a future decomposer reads first.\n- **Follow-ups worth filing** — at minimum the per-author room halt (the spec's §5.3.4), and approvals tier C as the named highest-value follow-on.\n\n## Manifest\n\nPromote `specs/unified-conversation/manifest.json` to `implemented`, following the `managing-specs` skill's rules and its manifest-ops script rather than hand-editing where the script covers it. Run `/spec:audit` afterwards if it is available.\n\n## The three draft ADRs\n\n`260818-002803` (SDK interaction prompts become fleet-wide Asks), `260818-002805` (one Conversation compound, capability flags instead of surface switches) and `260818-002806` (the reserved live lane replaces both the status strip and the under-composer presence line, amending `260729-145341`'s placement clause). Confirm each still describes what shipped and move it through `/adr:review` — do not leave three drafts describing a shipped system.\n\n## Acceptance\n\n- `specs/unified-conversation/manifest.json` reads `implemented` and `/spec:audit` is clean.\n- The three ADRs are no longer in draft, or the reason one stays is written down.\n- `04-implementation.md` names every phase's PR.",
+      "activeForm": "Writing the implementation write-up and promoting the manifest",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "5.2",
+        "5.3",
+        "5.4",
+        "5.5"
+      ],
+      "parallelWith": [
+        "5.7"
+      ],
+      "issue": "DOR-1332",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "5.7",
+      "phase": 5,
+      "phaseName": "P5 — Dev Playground Conversation page and docs",
+      "subject": "[unified-conversation] [P5] Write the phase 5 changelog fragment",
+      "description": "One fragment per phase, per `changelog/README.md`.\n\n## The rule (do not pre-allocate the id)\n\n- Mint the id **at execution time**: `node --experimental-strip-types .claude/scripts/id.ts` prints a `YYMMDD-HHMMSS` UTC timestamp id.\n- File: `changelog/unreleased/<id>-<kebab-slug>.md`, slug 2–6 words, lowercase with hyphens.\n- Body: optional `covers:` frontmatter, then Keep a Changelog headings with bullets.\n- Never edit `CHANGELOG.md`.\n\n## What this fragment says\n\nP5 is a Dev Playground restructure plus docs. Apply the `writing-changelogs` audience test honestly: someone **operating** DorkOS does not notice a playground page rename or a contributor guide, so the right answer for most of this phase's commits is the **`skip-changelog`** label rather than an invented entry.\n\nThe one exception worth a bullet is the **new user guide**: there is now a page explaining how to answer your agents from anywhere. If you write that bullet, link the docs page.\n\n## Acceptance (run it)\n\n```\npython3 .claude/scripts/changelog_backfill.py --check\n```\n\nEither a fragment covering the docs page, or the `skip-changelog` label on the PR with the reason in its description.",
+      "activeForm": "Writing the phase 5 changelog fragment",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "5.2",
+        "5.3",
+        "5.4",
+        "5.5"
+      ],
+      "parallelWith": [
+        "5.6"
+      ],
+      "issue": "DOR-1332",
+      "parentIssue": "DOR-1327"
+    },
+    {
+      "id": "5.8",
+      "phase": 5,
+      "phaseName": "P5 — Dev Playground Conversation page and docs",
+      "subject": "[unified-conversation] [P5] Phase 5 acceptance: the reviewer's browser check",
+      "description": "The programme is not done until this passes in a real browser against a running cockpit.\n\n## The spec's Reviewer's browser check for P4, verbatim (phase 5 owns its final sentence)\n\n> In a busy channel, scroll fast — the thumb tracks, the unread cursor is where it was, opening a thread keeps the position, and posting while scrolled up shows the new-messages pill rather than yanking. Attach a file and `@`-mention in a room; queue two messages mid-turn in a session. Then open `/dev/conversation`: the _Surfaces_ section shows session, room and DM side by side from one fixture, and _Live lane_ shows every state including the Ask stack and the receipts.\n\n**Phase 5 owns the third sentence** — `/dev/conversation`, the _Surfaces_ section from one fixture, and _Live lane_ showing every state including the Ask stack and the receipts. Re-run the first two sentences as a regression check anyway: this phase touches the playground, and a page that renders the real components can surface a product regression the browser suites missed.\n\n## Also required before the PR opens\n\n```\npnpm verify\npnpm knip\npnpm vitest run apps/client/src/dev/__tests__\npnpm docs:export-api   # and confirm docs/api/openapi.json has no uncommitted diff afterwards\n```\n\n- All five sections exist on `/dev/conversation`: **Surfaces · Message row · Timeline · Live lane · Composer** (with **Asks** as the card-family section).\n- No orphaned showcase: `pnpm knip` clean, and `every-showcase-mounts.test.tsx` green.\n- `/dev/identity` no longer carries the presence line; the Rooms page still carries the header, roster, delivery and bridge showcases.\n- `.claude/skills/maintaining-dev-playground/SKILL.md:233` no longer names `dev/DevPlayground.tsx` for `PAGE_COMPONENTS`.\n- `contributing/INDEX.md` lists the new docs page.\n- `specs/unified-conversation/manifest.json` is `implemented` (task 5.6).\n- The changelog fragment exists, or the PR carries `skip-changelog` with a reason (task 5.7).\n- An adversarial review against `REVIEW.md` has run on the branch **before** the PR opens.\n\n## The one thing a reviewer should try to break\n\nFind a component this programme built that has **no** playground showcase, or a showcase that recreates markup instead of rendering the real component. The `maintaining-dev-playground` skill's parity rule is the whole point of this phase, and a recreation is worse than a gap: it goes on looking right after the product breaks.",
+      "activeForm": "Running the phase 5 acceptance check",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "5.6",
+        "5.7"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1332",
+      "parentIssue": "DOR-1327"
+    }
+  ]
+}
