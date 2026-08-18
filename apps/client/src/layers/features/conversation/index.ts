@@ -32,6 +32,15 @@ export type {
 } from './model/target';
 export type { BodyRenderContext, ConversationBodyRenderer } from './model/body-renderer';
 export type { ConversationRow } from './lib/row-kinds';
+export { deriveLaneState, laneElapsed, LANE_TIMER_FLOOR_MS, NO_ASKS } from './model/lane-state';
+export type {
+  LaneAsk,
+  LaneOperationProgress,
+  LanePresenceAuthor,
+  LaneState,
+  LaneStateInput,
+  LaneTurn,
+} from './model/lane-state';
 export { messageItem, toolStatus } from './ui/message/message-variants';
 export { MessageAuthorAvatar } from './ui/message/MessageAuthorAvatar';
 export { formatTime } from './lib/format-entry-time';
