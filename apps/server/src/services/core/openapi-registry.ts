@@ -279,6 +279,7 @@ const LocalPermissionPreviewSchema = z.object({
       description: z.string().optional(),
     })
   ),
+  npmDependencies: z.array(z.object({ name: z.string(), range: z.string() })),
   externalHosts: z.array(z.string()),
   requires: z.array(
     z.object({

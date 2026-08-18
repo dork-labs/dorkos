@@ -13290,6 +13290,24 @@
                             ]
                           }
                         },
+                        "npmDependencies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "range": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "range"
+                            ]
+                          }
+                        },
                         "externalHosts": {
                           "type": "array",
                           "items": {
@@ -13366,6 +13384,7 @@
                         "unreadableHooks",
                         "schedules",
                         "secrets",
+                        "npmDependencies",
                         "externalHosts",
                         "requires",
                         "conflicts"
@@ -13592,6 +13611,24 @@
                             ]
                           }
                         },
+                        "npmDependencies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "range": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "range"
+                            ]
+                          }
+                        },
                         "externalHosts": {
                           "type": "array",
                           "items": {
@@ -13668,6 +13705,7 @@
                         "unreadableHooks",
                         "schedules",
                         "secrets",
+                        "npmDependencies",
                         "externalHosts",
                         "requires",
                         "conflicts"

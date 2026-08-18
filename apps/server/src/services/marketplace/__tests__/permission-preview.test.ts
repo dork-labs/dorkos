@@ -44,6 +44,8 @@ interface FixtureOptions {
   tasks?: SkillFixture[];
   /** Raw bytes written to `hooks/hooks.json`. Pass malformed text on purpose. */
   hooksJson?: string;
+  /** Written to `package.json` at the package root when supplied. */
+  packageJson?: Record<string, unknown>;
 }
 
 /**
@@ -189,6 +191,10 @@ async function createFixturePackage(
   if (options.hooksJson !== undefined) {
     await mkdir(join(pkgPath, 'hooks'), { recursive: true });
     await writeFile(join(pkgPath, 'hooks', 'hooks.json'), options.hooksJson);
+  }
+
+  if (options.packageJson) {
+    await writeFile(join(pkgPath, 'package.json'), JSON.stringify(options.packageJson, null, 2));
   }
 
   return pkgPath;
@@ -654,6 +660,72 @@ describe('PermissionPreviewBuilder', () => {
       expect(preview.externalHosts).toEqual(
         expect.arrayContaining(['https://api.openai.com', 'https://api.cohere.ai'])
       );
+    });
+  });
+
+  describe('npmDependencies', () => {
+    it('discloses every runtime library the install will fetch, with its version range', async () => {
+      const manifest = pluginManifest('flow');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
+        packageJson: { name: 'flow', dependencies: { zod: '^4.3.6', cronstrue: '~2.0.0' } },
+      });
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.npmDependencies).toEqual([
+        { name: 'zod', range: '^4.3.6' },
+        { name: 'cronstrue', range: '~2.0.0' },
+      ]);
+    });
+
+    it('reports nothing for a package whose npm needs are development-only', async () => {
+      const manifest = pluginManifest('dev-only');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
+        packageJson: { name: 'dev-only', devDependencies: { vitest: '^3.0.0' } },
+      });
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.npmDependencies).toEqual([]);
+    });
+
+    it('reports nothing for a package with no package.json at all', async () => {
+      const manifest = pluginManifest('no-package-json');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.npmDependencies).toEqual([]);
+    });
+
+    it('reads the real /flow plugin package.json shape', async () => {
+      // The exact structure the marketplace's flow plugin ships once `zod`
+      // moves out of devDependencies: a private, type-module dev package whose
+      // runtime scripts import zod (spec §F, F14).
+      const manifest = pluginManifest('flow-real-shape');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
+        packageJson: {
+          name: 'flow',
+          version: '0.2.0',
+          private: true,
+          type: 'module',
+          description: 'Dev tooling for the /flow plugin.',
+          scripts: { test: 'vitest run', typecheck: 'tsc --noEmit' },
+          dependencies: { zod: '^4.3.6' },
+          devDependencies: {
+            '@types/node': '^25.6.0',
+            ajv: '^8.18.0',
+            prettier: '^3.8.3',
+            tsx: '^4.20.3',
+            typescript: '^5.9.3',
+            vitest: '^3.2.4',
+          },
+        },
+      });
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.npmDependencies).toEqual([{ name: 'zod', range: '^4.3.6' }]);
     });
   });
 

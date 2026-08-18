@@ -194,6 +194,7 @@ function emptyPreview(): PermissionPreview {
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    npmDependencies: [],
     schedules: [],
     secrets: [],
     externalHosts: [],

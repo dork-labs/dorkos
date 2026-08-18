@@ -63,9 +63,15 @@ function successToastOptions(
   toastId: string | number,
   goToRegion: (region: 'messaging' | 'accounts') => void
 ) {
+  // An install can land and still leave something undone — most often its npm
+  // libraries, which warn rather than fail so the package's own files are not
+  // rolled back over a missing npm (DOR-1341). The note has to reach the
+  // person, or "Installed" quietly overstates what happened.
+  const description = result.warnings.length > 0 ? result.warnings.join(' ') : undefined;
   if (result.type === 'shape') {
     return {
       id: toastId,
+      description,
       action: {
         label: 'Apply…',
         onClick: () => useAppStore.getState().openShapeSwitcherToShape(result.packageName),
@@ -76,13 +82,14 @@ function successToastOptions(
   if (bridge) {
     return {
       id: toastId,
+      description,
       action: {
         label: bridge.region === 'messaging' ? 'Open Messaging' : 'Open Accounts',
         onClick: () => goToRegion(bridge.region),
       },
     };
   }
-  return { id: toastId };
+  return { id: toastId, description };
 }
 
 /**

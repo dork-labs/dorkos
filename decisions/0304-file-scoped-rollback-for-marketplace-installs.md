@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (supersedes the rollback approach of ADR-0231).
 
+**Amended 2026-08-18 (DOR-1341).** This ADR calls the design "git-free" and counts "no git subprocess calls" among its wins. That still holds of the engine — `runTransaction` shells out to nothing. But the install pipeline as a whole is no longer subprocess-free: a package that declares npm `dependencies` in its own `package.json` now gets one bounded `npm install --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error` run inside each flow's `stage` callback, before the backup is taken and before the atomic move. The rollback property this ADR is actually about is preserved and in fact extended: because npm runs on the staged tree, the `node_modules` it creates rides the same single atomic move as the package files, so an install that rolls back leaves neither behind. The step is bounded (120s, SIGKILL), executes no lifecycle scripts, and warns rather than fails — a missing `npm` or an offline registry must not roll back a package whose own files are fine. See `contributing/marketplace-installs.md` §5.1.
+
 ## Context
 
 ADR-0231 established the shared `runTransaction({ name, rollbackBranch, stage, activate })` engine that every marketplace install flow runs through. Its real transactional guarantee (an isolated `mkdtemp` staging directory plus a single atomic `rename` onto the install root via `atomicMove`) was sound and remains. Its optional rollback safety net was not:

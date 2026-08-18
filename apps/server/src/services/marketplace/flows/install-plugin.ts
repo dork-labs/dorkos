@@ -18,6 +18,7 @@ import type { PluginPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { atomicMove } from '../lib/atomic-move.js';
 import { installRootDirForType } from '../lib/install-roots.js';
+import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import {
   compileStagedExtensions,
@@ -108,11 +109,16 @@ export class PluginInstallFlow {
     // moves the existing target aside. Empty for a fresh install.
     const priorExtensionIds = await discoverExtensionIds(installRoot);
 
+    // Filled during `stage` by the npm dependency step and read by `activate`.
+    // Both run inside the transaction, so a rolled-back install never reports
+    // a dependency note for a package that did not land.
+    const warnings: string[] = [];
+
     const result = await runTransaction<InstallResult>({
       name: `install-plugin-${manifest.name}`,
       target: installRoot,
-      stage: (staging) => this.stage(staging.path, packagePath),
-      activate: (staging) => this.activate(staging.path, installRoot, manifest),
+      stage: (staging) => this.stage(staging.path, packagePath, installRoot, warnings),
+      activate: (staging) => this.activate(staging.path, installRoot, manifest, warnings),
     });
 
     // Success path only: retire extensions the reinstalled version dropped.
@@ -164,14 +170,33 @@ export class PluginInstallFlow {
   }
 
   /**
-   * Copy the package into the staging directory and compile every bundled
-   * extension. Throws on any compile error so the transaction wrapper
-   * tears the staging dir down before {@link activate} ever runs. The copy
-   * strips symlinks ({@link stagePackageContents}) so a malicious package
-   * cannot smuggle a link that escapes the install root (DOR-279).
+   * Copy the package into the staging directory, install any npm dependencies
+   * it declares, and compile every bundled extension. Throws on any compile
+   * error so the transaction wrapper tears the staging dir down before
+   * {@link activate} ever runs. The copy strips symlinks
+   * ({@link stagePackageContents}) so a malicious package cannot smuggle a link
+   * that escapes the install root (DOR-279).
+   *
+   * The npm step runs here, on the staged tree, so the `node_modules` it
+   * creates is activated by the same atomic move as the package files —
+   * a rolled-back install leaves neither behind (DOR-1341). It never throws:
+   * a dependency problem is reported as a warning on the install result, not
+   * as a failed install (see `lib/npm-dependencies.ts`).
    */
-  private async stage(stagingDir: string, packagePath: string): Promise<void> {
+  private async stage(
+    stagingDir: string,
+    packagePath: string,
+    installRoot: string,
+    warnings: string[]
+  ): Promise<void> {
     await stagePackageContents(packagePath, stagingDir, this.deps.logger);
+    warnings.push(
+      ...(await installStagedNpmDependencies({
+        stagingDir,
+        installPath: installRoot,
+        logger: this.deps.logger,
+      }))
+    );
     await compileStagedExtensions(
       stagingDir,
       this.deps.extensionCompiler,
@@ -189,7 +214,8 @@ export class PluginInstallFlow {
   private async activate(
     stagingDir: string,
     installRoot: string,
-    manifest: PluginPackageManifest
+    manifest: PluginPackageManifest,
+    warnings: string[]
   ): Promise<InstallResult> {
     await mkdir(path.dirname(installRoot), { recursive: true });
     await atomicMove(stagingDir, installRoot);
@@ -207,7 +233,7 @@ export class PluginInstallFlow {
       type: 'plugin',
       installPath: installRoot,
       manifest,
-      warnings: [],
+      warnings: [...warnings],
     };
   }
 }

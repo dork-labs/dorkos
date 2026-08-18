@@ -10,6 +10,7 @@ import type {
   PackageType,
   ShapePackageManifest,
 } from '@dorkos/marketplace';
+import type { NpmDependency } from './lib/npm-dependencies.js';
 
 /**
  * How much a scheduled job may do on its own once it fires.
@@ -127,6 +128,13 @@ export interface PermissionPreview {
   schedules: PreviewSchedule[];
   /** Secrets the package will request */
   secrets: { key: string; required: boolean; description?: string }[];
+  /**
+   * npm libraries the install will download from the registry, read from the
+   * `dependencies` map of the package's own `package.json`. Disclosed because
+   * the install fetches them over the network before the package ever runs, and
+   * a person approving an install deserves to know that in advance (DOR-1341).
+   */
+  npmDependencies: NpmDependency[];
   /** External hosts the package will contact */
   externalHosts: string[];
   /** Other packages this depends on */

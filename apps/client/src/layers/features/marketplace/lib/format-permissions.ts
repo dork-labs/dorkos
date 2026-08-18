@@ -69,8 +69,14 @@ export interface FormattedPermissionGroups {
 // ---------------------------------------------------------------------------
 
 /**
- * Format the `fileChanges` and `extensions` fields of a `PermissionPreview`
- * into the `effects` group.
+ * Format the `fileChanges`, `npmDependencies`, and `extensions` fields of a
+ * `PermissionPreview` into the `effects` group.
+ *
+ * The npm row sits here rather than under "Dependencies" — that group is other
+ * marketplace packages this one needs, which are a different thing from third-
+ * party libraries fetched off the npm registry. It says "download" because that
+ * is the part a person is consenting to: an install that reaches the network
+ * before the package has run a single line.
  *
  * @param preview - Full permission preview from the server.
  */
@@ -81,6 +87,18 @@ function formatEffects(preview: PermissionPreview): FormattedPermission[] {
     rows.push({
       icon: 'file',
       label: `${preview.fileChanges.length} file${preview.fileChanges.length === 1 ? '' : 's'} will be created, modified, or deleted`,
+    });
+  }
+
+  if (preview.npmDependencies.length > 0) {
+    const count = preview.npmDependencies.length;
+    rows.push({
+      icon: 'globe',
+      label: `Download ${count} npm ${count === 1 ? 'library' : 'libraries'} from the npm registry`,
+      // Every library is named, not just the first few: this is the row that
+      // tells a person exactly what code is about to be fetched onto their
+      // machine, and a truncated list would hide the one that matters.
+      description: preview.npmDependencies.map((dep) => `${dep.name}@${dep.range}`).join(', '),
     });
   }
 

@@ -323,6 +323,19 @@ export interface PreviewSchedule {
 }
 
 /**
+ * One npm library a package will fetch from the registry when it installs.
+ *
+ * Mirrors `NpmDependency` in
+ * `apps/server/src/services/marketplace/lib/npm-dependencies.ts`.
+ */
+export interface PreviewNpmDependency {
+  /** Package name on the npm registry (e.g. `zod`). */
+  name: string;
+  /** Version range exactly as the package declared it (e.g. `^4.3.6`). */
+  range: string;
+}
+
+/**
  * A preview of every effect a package install will have — surfaced to the user
  * before any disk mutation occurs.
  *
@@ -341,6 +354,12 @@ export interface PermissionPreview {
   schedules: PreviewSchedule[];
   /** Secrets the package will request from the user. */
   secrets: { key: string; required: boolean; description?: string }[];
+  /**
+   * npm libraries the install will download from the registry, read from the
+   * `dependencies` map of the package's own `package.json`. Disclosed so the
+   * install dialog can name the network fetch before a person approves it.
+   */
+  npmDependencies: PreviewNpmDependency[];
   /** External hosts the package will contact. */
   externalHosts: string[];
   /** Other packages this package depends on. */

@@ -142,6 +142,7 @@ export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
   extensions: [{ id: 'code-reviewer-ext', slots: ['sidebar', 'chat-toolbar'] }],
   hooks: [],
   unreadableHooks: [],
+  npmDependencies: [],
   schedules: [
     {
       name: 'nightly-review',
@@ -173,6 +174,10 @@ export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
     { event: 'Stop', command: 'curl -fsS https://hooks.slack.com/deploy-bot/done' },
   ],
   unreadableHooks: [{ path: 'hooks/hooks.json', event: 'SessionStart' }],
+  npmDependencies: [
+    { name: 'zod', range: '^4.3.6' },
+    { name: 'cronstrue', range: '~2.0.0' },
+  ],
   schedules: [
     {
       name: 'health-check',
@@ -217,6 +222,7 @@ export const MOCK_PERMISSION_PREVIEW_BLOCKING: PermissionPreview = {
   extensions: [],
   hooks: [],
   unreadableHooks: [],
+  npmDependencies: [],
   schedules: [],
   secrets: [
     { key: 'LINEAR_API_KEY', required: true, description: 'Linear API key for issue management' },

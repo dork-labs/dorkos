@@ -120,7 +120,7 @@ describe('useInstallWithToast', () => {
 
       // Fire the success callback as TanStack Query would.
       act(() => {
-        perCall.onSuccess({ success: true });
+        perCall.onSuccess({ success: true, warnings: [] });
       });
 
       expect(mockSuccess).toHaveBeenCalledTimes(1);
@@ -129,6 +129,29 @@ describe('useInstallWithToast', () => {
       });
       // Error toast never fires.
       expect(mockError).not.toHaveBeenCalled();
+    });
+
+    it('puts an install that landed with a note into the success toast', () => {
+      // An install can succeed and still leave something undone — npm libraries
+      // that could not be fetched warn rather than fail (DOR-1341). A bare
+      // "Installed" would overstate what happened.
+      const { result } = renderHook(() => useInstallWithToast());
+
+      act(() => {
+        result.current.mutate({ name: '@dorkos/code-reviewer' });
+      });
+      const perCall = fakes.mutate.mock.calls[0][1] as { onSuccess: (result: unknown) => void };
+      act(() => {
+        perCall.onSuccess({
+          success: true,
+          warnings: [
+            "DorkOS could not install this package's npm libraries because npm is not installed.",
+          ],
+        });
+      });
+
+      const opts = mockSuccess.mock.calls[0][1] as { description?: string };
+      expect(opts.description).toContain('npm is not installed');
     });
 
     it('replaces the loading toast with an error toast on failure', () => {
@@ -189,7 +212,7 @@ describe('useInstallWithToast', () => {
 
       const perCall = fakes.mutate.mock.calls[0][1] as { onSuccess: (r: unknown) => void };
       act(() => {
-        perCall.onSuccess({ type: 'shape', packageName: 'linear-ops' });
+        perCall.onSuccess({ type: 'shape', packageName: 'linear-ops', warnings: [] });
       });
 
       const opts = mockSuccess.mock.calls[0][1] as {
@@ -209,7 +232,11 @@ describe('useInstallWithToast', () => {
     });
 
     it('carries the same Apply action on the mutateAsync shape path', async () => {
-      fakes.mutateAsync.mockResolvedValue({ type: 'shape', packageName: 'flow-board' });
+      fakes.mutateAsync.mockResolvedValue({
+        type: 'shape',
+        packageName: 'flow-board',
+        warnings: [],
+      });
       const { result } = renderHook(() => useInstallWithToast());
 
       await act(async () => {
@@ -238,7 +265,7 @@ describe('useInstallWithToast', () => {
 
       const perCall = fakes.mutate.mock.calls[0][1] as { onSuccess: (r: unknown) => void };
       act(() => {
-        perCall.onSuccess({ type: 'agent', packageName: '@dorkos/code-reviewer' });
+        perCall.onSuccess({ type: 'agent', packageName: '@dorkos/code-reviewer', warnings: [] });
       });
 
       const opts = mockSuccess.mock.calls[0][1] as { id: string; action?: unknown };
@@ -261,6 +288,7 @@ describe('useInstallWithToast', () => {
           type: 'adapter',
           packageName: 'telegram-adapter',
           manifest: { adapterType: 'telegram' },
+          warnings: [],
         });
       });
 
@@ -293,6 +321,7 @@ describe('useInstallWithToast', () => {
           type: 'adapter',
           packageName: 'gmail-connector',
           manifest: { adapterType: 'connector' },
+          warnings: [],
         });
       });
 
@@ -315,7 +344,7 @@ describe('useInstallWithToast', () => {
 
   describe('mutateAsync (awaitable)', () => {
     it('resolves with the install result and fires a success toast', async () => {
-      fakes.mutateAsync.mockResolvedValue({ success: true, packagePath: '/tmp/x' });
+      fakes.mutateAsync.mockResolvedValue({ success: true, packagePath: '/tmp/x', warnings: [] });
       const { result } = renderHook(() => useInstallWithToast());
 
       let returned: unknown;
@@ -327,7 +356,7 @@ describe('useInstallWithToast', () => {
       expect(mockSuccess).toHaveBeenCalledWith('Installed Code Reviewer', {
         id: 'toast-id-abc',
       });
-      expect(returned).toEqual({ success: true, packagePath: '/tmp/x' });
+      expect(returned).toEqual({ success: true, packagePath: '/tmp/x', warnings: [] });
     });
 
     it('re-throws the error after firing an error toast', async () => {
@@ -361,7 +390,7 @@ describe('useInstallWithToast', () => {
     });
 
     it('does not replay the success toast across multiple re-renders', async () => {
-      fakes.mutateAsync.mockResolvedValue({ success: true });
+      fakes.mutateAsync.mockResolvedValue({ success: true, warnings: [] });
       const { result, rerender } = renderHook(() => useInstallWithToast());
 
       await act(async () => {
@@ -406,7 +435,7 @@ describe('useInstallWithToast', () => {
     });
 
     it('fires the loading toast before mutateAsync settles', async () => {
-      fakes.mutateAsync.mockResolvedValue({ success: true });
+      fakes.mutateAsync.mockResolvedValue({ success: true, warnings: [] });
       const { result } = renderHook(() => useInstallWithToast());
 
       await act(async () => {

@@ -20,6 +20,7 @@ import { TaskFrontmatterSchema } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { clampSchedulePermissionMode } from '../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from './lib/install-roots.js';
+import { readNpmDependencies } from './lib/npm-dependencies.js';
 import type {
   ConflictReport,
   PermissionPreview,
@@ -424,6 +425,12 @@ export class PermissionPreviewBuilder {
    *   `{ name, cron, permissionMode, startsEnabled }`.
    * - `secrets` — secret declarations sourced from each extension manifest's
    *   `serverCapabilities.secrets` array (deduplicated by `key`).
+   * - `npmDependencies` — the `dependencies` map of the package's own
+   *   `package.json`, so the dialog can say which libraries the install will
+   *   fetch from the npm registry before the person approves that network call
+   *   (DOR-1341). Only the package root is read; nested workspaces are not
+   *   chased. `node_modules` stays out of `fileChanges` as it always has —
+   *   listing thousands of vendored files would bury the package's own.
    * - `externalHosts` — hosts sourced from each extension manifest's
    *   `serverCapabilities.externalHosts` array (deduplicated). The
    *   marketplace manifest schema does not currently expose a top-level
@@ -453,6 +460,7 @@ export class PermissionPreviewBuilder {
       unreadableHooks: [],
       schedules: [],
       secrets: [],
+      npmDependencies: [],
       externalHosts: [],
       requires: [],
       conflicts: [],
@@ -475,6 +483,7 @@ export class PermissionPreviewBuilder {
       ...readManifestSchedules(manifest),
     ];
     preview.secrets = collectSecrets(extensionManifests);
+    preview.npmDependencies = await readNpmDependencies(packagePath);
     preview.externalHosts = collectExternalHosts(extensionManifests);
     preview.requires = await Promise.all(
       manifest.requires.map((decl) => resolveRequirement(this.dorkHome, decl))

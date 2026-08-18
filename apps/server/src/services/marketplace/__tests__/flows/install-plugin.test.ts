@@ -9,6 +9,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  chmod,
   lstat,
   mkdir,
   mkdtemp,
@@ -77,9 +78,14 @@ async function isSymlinkAt(target: string): Promise<boolean> {
 async function stagePackage(opts: {
   manifest: PluginPackageManifest;
   extensions?: { id: string; manifest: Record<string, unknown> }[];
+  /** Written to `package.json` at the package root when supplied. */
+  packageJson?: Record<string, unknown>;
 }): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'install-plugin-pkg-'));
   await mkdir(path.join(root, '.dork'), { recursive: true });
+  if (opts.packageJson) {
+    await writeFile(path.join(root, 'package.json'), JSON.stringify(opts.packageJson), 'utf-8');
+  }
   await writeFile(
     path.join(root, '.dork', 'manifest.json'),
     JSON.stringify(opts.manifest, null, 2),
@@ -437,5 +443,111 @@ describe('PluginInstallFlow', () => {
     // No leftover backup sibling.
     const pluginEntries = await readdir(path.join(deps.dorkHome, 'plugins'));
     expect(pluginEntries.some((e) => e.includes('.dorkos-bak-'))).toBe(false);
+  });
+
+  /**
+   * npm dependency installation (DOR-1341), driven end to end against a stub
+   * `npm` on `PATH` rather than an injected runner — the point of these tests is
+   * that the flow really shells out and that what npm creates is activated onto
+   * the install root by the same atomic move as the package files.
+   *
+   * Skipped on win32, where the stub would need a `.cmd` shim; the runner's own
+   * unit tests (`lib/__tests__/npm-dependencies.test.ts`) carry the platform
+   * argv assertion.
+   */
+  describe.skipIf(process.platform === 'win32')('npm dependencies', () => {
+    /** Put an executable stub named `npm` at the front of `PATH`. */
+    async function stubNpm(script: string): Promise<void> {
+      const binDir = await mkdtemp(path.join(tmpdir(), 'install-plugin-npm-stub-'));
+      cleanupDirs.push(binDir);
+      const stub = path.join(binDir, 'npm');
+      await writeFile(stub, script, 'utf-8');
+      await chmod(stub, 0o755);
+      vi.stubEnv('PATH', `${binDir}${path.delimiter}${process.env.PATH ?? ''}`);
+    }
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('installs declared dependencies and activates node_modules onto the install root', async () => {
+      // Stand in for a real registry fetch: create the one thing npm would.
+      await stubNpm('#!/bin/sh\nmkdir -p node_modules/zod\necho ok > node_modules/zod/index.js\n');
+      const deps = await buildDeps();
+      cleanupDirs.push(deps.dorkHome);
+      const manifest = buildManifest({ name: 'needs-zod' });
+      const pkgPath = await stagePackage({
+        manifest,
+        packageJson: { name: 'needs-zod', dependencies: { zod: '^4.3.6' } },
+      });
+      cleanupDirs.push(pkgPath);
+
+      const result = await new PluginInstallFlow(deps).install(pkgPath, manifest, {});
+
+      expect(result.warnings).toEqual([]);
+      const installRoot = path.join(deps.dorkHome, 'plugins', 'needs-zod');
+      expect(await pathExists(path.join(installRoot, 'node_modules', 'zod', 'index.js'))).toBe(
+        true
+      );
+    });
+
+    it('never runs npm for a package that declares no runtime dependencies', async () => {
+      const marker = path.join(await mkdtemp(path.join(tmpdir(), 'npm-marker-')), 'ran');
+      cleanupDirs.push(path.dirname(marker));
+      await stubNpm(`#!/bin/sh\ntouch "${marker}"\n`);
+      const deps = await buildDeps();
+      cleanupDirs.push(deps.dorkHome);
+      const manifest = buildManifest({ name: 'dev-deps-only' });
+      const pkgPath = await stagePackage({
+        manifest,
+        packageJson: { name: 'dev-deps-only', devDependencies: { zod: '^4.3.6' } },
+      });
+      cleanupDirs.push(pkgPath);
+
+      const result = await new PluginInstallFlow(deps).install(pkgPath, manifest, {});
+
+      expect(result.warnings).toEqual([]);
+      expect(await pathExists(marker)).toBe(false);
+    });
+
+    it('still installs the package, with a warning, when npm fails', async () => {
+      await stubNpm("#!/bin/sh\necho 'npm error code ENETUNREACH' >&2\nexit 1\n");
+      const deps = await buildDeps();
+      cleanupDirs.push(deps.dorkHome);
+      const manifest = buildManifest({ name: 'npm-fails' });
+      const pkgPath = await stagePackage({
+        manifest,
+        packageJson: { name: 'npm-fails', dependencies: { zod: '^4.3.6' } },
+      });
+      cleanupDirs.push(pkgPath);
+
+      const result = await new PluginInstallFlow(deps).install(pkgPath, manifest, {});
+
+      const installRoot = path.join(deps.dorkHome, 'plugins', 'npm-fails');
+      expect(result.ok).toBe(true);
+      expect(await pathExists(path.join(installRoot, '.dork', 'manifest.json'))).toBe(true);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0]).toContain('npm error code ENETUNREACH');
+      expect(result.warnings[0]).toContain(installRoot);
+    });
+
+    it('still installs the package, with a warning, when npm is not on the machine', async () => {
+      vi.stubEnv('PATH', path.join(tmpdir(), 'dorkos-no-npm-here'));
+      const deps = await buildDeps();
+      cleanupDirs.push(deps.dorkHome);
+      const manifest = buildManifest({ name: 'no-npm' });
+      const pkgPath = await stagePackage({
+        manifest,
+        packageJson: { name: 'no-npm', dependencies: { zod: '^4.3.6' } },
+      });
+      cleanupDirs.push(pkgPath);
+
+      const result = await new PluginInstallFlow(deps).install(pkgPath, manifest, {});
+
+      expect(result.ok).toBe(true);
+      expect(await pathExists(path.join(deps.dorkHome, 'plugins', 'no-npm'))).toBe(true);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0]).toContain('npm is not installed');
+    });
   });
 });

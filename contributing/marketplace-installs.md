@@ -89,7 +89,8 @@ apps/server/src/services/marketplace/
 ├── telemetry-hook.ts            # Singleton reporter for InstallEvent
 ├── types.ts                     # Shared types (InstallRequest, PermissionPreview, ...)
 ├── lib/
-│   └── atomic-move.ts           # Cross-device-safe fs.rename replacement
+│   ├── atomic-move.ts           # Cross-device-safe fs.rename replacement
+│   └── npm-dependencies.ts      # Staged `npm install` + the preview's reader
 ├── flows/
 │   ├── install-plugin.ts
 │   ├── install-agent.ts
@@ -201,6 +202,18 @@ Lifecycle:
 
 The net guarantee: either the package is fully installed and visible, or (for a fresh install) it never existed, or (for a reinstall) the previous installation is intact. Overwrite installs are safe by design: the previous target survives a failed activation and is reaped on success.
 
+### 5.1 npm dependencies
+
+A package may ship runtime code that imports from npm — the `/flow` plugin's `scripts/*.ts` import `zod`. Copying those files onto disk is not enough: without a `node_modules` beside them the first `node --experimental-strip-types <plugin>/scripts/dispatch.ts` dies with `ERR_MODULE_NOT_FOUND` (DOR-1341). So every install flow's `stage` callback, after the package contents are copied and before the transaction takes its backup, calls `installStagedNpmDependencies` (`lib/npm-dependencies.ts`). When the staged package root has a `package.json` with a non-empty `dependencies` map, that runs one `npm install --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error` in the staging directory (`npm.cmd` on win32), bounded at 120 s with `SIGKILL`. Three rules govern it, and none of them are style choices:
+
+- **`--ignore-scripts` is not optional.** The person approved a file copy and a library download, not lifecycle code from a transitive dependency. npm reads a project `.npmrc` from its cwd, which here is a directory a stranger authored — a command-line flag outranks every config file, and a test ships a hostile `.npmrc` plus a postinstall against the real npm to keep it that way.
+- **It runs on the staged tree, never on the activated one.** The `node_modules` it creates is activated by the same atomic `atomicMove` as the package files, so a rolled-back install leaves neither behind and a reinstall's previous `node_modules` is restored with everything else.
+- **A dependency problem warns; it does not fail the install.** No `npm` on the machine, a non-zero exit, a timeout, an offline registry — each comes back as one sentence on `InstallResult.warnings` naming the exact command to run by hand (`Run \`npm install --omit=dev\` in <installPath>`), which the install toast shows. Failing would roll back a package whose own commands, skills and docs work fine. Only the package **root**'s `package.json` is read — nested workspaces are deliberately not chased.
+
+The permission preview reports the same `dependencies` map as `npmDependencies: { name, range }[]` (section 6), so the install dialog names every library before the person approves a network fetch. `node_modules` stays out of `fileChanges` as it always has.
+
+A new flow gets none of this for free — the call lives in each flow's `stage`, not in `runTransaction` (`services/shapes/fork.ts` shares the engine and must not npm-install). Step 2 of section 9 is where to add it.
+
 ### Why file-scoped and not git
 
 The rollback operates on the install target directory using pure filesystem moves. That is deliberate: the install target is `<dorkHome>/plugins/<name>` or a project-local `.dork/` subtree (not `process.cwd()`), and installs write gitignored `.dork/` files that a `git reset` can neither restore nor remove. The superseded ADR-0231 rollback ran `git reset --hard` against `process.cwd()`, which protected the wrong tree, could not touch gitignored files, and destructively reverted every uncommitted tracked-file change in the whole repo (forcing every test to mock `isGitRepo`). ADR-0304 has the full rationale.
@@ -230,6 +243,8 @@ export interface PermissionPreview {
   }[];
   /** Secrets the package will request. */
   secrets: { key: string; required: boolean; description?: string }[];
+  /** npm libraries the install will fetch from the registry (section 5.1). */
+  npmDependencies: { name: string; range: string }[];
   /** External hosts the package will contact. */
   externalHosts: string[];
   /** Other packages this depends on. */
@@ -263,6 +278,7 @@ The builder (`services/marketplace/permission-preview.ts`) walks the staged pack
   `apply-shape.ts` may still force a schedule off when its bound agent is missing at apply time, which the preview cannot know in advance, so a `true` remains the more permissive of the two outcomes.
 
 - `.dork/adapters/*/manifest.json` for adapter requirements.
+- `package.json` at the package **root** for `npmDependencies` — the libraries the install will download from the npm registry (section 5.1). Nested workspaces are not chased, and `node_modules` stays out of `fileChanges`.
 - The `requires` field on the top-level manifest for dependency resolution against the installed set.
 
 It then delegates to the conflict detector (section 7) and attaches the result to `preview.conflicts`.
@@ -334,6 +350,8 @@ import path from 'node:path';
 import type { ThemePackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { atomicMove } from '../lib/atomic-move.js';
+import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
+import { stagePackageContents } from '../lib/stage-package.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -351,12 +369,23 @@ export class ThemeInstallFlow {
     opts: Pick<InstallRequest, 'projectPath'>
   ): Promise<InstallResult> {
     const installRoot = path.join(this.deps.dorkHome, 'themes', manifest.name);
+    const warnings: string[] = [];
 
     const result = await runTransaction<InstallResult>({
       name: `install-theme-${manifest.name}`,
       target: installRoot,
       stage: async (staging) => {
-        await cp(packagePath, staging.path, { recursive: true });
+        await stagePackageContents(packagePath, staging.path, this.deps.logger);
+        // Section 5.1 — a package that declares npm `dependencies` gets them
+        // installed on the staged tree. Not in `runTransaction`, so the flow
+        // has to ask for it; skipping it ships a package that cannot run.
+        warnings.push(
+          ...(await installStagedNpmDependencies({
+            stagingDir: staging.path,
+            installPath: installRoot,
+            logger: this.deps.logger,
+          }))
+        );
       },
       activate: async (staging) => {
         await mkdir(path.dirname(installRoot), { recursive: true });
@@ -368,7 +397,7 @@ export class ThemeInstallFlow {
           type: 'theme',
           installPath: installRoot,
           manifest,
-          warnings: [],
+          warnings: [...warnings],
         };
       },
     });
