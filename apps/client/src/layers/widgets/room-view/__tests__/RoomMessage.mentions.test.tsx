@@ -4,7 +4,7 @@
  *
  * Slice 2c: the server resolves `@handle` occurrences to `mentionSpans` at
  * write time (`RoomEntry.mentionSpans`); this is what turns each span into a
- * {@link MentionPill} inside the message body `RoomEntryRow` renders. The
+ * {@link MentionPill} inside the message body `RoomMessage` renders. The
  * claim under test is not "a pill appears" — it is that the pill's identity
  * comes from the room's ROSTER (`authors`), never from the tag's own text,
  * and that a mention nobody can resolve degrades to plain text rather than
@@ -21,11 +21,13 @@ import { useRoomDraftStore, useRoomOpenThreadStore } from '@/layers/entities/roo
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { RosterAuthor } from '../lib/room-timeline';
-import { RoomEntryRow } from '../ui/RoomEntryRow';
+import { RoomMessage } from '../ui/RoomMessage';
+import { ConversationRoot } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
 // A mention pill now reads route state to build its profile link
 // (`useProfileDeepLink`), and these tests mount it with no router. The link's
-// own behaviour has a dedicated file — `RoomEntryRow.click-to-profile.test.tsx`,
+// own behaviour has a dedicated file — `RoomMessage.click-to-profile.test.tsx`,
 // which mounts a real router and asserts the id that travels. Here it is stubbed
 // so the pill renders, which is what this file is actually about.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -112,7 +114,7 @@ function spanFor(text: string, needle: string, authorId: string): MentionSpan {
  */
 function row(target: RoomEntry, authors: ReadonlyMap<string, RosterAuthor>) {
   return (
-    <RoomEntryRow
+    <RoomMessage
       roomId="room-1"
       entry={target}
       author={{ id: 'ana', kind: 'human', displayName: 'Ana' }}
@@ -134,7 +136,14 @@ function renderRow(target: RoomEntry, authors: ReadonlyMap<string, RosterAuthor>
     wrapper: ({ children }) => (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={createMockTransport()}>
-          <TooltipProvider>{children}</TooltipProvider>
+          <TooltipProvider>
+            {/* The same conversation the room mounts (`RoomSurface`): its rows read
+                capabilities from it, so a bench without one is testing a component
+                in a state the app never puts it in. */}
+            <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+              {children}
+            </ConversationRoot>
+          </TooltipProvider>
         </TransportProvider>
       </QueryClientProvider>
     ),
@@ -164,7 +173,7 @@ function pillOf(): HTMLElement | null {
   return content().querySelector('[data-kind], [data-resolved="false"]');
 }
 
-describe('RoomEntryRow — mentions inside a message', () => {
+describe('RoomMessage — mentions inside a message', () => {
   it('draws a resolved mention as a pill, styled for the kind it resolved to', () => {
     const text = 'hey @bo can you take a look?';
     renderRow(entry(text, [spanFor(text, '@bo', 'bo')]));
@@ -280,7 +289,7 @@ describe('RoomEntryRow — mentions inside a message', () => {
  * prop alone re-renders nothing below it and a drawn pill keeps whatever the
  * roster said the moment it was first painted.
  */
-describe('RoomEntryRow — a drawn mention follows the roster', () => {
+describe('RoomMessage — a drawn mention follows the roster', () => {
   /** The same room a beat later: Bo has been renamed to Bobby. */
   const RENAMED = new Map<string, RosterAuthor>([
     ...AUTHORS,

@@ -31,6 +31,7 @@ export type {
   ConversationMentionPort,
   ConversationTarget,
 } from './model/target';
+export type { BodyRenderContext, ConversationBodyRenderer } from './model/body-renderer';
 export type { ConversationRow } from './lib/row-kinds';
 export { messageItem, toolStatus } from './ui/message/message-variants';
 export { MessageAuthorAvatar } from './ui/message/MessageAuthorAvatar';

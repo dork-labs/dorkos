@@ -13,7 +13,7 @@ import type { MessageAuthor } from '@/layers/shared/model';
  * live as sibling fields on `RoomRosterEntry` rather than one holding the
  * other, so a lookup keyed by author id has to carry both or lose one.
  *
- * Exported for `RoomEntryRow`, which reads the same map to resolve a
+ * Exported for `RoomMessage`, which reads the same map to resolve a
  * `<mention>` tag against the roster — a mention pill draws from exactly the
  * fields this type carries (kind, name, color, emoji, origin, and the
  * `agentRef` its hover card looks the agent's runtime up by).

@@ -75,7 +75,7 @@ export interface ThreadReplySummary {
  * **Requires at least one reply, and that is a real precondition rather than a
  * hedge.** A thread with no replies has no row — `groupByThread` only ever
  * creates a key once something hangs off it, so an empty array cannot reach
- * here from the timeline, and `RoomThreadReplyRow` is not rendered without one.
+ * here from the timeline, and `ThreadReplyRow` is not rendered without one.
  * Returning a zero-summary instead would invent a `lastAt` for a message that
  * does not exist, and every caller would have to decide what to draw for it. It
  * is pinned from both ends: the invariant is tested on `groupByThread`, and the

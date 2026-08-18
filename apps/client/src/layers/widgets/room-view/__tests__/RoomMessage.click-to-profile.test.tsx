@@ -30,7 +30,9 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { agentFacesByRef, type RosterAgentInfo } from '../lib/agent-details';
 import type { RosterAuthor } from '../lib/room-timeline';
 import { AgentInfoProvider, type RoomAgentDirectory } from '../model/agent-info-context';
-import { RoomEntryRow } from '../ui/RoomEntryRow';
+import { RoomMessage } from '../ui/RoomMessage';
+import { ConversationRoot } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -145,7 +147,7 @@ function renderMention(text: string, spans: MentionSpan[], fleet: RoomAgentDirec
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
-    <RoomEntryRow
+    <RoomMessage
       roomId="room-1"
       entry={entry(text, spans)}
       author={{ id: ANA_AUTHOR_ID, kind: 'human', displayName: 'Ana' }}
@@ -162,7 +164,12 @@ function renderMention(text: string, spans: MentionSpan[], fleet: RoomAgentDirec
           <TransportProvider transport={createMockTransport()}>
             <TooltipProvider>
               <harness.Wrapper>
-                <AgentInfoProvider known={fleet}>{children}</AgentInfoProvider>
+                <AgentInfoProvider known={fleet}>
+                  {/* The same conversation the room mounts (`RoomSurface`). */}
+                  <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                    {children}
+                  </ConversationRoot>
+                </AgentInfoProvider>
               </harness.Wrapper>
             </TooltipProvider>
           </TransportProvider>

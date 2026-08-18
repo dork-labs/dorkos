@@ -19,8 +19,10 @@ import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { useAgentBirthStore, useAppStore, type AgentBirthRecord } from '@/layers/shared/model';
 import { fireCelebration, resolveAgentVisual } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
+import { ConversationRoot } from '@/layers/features/conversation';
+import { NARRATION_CAPABILITIES } from '../model/narration-capabilities';
 import {
-  MessageItem,
+  SessionMessage,
   TypingDots,
   FirstLight,
   resolveMessageAuthor,
@@ -368,16 +370,21 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
         {...fastForwardProps}
       >
         <div className="flex flex-col gap-1" aria-live="polite" aria-atomic="false">
-          {convo.messages.map((message, i) => (
-            <MessageItem
-              key={message.id}
-              message={message}
-              grouping={convo.grouping[i]}
-              author={resolveMessageAuthor(message, { agent: dorkbotAuthor })}
-              sessionId=""
-              presentation
-            />
-          ))}
+          {/* A story told in message rows. It declares its own conversation
+              because the row reads what the surface can do, and the honest
+              answer here is nothing. */}
+          <ConversationRoot surface="session" capabilities={NARRATION_CAPABILITIES}>
+            {convo.messages.map((message, i) => (
+              <SessionMessage
+                key={message.id}
+                message={message}
+                grouping={convo.grouping[i]}
+                author={resolveMessageAuthor(message, { agent: dorkbotAuthor })}
+                sessionId=""
+                presentation
+              />
+            ))}
+          </ConversationRoot>
           {convo.isTyping && (
             <div className="px-1 py-2">
               <TypingDots />

@@ -10,12 +10,14 @@ import { useRoomDraftStore, useRoomOpenThreadStore } from '@/layers/entities/roo
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { MessageGrouping } from '@/layers/shared/model';
-import { RoomEntryRow } from '../ui/RoomEntryRow';
+import { RoomMessage } from '../ui/RoomMessage';
+import { ConversationRoot } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
 // The row reads route state to decide where its author face and its mention
 // pills lead (`useProfileDeepLink`), and this file mounts it with no router.
 // Where those links actually go has its own file —
-// `RoomEntryRow.click-to-profile.test.tsx`, which mounts a real router and
+// `RoomMessage.click-to-profile.test.tsx`, which mounts a real router and
 // asserts the id that travels. Here it is stubbed so the row renders, which is
 // what this file is about.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -131,7 +133,7 @@ function rowElement(
   isMember?: boolean
 ) {
   return (
-    <RoomEntryRow
+    <RoomMessage
       roomId="room-1"
       entry={target}
       author={{ id: 'ana', kind: 'agent', displayName: 'Ana', color: '#888' }}
@@ -170,14 +172,21 @@ function renderRow(
     wrapper: ({ children }) => (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>
-          <TooltipProvider>{children}</TooltipProvider>
+          <TooltipProvider>
+            {/* The same conversation the room mounts (`RoomSurface`): its rows read
+                capabilities from it, so a bench without one is testing a component
+                in a state the app never puts it in. */}
+            <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+              {children}
+            </ConversationRoot>
+          </TooltipProvider>
         </TransportProvider>
       </QueryClientProvider>
     ),
   });
 }
 
-describe('RoomEntryRow — the action surface', () => {
+describe('RoomMessage — the action surface', () => {
   it('draws the capsule in the one order every rendering uses', () => {
     // The design's capsule, made mechanical (`specs/room-messaging-design` §2):
     // the reader's three most-used emoji, then the picker, then the commands —
@@ -489,7 +498,7 @@ describe('RoomEntryRow — the action surface', () => {
 
   it('a right-click on a link does not open the row menu — the browser gets the event instead', () => {
     // The other half of the premise above (DOR-1272 blocker 1). A right-click
-    // ANYWHERE ELSE on this row DOES open the DorkOS action menu: `RoomEntryRow`
+    // ANYWHERE ELSE on this row DOES open the DorkOS action menu: `RoomMessage`
     // wraps every row in `EntryActionMenu` → `ResponsiveContextMenuTrigger` →
     // Radix's `ContextMenuTrigger`, which `preventDefault()`s `contextmenu`
     // unconditionally to do that (`@radix-ui/react-context-menu`). A link has
@@ -529,7 +538,7 @@ describe('RoomEntryRow — the action surface', () => {
   });
 });
 
-describe('RoomEntryRow — telling one notice from another', () => {
+describe('RoomMessage — telling one notice from another', () => {
   /** The notice's own mark, which is what tells the five codes apart. */
   function mark(): SVGElement | null {
     return screen.getByTestId('room-notice').querySelector('svg');
@@ -598,7 +607,7 @@ describe('RoomEntryRow — telling one notice from another', () => {
   });
 });
 
-describe('RoomEntryRow — the pills under a message', () => {
+describe('RoomMessage — the pills under a message', () => {
   it('draws nothing at all under a message nobody has reacted to', () => {
     // Behaviour 4's other half, and the one that keeps a room quiet: no pill
     // row, and no ghost + either. The affordance is the capsule until there is
@@ -768,14 +777,14 @@ describe('RoomEntryRow — the pills under a message', () => {
   });
 });
 
-describe('RoomEntryRow — the origin mark beside an entry (chats-as-channels spec §4.3, §9, DOR-879)', () => {
+describe('RoomMessage — the origin mark beside an entry (chats-as-channels spec §4.3, §9, DOR-879)', () => {
   /** Render one entry with its author's roster-carried `origin` set directly. */
   function renderWithOrigin(origin: 'local' | { platform: string }) {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
     return render(
-      <RoomEntryRow
+      <RoomMessage
         roomId="room-1"
         entry={entry()}
         author={{
@@ -802,7 +811,14 @@ describe('RoomEntryRow — the origin mark beside an entry (chats-as-channels sp
         wrapper: ({ children }) => (
           <QueryClientProvider client={queryClient}>
             <TransportProvider transport={createMockTransport()}>
-              <TooltipProvider>{children}</TooltipProvider>
+              <TooltipProvider>
+                {/* The same conversation the room mounts (`RoomSurface`): its rows read
+                    capabilities from it, so a bench without one is testing a component
+                    in a state the app never puts it in. */}
+                <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                  {children}
+                </ConversationRoot>
+              </TooltipProvider>
             </TransportProvider>
           </QueryClientProvider>
         ),
@@ -837,7 +853,7 @@ describe('RoomEntryRow — the origin mark beside an entry (chats-as-channels sp
  * timestamp on a group's first line and the one that appears in the gutter on
  * hover.
  */
-describe('RoomEntryRow — the layout slot each part is drawn with', () => {
+describe('RoomMessage — the layout slot each part is drawn with', () => {
   /** The row's two columns, in DOM order: the identity gutter, then the body. */
   function columns(): { gutter: HTMLElement; body: HTMLElement } {
     const row = screen.getByTestId('room-entry');
@@ -898,12 +914,12 @@ describe('RoomEntryRow — the layout slot each part is drawn with', () => {
 /**
  * Where the files posted with a message sit, and what the row says about them.
  *
- * The block itself is `RoomEntryAttachments` and is tested there. What only the
+ * The block itself is `Message.Attachments` and is tested there. What only the
  * whole row can answer is where it lands in the content column and whether a
  * message with no files still renders exactly as it did before rooms carried
  * any — which is every message written until now.
  */
-describe('RoomEntryRow — the files posted with a message', () => {
+describe('RoomMessage — the files posted with a message', () => {
   it('hangs the files under the words and above the pills', () => {
     // Asserted by document position rather than by child index: the content
     // column's children come and go — the author line on a group start, the

@@ -4,10 +4,10 @@
  * @module features/chat
  */
 export { ChatPanel } from './ui/ChatPanel';
-// Reusable chat primitives — surfaced for off-session composition (e.g. the
-// scripted onboarding conversation renders real message bubbles, the typing
+// The session transcript's row, surfaced for off-session composition (e.g. the
+// scripted onboarding conversation renders real message rows, the typing
 // indicator, the first-light arrival, and the composer without a live session).
-export { MessageItem } from './ui/message';
+export { SessionMessage } from './ui/message';
 export { resolveMessageAuthor } from './lib/resolve-message-author';
 export type { MessageAuthorAgent, MessageAuthorContext } from './lib/resolve-message-author';
 export { TypingDots } from './ui/primitives';
@@ -15,6 +15,11 @@ export { FirstLight } from './ui/FirstLight';
 export { ChatStatusStrip } from './ui/status/ChatStatusStrip';
 export { deriveStripState } from './ui/status/strip-state';
 export type { StripState } from './ui/status/strip-state';
+/**
+ * What an agent session's conversation can do — the one table that says how
+ * this surface differs from a channel's.
+ */
+export { SESSION_CAPABILITIES } from './config/session-capabilities';
 export { useChatSession } from './model/use-chat-session';
 export { useCelebrations } from './model/use-celebrations';
 export { useTaskState } from './model/use-task-state';

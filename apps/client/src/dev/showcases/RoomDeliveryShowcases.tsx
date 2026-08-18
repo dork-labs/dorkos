@@ -9,7 +9,7 @@
  * are rare, so nobody looks.
  *
  * The REAL components, never a copy of their markup — the notice's tone and mark
- * are chosen inside `RoomNoticeRow`, and the pending row's two states are chosen
+ * are chosen inside `NoticeRow`, and the pending row's two states are chosen
  * inside `RoomPendingRow`, so a recreation would be the one thing incapable of
  * showing that either choice had drifted.
  *
@@ -20,11 +20,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomAttachment, RoomMoment, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import type { PendingPost, RoomEntry } from '@/layers/entities/room';
 import { Message } from '@/layers/features/conversation';
-import { RoomEntryRow, RoomPendingRow } from '@/layers/widgets/room-view';
+import { RoomMessage, RoomPendingRow } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { THREAD_AGENT_ANA, THREAD_AGENT_KAI, THREAD_ROOM_ID } from './room-thread-showcase-data';
+import { ConversationRoot } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 
 /**
  * Every notice the room can write, with the SERVER's own words.
@@ -246,22 +248,24 @@ function MomentsSection() {
           <div key={label}>
             <ShowcaseLabel>{label}</ShowcaseLabel>
             <ShowcaseDemo>
-              <RoomEntryRow
-                roomId={THREAD_ROOM_ID}
-                entry={entry}
-                author={{
-                  id: entry.authorId,
-                  kind: authorId ? 'agent' : 'system',
-                  displayName: subject?.displayName ?? 'DorkOS',
-                  ...(subject?.color && { color: subject.color }),
-                }}
-                authorRef={MOMENT_AUTHORS.get(entry.authorId)}
-                authors={MOMENT_AUTHORS}
-                viewerAuthorId="author-you"
-                authorNames={new Map()}
-                reactionFrequents={[]}
-                grouping={{ position: 'only' }}
-              />
+              <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                <RoomMessage
+                  roomId={THREAD_ROOM_ID}
+                  entry={entry}
+                  author={{
+                    id: entry.authorId,
+                    kind: authorId ? 'agent' : 'system',
+                    displayName: subject?.displayName ?? 'DorkOS',
+                    ...(subject?.color && { color: subject.color }),
+                  }}
+                  authorRef={MOMENT_AUTHORS.get(entry.authorId)}
+                  authors={MOMENT_AUTHORS}
+                  viewerAuthorId="author-you"
+                  authorNames={new Map()}
+                  reactionFrequents={[]}
+                  grouping={{ position: 'only' }}
+                />
+              </ConversationRoot>
             </ShowcaseDemo>
           </div>
         );
@@ -281,17 +285,19 @@ function NoticesSection() {
         <div key={code}>
           <ShowcaseLabel>{label}</ShowcaseLabel>
           <ShowcaseDemo>
-            <RoomEntryRow
-              roomId={THREAD_ROOM_ID}
-              entry={noticeEntry(code, text)}
-              author={{ id: 'system', kind: 'system', displayName: 'DorkOS' }}
-              authorRef={undefined}
-              authors={new Map()}
-              viewerAuthorId="author-you"
-              authorNames={new Map()}
-              reactionFrequents={[]}
-              grouping={{ position: 'only' }}
-            />
+            <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+              <RoomMessage
+                roomId={THREAD_ROOM_ID}
+                entry={noticeEntry(code, text)}
+                author={{ id: 'system', kind: 'system', displayName: 'DorkOS' }}
+                authorRef={undefined}
+                authors={new Map()}
+                viewerAuthorId="author-you"
+                authorNames={new Map()}
+                reactionFrequents={[]}
+                grouping={{ position: 'only' }}
+              />
+            </ConversationRoot>
           </ShowcaseDemo>
         </div>
       ))}
@@ -423,7 +429,7 @@ function AttachmentsSection() {
  * Moments, notices and pending sends — the rows a real room only rarely shows.
  *
  * Every component here reads the query cache (the row's own retry is a mutation, and
- * every `RoomEntryRow` resolves its actions through one), so the bench brings a
+ * every `RoomMessage` resolves its actions through one), so the bench brings a
  * throwaway client of its own rather than borrowing the app's. Same shape as
  * `ThreadPanelDemo`, and for the same reason: a showcase that only renders
  * inside the running app is one nobody can test.

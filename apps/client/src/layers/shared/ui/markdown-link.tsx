@@ -112,7 +112,7 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
         target="_blank"
         onClick={handleClick}
         // Stop the row's own right-click menu (Radix `ContextMenuTrigger`,
-        // `RoomEntryBody`) from ever seeing this event, so the BROWSER's
+        // `the room's body renderer`) from ever seeing this event, so the BROWSER's
         // native link menu wins instead — "Copy Link Address", "Open Link in
         // New Tab", and so on (DOR-1272 blocker 1). React's synthetic events
         // walk the React tree, not the raw DOM, so stopping propagation here

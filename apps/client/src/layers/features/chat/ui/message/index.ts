@@ -1,9 +1,10 @@
 /**
- * Message sub-component module — internal decomposition of MessageItem.
+ * Message sub-component module — the session transcript's row and the blocks
+ * its body renderer draws.
  *
  * @module features/chat/ui/message
  */
-export { MessageItem } from './MessageItem';
+export { SessionMessage } from './SessionMessage';
 export type { InteractiveToolHandle } from './types';
 export { StreamingText } from './StreamingText';
 export { ThinkingBlock } from './ThinkingBlock';

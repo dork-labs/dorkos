@@ -4,7 +4,7 @@
  * `profile-unification` §3, bug 7).
  *
  * Same claim, same trap as the mention pill next door
- * (`RoomEntryRow.click-to-profile.test.tsx`): the id that must travel is the
+ * (`RoomMessage.click-to-profile.test.tsx`): the id that must travel is the
  * ROSTER's, and a room entry carries the author's. For a person those are one
  * id; for an agent they are two, and using the one already in hand opens an
  * empty profile. The answer is read off the URL, which is what `open()` writes
@@ -27,7 +27,9 @@ import {
 import { agentFacesByRef, type RosterAgentInfo } from '../lib/agent-details';
 import { toMessageAuthor, type RosterAuthor } from '../lib/room-timeline';
 import { AgentInfoProvider, type RoomAgentDirectory } from '../model/agent-info-context';
-import { RoomEntryRow } from '../ui/RoomEntryRow';
+import { RoomMessage } from '../ui/RoomMessage';
+import { ConversationRoot } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -148,7 +150,7 @@ function renderRow(
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
-    <RoomEntryRow
+    <RoomMessage
       roomId="room-1"
       entry={entry(author.id)}
       author={toMessageAuthor(author.id, AUTHORS, fleet.faces)}
@@ -165,7 +167,12 @@ function renderRow(
           <TransportProvider transport={createMockTransport()}>
             <TooltipProvider>
               <harness.Wrapper>
-                <AgentInfoProvider known={fleet}>{children}</AgentInfoProvider>
+                <AgentInfoProvider known={fleet}>
+                  {/* The same conversation the room mounts (`RoomSurface`). */}
+                  <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                    {children}
+                  </ConversationRoot>
+                </AgentInfoProvider>
               </harness.Wrapper>
             </TooltipProvider>
           </TransportProvider>

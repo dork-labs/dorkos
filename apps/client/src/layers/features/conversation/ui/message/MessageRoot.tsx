@@ -6,7 +6,7 @@
  * how a touch press feels under the finger. Everything else is a part.
  *
  * **Every message row is an `article`.** That is the decision both parents
- * arrived at independently (`MessageItem`, `RoomEntryRow`), and it is why the
+ * arrived at independently (the session's row and the room's), and it is why the
  * variant dial is called `role` while the DOM role is fixed: a row is an
  * article whoever wrote it, and `role="user" | "assistant"` is typography.
  *

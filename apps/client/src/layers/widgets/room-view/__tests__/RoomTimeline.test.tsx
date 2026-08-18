@@ -18,7 +18,7 @@ import { toMessageAuthor, authorsById, groupByThread } from '../lib/room-timelin
 // Every row reads route state to decide where its author face leads
 // (`useProfileDeepLink`), and this file mounts the timeline with no router.
 // Where that link goes has its own file —
-// `RoomEntryRow.click-to-profile.test.tsx`, which mounts a real router and
+// `RoomMessage.click-to-profile.test.tsx`, which mounts a real router and
 // asserts the id that travels.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
@@ -748,7 +748,7 @@ describe('RoomTimeline as a feed', () => {
     // Ctrl+End has to work from wherever focus is, and inside a message that is
     // a button belonging to a roving group. (Whether the group also grabs the
     // press on the way past is invisible from here — the container's answer
-    // lands second either way — so `RoomEntryRow` pins that half on a row
+    // lands second either way — so `RoomMessage` pins that half on a row
     // rendered without a feed around it.)
     render(
       <>

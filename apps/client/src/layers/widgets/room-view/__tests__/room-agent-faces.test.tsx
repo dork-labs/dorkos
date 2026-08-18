@@ -47,7 +47,7 @@ import { RoomTimeline } from '../ui/RoomTimeline';
 // (`useProfileDeepLink`), and this file mounts it with no router — without the
 // stub the message body renders as "This content couldn't be displayed" and
 // every face assertion below is reading an error boundary. The link's own
-// behaviour has a dedicated file (`RoomEntryRow.click-to-profile.test.tsx`),
+// behaviour has a dedicated file (`RoomMessage.click-to-profile.test.tsx`),
 // which mounts a real router; here it is stubbed so the pill renders at all.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();

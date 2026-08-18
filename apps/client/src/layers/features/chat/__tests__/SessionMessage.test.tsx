@@ -1,10 +1,34 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
-import { MessageItem } from '../ui/message';
+import { render as renderBare, screen, cleanup, act } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
+import { ConversationRoot } from '@/layers/features/conversation';
+import { SESSION_CAPABILITIES } from '../config/session-capabilities';
+import { SessionMessage } from '../ui/message';
 import { useAppStore } from '@/layers/shared/model';
 import type { MessageGrouping } from '../model/use-chat-session';
 import type { MessageAuthor } from '@/layers/shared/model';
+
+/**
+ * The conversation a session page mounts around its transcript.
+ *
+ * Every row reads what its conversation can do — reactions off, run-with on —
+ * so a bench without one is testing a component in a state the app never puts
+ * it in. Wrapped here rather than at each of the render sites below, which is
+ * the custom-render pattern RTL documents for exactly this.
+ */
+function SessionConversation({ children }: { children: ReactNode }) {
+  return (
+    <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+      {children}
+    </ConversationRoot>
+  );
+}
+
+/** Render one row inside the session conversation it belongs to. */
+function render(ui: ReactElement) {
+  return renderBare(ui, { wrapper: SessionConversation });
+}
 
 afterEach(() => {
   cleanup();
@@ -64,7 +88,7 @@ function authorProps(message: { role: 'user' | 'assistant' }) {
   return { author: message.role === 'user' ? HUMAN_AUTHOR : AGENT_AUTHOR };
 }
 
-describe('MessageItem', () => {
+describe('SessionMessage', () => {
   it('renders user messages as plain text', () => {
     const msg = {
       id: '1',
@@ -74,7 +98,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -94,7 +118,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -114,7 +138,7 @@ describe('MessageItem', () => {
       timestamp: '2026-07-22T08:00:00.000Z',
     };
     const { container: normal } = render(
-      <MessageItem message={msg} sessionId="" grouping={onlyGrouping} {...authorProps(msg)} />
+      <SessionMessage message={msg} sessionId="" grouping={onlyGrouping} {...authorProps(msg)} />
     );
     // The timestamp text is in the DOM on a normal render (shown on hover).
     expect(normal.textContent).toMatch(/\d{1,2}:\d{2}/);
@@ -122,7 +146,7 @@ describe('MessageItem', () => {
     cleanup();
 
     const { container: scripted } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId=""
         grouping={onlyGrouping}
@@ -146,7 +170,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -166,7 +190,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={middleGrouping}
@@ -198,7 +222,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -227,7 +251,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -254,7 +278,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -274,7 +298,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -294,7 +318,7 @@ describe('MessageItem', () => {
       timestamp: '2026-02-07T10:30:00.000Z',
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -318,7 +342,7 @@ describe('MessageItem', () => {
       timestamp: '2026-02-07T10:31:00.000Z',
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={middleGrouping}
@@ -339,7 +363,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -360,7 +384,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={firstGrouping}
@@ -385,7 +409,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -409,7 +433,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={middleGrouping}
@@ -429,7 +453,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={firstGrouping}
@@ -449,7 +473,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -475,7 +499,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -495,7 +519,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -515,7 +539,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -543,7 +567,7 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={middleGrouping}
@@ -584,7 +608,7 @@ describe('MessageItem', () => {
     };
 
     const { container } = render(
-      <MessageItem
+      <SessionMessage
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
@@ -648,7 +672,7 @@ describe('Auto-hide tool calls', () => {
     useAppStore.getState().setAutoHideToolCalls(true);
     const msg = makeMsg('complete');
     render(
-      <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
+      <SessionMessage message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
     );
     expect(screen.queryByText('Read ...')).toBeNull();
   });
@@ -657,14 +681,14 @@ describe('Auto-hide tool calls', () => {
     useAppStore.getState().setAutoHideToolCalls(true);
     const msg = makeMsg('running');
     const { rerender } = render(
-      <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
+      <SessionMessage message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
     );
     expect(screen.getByText('Read ...')).toBeDefined();
 
     // Transition to complete
     const completedMsg = makeMsg('complete');
     rerender(
-      <MessageItem
+      <SessionMessage
         message={completedMsg}
         sessionId="s"
         grouping={onlyGrouping}
@@ -685,7 +709,7 @@ describe('Auto-hide tool calls', () => {
     useAppStore.getState().setAutoHideToolCalls(true);
     const msg = makeMsg('error');
     render(
-      <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
+      <SessionMessage message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
     );
     act(() => {
       vi.advanceTimersByTime(10_000);
@@ -697,7 +721,7 @@ describe('Auto-hide tool calls', () => {
     useAppStore.getState().setAutoHideToolCalls(false);
     const msg = makeMsg('complete');
     render(
-      <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
+      <SessionMessage message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
     );
     expect(screen.getByText('Read ...')).toBeDefined();
   });

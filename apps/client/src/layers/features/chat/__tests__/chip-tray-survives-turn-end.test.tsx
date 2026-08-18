@@ -25,8 +25,10 @@ import { useAppStore, type MessageAuthor } from '@/layers/shared/model';
 import { setPlatformAdapter } from '@/layers/shared/lib';
 import { buildListRows } from '../lib/build-list-rows';
 import { selectRenderedMessages } from '../model/stream/derive-rendered-state';
-import { MessageItem } from '../ui/message';
+import { SessionMessage } from '../ui/message';
 import { useTrayExpansionStore } from '../model/view/use-tray-expansion';
+import { ConversationRoot } from '@/layers/features/conversation';
+import { SESSION_CAPABILITIES } from '../config/session-capabilities';
 
 const SESSION_ID = 'session-under-test';
 const NOW = Date.parse('2026-08-01T12:00:00Z');
@@ -87,11 +89,13 @@ function Transcript() {
     now: NOW,
   });
   return (
-    <>
+    // The conversation a session page mounts — the row reads its capabilities
+    // from it.
+    <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
       {rows.map((row) =>
         row.kind === 'message' && row.message.role === 'assistant' ? (
           <div key={row.key} data-testid="assistant-row" data-row-key={row.key}>
-            <MessageItem
+            <SessionMessage
               message={row.message}
               grouping={row.grouping}
               author={row.author}
@@ -100,7 +104,7 @@ function Transcript() {
           </div>
         ) : null
       )}
-    </>
+    </ConversationRoot>
   );
 }
 

@@ -1,18 +1,42 @@
-import { useId } from 'react';
-import { motion } from 'motion/react';
-import type { ChatMessage, MessageGrouping } from '../../model/use-chat-session';
-import { feedArticleProps, useAppStore } from '@/layers/shared/model';
-import type { FeedPosition, MessageAuthor } from '@/layers/shared/model';
+/**
+ * One row of a session transcript — the shared row, wired to a session.
+ *
+ * It owns only what a session knows: which of its two voices this message is in,
+ * what the row is called to a screen reader, what "Run this with…" would re-run,
+ * and the context the body renderer's components read (`MessageProvider`).
+ * Everything a row LOOKS like — the identity gutter, the group rhythm, the
+ * author line, the hover capsule — is `Message.*`, which a channel draws from
+ * the same code.
+ *
+ * **Every message row is an `article`, and every one of them is NAMED** — inside
+ * the transcript's feed and outside it alike, the same decision the room's rows
+ * landed on. The name is the author line ALREADY ON SCREEN, pointed at with
+ * `aria-labelledby`, never a second sentence invented for screen readers — that
+ * was the DOR-583 double-speak, and the fix for it is to stop inventing rather
+ * than to stay silent. A continuation row is the one exception and gets an
+ * `aria-label`: the design deliberately drops its author line for a run of
+ * messages from the same person, so who and when has to be said directly. The
+ * body is what the article is ABOUT (`aria-describedby`), which is what the APG
+ * asks a feed's articles to point at.
+ *
+ * `feedPosition` adds where the row sits in the set, which is what lets a screen
+ * reader say "message 12 of 30, DorkBot" as Page Down crosses the transcript. It
+ * is a consumer of the name, not its cause.
+ *
+ * @module features/chat/ui/message/SessionMessage
+ */
+import { useCallback, useId, useRef } from 'react';
 import { cn, getPlatform } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
-import { messageItem, MessageAuthorAvatar } from '@/layers/features/conversation';
-import { EntryRunWithMenu } from '@/layers/features/entry-actions';
+import { feedArticleProps } from '@/layers/shared/model';
+import type { FeedPosition, MessageAuthor } from '@/layers/shared/model';
+import { Message, formatTime } from '@/layers/features/conversation';
+import type { ChatMessage, MessageGrouping } from '../../model/use-chat-session';
+import { renderSessionBody } from '../render-session-body';
 import { MessageProvider } from './MessageContext';
-import { UserMessageContent } from './UserMessageContent';
-import { AssistantMessageContent } from './AssistantMessageContent';
 import type { InteractiveToolHandle } from './types';
 
-interface MessageItemProps {
+interface SessionMessageProps {
   message: ChatMessage;
   grouping: MessageGrouping;
   /** Who this message is from — the identity the gutter renders. */
@@ -61,38 +85,8 @@ interface MessageItemProps {
   feedPosition?: FeedPosition;
 }
 
-/** Format a timestamp string to a short time display (HH:MM). */
-function formatTime(timestamp: string): string {
-  try {
-    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
-}
-
-/**
- * Message item orchestrator — lays out the identity gutter and content column,
- * reads grouping and store settings, then delegates rendering to
- * UserMessageContent or AssistantMessageContent. Provides MessageContext to all
- * children for prop drilling elimination.
- *
- * **Every message row is an `article`, and every one of them is NAMED** —
- * inside the transcript's feed and outside it alike, the same decision the room
- * rows landed on (`RoomEntryRow`). The name is the author line ALREADY ON
- * SCREEN, pointed at with `aria-labelledby`, never a second sentence invented
- * for screen readers — that was the DOR-583 double-speak, and the fix for it is
- * to stop inventing rather than to stay silent. A continuation row is the one
- * exception and gets an `aria-label`: the design deliberately drops its author
- * line for a run of messages from the same person, so who and when has to be
- * said directly. The body is what the article is ABOUT
- * (`aria-describedby`), which is what the APG asks a feed's articles to point
- * at.
- *
- * `feedPosition` adds where the row sits in the set, which is what lets a
- * screen reader say "message 12 of 30, DorkBot" as Page Down crosses the
- * transcript. It is a consumer of the name, not its cause.
- */
-export function MessageItem({
+/** One message in a session transcript. */
+export function SessionMessage({
   message,
   grouping,
   author,
@@ -110,10 +104,11 @@ export function MessageItem({
   presentation = false,
   runtimeLabel,
   feedPosition,
-}: MessageItemProps) {
+}: SessionMessageProps) {
   const domId = useId();
   const headerId = `${domId}-author`;
   const contentId = `${domId}-content`;
+  const rowRef = useRef<HTMLDivElement>(null);
   // A group start renders the avatar, the author's name, and the time; a
   // continuation renders none of them and hangs under the group start, with its
   // time in the gutter on hover. Derived, never passed in: the caller already
@@ -137,22 +132,15 @@ export function MessageItem({
     message.messageType !== 'command' &&
     message.messageType !== 'compaction' &&
     message.content.trim().length > 0;
-  const { showTimestamps } = useAppStore();
-
-  const styles = messageItem({
-    role: isUserPrompt ? 'user' : 'assistant',
-    position: grouping.position,
-  });
 
   const time = message.timestamp ? formatTime(message.timestamp) : '';
   const showTime = !presentation && time.length > 0;
-  // The group header's time is part of the identity line, so it always shows —
-  // a header reading "DorkBot" with a blank where the time belongs looks broken.
-  // `showTimestamps` governs only the per-message stamps in the continuation
-  // gutter, which are the noisy ones the preference exists to quiet.
-  const gutterTimeTone = showTimestamps
-    ? 'text-msg-timestamp'
-    : 'group-hover:text-msg-timestamp text-transparent';
+  // One timestamp for the whole row: the author line draws it on a group start
+  // and the gutter draws it on hover for a continuation. Withheld entirely from
+  // scripted narration, where a clock reading would make a line of a story read
+  // as something somebody typed.
+  const at = showTime ? message.timestamp : undefined;
+  const focusRow = useCallback(() => rowRef.current?.focus(), []);
 
   return (
     <MessageProvider
@@ -170,54 +158,31 @@ export function MessageItem({
         runtimeLabel,
       }}
     >
-      <motion.div
-        initial={isNew ? { opacity: 0, y: 8 } : false}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+      <Message.Root
+        ref={rowRef}
+        role={isUserPrompt ? 'user' : 'assistant'}
+        position={grouping.position}
+        isNew={isNew}
         data-testid="message-item"
         data-role={message.role}
-        role="article"
         {...(showAuthorHeader
           ? { 'aria-labelledby': headerId }
           : { 'aria-label': showTime ? `${author.displayName}, ${time}` : author.displayName })}
         aria-describedby={contentId}
         {...feedArticleProps(feedPosition)}
-        className={cn(
-          styles.root(),
-          // A row Page Down can land on has to SHOW that it was landed on.
-          feedPosition && 'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
-          presentation && 'hover:bg-transparent'
-        )}
+        className={cn(presentation && 'hover:bg-transparent')}
       >
-        <div className={styles.gutter()}>
-          {showAuthorHeader && <MessageAuthorAvatar author={author} />}
-          {!showAuthorHeader && showTime && (
-            <span className={cn(styles.avatarTimestamp(), gutterTimeTone)}>{time}</span>
+        <Message.Gutter author={author} at={at} />
+        <Message.Body>
+          <Message.Author id={headerId} author={author} at={at} />
+          <Message.Content id={contentId}>
+            {renderSessionBody(message, { rowId: message.id, isStreaming })}
+          </Message.Content>
+          {showRunWith && (
+            <Message.Actions runWith={{ prompt: message.content, sessionId }} onExit={focusRow} />
           )}
-        </div>
-        <div className={styles.body()}>
-          {showAuthorHeader && (
-            <div id={headerId} className={styles.header()}>
-              <span className={styles.authorName()}>{author.displayName}</span>
-              {showTime && (
-                <span className={cn(styles.timestamp(), 'text-msg-timestamp')}>{time}</span>
-              )}
-            </div>
-          )}
-          <div id={contentId} data-slot="message-content" className={styles.content()}>
-            {isUser ? (
-              <UserMessageContent message={message} />
-            ) : (
-              <AssistantMessageContent message={message} />
-            )}
-          </div>
-        </div>
-        {showRunWith && (
-          <div className={styles.actions()}>
-            <EntryRunWithMenu prompt={message.content} sessionId={sessionId} />
-          </div>
-        )}
-      </motion.div>
+        </Message.Body>
+      </Message.Root>
     </MessageProvider>
   );
 }

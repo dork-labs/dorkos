@@ -1,36 +1,56 @@
 /**
- * One row of a room's history — the composition root.
+ * One row of a room's history — the shared row, wired to a channel.
  *
- * It owns what only the whole row can: which of the two kinds of line an entry
- * is, the single tab stop, and the grid a post is laid out on. Every part that
- * can be owned alone lives beside this file — the notice line, who spoke and
- * when, the words, the files posted with them, the action surface, the reaction
- * arithmetic, and what the row tells a screen reader about itself.
+ * It owns what only a room knows: which of the three kinds of line an entry is,
+ * who wrote it as the roster holds them, what this reader may do to it, and how
+ * the row describes itself. Everything a row LOOKS like — the identity gutter,
+ * the group rhythm, the author line, the hover capsule, the pills — is
+ * `Message.*`, which a session transcript draws from the same code.
  *
- * @module widgets/room-view/ui/RoomEntryRow
+ * A `post` renders on the message grid. A `notice` is the room speaking about
+ * itself and renders as {@link NoticeRow}: a quiet full-width line with no
+ * author beside it and no actions on it. A post carrying `body.moment` is a
+ * milestone and renders as {@link MomentRow} — a moment is a post, so nothing
+ * but the body says so.
+ *
+ * `orphanedReply` adds one quiet line saying the row is answering something out
+ * of view. Without it a reply whose thread head has scrolled out of the loaded
+ * history is indistinguishable from a new remark, which is a small lie the
+ * reader has no way to catch.
+ *
+ * **Every post carries the action surface** — a toolbar on hover or focus, the
+ * same actions on right-click, and a drawer on a long press. The row is a tab
+ * stop so the toolbar can be reached without a pointer; its buttons join the tab
+ * order only while focus is inside the row (see `EntryActionBar`). A fifth way
+ * in, hidden and costing nothing, exists for the one reader none of those four
+ * served: a screen reader on a touch screen. See `Message.Actions`.
+ *
+ * **The article describes itself in a line, not in full** — `entrySummary` owns
+ * that line and says what it drops.
+ *
+ * **Every message row is NAMED, wherever it renders** — the room's feed and the
+ * thread panel alike. How that name is arrived at, why a continuation row is
+ * named differently, and what `feedPosition` adds to it are
+ * `entryRowArticleProps`.
+ *
+ * @module widgets/room-view/ui/RoomMessage
  */
-import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useRef } from 'react';
 import {
   useProfileDeepLink,
   type FeedPosition,
   type MessageGrouping,
   type MessageAuthor,
-  type LongPressState,
 } from '@/layers/shared/model';
-import { cn } from '@/layers/shared/lib';
 import { profileMemberIdOf, type RoomEntry } from '@/layers/entities/room';
 import {
   Message,
   MomentRow,
   NoticeRow,
   attachmentsSummary,
-  formatAbsoluteTime,
   formatTime,
-  messageItem,
 } from '@/layers/features/conversation';
 import {
-  EntryActionMenu,
-  EntryReactionRow,
   useEntryActions,
   type EntryActionBarHandle,
   type RovingGroupHandle,
@@ -41,11 +61,9 @@ import { toMessageAuthor, type RosterAuthor } from '../lib/room-timeline';
 import { useAgentInfo, useRoomAgentFaces } from '../model/agent-info-context';
 import { useEntryReactions } from '../model/use-entry-reactions';
 import { useEntryRowKeys } from '../model/use-entry-row-keys';
-import { RoomEntryActions } from './RoomEntryActions';
-import { RoomEntryBody } from './RoomEntryBody';
-import { RoomEntryAuthorLine, RoomEntryGutter } from './RoomEntryHeader';
+import { makeRoomBodyRenderer } from './render-room-body';
 
-interface RoomEntryRowProps {
+interface RoomMessageProps {
   /** The room this entry belongs to, which its actions act on. */
   roomId: string;
   /** The durable log entry to render. */
@@ -124,41 +142,8 @@ interface RoomEntryRowProps {
   rowId?: string;
 }
 
-/**
- * One line of a room's history.
- *
- * A `post` renders on the same grid session chat uses — identity gutter, then
- * the content column — so a room reads as the same surface with more people in
- * it. A `notice` is the room speaking about itself and renders as
- * {@link NoticeRow}: a quiet full-width line with no author beside it and
- * no actions on it. A post carrying `body.moment` is a milestone and renders as
- * {@link MomentRow} — a moment is a post, so nothing but the body says so.
- *
- * `orphanedReply` adds one quiet line saying the row is answering something
- * out of view. Without it a reply whose thread head has scrolled out of the
- * loaded history is indistinguishable from a new remark, which is a small lie
- * the reader has no way to catch.
- *
- * **Every post carries the action surface** — a toolbar on hover or focus, the
- * same actions on right-click, and a drawer on a long press. The row is a tab
- * stop so the toolbar can be reached without a pointer; its buttons join the
- * tab order only while focus is inside the row (see `EntryActionBar`). A fifth
- * way in, hidden and costing nothing, exists for the one reader none of those
- * four served: a screen reader on a touch screen. See {@link RoomEntryActions}.
- *
- * **The article describes itself in a line, not in full** — see
- * {@link RoomEntryBody}, which draws both the words and the line that stands in
- * for them where they are too long or too code-heavy to describe themselves.
- *
- * **Every message row is NAMED, wherever it renders** — the room's feed and the
- * thread panel alike. That is the decision, not a side effect of the feed work
- * that happened to leak: a message that cannot say who wrote it is a message a
- * screen reader can only reach by reading everything around it, and that is as
- * true in a thread as it is in a room. How that name is arrived at, why a
- * continuation row is named differently, and what `feedPosition` adds to it are
- * `entryRowArticleProps`.
- */
-export function RoomEntryRow({
+/** One line of a room's history. */
+export function RoomMessage({
   roomId,
   entry,
   author,
@@ -173,9 +158,8 @@ export function RoomEntryRow({
   orphanedReply,
   feedPosition,
   rowId,
-}: RoomEntryRowProps) {
+}: RoomMessageProps) {
   const time = formatTime(entry.createdAt);
-  const absoluteTime = formatAbsoluteTime(entry.createdAt);
   // `null` for a message that already reads as one line — see `entrySummary`.
   // Memoised on the text: six passes over a message body is not much, but it is
   // six passes per row per render of a feed that re-renders on every arriving
@@ -205,9 +189,6 @@ export function RoomEntryRow({
   const barRef = useRef<EntryActionBarHandle>(null);
   const pillsRef = useRef<RovingGroupHandle>(null);
 
-  // How the touch press is going, so the message can give under the finger
-  // (design record §5.6). Idle on a pointer device, which never reports one.
-  const [press, setPress] = useState<LongPressState | null>(null);
   const { reactions, toggle, quickRow } = useEntryReactions({
     roomId,
     entry,
@@ -223,14 +204,6 @@ export function RoomEntryRow({
   // the fleet could not name all resolve to `undefined`, and the gutter draws
   // plain art rather than a control that opens an empty profile.
   const authorAgent = useAgentInfo(authorRef?.agentRef);
-  // Who a MOMENT is about, resolved here because only the row can reach both
-  // the room's roster and the fleet — see `MomentRow`, which takes the answer
-  // as a prop for that reason. Computed for every row rather than inside the
-  // moment branch, because hooks may not hang off which kind of line this is.
-  const faces = useRoomAgentFaces();
-  const subjectId = entry.body.subjectAuthorId ?? entry.authorId;
-  const subjectRef = authors.get(subjectId);
-  const subjectAgent = useAgentInfo(subjectRef?.agentRef);
   const { open: openProfile } = useProfileDeepLink();
   const profileMemberId =
     authorRef === undefined ? undefined : profileMemberIdOf(authorRef, authorAgent?.memberId);
@@ -255,6 +228,16 @@ export function RoomEntryRow({
     pillsRef,
     hasReactions: reactions.length > 0,
   });
+  const focusRow = useCallback(() => rowRef.current?.focus(), []);
+  const renderBody = useMemo(() => makeRoomBodyRenderer(authors), [authors]);
+  // Who a MOMENT is about, resolved here because only the host can reach both
+  // the room's roster and the fleet — see `MomentRow`, which takes the answer as
+  // a prop for that reason. Computed for every row rather than inside the moment
+  // branch, because hooks may not hang off which kind of line this is.
+  const faces = useRoomAgentFaces();
+  const subjectId = entry.body.subjectAuthorId ?? entry.authorId;
+  const subjectRef = authors.get(subjectId);
+  const subjectAgent = useAgentInfo(subjectRef?.agentRef);
 
   if (entry.kind === 'notice') {
     return <NoticeRow entry={entry} feedPosition={feedPosition} rowId={rowId} />;
@@ -274,6 +257,8 @@ export function RoomEntryRow({
         subjectIdentity={{
           handle: subjectRef?.handle ?? undefined,
           origin: subjectRef?.origin,
+          // A chip per fact the roster actually resolved, and nothing at all
+          // for one it did not — never an invented runtime.
           agent: subjectAgent && {
             runtime: subjectAgent.runtime,
             ...(subjectAgent.model && { model: subjectAgent.model }),
@@ -286,134 +271,119 @@ export function RoomEntryRow({
   }
 
   // A group start renders the avatar, the name and the time; a continuation
-  // hangs beneath it. Derived from `grouping.position` for the same reason
-  // MessageItem derives it — two sources for one fact can only drift.
+  // hangs beneath it. Derived from `grouping.position` inside the row family,
+  // for the same reason it always was — two sources for one fact can only drift.
   const showAuthorHeader = grouping.position === 'first' || grouping.position === 'only';
-  const styles = messageItem({ position: grouping.position, anchor: 'rail' });
 
   return (
-    <EntryActionMenu actions={actions} reactions={quickRow} onPressStateChange={setPress}>
-      {/*
+    <Message.Root
+      ref={rowRef}
+      id={rowId}
+      position={grouping.position}
+      actions={actions}
+      reactions={quickRow}
+      data-testid="room-entry"
+      /*
         A message is a non-interactive container that must still be focusable and
         must still hear an arrow key: it is the single tab stop its own actions
         are reached FROM, which is what keeps a room one Tab per message (see
-        `EntryActionBar`). Both rules below assume the fix is to make the row
-        interactive, and that is wrong here — the row holds selectable text and
-        its own buttons, and neither may sit inside a control. Same shape as
-        `link-safety-modal.tsx`, which handles Escape on a dialog container.
-      */}
-      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- see above */}
-      <div
-        ref={rowRef}
-        id={rowId}
-        data-testid="room-entry"
-        role="article"
-        // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- see above
-        tabIndex={0}
-        // How the row names and describes itself, and where it sits in the feed
-        // — one decision, in `entryRowArticleProps`, which also says why there
-        // is no `aria-keyshortcuts` on a room's messages.
-        {...entryRowArticleProps({
-          showAuthorHeader,
-          headerId,
-          displayName: author.displayName,
-          time,
-          summary,
-          contentId,
-          summaryId,
-          feedPosition,
-        })}
-        onKeyDown={handleKeyDown}
-        className={cn(
-          styles.root(),
-          'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
-          // The press acknowledgment (design record §5.6). Touch-only in
-          // practice: nothing else reports a press state. The squish is a
-          // transition and the spring-back is an animation, which is what makes
-          // a CANCELLED press snap back with neither — a reader who started
-          // scrolling gets no celebration for the gesture they abandoned.
-          'origin-center',
-          // iOS answers a long press on text with its own selection callout, so
-          // the press meant to open this message's drawer summoned Apple's
-          // "Copy / Look Up" bubble on top of it — two menus for one gesture,
-          // and the wrong one in front. The words stay selectable; only the
-          // callout is refused, and the drawer carries a Copy text of its own.
-          '[-webkit-touch-callout:none]',
-          press === 'pressing' && 'motion-safe:animate-press-in',
-          press === 'released' && 'motion-safe:animate-press-release'
-        )}
-      >
-        <RoomEntryGutter
+        `EntryActionBar`). The a11y rules that would object here — a tab stop and
+        a key handler on a non-interactive element — both assume the fix is to
+        make the row interactive, and that is wrong: the row holds selectable
+        text and its own buttons, and neither may sit inside a control. Same
+        shape as `link-safety-modal.tsx`, which handles Escape on a dialog
+        container. (They no longer fire at all, because the row is drawn by a
+        component rather than a bare `div` — the reasoning is kept because the
+        decision is still the decision.)
+      */
+      tabIndex={0}
+      // How the row names and describes itself, and where it sits in the feed —
+      // one decision, in `entryRowArticleProps`, which also says why there is no
+      // `aria-keyshortcuts` on a room's messages.
+      {...entryRowArticleProps({
+        showAuthorHeader,
+        headerId,
+        displayName: author.displayName,
+        time,
+        summary,
+        contentId,
+        summaryId,
+        feedPosition,
+      })}
+      onKeyDown={handleKeyDown}
+    >
+      <Message.Gutter
+        author={author}
+        at={entry.createdAt}
+        onViewProfile={viewAuthorProfile}
+        isSelf={entry.authorId === viewerAuthorId}
+      />
+      <Message.Body>
+        <Message.Author
+          id={headerId}
           author={author}
-          showAuthorHeader={showAuthorHeader}
-          createdAt={entry.createdAt}
-          time={time}
-          absoluteTime={absoluteTime}
-          onViewProfile={viewAuthorProfile}
-          isSelf={entry.authorId === viewerAuthorId}
-          className={styles.gutter()}
-          timestampClassName={styles.avatarTimestamp()}
+          at={entry.createdAt}
+          origin={authorRef?.origin}
         />
-        <div className={styles.body()}>
-          {showAuthorHeader && (
-            <RoomEntryAuthorLine
-              id={headerId}
-              author={author}
-              authorRef={authorRef}
-              createdAt={entry.createdAt}
-              time={time}
-              absoluteTime={absoluteTime}
-              className={styles.header()}
-              nameClassName={styles.authorName()}
-              timestampClassName={styles.timestamp()}
-            />
-          )}
-          {orphanedReply === true && (
-            <p data-testid="room-entry-orphan" className="text-muted-foreground text-xs italic">
-              Replying to an earlier message
-            </p>
-          )}
-          <RoomEntryBody
-            entry={entry}
-            authors={authors}
-            contentId={contentId}
-            summary={summary}
-            summaryId={summaryId}
-            className={styles.content()}
-          />
-          {/* The files that came with the message, under the words and above
-              the pills. An entry with none — including every entry written
-              before rooms carried files at all — renders nothing here. */}
-          <Message.Attachments items={entry.attachments ?? []} />
-          {/* The pills, under the words they are about. A message with no
-              reactions renders nothing here at all — no rail, no ghost — which
-              is what keeps a quiet room quiet (design record §2, behaviour 4). */}
-          <EntryReactionRow
-            ref={pillsRef}
-            reactions={reactions}
-            viewerAuthorId={viewerAuthorId}
-            names={authorNames}
-            frequents={reactionFrequents}
-            onToggle={toggle}
-            disabled={streamStalled === true || !isMember}
-            onExit={() => rowRef.current?.focus()}
-          />
-          {/* "Reply in thread" stays offered even here: it only opens the
-              thread panel, and that panel's own composer is the SAME
-              `RoomComposer` the room's own composer is — it already refuses
-              to post once `isMember` is false (DOR-1233), so a room you left
-              cannot be replied into through this door either. "Copy text"
-              reads the message, not the room, so membership is not its
-              business at all. */}
-          <RoomEntryActions
-            actions={actions}
-            reactions={quickRow}
-            barRef={barRef}
-            onExit={() => rowRef.current?.focus()}
-            className={styles.actions()}
-          />
-        </div>
-      </div>
-    </EntryActionMenu>
+        {orphanedReply === true && (
+          <p data-testid="room-entry-orphan" className="text-muted-foreground text-xs italic">
+            Replying to an earlier message
+          </p>
+        )}
+        <Message.Content
+          id={contentId}
+          // A long unbroken token — a URL, a file path, a hash pasted as
+          // `code` — is wider than the column and had nowhere to go: the column
+          // is `min-w-0`, so the overflow was simply clipped and the end of the
+          // token was unreadable and unselectable. Inline code breaks mid-token,
+          // which is right for something that is not prose; a fenced block
+          // scrolls instead, because breaking a line of code changes what it
+          // says.
+          className="[&_:not(pre)>code]:wrap-anywhere [&_pre]:overflow-x-auto"
+        >
+          {renderBody(entry, { rowId: entry.id, isStreaming: false })}
+        </Message.Content>
+        {summary !== null && (
+          /*
+            The article's description, for a message too long or too code-heavy
+            to be its own — and deliberately `display:none`.
+
+            A description is resolved from the element it points AT whether or
+            not that element is displayed, which is what makes this the one
+            place a summary can live without also being read twice: `sr-only`
+            would put it back in the row's own contents, so a screen reader
+            would hear the summary and then the message.
+          */
+          <span id={summaryId} className="hidden">
+            {summary}
+          </span>
+        )}
+        {/* The files that came with the message, under the words and above
+            the pills. An entry with none — including every entry written
+            before rooms carried files at all — renders nothing here. */}
+        <Message.Attachments items={entry.attachments ?? []} />
+        {/* The pills, under the words they are about. A message with no
+            reactions renders nothing here at all — no rail, no ghost — which
+            is what keeps a quiet room quiet (design record §2, behaviour 4). */}
+        <Message.Reactions
+          ref={pillsRef}
+          reactions={reactions}
+          viewerAuthorId={viewerAuthorId}
+          names={authorNames}
+          frequents={reactionFrequents}
+          onToggle={toggle}
+          disabled={streamStalled === true || !isMember}
+          onExit={focusRow}
+        />
+        {/* "Reply in thread" stays offered even here: it only opens the
+            thread panel, and that panel's own composer is the SAME
+            `RoomComposer` the room's own composer is — it already refuses
+            to post once `isMember` is false (DOR-1233), so a room you left
+            cannot be replied into through this door either. "Copy text"
+            reads the message, not the room, so membership is not its
+            business at all. */}
+        <Message.Actions actions={actions} reactions={quickRow} barRef={barRef} onExit={focusRow} />
+      </Message.Body>
+    </Message.Root>
   );
 }

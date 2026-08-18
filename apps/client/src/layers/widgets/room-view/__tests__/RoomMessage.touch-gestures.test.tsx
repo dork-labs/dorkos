@@ -42,11 +42,13 @@ import { useRoomDraftStore, useRoomOpenThreadStore } from '@/layers/entities/roo
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { RosterAuthor } from '../lib/room-timeline';
-import { RoomEntryRow } from '../ui/RoomEntryRow';
+import { RoomMessage } from '../ui/RoomMessage';
+import { ConversationRoot } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
 // A mention pill now reads route state to build its profile link
 // (`useProfileDeepLink`), and these tests mount it with no router. The link's
-// own behaviour has a dedicated file — `RoomEntryRow.click-to-profile.test.tsx`,
+// own behaviour has a dedicated file — `RoomMessage.click-to-profile.test.tsx`,
 // which mounts a real router and asserts the id that travels. Here it is stubbed
 // so the pill renders, which is what this file is actually about.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -67,7 +69,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
  * whether `EntryActionMenu` arms a right-click menu (desktop, no competing
  * long-press at all) or the mobile drawer's own long-press — only the latter
  * can race the pill's gesture, so this must be `true` for the race to be
- * reachable at all (`RoomEntryRow.mentions.test.tsx` deliberately mocks this
+ * reachable at all (`RoomMessage.mentions.test.tsx` deliberately mocks this
  * `false`, which is why it never saw this bug).
  */
 beforeAll(() => {
@@ -150,7 +152,7 @@ function renderRow(target: RoomEntry) {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
-    <RoomEntryRow
+    <RoomMessage
       roomId="room-1"
       entry={target}
       author={{ id: 'ana', kind: 'human', displayName: 'Ana' }}
@@ -165,7 +167,14 @@ function renderRow(target: RoomEntry) {
       wrapper: ({ children }) => (
         <QueryClientProvider client={queryClient}>
           <TransportProvider transport={createMockTransport()}>
-            <TooltipProvider>{children}</TooltipProvider>
+            <TooltipProvider>
+              {/* The same conversation the room mounts (`RoomSurface`): its rows read
+                  capabilities from it, so a bench without one is testing a component
+                  in a state the app never puts it in. */}
+              <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                {children}
+              </ConversationRoot>
+            </TooltipProvider>
           </TransportProvider>
         </QueryClientProvider>
       ),
@@ -178,7 +187,7 @@ function content(): HTMLElement {
   return document.querySelector('[data-slot="message-content"]') as HTMLElement;
 }
 
-/** The resolved mention pill inside the message body (see the doc on the equivalent helper in `RoomEntryRow.mentions.test.tsx` for why `data-kind` is the query). */
+/** The resolved mention pill inside the message body (see the doc on the equivalent helper in `RoomMessage.mentions.test.tsx` for why `data-kind` is the query). */
 function pillOf(): HTMLElement {
   const found = content().querySelector<HTMLElement>('[data-kind]');
   if (!found) throw new Error('fixture error: no resolved mention pill in this message');
@@ -204,7 +213,7 @@ async function realLongPress(target: HTMLElement) {
   fireEvent.pointerUp(target);
 }
 
-describe('RoomEntryRow — touch gesture priority between a mention pill and the message drawer', () => {
+describe('RoomMessage — touch gesture priority between a mention pill and the message drawer', () => {
   it('long-pressing the mention pill opens its identity card, never the message drawer', async () => {
     const text = 'hey @bo can you take a look?';
     renderRow(entry(text, [spanFor(text, '@bo', 'bo')]));

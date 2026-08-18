@@ -29,10 +29,10 @@ export type { RoomSurfaceProps } from './ui/RoomSurface';
  * layout the row itself owns, so a copy would be the one thing that cannot
  * catch a layout defect. Nothing in the routed app imports it from here.
  */
-export { RoomEntryRow } from './ui/RoomEntryRow';
+export { RoomMessage } from './ui/RoomMessage';
 /**
  * The thread side panel, exported for the Dev Playground's thread bench
- * (`/dev/rooms`) for the same reason `RoomEntryRow` is: the playground renders
+ * (`/dev/rooms`) for the same reason `RoomMessage` is: the playground renders
  * the real component, never a copy of its markup. Nothing in the routed app
  * imports it from here — the room view mounts it itself.
  */
@@ -49,7 +49,7 @@ export { RoomPendingRow } from './ui/RoomPendingRow';
  * Seeds what a room knows about its agents — how each one runs, and the face
  * each one wears — for a subtree, exported for the Dev Playground's identity
  * bench. A mention pill's hover card reads it from context (see
- * `agent-info-context`), so a benched `RoomEntryRow` needs one above it or its
+ * `agent-info-context`), so a benched `RoomMessage` needs one above it or its
  * cards can only ever be shown bare. The routed app feeds it
  * `useRoomAgentDirectory`, which reads the real fleet.
  */

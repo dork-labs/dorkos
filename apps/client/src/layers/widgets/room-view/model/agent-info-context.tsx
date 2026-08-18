@@ -43,7 +43,7 @@ const AgentInfoContext = createContext<RoomAgentDirectory>(NOTHING_KNOWN);
  * reaches a consumer inside a bailed-out subtree, and it costs no re-parse.
  *
  * **It reads nothing itself**, which is what lets the Dev Playground bench the
- * real `RoomEntryRow` against seeded data with no fleet to read. The routed app
+ * real `RoomMessage` against seeded data with no fleet to read. The routed app
  * feeds it {@link useRoomAgentDirectory}, so the surface holding the
  * answer is also the one that can use it for its own rows — a provider that
  * fetched privately would have to be read back through a second hook.

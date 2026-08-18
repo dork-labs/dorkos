@@ -83,7 +83,7 @@ interface MomentRowProps {
  * the one piece of context a reader who cannot see the band is missing. The
  * words themselves stay in the name rather than being replaced by a fixed label,
  * so the worst case is hearing the line twice instead of never — the same rule
- * `RoomNoticeRow` follows.
+ * {@link NoticeRow} follows.
  *
  * **Nothing to press.** No toolbar, no reaction rail, and no navigation: a
  * milestone states something that happened, and there is nobody to answer. The

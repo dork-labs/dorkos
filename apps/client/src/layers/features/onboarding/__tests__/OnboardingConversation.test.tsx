@@ -171,7 +171,7 @@ vi.mock('@/layers/entities/runtime', () => ({
  * owns is WHICH identity reaches it, so the stubs publish exactly that.
  */
 vi.mock('@/layers/features/chat', () => ({
-  MessageItem: ({
+  SessionMessage: ({
     message,
     author,
   }: {

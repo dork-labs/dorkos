@@ -30,8 +30,8 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     keywords: ['assistant', 'message', 'content', 'markdown', 'code', 'tool', 'approval'],
   },
   {
-    id: 'messageitem',
-    title: 'MessageItem',
+    id: 'sessionmessage',
+    title: 'SessionMessage',
     page: 'chat',
     category: 'Messages',
     keywords: ['message', 'item', 'grouping', 'position', 'bubble'],

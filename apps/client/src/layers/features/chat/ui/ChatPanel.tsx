@@ -28,6 +28,8 @@ import { playNotificationSound } from '@/layers/shared/lib';
 import { resolveTransportRetryText } from '../lib/resolve-retry-text';
 import type { MessageListHandle } from './MessageList';
 import type { ComposerInputHandle } from '@/layers/features/composer';
+import { ConversationRoot } from '@/layers/features/conversation';
+import { SESSION_CAPABILITIES } from '../config/session-capabilities';
 import { ChatMessageArea } from './ChatMessageArea';
 import { BirthCertificate } from './BirthCertificate';
 import { ChatInputContainer } from './input/ChatInputContainer';
@@ -388,125 +390,130 @@ export function ChatPanel({
   );
 
   return (
-    <div data-testid="chat-panel" className="flex h-full w-full flex-col">
-      <BirthCertificate sessionId={sessionId} />
+    // The session's conversation, declared once by the surface every session
+    // mounts — the route, the Obsidian embed and the dev simulator alike. Every
+    // row, and from P2 the live lane, reads what it can do from here.
+    <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+      <div data-testid="chat-panel" className="flex h-full w-full flex-col">
+        <BirthCertificate sessionId={sessionId} />
 
-      <ChatMessageArea
-        messages={messages}
-        sessionId={sessionId!}
-        isLoadingHistory={isLoadingHistory}
-        hydrated={hydrated}
-        isTextStreaming={isTextStreaming}
-        isAtBottom={isAtBottom}
-        hasNewMessages={hasNewMessages}
-        scrollToBottom={scrollToBottom}
-        onScrollStateChange={handleScrollStateChange}
-        activeToolCallId={activeInteraction?.toolCallId ?? null}
-        onToolRef={handleToolRef}
-        focusedOptionIndex={focusedOptionIndex}
-        onToolDecided={markToolCallResponded}
-        onRetry={handleRetry}
-        inputZoneToolCallId={activeInteraction?.toolCallId ?? null}
-        messageListRef={messageListRef}
-        runtimeLabel={runtimeAuthLabel}
-      />
+        <ChatMessageArea
+          messages={messages}
+          sessionId={sessionId!}
+          isLoadingHistory={isLoadingHistory}
+          hydrated={hydrated}
+          isTextStreaming={isTextStreaming}
+          isAtBottom={isAtBottom}
+          hasNewMessages={hasNewMessages}
+          scrollToBottom={scrollToBottom}
+          onScrollStateChange={handleScrollStateChange}
+          activeToolCallId={activeInteraction?.toolCallId ?? null}
+          onToolRef={handleToolRef}
+          focusedOptionIndex={focusedOptionIndex}
+          onToolDecided={markToolCallResponded}
+          onRetry={handleRetry}
+          inputZoneToolCallId={activeInteraction?.toolCallId ?? null}
+          messageListRef={messageListRef}
+          runtimeLabel={runtimeAuthLabel}
+        />
 
-      <TerminalReasonChip terminalReason={sessionStatus?.terminalReason} />
+        <TerminalReasonChip terminalReason={sessionStatus?.terminalReason} />
 
-      <ChatStatusStrip
-        status={status}
-        streamStartTime={streamStartTime}
-        estimatedTokens={estimatedTokens}
-        permissionMode={permissionMode}
-        isWaitingForUser={isWaitingForUser ?? false}
-        waitingType={waitingType ?? 'approval'}
-        systemStatus={systemStatus}
-        operationProgress={operationProgress}
-        activity={activity}
-      />
+        <ChatStatusStrip
+          status={status}
+          streamStartTime={streamStartTime}
+          estimatedTokens={estimatedTokens}
+          permissionMode={permissionMode}
+          isWaitingForUser={isWaitingForUser ?? false}
+          waitingType={waitingType ?? 'approval'}
+          systemStatus={systemStatus}
+          operationProgress={operationProgress}
+          activity={activity}
+        />
 
-      <AnimatePresence>
-        {showSuggestions && (
-          <PromptSuggestionChips
-            suggestions={promptSuggestions}
-            onChipClick={handleSuggestionClick}
+        <AnimatePresence>
+          {showSuggestions && (
+            <PromptSuggestionChips
+              suggestions={promptSuggestions}
+              onChipClick={handleSuggestionClick}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Suggestion chips (e.g. the living tour's offer) only appear when the
+          session is idle — never interrupt an in-flight turn. */}
+        {status === 'idle' && suggestionChips.map((chip) => <chip.component key={chip.id} />)}
+
+        <CelebrationOverlay
+          celebration={celebrations.activeCelebration}
+          onComplete={celebrations.clearCelebration}
+        />
+
+        <TaskListPanel
+          tasks={taskState.tasks}
+          taskMap={taskState.taskMap}
+          activeForm={taskState.activeForm}
+          isCollapsed={taskState.isCollapsed}
+          onToggleCollapse={taskState.toggleCollapse}
+          celebratingTaskId={celebrations.celebratingTaskId}
+          onCelebrationComplete={celebrations.clearCelebration}
+          statusTimestamps={taskState.statusTimestamps}
+        />
+
+        {showTurnFailedNotice && (
+          <TurnFailedNotice
+            sessionId={sessionId!}
+            onRetry={hasUserMessage ? handleRetry : undefined}
           />
         )}
-      </AnimatePresence>
 
-      {/* Suggestion chips (e.g. the living tour's offer) only appear when the
-          session is idle — never interrupt an in-flight turn. */}
-      {status === 'idle' && suggestionChips.map((chip) => <chip.component key={chip.id} />)}
+        {error && (
+          <div className="mx-4 mb-2">
+            <ErrorMessageBlock
+              message={error.message}
+              heading={error.heading}
+              subtext={error.message}
+              onRetry={error.retryable ? handleTransportRetry : undefined}
+            />
+          </div>
+        )}
 
-      <CelebrationOverlay
-        celebration={celebrations.activeCelebration}
-        onComplete={celebrations.clearCelebration}
-      />
-
-      <TaskListPanel
-        tasks={taskState.tasks}
-        taskMap={taskState.taskMap}
-        activeForm={taskState.activeForm}
-        isCollapsed={taskState.isCollapsed}
-        onToggleCollapse={taskState.toggleCollapse}
-        celebratingTaskId={celebrations.celebratingTaskId}
-        onCelebrationComplete={celebrations.clearCelebration}
-        statusTimestamps={taskState.statusTimestamps}
-      />
-
-      {showTurnFailedNotice && (
-        <TurnFailedNotice
-          sessionId={sessionId!}
-          onRetry={hasUserMessage ? handleRetry : undefined}
+        <ChatInputContainer
+          chatInputRef={chatInputRef}
+          input={input}
+          autocomplete={autocomplete}
+          handleSubmit={handleSubmit}
+          enqueueContent={enqueueContent}
+          steerContent={steerContent}
+          addContextContent={addContextContent}
+          tryNativeCommand={tryNativeCommand}
+          commandPending={commandPending}
+          status={status}
+          stop={stop}
+          setInput={setInput}
+          sessionId={sessionId ?? ''}
+          sessionStatus={sessionStatus}
+          fileUpload={{
+            pendingFiles: fileUpload.pendingFiles,
+            onFilesSelected: fileUpload.addFiles,
+            onFileRemove: fileUpload.removeFile,
+            onFileRetry: fileUpload.retryFile,
+            onUploadCancel: fileUpload.cancelUpload,
+            isUploading: fileUpload.isUploading,
+            hasFailedUpload: fileUpload.hasFailedUpload,
+          }}
+          interaction={{
+            active: activeInteraction,
+            pendingApprovals: pendingInteractions.filter((tc) => tc.interactiveType === 'approval'),
+            focusedOptionIndex,
+            onToolRef: handleToolRef,
+            onToolDecided: markToolCallResponded,
+          }}
+          sync={{
+            connectionState: syncConnectionState,
+          }}
         />
-      )}
-
-      {error && (
-        <div className="mx-4 mb-2">
-          <ErrorMessageBlock
-            message={error.message}
-            heading={error.heading}
-            subtext={error.message}
-            onRetry={error.retryable ? handleTransportRetry : undefined}
-          />
-        </div>
-      )}
-
-      <ChatInputContainer
-        chatInputRef={chatInputRef}
-        input={input}
-        autocomplete={autocomplete}
-        handleSubmit={handleSubmit}
-        enqueueContent={enqueueContent}
-        steerContent={steerContent}
-        addContextContent={addContextContent}
-        tryNativeCommand={tryNativeCommand}
-        commandPending={commandPending}
-        status={status}
-        stop={stop}
-        setInput={setInput}
-        sessionId={sessionId ?? ''}
-        sessionStatus={sessionStatus}
-        fileUpload={{
-          pendingFiles: fileUpload.pendingFiles,
-          onFilesSelected: fileUpload.addFiles,
-          onFileRemove: fileUpload.removeFile,
-          onFileRetry: fileUpload.retryFile,
-          onUploadCancel: fileUpload.cancelUpload,
-          isUploading: fileUpload.isUploading,
-          hasFailedUpload: fileUpload.hasFailedUpload,
-        }}
-        interaction={{
-          active: activeInteraction,
-          pendingApprovals: pendingInteractions.filter((tc) => tc.interactiveType === 'approval'),
-          focusedOptionIndex,
-          onToolRef: handleToolRef,
-          onToolDecided: markToolCallResponded,
-        }}
-        sync={{
-          connectionState: syncConnectionState,
-        }}
-      />
-    </div>
+      </div>
+    </ConversationRoot>
   );
 }
