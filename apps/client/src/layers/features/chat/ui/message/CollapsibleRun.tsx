@@ -7,13 +7,12 @@
  * @module features/chat/ui/message/CollapsibleRun
  */
 import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { CollapsibleCard } from '../primitives';
 
 /** Minimum run length before the "N more" collapse kicks in. */
-const COLLAPSE_THRESHOLD = 4;
+export const COLLAPSE_THRESHOLD = 4;
 /** Number of items shown before the collapse button. */
-const VISIBLE_COUNT = 2;
+export const VISIBLE_COUNT = 2;
 
 /**
  * Wraps a run of consecutive tool/thinking elements with a "show N more" collapse.
@@ -34,18 +33,18 @@ export function CollapsibleRun({ children }: { children: React.ReactNode[] }) {
   return (
     <>
       {children.slice(0, VISIBLE_COUNT)}
+      {/* The card's own chevron, not a hand-drawn one: `hideChevron` also drops
+          `aria-expanded`, and this header IS a real expand control — a screen
+          reader has to hear that it is collapsed. */}
       <CollapsibleCard
         expanded={false}
         onToggle={() => setExpanded(true)}
-        hideChevron
+        ariaLabel={`Show ${hiddenCount} more steps`}
         className="border-l-muted-foreground/15"
         header={
-          <>
-            <ChevronRight className="text-muted-foreground size-(--size-icon-xs)" />
-            <span className="text-3xs text-muted-foreground font-mono">
-              and {hiddenCount} more steps&hellip;
-            </span>
-          </>
+          <span className="text-3xs text-muted-foreground font-mono">
+            and {hiddenCount} more steps&hellip;
+          </span>
         }
       >
         <></>
