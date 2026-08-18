@@ -58,6 +58,15 @@ export interface LaneAsk {
  */
 export const NO_ASKS: readonly LaneAsk[] = [];
 
+/**
+ * The empty presence list a surface with no presence passes.
+ *
+ * Shared for the reason {@link NO_ASKS} is: a session re-derives its lane on
+ * every turn event, and a fresh `[]` each time is a new identity for a memo to
+ * miss on.
+ */
+export const NO_PRESENCE: readonly LanePresenceAuthor[] = [];
+
 /** One agent working in this conversation, as the lane reads it. */
 export interface LanePresenceAuthor {
   /** The agent doing the work. */

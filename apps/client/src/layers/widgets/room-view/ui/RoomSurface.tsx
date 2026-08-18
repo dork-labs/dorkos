@@ -24,7 +24,7 @@ import { RoomComposer } from './RoomComposer';
 import { RoomHeader } from './RoomHeader';
 import { RoomLiveLane } from './RoomLiveLane';
 import { RoomThreadPanel } from './RoomThreadPanel';
-import { RoomTimeline, RoomTimelineSkeleton, scrollToEntryRow } from './RoomTimeline';
+import { RoomTimeline, RoomTimelineSkeleton } from './RoomTimeline';
 
 /** What {@link RoomSurface} needs to draw a room. */
 export interface RoomSurfaceProps {
@@ -300,7 +300,6 @@ export function RoomSurface({
         stalled={stream.stalled}
         unavailable={stream.unavailable}
         onRetry={stream.retry}
-        onScrollToRow={scrollToEntryRow}
       />
       {/* Keyed on the room so opening a conversation gives you a composer that
           is focused and freshly sized for that room's draft. Switching to an

@@ -8,6 +8,9 @@ covers:
   - "test(client,server,e2e): P2.6 — the whole priority table, the new route's authority, and the two claims only a browser can make (DOR-1329)"
   - 'feat(client): P2.7 — every lane state and both peek shapes in the Dev Playground (DOR-1329)'
   - 'chore(client,server,e2e,docs): P2.9 — the phase gate, and every reference points at the line that exists (DOR-1329)'
+  - 'chore(e2e): the two new specs point at the code they cover (DOR-1329)'
+  - 'fix(client): the peek closes with its trigger, hands the caret back, and only links to rows that exist (DOR-1329)'
+  - 'fix(server,client,e2e): visibility before the person gate, a dead export gone, and every reference points at what exists (DOR-1329)'
 ---
 
 ### Added

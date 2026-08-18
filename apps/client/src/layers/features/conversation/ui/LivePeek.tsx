@@ -32,10 +32,16 @@ export interface LivePeekRow {
   /** ISO 8601 — when its oldest live claim started. */
   since: string;
   /**
-   * What it is answering, in the words already on screen, or `null` when the
-   * host could not resolve the entry (it has scrolled out of the loaded page).
+   * What it is answering — the words already on screen, and the DOM id of the
+   * row they are on — or `null` when the host cannot honestly offer either.
+   *
+   * **`rowId`, not `entryId`, is what makes the link real.** An entry can be
+   * quotable and still be drawn nowhere (a reply lives in a thread panel, and a
+   * phone unmounts the room while one is open), and a link that scrolls to
+   * nothing is worse than no link. The host resolves the element; this draws the
+   * control only when there is one.
    */
-  replyingTo: { entryId: string; excerpt: string } | null;
+  replyingTo: { entryId: string; excerpt: string; rowId: string } | null;
   /**
    * Where its work runs, or `null` when this room holds no binding for it.
    *
@@ -49,8 +55,8 @@ export interface LivePeekRow {
 export interface LivePeekProps {
   /** One row per working agent, oldest claim first. */
   rows: readonly LivePeekRow[];
-  /** Jump the timeline to an entry and flash it. */
-  onScrollToRow?: (entryId: string) => void;
+  /** Take the reader to a row by its DOM id, and leave them standing on it. */
+  onScrollToRow?: (rowId: string) => void;
   /** Open the session an agent's work runs in. */
   onOpenSession?: (sessionId: string) => void;
   /**
@@ -95,7 +101,7 @@ export function LivePeek({
   const footerStop = rows.length > 1 && onStopAll !== undefined;
 
   return (
-    <div data-testid="live-peek" className="flex flex-col">
+    <div data-slot="live-peek" data-testid="live-peek" className="flex flex-col">
       <ul className="divide-border divide-y">
         {rows.map((row) => (
           <li key={row.authorId} data-testid="live-peek-row" className="flex gap-2.5 px-3 py-2.5">
@@ -121,7 +127,7 @@ export function LivePeek({
                 <button
                   type="button"
                   data-testid="live-peek-replying-to"
-                  onClick={() => onScrollToRow(row.replyingTo!.entryId)}
+                  onClick={() => onScrollToRow(row.replyingTo!.rowId)}
                   className="focus-ring text-muted-foreground hover:text-foreground truncate rounded text-left text-xs underline underline-offset-2"
                 >
                   {`Replying to “${row.replyingTo.excerpt}”`}

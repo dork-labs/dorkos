@@ -133,21 +133,6 @@ export function presenceRow(name: string, detail: string | null, state: Presence
 }
 
 /**
- * One agent's row in the list behind the count, in the room sheet.
- *
- * A thin naming of {@link presenceRow} for the caller whose detail is always an
- * elapsed time, kept so the room sheet reads as what it is rather than as a
- * general row with a time in it.
- *
- * @param name - The agent's display name.
- * @param state - Where that agent's own claim is.
- * @param elapsed - How long it has been running, already in words.
- */
-export function presenceListRow(name: string, state: PresenceCopyState, elapsed: string): string {
-  return presenceRow(name, elapsed, state);
-}
-
-/**
  * How long something has been running, in the shortest true form.
  *
  * Seconds while it is quick, then minutes, then hours. No decimals and no

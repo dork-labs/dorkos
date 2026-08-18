@@ -17,7 +17,7 @@ import { motion } from 'motion/react';
 import { Info, MessageSquare, Shield } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { STATUS_DOT_COLOR, STATUS_DOT_PULSE } from '@/layers/shared/ui';
-import { laneElapsed, type LaneState } from '../model/lane-state';
+import { laneElapsed, LANE_TIMER_FLOOR_MS, type LaneState } from '../model/lane-state';
 
 /**
  * How often the lane re-reads the clock while something is running.
@@ -42,6 +42,22 @@ export function stalledSentence(unavailable: boolean): string {
   return unavailable
     ? 'This room is no longer available. It may have been deleted, or you may no longer have access to it.'
     : "New messages aren't coming through right now. You can still send — anything that doesn't get through will say so.";
+}
+
+/**
+ * The same fact, short enough for a phone.
+ *
+ * The lane never wraps and never grows, so on a 375 px screen the full sentence
+ * truncated at "New messages aren't coming thr…" — which drops the actionable
+ * half ("you can still send") and left it reachable only by a `title`, which a
+ * finger cannot open. A shorter TRUE sentence is better than a longer one a
+ * reader cannot finish. The full one is still what the announcer carries, so
+ * nothing is lost to a reader who cannot see the line at all.
+ *
+ * @param unavailable - Whether the room itself is gone rather than unreachable.
+ */
+export function shortStalledSentence(unavailable: boolean): string {
+  return unavailable ? 'This room is no longer available' : 'Reconnecting — you can still send';
 }
 
 /**
@@ -113,6 +129,19 @@ export function laneMotionKey(state: LaneState): string {
   }
 }
 
+/**
+ * What the presence line is called on each surface.
+ *
+ * `room-presence` is the name the shipped browser suites resolve by, so the
+ * room keeps it. A session has no presence rung at all — its capability table
+ * turns it off — so its entry exists only to keep this map total by type.
+ */
+const PRESENCE_TESTID: Record<'room' | 'thread' | 'session', string> = {
+  room: 'room-presence',
+  thread: 'thread-presence',
+  session: 'session-presence',
+};
+
 /** How many drafts are being held, in words. */
 function queuedSentence(depth: number): string {
   return depth === 1 ? '1 queued' : `${depth} queued`;
@@ -137,7 +166,7 @@ export interface LaneContentProps {
    * open on a wide screen there are two lanes on the page, and one testid over
    * both left "did the ROOM say it" unaskable.
    */
-  scope?: 'room' | 'thread';
+  scope?: 'room' | 'thread' | 'session';
 }
 
 /**
@@ -236,9 +265,19 @@ function StalledLine({ onRetry, unavailable }: { onRetry?: () => void; unavailab
       className="flex min-w-0 items-center gap-2"
     >
       <LaneDot signal="error" reducedMotion />
-      {/* Titled as well as truncated: the lane never wraps, and this is the one
-          rung whose sentence is longer than a narrow column. */}
-      <span className="text-muted-foreground truncate" title={sentence}>
+      {/* Two spellings of one fact, one per width. The lane never wraps and
+          never grows, so on a phone the full sentence loses its actionable half
+          to an ellipsis — see `shortStalledSentence`. Both are `aria-hidden`
+          because the lane's live region already carries the full one, and a
+          screen reader that met both would hear the outage twice. */}
+      <span aria-hidden="true" className="text-muted-foreground truncate sm:hidden">
+        {shortStalledSentence(unavailable)}
+      </span>
+      <span
+        aria-hidden="true"
+        className="text-muted-foreground hidden truncate sm:inline"
+        title={sentence}
+      >
         {sentence}
       </span>
       {onRetry !== undefined && (
@@ -272,7 +311,7 @@ function PresenceLine({
   state: Extract<LaneState, { kind: 'presence' }>;
   faces: ReactNode;
   reducedMotion: boolean;
-  scope: 'room' | 'thread';
+  scope: 'room' | 'thread' | 'session';
 }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
@@ -285,7 +324,7 @@ function PresenceLine({
       <span
         // Kept from `RoomPresenceLine`, which this replaces: the shipped
         // presence suites resolve the line by this name.
-        data-testid={scope === 'thread' ? 'thread-presence' : 'room-presence'}
+        data-testid={PRESENCE_TESTID[scope]}
         data-late={state.late ? 'true' : undefined}
         className="text-muted-foreground flex min-w-0 items-center"
       >
@@ -502,10 +541,21 @@ function LaneDot({
  */
 function LaneElapsed({ since }: { since: string }) {
   const [now, setNow] = useState(() => Date.now());
+  const due = Date.parse(since) + LANE_TIMER_FLOOR_MS;
+
   useEffect(() => {
+    // Nothing is drawn for the first ten seconds, so nothing needs to tick for
+    // them either: a claim that has just arrived sleeps until its number is due
+    // and only then starts a per-second timer. A room with four agents in it was
+    // otherwise running four intervals to render nothing.
+    const wait = due - Date.now();
+    if (wait > 0) {
+      const wake = setTimeout(() => setNow(Date.now()), wait);
+      return () => clearTimeout(wake);
+    }
     const timer = setInterval(() => setNow(Date.now()), LANE_TICK_MS);
     return () => clearInterval(timer);
-  }, [since]);
+  }, [due, now]);
 
   const elapsed = laneElapsed(since, now);
   if (elapsed === null) return null;

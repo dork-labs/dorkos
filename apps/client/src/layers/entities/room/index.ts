@@ -108,7 +108,6 @@ export {
   presenceCountSentence,
   presenceDetail,
   presenceElapsed,
-  presenceListRow,
   presenceRow,
   presenceSentence,
 } from './lib/presence-copy';

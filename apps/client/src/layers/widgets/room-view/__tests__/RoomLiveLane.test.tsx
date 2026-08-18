@@ -76,6 +76,18 @@ function entry(id: string, text: string): RoomEntry {
 
 const ENTRIES = [entry('trigger-kai', 'can you log today’s decisions?')];
 
+/** A reply hung off the first entry — drawn in a thread panel, never in the flow. */
+const THREAD_REPLY = {
+  ...entry('reply-in-a-thread', 'on it — checking the deploy log now'),
+  threadRootEntryId: 'trigger-kai',
+} as unknown as RoomEntry;
+
+/** A reply whose root is not in the loaded page at all — nothing to aim at. */
+const ORPHANED_REPLY = {
+  ...entry('reply-with-no-root', 'picking this up'),
+  threadRootEntryId: 'a-root-nobody-loaded',
+} as unknown as RoomEntry;
+
 /** The room the lane draws for, with only what it reads off one. */
 const ROOM_WITH_ROSTER = {
   id: ROOM,
@@ -116,10 +128,13 @@ function line(): string {
 }
 
 /** Mount the lane with everything a room hands it. */
-function renderLane(props: Partial<Parameters<typeof RoomLiveLane>[0]> = {}) {
+function renderLane(
+  props: Partial<Parameters<typeof RoomLiveLane>[0]> = {},
+  transport = createMockTransport()
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <TransportProvider transport={createMockTransport()}>
+    <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <RoomLiveLane
           room={ROOM_WITH_ROSTER}
@@ -291,11 +306,18 @@ describe('RoomLiveLane', () => {
     // the lane waits ten seconds before it puts one up (design record).
     expect(line()).toBe('Kai is working on it');
 
+    // Two steps: the leaf sleeps until its number is DUE rather than ticking
+    // through the silence, so the first wake is what starts the per-second
+    // timer and the second advance is what the timer answers.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(11_000);
+      await vi.advanceTimersByTimeAsync(10_000);
     });
+    expect(line()).toBe('Kai is working on it · 10s');
 
-    expect(line()).toBe('Kai is working on it · 11s');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(line()).toBe('Kai is working on it · 12s');
   });
 
   it('announces the sentence, and never the number that ticks', async () => {
@@ -376,15 +398,167 @@ describe('RoomLiveLane', () => {
     expect(all).toHaveTextContent('Stops all 2');
   });
 
-  it('takes the reader to the entry an agent is answering', () => {
+  it('takes the reader to the row an agent’s trigger is drawn on', () => {
+    // The room's flow draws top-level entries, so a claim on one gets the flow's
+    // own row id.
     vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
     working('kai');
-    const onScrollToRow = vi.fn();
+    const row = document.createElement('div');
+    row.id = 'room-entry-trigger-kai';
+    // Focusable, as every real room row is (`RoomMessage` gives each one a tab
+    // stop): focus is what marks the row a reader was sent to.
+    row.tabIndex = 0;
+    row.scrollIntoView = vi.fn();
+    document.body.append(row);
 
-    renderLane({ onScrollToRow });
+    renderLane();
     fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
     fireEvent.click(screen.getByTestId('live-peek-replying-to'));
 
-    expect(onScrollToRow).toHaveBeenCalledWith('trigger-kai');
+    expect(row.scrollIntoView).toHaveBeenCalled();
+    expect(row).toHaveFocus();
+    row.remove();
+  });
+
+  it('sends a reply’s claim to the thread it belongs to, which the room does draw', () => {
+    // A reply is never in the room's own flow (`groupByThread` keeps it out), so
+    // `room-entry-<reply>` resolves to nothing. The truest place a room can take
+    // you is the "↳ N replies" row of the thread it is in.
+    vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+    working('kai', 'working', STARTED, 'reply-in-a-thread');
+    const row = document.createElement('div');
+    row.id = 'thread-row-trigger-kai';
+    // Focusable, as every real room row is (`RoomMessage` gives each one a tab
+    // stop): focus is what marks the row a reader was sent to.
+    row.tabIndex = 0;
+    row.scrollIntoView = vi.fn();
+    document.body.append(row);
+
+    renderLane({ entries: [...ENTRIES, THREAD_REPLY] });
+    fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+    fireEvent.click(screen.getByTestId('live-peek-replying-to'));
+
+    expect(row.scrollIntoView).toHaveBeenCalled();
+    row.remove();
+  });
+
+  it('draws no “replying to” link at all when the trigger is drawn nowhere', () => {
+    // The defect this pins: the link resolved `room-entry-<id>` unconditionally,
+    // so a claim the room draws no row for — a reply whose thread is not even in
+    // the loaded page — offered a control that silently did nothing. Quotable is
+    // not the same as rendered.
+    vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+    working('kai', 'working', STARTED, 'reply-with-no-root');
+
+    renderLane({ entries: [...ENTRIES, ORPHANED_REPLY] });
+    fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+
+    expect(screen.getByTestId('live-peek-row')).toHaveTextContent('Kai');
+    expect(screen.queryByTestId('live-peek-replying-to')).toBeNull();
+  });
+
+  it('aims inside the panel when it is the thread’s own lane', () => {
+    vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+    working('kai');
+    const row = document.createElement('div');
+    row.id = 'thread-panel-entry-trigger-kai';
+    // Focusable, as every real room row is (`RoomMessage` gives each one a tab
+    // stop): focus is what marks the row a reader was sent to.
+    row.tabIndex = 0;
+    row.scrollIntoView = vi.fn();
+    document.body.append(row);
+
+    renderLane({ laneScope: 'thread' });
+    fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+    fireEvent.click(screen.getByTestId('live-peek-replying-to'));
+
+    expect(row.scrollIntoView).toHaveBeenCalled();
+    row.remove();
+  });
+
+  it('closes the peek when the work ends, and does not re-open it on the next claim', async () => {
+    // The defect this pins, reproduced three times in a real cockpit: `peekOpen`
+    // is local state and the popover UNMOUNTS when the rung leaves `presence`,
+    // which fires no `onOpenChange` — so the flag stayed `true` and the next
+    // agent to pick something up mounted the peek already open over the
+    // composer. It also kept `onPeekOpenChange(false)` from ever reaching the
+    // host, leaving the room-sessions query enabled for the life of the view.
+    vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+    working('kai');
+
+    renderLane();
+    fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+    expect(screen.getByTestId('live-peek')).toBeInTheDocument();
+
+    // The work ends: presence clears and the trigger goes with it. (The
+    // `onPeekOpenChange(false)` half of this contract — which is what stops the
+    // host fetching room sessions forever — is pinned in `LiveLane.test.tsx`,
+    // where the callback is the component's own prop.)
+    act(() => useRoomPresenceStore.getState().clearAuthor(ROOM, 'kai'));
+    expect(screen.queryByTestId('live-peek')).toBeNull();
+
+    // And a fresh claim draws a CLOSED lane, not an open popover.
+    act(() => working('kai'));
+    expect(screen.getByTestId('room-presence')).toBeInTheDocument();
+    expect(screen.queryByTestId('live-peek')).toBeNull();
+  });
+
+  it('offers the session an agent’s work runs in, and asks for it only on open', async () => {
+    // The client half of the one server change this phase made
+    // (`GET /api/rooms/:id/sessions`, whose own answers are pinned in
+    // `rooms-sessions.test.ts`). The join is `authorId → sessionId`, and the
+    // request is deliberately not made until somebody opens the peek — a room
+    // open is not a question about sessions.
+    // Real timers for this one: the assertion is about a QUERY resolving, and
+    // RTL's own polling never advances a fake clock.
+    vi.useRealTimers();
+    working('kai');
+    const transport = createMockTransport();
+    transport.listRoomSessions = vi
+      .fn()
+      .mockResolvedValue({ bindings: [{ authorId: 'kai', sessionId: 'session-kai' }] });
+
+    renderLane({}, transport);
+    expect(transport.listRoomSessions).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+
+    fireEvent.click(await screen.findByTestId('live-peek-open-session'));
+    expect(transport.listRoomSessions).toHaveBeenCalledWith(ROOM);
+    expect(navigateSpy).toHaveBeenCalledWith({
+      to: '/session',
+      search: { session: 'session-kai' },
+    });
+  });
+
+  it('draws no link at all for an agent this room holds no binding for', () => {
+    // Absent, never disabled: a control that cannot do anything is a promise the
+    // product is not keeping.
+    vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+    working('kai');
+
+    renderLane();
+    fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+
+    expect(screen.queryByTestId('live-peek-open-session')).toBeNull();
+  });
+
+  it('hands the caret back when the peek closes out from under it', () => {
+    // Radix returns focus to a trigger it CLOSED; it has nothing to return to
+    // when the trigger is removed, so the browser drops the caret on
+    // `document.body` and Tab restarts at the top of the page. The lane's own
+    // root is always mounted and sits one Tab from the composer.
+    vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+    working('kai');
+
+    renderLane();
+    const trigger = screen.getByRole('button', { name: 'Show who is working' });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    act(() => useRoomPresenceStore.getState().clearAuthor(ROOM, 'kai'));
+
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toBe(document.querySelector('[data-slot="live-lane"]'));
   });
 });

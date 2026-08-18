@@ -18,7 +18,7 @@
  *
  * @module features/conversation/ui/LiveLane
  */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
   ResponsivePopover,
@@ -39,15 +39,27 @@ import { LaneContent, laneAnnouncement, laneMotionKey } from './LaneContent';
 const LANE_CROSSFADE_S = 0.16;
 
 /**
- * Which half of a room's presence this lane speaks for.
+ * Which conversation this lane speaks for.
  *
  * With a thread open on a wide screen there are two lanes on the page — the
  * panel's and the room's — and one testid over both made "the room announced it"
  * unaskable: the query either found two nodes or silently answered with whichever
  * came first in the document. Named per scope, exactly as `RoomPresenceLine`
  * named its own announcer.
+ *
+ * `session` is here for the same reason and answers a different complaint: a
+ * session's lane was drawing the ROOM's announcer name on `/session`, where
+ * there is no room and never any presence. A name that is wrong is worse than a
+ * name that is generic.
  */
-export type LaneScope = 'room' | 'thread';
+export type LaneScope = 'room' | 'thread' | 'session';
+
+/** What the live region is called on each surface. */
+const ANNOUNCER_TESTID: Record<LaneScope, string> = {
+  room: 'room-presence-announcer',
+  thread: 'thread-presence-announcer',
+  session: 'session-lane-announcer',
+};
 
 /** What the live lane needs to draw itself. */
 export interface LiveLaneProps {
@@ -78,6 +90,17 @@ export interface LiveLaneProps {
   onPeekOpenChange?: (open: boolean) => void;
   /** What the peek's trigger is called, for a reader who cannot see the line. */
   peekLabel?: string;
+  /**
+   * Force the reduced-motion branch, for the Dev Playground alone.
+   *
+   * **Playground-only, and the product never passes it.** `useReducedMotion()`
+   * reads the media query rather than any React context, so a bench has no way
+   * to show the branch a reader with "Reduce motion" on actually gets — and a
+   * bench that cannot show what it claims is worse than none. Omitted, the lane
+   * asks the reader's own system setting, which is the only thing that decides
+   * it in the app.
+   */
+  reducedMotionOverride?: boolean;
 }
 
 /**
@@ -107,15 +130,53 @@ export function LiveLane({
   peek,
   onPeekOpenChange,
   peekLabel = 'Show who is working',
+  reducedMotionOverride,
 }: LiveLaneProps) {
   const [peekOpen, setPeekOpen] = useState(false);
+  const laneRef = useRef<HTMLDivElement>(null);
   // Branch OFF, not shorter: the end states all read statically — the dot is
   // present, the words are present — so a reader who asked for less motion gets
   // no motion rather than a faster version of it.
-  const reducedMotion = useReducedMotion() === true;
+  const systemReducedMotion = useReducedMotion() === true;
+  const reducedMotion = reducedMotionOverride ?? systemReducedMotion;
   const announcement = laneAnnouncement(state, unavailable);
   const empty = state.kind === 'empty';
   const offersPeek = state.kind === 'presence' && peek !== undefined;
+
+  // **Close the peek when its trigger stops existing.** The rung leaves
+  // `presence` the moment the work ends, which unmounts the popover — and Radix
+  // fires no `onOpenChange` for an unmount, so `peekOpen` stayed `true` and the
+  // NEXT claim mounted the peek already open, over the composer, unasked.
+  //
+  // Adjusted during render rather than in an effect, which is the same shape
+  // `RoomPresenceLine` used for the same shape of problem: React re-runs this
+  // component before committing anything, so the correction costs a render pass
+  // rather than a frame of the wrong thing — and a `setState` inside an effect
+  // is a cascading render the lint rule is right to object to.
+  if (peekOpen && !offersPeek) setPeekOpen(false);
+  const peekIsOpen = peekOpen && offersPeek;
+
+  // Telling the HOST is a side effect and belongs in one. It is what stops
+  // `useRoomSessions` staying enabled for the life of the view — the second
+  // damage the silent unmount did.
+  //
+  // Focus is handed back deliberately rather than left where Radix drops it: the
+  // trigger the reader was standing on has just been removed, and the browser's
+  // answer to that is `document.body`, which restarts Tab at the top of the
+  // page. The lane's own root is always mounted and sits immediately before the
+  // composer, so it is one Tab from where the reader was going anyway — and a
+  // reader who had already moved on is left exactly where they are.
+  const reportedOpenRef = useRef(false);
+  useEffect(() => {
+    if (reportedOpenRef.current === peekIsOpen) return;
+    const wasInside =
+      !peekIsOpen &&
+      (laneRef.current?.contains(document.activeElement) === true ||
+        document.activeElement === document.body);
+    reportedOpenRef.current = peekIsOpen;
+    onPeekOpenChange?.(peekIsOpen);
+    if (wasInside) laneRef.current?.focus();
+  }, [peekIsOpen, onPeekOpenChange]);
 
   const content = (
     <LaneContent
@@ -130,8 +191,13 @@ export function LiveLane({
 
   return (
     <div
+      ref={laneRef}
       data-slot="live-lane"
       data-lane-scope={scope}
+      // Focusable only programmatically: it is never a tab stop of its own, and
+      // exists as a landing place for the caret when the peek closes out from
+      // under a reader who was standing in it.
+      tabIndex={-1}
       data-lane-state={state.kind}
       // Mirrored onto the DOM because the test harness strips motion props: this
       // is how a unit test can see which branch was taken.
@@ -141,7 +207,7 @@ export function LiveLane({
     >
       {/* The one live region. Mounted whether or not it has anything to say. */}
       <span
-        data-testid={scope === 'thread' ? 'thread-presence-announcer' : 'room-presence-announcer'}
+        data-testid={ANNOUNCER_TESTID[scope]}
         role="status"
         aria-live="polite"
         aria-atomic="true"
@@ -164,13 +230,7 @@ export function LiveLane({
           className="flex min-w-0 flex-1 items-center"
         >
           {offersPeek ? (
-            <ResponsivePopover
-              open={peekOpen}
-              onOpenChange={(open) => {
-                setPeekOpen(open);
-                onPeekOpenChange?.(open);
-              }}
-            >
+            <ResponsivePopover open={peekIsOpen} onOpenChange={setPeekOpen}>
               <ResponsivePopoverTrigger asChild>
                 <button
                   type="button"
