@@ -40,6 +40,21 @@ describe('askHeadline', () => {
     );
   });
 
+  it('names the file when the SDK’s display name is just the tool’s own name', () => {
+    // The real shape a `Write` arrives in: `displayName: "Write"`, which says
+    // nothing the tool name did not. Taking it at face value produced
+    // "wants to write" with no file in it on every fleet-wide card.
+    const realWrite = approval({
+      toolName: 'Write',
+      displayName: 'Write',
+      description: '/projects/meeting-notes/standup.md',
+      input: JSON.stringify({ file_path: '/projects/meeting-notes/standup.md' }),
+    });
+    expect(askHeadline(ask(realWrite), 'Meeting Notes')).toBe(
+      'Meeting Notes wants to write standup.md'
+    );
+  });
+
   it('falls back to the tool’s own label when the prompt named no action', () => {
     // `getToolLabel` is the transcript's phrasing for the same call, so the
     // card and the transcript say the same thing about the same tool.

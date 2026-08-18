@@ -16,6 +16,20 @@ import { useAnswerAsk } from '../model/use-answer-ask';
 import { AskStack } from './AskStack';
 import { InteractionAsk } from './InteractionAsk';
 
+/**
+ * When this prompt runs out, in epoch ms.
+ *
+ * The budget rides on every kind now, so this is the same anchor the card's own
+ * countdown uses. A DTO too old to carry one is measured from its remainder,
+ * which is the only reading available for it.
+ *
+ * @param ask - The prompt to place.
+ */
+function askDeadline(ask: InteractionPendingEvent): number {
+  const { startedAt, timeoutMs, remainingMs } = ask.interaction;
+  return timeoutMs === undefined ? startedAt + remainingMs : startedAt + timeoutMs;
+}
+
 /** Never show more cards at once than a person can actually work through. */
 const MAX_CARDS = 6;
 
@@ -47,9 +61,11 @@ export function AskList({ asks, agentNames, onOpenSession, emptyState }: AskList
   // are NOT part of what is waiting — the count belongs to `asks` alone.
   const settling = useSettlingAsks();
   const groups = useMemo(() => {
-    const soonestFirst = [...asks].sort(
-      (a, b) => a.interaction.remainingMs - b.interaction.remainingMs
-    );
+    // By DEADLINE, not by the remainder the list happened to be read at:
+    // `remainingMs` is a snapshot taken at different instants for prompts that
+    // arrived at different times, so sorting on it puts a nearly-expired ask
+    // below a fresh one whose envelope is simply newer.
+    const soonestFirst = [...asks].sort((a, b) => askDeadline(a) - askDeadline(b));
     const held = settling.filter(
       (ask) => !asks.some((waiting) => waiting.interaction.id === ask.interaction.id)
     );
