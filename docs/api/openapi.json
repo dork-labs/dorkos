@@ -6646,6 +6646,37 @@
           "kind"
         ]
       },
+      "RoomSessionsResponse": {
+        "type": "object",
+        "properties": {
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomSessionBinding"
+            }
+          }
+        },
+        "required": [
+          "bindings"
+        ]
+      },
+      "RoomSessionBinding": {
+        "type": "object",
+        "properties": {
+          "authorId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "authorId",
+          "sessionId"
+        ]
+      },
       "UpdateRoomRequest": {
         "type": "object",
         "properties": {
@@ -16561,6 +16592,58 @@
           },
           "409": {
             "description": "Un-archiving would collide with a live channel holding the slug",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/sessions": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Where each of a room's agents does its work",
+        "description": "One `authorId → sessionId` pair per agent that has answered in this room, and nothing else — no session content, no working directory, no status. The narrowness is the point: this exists so a cockpit can turn \"Meeting Notes is working on it\" into a link you can follow, and a route that answered more would be a second way to read a session, reached through a room. A room the caller cannot see answers 404, exactly as reading the room does. **Only a person may ask** — a caller the server resolves as an agent (one presenting `X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`, because an agent enumerating its room-mates' sessions is arbitration this domain has declined.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bindings, one per agent that has answered here",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomSessionsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller resolved to an agent, which may not ask this (`PEOPLE_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
             "content": {
               "application/json": {
                 "schema": {

@@ -257,7 +257,7 @@ describe('HomeRoomPage — the room', () => {
     renderHome();
     await screen.findByPlaceholderText('Message #team…');
 
-    // #team narrates its own work under the composer (`RoomPresenceLine`), so
+    // #team narrates its own work in its own live lane, so
     // an agent working here must not also be announced three lines up in a
     // different sentence.
     expect(presenceStrip).toHaveBeenCalledWith([TEAM_ID]);

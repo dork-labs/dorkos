@@ -70,6 +70,15 @@ interface PresenceRecord {
 export interface RoomPresenceAuthor {
   /** The agent doing the work. */
   authorId: string;
+  /**
+   * The entry whose trigger its OLDEST live claim answers.
+   *
+   * What "replying to …" in the live lane's peek points at. It rides on the
+   * summarised row rather than being looked up again because the collapse to one
+   * row per agent has already chosen which claim speaks for it, and a second
+   * lookup could choose a different one.
+   */
+  entryId: string;
   /** Whether the room is still waiting for it, or has stopped. */
   state: Exclude<RoomPresenceState, 'done'>;
   /** ISO 8601 — when its oldest live claim started. */
@@ -320,6 +329,7 @@ function summarize(
     )
     .map((record) => ({
       authorId: record.authorId,
+      entryId: record.entryId,
       state: record.state,
       since: record.since,
       elapsedMs: Math.max(0, now - Date.parse(record.since)),
@@ -362,6 +372,71 @@ export function useRoomPresence(
   // stale numbers. A room with nothing in it answers with one shared empty
   // array, so the quiet case — which is nearly always — costs nothing.
   return summarize(indicators, scope);
+}
+
+/**
+ * One agent's live claim in this room, WITHOUT the clock.
+ *
+ * Everything {@link RoomPresenceAuthor} carries except `elapsedMs`, which is the
+ * only field that changes when nothing has happened.
+ */
+export type RoomPresenceClaimRow = Omit<RoomPresenceAuthor, 'elapsedMs'>;
+
+/** One shared empty answer, so a quiet room never re-renders its reader. */
+const NO_CLAIMS: RoomPresenceClaimRow[] = [];
+
+/**
+ * Who is working in this room, and on what — and NOT for how long.
+ *
+ * The question the live lane's host asks. It needs more than
+ * {@link useRoomPresenceAuthorIds} gives (the state, the start, the entry each
+ * claim answers) and strictly less than {@link useRoomPresence} gives: no
+ * elapsed time, and therefore no re-render once a second.
+ *
+ * **That difference is the whole reason for a third hook.** The lane is mounted
+ * by `RoomSurface`, which also mounts the timeline. Reading the ticking hook up
+ * there would redraw every row in the room once a second for as long as any
+ * agent was working — the exact regression `useRoomPresenceAuthorIds` was
+ * written to undo, one layer up. Each row carries its immutable `since` and the
+ * lane's own text node is what reads the clock.
+ *
+ * **One timer per reader, and it only prunes.** Expiry is a change to the STORE,
+ * and the store already re-renders its readers, so nothing here needs a
+ * re-render of its own. A quiet room runs no timer at all.
+ *
+ * @param roomId - The room on screen, or `null` when none is.
+ * @param scope - Which half of the room's presence to answer with while a thread
+ *   panel is open. Omit for all of it — see {@link PresenceScope}.
+ * @returns One row per agent, oldest claim first. Empty when nobody is working.
+ */
+export function useRoomPresenceClaims(
+  roomId: string | null,
+  scope?: PresenceScope
+): readonly RoomPresenceClaimRow[] {
+  const indicators = useRoomPresenceStore((held) =>
+    roomId === null ? undefined : held.rooms[roomId]
+  );
+  const live = indicators !== undefined;
+
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => useRoomPresenceStore.getState().prune(), PRESENCE_TICK_MS);
+    return () => clearInterval(timer);
+  }, [live]);
+
+  return useMemo(() => {
+    const working = summarize(indicators, scope);
+    if (working.length === 0) return NO_CLAIMS;
+    // `summarize` reads the clock to age records out, which is a filter here
+    // rather than a value: the elapsed time it computed is dropped on this line,
+    // so nothing this hook returns is a function of when it was called.
+    return working.map(({ authorId, entryId, state, since }) => ({
+      authorId,
+      entryId,
+      state,
+      since,
+    }));
+  }, [indicators, scope]);
 }
 
 /** One shared empty answer, so a quiet room never re-renders its reader. */
@@ -476,6 +551,7 @@ export function useRoomPresenceEverywhere(): readonly RoomPresenceClaim[] {
         claims.push({
           roomId,
           authorId: agent.authorId,
+          entryId: agent.entryId,
           state: agent.state,
           since: agent.since,
         });

@@ -9,6 +9,7 @@
  *
  * @module mesh/default-access-rules
  */
+import { OPEN_MESH_NAMESPACE } from '@dorkos/shared/mesh-schemas';
 
 /** Priority for same-namespace allow rules. */
 export const SAME_NAMESPACE_ALLOW_PRIORITY = 100;
@@ -24,18 +25,10 @@ export const CROSS_NAMESPACE_DENY_PRIORITY = 10;
 export const SYSTEM_AGENT_ALLOW_PRIORITY = 200;
 
 /**
- * Sentinel namespace meaning "every other namespace" — used in place of a
- * single-pair `sourceNamespace`/`targetNamespace` for the catch-all and
- * system-agent bridge rules, which match `relay.agent.>` (every namespace),
- * not one specific namespace.
- */
-export const CATCH_ALL_NAMESPACE = '*';
-
-/**
  * One default access-rule write, in both forms a consumer needs: the Relay
  * subject pattern actually written (`from`/`to`/`action`/`priority`) and the
  * namespace-level description for display (`sourceNamespace`/`targetNamespace`,
- * using {@link CATCH_ALL_NAMESPACE} where the rule isn't a single pair).
+ * using {@link OPEN_MESH_NAMESPACE} where the rule isn't a single pair).
  */
 export interface DefaultAccessRuleSpec {
   /** Relay subject pattern the rule matches messages FROM. */
@@ -44,9 +37,9 @@ export interface DefaultAccessRuleSpec {
   to: string;
   action: 'allow' | 'deny';
   priority: number;
-  /** Namespace-level source; {@link CATCH_ALL_NAMESPACE} for "every namespace". */
+  /** Namespace-level source; {@link OPEN_MESH_NAMESPACE} for "every namespace". */
   sourceNamespace: string;
-  /** Namespace-level target; {@link CATCH_ALL_NAMESPACE} for "every namespace". */
+  /** Namespace-level target; {@link OPEN_MESH_NAMESPACE} for "every namespace". */
   targetNamespace: string;
 }
 
@@ -88,7 +81,7 @@ export function defaultAccessRuleSpecs(
       action: 'deny',
       priority: CROSS_NAMESPACE_DENY_PRIORITY,
       sourceNamespace: namespace,
-      targetNamespace: CATCH_ALL_NAMESPACE,
+      targetNamespace: OPEN_MESH_NAMESPACE,
     },
   ];
 
@@ -100,14 +93,14 @@ export function defaultAccessRuleSpecs(
         action: 'allow',
         priority: SYSTEM_AGENT_ALLOW_PRIORITY,
         sourceNamespace: namespace,
-        targetNamespace: CATCH_ALL_NAMESPACE,
+        targetNamespace: OPEN_MESH_NAMESPACE,
       },
       {
         from: 'relay.agent.>',
         to: `relay.agent.${namespace}.*`,
         action: 'allow',
         priority: SYSTEM_AGENT_ALLOW_PRIORITY,
-        sourceNamespace: CATCH_ALL_NAMESPACE,
+        sourceNamespace: OPEN_MESH_NAMESPACE,
         targetNamespace: namespace,
       }
     );

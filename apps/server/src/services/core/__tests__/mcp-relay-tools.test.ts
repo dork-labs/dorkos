@@ -645,7 +645,10 @@ describe('ACCESS_DENIED remediation hint', () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.code).toBe('ACCESS_DENIED');
     expect(parsed.hint).toContain('denied by default');
-    expect(parsed.hint).toContain('Access view');
+    // Both remedies, named the way the UI names them (DOR-1338).
+    expect(parsed.hint).toContain('Let all my agents talk to each other');
+    expect(parsed.hint).toContain('Team → Access');
+    expect(parsed.hint).toContain('this namespace pair');
   });
 
   it('non-access failures carry no hint', async () => {

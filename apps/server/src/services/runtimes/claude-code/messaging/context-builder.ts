@@ -144,8 +144,10 @@ a namespace (explicit in its manifest, or derived from its directory layout);
 agents in the same namespace can message each other, cross-namespace messaging is
 DENIED by default, and the DorkBot system agent can reach (and be reached by) all
 namespaces. A denied send fails with code ACCESS_DENIED plus a hint: the user can
-allow a namespace pair from the Team page Access view. Use ${T}mesh_query_topology()
-to inspect namespaces and rules.
+turn on "Let all my agents talk to each other" in Team → Access to open every pair
+at once, or allow a single namespace pair in the same view. Use ${T}mesh_query_topology()
+to inspect namespaces and rules — its openMesh field tells you whether that
+mesh-wide switch is already on.
 
 Subject hierarchy:
   relay.agent.{namespace}.{agentId}    — an agent's inbox; take it from the relaySubject

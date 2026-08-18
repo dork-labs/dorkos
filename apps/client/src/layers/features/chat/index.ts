@@ -12,9 +12,6 @@ export { resolveMessageAuthor } from './lib/resolve-message-author';
 export type { MessageAuthorAgent, MessageAuthorContext } from './lib/resolve-message-author';
 export { TypingDots } from './ui/primitives';
 export { FirstLight } from './ui/FirstLight';
-export { ChatStatusStrip } from './ui/status/ChatStatusStrip';
-export { deriveStripState } from './ui/status/strip-state';
-export type { StripState } from './ui/status/strip-state';
 /**
  * What an agent session's conversation can do — the one table that says how
  * this surface differs from a channel's.

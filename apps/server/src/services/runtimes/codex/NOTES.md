@@ -131,7 +131,8 @@ Semantic fit is also good, not just convenient:
   presentation metadata transfers correctly for free — `ShieldOff` icon + red warn treatment
   (`MODE_ICONS`/`MODE_WARN` in
   `apps/client/src/layers/features/status/ui/PermissionModeItem.tsx`), and
-  `ChatStatusStrip.tsx:177` special-cases `bypassPermissions` for its warning verb.
+  the live lane special-cases `bypassPermissions` for its warning glyph
+  (`features/conversation/ui/LaneContent.tsx`).
 - `default` ↔ the runtime's own default posture (read-only for headless Codex).
 
 ### `ApprovalMode` value drift (informational)

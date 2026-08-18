@@ -89,6 +89,7 @@ import type {
   RoomPresencePayload,
   RoomReactionEvent,
   RoomRosterEntry,
+  RoomSessionBinding,
   RoomSummary,
   RoomWithRoster,
   ThreadSummary,
@@ -1501,6 +1502,33 @@ export class RoomService {
     const room = this.store.getRoom(roomId);
     if (!room || !this.canSee(roomId, viewerAuthorId)) return null;
     return this.withRoster(room, viewerAuthorId);
+  }
+
+  /**
+   * Which session each of this room's agents answers in.
+   *
+   * **Ids only, and that is the whole of it** — no session content, no working
+   * directory, no status. It exists so the room's live lane can offer "Open its
+   * session", which is a link; anything more would be a second way to read a
+   * session, reached through a room and reviewed as neither.
+   *
+   * The room is resolved through {@link RoomService.requireVisibleRoom}, so a
+   * room the caller cannot see throws `ROOM_NOT_FOUND` exactly as reading it
+   * does. **Whether the caller may ask at all is the ROUTE's question**, not
+   * this method's: `specs/room-presence` §15 deferred the mapping until there
+   * was an authorization design for it, and the design is "people only", which
+   * is a statement about HTTP callers rather than about room state.
+   *
+   * @param roomId - The room to list bindings for.
+   * @param viewerAuthorId - The caller, for the visibility check.
+   * @returns One binding per agent that has answered here, room-scoped.
+   */
+  listRoomSessions(roomId: string, viewerAuthorId: string): RoomSessionBinding[] {
+    this.requireVisibleRoom(roomId, viewerAuthorId);
+    return this.store.sessionLedger
+      .list()
+      .filter((binding) => binding.roomId === roomId)
+      .map(({ authorId, sessionId }) => ({ authorId, sessionId }));
   }
 
   /**

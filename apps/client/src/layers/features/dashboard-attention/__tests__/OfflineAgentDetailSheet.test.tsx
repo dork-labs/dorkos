@@ -87,6 +87,7 @@ function makeTopologyView(agents: Partial<Parameters<typeof makeAgent>[0]>[] = [
       },
     ],
     accessRules: [],
+    openMesh: false,
   };
 }
 
@@ -298,6 +299,7 @@ describe('OfflineAgentDetailSheet', () => {
         },
       ],
       accessRules: [],
+      openMesh: false,
     };
     mockUseTopology.mockReturnValue({ data: topology });
 

@@ -18,5 +18,13 @@ export { useMeshStatus, MESH_STATUS_KEY } from './model/use-mesh-status';
 export { useMeshAgentHealth } from './model/use-mesh-agent-health';
 export { useMeshHeartbeat } from './model/use-mesh-heartbeat';
 export { useTopology } from './model/use-mesh-topology';
-export { useUpdateAccessRule, useAgentAccess } from './model/use-mesh-access';
+export { useUpdateAccessRule, useAgentAccess, useSetOpenMesh } from './model/use-mesh-access';
+export {
+  OpenMeshSwitch,
+  OpenMeshNotice,
+  OpenMeshSwitchRow,
+  OpenMeshNoticeRow,
+  OPEN_MESH_LABEL,
+} from './ui/OpenMeshSwitch';
+export type { OpenMeshRowProps } from './ui/OpenMeshSwitch';
 export { useMeshScanRoots } from './model/use-mesh-scan-roots';

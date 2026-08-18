@@ -73,7 +73,7 @@ src/
 │   │   │   ├── ui/
 │   │   │   │   ├── input/    # ChatInputContainer, QueuePanel, InteractiveInputPanel, PromptSuggestionChips
 │   │   │   │   ├── message/  # AssistantMessageContent, StreamingText, ThinkingBlock, SubagentBlock
-│   │   │   │   ├── status/   # ChatStatusSection, AgentIdentityChip, ChatStatusStrip, inference themes
+│   │   │   │   ├── status/   # ChatStatusSection, AgentIdentityChip, terminal-reason chip
 │   │   │   │   ├── tasks/    # TaskListPanel, TaskDetail, AgentRunner, BackgroundTaskBar
 │   │   │   │   └── tools/    # ToolCallCard, ToolApproval, QuestionPrompt, ElicitationPrompt
 │   │   │   ├── model/

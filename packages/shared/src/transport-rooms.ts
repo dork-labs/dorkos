@@ -28,6 +28,7 @@ import type {
   RoomEvent,
   RoomMember,
   RoomRosterEntry,
+  RoomSessionsResponse,
   RoomSummary,
   RoomWithRoster,
   ThreadSummary,
@@ -179,6 +180,22 @@ export interface RoomTransport {
    * @returns How many in-flight turns were interrupted; `0` when it was idle.
    */
   haltRoom(id: string): Promise<HaltRoomResponse>;
+  /**
+   * Where each agent's work in this room actually runs.
+   *
+   * One `authorId → sessionId` pair per agent that has answered here, and
+   * nothing else — see {@link RoomSessionsResponse} for why the narrowness is
+   * the point. It is what turns "Meeting Notes is working on it" into a link you
+   * can follow.
+   *
+   * **Only a person may ask.** A room the caller cannot see answers 404, exactly
+   * as reading the room does, and a caller resolved as an agent is refused: an
+   * agent enumerating its room-mates' sessions is a capability this domain has
+   * not granted.
+   *
+   * @param id - The room to ask about.
+   */
+  listRoomSessions(id: string): Promise<RoomSessionsResponse>;
   /**
    * Put one emoji on one entry, or take it back.
    *

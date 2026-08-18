@@ -10,8 +10,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/layers/shared/ui';
-import { useTopology, useUpdateAccessRule } from '@/layers/entities/mesh';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { useTopology, useUpdateAccessRule, OpenMeshSwitch } from '@/layers/entities/mesh';
+import { OPEN_MESH_NAMESPACE, type AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { MeshEmptyState } from './MeshEmptyState';
 
@@ -123,18 +123,31 @@ function AccessRuleRow({
 
 // -- Add Rule Form --
 
+/** Id of the line explaining why the form is inert while the switch is on. */
+const OPEN_MESH_EXPLANATION_ID = 'acl-open-mesh-explanation';
+
 interface AddRuleFormProps {
   namespaces: string[];
   onAdd: (source: string, target: string) => void;
   isPending: boolean;
+  /**
+   * True while the mesh-wide switch is on. The form stays on screen — it is how
+   * a person learns per-pair grants exist — and stays in the tab order, read
+   * out with the explanation above it, because a control that vanishes from a
+   * screen reader teaches nothing. It is neutralised with `aria-disabled`
+   * rather than `disabled`: announced as unavailable, still discoverable, and
+   * inert to clicks and submits.
+   */
+  inert?: boolean;
 }
 
-function AddRuleForm({ namespaces, onAdd, isPending }: AddRuleFormProps) {
+function AddRuleForm({ namespaces, onAdd, isPending, inert }: AddRuleFormProps) {
   const [source, setSource] = useState('');
   const [target, setTarget] = useState('');
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (inert) return;
     if (source && target && source !== target) {
       onAdd(source, target);
       setSource('');
@@ -142,14 +155,23 @@ function AddRuleForm({ namespaces, onAdd, isPending }: AddRuleFormProps) {
     }
   }
 
+  // A11y wiring shared by every control in the form while the switch is on.
+  const inertProps = inert
+    ? ({ 'aria-disabled': true, 'aria-describedby': OPEN_MESH_EXPLANATION_ID } as const)
+    : {};
+
   return (
     <form onSubmit={handleSubmit} className="flex items-end gap-2">
       <div className="flex-1 space-y-1">
         <Label htmlFor="acl-source" className="text-muted-foreground text-xs font-medium">
           Source
         </Label>
-        <Select value={source} onValueChange={setSource}>
-          <SelectTrigger id="acl-source" className="w-full">
+        <Select value={source} onValueChange={inert ? () => {} : setSource}>
+          <SelectTrigger
+            id="acl-source"
+            className="w-full aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            {...inertProps}
+          >
             <SelectValue placeholder="Select namespace" />
           </SelectTrigger>
           <SelectContent>
@@ -165,8 +187,12 @@ function AddRuleForm({ namespaces, onAdd, isPending }: AddRuleFormProps) {
         <Label htmlFor="acl-target" className="text-muted-foreground text-xs font-medium">
           Target
         </Label>
-        <Select value={target} onValueChange={setTarget}>
-          <SelectTrigger id="acl-target" className="w-full">
+        <Select value={target} onValueChange={inert ? () => {} : setTarget}>
+          <SelectTrigger
+            id="acl-target"
+            className="w-full aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            {...inertProps}
+          >
             <SelectValue placeholder="Select namespace" />
           </SelectTrigger>
           <SelectContent>
@@ -178,7 +204,12 @@ function AddRuleForm({ namespaces, onAdd, isPending }: AddRuleFormProps) {
           </SelectContent>
         </Select>
       </div>
-      <Button type="submit" disabled={isPending || !source || !target || source === target}>
+      <Button
+        type="submit"
+        className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+        disabled={!inert && (isPending || !source || !target || source === target)}
+        {...inertProps}
+      >
         {isPending ? <Loader2 className="animate-spin" /> : <Plus />}
         Allow Access
       </Button>
@@ -210,24 +241,48 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
   }
 
   const namespaces = topology?.namespaces ?? [];
-  const accessRules = topology?.accessRules ?? [];
+  const openMesh = topology?.openMesh ?? false;
+  // The mesh-wide `* -> *` rule rides in accessRules like any other explicit
+  // grant, but the switch above IS its row — listing it again (with a delete
+  // button that competes with the switch) would give one fact two controls.
+  // Scoped to `origin: 'explicit'` so the bridge-written `* -> {system ns}`
+  // allow (DorkBot's inbound rule) keeps its row.
+  const accessRules = (topology?.accessRules ?? []).filter(
+    (rule) =>
+      !(
+        rule.origin === 'explicit' &&
+        rule.sourceNamespace === OPEN_MESH_NAMESPACE &&
+        rule.targetNamespace === OPEN_MESH_NAMESPACE
+      )
+  );
   const namespaceNames = namespaces.map((ns) => ns.namespace);
 
+  // The mesh-wide switch is the one control on this view that means something
+  // before any namespace exists — it decides what happens to the agents you are
+  // about to make — so it renders above the empty state too, not only once the
+  // per-pair machinery has something to act on.
   if (namespaces.length === 0) {
     return (
-      <MeshEmptyState
-        icon={Shield}
-        headline="Cross-project access requires multiple namespaces"
-        description="Register agents from different directories to create namespaces, then configure cross-namespace access rules."
-        action={
-          onGoToDiscovery ? { label: 'Go to Discovery', onClick: onGoToDiscovery } : undefined
-        }
-      />
+      <div className="space-y-6 p-4">
+        <OpenMeshSwitch />
+        <MeshEmptyState
+          icon={Shield}
+          headline="Cross-project access requires multiple namespaces"
+          description="Register agents from different directories to create namespaces, then configure cross-namespace access rules."
+          action={
+            onGoToDiscovery ? { label: 'Go to Discovery', onClick: onGoToDiscovery } : undefined
+          }
+        />
+      </div>
     );
   }
 
   return (
     <div className="space-y-6 p-4">
+      {/* The mesh-wide switch — the one-click answer to "my agents can't talk
+          to each other", above the per-pair machinery it makes unnecessary. */}
+      <OpenMeshSwitch />
+
       {/* Namespace Groups */}
       <div className="space-y-2">
         <h3 className="text-muted-foreground text-sm font-medium">Namespaces</h3>
@@ -280,9 +335,15 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
       {namespaceNames.length >= 2 && (
         <div className="space-y-2">
           <h3 className="text-muted-foreground text-sm font-medium">Allow Cross-Project Access</h3>
+          {openMesh && (
+            <p id={OPEN_MESH_EXPLANATION_ID} className="text-muted-foreground text-xs">
+              Already allowed by the switch above. Turn it off to allow projects one pair at a time.
+            </p>
+          )}
           <AddRuleForm
             namespaces={namespaceNames}
             isPending={isPending}
+            inert={openMesh}
             onAdd={(source, target) =>
               updateRule({ sourceNamespace: source, targetNamespace: target, action: 'allow' })
             }
