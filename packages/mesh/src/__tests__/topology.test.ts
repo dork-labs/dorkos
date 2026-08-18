@@ -717,16 +717,40 @@ describe('TopologyManager', () => {
       expect(tm.getTopology('*').openMesh).toBe(true);
     });
 
-    it('never seeds a namespace literally named ">" from the Relay migration', () => {
+    it('re-seeds the switch from Relay when the rule store is lost (dork.db rebuild)', () => {
+      // ADR-0043: dork.db is a rebuildable cache. Relay's access-rules.json is
+      // NOT — so after a rebuild Relay still enforces the wildcard allow. If the
+      // store did not learn it back, the mesh would be open in fact and shut in
+      // the UI. The store, the flag and Relay have to agree again.
       const store = makeFakeRuleStore();
       const relay = makeMockRelayCore([
         { from: 'relay.agent.>', to: 'relay.agent.>', action: 'allow', priority: 50 },
+      ]);
+      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), relay, store);
+
+      tm.syncNamespaceRulesFromRelay();
+
+      expect(store.list()).toEqual([{ sourceNamespace: '*', targetNamespace: '*' }]);
+      expect(tm.isOpenMesh()).toBe(true);
+      expect(tm.getTopology('*').openMesh).toBe(true);
+      expect(tm.getTopology('ns-a').namespaces).toHaveLength(2);
+    });
+
+    it('never seeds a namespace literally named ">" from a half-wildcard bridge rule', () => {
+      // The system-agent bridge writes `relay.agent.> -> relay.agent.{ns}.*`.
+      // Only an EXACT `>` on both sides is the switch; one side alone must not
+      // seed anything — least of all a namespace whose name is `>`.
+      const store = makeFakeRuleStore();
+      const relay = makeMockRelayCore([
+        { from: 'relay.agent.>', to: 'relay.agent.system.*', action: 'allow', priority: 200 },
+        { from: 'relay.agent.system.*', to: 'relay.agent.>', action: 'allow', priority: 200 },
       ]);
       const tm = makeTopology(makeMockRegistry(), relay, store);
 
       tm.syncNamespaceRulesFromRelay();
 
       expect(store.list()).toEqual([]);
+      expect(tm.isOpenMesh()).toBe(false);
     });
 
     it('rejects a one-sided wildcard in both directions', () => {

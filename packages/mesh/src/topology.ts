@@ -130,6 +130,15 @@ export class TopologyManager {
    * and only as a migration, never as a topology read. Then projects every
    * stored rule into Relay (idempotent) so Relay enforces exactly what the store
    * owns, even if Relay's `access-rules.json` was lost.
+   *
+   * The mesh-wide `relay.agent.> -> relay.agent.>` rule is seeded FIRST, by
+   * exact match, because the pair regex below cannot describe it. Without that,
+   * losing `dork.db` (a rebuildable cache under ADR-0043 — the reconciler
+   * restores it from the `.dork/agent.json` files, and this migration restores
+   * the rules) would leave Relay still enforcing the wildcard allow while the
+   * store, the topology view and the switch all reported the mesh closed: open
+   * in fact, shut in the UI. Pair rules already came back this way; the switch
+   * now does too.
    */
   syncNamespaceRulesFromRelay(): void {
     if (!this.relayCore) return;
@@ -137,6 +146,15 @@ export class TopologyManager {
     if (this.namespaceRules.list().length === 0) {
       for (const rule of this.relayCore.listAccessRules()) {
         if (rule.action !== 'allow') continue;
+        if (
+          rule.from === relayPattern(OPEN_MESH_NAMESPACE) &&
+          rule.to === relayPattern(OPEN_MESH_NAMESPACE)
+        ) {
+          this.namespaceRules.add(OPEN_MESH_NAMESPACE, OPEN_MESH_NAMESPACE);
+          continue;
+        }
+        // Pair rules only. `relay.agent.>` deliberately fails this match, so a
+        // half-wildcard bridge rule can never seed a namespace named `>`.
         const from = rule.from.match(/^relay\.agent\.(.*)\.\*$/);
         const to = rule.to.match(/^relay\.agent\.(.*)\.\*$/);
         if (from && to && from[1] !== to[1]) {

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(mesh,server,client): one switch lets every agent on this machine talk to every other (DOR-1338)'
+  - 'fix(mesh,client): the switch survives losing dork.db, and its inert form stays readable (DOR-1338 review)'
 ---
 
 ### Added

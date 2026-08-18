@@ -193,11 +193,20 @@ describe('TopologyPanel — the mesh-wide switch (DOR-1338)', () => {
   it('makes the pair-grant controls informational while on, keeping stored rules visible', async () => {
     renderPanel({ getMeshTopology: vi.fn().mockResolvedValue(TOPOLOGY_OPEN_MESH) });
 
-    expect(await screen.findByText(/Already allowed by the switch above/)).toBeInTheDocument();
-    // The namespace pickers are inert — they are disabled by the switch alone,
-    // unlike the submit button, which an empty form disables anyway.
-    expect(screen.getByRole('combobox', { name: 'Source' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Target' })).toBeDisabled();
+    const explanation = await screen.findByText(/Already allowed by the switch above/);
+    expect(explanation).toBeInTheDocument();
+
+    // The pickers stay in the accessibility tree — announced as unavailable and
+    // pointed at the explanation, rather than removed from it. `disabled` would
+    // hide the very affordance the copy is explaining.
+    const source = screen.getByRole('combobox', { name: 'Source' });
+    const target = screen.getByRole('combobox', { name: 'Target' });
+    for (const control of [source, target, screen.getByRole('button', { name: /Allow Access/ })]) {
+      expect(control).toHaveAttribute('aria-disabled', 'true');
+      expect(control).not.toBeDisabled();
+      expect(control).toHaveAttribute('aria-describedby', explanation.id);
+    }
+    expect(explanation.id).toBeTruthy();
 
     // The stored pair rule is still listed and still removable — turning the
     // switch off has to put the operator back exactly where they were.
@@ -213,5 +222,36 @@ describe('TopologyPanel — the mesh-wide switch (DOR-1338)', () => {
     expect(
       screen.queryByRole('button', { name: 'Remove access from * to *' })
     ).not.toBeInTheDocument();
+  });
+
+  it('adding a pair is inert while the switch is on', async () => {
+    const updateMeshAccessRule = vi.fn();
+    renderPanel({
+      getMeshTopology: vi.fn().mockResolvedValue(TOPOLOGY_OPEN_MESH),
+      updateMeshAccessRule,
+    });
+
+    await screen.findByRole('switch', { name: OPEN_MESH_LABEL });
+    await userEvent.click(screen.getByRole('button', { name: /Allow Access/ }));
+
+    expect(updateMeshAccessRule).not.toHaveBeenCalled();
+  });
+
+  it('offers the switch before any namespace exists', async () => {
+    renderPanel({
+      getMeshTopology: vi.fn().mockResolvedValue({
+        callerNamespace: '*',
+        namespaces: [],
+        accessRules: [],
+        openMesh: false,
+      } satisfies TopologyView),
+    });
+
+    // The empty state still explains itself, but the one control that matters
+    // before the first agent exists is reachable rather than hidden behind it.
+    expect(await screen.findByRole('switch', { name: OPEN_MESH_LABEL })).toBeInTheDocument();
+    expect(
+      screen.getByText('Cross-project access requires multiple namespaces')
+    ).toBeInTheDocument();
   });
 });
