@@ -15,7 +15,7 @@ import {
   UnreadDivider,
   type ConversationCapabilities,
 } from '@/layers/features/conversation';
-import { SESSION_CAPABILITIES } from '@/layers/features/chat';
+import { SESSION_CAPABILITIES } from '@/layers/widgets/session';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import type { MessageGrouping } from '@/layers/shared/model';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -102,8 +102,8 @@ const NO_CAPABILITIES: ConversationCapabilities = {
   threads: false,
   runWith: false,
   attachments: false,
-  toolCards: false,
   mentions: false,
+  streamHealth: false,
   presence: false,
   turnStatus: false,
   asks: false,
@@ -121,7 +121,7 @@ function MessageMatrixShowcase() {
   return (
     <PlaygroundSection
       title="Message.* matrix"
-      description="One row, composed from Message.Root · Gutter · Author · Body · Content · Attachments · Reactions · Actions. Look is decided by variants (anchor, role, position, density) and behaviour by capability flags — a channel has reactions and no “Run this with…”, a session has the opposite, and the component is identical. Hover each row to see its capsule. `threads` shows up as the reply line under a thread root (benched on the Rooms page, not duplicated here) and `toolCards` inside the host’s own body renderer, so neither has anything to show on the row itself."
+      description="One row, composed from Message.Root · Gutter · Author · Body · Content · Attachments · Reactions · Actions. Look is decided by variants (anchor, role, position, density) and behaviour by capability flags — a channel has reactions and no “Run this with…”, a session has the opposite, and the component is identical. Hover each row to see its capsule. `threads` shows up as the reply line under a thread root (benched on the Rooms page, not duplicated here), so it has nothing to show on the row itself."
     >
       <ShowcaseLabel>The two shipped conversations, same row, same fixture</ShowcaseLabel>
       <ShowcaseDemo>

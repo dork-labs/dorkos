@@ -124,7 +124,7 @@ describe('StreamingText dorkos-ui fence', () => {
 
   it('threads the fence-based supersede flag: false renders board cells inert, absent stays live', async () => {
     // DOR-302: the flag now means "no newer FENCE-BEARING message exists" and is
-    // computed by MessageList; here we verify it reaches the widget's actions.
+    // computed by the transcript; here we verify it reaches the widget's actions.
     const boardFence = [
       '```dorkos-ui',
       JSON.stringify({

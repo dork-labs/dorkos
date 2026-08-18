@@ -11,7 +11,7 @@ import '@testing-library/jest-dom/vitest';
 
 let lastConsume: (() => void) | undefined;
 
-vi.mock('@/layers/features/chat', () => ({
+vi.mock('../ui/ChatPanel', () => ({
   ChatPanel: ({
     sessionId,
     launchRuntime,

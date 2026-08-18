@@ -1,6 +1,6 @@
-import { MessageList } from '@/layers/features/chat/ui/MessageList';
+import { SessionTranscript } from '@/layers/widgets/session';
 import { Conversation } from '@/layers/features/conversation';
-import { SESSION_CAPABILITIES } from '@/layers/features/chat';
+import { SESSION_CAPABILITIES } from '@/layers/widgets/session';
 import { MessageCircle } from 'lucide-react';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import type { SimulatorResult } from './use-simulator';
@@ -10,7 +10,7 @@ interface SimulatorChatPanelProps {
   textEffect?: TextEffectConfig;
 }
 
-/** Mirrors ChatPanel layout with real MessageList, powered by simulator state instead of useChatSession. */
+/** Mirrors ChatPanel layout with real SessionTranscript, powered by simulator state instead of useChatSession. */
 export function SimulatorChatPanel({ sim, textEffect }: SimulatorChatPanelProps) {
   return (
     <div className="flex h-full w-full flex-col">
@@ -26,7 +26,7 @@ export function SimulatorChatPanel({ sim, textEffect }: SimulatorChatPanelProps)
           </div>
         ) : (
           <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
-            <MessageList
+            <SessionTranscript
               messages={sim.messages}
               sessionId="simulator-session"
               isTextStreaming={sim.isTextStreaming}

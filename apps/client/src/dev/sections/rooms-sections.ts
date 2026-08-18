@@ -182,8 +182,8 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
-    id: 'roompendingrow',
-    title: 'RoomPendingRow',
+    id: 'pendingrow',
+    title: 'PendingRow',
     page: 'rooms',
     category: 'Delivery',
     keywords: ['pending', 'sending', 'failed', 'retry', 'discard', 'optimistic', 'offline', 'send'],

@@ -27,7 +27,7 @@
  *
  * @module global-setup
  */
-import { chromium, request, type FullConfig } from '@playwright/test';
+import { chromium, request, type APIResponse, type FullConfig } from '@playwright/test';
 
 /**
  * Where a leg's `DORK_HOME` is allowed to be.
@@ -71,6 +71,52 @@ function assertThrowawayHome(baseURL: string, dorkHome: string | undefined): voi
   );
 }
 
+/** How long to keep asking the API for its config before giving up. */
+const CONFIG_READY_TIMEOUT_MS = 30_000;
+
+/** How long to wait between attempts. */
+const CONFIG_RETRY_DELAY_MS = 500;
+
+/**
+ * Read `/api/config`, waiting out a cold start rather than failing on it.
+ *
+ * Playwright's `webServer.url` gate proves the Vite dev server's PORT is
+ * answering, which is not the same as the API behind its proxy being up: on a
+ * cold start the first `/api/*` request through that proxy can 500 or time out
+ * while the server is still booting. It fired on two of three suite launches,
+ * which is often enough to be a broken gate rather than a flake — and it took
+ * the whole run with it, because this is global setup.
+ *
+ * Bounded, so a genuinely dead API still fails the run instead of hanging it,
+ * and it reports the last thing it saw.
+ *
+ * @param context - A request context already bound to `baseURL`.
+ * @param baseURL - The Vite dev server that proxies to the leg being checked.
+ * @returns The successful response.
+ */
+async function readConfigWhenReady(
+  context: Awaited<ReturnType<typeof request.newContext>>,
+  baseURL: string
+): Promise<APIResponse> {
+  const deadline = Date.now() + CONFIG_READY_TIMEOUT_MS;
+  let lastSeen = '(no response)';
+  for (;;) {
+    try {
+      const response = await context.get('/api/config');
+      if (response.ok()) return response;
+      lastSeen = String(response.status());
+    } catch (error) {
+      lastSeen = error instanceof Error ? error.message : String(error);
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Could not read config at ${baseURL} within ${CONFIG_READY_TIMEOUT_MS / 1000}s: ${lastSeen}`
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, CONFIG_RETRY_DELAY_MS));
+  }
+}
+
 /**
  * Mark onboarding dismissed — and the follow-up role prompt with it — on the
  * server behind one base URL.
@@ -92,10 +138,7 @@ function assertThrowawayHome(baseURL: string, dorkHome: string | undefined): voi
 async function dismissOnboarding(baseURL: string): Promise<void> {
   const context = await request.newContext({ baseURL });
   try {
-    const current = await context.get('/api/config');
-    if (!current.ok()) {
-      throw new Error(`Could not read config at ${baseURL}: ${current.status()}`);
-    }
+    const current = await readConfigWhenReady(context, baseURL);
     const { onboarding, profile, dorkHome } = (await current.json()) as {
       onboarding?: { dismissedAt?: string };
       profile?: { rolePromptDismissedAt?: string | null };

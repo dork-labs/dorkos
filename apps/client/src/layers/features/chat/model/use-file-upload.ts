@@ -11,7 +11,7 @@ import type { PendingFile } from '@/layers/features/composer';
  * which uploads them all in one batch and returns their `savedPath` values for
  * injection into the outgoing message.
  *
- * @returns File upload state and action callbacks for use in ChatInputContainer / ChatPanel.
+ * @returns File upload state and action callbacks for use in `SessionComposer` / `ChatPanel`.
  */
 export function useFileUpload() {
   const transport = useTransport();

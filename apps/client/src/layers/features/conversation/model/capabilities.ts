@@ -31,10 +31,34 @@ export interface ConversationCapabilities {
   runWith: boolean;
   /** The composer accepts files. */
   attachments: boolean;
-  /** Bodies may contain tool cards, thinking blocks and inline prompts. */
-  toolCards: boolean;
-  /** The composer offers an @mention picker and bodies render mention pills. */
+  /**
+   * The composer offers an `@` picker.
+   *
+   * Read by `Conversation.Composer`, which draws the `mentionPicker` slot only
+   * where this is true — so a surface that declares `mentions: false` cannot
+   * grow a picker by passing a node.
+   *
+   * There is no `toolCards` flag beside it, and its absence is a decision: what
+   * a body may contain is settled by which body renderer the HOST hands the
+   * timeline (`renderSessionBody` vs `renderRoomBody`), which is §2.6's gate and
+   * already discriminates. A boolean two capability tables had to keep in step
+   * while nothing read it was a check that could not fail.
+   */
   mentions: boolean;
+  /**
+   * The lane may say that this client has stopped hearing the conversation.
+   *
+   * A channel does; a session does not, and that is a decision rather than an
+   * omission. A session already reports its connection in the status strip
+   * under the box, where it is one chip among the model, the mode and the
+   * branch, and where every other surface in the cockpit reads connection
+   * health from. Two alarms about one fact teach people to read neither
+   * (`contributing/design-system.md`, "two voices for one fact"), so the second
+   * one goes — and it is the lane's, because the lane's sentence is written in
+   * a room's vocabulary ("new messages aren't coming through") which a session
+   * transcript has no use for: a session has a turn, not new messages.
+   */
+  streamHealth: boolean;
   /** The lane may show presence for other authors. */
   presence: boolean;
   /** The lane may show this conversation's own turn status (elapsed, tokens, mode). */

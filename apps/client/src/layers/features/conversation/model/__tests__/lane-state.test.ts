@@ -44,8 +44,8 @@ const ROOM_CAPABILITIES: ConversationCapabilities = {
   threads: true,
   runWith: false,
   attachments: true,
-  toolCards: false,
   mentions: true,
+  streamHealth: true,
   presence: true,
   turnStatus: false,
   asks: true,
@@ -57,8 +57,8 @@ const SESSION_CAPABILITIES: ConversationCapabilities = {
   threads: false,
   runWith: true,
   attachments: true,
-  toolCards: true,
   mentions: false,
+  streamHealth: false,
   presence: false,
   turnStatus: true,
   asks: true,
@@ -126,7 +126,6 @@ function input(overrides: Partial<LaneStateInput> = {}): LaneStateInput {
     stalled: false,
     presence: [],
     turn: null,
-    queueDepth: 0,
     ...overrides,
   };
 }
@@ -171,12 +170,13 @@ describe('deriveLaneState — the priority stack', () => {
     expect(state).toEqual({ kind: 'stalled' });
   });
 
-  it('reports a stalled stream on a surface with no presence at all', () => {
-    // `stalled` is the one rung with no capability gate: every surface has a
-    // stream, and one that has stopped is worth saying wherever it happens.
+  it('withholds the stalled rung from a surface that says it elsewhere', () => {
+    // **Seeded defect:** drop the `streamHealth` gate on rung 2, and a session —
+    // whose status chip under the same box already reports the connection —
+    // grows a second alarm about one fact. Run and red.
     const state = deriveLaneState(input({ capabilities: SESSION_CAPABILITIES, stalled: true }));
 
-    expect(state).toEqual({ kind: 'stalled' });
+    expect(state).toEqual({ kind: 'empty' });
   });
 
   it('names one agent, in the words the room already used', () => {
@@ -364,24 +364,17 @@ describe('deriveLaneState — the priority stack', () => {
     }
   });
 
-  it('reports held drafts below every turn rung, and only when there are some', () => {
+  it('says nothing about held drafts, because the queue panel is their home', () => {
+    // There is no `queued` rung. It used to sit below every `turn-*` rung while
+    // a queue only ever exists BECAUSE a turn is running, so it could never be
+    // reached — a person with two messages held saw no mention of them at all.
     expect(
-      deriveLaneState(input({ capabilities: SESSION_CAPABILITIES, queueDepth: 3, turn: turn() }))
+      deriveLaneState(input({ capabilities: SESSION_CAPABILITIES, turn: turn() }))
     ).toMatchObject({ kind: 'turn-streaming' });
 
     expect(
-      deriveLaneState(
-        input({
-          capabilities: SESSION_CAPABILITIES,
-          queueDepth: 3,
-          turn: turn({ status: 'idle' }),
-        })
-      )
-    ).toEqual({ kind: 'queued', depth: 3 });
-
-    expect(deriveLaneState(input({ capabilities: SESSION_CAPABILITIES, queueDepth: 0 }))).toEqual({
-      kind: 'empty',
-    });
+      deriveLaneState(input({ capabilities: SESSION_CAPABILITIES, turn: turn({ status: 'idle' }) }))
+    ).toEqual({ kind: 'empty' });
   });
 });
 

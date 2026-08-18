@@ -3,7 +3,27 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render as renderBare, screen, cleanup, act } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { Conversation } from '@/layers/features/conversation';
-import { SESSION_CAPABILITIES } from '../config/session-capabilities';
+import type { ConversationCapabilities } from '@/layers/features/conversation';
+
+/**
+ * The session's capability table, declared here rather than imported.
+ *
+ * `SESSION_CAPABILITIES` moved to `widgets/session/model` with its host in P4,
+ * and a feature may not import a widget's model — ESLint refuses it. The
+ * shipped table is exercised where it is mounted (`widgets/session`); what this
+ * suite needs is a conversation for the row to read, and that is data.
+ */
+const SESSION_CAPABILITIES: ConversationCapabilities = {
+  reactions: false,
+  threads: false,
+  runWith: true,
+  attachments: true,
+  mentions: false,
+  streamHealth: false,
+  presence: false,
+  turnStatus: true,
+  asks: true,
+};
 import { SessionMessage } from '../ui/message';
 import { useAppStore } from '@/layers/shared/model';
 import type { MessageGrouping } from '../model/use-chat-session';
@@ -391,7 +411,7 @@ describe('SessionMessage', () => {
         {...authorProps(msg)}
       />
     );
-    // Separators are list rows now (see MessageList's day/unread dividers), so a
+    // Separators are list rows now (see the transcript's day/unread dividers), so a
     // group start renders the gutter + content layout and nothing above it.
     const root = container.firstElementChild;
     expect(root?.querySelector('.w-\\[var\\(--msg-gutter-width\\)\\]')).not.toBeNull();

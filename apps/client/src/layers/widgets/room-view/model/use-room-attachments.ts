@@ -31,7 +31,7 @@ import type { PendingFile } from '@/layers/features/composer';
  * that will serve them back.
  *
  * @param roomId - The room the files are uploaded into.
- * @returns The chip bar's state and the actions `RoomComposer` wires to it.
+ * @returns The chip bar's state and the actions `ChannelComposer` wires to it.
  */
 export function useRoomAttachments(roomId: string) {
   const transport = useTransport();

@@ -69,6 +69,11 @@ describe('features/conversation — no part asks which surface it is on', () => 
     expect(files.some((f) => f.startsWith('ui/rows/'))).toBe(true);
     expect(files.some((f) => f.startsWith('lib/'))).toBe(true);
     expect(files.some((f) => f.startsWith('model/'))).toBe(true);
+    // And the two P4 files most likely to have wanted a surface check: the one
+    // list and the one composer card, each of which draws for both surfaces
+    // from one body.
+    expect(files).toContain('ui/Timeline.tsx');
+    expect(files).toContain('ui/ComposerHost.tsx');
     // And the text really arrived — an empty string includes nothing.
     expect(SOURCES[`../${ALLOWED}`]).toContain('ConversationRoot');
   });

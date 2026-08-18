@@ -3565,7 +3565,7 @@ export const ServerConfigSchema = z
         // can read and flip status-bar item visibility.
         statusBar: StatusBarPrefsSchema,
         // Whether the message box shows formatting as you type (DOR-948). Also
-        // defined in config-schema.ts; on the wire because `ChatInputContainer`
+        // defined in config-schema.ts; on the wire because `SessionComposer`
         // picks its field from it and Settings shows it back as a switch.
         composer: ComposerPrefsSchema,
         autonomyAcknowledgedAt: z.string().nullable().openapi({

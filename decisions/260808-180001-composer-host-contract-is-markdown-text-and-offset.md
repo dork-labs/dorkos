@@ -13,6 +13,14 @@ superseded-by: null
 
 Accepted
 
+**Amended 2026-08-18 (DOR-1331).** The decision holds unchanged; two names in the Context below
+have moved. `RoomComposer` and `ChatInputContainer` were merged into one composer card,
+`Conversation.Composer`, and what is left of each host is its own wiring: `ChannelComposer` is now
+the host that lands `insertMention`'s result with `focusAt(pos)`, and `SessionComposer` is the one
+that drives `detectCommandTrigger`. The contract those hosts drive the field through — a markdown
+string and an offset into it — is exactly what made that merge possible without touching either
+palette.
+
 ## Context
 
 `Composer.Input` is the one text field on chat, rooms, the dashboard hero, and onboarding

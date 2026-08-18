@@ -12,7 +12,7 @@
  *
  * **This file tests the WIRING, which the unit tests cannot see.** The parity
  * test proves `MemberList` uses an override it is handed, and
- * `RoomTimeline.test.tsx` proves `toMessageAuthor` does; neither notices if a
+ * `RoomFlow.test.tsx` proves `toMessageAuthor` does; neither notices if a
  * caller stops handing one over. So nothing here passes a face in by hand: the
  * fleet is mocked at the transport, exactly the two calls the real hook makes,
  * and every assertion is what a person would see on screen.
@@ -41,7 +41,7 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomHeader } from '../ui/RoomHeader';
 import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
-import { RoomTimeline } from '../ui/RoomTimeline';
+import { RoomFlow } from '../ui/RoomFlow';
 
 // A mention pill reads route state to build its profile link
 // (`useProfileDeepLink`), and this file mounts it with no router — without the
@@ -208,7 +208,7 @@ function glyphsOf(slot: string): string[] {
 /** The timeline, rendered for one room's roster. */
 function timeline(members: RoomRosterEntry[]) {
   return (
-    <RoomTimeline
+    <RoomFlow
       roomId="room-1"
       roomName="general"
       viewerAuthorId="author-you"
@@ -307,7 +307,7 @@ describe('an agent wears its own face across a room', () => {
   it('keeps the honest letter in the gutter too, beside a face it could resolve', async () => {
     const ghostEntry: RoomEntry = { ...ENTRY, id: 'entry-2', authorId: 'author-ghost' };
     renderIn(
-      <RoomTimeline
+      <RoomFlow
         roomId="room-1"
         roomName="general"
         viewerAuthorId="author-you"

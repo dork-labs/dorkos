@@ -26,8 +26,6 @@ export type { ConversationCapabilities, ConversationSurface } from './model/capa
 export type {
   ConversationAttachmentPort,
   ConversationDraft,
-  ConversationMentionCandidate,
-  ConversationMentionPort,
   ConversationTarget,
 } from './model/target';
 export type { BodyRenderContext, ConversationBodyRenderer } from './model/body-renderer';
@@ -49,9 +47,20 @@ export type {
 } from './model/lane-state';
 export type { LaneScope } from './ui/LiveLane';
 export type { LivePeekRow } from './ui/LivePeek';
-// `LiveLaneProps` and `LivePeekProps` stay inside the slice: a host writes
-// `<Conversation.LiveLane …>` and TypeScript infers them, so exporting the two
-// interfaces would be two more things to keep in step for no reader's benefit.
+export type { ConversationRowRenderer } from './lib/row-kinds';
+export type { ConversationTimelineHandle } from './ui/Timeline';
+// `LiveLaneProps`, `LivePeekProps`, `ConversationTimelineProps` and
+// `ConversationRowContext` stay inside the slice: a host writes
+// `<Conversation.Timeline …>` and names its renderer's parameters positionally,
+// so TypeScript infers all four — exporting them would be more things to keep in
+// step for no reader's benefit.
+
+// Where a session left off. The rule itself is drawn by the timeline, but the
+// CURSOR is a session cursor read over the transport, so the host resolves it
+// and hands the placement down — a room's own rule comes from its roster
+// instead. `ScrollThumb` is not exported beside it: it is drawn by the timeline
+// and by nothing else.
+export { useUnreadCursor } from './model/use-unread-cursor';
 export { messageItem, toolStatus } from './ui/message/message-variants';
 export { MessageAuthorAvatar } from './ui/message/MessageAuthorAvatar';
 export { formatTime } from './lib/format-entry-time';
@@ -61,15 +70,19 @@ export { NoticeRow } from './ui/rows/NoticeRow';
 export { MomentRow } from './ui/rows/MomentRow';
 export type { MomentSubjectIdentity } from './ui/rows/MomentRow';
 export { ThreadReplyRow } from './ui/rows/ThreadReplyRow';
+export { PendingRow } from './ui/rows/PendingRow';
 
 export { attachmentsSummary } from './ui/message/MessageAttachments';
 // The parts' own prop types are not re-exported: a host writes `<Message.Root>`
 // and TypeScript infers them. Exporting nine interfaces nothing names would be
 // nine more things to keep in step for no reader's benefit.
 
+import { ConversationComposer } from './ui/ComposerHost';
+import { ConversationFooter } from './ui/ConversationFooter';
 import { ConversationRoot } from './ui/ConversationRoot';
 import { LiveLane } from './ui/LiveLane';
 import { LivePeek } from './ui/LivePeek';
+import { ConversationTimeline } from './ui/Timeline';
 import { MessageActions } from './ui/message/MessageActions';
 import { MessageAttachments } from './ui/message/MessageAttachments';
 import { MessageAuthor } from './ui/message/MessageAuthor';
@@ -81,18 +94,21 @@ import { MessageRoot } from './ui/message/MessageRoot';
 /**
  * The conversation compound, as a host composes it.
  *
- * `Root` and `LiveLane` are the whole of it after P2 — `Header`, `Timeline`,
- * `Composer` and `Footer` land in P4. It is a namespace object rather than six
- * loose exports for the reason `Composer.*` already is one: a host writes
- * `<Conversation.Timeline>` beside `<Conversation.Composer>` and reads the tree
- * it is building. It is also the ONLY way in — neither the provider nor the lane
- * is exported loose beside it, so there is one spelling of each in the codebase
- * rather than two.
+ * Six parts after P4: the provider, the one list, the reserved lane, its peek,
+ * the one composer card and the strip under it. It is a namespace
+ * object rather than loose exports for the reason `Composer.*` already is one: a
+ * host writes `<Conversation.Timeline>` beside `<Conversation.Composer>` and reads
+ * the tree it is building. It is also the ONLY way in — neither the provider nor
+ * the lane is exported loose beside it, so there is one spelling of each in the
+ * codebase rather than two.
  */
 export const Conversation = {
   Root: ConversationRoot,
+  Timeline: ConversationTimeline,
   LiveLane,
   LivePeek,
+  Composer: ConversationComposer,
+  Footer: ConversationFooter,
 };
 
 /**

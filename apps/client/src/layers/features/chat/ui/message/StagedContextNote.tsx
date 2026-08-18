@@ -17,7 +17,7 @@ interface StagedContextNoteProps {
  * is an honest record of what was added rather than a silent success.
  *
  * Sourced from the `context_staged` event, projected by `projectSessionMessages`
- * and routed here by `MessageList` on the message's `_stagedContext` tag.
+ * and routed here by `SessionTranscript` on the message's `_stagedContext` tag.
  */
 export function StagedContextNote({ content }: StagedContextNoteProps) {
   return (

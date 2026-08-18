@@ -94,8 +94,6 @@ export function laneAnnouncement(state: LaneState, unavailable: boolean): string
       return 'Working';
     case 'turn-complete':
       return '';
-    case 'queued':
-      return queuedSentence(state.depth);
     case 'empty':
       return '';
   }
@@ -122,8 +120,6 @@ export function laneMotionKey(state: LaneState): string {
       return `${state.kind}:${state.message}`;
     case 'turn-streaming':
       return `turn-streaming:${state.verbKey}`;
-    case 'queued':
-      return `queued:${state.depth}`;
     default:
       return state.kind;
   }
@@ -141,11 +137,6 @@ const PRESENCE_TESTID: Record<'room' | 'thread' | 'session', string> = {
   thread: 'thread-presence',
   session: 'session-presence',
 };
-
-/** How many drafts are being held, in words. */
-function queuedSentence(depth: number): string {
-  return depth === 1 ? '1 queued' : `${depth} queued`;
-}
 
 /** What one lane rendering needs beyond its own state. */
 export interface LaneContentProps {
@@ -204,8 +195,6 @@ export function LaneContent({
       return <StreamingLine state={state} reducedMotion={reducedMotion} />;
     case 'turn-complete':
       return <CompleteLine state={state} />;
-    case 'queued':
-      return <QueuedLine state={state} />;
     case 'empty':
       return null;
   }
@@ -482,19 +471,6 @@ function CompleteLine({ state }: { state: Extract<LaneState, { kind: 'turn-compl
       <span className="truncate">{state.elapsed}</span>
       <span aria-hidden="true">·</span>
       <span className="shrink-0">{state.tokens}</span>
-    </span>
-  );
-}
-
-/**
- * Drafts the composer is holding until this turn ends.
- *
- * @internal
- */
-function QueuedLine({ state }: { state: Extract<LaneState, { kind: 'queued' }> }) {
-  return (
-    <span data-testid="lane-queued" className="text-muted-foreground flex min-w-0 items-center">
-      <span className="truncate">{queuedSentence(state.depth)}</span>
     </span>
   );
 }

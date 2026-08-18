@@ -220,7 +220,7 @@ test.describe('Home is the #team room @smoke', () => {
     await expect(roomsPage.roomHeader).toHaveCount(1);
     // The room's composer, addressed the way every other room spec addresses
     // it. Not `home-composer`: that testid is stamped only where the recents
-    // panel is offered, which is the home surface alone (`RoomComposer`), and
+    // panel is offered, which is the home surface alone (`ChannelComposer`), and
     // its absence here is the correct answer rather than a missing composer.
     await expect(roomsPage.composer('#team')).toBeVisible();
   });
@@ -331,7 +331,7 @@ test.describe('Home is the #team room @smoke', () => {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     // …and the room the operator wrote in is now one of the places they have
-    // been today. Deleting the write in `RoomComposer.handleSubmit` reddens
+    // been today. Deleting the write in the room target's `send` reddens
     // exactly this line.
     await expect(teamRow).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
   });

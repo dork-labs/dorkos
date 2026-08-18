@@ -47,7 +47,7 @@ const SERVER_ROUND_TRIP_MS = 30_000;
 /**
  * Padding that makes one message far taller than the list's 80px row estimate.
  *
- * Load-bearing, not decoration. `MessageList` lands a conversation that has an
+ * Load-bearing, not decoration. `Conversation.Timeline` lands a conversation that has an
  * unread rule ON the rule rather than at the end, and being at the end is what
  * marks a session read — so a transcript short enough to fit the viewport would
  * leave every device pinned to the bottom, marking itself read the moment it

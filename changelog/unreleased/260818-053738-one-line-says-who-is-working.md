@@ -11,6 +11,7 @@ covers:
   - 'chore(e2e): the two new specs point at the code they cover (DOR-1329)'
   - 'fix(client): the peek closes with its trigger, hands the caret back, and only links to rows that exist (DOR-1329)'
   - 'fix(server,client,e2e): visibility before the person gate, a dead export gone, and every reference points at what exists (DOR-1329)'
+  - 'feat(client,server): the live lane above every composer — presence, peek, session status, one height (P2, DOR-1329) (#1092)'
 ---
 
 ### Added

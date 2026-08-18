@@ -514,7 +514,7 @@ const animated = resolveStreamdownAnimation(config);
 
 ### Data Flow
 
-`MessageList` (optional `textEffect` prop) → `SessionMessage` → `MessageContext` → `AssistantMessageContent` → `StreamingText` → `Streamdown` (`animated` + `isAnimating` props)
+`SessionTranscript` (optional `textEffect` prop) → `SessionMessage` → `MessageContext` → `AssistantMessageContent` → `StreamingText` → `Streamdown` (`animated` + `isAnimating` props)
 
 ### Reduced Motion
 

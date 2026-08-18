@@ -89,10 +89,10 @@ function entry(overrides: Partial<RoomEntry> & { id: string; seq: number }): Roo
 /**
  * A room's log put through the host's OWN pipeline, kind by kind.
  *
- * The same three calls `RoomTimeline` makes, in the same order: split the
+ * The same three calls `RoomFlow` makes, in the same order: split the
  * threads off, lay the remaining flow out, and ask each laid-out row what it
  * is. The only thing written here rather than imported is the `Fragment`
- * `RoomTimeline` draws — a message row, then a reply line under it when the
+ * `RoomFlow` draws — a message row, then a reply line under it when the
  * grouping found replies — because that is JSX and not a function.
  */
 function kindsDrawnFor(

@@ -381,7 +381,7 @@ export function RoomMessage({
         />
         {/* "Reply in thread" stays offered even here: it only opens the
             thread panel, and that panel's own composer is the SAME
-            `RoomComposer` the room's own composer is — it already refuses
+            `ChannelComposer` the room's own composer is — it already refuses
             to post once `isMember` is false (DOR-1233), so a room you left
             cannot be replied into through this door either. "Copy text"
             reads the message, not the room, so membership is not its

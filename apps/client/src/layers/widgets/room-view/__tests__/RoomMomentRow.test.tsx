@@ -105,7 +105,7 @@ function renderRow(target: RoomEntry = entry()) {
     <RoomMessage
       roomId="room-1"
       entry={target}
-      // Resolved off the roster exactly as `RoomTimeline` resolves it, so the
+      // Resolved off the roster exactly as `RoomFlow` resolves it, so the
       // fixture cannot disagree with the feed about who wrote the entry.
       author={toMessageAuthor(target.authorId, AUTHORS)}
       authorRef={AUTHORS.get(target.authorId)}

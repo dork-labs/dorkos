@@ -175,6 +175,17 @@ Layer check: `features/conversation` imports `entities/room`, `entities/session`
 
 ### 2.2 The API
 
+> **Amended 2026-08-18 (P4, DOR-1331), against what shipped.** Three things in this section read
+> differently now, and each is argued at length in `04-implementation.md`:
+> **(1)** `capabilities.toolCards` does not exist. Which body a row draws is settled by the renderer
+> the host hands it (`renderSessionBody` vs `renderRoomBody`), which is §2.6's gate; a flag two
+> capability tables had to keep in step while nothing read it was a check that could not fail.
+> **(2)** `capabilities.streamHealth` was added, and it is what decides whether the live lane says
+> "this client has stopped hearing" — a room does, a session says it in its status strip instead.
+> **(3)** The timeline's prop is `renderRow`, not `renderBody`: the two row wrappers hold what only
+> each surface knows, so the timeline calls the host back for a whole row and `ConversationBodyRenderer`
+> stays the §2.6 seam INSIDE it.
+
 ```ts
 /** Which of the three presentations this conversation is. */
 export type ConversationSurface = 'session' | 'room' | 'dm';
@@ -189,10 +200,10 @@ export interface ConversationCapabilities {
   runWith: boolean;
   /** The composer accepts files. */
   attachments: boolean;
-  /** Bodies may contain tool cards, thinking blocks and inline prompts. */
-  toolCards: boolean;
   /** The composer offers an @mention picker and bodies render mention pills. */
   mentions: boolean;
+  /** The lane may say this client has stopped hearing the conversation. */
+  streamHealth: boolean;
   /** The lane may show presence for other authors. */
   presence: boolean;
   /** The lane may show this conversation's own turn status (elapsed, tokens, mode). */
@@ -241,8 +252,8 @@ export const SESSION_CAPABILITIES: ConversationCapabilities = {
   threads: false,
   runWith: true,
   attachments: true,
-  toolCards: true,
   mentions: false,
+  streamHealth: false,
   presence: false,
   turnStatus: true,
   asks: true,
@@ -254,8 +265,8 @@ export const ROOM_CAPABILITIES: ConversationCapabilities = {
   threads: true,
   runWith: false,
   attachments: true,
-  toolCards: false,
   mentions: true,
+  streamHealth: true,
   presence: true,
   turnStatus: false,
   asks: true,
@@ -283,7 +294,7 @@ That table is the whole of "what is different between the surfaces", written onc
   </Conversation.Header>
   <Conversation.Timeline
     rows={rows}
-    renderBody={renderRoomBody}
+    renderRow={renderRoomRow}
     onOpenThread={openThread}
     ref={timelineRef}
   />
@@ -307,8 +318,8 @@ Built by porting `MessageList.tsx` (the virtualized one) and folding `RoomTimeli
 export interface ConversationTimelineProps {
   /** Ordered rows, already grouped. See `lib/row-kinds.ts`. */
   rows: readonly ConversationRow[];
-  /** Turns a message row's payload into its body. §2.6. */
-  renderBody: ConversationBodyRenderer;
+  /** Draws one row. The host's own row wrapper, which composes §2.6's body renderer inside it. */
+  renderRow: ConversationRowRenderer;
   /** Sequence the unread cursor is placed against; `null` when everything is read. */
   lastReadSeq?: number | null;
   /** Called when a row asks to open its thread. Required when `capabilities.threads`. */
@@ -374,7 +385,7 @@ What it inherits from each parent:
 
 Every part takes `asChild` (the repo has 188 uses) and stamps `data-slot` (728 uses, mandated). Every export carries TSDoc (Hard Rule 4).
 
-**Capability flags, not surface checks.** `Message.Reactions` renders `null` when `capabilities.reactions` is false. `Message.Actions` composes its menu from the capabilities: `runWith` adds the `RunWithMenu` item, `threads` adds "Reply in thread", `reactions` adds the emoji row. `Message.Body` renders a tool card only when `capabilities.toolCards`. There is no `surface === 'room'` anywhere below `Conversation.Root` — a lint-visible property, and §7.1 pins it with a source scan.
+**Capability flags, not surface checks.** `Message.Reactions` renders `null` when `capabilities.reactions` is false. `Message.Actions` composes its menu from the capabilities: `runWith` adds the `RunWithMenu` item, `threads` adds "Reply in thread", `reactions` adds the emoji row. What a body may contain is settled by WHICH body renderer the host hands the row (`renderSessionBody` vs `renderRoomBody`) — that is this section's gate, and there is no capability flag beside it. There is no `surface === 'room'` anywhere below `Conversation.Root` — a lint-visible property, and §7.1 pins it with a source scan.
 
 **Hover actions merge.** `features/chat/ui/message/RunWithMenu.tsx:55` (141 lines) and `features/entry-actions` (`EntryActionBar`, `EntryActionMenu`, `EntryReactionRow`, `EntryReactionPicker`, `EntryReactionGrid`, `useEntryActions`, `ENTRY_ACTION_ORDER`, `RovingGroup`) become one system. `features/entry-actions` is the survivor — it already has the roving keyboard group, the long-press path and the mobile alternates the design system requires — and it gains one action id, `run-with`, whose availability is `capabilities.runWith`. `RunWithMenu.tsx` is deleted and its popover body becomes that action's content.
 

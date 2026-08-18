@@ -42,8 +42,8 @@ const ROOM_LIKE: ConversationCapabilities = {
   threads: true,
   runWith: false,
   attachments: true,
-  toolCards: false,
   mentions: true,
+  streamHealth: true,
   presence: true,
   turnStatus: false,
   asks: true,
@@ -55,6 +55,7 @@ const SESSION_LIKE: ConversationCapabilities = {
   reactions: false,
   threads: false,
   mentions: false,
+  streamHealth: false,
   presence: false,
   turnStatus: true,
 };
@@ -81,7 +82,6 @@ function presence(claims: readonly LanePresenceAuthor[]): LaneState {
     stalled: false,
     presence: claims,
     turn: null,
-    queueDepth: 0,
   });
 }
 
@@ -92,7 +92,6 @@ function turn(overrides: Partial<LaneTurn> = {}): LaneState {
     asks: NO_ASKS,
     stalled: false,
     presence: [],
-    queueDepth: 0,
     turn: {
       status: 'streaming',
       isWaitingForUser: false,
@@ -145,7 +144,7 @@ export function LiveLaneShowcase() {
   return (
     <PlaygroundSection
       title="Live lane"
-      description="One reserved line above the composer, on every conversation surface. It is a fixed 24 pixels whether or not it has anything to say — that is the whole feature, because it means an agent picking something up cannot push the message you were reading. Ten states share it and the first match wins: an Ask outranks a stalled stream (a prompt in hand is still answerable when the wire goes quiet), a stalled stream outranks presence (a client that cannot read the stream must not claim to know who is working), and everything about this conversation's own turn sits below both. Only the working dot moves."
+      description="One reserved line above the composer, on every conversation surface. It is a fixed 24 pixels whether or not it has anything to say — that is the whole feature, because it means an agent picking something up cannot push the message you were reading. Nine states share it and the first match wins: an Ask outranks a stalled stream (a prompt in hand is still answerable when the wire goes quiet), a stalled stream outranks presence (a client that cannot read the stream must not claim to know who is working), and everything about this conversation's own turn sits below both. Only the working dot moves."
     >
       <ShowcaseLabel>
         Empty — a quiet room looks quiet. The bordered box below is the showcase&apos;s, not the
@@ -346,16 +345,6 @@ export function LiveLaneShowcase() {
       <ShowcaseDemo>
         <LaneBox>
           <Conversation.LiveLane state={turn({ status: 'idle', showComplete: true })} />
-        </LaneBox>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Drafts the composer is holding until this turn ends</ShowcaseLabel>
-      <ShowcaseDemo>
-        <LaneBox>
-          <Conversation.LiveLane state={{ kind: 'queued', depth: 1 }} />
-        </LaneBox>
-        <LaneBox>
-          <Conversation.LiveLane state={{ kind: 'queued', depth: 4 }} />
         </LaneBox>
       </ShowcaseDemo>
 

@@ -108,7 +108,7 @@ describe('projectInProgressTurn', () => {
 
   it('surfaces an approval_required interaction as a pending tool-call part', () => {
     // Purpose: a recovered approval must render as a pending, interactive
-    // tool-call part the InteractiveInputPanel can drive.
+    // tool-call part `SessionAsks` can drive.
     const events: SessionEvent[] = [
       {
         seq: 1,

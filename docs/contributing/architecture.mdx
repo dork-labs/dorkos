@@ -346,7 +346,7 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD):
 | `entities/tasks/`        | Task scheduler hooks              | useTasksEnabled, useSchedules, useRuns                                        |
 | `entities/relay/`        | Relay messaging hooks             | useRelayEnabled, useRelayMessages                                             |
 | `entities/mesh/`         | Mesh discovery hooks              | useMeshEnabled, useRegisteredAgents                                           |
-| `features/chat/`         | Chat interface                    | ChatPanel, MessageList, ToolCallCard                                          |
+| `features/chat/`         | A session's own machinery         | useChatSession, SessionMessage, ToolCallCard                                  |
 | `features/session-list/` | Session management                | SessionSidebar, SessionItem                                                   |
 | `features/settings/`     | Settings UI                       | SettingsDialog                                                                |
 | `features/tasks/`        | Task scheduler UI                 | TasksPanel, CreateScheduleDialog                                              |

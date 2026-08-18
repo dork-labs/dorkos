@@ -48,8 +48,8 @@
  * - `features/mentions/model/use-mention-autocomplete.ts` matches
  *   `MENTION_TRIGGER` against `text.slice(0, cursorPos)` and writes back through
  *   `insertMention`, which slices by the same offsets
- * - `widgets/room-view/ui/RoomComposer.tsx` then calls `focusAt(cursorPos)`
- * - `features/chat/ui/input/ChatInputContainer.tsx`'s `insertIntoComposer`
+ * - `widgets/room-view/ui/ChannelComposer.tsx` then calls `focusAt(cursorPos)`
+ * - `widgets/session/ui/SessionComposer.tsx`'s `insertIntoComposer`
  *   calls `focusAt(next.length)` after a file-tree path drop
  *
  * @module features/composer/ui/field/markdown-offsets

@@ -69,9 +69,9 @@ src/
 │   │   ├── binding/     # Adapter-agent binding hooks (useBindings, useCreateBinding, etc.)
 │   │   └── marketplace/ # Marketplace hooks (useMarketplacePackages, useInstallPackage, etc.)
 │   ├── features/        # Complete user-facing functionality
-│   │   ├── chat/        # ChatPanel, MessageList, streaming, useChatSession
+│   │   ├── chat/        # A session's model: useChatSession, streaming, message parts
 │   │   │   ├── ui/
-│   │   │   │   ├── input/    # ChatInputContainer, QueuePanel, InteractiveInputPanel, PromptSuggestionChips
+│   │   │   │   ├── input/    # QueuePanel, StopConfirmDialog, AnimatedPlaceholder
 │   │   │   │   ├── message/  # AssistantMessageContent, StreamingText, ThinkingBlock, SubagentBlock
 │   │   │   │   ├── status/   # ChatStatusSection, AgentIdentityChip, terminal-reason chip
 │   │   │   │   ├── tasks/    # TaskListPanel, TaskDetail, AgentRunner, BackgroundTaskBar

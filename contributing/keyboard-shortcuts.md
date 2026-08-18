@@ -70,7 +70,7 @@ because `Enter` is a newline there):
 
 Both are **capability-gated by presence, not by a disabled state.** The host wires `onSteer` /
 `onStage` only when the session's runtime declares `supportsSteer` / `supportsContextStaging`
-(`ChatInputContainer` reads them via `useCapabilitiesForRuntime`). When a callback is absent the
+(`SessionComposer` reads them via `useCapabilitiesForRuntime`). When a callback is absent the
 chord resolves to **Queue** (`onSteer ?? onQueue`, `onStage ?? onQueue`) — a shortcut never does
 something the button cannot, and it is never swallowed. The chords sit downstream of the
 backslash-continuation rule and only fire with `isStreaming`, `value.trim()`, no open queue-item
@@ -302,7 +302,7 @@ ChatPanel
   ├── focusedOptionIndex state
   ├── activeToolHandleRef (InteractiveToolHandle)
   │
-  └── MessageList
+  └── Conversation.Timeline
         └── SessionMessage (receives activeToolCallId, onToolRef, focusedOptionIndex)
               └── MessageContext (the three props, put on context for the body)
                     └── AssistantMessageContent (reads them with useMessageContext)
@@ -349,7 +349,7 @@ useInteractiveShortcuts({
 
 ### `SessionMessage.tsx`
 
-Threads three props from `ChatPanel` through `MessageList`:
+Threads three props from `ChatPanel` through `SessionTranscript`:
 
 - **`activeToolCallId`** -- The `toolCallId` of the currently active interactive tool
 - **`onToolRef`** -- Callback to register the imperative handle of the active component
