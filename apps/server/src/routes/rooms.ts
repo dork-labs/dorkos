@@ -160,6 +160,43 @@ router.patch('/:id', (req, res) => {
   }
 });
 
+/**
+ * GET /:id/sessions — which session each of this room's agents answers in.
+ *
+ * The mapping `specs/room-presence` §15 deliberately kept off the presence
+ * signal, "waiting for a design that checks the caller's right to it". This is
+ * that design, and it is two sentences long:
+ *
+ * - **A room you cannot see answers 404**, exactly as `GET /:id` does, so this
+ *   route discloses nothing about a room that reading it would not.
+ * - **Only a person may ask.** A caller resolved as an agent is refused 403
+ *   (`PEOPLE_ONLY`), the same boundary reacting and read state already draw. An
+ *   agent enumerating its room-mates' sessions is arbitration this domain has
+ *   declined; a person asking "where is that work running" is the reason the
+ *   route exists.
+ *
+ * The body is ids and nothing else — no session content, no cwd, no status. It
+ * is the minimum that makes a link, and the narrowness is the security claim.
+ *
+ * Declared beside `GET /:id` and BELOW it, which is safe: Express 5 matches
+ * `/:id` against a single segment, so `/:id/sessions` cannot be swallowed by it
+ * and no existing route needed reordering.
+ */
+router.get('/:id/sessions', (req, res) => {
+  try {
+    const caller = resolveCaller(res);
+    if (caller.kind !== 'human') {
+      // A 403 rather than a 404: there is nothing to hide from a caller that is
+      // already in the room, and telling an agent "this is not yours to read" is
+      // more useful than pretending the route does not exist.
+      throw new RoomError('PEOPLE_ONLY', "Only a person can see where a room's work runs.");
+    }
+    res.json({ bindings: getRoomService().listRoomSessions(req.params.id, caller.id) });
+  } catch (err) {
+    sendRoomError(res, err, 'GET /:id/sessions');
+  }
+});
+
 /** GET /:id/entries — a page of history, oldest-first. */
 router.get('/:id/entries', (req, res) => {
   const query = parseBody(ListRoomEntriesQuerySchema, req.query, res);

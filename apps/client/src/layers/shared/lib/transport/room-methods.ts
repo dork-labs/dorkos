@@ -28,6 +28,7 @@ import {
   type RoomEvent,
   type RoomMember,
   type RoomRosterEntry,
+  type RoomSessionsResponse,
   type RoomSummary,
   type RoomWithRoster,
   type ThreadSummary,
@@ -189,6 +190,14 @@ export function createRoomMethods(baseUrl: string) {
      */
     haltRoom(id: string): Promise<HaltRoomResponse> {
       return fetchJSON<HaltRoomResponse>(baseUrl, `/rooms/${id}/halt`, { method: 'POST' });
+    },
+
+    /**
+     * Where each of this room's agents does its work. Ids only, people only —
+     * see the port's own note.
+     */
+    listRoomSessions(id: string): Promise<RoomSessionsResponse> {
+      return fetchJSON<RoomSessionsResponse>(baseUrl, `/rooms/${id}/sessions`);
     },
 
     /**

@@ -1305,6 +1305,33 @@ export const HaltRoomResponseSchema = z
 
 export type HaltRoomResponse = z.infer<typeof HaltRoomResponseSchema>;
 
+/** Which session one agent's work in a room runs in. */
+export const RoomSessionBindingSchema = z
+  .object({
+    /** The agent's author id in this room. */
+    authorId: z.string().min(1),
+    /** The session its turns run in. */
+    sessionId: z.string().min(1),
+  })
+  .openapi('RoomSessionBinding');
+
+export type RoomSessionBinding = z.infer<typeof RoomSessionBindingSchema>;
+
+/**
+ * What `GET /api/rooms/:id/sessions` answers with: ids, and nothing else.
+ *
+ * **The narrowness is the security claim.** This exists so the room's live lane
+ * can offer "Open its session" — a link, which needs a session id and nothing
+ * more. No session content, no working directory, no status: a route that
+ * answered those would be a second, unreviewed way to read a session, reached
+ * through a room.
+ */
+export const RoomSessionsResponseSchema = z
+  .object({ bindings: z.array(RoomSessionBindingSchema) })
+  .openapi('RoomSessionsResponse');
+
+export type RoomSessionsResponse = z.infer<typeof RoomSessionsResponseSchema>;
+
 // === SSE ===
 
 /**

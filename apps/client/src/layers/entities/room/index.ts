@@ -9,6 +9,7 @@
  * @module entities/room
  */
 export { roomKeys } from './api/query-keys';
+export { useRoomSessions } from './api/use-room-sessions';
 export { useRooms, useRoomsByKind } from './model/use-rooms';
 export { useTeamRoom } from './model/use-team-room';
 export type { TeamRoomState } from './model/use-team-room';
