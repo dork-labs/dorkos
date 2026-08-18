@@ -1,7 +1,7 @@
 ---
 id: 260818-002806
 title: A reserved live lane above every composer replaces the status strip and the under-composer presence line
-status: draft
+status: accepted
 created: 2026-08-18
 spec: unified-conversation
 superseded-by: null
@@ -12,9 +12,23 @@ amends: 152
 
 ## Status
 
-Draft (auto-extracted from spec: unified-conversation)
+Accepted. Shipped in P2 (`#1092`) and confirmed against the tree at P5
+(DOR-1332): `Conversation.LiveLane` (`features/conversation/ui/LiveLane.tsx`)
+is the reserved `h-6` line, mounted on every surface, documented under
+`contributing/design-system.md` → Components → Live lane.
 
-Amends ADR-152, which stays **accepted**. What survives is its whole decision: a `deriveStripState()`-shaped pure function mapping raw props to a discriminated union, rendered through one morphing container with `AnimatePresence mode="wait"` keyed on the variant. What is retired is its scope — "the chat UI's status strip", six states, in the session chat only, implemented as `features/chat/ui/status/strip-state.ts` (the file its `affects` glob names). Those move to `features/conversation/model/lane-state.ts`, shared by every surface, with ten states.
+**One number in this record no longer matches the shipped stack.** The
+Decision section below still says "ten states" and lists a queue note as the
+lowest rung; P4's review (session 7, `04-implementation.md`) deleted the
+`queued` rung outright rather than reordering it — a queue only ever exists
+because a turn is already in flight, so it could never win against
+`turn-streaming` and would have hidden what the agent is doing to report a
+number. The shipped stack is **nine** rungs, ending at `turn-complete` then
+`empty`. Left uncorrected in the prose below because an ADR is a record of
+the decision as reasoned at the time, not a living spec; the accurate count
+lives in `contributing/design-system.md` and `lane-state.ts`'s own TSDoc.
+
+Amends ADR-152, which stays **accepted**. What survives is its whole decision: a `deriveStripState()`-shaped pure function mapping raw props to a discriminated union, rendered through one morphing container with `AnimatePresence mode="wait"` keyed on the variant. What is retired is its scope — "the chat UI's status strip", six states, in the session chat only, implemented as `features/chat/ui/status/strip-state.ts` (the file its `affects` glob names). Those move to `features/conversation/model/lane-state.ts`, shared by every surface, with nine states.
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 id: 260818-002805
 title: One Conversation compound, with capability flags instead of surface switches
-status: draft
+status: accepted
 created: 2026-08-18
 spec: unified-conversation
 superseded-by: null
@@ -11,7 +11,14 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: unified-conversation)
+Accepted. Shipped across P1–P4 (`#1091`, `#1092`, `#1093`, `#1102`) and confirmed
+against the tree at P5 (DOR-1332): `features/conversation/` exists with the
+`Conversation` namespace object (`Root`/`Timeline`/`LiveLane`/`Composer`/`Footer`)
+and the `Message.*` row family; `ConversationCapabilities` is declared once per
+host (`SESSION_CAPABILITIES`, `ROOM_CAPABILITIES`) and read everywhere behaviour
+differs; `no-surface-switches.test.ts` mechanically enforces that nothing below
+`Conversation.Root` compares against `surface`. `contributing/architecture.md`
+now documents the pattern under "Namespace compounds".
 
 ## Context
 
