@@ -100,14 +100,22 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * `runtimes.claudeCode.persistentSession` off — how it ships — nothing
    * launches a pump, every session reads `cold`, and every reap is a no-op,
    * which is the truth rather than a stub.
+   *
+   * Keyed through `sessionStore.sessionKeyOf` (below), the ONE resolver that
+   * answers "which key is this session's pump filed under" whichever id in
+   * its rename chain the caller holds (DOR-1309).
    */
-  private readonly pumps = new SessionPumpRegistry();
+  private readonly pumps = new SessionPumpRegistry((id) => this.sessionStore.sessionKeyOf(id));
   /**
    * The path a message takes when its session holds its process open. Reads the
    * opt-in per session and wires the pump, the turn windower and the crash
-   * policy together; see `sessions/persistent-dispatch.ts`.
+   * policy together; see `sessions/persistent-dispatch.ts`. Shares
+   * {@link pumps}'s SAME resolver, so the two structures can never learn about
+   * a rekey at different times.
    */
-  private readonly persistent = new PersistentDispatch(this.pumps);
+  private readonly persistent = new PersistentDispatch(this.pumps, (id) =>
+    this.sessionStore.sessionKeyOf(id)
+  );
   private commandRegistries = new Map<string, CommandRegistryService>();
   private static readonly MAX_COMMAND_REGISTRIES = 50;
 

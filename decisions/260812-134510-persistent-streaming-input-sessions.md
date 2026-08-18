@@ -68,6 +68,16 @@ A warm process pins whatever it was launched with. Change any pinned value and t
 
 **The account pin is a security control, not an optimization detail.** A Claude account _is_ a config directory: it carries that account's transcripts and its own sign-in, so the account a process launched under is the account its work **bills to**. A dispatch that rode a process launched under a different account would bill a paying client's conversation to someone else. No other row has that consequence. So the account is compared **first and unconditionally**, ahead of any other pin and with no "these fingerprints are otherwise identical" shortcut in front of it, and again through the ordinary pin loop; a cross-account reuse is its own error class (`AccountPinViolationError`) because it is a security event, not a bug. Two string compares is a trivial price to never send someone else's invoice.
 
+## Amendment — 2026-08-18 (DOR-1309): the canonical-id rebind is a THIRD incident, on the hot path this ADR was supposed to keep it off
+
+Status stays **accepted**; this narrows one consequence of the decision, it does not reopen it.
+
+The Context section names two incidents the mid-turn rebind cost before this ADR — DOR-493, DOR-838 — both on the resume-per-message path this ADR demotes, and the Decision says resume's fragilities, the rebind included, "survive only there, off the hot path." That is true about WHERE the rebind runs: a persistent session's first turn is a genuine cold start, so it still gets its canonical id re-minted mid-stream (`system/init`, ADR-0267) exactly as a cold-start turn always has. It said nothing about who has to hear about it once it happens.
+
+DOR-1309 was the third incident, and it happened on the pump's hot path rather than the demoted resume path. `PersistentDispatch.bundles` and `SessionPumpRegistry.entries` — the two structures that hold this ADR's warm process state — were keyed by whatever raw id a caller passed, never resolved through the same alias graph `SessionStore` already keeps for its own reverse index. A session's second message, sent under the id the first message's rebind had just taught the client, missed the pump entirely and warmed a SECOND process beside the first — which then sat orphaned, holding memory, until the idle reap this ADR's `WARM_IDLE_MS` describes above. Turn two paid the cost turn one was supposed to have already paid, on the very path built to make turn two fast.
+
+**The invariant this settles for every future per-session registry in this adapter**: any structure that holds process state keyed by session identity resolves that identity through `SessionStore.sessionKeyOf` before it ever touches its own map — never by whichever id a caller happened to pass. `PersistentDispatch` and `SessionPumpRegistry` both take that resolver at construction now (`services/runtimes/claude-code/sessions/persistent-dispatch.ts`, `session-pump-registry.ts`); the next per-session structure this adapter grows inherits the same obligation, and does not get to invent its own alias tracking to meet it — `SessionStore` is the one place that already has to know a session's whole rename chain, so it is the one place anything else may ask.
+
 ## Consequences
 
 ### Positive
