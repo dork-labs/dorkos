@@ -438,7 +438,7 @@ them any more: Telegram drops messages from other bots
 (`isBotSender` in `adapters/telegram/inbound.ts`, with a carve-out for a human
 posting as an anonymous group admin), the room composer has a mention picker
 (`features/mentions`), a room shows an in-flight working indicator
-(`entities/room/model/use-room-presence.ts`, `widgets/room-view/ui/RoomPresenceLine.tsx`),
+(`entities/room/model/use-room-presence.ts`, `features/conversation/ui/LiveLane.tsx`),
 and Telegram's typing indicator is driven by the turn — it starts on the turn's
 first event and stops at the terminal (including a question or an approval,
 where the agent is waiting on a person). The blind 60s cap that ran from message

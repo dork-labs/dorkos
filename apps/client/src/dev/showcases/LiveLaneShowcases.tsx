@@ -12,7 +12,6 @@
  *
  * @module dev/showcases/LiveLaneShowcases
  */
-import { MotionConfig } from 'motion/react';
 import {
   Conversation,
   deriveLaneState,
@@ -336,18 +335,11 @@ export function LiveLaneShowcase() {
 
       <ShowcaseLabel>
         Reduced motion — the dot stays and only its breathing goes. The branch is OFF, not shorter:
-        every end state reads statically.
+        every end state above reads statically, so a reader who asked for less motion loses nothing
+        but the movement. It follows the reader&apos;s own system setting rather than anything on
+        this page — turn &ldquo;Reduce motion&rdquo; on and every lane here changes at once. Which
+        branch a lane took is stamped on the element as data-lane-motion.
       </ShowcaseLabel>
-      <ShowcaseDemo>
-        <MotionConfig reducedMotion="always">
-          <LaneBox>
-            <Conversation.LiveLane state={presence([claim('Meeting Notes', 64)])} />
-          </LaneBox>
-          <LaneBox>
-            <Conversation.LiveLane state={turn()} />
-          </LaneBox>
-        </MotionConfig>
-      </ShowcaseDemo>
     </PlaygroundSection>
   );
 }

@@ -41,8 +41,11 @@ export type {
   LaneStateInput,
   LaneTurn,
 } from './model/lane-state';
-export type { LaneScope, LiveLaneProps } from './ui/LiveLane';
-export type { LivePeekProps, LivePeekRow } from './ui/LivePeek';
+export type { LaneScope } from './ui/LiveLane';
+export type { LivePeekRow } from './ui/LivePeek';
+// `LiveLaneProps` and `LivePeekProps` stay inside the slice: a host writes
+// `<Conversation.LiveLane …>` and TypeScript infers them, so exporting the two
+// interfaces would be two more things to keep in step for no reader's benefit.
 export { messageItem, toolStatus } from './ui/message/message-variants';
 export { MessageAuthorAvatar } from './ui/message/MessageAuthorAvatar';
 export { formatTime } from './lib/format-entry-time';

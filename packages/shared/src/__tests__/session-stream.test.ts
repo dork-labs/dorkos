@@ -80,11 +80,11 @@ describe('SessionStatusSchema', () => {
 
   it('parses a status carrying what the session is doing right now', () => {
     // Purpose: the fleet-wide activity reading rides the status projection, so a
-    // sidebar can say "Editing strip-state.ts" without opening the session.
+    // sidebar can say "Editing lane-state.ts" without opening the session.
     const working = {
       ...coldStatus,
       lifecycle: 'streaming' as const,
-      activity: { toolName: 'Edit', target: 'strip-state.ts' },
+      activity: { toolName: 'Edit', target: 'lane-state.ts' },
     };
     expect(SessionStatusSchema.parse(working).activity).toEqual(working.activity);
   });

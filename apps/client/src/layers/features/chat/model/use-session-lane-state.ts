@@ -41,7 +41,7 @@ export interface SessionLaneInput {
 }
 
 /** Format a token count for display (e.g. 3200 -> "~3.2k tokens"). */
-export function formatTokens(count: number): string {
+function formatTokens(count: number): string {
   if (count >= 1000) {
     return `~${(count / 1000).toFixed(1)}k tokens`;
   }
