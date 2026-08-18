@@ -1,10 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { runBinaryProbe, findBinaryOnPath } from '../run-probe.js';
+import {
+  runBinaryProbe,
+  findBinaryOnPath,
+  logProbeFailure,
+  resetProbeFailureNotices,
+} from '../run-probe.js';
+import { logger } from '../../../../lib/logger.js';
 
 vi.mock('node:child_process', () => ({ execFile: vi.fn() }));
 vi.mock('node:fs', () => ({ existsSync: vi.fn() }));
+vi.mock('../../../../lib/logger.js', () => ({
+  logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+}));
 
 type ProbeOutcome = { stdout?: string } | { error: Error } | 'hang';
 
@@ -91,5 +100,62 @@ describe('findBinaryOnPath', () => {
     const promise = findBinaryOnPath('codex', TIMEOUT);
     await vi.advanceTimersByTimeAsync(TIMEOUT + 1);
     await expect(promise).resolves.toBeNull();
+  });
+});
+
+describe('logProbeFailure', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetProbeFailureNotices();
+  });
+
+  // Purpose: F2 was invisible from outside because every probe swallowed its
+  // error. A person reading the server log must be able to see WHICH check
+  // failed, on WHICH binary, and why.
+  it('warns with the check, the binary path and the error code', () => {
+    const err = Object.assign(new Error('spawn ENOTDIR'), { code: 'ENOTDIR' });
+
+    logProbeFailure('Claude Code CLI', '/app.asar/node_modules/sdk/claude', err);
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const [message, details] = vi.mocked(logger.warn).mock.calls[0] as [string, unknown];
+    expect(message).toContain('Claude Code CLI');
+    expect(details).toMatchObject({
+      binary: '/app.asar/node_modules/sdk/claude',
+      code: 'ENOTDIR',
+      error: 'spawn ENOTDIR',
+    });
+  });
+
+  // Purpose: a requirements poll runs these probes repeatedly; the same failure
+  // must not fill the log.
+  it('logs one notice per distinct check + binary + code', () => {
+    const err = Object.assign(new Error('spawn ENOTDIR'), { code: 'ENOTDIR' });
+
+    logProbeFailure('Claude Code CLI', '/a/claude', err);
+    logProbeFailure('Claude Code CLI', '/a/claude', err);
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+
+    // A different binary, a different code, or a different check is news again.
+    logProbeFailure('Claude Code CLI', '/b/claude', err);
+    logProbeFailure('Claude Code CLI', '/a/claude', Object.assign(new Error('nope'), { code: 1 }));
+    logProbeFailure('Claude Code authentication', '/a/claude', err);
+    expect(logger.warn).toHaveBeenCalledTimes(4);
+  });
+
+  // Purpose: an error with no `code` (a bounded-out probe rejects with a plain
+  // Error) must still say something useful rather than log `undefined`.
+  it('falls back to the message when the error carries no code', () => {
+    logProbeFailure(
+      'Codex CLI',
+      '/bin/codex',
+      new Error('probe timed out after 5000ms: /bin/codex')
+    );
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const [, details] = vi.mocked(logger.warn).mock.calls[0] as [string, { code?: string }];
+    expect(details.code).toBeUndefined();
+    expect(details).toMatchObject({ error: 'probe timed out after 5000ms: /bin/codex' });
   });
 });

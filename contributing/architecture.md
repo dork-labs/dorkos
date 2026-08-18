@@ -860,9 +860,13 @@ Since SDK 0.2.113 the Agent SDK ships Claude Code as a per-platform native binar
 
 **Fix:** `ClaudeCodeRuntime` resolves the binary path dynamically via `resolveClaudeCliPath()`:
 
-1. The SDK's bundled, version-matched native binary (preferred — avoids requiring a separate install)
-2. Fall back to a `claude` on PATH (resilience for when the bundled optional dependency failed to install)
-3. Otherwise `undefined` (let the SDK resolve)
+1. An explicit `DORKOS_CLAUDE_CLI_PATH` (the packaged desktop app hands over the binary it unpacked)
+2. The SDK's bundled, version-matched native binary (preferred — avoids requiring a separate install), remapped from `app.asar` to `app.asar.unpacked` when the resolved path lands inside the archive
+3. A binary the one-click install put under `<dorkHome>/runtimes/claude-code`
+4. Fall back to a `claude` on PATH (resilience for when the bundled optional dependency failed to install)
+5. Otherwise `undefined` (let the SDK resolve)
+
+The readiness probe (`resolveClaudeBinaryPath`) walks the same rungs, differing only in using the bounded async PATH lookup, so what the setup screen reports and what a session spawns can never disagree (DOR-1334).
 
 The resolved path is passed via `pathToClaudeCodeExecutable` in SDK options.
 

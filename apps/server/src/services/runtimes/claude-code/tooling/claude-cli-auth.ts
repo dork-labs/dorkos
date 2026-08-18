@@ -22,25 +22,32 @@
  *
  * @module services/runtimes/claude-code/tooling/claude-cli-auth
  */
-import { resolveBundledClaudeBinary } from '../sdk/sdk-utils.js';
-import { findBinaryOnPath, runBinaryProbe } from '../../shared/run-probe.js';
+import { resolveClaudeBinaryBeforePath } from '../sdk/sdk-utils.js';
+import { findBinaryOnPath, logProbeFailure, runBinaryProbe } from '../../shared/run-probe.js';
 
 /** Hard bound on each Claude CLI probe (the PATH locate, `--version`, and `auth status`). */
 export const CLAUDE_PROBE_TIMEOUT_MS = 5_000;
 
+/** Auth-check name, as the requirements payload and the log both spell it. */
+const AUTH_PROBE_LABEL = 'Claude Code authentication';
+
 /**
- * Resolve the `claude` executable to probe: bundled native binary first, then
- * `PATH`. This approximates (not exactly mirrors) the SDK's spawn resolution,
- * which also honors a CLAUDE_CLI_PATH env override before these steps; in the
- * packaged desktop app that env path may resolve where this probe cannot. The
- * bundled lookup is a synchronous `require.resolve` (no spawn); the PATH
- * locate is bounded.
+ * Resolve the `claude` executable to probe: the `DORKOS_CLAUDE_CLI_PATH`
+ * override, then the SDK's bundled native binary, then a provisioned install,
+ * then `PATH`.
+ *
+ * This is the SAME ladder the SDK spawn seam walks — literally the same rungs
+ * ({@link resolveClaudeBinaryBeforePath}), differing only in the final `PATH`
+ * lookup, which is the bounded ASYNC one here so a stalled `PATH` mount can
+ * never block the event loop. The two must never disagree: when they did, the
+ * packaged Mac app ran sessions on a binary this probe called missing
+ * (DOR-1334 / F2).
  *
  * @returns Absolute path to the binary, or `null` when unresolvable.
  */
 export async function resolveClaudeBinaryPath(): Promise<string | null> {
   return (
-    resolveBundledClaudeBinary() ?? (await findBinaryOnPath('claude', CLAUDE_PROBE_TIMEOUT_MS))
+    resolveClaudeBinaryBeforePath() ?? (await findBinaryOnPath('claude', CLAUDE_PROBE_TIMEOUT_MS))
   );
 }
 
@@ -78,8 +85,10 @@ export async function isClaudeCliAuthenticated(binary: string | null): Promise<b
   try {
     const out = await runBinaryProbe(binary, ['auth', 'status', '--json'], CLAUDE_PROBE_TIMEOUT_MS);
     return isLoggedIn(out);
-  } catch {
-    // Non-zero exit (signed out) or a bounded-out probe.
+  } catch (err) {
+    // Non-zero exit (signed out) or a bounded-out probe. Reported once per
+    // distinct failure so "authentication: missing" is never unexplainable.
+    logProbeFailure(AUTH_PROBE_LABEL, binary, err);
     return false;
   }
 }

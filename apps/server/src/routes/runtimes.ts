@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
 import { provisionOpenCode } from '../services/runtimes/opencode/provision.js';
 import { provisionCodex } from '../services/runtimes/codex/provision.js';
+import { provisionClaudeCode } from '../services/runtimes/claude-code/tooling/provision.js';
 import {
   storeRuntimeCredential,
   storeProviderCredential,
@@ -195,6 +196,19 @@ router.post('/opencode/provision', (req, res) =>
  */
 router.post('/codex/provision', (req, res) =>
   streamRuntimeProvision(req, res, provisionCodex, 'Codex')
+);
+
+/**
+ * POST /api/runtimes/claude-code/provision — opt-in, on-demand Claude Code install.
+ *
+ * The endpoint behind the "Install Claude" action the readiness projection
+ * already offered when no `claude` binary resolves; without it that button
+ * answered 404 and looked to the person like nothing happening (DOR-1334 / F4).
+ * Installs the SDK's per-platform binary package, version-locked to the SDK pin.
+ * Same SSE frame contract as the codex/opencode endpoints. Loopback-only.
+ */
+router.post('/claude-code/provision', (req, res) =>
+  streamRuntimeProvision(req, res, provisionClaudeCode, 'Claude Code')
 );
 
 // --- OpenRouter (OpenCode Gateway) -----------------------------------------

@@ -14,6 +14,7 @@
  */
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { logger } from '../../../lib/logger.js';
 
 /**
  * Run `binary args`, bounded by `timeoutMs`, resolving trimmed stdout.
@@ -54,6 +55,51 @@ export function runBinaryProbe(binary: string, args: string[], timeoutMs: number
         finish(() => resolve((typeof stdout === 'string' ? stdout : String(stdout)).trim()));
       }
     );
+  });
+}
+
+/**
+ * Failures already reported, keyed by check + binary + error code.
+ *
+ * `GET /api/system/requirements` re-runs every probe on each poll, so an
+ * unfixable failure (no binary, a signed-out CLI) would otherwise write the same
+ * warning forever. One line per distinct failure is what a person debugging
+ * actually needs; the repeats are noise.
+ */
+const reportedProbeFailures = new Set<string>();
+
+/** Clear the "already reported" set. For tests, which assert on the first notice. */
+export function resetProbeFailureNotices(): void {
+  reportedProbeFailures.clear();
+}
+
+/**
+ * Report a swallowed probe failure at `warn`, once per distinct failure.
+ *
+ * Dependency probes deliberately degrade to "missing" rather than throwing, and
+ * for a long time they did it in silence: the packaged Mac app reported its own
+ * bundled Claude Code as missing and the server log said nothing at all, so
+ * there was no way to tell an absent binary from one that could not be spawned
+ * (DOR-1334 / F3). Every `catch` that turns a probe error into `missing` calls
+ * this, so the reason is always one `grep` away.
+ *
+ * @param check - The dependency check that failed, as the user sees it named
+ *   (e.g. `'Claude Code CLI'`) — the log must say WHICH answer this explains.
+ * @param binary - The binary the probe tried to run.
+ * @param err - Whatever the probe rejected with.
+ */
+export function logProbeFailure(check: string, binary: string, err: unknown): void {
+  const code =
+    typeof err === 'object' && err !== null && 'code' in err
+      ? String((err as { code: unknown }).code)
+      : undefined;
+  const key = `${check} | ${binary} | ${code ?? ''}`;
+  if (reportedProbeFailures.has(key)) return;
+  reportedProbeFailures.add(key);
+  logger.warn(`[Runtimes] ${check} probe failed — reporting it missing`, {
+    binary,
+    ...(code !== undefined ? { code } : {}),
+    error: err instanceof Error ? err.message : String(err),
   });
 }
 

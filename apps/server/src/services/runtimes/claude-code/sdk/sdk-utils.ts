@@ -2,12 +2,11 @@ import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import type { UUID } from 'node:crypto';
+import { resolveAsarUnpacked } from '../../shared/asar-path.js';
+import { claudePlatformPackages, resolveProvisionedClaudePath } from '../tooling/provision.js';
 
 /** Resolve modules relative to this file — ESM has no ambient `require`. */
 const requireFrom = createRequire(import.meta.url);
-
-/** npm name of the SDK whose bundled native binary we spawn. */
-const SDK_PKG = '@anthropic-ai/claude-agent-sdk';
 
 /**
  * Env override for an explicit Claude Code binary path.
@@ -293,28 +292,27 @@ export function createIdlePrompt(): HeldUserPrompt {
  *
  * Since 0.2.113 the Agent SDK ships Claude Code as a native binary in optional
  * dependencies named `@anthropic-ai/claude-agent-sdk-<platform>-<arch>[-musl]`,
- * exposing `claude` (or `claude.exe`) at the package root. This mirrors the SDK's
- * own resolution so we can pass the exact binary it would self-resolve — and,
- * more importantly, detect its absence (the SDK throws rather than falling back
- * to PATH when the optional dependency is missing).
+ * exposing `claude` (or `claude.exe`) at the package root (the names are listed
+ * by {@link claudePlatformPackages}, shared with the provisioner so what one
+ * installs is what the other resolves). This mirrors the SDK's own resolution so
+ * we can pass the exact binary it would self-resolve — and, more importantly,
+ * detect its absence (the SDK throws rather than falling back to PATH when the
+ * optional dependency is missing).
+ *
+ * Inside the packaged desktop app `require.resolve` lands on a path INSIDE
+ * `app.asar`, which Electron's patched `fs` reports as existing while nothing
+ * can spawn it; {@link resolveAsarUnpacked} maps such a path onto the
+ * `app.asar.unpacked` twin electron-builder really wrote to disk (DOR-1334).
  *
  * @returns Absolute path to the bundled binary, or `null` when the optional
  *   dependency for this platform/arch isn't installed.
  */
 export function resolveBundledClaudeBinary(): string | null {
-  const { platform, arch } = process;
-  const ext = platform === 'win32' ? '.exe' : '';
+  const ext = process.platform === 'win32' ? '.exe' : '';
   // Only one variant is ever installed on a given host; try each, take the first.
-  const candidates =
-    platform === 'linux'
-      ? [`${SDK_PKG}-linux-${arch}`, `${SDK_PKG}-linux-${arch}-musl`]
-      : platform === 'android'
-        ? [`${SDK_PKG}-linux-${arch}-android`]
-        : [`${SDK_PKG}-${platform}-${arch}`];
-
-  for (const pkg of candidates) {
+  for (const pkg of claudePlatformPackages()) {
     try {
-      const resolved = requireFrom.resolve(`${pkg}/claude${ext}`);
+      const resolved = resolveAsarUnpacked(requireFrom.resolve(`${pkg}/claude${ext}`));
       if (existsSync(resolved)) return resolved;
     } catch {
       /* optional dependency not installed for this variant */
@@ -358,6 +356,28 @@ function findClaudeOnPath(): string | null {
 }
 
 /**
+ * The rungs of the ONE Claude-binary ladder that resolve without spawning
+ * anything: the {@link CLAUDE_CLI_PATH_ENV} override, the SDK's bundled binary,
+ * then a provisioned install.
+ *
+ * Shared verbatim by the SDK spawn seam ({@link resolveClaudeCliPath}) and the
+ * readiness probe (`resolveClaudeBinaryPath` in `tooling/claude-cli-auth.ts`),
+ * which differ ONLY in how they look on `PATH` afterwards — bounded-sync for the
+ * spawn seam, bounded-async for the probe, which must never block the event
+ * loop. They used to differ in the rungs too, and that is precisely how the
+ * packaged Mac app came to run sessions on a binary its own readiness ladder
+ * called missing (DOR-1334 / F2): the spawn seam honored the env override, the
+ * probe did not.
+ *
+ * @returns The first existing binary from those three rungs, or `null`.
+ */
+export function resolveClaudeBinaryBeforePath(): string | null {
+  return (
+    resolveClaudeBinaryFromEnv() ?? resolveBundledClaudeBinary() ?? resolveProvisionedClaudePath()
+  );
+}
+
+/**
  * Resolve the Claude Code executable for the SDK to spawn
  * (`options.pathToClaudeCodeExecutable`).
  *
@@ -367,19 +387,20 @@ function findClaudeOnPath(): string | null {
  * 0. An explicit path from {@link CLAUDE_CLI_PATH_ENV} (the packaged desktop
  *    app supplies its unpacked, signed binary this way — see that constant's
  *    doc for why `require.resolve` can't reach it there). Unset in dev and the
- *    npm CLI, so steps 1–3 are their unchanged resolution.
+ *    npm CLI, so the steps below are their unchanged resolution.
  * 1. The SDK's bundled, version-matched native binary (preferred — avoids the
  *    version skew of pointing at an unrelated global install).
- * 2. A `claude` on PATH — the SDK throws rather than falling back to PATH when
+ * 2. A binary the one-click install put under `<dorkHome>/runtimes/claude-code`
+ *    (ADR-0317; `tooling/provision.ts`).
+ * 3. A `claude` on PATH — the SDK throws rather than falling back to PATH when
  *    its bundled binary is missing, so we supply this for resilience.
- * 3. `undefined` — the SDK self-resolves and raises a clear "install Claude Code"
- *    error; {@link checkClaudeDependencies} surfaces the same via the dependency check.
+ * 4. `undefined` — the SDK self-resolves and raises a clear "install Claude Code"
+ *    error; `checkClaudeDependencies` reports the same through the dependency
+ *    check, which walks this exact ladder.
  *
  * The pre-0.2.113 `cli.js` resolution is gone: the SDK no longer ships `cli.js`,
  * so resolving it always failed.
  */
 export function resolveClaudeCliPath(): string | undefined {
-  return (
-    resolveClaudeBinaryFromEnv() ?? resolveBundledClaudeBinary() ?? findClaudeOnPath() ?? undefined
-  );
+  return resolveClaudeBinaryBeforePath() ?? findClaudeOnPath() ?? undefined;
 }

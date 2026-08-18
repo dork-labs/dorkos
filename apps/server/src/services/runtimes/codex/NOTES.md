@@ -216,11 +216,15 @@ write churn described above no longer applies. Not re-verified live (no re-probe
   SDK's own inheritance loop (`Object.entries(process.env)`, skipping `undefined`) and the
   token is layered on top, so PATH/HOME/CODEX_HOME survive; `prependPathDirs` still runs
   afterwards inside the SDK. A turn with no registered agent, or one where minting fails,
-  keeps using the shared boot client with `env` unset. Verified live against
+  keeps using the shared client with `env` unset. (That shared client is now built on the
+  FIRST turn, not at construction — DOR-1334: `new Codex()` throws when it cannot find a
+  binary, which kept the whole runtime out of the registry in the packaged app.) Verified live against
   `@openai/codex-sdk` dist: `CodexExec.run` uses `envOverride` wholesale when present.
-- `CodexOptions.codexPathOverride` is where `runtimes.codex.binaryPath` config wires in;
-  when unset the SDK resolves its **own vendored binary** from `@openai/codex` optional
-  deps — it does not search PATH. So execution does not strictly require a system `codex`
+- `CodexOptions.codexPathOverride` is where the binary DorkOS resolved wires in. The adapter
+  now always sets it (`resolveCodexBinaryPath`: config `binaryPath` → vendored → provisioned
+  → PATH), so the SDK's own discovery never runs; when unset the SDK resolves its **own
+  vendored binary** from `@openai/codex` optional deps — it does not search PATH, and it
+  THROWS rather than reporting when it finds nothing. So execution does not strictly require a system `codex`
   install; auth state (`codex login` under `$CODEX_HOME`) does. `check-dependencies.ts`
   (2.1) probing for a system binary is still the right UX for the login flow.
 - `codex exec --ephemeral` exists ("without persisting session files") — must NOT be used;
