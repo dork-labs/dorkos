@@ -10,7 +10,7 @@
  *
  * The REAL components, never a copy of their markup — the notice's tone and mark
  * are chosen inside `NoticeRow`, and the pending row's two states are chosen
- * inside `RoomPendingRow`, so a recreation would be the one thing incapable of
+ * inside `PendingRow`, so a recreation would be the one thing incapable of
  * showing that either choice had drifted.
  *
  * @module dev/showcases/RoomDeliveryShowcases
@@ -19,8 +19,8 @@ import { useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomAttachment, RoomMoment, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import type { PendingPost, RoomEntry } from '@/layers/entities/room';
-import { Conversation, Message } from '@/layers/features/conversation';
-import { ROOM_CAPABILITIES, RoomMessage, RoomPendingRow } from '@/layers/widgets/room-view';
+import { Conversation, Message, PendingRow } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES, RoomMessage } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -307,12 +307,12 @@ function NoticesSection() {
 function PendingSection() {
   return (
     <PlaygroundSection
-      title="RoomPendingRow"
+      title="PendingRow"
       description="What holds your words between pressing Enter and the room echoing them back. A post is trigger-only — the entry arrives on the room's stream, not in the response — so without this the sentence was simply gone for the length of the round trip, and gone for good under a stream that had stopped listening. In flight it is the same words in the same place, dimmed and with nothing to press; once it has been in flight too long it grows a Discard, because a row with no way out is one that can be stuck on screen for the session; refused, it says so and offers both. Nothing here can lose the words without somebody choosing to."
     >
       <ShowcaseLabel>In flight, just sent</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomPendingRow
+        <PendingRow
           post={pending('sending', 'is the build still stuck?')}
           viewerAuthorId="author-you"
         />
@@ -320,7 +320,7 @@ function PendingSection() {
 
       <ShowcaseLabel>Refused — the words are still here</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomPendingRow
+        <PendingRow
           post={pending('failed', 'is the build still stuck?')}
           viewerAuthorId="author-you"
         />
@@ -328,7 +328,7 @@ function PendingSection() {
 
       <ShowcaseLabel>In flight too long — a way out appears</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomPendingRow
+        <PendingRow
           post={pending('sending', 'is the build still stuck?', 0)}
           viewerAuthorId="author-you"
         />

@@ -16,7 +16,7 @@ import { useThreadArrivals } from '../model/use-thread-arrivals';
 import { RoomComposer } from './RoomComposer';
 import { RoomLiveLane } from './RoomLiveLane';
 import { RoomMessage } from './RoomMessage';
-import { RoomPendingList } from './RoomPendingRow';
+import { PendingRow } from '@/layers/features/conversation';
 
 interface RoomThreadPanelProps {
   /** The room the thread lives in. */
@@ -412,7 +412,13 @@ export function RoomThreadPanel({
             Below the feed rather than in it, for the same reason the room's are
             below its own: a reply the server has not accepted is not one of the
             panel's numbered articles. */}
-          <RoomPendingList posts={pending} viewerAuthorId={room.viewerAuthorId} />
+          {pending.length > 0 && (
+            <div className="flex flex-col">
+              {pending.map((post) => (
+                <PendingRow key={post.clientId} post={post} viewerAuthorId={room.viewerAuthorId} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* The thread's own lane, above its own composer, scoped to the claims

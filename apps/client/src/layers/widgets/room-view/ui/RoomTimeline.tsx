@@ -15,7 +15,7 @@ import {
 } from '../lib/room-timeline';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
 import { RoomMessage } from './RoomMessage';
-import { RoomPendingList } from './RoomPendingRow';
+import { PendingRow } from '@/layers/features/conversation';
 
 interface RoomTimelineProps {
   /** The room on screen. Every entry's actions act on it. */
@@ -333,7 +333,13 @@ export function RoomTimeline({
       {/* Below the log, at the tail, where the message is about to appear —
           and outside the feed, because a message the server has not accepted
           yet is not one of its numbered articles. */}
-      <RoomPendingList posts={pending} viewerAuthorId={viewerAuthorId} />
+      {pending.length > 0 && (
+        <div className="flex flex-col">
+          {pending.map((post) => (
+            <PendingRow key={post.clientId} post={post} viewerAuthorId={viewerAuthorId} />
+          ))}
+        </div>
+      )}
     </AgentInfoProvider>
   );
 }

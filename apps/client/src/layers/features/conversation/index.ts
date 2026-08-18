@@ -49,9 +49,16 @@ export type {
 } from './model/lane-state';
 export type { LaneScope } from './ui/LiveLane';
 export type { LivePeekRow } from './ui/LivePeek';
-// `LiveLaneProps` and `LivePeekProps` stay inside the slice: a host writes
-// `<Conversation.LiveLane …>` and TypeScript infers them, so exporting the two
-// interfaces would be two more things to keep in step for no reader's benefit.
+export type {
+  ConversationRowContext,
+  ConversationRowRenderer,
+  ConversationTimelineHandle,
+} from './ui/Timeline';
+// `LiveLaneProps`, `LivePeekProps` and `ConversationTimelineProps` stay inside
+// the slice: a host writes `<Conversation.Timeline …>` and TypeScript infers
+// them, so exporting the interfaces would be more things to keep in step for no
+// reader's benefit.
+
 // The scroller's two moved pieces. Exported while `features/chat`'s retiring
 // `MessageList` still draws them; task 4.3 deletes that list, and both become
 // internal to `Conversation.Timeline`.
@@ -66,6 +73,7 @@ export { NoticeRow } from './ui/rows/NoticeRow';
 export { MomentRow } from './ui/rows/MomentRow';
 export type { MomentSubjectIdentity } from './ui/rows/MomentRow';
 export { ThreadReplyRow } from './ui/rows/ThreadReplyRow';
+export { PendingRow } from './ui/rows/PendingRow';
 
 export { attachmentsSummary } from './ui/message/MessageAttachments';
 // The parts' own prop types are not re-exported: a host writes `<Message.Root>`
@@ -75,6 +83,7 @@ export { attachmentsSummary } from './ui/message/MessageAttachments';
 import { ConversationRoot } from './ui/ConversationRoot';
 import { LiveLane } from './ui/LiveLane';
 import { LivePeek } from './ui/LivePeek';
+import { ConversationTimeline } from './ui/Timeline';
 import { MessageActions } from './ui/message/MessageActions';
 import { MessageAttachments } from './ui/message/MessageAttachments';
 import { MessageAuthor } from './ui/message/MessageAuthor';
@@ -86,16 +95,17 @@ import { MessageRoot } from './ui/message/MessageRoot';
 /**
  * The conversation compound, as a host composes it.
  *
- * `Root` and `LiveLane` are the whole of it after P2 — `Header`, `Timeline`,
- * `Composer` and `Footer` land in P4. It is a namespace object rather than six
- * loose exports for the reason `Composer.*` already is one: a host writes
- * `<Conversation.Timeline>` beside `<Conversation.Composer>` and reads the tree
- * it is building. It is also the ONLY way in — neither the provider nor the lane
- * is exported loose beside it, so there is one spelling of each in the codebase
- * rather than two.
+ * `Root`, `Timeline`, `LiveLane` and the peek are what it holds after P4's list
+ * merge; `Composer` and `Footer` join them in the same phase. It is a namespace
+ * object rather than loose exports for the reason `Composer.*` already is one: a
+ * host writes `<Conversation.Timeline>` beside `<Conversation.Composer>` and reads
+ * the tree it is building. It is also the ONLY way in — neither the provider nor
+ * the lane is exported loose beside it, so there is one spelling of each in the
+ * codebase rather than two.
  */
 export const Conversation = {
   Root: ConversationRoot,
+  Timeline: ConversationTimeline,
   LiveLane,
   LivePeek,
 };

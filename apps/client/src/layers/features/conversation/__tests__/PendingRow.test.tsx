@@ -14,7 +14,7 @@ import {
   type RoomEntry,
 } from '@/layers/entities/room';
 import { TransportProvider } from '@/layers/shared/model';
-import { RoomPendingRow } from '../ui/RoomPendingRow';
+import { PendingRow } from '../ui/rows/PendingRow';
 
 const ROOM = 'room-1';
 const VIEWER = 'author-you';
@@ -71,7 +71,7 @@ function renderRow(
       </QueryClientProvider>
     );
   }
-  render(<RoomPendingRow post={pending} viewerAuthorId={VIEWER} />, { wrapper: Wrapper });
+  render(<PendingRow post={pending} viewerAuthorId={VIEWER} />, { wrapper: Wrapper });
 }
 
 beforeEach(() => {
@@ -84,7 +84,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('RoomPendingRow', () => {
+describe('PendingRow', () => {
   it('keeps the words on screen while they are in the air', () => {
     renderRow(post());
 
@@ -232,7 +232,7 @@ describe('RoomPendingRow', () => {
   });
 });
 
-describe('RoomPendingRow — the files in the message', () => {
+describe('PendingRow — the files in the message', () => {
   it('names them, inert: no link and no thumbnail', () => {
     // There is no entry yet, so there is nothing to link to and nothing to draw
     // a thumbnail from. The chips exist to say the files are still here.

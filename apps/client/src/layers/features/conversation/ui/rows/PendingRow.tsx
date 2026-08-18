@@ -1,3 +1,13 @@
+/**
+ * A message of this reader's own, waiting for the conversation to say it back.
+ *
+ * Moved out of `widgets/room-view` with the list that drew it: one timeline
+ * draws a session and a channel, and the rows waiting under it are the same
+ * rows. The LIST it used to come with is gone — the timeline takes the pending
+ * messages as a prop and draws one of these per message.
+ *
+ * @module features/conversation/ui/rows/PendingRow
+ */
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { File as FileIcon, Loader2, TriangleAlert } from 'lucide-react';
@@ -13,7 +23,7 @@ import {
   type RoomEntry,
 } from '@/layers/entities/room';
 
-interface RoomPendingRowProps {
+interface PendingRowProps {
   /** The message that has been sent and not yet come back. */
   post: PendingPost;
   /**
@@ -64,7 +74,7 @@ interface RoomPendingRowProps {
  *
  * @param props - The pending message to draw, and who is reading.
  */
-export function RoomPendingRow({ post, viewerAuthorId }: RoomPendingRowProps) {
+export function PendingRow({ post, viewerAuthorId }: PendingRowProps) {
   const send = usePostToRoom();
   const reply = useReplyInThread();
   const queryClient = useQueryClient();
@@ -213,32 +223,4 @@ function useIsSlow(post: PendingPost): boolean {
   }, [at, status, slow]);
 
   return slow;
-}
-
-/**
- * Everything this reader has sent into one conversation and not yet seen back.
- *
- * A plain list rather than part of the feed above it, deliberately: a feed's
- * articles carry "12 of 30", and a message that does not exist on the server yet
- * is not one of the thirty. It would also renumber the whole set every time
- * somebody typed.
- *
- * @param props.posts - The pending messages, oldest first.
- * @param props.viewerAuthorId - This reader's own author id in the room.
- */
-export function RoomPendingList({
-  posts,
-  viewerAuthorId,
-}: {
-  posts: readonly PendingPost[];
-  viewerAuthorId: string;
-}) {
-  if (posts.length === 0) return null;
-  return (
-    <div className="flex flex-col">
-      {posts.map((post) => (
-        <RoomPendingRow key={post.clientId} post={post} viewerAuthorId={viewerAuthorId} />
-      ))}
-    </div>
-  );
 }

@@ -44,7 +44,6 @@ export { RoomThreadPanel } from './ui/RoomThreadPanel';
  * one takes a slow link or a dead stream. Nothing in the routed app imports it
  * from here; the timeline and the thread panel mount it themselves.
  */
-export { RoomPendingRow } from './ui/RoomPendingRow';
 /**
  * Seeds what a room knows about its agents — how each one runs, and the face
  * each one wears — for a subtree, exported for the Dev Playground's identity
