@@ -193,14 +193,17 @@ describe('PermissionPreviewSection', () => {
     expect(paths).toEqual(['gone.md', 'new.md']);
   });
 
-  it('says everything stays inside the install folder when it does', () => {
+  it('adds no reassurance row when every file stays inside the install folder', () => {
     const preview = makePreview({
       fileChanges: [{ path: '/Users/kai/.dork/plugins/flow/a.md', action: 'create' }],
     });
 
     render(<PermissionPreviewSection preview={preview} installBase="/Users/kai/.dork" />);
 
-    expect(screen.getByText('Every file stays inside /Users/kai/.dork.')).toBeInTheDocument();
+    // The headline already names the folder; a row that can never be false
+    // would only spend vertical space the dialog does not have.
+    expect(screen.queryByText(/stays inside/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/1 file under/)).toBeInTheDocument();
   });
 
   it('warns in amber when a file lands outside the install folder', () => {

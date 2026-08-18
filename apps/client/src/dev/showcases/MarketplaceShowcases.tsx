@@ -385,7 +385,7 @@ function PermissionPreviewSectionShowcase() {
   return (
     <PlaygroundSection
       title="PermissionPreviewSection"
-      description="Human-readable breakdown of everything a package will do on install. The file effects name the folder, count each action, and hide the paths behind a disclosure; the containment line only appears when the caller says which folder the install targets."
+      description="Human-readable breakdown of everything a package will do on install. The file effects name the folder, count each action, and hide the paths behind a disclosure. A warning row appears only when a file lands outside the folder the caller says the install targets."
     >
       <ShowcaseLabel>Minimal (no secrets, no hosts, no conflicts)</ShowcaseLabel>
       <ShowcaseDemo>

@@ -127,10 +127,15 @@ function PermissionItem({ item }: { item: FormattedPermission }) {
             {item.label}
           </code>
         ) : (
-          <span>{item.label}</span>
+          // `break-words`, not the default: several labels embed a filesystem
+          // path with no spaces to break at (the install root, an unreadable
+          // hook's path), and on a 390px phone an unbroken path overflows a
+          // dialog that has no horizontal scroll — silently cutting off the one
+          // fact this section exists to show.
+          <span className="break-words">{item.label}</span>
         )}
         {item.description && (
-          <p className="text-muted-foreground mt-0.5 text-xs">{item.description}</p>
+          <p className="text-muted-foreground mt-0.5 text-xs break-words">{item.description}</p>
         )}
         {item.details && item.details.length > 0 && (
           <PermissionDetails items={item.details} label={item.detailsLabel ?? 'Show details'} />
@@ -203,9 +208,8 @@ interface PermissionPreviewSectionProps {
   /**
    * The folder this install targets — the DorkOS data directory for a global
    * install, the project's `.dork` folder for an agent-local one. Given it, the
-   * effects section says whether every file stays inside. Omit it and no
-   * containment claim is made, because an unchecked reassurance is worse than
-   * none.
+   * effects section warns about any file that lands outside. Omit it and the
+   * check is skipped rather than run against a folder we are only guessing at.
    */
   installBase?: string;
 }

@@ -27,7 +27,12 @@ export type PermissionSeverity = 'info' | 'warning' | 'error';
  * paths and a person is checking them character by character.
  */
 export interface PermissionDetailItem {
-  /** The path itself, relative to the folder the row's label names. */
+  /**
+   * The path itself. Relative to the folder the row's label names on the file
+   * headline, where that folder is stated once and repeating it on 135 lines
+   * would bury the part that differs. Absolute on the escape warning, where the
+   * whole point of the row is that these paths are somewhere else.
+   */
   text: string;
   /** Plain-language action word: `'new'`, `'changed'`, or `'removed'`. */
   tag?: string;
@@ -69,9 +74,9 @@ export interface FormatPermissionOptions {
   /**
    * The folder every changed file is expected to stay inside — the DorkOS data
    * directory for a global install, the project's `.dork` folder for an
-   * agent-local one. When given, the effects group gains a line saying whether
-   * anything escapes it. When omitted, no containment claim is made at all,
-   * because an unchecked reassurance is worse than none.
+   * agent-local one. When given, any path that escapes it earns a warning row.
+   * When omitted, the check is skipped entirely rather than run against a
+   * folder we are only guessing at.
    */
   installBase?: string;
 }
@@ -154,20 +159,35 @@ function relativeTo(path: string, root: string): string {
 }
 
 /**
+ * Reduce a path to the form segment comparison can trust: forward slashes, no
+ * repeated or trailing separators, no `.` segments.
+ *
+ * The two sides being compared are built differently. The server writes preview
+ * paths with Node's `path.join`, which already normalises; the client assembles
+ * the install base by concatenating a stored `projectPath` with `/.dork`, which
+ * does not. A stored path with a trailing slash or a `./` prefix would otherwise
+ * read as "outside your folder" for every single file — a false alarm on an
+ * install that is perfectly ordinary.
+ */
+function normalizeForCompare(path: string): string {
+  return path
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .replace(/(^|\/)\.(?=\/|$)/g, '$1')
+    .replace(/\/+/g, '/')
+    .replace(/(.)\/$/, '$1');
+}
+
+/**
  * Whether `path` sits inside `base`. Compares whole segments, so
  * `~/.dork-backup/x` is correctly outside `~/.dork`.
- *
- * Both sides are compared with forward slashes: the server builds preview paths
- * with the host's separator while the caller assembles `base` from config
- * strings, and a separator mismatch would raise a false "outside your folder"
- * alarm on Windows.
  */
 function isInside(path: string, base: string): boolean {
   if (base === '') return false;
-  const root = base.replace(/\\/g, '/').replace(/\/+$/, '');
+  const root = normalizeForCompare(base);
   // `base` was nothing but separators, i.e. the filesystem root: everything is inside.
-  if (root === '') return true;
-  const candidate = path.replace(/\\/g, '/');
+  if (root === '/' || root === '') return true;
+  const candidate = normalizeForCompare(path);
   return candidate === root || candidate.startsWith(`${root}/`);
 }
 
@@ -211,7 +231,7 @@ function toDetailItems(changes: FileChange[], root: string): PermissionDetailIte
 /**
  * Build the file rows of the effects group: one headline naming the shared
  * folder and a count per action, with the full path list behind a disclosure,
- * plus a line saying whether anything lands outside the install folder.
+ * plus a warning row naming anything that lands outside the install folder.
  *
  * A count alone is not consent — the person approving an install needs to know
  * where the files go and, above all, which existing files disappear.
@@ -246,14 +266,14 @@ function formatFileChanges(
   // there is nothing to check the paths against, so say nothing.
   if (!installBase) return rows;
 
+  // Escapes only. The reassuring "everything stays inside X" twin was dropped:
+  // the headline already names the folder every file shares, and the preview
+  // builder resolves every path against the install root, so the positive row
+  // could never be false — it spent the dialog's scarcest resource, vertical
+  // space, restating the line above it. The warning stays as a guard, so a
+  // future install flow that writes outside the target cannot do it quietly.
   const outside = changes.filter((change) => !isInside(change.path, installBase));
-  if (outside.length === 0) {
-    rows.push({
-      icon: 'check',
-      label: `Every file stays inside ${installBase}.`,
-      severity: 'info' satisfies PermissionSeverity,
-    });
-  } else {
+  if (outside.length > 0) {
     rows.push({
       icon: 'alert-triangle',
       label: `${outside.length} ${outside.length === 1 ? 'file lands' : 'files land'} outside ${installBase}.`,

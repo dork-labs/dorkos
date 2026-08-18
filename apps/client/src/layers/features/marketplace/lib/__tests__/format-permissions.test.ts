@@ -158,7 +158,7 @@ describe('formatPermissionPreview → effects → file changes', () => {
   // Containment
   // -------------------------------------------------------------------------
 
-  it('says everything stays inside the install folder when it does', () => {
+  it('adds no row at all when every file stays inside the install folder', () => {
     const preview = makePreview({
       fileChanges: [
         { path: `${FLOW_ROOT}/a.md`, action: 'create' },
@@ -168,11 +168,27 @@ describe('formatPermissionPreview → effects → file changes', () => {
 
     const rows = formatPermissionPreview(preview, { installBase: DORK_HOME }).effects;
 
-    expect(rows[1]).toMatchObject({
-      icon: 'check',
-      label: `Every file stays inside ${DORK_HOME}.`,
-      severity: 'info',
+    // The headline already names the folder. A second row restating it could
+    // never be false, and the dialog's scarcest resource is vertical space.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.icon).toBe('file');
+  });
+
+  it('does not cry escape over a stray slash or dot in the install folder', () => {
+    // Agent-local installs: the server writes file paths with `path.join`, the
+    // client concatenates the base as `${projectPath}/.dork`. A stored
+    // projectPath with a trailing slash or a `./` in it must not make every
+    // ordinary file read as "outside your folder".
+    const preview = makePreview({
+      fileChanges: [{ path: '/Users/kai/proj/.dork/plugins/flow/a.md', action: 'create' }],
     });
+
+    for (const projectPath of ['/Users/kai/proj', '/Users/kai/proj/', '/Users/kai/./proj']) {
+      const rows = formatPermissionPreview(preview, {
+        installBase: `${projectPath}/.dork`,
+      }).effects;
+      expect(rows, `projectPath: ${projectPath}`).toHaveLength(1);
+    }
   });
 
   it('warns, and names them, when files land outside the install folder', () => {
@@ -242,6 +258,6 @@ describe('formatPermissionPreview → effects → file changes', () => {
 
     const rows = formatPermissionPreview(preview, { installBase: DORK_HOME }).effects;
 
-    expect(rows.map((r) => r.icon)).toEqual(['file', 'check', 'puzzle']);
+    expect(rows.map((r) => r.icon)).toEqual(['file', 'puzzle']);
   });
 });

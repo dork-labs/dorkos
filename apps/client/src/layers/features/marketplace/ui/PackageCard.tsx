@@ -166,7 +166,14 @@ export function PackageCard({
           {pkg.marketplace && (
             <>
               <Store className="size-3 shrink-0" aria-hidden />
-              <span className="min-w-0 truncate">{pkg.marketplace}</span>
+              <span className="min-w-0 truncate">
+                {/* The icons and the "·" are aria-hidden, so sighted readers get
+                    the distinction from the glyphs and everyone else would hear
+                    "Dork Labs dorkos-community" as one name. This word is the
+                    only thing separating them. */}
+                <span className="sr-only">from </span>
+                {pkg.marketplace}
+              </span>
             </>
           )}
         </div>
