@@ -298,7 +298,10 @@ export function ChannelComposer({
     // later, rather than consuming it into a message that cannot be written.
     //
     // Text-only sends never arm this, so two sentences in one tick still both
-    // go — that is the behaviour DOR-783 asked for and it is unchanged.
+    // go — that is the behaviour DOR-783 asked for, and it survives the move to
+    // the shared composer because the FIELD's own "wait for the upload" rung is
+    // handed only to a surface whose send waits for one
+    // (`ConversationAttachmentPort.holdsSendWhileUploading`, false here).
     if (uploading.current) return;
     // Sending takes the picker down with it: Enter reaches this path only when
     // there was no row to pick, and nothing else would close a "No one by that
@@ -316,12 +319,20 @@ export function ChannelComposer({
       .catch(() => {
         // The post was never made, so there is no pending row holding these
         // words — the box is the only place they can survive, and it is the box
-        // they were typed in. Restored only while it is still empty: merging
-        // them into a sentence typed since is the exact failure DOR-783 removed
-        // from the refusal path. The chips stay, in error, with their reason on
-        // the bar and in the composer's own refusal line.
+        // they were typed in. So they go back ALWAYS. The earlier rule put them
+        // back only into an empty box, which meant a person who kept typing
+        // while the send failed lost the first sentence outright, with nothing
+        // on screen to say so.
+        //
+        // When something has been typed since, the failed words go ABOVE it
+        // rather than over it: DOR-783's lesson was that a refusal must not
+        // overwrite a sentence in progress, and this does not — both are in the
+        // box, in the order they were typed, and either can be deleted. The
+        // chips stay, in error, with their reason on the bar and in the
+        // composer's own refusal line.
         const store = useRoomDraftStore.getState();
-        if ((store.drafts[draftKey] ?? '') === '') store.set(draftKey, body);
+        const since = store.drafts[draftKey] ?? '';
+        store.set(draftKey, since === '' ? body : `${body}\n${since}`);
       })
       .finally(() => {
         // Released whichever way it went, so a failed upload does not wedge the

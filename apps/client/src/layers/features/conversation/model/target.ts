@@ -59,6 +59,24 @@ export interface ConversationAttachmentPort {
   readonly hasFailed: boolean;
   /** True while bytes are going up. */
   readonly isUploading: boolean;
+  /**
+   * Whether an upload still in flight holds this surface's send.
+   *
+   * True where the send needs the bytes to have LANDED first: a session
+   * rewrites the message text with the saved paths, so Enter mid-upload would
+   * send a sentence pointing at a file that is not there yet. Enter waits, and
+   * Escape offers to abandon the upload.
+   *
+   * False where uploading IS part of sending — a room awaits its own upload
+   * inside `send` — and holding Enter there would refuse a send the surface can
+   * complete perfectly well. It is also what keeps Escape meaning one thing in a
+   * channel: take the `@` picker down, never cancel a send in progress.
+   *
+   * A flag on the PORT rather than a capability, because it is a fact about how
+   * this surface's own send is built, and the two surfaces that exist disagree
+   * about it for that reason alone.
+   */
+  readonly holdsSendWhileUploading: boolean;
 }
 
 /** What the composer needs to send into this conversation. */

@@ -198,8 +198,16 @@ export function ConversationComposer({
           ? {}
           : {
               onAttach: attachments.add,
-              isUploading: attachments.isUploading,
-              onCancelUpload: attachments.cancel,
+              // The two upload rungs the FIELD owns — Enter waits while bytes
+              // are going up, and Escape offers to abandon them — are handed
+              // over only where the surface's send genuinely waits for the
+              // upload. Passing them because a port exists gave a channel both
+              // by accident: Enter went silently nowhere mid-upload, and Escape
+              // (which in a channel only ever closed the `@` picker) aborted
+              // the upload, rejected the send and took the typed words with it.
+              ...(attachments.holdsSendWhileUploading
+                ? { isUploading: attachments.isUploading, onCancelUpload: attachments.cancel }
+                : {}),
             })}
         onClearArmedChange={setClearArmed}
       />

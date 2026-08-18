@@ -9,10 +9,10 @@
  * replace the whole thing.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { Conversation } from '..';
 import type { ConversationCapabilities } from '../model/capabilities';
-import type { ConversationTarget } from '../model/target';
+import type { ConversationAttachmentPort, ConversationTarget } from '../model/target';
 
 /** Every capability off, so each case turns on only what it is about. */
 const BASE: ConversationCapabilities = {
@@ -37,6 +37,23 @@ function target(overrides: Partial<ConversationTarget> = {}): ConversationTarget
     send: vi.fn(async () => {}),
     queueDepth: 0,
     attachments: null,
+    ...overrides,
+  };
+}
+
+/** An attachment port with nothing staged and nothing in flight. */
+function attachmentPort(
+  overrides: Partial<ConversationAttachmentPort> = {}
+): ConversationAttachmentPort {
+  return {
+    staged: [],
+    add: vi.fn(),
+    remove: vi.fn(),
+    retry: vi.fn(),
+    cancel: vi.fn(),
+    hasFailed: false,
+    isUploading: false,
+    holdsSendWhileUploading: false,
     ...overrides,
   };
 }
@@ -130,17 +147,7 @@ describe('Conversation.Composer', () => {
     mount(
       {},
       {
-        target: target({
-          attachments: {
-            staged: [],
-            add: vi.fn(),
-            remove: vi.fn(),
-            retry: vi.fn(),
-            cancel: vi.fn(),
-            hasFailed: true,
-            isUploading: false,
-          },
-        }),
+        target: target({ attachments: attachmentPort({ hasFailed: true }) }),
         capabilities: { attachments: true },
       }
     );
@@ -160,22 +167,78 @@ describe('Conversation.Composer', () => {
       {
         capabilities: { attachments: true },
         target: target({
-          attachments: {
+          attachments: attachmentPort({
             staged: [
               { id: 'f1', file: new File(['x'], 'notes.txt'), status: 'pending', progress: 0 },
             ],
-            add: vi.fn(),
-            remove: vi.fn(),
-            retry: vi.fn(),
-            cancel: vi.fn(),
-            hasFailed: false,
-            isUploading: false,
-          },
+          }),
         }),
       }
     );
 
     expect(screen.getByText('notes.txt')).toBeInTheDocument();
+  });
+
+  describe('an upload in flight', () => {
+    /**
+     * Mount the card over a target that is mid-upload.
+     *
+     * @param holdsSendWhileUploading - Whether this surface's send waits for it.
+     * @param onSubmit - The host's send funnel.
+     * @returns The port, so a case can read what the field did to it.
+     */
+    function mountUploading(
+      holdsSendWhileUploading: boolean,
+      onSubmit: () => void
+    ): ConversationAttachmentPort {
+      const attachments = attachmentPort({ isUploading: true, holdsSendWhileUploading });
+      mount(
+        { value: 'ship it', onSubmit },
+        { capabilities: { attachments: true }, target: target({ attachments }) }
+      );
+      return attachments;
+    }
+
+    it('sends on Enter where the send does its own uploading', () => {
+      // **Seeded defect:** hand the field `isUploading` whenever a port exists —
+      // which for a channel is always — and Enter mid-upload goes silently
+      // nowhere, on the one surface whose `send` awaits the upload itself. Run
+      // and red.
+      const onSubmit = vi.fn();
+      mountUploading(false, onSubmit);
+
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+
+      expect(onSubmit).toHaveBeenCalledOnce();
+    });
+
+    it('holds Enter where the send needs the file to have landed first', () => {
+      const onSubmit = vi.fn();
+      mountUploading(true, onSubmit);
+
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('leaves Escape alone where the surface does not offer to abandon an upload', () => {
+      // **Seeded defect:** hand the field `onCancelUpload` unconditionally, and
+      // Escape in a channel — where it only ever closed the `@` picker — aborts
+      // the upload, which rejects the send. Run and red.
+      const attachments = mountUploading(false, vi.fn());
+
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+
+      expect(attachments.cancel).not.toHaveBeenCalled();
+    });
+
+    it('offers Escape as the way out where the send is being held', () => {
+      const attachments = mountUploading(true, vi.fn());
+
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+
+      expect(attachments.cancel).toHaveBeenCalledOnce();
+    });
   });
 
   it('lets a prompt replace the whole box on a surface that can be taken over', () => {

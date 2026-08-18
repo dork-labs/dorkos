@@ -84,6 +84,10 @@ export function useRoomTarget(input: RoomTargetInput): RoomTarget {
       cancel: attachments.cancelUpload,
       hasFailed: attachments.hasFailedUpload,
       isUploading: attachments.isUploading,
+      // Uploading IS part of a room's send — `send` awaits `uploadAndGetIds`
+      // itself — so Enter never has to wait, and Escape keeps meaning the one
+      // thing it means in a channel: take the `@` picker down.
+      holdsSendWhileUploading: false,
     }),
     [attachments]
   );

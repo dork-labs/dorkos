@@ -70,6 +70,10 @@ export function useSessionTarget(input: SessionTargetInput): ConversationTarget 
       cancel: files.cancelUpload,
       hasFailed: files.hasFailedUpload,
       isUploading: files.isUploading,
+      // A session's send rewrites the message with the SAVED PATHS, so it
+      // cannot go out until the files have landed. Enter waits, and Escape
+      // offers to abandon the upload.
+      holdsSendWhileUploading: true,
     }),
     [files]
   );

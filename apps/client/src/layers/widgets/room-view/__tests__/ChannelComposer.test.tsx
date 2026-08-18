@@ -810,6 +810,35 @@ describe('ChannelComposer — attaching a file', () => {
     // them.
     await waitFor(() => expect(field.value).toBe('here it is'));
   });
+
+  it('gives the refused words back even when something has been typed since', async () => {
+    // **Seeded defect:** put the draft back only into an EMPTY box — the old
+    // rule — and a person who kept typing while the upload failed loses the
+    // first sentence outright, with nothing on screen to say so. Run and red.
+    const transport = createMockTransport();
+    let refuse!: (error: Error) => void;
+    vi.mocked(transport.uploadRoomAttachments).mockReturnValue(
+      new Promise<RoomAttachment[]>((_resolve, reject) => {
+        refuse = reject;
+      })
+    );
+    const field = renderComposer(transport);
+
+    choose(fileInputs()[1]!, [NOTES]);
+    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
+
+    type(field, 'here it is');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(transport.uploadRoomAttachments).toHaveBeenCalledTimes(1));
+
+    type(field, 'and one more thing');
+    refuse(new Error('Upload failed'));
+
+    // Both sentences are in the box, in the order they were typed, and neither
+    // was sent. Nothing went out, so nothing may quietly disappear either.
+    await waitFor(() => expect(field.value).toBe('here it is\nand one more thing'));
+    expect(transport.postToRoom).not.toHaveBeenCalled();
+  });
 });
 
 describe('ChannelComposer — "Jump back in" is offered on one surface and read on one', () => {
