@@ -8,9 +8,12 @@ covers:
   - 'refactor(client): P4.6 — AssistantMessageContent split by part kind, under the 500-line bar (DOR-1331)'
   - 'test(client): P4.7 — the timeline and the composer card, and knip clean of everything this phase touched (DOR-1331)'
   - "test(e2e): P4.7 — the room's suites read a virtualized list, and the timeline moves one box rather than every row (DOR-1331)"
+  - 'fix(client): P4.9 — a room comes back from a thread on the message you were reading, and the session lane says stalled and queued (DOR-1331)'
 ---
 
 ### Changed
 
 - Long channels scroll smoothly. A channel now draws only the messages you can see, the way a session's chat already did, so a room with months of history stays as quick to scroll as a room with ten messages (DOR-1331)
 - When a message arrives while you are reading back through a channel, you get a "New messages" button instead of being taken to the bottom. Press it when you are ready (DOR-1331)
+- Open a thread on your phone and come back, and the channel is on the same message you were reading (DOR-1331)
+- The line above the message box in a session now says when the connection has dropped, and how many of your messages are waiting to send — the same line a channel already draws (DOR-1331)
