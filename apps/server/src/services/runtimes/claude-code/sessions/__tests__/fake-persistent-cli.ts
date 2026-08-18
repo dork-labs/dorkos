@@ -95,22 +95,40 @@ export class FakeCliProcess {
   private readonly parked: Array<() => void> = [];
 
   /**
+   * The SDK session id THIS process's `system/init` reports. Fixed at boot,
+   * exactly as the real CLI's is — a process cannot re-mint its own id
+   * mid-life, only a NEW one can report a different one (DOR-1309's "second
+   * rename" is always a relaunch, never a mid-process event).
+   */
+  readonly sdkSessionId: string;
+
+  /**
    * Boot a process around a held prompt.
    *
    * @param options - The SDK options this launch was handed
    * @param prompt - The held input stream the pump owns
    * @param deferInit - When true, hold `system/init` until {@link reportReady},
    *   so a test can press Stop while the first turn is still booting (DOR-1191).
+   * @param sdkSessionId - The id THIS process's `system/init` reports. Defaults
+   *   to the module constant, which is what every test that never varies it
+   *   gets — the ADR-0267 re-mint a DOR-1309 test drives by booting a SECOND
+   *   process with a DIFFERENT id here.
    */
-  constructor(options: Options, prompt: AsyncIterable<unknown>, deferInit = false) {
+  constructor(
+    options: Options,
+    prompt: AsyncIterable<unknown>,
+    deferInit = false,
+    sdkSessionId: string = SESSION_ID
+  ) {
     this.options = options;
+    this.sdkSessionId = sdkSessionId;
     if (deferInit) {
       // Nothing is read or answered until the process reports ready: the pump
       // stays WARMING and its dispatch parks on `system/init`.
       this.deferredPrompt = prompt;
       return;
     }
-    this.emit(initMessage());
+    this.emit(initMessage(this.sdkSessionId));
     void this.readPrompt(prompt);
   }
 
@@ -119,7 +137,7 @@ export class FakeCliProcess {
     if (this.deferredPrompt === undefined) return;
     const prompt = this.deferredPrompt;
     this.deferredPrompt = undefined;
-    this.emit(initMessage());
+    this.emit(initMessage(this.sdkSessionId));
     void this.readPrompt(prompt);
   }
 
@@ -314,6 +332,16 @@ export class FakeCli {
    * (DOR-1191). Reset after it takes, so only the one launch is deferred.
    */
   deferNextInit = false;
+  /**
+   * The SDK session id the NEXT process boots under (see
+   * {@link FakeCliProcess.sdkSessionId}). Persists across launches — unlike
+   * {@link deferNextInit} it does not reset itself, because a real CLI's id
+   * does not spontaneously drift back either. Mutate it before a crash or a
+   * pin-change relaunch to model the SDK re-minting the session id a SECOND
+   * time (DOR-1309's "retired id" shape: a caller still holding what USED to
+   * be the canonical id after the newer rename).
+   */
+  nextSdkSessionId: string = SESSION_ID;
 
   /**
    * The `query()` implementation to hand `vi.mocked(query).mockImplementation`.
@@ -323,7 +351,7 @@ export class FakeCli {
   readonly query = (args: { prompt: AsyncIterable<unknown>; options: Options }): FakeCliProcess => {
     const deferInit = this.deferNextInit;
     this.deferNextInit = false;
-    const process = new FakeCliProcess(args.options, args.prompt, deferInit);
+    const process = new FakeCliProcess(args.options, args.prompt, deferInit, this.nextSdkSessionId);
     this.processes.push(process);
     return process;
   };
@@ -341,12 +369,17 @@ export class FakeCli {
 
 const SESSION_ID = 'sdk-session-persistent';
 
-/** The `system/init` that says the process is up and its controls are usable. */
-function initMessage(): SDKMessage {
+/**
+ * The `system/init` that says the process is up and its controls are usable.
+ *
+ * @param sdkSessionId - The id this boot reports, defaulting to the module
+ *   constant every existing test relies on.
+ */
+function initMessage(sdkSessionId: string = SESSION_ID): SDKMessage {
   return {
     type: 'system',
     subtype: 'init',
-    session_id: SESSION_ID,
+    session_id: sdkSessionId,
     model: 'claude-haiku-4-5-20251001',
     permissionMode: 'default',
     tools: [],

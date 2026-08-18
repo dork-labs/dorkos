@@ -1061,3 +1061,169 @@ describe('an elicitation-only turn is not a silent turn (DOR-1240)', () => {
     expect(events.find((e) => e.type === 'done')).toBeDefined();
   });
 });
+
+// DOR-1309. The SDK re-mints a session's canonical id mid-first-turn
+// (`system/init`, ADR-0267), and `SessionStore` already resolves every id a
+// session has ever answered to back to the ONE key it is stored under. This
+// block proves `PersistentDispatch` and `SessionPumpRegistry` now agree with
+// that resolution. Before the fix they kept their OWN raw-id keys, so a turn,
+// a steer, or a stage under any id but the exact one the pump happened to be
+// registered under spawned a SECOND process instead of reaching the first —
+// the shape DOR-1312 measured live, and the root of DOR-1315's second-window
+// steer and DOR-1318's stage-on-an-idle-session failure.
+describe('a session keeps its ONE warm process across an SDK rekey (DOR-1309)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  it('(a) reaches the process turn 1 warmed when turn 2 arrives under the CANONICAL id', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const canonical = runtime.getInternalSessionId(sessionId)!;
+    // Sanity: an actual rekey happened, or this test proves nothing.
+    expect(canonical).not.toBe(sessionId);
+
+    const events = await turn(canonical, 'turn two, under the new id');
+
+    expect(cli.launches).toBe(1);
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(cli.processes[0]!.answered).toBe(2);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+    expect(runtime.getSessionWarmth(canonical)).toBe('warm');
+  });
+
+  it('(b) reaches the same process when a later turn arrives under a RETIRED id from an earlier rename', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId); // process 1: sessionId -> canonical1 (the fake's default id)
+    const canonical1 = runtime.getInternalSessionId(sessionId)!;
+    expect(canonical1).not.toBe(sessionId);
+
+    // The process dies; recovery relaunches under an id that renames AGAIN, so
+    // canonical1 becomes a retired link in the chain rather than the session's
+    // current id — the "second rename" DOR-774 describes.
+    cli.nextSdkSessionId = 'sdk-session-persistent-2';
+    cli.processes[0]!.crash(new Error('the CLI went away'));
+    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('crashed'));
+    await turn(sessionId, 'recovering');
+    const canonical2 = runtime.getInternalSessionId(sessionId)!;
+    expect(canonical2).toBe('sdk-session-persistent-2');
+    expect(cli.launches).toBe(2);
+
+    // A turn under canonical1 — now RETIRED — must still reach process 2, not
+    // spawn a third.
+    const events = await turn(canonical1, 'addressed by the retired id');
+
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(cli.launches).toBe(2);
+    expect(cli.processes[1]!.answered).toBe(2);
+    expect(runtime.getSessionWarmth(canonical1)).toBe('warm');
+  });
+
+  it('(c) lets a steer under the CANONICAL id join a turn open under the original id', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const canonical = runtime.getInternalSessionId(sessionId)!;
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    // The turn opens under the ORIGINAL id — the caller that started it never
+    // learned the canonical id (e.g. a room binding that only ever holds the
+    // first id it saw).
+    const running = turn(sessionId, 'do the thing');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+
+    // A DIFFERENT caller — a browser tab that already has the canonical id
+    // from an earlier 202 — steers under it. The bundle is filed under
+    // `sessionId` (dispatch's own resolution always normalizes to the first
+    // id a session was ever seen under), so this specifically exercises
+    // `steer`'s OWN resolution, independent of `dispatch`'s.
+    const receipt = await runtime.deliverIntoTurn(canonical, 'please also check the tests', {
+      mode: 'steer',
+      messageId: 'steer-canonical-1',
+    });
+    expect(receipt).toEqual({ delivered: true });
+
+    await vi.waitFor(() => expect(process.received).toHaveLength(3));
+    expect(process.inbox.at(-1)!.content).toBe('please also check the tests');
+
+    process.answer('steer-canonical-1');
+    const events = await running;
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(cli.launches).toBe(1);
+  });
+
+  it('(d) appends a stage under the canonical id onto the one warm process, instead of colliding with the ceiling (DOR-1318 shape)', async () => {
+    // MAX_WARM_SESSIONS is mocked to 1 for this whole file, so a phantom
+    // second pump for the SAME session — one that keys by the raw id instead
+    // of resolving it — has nowhere to go but to reclaim (and kill) the real
+    // one to clear room for its own duplicate. That is worse than an orphan:
+    // it destroys the live conversation's process while staging a note onto it.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const canonical = runtime.getInternalSessionId(sessionId)!;
+    expect(cli.launches).toBe(1);
+
+    const receipt = await runtime.deliverIntoTurn(canonical, 'use the staging bucket', {
+      mode: 'stage',
+      messageId: 'stage-canonical-1',
+    });
+
+    expect(receipt).toEqual({ delivered: true });
+    expect(cli.launches).toBe(1);
+    expect(cli.processes[0]!.ended).toBe(false);
+    await vi.waitFor(() => expect(cli.processes[0]!.staged).toHaveLength(1));
+  });
+
+  it('(e) reaps the one process whichever id names it, and (f) both ids read warmth identically', async () => {
+    const sessionId = nextSession();
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+
+    await turn(sessionId);
+    const canonical = runtime.getInternalSessionId(sessionId)!;
+    expect(canonical).not.toBe(sessionId);
+    // (f): both ids agree while warm.
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+    expect(runtime.getSessionWarmth(canonical)).toBe('warm');
+
+    // (e): reap addressed by the CANONICAL id retires the one process.
+    await runtime.reapSession(canonical);
+
+    expect(cli.processes[0]!.ended).toBe(true);
+    // (f), again: both ids agree once cold.
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(runtime.getSessionWarmth(canonical)).toBe('cold');
+  });
+
+  it('(g) a turn under the canonical id while another is open under the original id neither orphans nor duplicates', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId); // turn 1 — completes; the rename happens here
+    const canonical = runtime.getInternalSessionId(sessionId)!;
+    expect(canonical).not.toBe(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    // Turn 2, left open, under the ORIGINAL id — a caller that has not learned
+    // the canonical id yet.
+    const turn2 = turn(sessionId, 'turn two, left open');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+
+    // Turn 3 arrives under the CANONICAL id while turn 2 is still open — the
+    // same race DOR-1312 measured, one hop later. Pre-fix this spawned a
+    // SECOND process under `canonical`, leaving turn 2's process an orphan
+    // (DOR-1312's ~500MB-until-the-reaper) rather than settling into it. The
+    // process is still silent from turn 2's setup, so turn 3's own message is
+    // answered by hand once it lands.
+    const events3Promise = turn(canonical, 'turn three, under the canonical id');
+    await vi.waitFor(() => expect(process.received).toHaveLength(3));
+    process.answer(process.received[2]!);
+    const events3 = await events3Promise;
+
+    expect(cli.launches).toBe(1);
+    expect(events3.some((e) => e.type === 'done')).toBe(true);
+
+    // Turn 2's stranded window settles (DOR-1294's existing backstop) rather
+    // than hanging or leaking into turn 3.
+    const events2 = await turn2;
+    expect(events2.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+});
