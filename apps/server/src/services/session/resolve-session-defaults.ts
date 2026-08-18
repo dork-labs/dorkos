@@ -70,6 +70,7 @@ import type {
   PermissionModeDescriptor,
   PermissionStop,
   RuntimeCapabilities,
+  RuntimeSettingsCapability,
 } from '@dorkos/shared/agent-runtime';
 import { readManifest } from '@dorkos/shared/manifest';
 import { resolveTrustStops } from '@dorkos/shared/permission-semantics';
@@ -290,6 +291,54 @@ export function resolveSessionDefaults(opts: {
 
   // Tier 4 — whatever is still unset stays unset, and the runtime decides.
   return settings;
+}
+
+/**
+ * The settings a turn NOBODY IS WATCHING starts a new session with — the whole
+ * ladder above, in one call, for the surfaces that trigger a turn on their own.
+ *
+ * Two surfaces share it and must keep answering identically for the same agent:
+ * a room turn (`rooms/room-turn-runner.ts`) and a relay-triggered turn
+ * (`relay/turn-execution-settings.ts`). Before this existed the room resolved
+ * the ladder and the relay resolved nothing at all, so an agent pinned to one
+ * model answered a colleague on whatever the server defaulted to (DOR-1344).
+ * Two call sites resolving the same question is how they came apart; this is
+ * the one place that answers it, so they cannot again.
+ *
+ * **No permission tier, ever.** {@link resolveSessionDefaults} answers the trust
+ * stop only for a caller that hands it the runtime's declared modes, and no
+ * caller here does: the configured default is for sessions a person is watching
+ * (spec `trust-dial`, decision 6). A room and a relay binding each carry their
+ * own permission mode and their own stricter gates, and the answer here must
+ * never displace one.
+ *
+ * **New sessions only.** A session that already has settings is a running
+ * conversation and keeps them — "applies to new conversations, running ones keep
+ * their settings". Which is each caller's own check, because the two differ in
+ * what they then do about it: a room hands the runtime nothing and lets it
+ * hydrate the row itself, while the relay creates the session record before the
+ * runtime would, so it has to pass the stored values through.
+ *
+ * @param opts.runtimeType - The runtime the turn will actually run on.
+ * @param opts.agentPath - The addressed agent's directory, the one holding
+ *   `.dork/agent.json`. Omitted → no agent tier, and the ladder starts at the
+ *   server's per-runtime default.
+ * @param opts.declared - The runtime's own `settings` capability, which is the
+ *   authority on where its defaults live and whether it takes an effort at all.
+ *   Omitted → neither is known, and the safe direction for each is
+ *   {@link resolveSessionDefaults}'s.
+ */
+export async function resolveUnattendedSessionDefaults(opts: {
+  runtimeType: string;
+  agentPath?: string;
+  declared?: Pick<RuntimeSettingsCapability, 'configSection' | 'supportsEffort'>;
+}): Promise<SessionSettings> {
+  return resolveSessionDefaults({
+    runtimeType: opts.runtimeType,
+    agent: await readAgentExecutionDefaults(opts.agentPath),
+    configSection: opts.declared?.configSection,
+    supportsEffort: opts.declared?.supportsEffort,
+  });
 }
 
 /**

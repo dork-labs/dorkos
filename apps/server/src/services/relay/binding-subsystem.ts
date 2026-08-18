@@ -19,6 +19,7 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import { logger } from '../../lib/logger.js';
 import { BindingStore } from './binding-store.js';
 import { AgentSessionStore } from './agent-session-store.js';
+import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
 import {
   BindingRouter,
   type RelayCoreLike,
@@ -327,11 +328,30 @@ export class BindingSubsystem {
       // message from a user) need a runtime to be created against. Existing
       // sessions route to their owning runtime via session_metadata.
       const agentManager = resolveSessionCreatorRuntime(deps.agentRuntimes);
+      // What a chat-originated session runs on — the SAME answer the relay
+      // adapter resolves for a turn (`turn-execution-settings.ts`), and it has
+      // to be resolved HERE because this is where the session is created. The
+      // adapter's own `ensureSession` runs after the router has published to
+      // `relay.agent.*`, by which time the session exists and that call is a
+      // no-op; a model resolved only there reached nothing on this path, so an
+      // agent answered a stranger on Telegram with the SDK's default while
+      // answering a room on its own model (DOR-1344).
+      const resolveSettings = createTurnExecutionSettingsResolver(
+        agentManager.type ?? runtimeRegistry.getDefaultType()
+      );
       const sessionCreator: AgentSessionCreator = {
         async createSession(cwd: string, permissionMode: PermissionMode) {
           const id = crypto.randomUUID();
-          // No fallback: the binding decides the mode (DOR-604).
-          agentManager.ensureSession(id, { permissionMode, cwd });
+          // No fallback: the binding decides the mode (DOR-604), and the
+          // resolver above cannot answer about permissions at all.
+          agentManager.ensureSession(id, {
+            permissionMode,
+            cwd,
+            // The id is minted one line up, so there is no settings row to find
+            // — this is the manifest-then-server ladder, every time. `cwd` is
+            // the agent's own project directory, which is where its manifest is.
+            ...(await resolveSettings({ sessionId: id, agentDirectory: cwd })),
+          });
           return { id };
         },
       };

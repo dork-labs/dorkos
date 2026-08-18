@@ -49,8 +49,7 @@ import {
   dispatchMessage,
   getOrCreateProjector,
   persistenceModeFor,
-  readAgentExecutionDefaults,
-  resolveSessionDefaults,
+  resolveUnattendedSessionDefaults,
   type SessionStateProjector,
 } from '../session/index.js';
 import type {
@@ -164,19 +163,17 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // takes an effort at all, are the RUNTIME's own declarations. They are
       // handed to the resolver rather than looked up there: the registry imports
       // the resolver, so the arrow only points one way.
-      const declared = runtime.getCapabilities().settings;
+      //
+      // A room turn always has an agent — it is the agent the room addressed —
+      // and {@link resolveUnattendedSessionDefaults} is the same call a
+      // relay-triggered turn makes, so the two surfaces answer identically for
+      // one agent rather than drifting the way they did (DOR-1344).
       const seed =
         (await runtimeRegistry.getSessionSettings(sessionId)) === null
-          ? resolveSessionDefaults({
+          ? await resolveUnattendedSessionDefaults({
               runtimeType,
-              // A room turn always has an agent — it is the agent the room
-              // addressed — so this is the one surface where the per-agent
-              // setting is the whole point rather than a refinement.
-              agent: await readAgentExecutionDefaults(request.agentPath),
-              configSection: declared.configSection,
-              // The room's addressed agent can name an effort on any runtime,
-              // including one that has none — this is what drops it there.
-              supportsEffort: declared.supportsEffort,
+              agentPath: request.agentPath,
+              declared: runtime.getCapabilities().settings,
             })
           : {};
 
