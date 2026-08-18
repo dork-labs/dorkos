@@ -171,7 +171,9 @@ describe('ContextTab', () => {
       // teaches it to their agent (DOR-1292). Scanned over the raw text, so a
       // name buried mid-line cannot slip past an element query.
       const unprefixed = [...text.matchAll(/(?:relay|mesh|binding)_[a-z_]+/g)]
-        .filter((match) => text.slice(Math.max(0, match.index - PREFIX.length), match.index) !== PREFIX)
+        .filter(
+          (match) => text.slice(Math.max(0, match.index - PREFIX.length), match.index) !== PREFIX
+        )
         .map((match) => match[0]);
 
       expect(
