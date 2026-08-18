@@ -4,6 +4,7 @@ import { UserMessageContent } from '@/layers/features/chat/ui/message/UserMessag
 import { AssistantMessageContent } from '@/layers/features/chat/ui/message/AssistantMessageContent';
 import { MessageProvider } from '@/layers/features/chat/ui/message/MessageContext';
 import { PermissionDeniedChip } from '@/layers/features/chat/ui/message/PermissionDeniedChip';
+import { StagedContextNote } from '@/layers/features/chat/ui/message/StagedContextNote';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -342,6 +343,16 @@ export function MessageShowcases() {
               sessionId={MOCK_SESSION_ID}
             />
           </Conversation.Root>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="StagedContextNote"
+        description="What Add context leaves behind. Not a message bubble — nothing replied to it — and on a default install this is the whole of what a person sees, because the words are held for the next reply rather than reaching the agent now."
+      >
+        <ShowcaseLabel>Held for the next reply</ShowcaseLabel>
+        <ShowcaseDemo>
+          <StagedContextNote content="Also check that the migration is reversible" />
         </ShowcaseDemo>
       </PlaygroundSection>
 

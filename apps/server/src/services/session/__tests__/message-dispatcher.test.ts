@@ -49,6 +49,7 @@ import {
 } from '../message-dispatcher.js';
 import { resetStagedContextStore } from '../staged-context-store.js';
 import { assembleAdditionalContext } from '../context-assembler.js';
+import { logger } from '../../../lib/logger.js';
 import type { DispatchContext } from '../../../lib/dispatch-context.js';
 import { currentDispatch, currentDispatchId } from '../../../lib/dispatch-context.js';
 import { recentDispatches, resetDispatchBuffers } from '../../observability/dispatch-buffers.js';
@@ -1261,6 +1262,97 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
       scope: 'per-turn',
       data: { text: 'stage me' },
     });
+  });
+
+  // DOR-1307. `supportsContextStaging` is a claim about the ADAPTER, and reading
+  // it as a claim about the session sent every stage down the native path. For
+  // claude-code the native path is a held process, so the adapter's only way to
+  // honour the ask was to START one — on a default install, with the setting off,
+  // behind the operator's back. The session now answers for itself, exactly as it
+  // does for a steer (DOR-1268), and a `false` routes to the fold instead.
+  const ADAPTER_BUG_LOG = '[MessageDispatcher] runtime declares context staging but had to fold';
+
+  it('folds a stage this session cannot take natively, and never calls that an adapter bug (DOR-1307)', async () => {
+    withCapabilities({ supportsContextStaging: true });
+    Object.assign(runtime, { canStageSession: vi.fn(() => false) });
+    // Armed so that REMOVING the gate takes the adapter-bug path rather than
+    // crashing on an unstubbed receipt: the mutation must fail these assertions
+    // for the reason they are about, not by accident.
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'unsupported' });
+    const projector = getOrCreateProjector(session);
+    const ingest = vi.spyOn(projector, 'ingest');
+    const logged = vi.spyOn(logger, 'error');
+
+    const result = await send('use the staging bucket', { disposition: 'stage' });
+
+    // `not-stageable`, never `unsupported`: the runtime DOES declare staging, and
+    // a receipt saying otherwise would contradict its own capabilities on every
+    // default install.
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'stage',
+      applied: 'stage',
+      degradedBecause: 'not-stageable',
+    });
+    expect(result.queued).toBe(false);
+    // Never asked natively. Asking is what booted the process.
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+    // A fold the design intends is not a defect, and logging it as one buries the
+    // real adapter bugs under noise from every install.
+    expect(logged).not.toHaveBeenCalledWith(ADAPTER_BUG_LOG, expect.anything());
+    // The person still gets the one proof their words landed.
+    expect(ingest).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'context_staged', content: 'use the staging bucket' })
+    );
+
+    // And the words ride the NEXT turn, which is the promise the fold makes.
+    runtime.withScenarios([quickTurn()]);
+    await send('now do the thing');
+    await settle();
+    const call = runtime.sendMessage.mock.calls.find(
+      ([, content]) => content === 'now do the thing'
+    );
+    expect(call?.[2]?.additionalContext).toContainEqual({
+      kind: 'staged_context',
+      scope: 'per-turn',
+      data: { text: 'use the staging bucket' },
+    });
+  });
+
+  it('takes the native path when the session says it can stage', async () => {
+    // The other side of the same gate: turning the opt-in on must not cost the
+    // native path, or the fix would have been a removal.
+    withCapabilities({ supportsContextStaging: true });
+    Object.assign(runtime, { canStageSession: vi.fn(() => true) });
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: true });
+
+    const result = await send('attach this', { disposition: 'stage' });
+
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'stage',
+      applied: 'stage',
+    });
+    expect(result.outcome.degradedBecause).toBeUndefined();
+    expect(runtime.deliverIntoTurn).toHaveBeenCalledWith(
+      session,
+      'attach this',
+      expect.objectContaining({ mode: 'stage' })
+    );
+  });
+
+  it('still calls a declared-and-stageable-but-undeliverable stage an adapter bug', async () => {
+    // The two folds must stay distinguishable in the logs. This one IS a defect:
+    // the runtime said yes twice and then could not deliver.
+    withCapabilities({ supportsContextStaging: true });
+    Object.assign(runtime, { canStageSession: vi.fn(() => true) });
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'unsupported' });
+    const logged = vi.spyOn(logger, 'error');
+
+    const result = await send('stage me', { disposition: 'stage' });
+
+    expect(result.outcome.degradedBecause).toBe('unsupported');
+    expect(logged).toHaveBeenCalledWith(ADAPTER_BUG_LOG, expect.anything());
   });
 
   it('records what was REQUESTED on the row, never what was applied', async () => {

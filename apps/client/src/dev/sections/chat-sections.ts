@@ -64,6 +64,13 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     keywords: ['message', 'item', 'grouping', 'position', 'bubble'],
   },
   {
+    id: 'stagedcontextnote',
+    title: 'StagedContextNote',
+    page: 'chat',
+    category: 'Messages',
+    keywords: ['staged', 'context', 'add', 'note', 'fold', 'next', 'reply', 'disposition'],
+  },
+  {
     id: 'messageauthoravatar',
     title: 'MessageAuthorAvatar',
     page: 'chat',
