@@ -1,5 +1,5 @@
 import { SessionMessage } from '@/layers/features/chat/ui/message/SessionMessage';
-import { MessageAuthorAvatar } from '@/layers/features/conversation';
+import { ConversationRoot, MessageAuthorAvatar } from '@/layers/features/conversation';
 import { UserMessageContent } from '@/layers/features/chat/ui/message/UserMessageContent';
 import { AssistantMessageContent } from '@/layers/features/chat/ui/message/AssistantMessageContent';
 import { MessageProvider } from '@/layers/features/chat/ui/message/MessageContext';
@@ -7,6 +7,7 @@ import { PermissionDeniedChip } from '@/layers/features/chat/ui/message/Permissi
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { ConversationRowShowcases } from './ConversationRowShowcases';
 import {
   createUserMessage,
   createAssistantMessage,
@@ -22,7 +23,6 @@ import {
 } from '../mock-chat-data';
 import type { MessageGrouping } from '@/layers/features/chat/model/chat-types';
 import type { MessageAuthor } from '@/layers/shared/model';
-import { ConversationRoot } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES } from '@/layers/features/chat';
 
 /** Stand-in participants for the identity gutter. */
@@ -79,10 +79,11 @@ const STANDALONE_CTX = {
   inputZoneToolCallId: null,
 };
 
-/** Message-related component showcases: UserMessageContent, AssistantMessageContent, SessionMessage. */
+/** Message-related component showcases: the shared row, its content, and its identity. */
 export function MessageShowcases() {
   return (
     <>
+      <ConversationRowShowcases />
       <PlaygroundSection
         title="PermissionDeniedChip"
         description="Read-only chip marking a tool call blocked before execution by the auto-mode safety classifier — distinct from a user denial, with no actions or re-approval."

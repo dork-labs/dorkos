@@ -9,6 +9,33 @@ import type { PlaygroundSection } from '../playground-registry';
 export const CHAT_SECTIONS: PlaygroundSection[] = [
   // MessageShowcases
   {
+    id: 'message-matrix',
+    title: 'Message.* matrix',
+    page: 'chat',
+    category: 'Messages',
+    keywords: [
+      'message',
+      'row',
+      'conversation',
+      'capabilities',
+      'anchor',
+      'rail',
+      'corner',
+      'density',
+      'compact',
+      'reactions',
+      'run with',
+      'shared',
+    ],
+  },
+  {
+    id: 'conversation-dividers',
+    title: 'Conversation dividers',
+    page: 'chat',
+    category: 'Messages',
+    keywords: ['divider', 'day', 'unread', 'new messages', 'separator', 'rule', 'boundary'],
+  },
+  {
     id: 'permissiondeniedchip',
     title: 'PermissionDeniedChip',
     page: 'chat',
