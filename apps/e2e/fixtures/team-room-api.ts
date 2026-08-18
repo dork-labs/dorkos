@@ -116,7 +116,7 @@ export interface TeamRoomEntry {
    * `moment` is what makes an entry a milestone and `notice` is what makes it
    * the ROOM speaking rather than somebody in it — both are ordinary posts whose
    * body says what they are, which is exactly how the cockpit tells them apart
-   * too (`RoomEntryRow`, `RoomNoticeRow`). An assertion about who ANSWERED has
+   * too (`RoomMessage`, `NoticeRow`). An assertion about who ANSWERED has
    * to exclude notices, or the room's own helpful line counts as a participant.
    */
   body: { text?: string; notice?: string; moment?: TeamRoomMoment; subjectAuthorId?: string };

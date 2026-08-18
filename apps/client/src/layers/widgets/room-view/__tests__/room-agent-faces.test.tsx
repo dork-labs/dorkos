@@ -39,13 +39,15 @@ import {
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomHeader } from '../ui/RoomHeader';
+import { Conversation } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { RoomTimeline } from '../ui/RoomTimeline';
 
 // A mention pill reads route state to build its profile link
 // (`useProfileDeepLink`), and this file mounts it with no router — without the
 // stub the message body renders as "This content couldn't be displayed" and
 // every face assertion below is reading an error boundary. The link's own
-// behaviour has a dedicated file (`RoomEntryRow.click-to-profile.test.tsx`),
+// behaviour has a dedicated file (`RoomMessage.click-to-profile.test.tsx`),
 // which mounts a real router; here it is stubbed so the pill renders at all.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
@@ -174,7 +176,14 @@ function renderIn(ui: ReactNode, overrides: Partial<Transport>) {
     wrapper: ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>
-          <TooltipProvider>{children}</TooltipProvider>
+          <TooltipProvider>
+            {/* The same conversation the room mounts (`RoomSurface`): its rows read
+              capabilities from it, so a bench without one is testing a component
+              in a state the app never puts it in. */}
+            <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+              {children}
+            </Conversation.Root>
+          </TooltipProvider>
         </TransportProvider>
       </QueryClientProvider>
     ),

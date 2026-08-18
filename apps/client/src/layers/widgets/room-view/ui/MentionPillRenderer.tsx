@@ -185,7 +185,7 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
  * would still dress typed text up with a leading `@` it did not earn.
  *
  * A plain function rather than a hook: the only state involved is
- * `spannedIds`, so the caller memoizes on that (`RoomEntryBody` already does,
+ * `spannedIds`, so the caller memoizes on that (`the room's body renderer` already does,
  * via `useMemo`) instead of this module owning a second copy of that decision.
  *
  * @param spannedIds - Author ids `entry.mentionSpans` actually names for this

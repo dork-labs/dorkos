@@ -9,7 +9,7 @@
  * are rare, so nobody looks.
  *
  * The REAL components, never a copy of their markup — the notice's tone and mark
- * are chosen inside `RoomNoticeRow`, and the pending row's two states are chosen
+ * are chosen inside `NoticeRow`, and the pending row's two states are chosen
  * inside `RoomPendingRow`, so a recreation would be the one thing incapable of
  * showing that either choice had drifted.
  *
@@ -19,7 +19,8 @@ import { useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomAttachment, RoomMoment, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import type { PendingPost, RoomEntry } from '@/layers/entities/room';
-import { RoomEntryAttachments, RoomEntryRow, RoomPendingRow } from '@/layers/widgets/room-view';
+import { Conversation, Message } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES, RoomMessage, RoomPendingRow } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -245,22 +246,24 @@ function MomentsSection() {
           <div key={label}>
             <ShowcaseLabel>{label}</ShowcaseLabel>
             <ShowcaseDemo>
-              <RoomEntryRow
-                roomId={THREAD_ROOM_ID}
-                entry={entry}
-                author={{
-                  id: entry.authorId,
-                  kind: authorId ? 'agent' : 'system',
-                  displayName: subject?.displayName ?? 'DorkOS',
-                  ...(subject?.color && { color: subject.color }),
-                }}
-                authorRef={MOMENT_AUTHORS.get(entry.authorId)}
-                authors={MOMENT_AUTHORS}
-                viewerAuthorId="author-you"
-                authorNames={new Map()}
-                reactionFrequents={[]}
-                grouping={{ position: 'only' }}
-              />
+              <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                <RoomMessage
+                  roomId={THREAD_ROOM_ID}
+                  entry={entry}
+                  author={{
+                    id: entry.authorId,
+                    kind: authorId ? 'agent' : 'system',
+                    displayName: subject?.displayName ?? 'DorkOS',
+                    ...(subject?.color && { color: subject.color }),
+                  }}
+                  authorRef={MOMENT_AUTHORS.get(entry.authorId)}
+                  authors={MOMENT_AUTHORS}
+                  viewerAuthorId="author-you"
+                  authorNames={new Map()}
+                  reactionFrequents={[]}
+                  grouping={{ position: 'only' }}
+                />
+              </Conversation.Root>
             </ShowcaseDemo>
           </div>
         );
@@ -280,17 +283,19 @@ function NoticesSection() {
         <div key={code}>
           <ShowcaseLabel>{label}</ShowcaseLabel>
           <ShowcaseDemo>
-            <RoomEntryRow
-              roomId={THREAD_ROOM_ID}
-              entry={noticeEntry(code, text)}
-              author={{ id: 'system', kind: 'system', displayName: 'DorkOS' }}
-              authorRef={undefined}
-              authors={new Map()}
-              viewerAuthorId="author-you"
-              authorNames={new Map()}
-              reactionFrequents={[]}
-              grouping={{ position: 'only' }}
-            />
+            <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+              <RoomMessage
+                roomId={THREAD_ROOM_ID}
+                entry={noticeEntry(code, text)}
+                author={{ id: 'system', kind: 'system', displayName: 'DorkOS' }}
+                authorRef={undefined}
+                authors={new Map()}
+                viewerAuthorId="author-you"
+                authorNames={new Map()}
+                reactionFrequents={[]}
+                grouping={{ position: 'only' }}
+              />
+            </Conversation.Root>
           </ShowcaseDemo>
         </div>
       ))}
@@ -356,13 +361,13 @@ const TINY_PNG =
 function AttachmentsSection() {
   return (
     <PlaygroundSection
-      title="RoomEntryAttachments"
+      title="Message.Attachments"
       description="What a file looks like once it is part of the conversation. Two branches, and which one draws is decided by the SERVER: an image renders inline only when the bytes themselves were checked, and everything else — including a file merely NAMED .png — is a chip you download. Read these together and check that (a) a thumbnail sits under the words without pushing the reaction pills off the bottom of a short message, (b) a chip stays readable when the filename is long enough to truncate, and (c) several files wrap rather than scroll."
     >
       <ShowcaseLabel>Verified image — the only case that renders inline</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomEntryAttachments
-          attachments={[
+        <Message.Attachments
+          items={[
             attachment({
               id: 'att-image',
               name: 'build-graph.png',
@@ -377,8 +382,8 @@ function AttachmentsSection() {
 
       <ShowcaseLabel>Everything else — a chip you can download</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomEntryAttachments
-          attachments={[
+        <Message.Attachments
+          items={[
             attachment({ id: 'att-log', name: 'server.log', mimeType: 'text/plain', size: 812 }),
           ]}
         />
@@ -386,8 +391,8 @@ function AttachmentsSection() {
 
       <ShowcaseLabel>Several at once, one of them named to look like an image</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomEntryAttachments
-          attachments={[
+        <Message.Attachments
+          items={[
             attachment({
               id: 'att-shot',
               name: 'screenshot.png',
@@ -422,7 +427,7 @@ function AttachmentsSection() {
  * Moments, notices and pending sends — the rows a real room only rarely shows.
  *
  * Every component here reads the query cache (the row's own retry is a mutation, and
- * every `RoomEntryRow` resolves its actions through one), so the bench brings a
+ * every `RoomMessage` resolves its actions through one), so the bench brings a
  * throwaway client of its own rather than borrowing the app's. Same shape as
  * `ThreadPanelDemo`, and for the same reason: a showcase that only renders
  * inside the running app is one nobody can test.

@@ -14,7 +14,7 @@ import { authorsById, toMessageAuthor } from '../lib/room-timeline';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
 import { useThreadArrivals } from '../model/use-thread-arrivals';
 import { RoomComposer } from './RoomComposer';
-import { RoomEntryRow } from './RoomEntryRow';
+import { RoomMessage } from './RoomMessage';
 import { RoomPendingList } from './RoomPendingRow';
 import { RoomPresenceLine } from './RoomPresenceLine';
 import { RoomStalledNotice } from './RoomStalledNotice';
@@ -81,7 +81,7 @@ interface RoomThreadPanelProps {
  * aside costs the conversation it hangs off exactly one quiet line.
  *
  * Root at the top with its own reactions, replies beneath it on a connector.
- * Each reply is an ordinary {@link RoomEntryRow}, so it carries the same
+ * Each reply is an ordinary {@link RoomMessage}, so it carries the same
  * capsule, the same reactions and the same keyboard model it would anywhere
  * else — a thread is a different PLACE, not a different kind of message.
  *
@@ -220,7 +220,7 @@ export function RoomThreadPanel({
         element. But Escape is one of its three ways out, and a key only reaches
         it if this element hears one — so it is focusable (`tabIndex={-1}`, taken
         on open) and listens, without pretending to be a button. Same shape as
-        `RoomEntryRow`, which carries the identical carve-out for the identical
+        `RoomMessage`, which carries the identical carve-out for the identical
         reason.
       */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- see above */}
@@ -327,7 +327,7 @@ export function RoomThreadPanel({
                 The start of this thread is gone. What was said after it is still here.
               </p>
             ) : (
-              <RoomEntryRow
+              <RoomMessage
                 roomId={room.id}
                 entry={root}
                 author={toMessageAuthor(root.authorId, authors, agents.faces)}
@@ -375,7 +375,7 @@ export function RoomThreadPanel({
                           arrival === 'handed-off' && 'motion-safe:animate-reply-settle'
                         )}
                       >
-                        <RoomEntryRow
+                        <RoomMessage
                           roomId={room.id}
                           entry={reply}
                           author={toMessageAuthor(reply.authorId, authors, agents.faces)}

@@ -98,7 +98,7 @@ export function buildScriptMessage(
 
 /**
  * Compute per-message grouping for the message list, grouping consecutive
- * same-role messages so the real `MessageItem` styling reads correctly.
+ * same-role messages so the real `SessionMessage` styling reads correctly.
  *
  * @param messages - The revealed messages, in order.
  */

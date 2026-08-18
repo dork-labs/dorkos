@@ -13,7 +13,9 @@ import {
   roomDisplayTitle,
   threadRootIdOf,
 } from '@/layers/entities/room';
+import { Conversation } from '@/layers/features/conversation';
 import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
+import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
 import { useRestoreThreadFocus } from '../model/use-restore-thread-focus';
 import { useStickToBottom } from '../model/use-stick-to-bottom';
@@ -322,6 +324,18 @@ export function RoomSurface({
     </div>
   );
 
+  // What this conversation IS and what it can do, published once for every part
+  // below — the row, the thread panel's rows, and (from P2) the live lane. A DM
+  // is a room whose kind changes naming only, so `surface` tells them apart for
+  // the one place that has to choose a word, and the capability table is shared.
+  const conversation = {
+    surface: room.kind === 'dm' ? ('dm' as const) : ('room' as const),
+    capabilities: ROOM_CAPABILITIES,
+    // A room's messages run long, so its action capsule rides a sticky rail
+    // rather than being pinned to a corner that scrolls away.
+    anchor: 'rail' as const,
+  };
+
   // The phone's push: the thread REPLACES the room rather than covering it, and
   // slides in from the right the way this app's other drill-ins do. The room is
   // unmounted while it is open, which is the honest reading of a push — there
@@ -335,44 +349,48 @@ export function RoomSurface({
   // real drill-in both ways.
   if (isMobile) {
     return (
-      <AnimatePresence initial={false} mode="wait">
-        <motion.div
-          key={panel ? `thread-${openThreadId}` : 'room'}
-          initial={{ opacity: 0, x: 16 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 16 }}
-          transition={{ duration: 0.15, ease: [0, 0, 0.2, 1] }}
-          // The room ends where the software keyboard begins.
-          //
-          // A phone's keyboard shrinks the VISUAL viewport and leaves the layout
-          // viewport alone, so `h-dvh` on the shell above measures a screen that
-          // is no longer all visible — and everything this column pins to its
-          // bottom edge (the composer, the stalled notice, the presence line)
-          // sits behind the keyboard the moment you tap to type. Insetting by
-          // the difference is what puts them back above it, and it costs
-          // nothing where there is no keyboard: the hook reads 0 without
-          // `visualViewport`, under pinch-zoom, and on every desktop.
-          //
-          // One place, not two: on a phone the thread panel is a full-screen
-          // push rendered INSIDE this element, so both surfaces inherit it.
-          style={{ paddingBottom: keyboardInset }}
-          data-testid="room-surface"
-          // A flex COLUMN, not a bare `h-full` box: the room column inside is
-          // `flex-1`, which needs a flex parent to be bounded by. Without it the
-          // scroller had no height to overflow, so the room silently stopped
-          // scrolling on phones — it opened at the top and stayed there.
-          className="flex h-full flex-col overflow-hidden"
-        >
-          {panel === false ? roomColumn : panel}
-        </motion.div>
-      </AnimatePresence>
+      <Conversation.Root {...conversation}>
+        <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            key={panel ? `thread-${openThreadId}` : 'room'}
+            initial={{ opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 16 }}
+            transition={{ duration: 0.15, ease: [0, 0, 0.2, 1] }}
+            // The room ends where the software keyboard begins.
+            //
+            // A phone's keyboard shrinks the VISUAL viewport and leaves the layout
+            // viewport alone, so `h-dvh` on the shell above measures a screen that
+            // is no longer all visible — and everything this column pins to its
+            // bottom edge (the composer, the stalled notice, the presence line)
+            // sits behind the keyboard the moment you tap to type. Insetting by
+            // the difference is what puts them back above it, and it costs
+            // nothing where there is no keyboard: the hook reads 0 without
+            // `visualViewport`, under pinch-zoom, and on every desktop.
+            //
+            // One place, not two: on a phone the thread panel is a full-screen
+            // push rendered INSIDE this element, so both surfaces inherit it.
+            style={{ paddingBottom: keyboardInset }}
+            data-testid="room-surface"
+            // A flex COLUMN, not a bare `h-full` box: the room column inside is
+            // `flex-1`, which needs a flex parent to be bounded by. Without it the
+            // scroller had no height to overflow, so the room silently stopped
+            // scrolling on phones — it opened at the top and stayed there.
+            className="flex h-full flex-col overflow-hidden"
+          >
+            {panel === false ? roomColumn : panel}
+          </motion.div>
+        </AnimatePresence>
+      </Conversation.Root>
     );
   }
 
   return (
-    <div className="flex h-full overflow-hidden">
-      {roomColumn}
-      {panel}
-    </div>
+    <Conversation.Root {...conversation}>
+      <div className="flex h-full overflow-hidden">
+        {roomColumn}
+        {panel}
+      </div>
+    </Conversation.Root>
   );
 }

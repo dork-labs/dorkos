@@ -43,20 +43,15 @@ interface CapturedMessageProps {
 
 const { captured } = vi.hoisted(() => ({ captured: [] as unknown[] }));
 
-// Stand in for MessageItem to read the props it receives. The dividers stay
-// real — they are what shifts the row indices this suite is about.
-vi.mock('../ui/message', async () => {
-  const { DayDivider } = await import('../ui/message/DayDivider');
-  const { UnreadDivider } = await import('../ui/message/UnreadDivider');
-  return {
-    DayDivider,
-    UnreadDivider,
-    MessageItem: (props: unknown) => {
-      captured.push(props);
-      return <div data-testid="message-item" />;
-    },
-  };
-});
+// Stand in for SessionMessage to read the props it receives. The dividers stay
+// real — they are what shifts the row indices this suite is about, and they
+// come from `features/conversation`, which is not mocked here.
+vi.mock('../ui/message', () => ({
+  SessionMessage: (props: unknown) => {
+    captured.push(props);
+    return <div data-testid="message-item" />;
+  },
+}));
 
 vi.mock('../ui/ScrollThumb', () => ({ ScrollThumb: () => null }));
 

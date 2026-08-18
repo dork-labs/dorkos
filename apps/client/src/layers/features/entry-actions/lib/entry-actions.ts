@@ -12,17 +12,24 @@
 import type { LucideIcon } from 'lucide-react';
 
 /** One position in the capsule. Stable — tests and telemetry name these. */
-export type EntryActionSlot = 'react' | 'react-more' | 'reply' | 'copy' | 'mention' | 'profile';
+export type EntryActionSlot =
+  | 'react'
+  | 'react-more'
+  | 'run-with'
+  | 'reply'
+  | 'copy'
+  | 'mention'
+  | 'profile';
 
 /**
  * Which action this is.
  *
  * The slots a COMMAND can fill — a button with an icon that does one thing. The
- * two reaction slots are excluded deliberately: `react` is however many quick
- * emoji this reader has, and `react-more` opens a picker rather than running,
- * so neither is one of these.
+ * three others are excluded deliberately: `react` is however many quick emoji
+ * this reader has, and `react-more` and `run-with` each open a menu rather than
+ * running, so none of them is one of these.
  */
-export type EntryActionId = Exclude<EntryActionSlot, 'react' | 'react-more'>;
+export type EntryActionId = Exclude<EntryActionSlot, 'react' | 'react-more' | 'run-with'>;
 
 /** One thing you can do to a message. */
 export interface EntryAction {
@@ -58,6 +65,15 @@ export interface EntryAction {
  * touch affordance, and this is the same destination reached the way every
  * other per-message action is reached (DOR-1251).
  *
+ * **`run-with` sits with the other menu-opener, not with the commands.** It
+ * arrived when the session's lone "Run this with…" control and this capsule
+ * became one surface, and it is placed beside `react-more` because both open a
+ * menu instead of doing something. Nothing a finger already knows moved: the
+ * conversations that offer `run-with` (`capabilities.runWith`) offer none of
+ * the room's commands, and the ones that offer the commands do not offer it —
+ * so `room-entry-actions.spec.ts`, which counts arrow presses to reach Reply,
+ * counts exactly what it counted before.
+ *
  * One array, three renderings. The toolbar maps over it, the right-click menu
  * and the touch drawer render the commands from it in the same order, and a test
  * pins the sequence — which is what makes this the single source rather than a
@@ -66,6 +82,7 @@ export interface EntryAction {
 export const ENTRY_ACTION_ORDER: readonly EntryActionSlot[] = [
   'react',
   'react-more',
+  'run-with',
   'reply',
   'copy',
   'mention',

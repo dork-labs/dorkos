@@ -5,7 +5,7 @@
  * One function because the three answers constrain each other. The name has to
  * come from what is already on screen, which decides what the description may
  * be; and the position is only meaningful once the row has a name to attach it
- * to. Spread onto the row in `RoomEntryRow`, the same way `feedArticleProps`
+ * to. Spread onto the row in `RoomMessage`, the same way `feedArticleProps`
  * is spread onto any article of a feed.
  *
  * @module widgets/room-view/lib/entry-row-article

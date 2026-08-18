@@ -7,7 +7,7 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: RoomsShowcases — Room Sheet, RoomMemberRow, RoomAvatar,
  * BridgeVisibilityBadge, ResponseModeControl, LoudnessMeter, RoomLoudnessLine,
- * AgentRosterPicker, RemoveMemberConfirm. RoomThreadShowcases — RoomThreadReplyRow,
+ * AgentRosterPicker, RemoveMemberConfirm. RoomThreadShowcases — ThreadReplyRow,
  * RoomThreadPanel, Thread arrival animations.
  */
 export const ROOMS_SECTIONS: PlaygroundSection[] = [
@@ -116,8 +116,8 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     keywords: ['remove', 'confirm', 'undo', 'toast', 'member', 'destructive'],
   },
   {
-    id: 'roomthreadreplyrow',
-    title: 'RoomThreadReplyRow',
+    id: 'threadreplyrow',
+    title: 'ThreadReplyRow',
     page: 'rooms',
     category: 'Threads',
     keywords: [
@@ -189,8 +189,8 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     keywords: ['pending', 'sending', 'failed', 'retry', 'discard', 'optimistic', 'offline', 'send'],
   },
   {
-    id: 'roomentryattachments',
-    title: 'RoomEntryAttachments',
+    id: 'message-attachments',
+    title: 'Message.Attachments',
     page: 'rooms',
     category: 'Delivery',
     keywords: ['attachment', 'file', 'image', 'thumbnail', 'download', 'chip', 'upload'],

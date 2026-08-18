@@ -1,4 +1,6 @@
 import { MessageList } from '@/layers/features/chat/ui/MessageList';
+import { Conversation } from '@/layers/features/conversation';
+import { SESSION_CAPABILITIES } from '@/layers/features/chat';
 import { MessageCircle } from 'lucide-react';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import type { SimulatorResult } from './use-simulator';
@@ -23,16 +25,18 @@ export function SimulatorChatPanel({ sim, textEffect }: SimulatorChatPanelProps)
             </div>
           </div>
         ) : (
-          <MessageList
-            messages={sim.messages}
-            sessionId="simulator-session"
-            isTextStreaming={sim.isTextStreaming}
-            activeToolCallId={null}
-            onToolRef={() => {}}
-            onToolDecided={() => {}}
-            onRetry={() => {}}
-            textEffect={textEffect}
-          />
+          <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
+            <MessageList
+              messages={sim.messages}
+              sessionId="simulator-session"
+              isTextStreaming={sim.isTextStreaming}
+              activeToolCallId={null}
+              onToolRef={() => {}}
+              onToolDecided={() => {}}
+              onRetry={() => {}}
+              textEffect={textEffect}
+            />
+          </Conversation.Root>
         )}
       </div>
 

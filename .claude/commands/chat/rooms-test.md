@@ -38,7 +38,7 @@ Drive the browser with the **Playwright MCP** (`mcp__plugin_playwright_playwrigh
 - Radix dialogs and popovers (create-channel, reaction picker, member menus) need a real click on the option element — a raw `el.click()` inside `browser_evaluate` does not reliably fire the Radix handler.
 - **Do not assert which emoji the quick-reaction row shows.** It is the reader's own most-used set, computed across rooms, so it differs per machine and per run. Read what is there, then assert against what you read (`apps/e2e/pages/RoomsPage.ts` carries the same warning).
 - **The halt button does not exist when nothing is working.** `room-header-halt` renders only while `working > 0`, so "the button is missing" is a timing statement, not a bug — re-check while an agent is actually mid-turn.
-- The thread panel renders the **same** `RoomEntryRow` component as the main timeline, but only the timeline's copy carries the `id="room-entry-<entryId>"` attribute (duplicate DOM ids are avoided deliberately). Scope every entry query to `[data-testid="room-timeline"]` or to `[data-testid="room-thread-panel"]` — never to the page.
+- The thread panel renders the **same** `RoomMessage` component as the main timeline, but only the timeline's copy carries the `id="room-entry-<entryId>"` attribute (duplicate DOM ids are avoided deliberately). Scope every entry query to `[data-testid="room-timeline"]` or to `[data-testid="room-thread-panel"]` — never to the page.
 
 The trustworthy selector source is `apps/e2e/pages/RoomsPage.ts` and `apps/e2e/pages/NewMenuPage.ts`. Read them before inventing a locator; they already encode the flows below.
 
@@ -487,16 +487,16 @@ Verdict vocabulary — use it exactly:
 
 For any genuine bug, trace the code before writing the recommendation. The root-cause map for this surface:
 
-| Area                                       | File                                                                                                                                                  |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Membership, posting, reactions, 3-way rule | `apps/server/src/services/rooms/room-service.ts`                                                                                                      |
-| Dispatch, halt, claims                     | `apps/server/src/services/rooms/room-trigger.ts`                                                                                                      |
-| The burst window and parking               | `apps/server/src/services/rooms/room-collect.ts`                                                                                                      |
-| Every notice's exact words                 | `apps/server/src/services/rooms/notices/notice-copy.ts`                                                                                               |
-| Reaction budget                            | `apps/server/src/services/rooms/reactions/reaction-budget.ts`                                                                                         |
-| Routes                                     | `apps/server/src/routes/rooms.ts`, `apps/server/src/routes/room-events-handler.ts`                                                                    |
-| What a triggered agent is told             | `apps/server/src/services/runtimes/shared/room-context-block.ts`                                                                                      |
-| Client                                     | `apps/client/src/layers/widgets/room-view/ui/` — `RoomHeader`, `RoomComposer`, `RoomEntryRow`, `RoomNoticeRow`, `RoomThreadPanel`, `RoomPresenceLine` |
+| Area                                       | File                                                                                                                                                                                                                    |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Membership, posting, reactions, 3-way rule | `apps/server/src/services/rooms/room-service.ts`                                                                                                                                                                        |
+| Dispatch, halt, claims                     | `apps/server/src/services/rooms/room-trigger.ts`                                                                                                                                                                        |
+| The burst window and parking               | `apps/server/src/services/rooms/room-collect.ts`                                                                                                                                                                        |
+| Every notice's exact words                 | `apps/server/src/services/rooms/notices/notice-copy.ts`                                                                                                                                                                 |
+| Reaction budget                            | `apps/server/src/services/rooms/reactions/reaction-budget.ts`                                                                                                                                                           |
+| Routes                                     | `apps/server/src/routes/rooms.ts`, `apps/server/src/routes/room-events-handler.ts`                                                                                                                                      |
+| What a triggered agent is told             | `apps/server/src/services/runtimes/shared/room-context-block.ts`                                                                                                                                                        |
+| Client                                     | `apps/client/src/layers/widgets/room-view/ui/` — `RoomHeader`, `RoomComposer`, `RoomMessage`, `RoomThreadPanel`, `RoomPresenceLine`; the row itself and `NoticeRow` are `apps/client/src/layers/features/conversation/` |
 
 If the run found bugs, close with the `/flow:ideate` prompt shape `/chat:self-test` uses — problem statement, this report's path, the affected files found while tracing, and what "fixed" looks like.
 

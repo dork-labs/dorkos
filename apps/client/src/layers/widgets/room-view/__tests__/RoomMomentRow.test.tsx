@@ -3,7 +3,7 @@
  * A moment in the feed — the milestone line, drawn through the row every other
  * entry goes through (team-room-home spec D5.1).
  *
- * Rendered via `RoomEntryRow` rather than the moment row directly, because the
+ * Rendered via `RoomMessage` rather than the moment row directly, because the
  * claim under test is that the feed's OWN dispatch reaches it: a moment is a
  * post, so a client that only checked `entry.kind` would draw it as an ordinary
  * message and the milestone would read as somebody talking.
@@ -16,12 +16,14 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { RoomEntry, RoomMoment } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { RoomEntryRow } from '../ui/RoomEntryRow';
+import { RoomMessage } from '../ui/RoomMessage';
 import { toMessageAuthor, type RosterAuthor } from '../lib/room-timeline';
+import { Conversation } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
 // The row reads route state to decide where its author face leads
 // (`useProfileDeepLink`), and this file mounts it with no router. Where that
-// link goes has its own file — `RoomEntryRow.click-to-profile.test.tsx`, which
+// link goes has its own file — `RoomMessage.click-to-profile.test.tsx`, which
 // mounts a real router and asserts the id that travels.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
@@ -100,7 +102,7 @@ function renderRow(target: RoomEntry = entry()) {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
-    <RoomEntryRow
+    <RoomMessage
       roomId="room-1"
       entry={target}
       // Resolved off the roster exactly as `RoomTimeline` resolves it, so the
@@ -118,7 +120,14 @@ function renderRow(target: RoomEntry = entry()) {
       wrapper: ({ children }) => (
         <QueryClientProvider client={queryClient}>
           <TransportProvider transport={createMockTransport()}>
-            <TooltipProvider>{children}</TooltipProvider>
+            <TooltipProvider>
+              {/* The same conversation the room mounts (`RoomSurface`): its rows read
+                  capabilities from it, so a bench without one is testing a component
+                  in a state the app never puts it in. */}
+              <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                {children}
+              </Conversation.Root>
+            </TooltipProvider>
           </TransportProvider>
         </QueryClientProvider>
       ),

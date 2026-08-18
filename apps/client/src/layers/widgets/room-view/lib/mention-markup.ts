@@ -6,7 +6,7 @@
  * Pairs with Streamdown's own `allowedTags` / `literalTagContent` mention-pill
  * pattern: `MENTION_TAG` names the tag to allow, `MENTION_AUTHOR_ATTR` the
  * attribute it carries, and both must be threaded to the same `Streamdown` call
- * that renders this function's output — see `RoomEntryRow`.
+ * that renders this function's output — see `RoomMessage`.
  *
  * @module widgets/room-view/lib/mention-markup
  */
@@ -19,7 +19,7 @@ export const MENTION_TAG = 'mention';
 export const MENTION_AUTHOR_ATTR = 'author_id';
 
 /**
- * Streamdown's `allowedTags`, module-scoped so every `RoomEntryRow` render
+ * Streamdown's `allowedTags`, module-scoped so every `RoomMessage` render
  * passes the SAME reference. Streamdown re-derives its escaped markdown
  * whenever this prop's identity changes (`useMemo([...], [allowedTags])`
  * internally), and a fresh object literal on every render would do that on

@@ -55,7 +55,7 @@ interface MarkdownContentProps {
    * typed, say) and merely happens to look the same. This component cannot
    * tell those apart, so a caller allowing a tag whose attributes carry
    * meaning (like an id to look up) must itself gate what that tag is allowed
-   * to resolve against — see `RoomEntryBody`'s `spannedIds` for the pattern.
+   * to resolve against — see `the room's body renderer`'s `spannedIds` for the pattern.
    */
   allowedTags?: AllowedTags;
   /**

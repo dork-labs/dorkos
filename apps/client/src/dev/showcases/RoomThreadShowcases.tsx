@@ -15,7 +15,8 @@ import { useState } from 'react';
 import { Button } from '@/layers/shared/ui';
 import type { RoomEntry } from '@/layers/entities/room';
 import { useRoomPresenceStore } from '@/layers/entities/room';
-import { RoomThreadReplyRow } from '@/layers/widgets/room-view';
+import { Conversation, ThreadReplyRow } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -29,7 +30,7 @@ import {
 } from './room-thread-showcase-data';
 
 // ---------------------------------------------------------------------------
-// RoomThreadReplyRow
+// ThreadReplyRow
 // ---------------------------------------------------------------------------
 
 const ROOT_FOR_ROW = threadEntry('the deploy is stuck — the last step never returned');
@@ -60,13 +61,16 @@ function ReplyRowDemo({
 }) {
   const [open, setOpen] = useState(startOpen);
   return (
-    <RoomThreadReplyRow
-      rootEntryId={ROOT_FOR_ROW.id}
-      replies={replies}
-      lastReadSeq={lastReadSeq}
-      open={open}
-      onOpen={() => setOpen((prev) => !prev)}
-    />
+    // The row reads its conversation for `capabilities.threads`, so the bench
+    // brings the same Root the room mounts rather than a stand-in.
+    <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+      <ThreadReplyRow
+        replies={replies}
+        lastReadSeq={lastReadSeq}
+        open={open}
+        onOpen={() => setOpen((prev) => !prev)}
+      />
+    </Conversation.Root>
   );
 }
 
@@ -75,13 +79,14 @@ function GrowingReplyRowDemo() {
   const [replies, setReplies] = useState<RoomEntry[]>(() => threeReplies());
   return (
     <div className="flex flex-col items-start gap-2">
-      <RoomThreadReplyRow
-        rootEntryId={ROOT_FOR_ROW.id}
-        replies={replies}
-        lastReadSeq={null}
-        open={false}
-        onOpen={() => setReplies((prev) => [...prev, threadReply(ROOT_FOR_ROW, 'and again')])}
-      />
+      <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+        <ThreadReplyRow
+          replies={replies}
+          lastReadSeq={null}
+          open={false}
+          onOpen={() => setReplies((prev) => [...prev, threadReply(ROOT_FOR_ROW, 'and again')])}
+        />
+      </Conversation.Root>
       <Button
         variant="outline"
         size="sm"
@@ -130,10 +135,10 @@ function replyRowStates(): ReplyRowState[] {
   ];
 }
 
-function RoomThreadReplyRowShowcase() {
+function ThreadReplyRowShowcase() {
   return (
     <PlaygroundSection
-      title="RoomThreadReplyRow"
+      title="ThreadReplyRow"
       description="The quiet line under a thread root — “↳ 3 replies · last 9:45 AM”. It replaces the old inline reply gathering (design record §3): a room shows a room, and a thread has its own place to be, however long it runs. Unread is derived from the reader's frozen cursor, never stored, and colours the whole row rather than a badge — a reader scanning history is looking for colour, not a number to find first."
     >
       {replyRowStates().map((state) => (
@@ -334,7 +339,7 @@ function ThreadArrivalShowcase() {
   return (
     <PlaygroundSection
       title="Thread arrival animations"
-      description="Three one-shot motions live in this panel (design record §5.3–5.5), all keyed by `useThreadArrivals` so they play once per reply and never replay on an unrelated re-render: the connector drawing downward, an ordinary reply bouncing in, and an agent's reply settling upward out of the presence line it just occupied. `RoomThreadReplyRow`'s own count-flip is benched separately above, on the row itself."
+      description="Three one-shot motions live in this panel (design record §5.3–5.5), all keyed by `useThreadArrivals` so they play once per reply and never replay on an unrelated re-render: the connector drawing downward, an ordinary reply bouncing in, and an agent's reply settling upward out of the presence line it just occupied. `ThreadReplyRow`'s own count-flip is benched separately above, on the row itself."
     >
       <ShowcaseLabel>
         &quot;Ordinary reply&quot; plays the connector draw and the drop-in. The two-step Kai
@@ -352,7 +357,7 @@ function ThreadArrivalShowcase() {
 export function RoomThreadShowcases() {
   return (
     <>
-      <RoomThreadReplyRowShowcase />
+      <ThreadReplyRowShowcase />
       <RoomThreadPanelShowcase />
       <ThreadArrivalShowcase />
     </>

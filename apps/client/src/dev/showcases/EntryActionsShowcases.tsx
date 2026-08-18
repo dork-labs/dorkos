@@ -2,9 +2,9 @@ import { AtSign, Copy, Reply } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { MessageAuthor, MessageGrouping } from '@/layers/shared/model';
 import type { AuthorRef, RoomEntry } from '@/layers/entities/room';
-import { messageItem } from '@/layers/features/chat';
+import { Conversation, messageItem } from '@/layers/features/conversation';
 import { EntryActionBar, type EntryAction } from '@/layers/features/entry-actions';
-import { RoomEntryRow } from '@/layers/widgets/room-view';
+import { ROOM_CAPABILITIES, RoomMessage } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -42,7 +42,7 @@ interface BenchRowProps {
 /**
  * One seeded room row, with the bench's defaults already applied.
  *
- * This is the REAL `RoomEntryRow` — the toolbar's enclosure is held by layout
+ * This is the REAL `RoomMessage` — the toolbar's enclosure is held by layout
  * the row itself owns (a zero-height sticky rail), so a copy of its markup
  * would be the one thing incapable of showing a layout defect.
  */
@@ -54,18 +54,20 @@ function BenchRow({
   stalled,
 }: BenchRowProps) {
   return (
-    <RoomEntryRow
-      roomId={BENCH_ROOM_ID}
-      entry={entry}
-      author={author}
-      authorRef={authorRef}
-      authors={BENCH_AUTHORS}
-      viewerAuthorId={BENCH_VIEWER_ID}
-      authorNames={BENCH_NAMES}
-      reactionFrequents={BENCH_FREQUENTS}
-      streamStalled={stalled}
-      grouping={grouping}
-    />
+    <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+      <RoomMessage
+        roomId={BENCH_ROOM_ID}
+        entry={entry}
+        author={author}
+        authorRef={authorRef}
+        authors={BENCH_AUTHORS}
+        viewerAuthorId={BENCH_VIEWER_ID}
+        authorNames={BENCH_NAMES}
+        reactionFrequents={BENCH_FREQUENTS}
+        streamStalled={stalled}
+        grouping={grouping}
+      />
+    </Conversation.Root>
   );
 }
 

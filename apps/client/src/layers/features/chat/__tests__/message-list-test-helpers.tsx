@@ -17,6 +17,8 @@ import type { ReadCursor } from '@dorkos/shared/read-cursor-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { Conversation } from '@/layers/features/conversation';
+import { SESSION_CAPABILITIES } from '../config/session-capabilities';
 
 /** The author id every cursor in these suites belongs to. */
 const HARNESS_USER_ID = 'author-me';
@@ -92,7 +94,14 @@ export function renderWithTransport(
   return render(ui, {
     ...options,
     wrapper: ({ children }: { children: React.ReactNode }) => (
-      <TransportProvider transport={transport}>{children}</TransportProvider>
+      <TransportProvider transport={transport}>
+        {/* The conversation a session page mounts around its transcript. Every
+            row reads what its conversation can do, so a bench without one is
+            testing a component in a state the app never puts it in. */}
+        <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
+          {children}
+        </Conversation.Root>
+      </TransportProvider>
     ),
   });
 }

@@ -5,7 +5,7 @@ import { agentAuthorRef, type RoomEntry } from '@dorkos/shared/room-schemas';
 import { MentionPill, IdentityHoverCard } from '@/layers/shared/ui';
 import {
   AgentInfoProvider,
-  RoomEntryRow,
+  RoomMessage,
   agentFacesByRef,
   type RoomAgentDirectory,
   type RosterAgentInfo,
@@ -14,6 +14,8 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { MOCK_IDENTITIES, type MockIdentity } from '../mock-samples';
+import { Conversation } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 
 /**
  * A mention pill on its own, as it would sit anywhere else — never inside a
@@ -185,7 +187,7 @@ function MentionInAMessageSection() {
   return (
     <PlaygroundSection
       title="A mention in a real message"
-      description="The whole path, end to end: a server-spanned @mention inside the real RoomEntryRow, resolved against a roster, with the agent's runtime and model joined in from the fleet. Hover the pill. Warden is seeded as a known agent, so its card carries the runtime chip; Ana is a person and carries her origin instead. Mention an agent the fleet has no manifest for and the chip is simply absent — never a placeholder."
+      description="The whole path, end to end: a server-spanned @mention inside the real RoomMessage, resolved against a roster, with the agent's runtime and model joined in from the fleet. Hover the pill. Warden is seeded as a known agent, so its card carries the runtime chip; Ana is a person and carries her origin instead. Mention an agent the fleet has no manifest for and the chip is simply absent — never a placeholder."
     >
       <ShowcaseLabel>
         Hover @warden — name and handle from the roster, runtime from the fleet
@@ -193,17 +195,19 @@ function MentionInAMessageSection() {
       <ShowcaseDemo>
         <QueryClientProvider client={client}>
           <AgentInfoProvider known={BENCH_DIRECTORY}>
-            <RoomEntryRow
-              roomId="bench-room"
-              entry={BENCH_ENTRY}
-              author={{ id: 'author-ana', kind: 'human', displayName: 'Ana' }}
-              authorRef={BENCH_AUTHORS.get('author-ana')}
-              authors={BENCH_AUTHORS}
-              viewerAuthorId="author-you"
-              authorNames={new Map([['author-ana', 'Ana']])}
-              reactionFrequents={[]}
-              grouping={{ position: 'only' }}
-            />
+            <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+              <RoomMessage
+                roomId="bench-room"
+                entry={BENCH_ENTRY}
+                author={{ id: 'author-ana', kind: 'human', displayName: 'Ana' }}
+                authorRef={BENCH_AUTHORS.get('author-ana')}
+                authors={BENCH_AUTHORS}
+                viewerAuthorId="author-you"
+                authorNames={new Map([['author-ana', 'Ana']])}
+                reactionFrequents={[]}
+                grouping={{ position: 'only' }}
+              />
+            </Conversation.Root>
           </AgentInfoProvider>
         </QueryClientProvider>
       </ShowcaseDemo>

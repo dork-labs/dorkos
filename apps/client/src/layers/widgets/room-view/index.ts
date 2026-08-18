@@ -9,6 +9,12 @@
  */
 export { ChannelsPage } from './ui/ChannelsPage';
 /**
+ * What a channel — and a DM, which is a channel by another name — can do. The
+ * one table that says how this surface differs from the session's, read by the
+ * `Conversation.Root` this widget mounts and by the Dev Playground's benches.
+ */
+export { ROOM_CAPABILITIES } from './model/room-capabilities';
+/**
  * The room itself, exported so the app shell can render #team as the home tab.
  * A host contributes an address and the chrome above the feed — never a second
  * copy of a room.
@@ -23,16 +29,14 @@ export type { RoomSurfaceProps } from './ui/RoomSurface';
  * layout the row itself owns, so a copy would be the one thing that cannot
  * catch a layout defect. Nothing in the routed app imports it from here.
  */
-export { RoomEntryRow } from './ui/RoomEntryRow';
+export { RoomMessage } from './ui/RoomMessage';
 /**
- * The thread side panel and its "N replies" row under a thread root, exported
- * for the Dev Playground's thread bench (`/dev/rooms`) for the same reason
- * `RoomEntryRow` is: the playground renders the real components, never a copy
- * of their markup. Nothing in the routed app imports them from here — the
- * room view mounts both itself.
+ * The thread side panel, exported for the Dev Playground's thread bench
+ * (`/dev/rooms`) for the same reason `RoomMessage` is: the playground renders
+ * the real component, never a copy of its markup. Nothing in the routed app
+ * imports it from here — the room view mounts it itself.
  */
 export { RoomThreadPanel } from './ui/RoomThreadPanel';
-export { RoomThreadReplyRow } from './ui/RoomThreadReplyRow';
 /**
  * The row that holds a message between pressing Enter and the room echoing it
  * back, exported for the Dev Playground's delivery bench (`/dev/rooms`) — the
@@ -42,19 +46,10 @@ export { RoomThreadReplyRow } from './ui/RoomThreadReplyRow';
  */
 export { RoomPendingRow } from './ui/RoomPendingRow';
 /**
- * The files posted with a message, exported for the Dev Playground's delivery
- * bench (`/dev/rooms`) for the same reason `RoomPendingRow` is: producing a
- * real one on demand means uploading a file into a room, and the case worth
- * eyeballing — a thumbnail beside a download chip beside a long filename — is
- * the one nobody has lying around. Nothing in the routed app imports it from
- * here; `RoomEntryRow` mounts it itself.
- */
-export { RoomEntryAttachments } from './ui/RoomEntryAttachments';
-/**
  * Seeds what a room knows about its agents — how each one runs, and the face
  * each one wears — for a subtree, exported for the Dev Playground's identity
  * bench. A mention pill's hover card reads it from context (see
- * `agent-info-context`), so a benched `RoomEntryRow` needs one above it or its
+ * `agent-info-context`), so a benched `RoomMessage` needs one above it or its
  * cards can only ever be shown bare. The routed app feeds it
  * `useRoomAgentDirectory`, which reads the real fleet.
  */

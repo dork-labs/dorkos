@@ -9,6 +9,8 @@ import type { AuthorOrigin, RoomEntry, RoomRosterEntry } from '@dorkos/shared/ro
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { authorColor } from '@/layers/entities/room';
+import { Conversation } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { RoomTimeline } from '../ui/RoomTimeline';
 import { unreadPlacement } from '@/layers/shared/lib';
 import { toMessageAuthor, authorsById, groupByThread } from '../lib/room-timeline';
@@ -16,7 +18,7 @@ import { toMessageAuthor, authorsById, groupByThread } from '../lib/room-timelin
 // Every row reads route state to decide where its author face leads
 // (`useProfileDeepLink`), and this file mounts the timeline with no router.
 // Where that link goes has its own file —
-// `RoomEntryRow.click-to-profile.test.tsx`, which mounts a real router and
+// `RoomMessage.click-to-profile.test.tsx`, which mounts a real router and
 // asserts the id that travels.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
@@ -109,7 +111,14 @@ function Wrapper({ children }: { children: React.ReactNode }) {
       }
     >
       <TransportProvider transport={createMockTransport()}>
-        <TooltipProvider>{children}</TooltipProvider>
+        <TooltipProvider>
+          {/* The same conversation the room mounts (`RoomSurface`): its rows read
+              capabilities from it, so a bench without one is testing a component
+              in a state the app never puts it in. */}
+          <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+            {children}
+          </Conversation.Root>
+        </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -739,7 +748,7 @@ describe('RoomTimeline as a feed', () => {
     // Ctrl+End has to work from wherever focus is, and inside a message that is
     // a button belonging to a roving group. (Whether the group also grabs the
     // press on the way past is invisible from here — the container's answer
-    // lands second either way — so `RoomEntryRow` pins that half on a row
+    // lands second either way — so `RoomMessage` pins that half on a row
     // rendered without a feed around it.)
     render(
       <>

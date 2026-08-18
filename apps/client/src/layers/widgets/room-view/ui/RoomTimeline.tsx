@@ -5,12 +5,17 @@ import { useNow } from '@/layers/shared/model';
 import { Button, Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { isRoomMember, usePendingPosts } from '@/layers/entities/room';
-import { DayDivider, UnreadDivider } from '@/layers/features/chat';
-import { authorsById, entryRowId, groupByThread, toMessageAuthor } from '../lib/room-timeline';
+import { DayDivider, ThreadReplyRow, UnreadDivider } from '@/layers/features/conversation';
+import {
+  authorsById,
+  entryRowId,
+  groupByThread,
+  threadRowId,
+  toMessageAuthor,
+} from '../lib/room-timeline';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
-import { RoomEntryRow } from './RoomEntryRow';
+import { RoomMessage } from './RoomMessage';
 import { RoomPendingList } from './RoomPendingRow';
-import { RoomThreadReplyRow } from './RoomThreadReplyRow';
 
 interface RoomTimelineProps {
   /** The room on screen. Every entry's actions act on it. */
@@ -178,7 +183,7 @@ export function RoomTimeline({
         id: entry.id,
         // A moment groups with nothing, and that is the whole reason it carries
         // an id of its own here. It draws its own band rather than the message
-        // grid (`RoomMomentRow`), so an agent's next message — same author,
+        // grid (`MomentRow`), so an agent's next message — same author,
         // same minute — would have been laid out as a CONTINUATION of it and
         // arrive with no avatar and no name under a row that never showed one.
         authorId: entry.body.moment ? `moment:${entry.id}` : entry.authorId,
@@ -246,7 +251,7 @@ export function RoomTimeline({
           const replies = repliesByRoot.get(entry.id);
           return (
             <Fragment key={entry.id}>
-              <RoomEntryRow
+              <RoomMessage
                 roomId={roomId}
                 entry={entry}
                 author={toMessageAuthor(entry.authorId, authors, agents.faces)}
@@ -277,8 +282,8 @@ export function RoomTimeline({
                 rowId={entryRowId(entry.id)}
               />
               {replies && (
-                <RoomThreadReplyRow
-                  rootEntryId={entry.id}
+                <ThreadReplyRow
+                  id={threadRowId(entry.id)}
                   replies={replies}
                   lastReadSeq={lastReadSeq}
                   open={openThreadId === entry.id}

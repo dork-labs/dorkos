@@ -59,7 +59,7 @@ export const BENCH_VIEWER_REF: AuthorRef & { origin: 'local' } = {
 };
 
 /**
- * The bench's roster, keyed by author id — what a `RoomEntryRow` resolves a
+ * The bench's roster, keyed by author id — what a `RoomMessage` resolves a
  * `<mention>` against.
  */
 export const BENCH_AUTHORS: ReadonlyMap<string, AuthorRef & { origin: 'local' }> = new Map([
@@ -74,7 +74,7 @@ let seq = 0;
  *
  * @param text - What the entry says.
  * @param overrides - Anything a particular demo needs to differ.
- * @returns A complete entry, safe to hand straight to `RoomEntryRow`.
+ * @returns A complete entry, safe to hand straight to `RoomMessage`.
  */
 export function benchEntry(text: string, overrides: Partial<RoomEntry> = {}): RoomEntry {
   seq += 1;

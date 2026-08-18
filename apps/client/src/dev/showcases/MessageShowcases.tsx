@@ -1,5 +1,5 @@
-import { MessageItem } from '@/layers/features/chat/ui/message/MessageItem';
-import { MessageAuthorAvatar } from '@/layers/features/chat/ui/message/MessageAuthorAvatar';
+import { SessionMessage } from '@/layers/features/chat/ui/message/SessionMessage';
+import { Conversation, MessageAuthorAvatar } from '@/layers/features/conversation';
 import { UserMessageContent } from '@/layers/features/chat/ui/message/UserMessageContent';
 import { AssistantMessageContent } from '@/layers/features/chat/ui/message/AssistantMessageContent';
 import { MessageProvider } from '@/layers/features/chat/ui/message/MessageContext';
@@ -8,6 +8,7 @@ import { StagedContextNote } from '@/layers/features/chat/ui/message/StagedConte
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { MessageRowShowcases } from './MessageRowShowcases';
 import {
   createUserMessage,
   createAssistantMessage,
@@ -23,6 +24,7 @@ import {
 } from '../mock-chat-data';
 import type { MessageGrouping } from '@/layers/features/chat/model/chat-types';
 import type { MessageAuthor } from '@/layers/shared/model';
+import { SESSION_CAPABILITIES } from '@/layers/features/chat';
 
 /** Stand-in participants for the identity gutter. */
 const HUMAN_AUTHOR: MessageAuthor = { kind: 'human', id: 'human', displayName: 'You' };
@@ -78,10 +80,11 @@ const STANDALONE_CTX = {
   inputZoneToolCallId: null,
 };
 
-/** Message-related component showcases: UserMessageContent, AssistantMessageContent, MessageItem. */
+/** Message-related component showcases: the shared row, its content, and its identity. */
 export function MessageShowcases() {
   return (
     <>
+      <MessageRowShowcases />
       <PlaygroundSection
         title="PermissionDeniedChip"
         description="Read-only chip marking a tool call blocked before execution by the auto-mode safety classifier — distinct from a user denial, with no actions or re-approval."
@@ -250,8 +253,8 @@ export function MessageShowcases() {
       </PlaygroundSection>
 
       <PlaygroundSection
-        title="MessageItem"
-        description="Full MessageItem component with grouping positions."
+        title="SessionMessage"
+        description="Full SessionMessage component with grouping positions."
       >
         {(
           [
@@ -264,72 +267,82 @@ export function MessageShowcases() {
           <div key={grouping.position}>
             <ShowcaseLabel>{`User — position: ${grouping.position}`}</ShowcaseLabel>
             <ShowcaseDemo>
-              <MessageItem
-                message={createUserMessage({
-                  content: `Message with position="${grouping.position}"`,
-                })}
-                grouping={grouping}
-                author={HUMAN_AUTHOR}
-                sessionId={MOCK_SESSION_ID}
-              />
+              <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
+                <SessionMessage
+                  message={createUserMessage({
+                    content: `Message with position="${grouping.position}"`,
+                  })}
+                  grouping={grouping}
+                  author={HUMAN_AUTHOR}
+                  sessionId={MOCK_SESSION_ID}
+                />
+              </Conversation.Root>
             </ShowcaseDemo>
           </div>
         ))}
 
         <ShowcaseLabel>Assistant — position: only</ShowcaseLabel>
         <ShowcaseDemo>
-          <MessageItem
-            message={createAssistantMessage({
-              content: 'Here is a short assistant reply.',
-            })}
-            grouping={{ position: 'only' }}
-            author={AGENT_AUTHOR}
-            sessionId={MOCK_SESSION_ID}
-          />
+          <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
+            <SessionMessage
+              message={createAssistantMessage({
+                content: 'Here is a short assistant reply.',
+              })}
+              grouping={{ position: 'only' }}
+              author={AGENT_AUTHOR}
+              sessionId={MOCK_SESSION_ID}
+            />
+          </Conversation.Root>
         </ShowcaseDemo>
 
         <ShowcaseLabel>Assistant with tool calls — position: only</ShowcaseLabel>
         <ShowcaseDemo>
-          <MessageItem
-            message={createAssistantMessage({
-              content: 'Let me check that file for you.',
-              toolCalls: [TOOL_CALLS.complete],
-              parts: [
-                { type: 'text', text: 'Let me check that file for you.' },
-                {
-                  type: 'tool_call',
-                  toolCallId: TOOL_CALLS.complete.toolCallId,
-                  toolName: 'Edit',
-                  input: TOOL_CALLS.complete.input,
-                  result: TOOL_CALLS.complete.result,
-                  status: 'complete',
-                },
-              ],
-            })}
-            grouping={{ position: 'only' }}
-            author={AGENT_AUTHOR}
-            sessionId={MOCK_SESSION_ID}
-          />
+          <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
+            <SessionMessage
+              message={createAssistantMessage({
+                content: 'Let me check that file for you.',
+                toolCalls: [TOOL_CALLS.complete],
+                parts: [
+                  { type: 'text', text: 'Let me check that file for you.' },
+                  {
+                    type: 'tool_call',
+                    toolCallId: TOOL_CALLS.complete.toolCallId,
+                    toolName: 'Edit',
+                    input: TOOL_CALLS.complete.input,
+                    result: TOOL_CALLS.complete.result,
+                    status: 'complete',
+                  },
+                ],
+              })}
+              grouping={{ position: 'only' }}
+              author={AGENT_AUTHOR}
+              sessionId={MOCK_SESSION_ID}
+            />
+          </Conversation.Root>
         </ShowcaseDemo>
 
         <ShowcaseLabel>Local command (/context) — prompt + full-width output</ShowcaseLabel>
         <ShowcaseDemo>
-          <MessageItem
-            message={createUserMessage({ content: '/context', messageType: 'command' })}
-            grouping={{ position: 'first' }}
-            author={HUMAN_AUTHOR}
-            sessionId={MOCK_SESSION_ID}
-          />
-          <MessageItem
-            message={createUserMessage({
-              content:
-                '\x1b[1mContext Usage\x1b[0m\n\x1b[32m█████████\x1b[0m\x1b[90m░░░░░░░░░░░\x1b[0m 45%\n\nSystem prompt   2.3k tokens\nTools          11.1k tokens\nMessages       45.2k tokens',
-              messageType: 'local_command_output',
-            })}
-            grouping={{ position: 'last' }}
-            author={SYSTEM_AUTHOR}
-            sessionId={MOCK_SESSION_ID}
-          />
+          <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
+            <SessionMessage
+              message={createUserMessage({ content: '/context', messageType: 'command' })}
+              grouping={{ position: 'first' }}
+              author={HUMAN_AUTHOR}
+              sessionId={MOCK_SESSION_ID}
+            />
+          </Conversation.Root>
+          <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
+            <SessionMessage
+              message={createUserMessage({
+                content:
+                  '\x1b[1mContext Usage\x1b[0m\n\x1b[32m█████████\x1b[0m\x1b[90m░░░░░░░░░░░\x1b[0m 45%\n\nSystem prompt   2.3k tokens\nTools          11.1k tokens\nMessages       45.2k tokens',
+                messageType: 'local_command_output',
+              })}
+              grouping={{ position: 'last' }}
+              author={SYSTEM_AUTHOR}
+              sessionId={MOCK_SESSION_ID}
+            />
+          </Conversation.Root>
         </ShowcaseDemo>
       </PlaygroundSection>
 

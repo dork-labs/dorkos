@@ -18,7 +18,8 @@ import { Feed } from '@/layers/shared/ui';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { useSessionRuntime } from '@/layers/entities/session';
 import { WIDGET_FENCE_MARKER } from '@/layers/features/gen-ui';
-import { MessageItem, DayDivider, UnreadDivider, StagedContextNote } from './message';
+import { DayDivider, UnreadDivider } from '@/layers/features/conversation';
+import { SessionMessage, StagedContextNote } from './message';
 import type { InteractiveToolHandle } from './message';
 import { buildListRows } from '../lib/build-list-rows';
 import type { ListRow } from '../lib/build-list-rows';
@@ -416,7 +417,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
     // A staged-context note is not a turn: it renders as a quiet standalone row,
     // never a message bubble with an avatar and grouping. Branch before
-    // MessageItem so none of that chrome applies to it.
+    // SessionMessage so none of that chrome applies to it.
     if (message._stagedContext) {
       return <StagedContextNote content={message.content} />;
     }
@@ -429,7 +430,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       lastWidgetFenceIndex === -1 || messageIndex >= lastWidgetFenceIndex;
 
     return (
-      <MessageItem
+      <SessionMessage
         message={message}
         grouping={row.grouping}
         author={row.author}

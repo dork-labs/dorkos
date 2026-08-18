@@ -107,7 +107,7 @@ vi.mock('@/layers/entities/runtime', () => ({
 }));
 
 vi.mock('@/layers/features/chat', () => ({
-  MessageItem: ({ message }: { message: { content: string } }) => (
+  SessionMessage: ({ message }: { message: { content: string } }) => (
     <div data-testid="msg">{message.content}</div>
   ),
   resolveMessageAuthor: () => ({ kind: 'agent', id: 'dorkbot', displayName: 'DorkBot' }),

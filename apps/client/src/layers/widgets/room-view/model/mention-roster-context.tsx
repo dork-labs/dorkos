@@ -10,7 +10,7 @@
  * the message text does not has to arrive by context or it never arrives at all.
  * That is `agent-info-context` for how an agent RUNS, and this for who it IS.
  *
- * **Mounted per message, not per room.** `RoomEntryBody` already holds the
+ * **Mounted per message, not per room.** `the room's body renderer` already holds the
  * roster as a prop and is the only thing that draws a `<mention>`, so putting
  * the provider there keeps the roster a single prop chain with one extra hop at
  * the end — rather than a second thing every surface that renders a row (the

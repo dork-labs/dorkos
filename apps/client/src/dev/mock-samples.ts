@@ -10,6 +10,7 @@ import type {
   ErrorPart,
 } from '@dorkos/shared/types';
 import type { SessionDiagnostics } from '@/layers/features/status';
+import type { MessageAuthor } from '@/layers/shared/model';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import type { IdentityStatus } from '@/layers/shared/ui';
 import {
@@ -1139,3 +1140,19 @@ export const MOCK_TEAM_ROSTER: TeamMember[] = [
     },
   },
 ];
+
+/**
+ * Stand-in participants for a message row's identity gutter, shared by every
+ * bench that draws one. One set, so a change to how a face resolves shows up in
+ * every showcase at once rather than in whichever one was remembered.
+ */
+export const HUMAN_AUTHOR: MessageAuthor = { kind: 'human', id: 'human', displayName: 'You' };
+
+/** An agent with a stored emoji and colour — the branded case. */
+export const AGENT_AUTHOR: MessageAuthor = {
+  kind: 'agent',
+  id: 'dorkbot',
+  displayName: 'DorkBot',
+  emoji: '\u{1F916}',
+  color: 'hsl(210, 70%, 55%)',
+};

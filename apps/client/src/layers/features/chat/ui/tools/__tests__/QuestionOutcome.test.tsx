@@ -4,8 +4,10 @@ import { render, screen, cleanup } from '@testing-library/react';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { ToolCallPart } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
-import { MessageItem } from '../../message';
+import { SessionMessage } from '../../message';
 import type { MessageAuthor } from '@/layers/shared/model';
+import { Conversation } from '@/layers/features/conversation';
+import { SESSION_CAPABILITIES } from '../../../config/session-capabilities';
 
 // Streamdown pulls in a full markdown pipeline this suite has no use for.
 vi.mock('streamdown', () => ({
@@ -14,10 +16,10 @@ vi.mock('streamdown', () => ({
   ),
 }));
 
-// RunWithMenu depends on the router and session queries; this suite is about
+// EntryRunWithMenu depends on the router and session queries; this suite is about
 // one tool part's rendering, and provides neither.
-vi.mock('../../message/RunWithMenu', () => ({
-  RunWithMenu: () => <div data-testid="run-with-menu" />,
+vi.mock('@/layers/features/entry-actions/ui/EntryRunWithMenu', () => ({
+  EntryRunWithMenu: () => <div data-testid="run-with-menu" />,
 }));
 
 afterEach(cleanup);
@@ -35,7 +37,7 @@ const QUESTIONS = [
 
 /**
  * Render one `AskUserQuestion` tool part exactly as history hands it over —
- * through `MessageItem`, so the branch under test is the real one in
+ * through `SessionMessage`, so the branch under test is the real one in
  * `AssistantMessageContent` rather than a hand-picked prop set.
  */
 function renderQuestionPart(overrides: Partial<ToolCallPart>) {
@@ -57,12 +59,16 @@ function renderQuestionPart(overrides: Partial<ToolCallPart>) {
   };
   return render(
     <TransportProvider transport={createMockTransport()}>
-      <MessageItem
-        message={message}
-        sessionId="s1"
-        grouping={{ position: 'only' }}
-        author={AGENT}
-      />
+      {/* The conversation a session page mounts — the row reads its
+          capabilities from it. */}
+      <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
+        <SessionMessage
+          message={message}
+          sessionId="s1"
+          grouping={{ position: 'only' }}
+          author={AGENT}
+        />
+      </Conversation.Root>
     </TransportProvider>
   );
 }

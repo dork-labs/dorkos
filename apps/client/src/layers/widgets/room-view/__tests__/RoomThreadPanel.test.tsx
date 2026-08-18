@@ -10,11 +10,13 @@ import { useRoomPresenceStore } from '@/layers/entities/room';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomThreadPanel } from '../ui/RoomThreadPanel';
+import { Conversation } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
 // The entry rows inside the panel read route state to decide where an author
 // face leads (`useProfileDeepLink`), and this file mounts them with no router.
 // Where that link goes has its own file —
-// `RoomEntryRow.click-to-profile.test.tsx`, which mounts a real router and
+// `RoomMessage.click-to-profile.test.tsx`, which mounts a real router and
 // asserts the id that travels.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
@@ -128,7 +130,14 @@ function renderPanel(overrides: Partial<Parameters<typeof RoomThreadPanel>[0]> =
           }
         >
           <TransportProvider transport={createMockTransport()}>
-            <TooltipProvider>{children}</TooltipProvider>
+            <TooltipProvider>
+              {/* The same conversation the room mounts (`RoomSurface`): its rows read
+                  capabilities from it, so a bench without one is testing a component
+                  in a state the app never puts it in. */}
+              <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                {children}
+              </Conversation.Root>
+            </TooltipProvider>
           </TransportProvider>
         </QueryClientProvider>
       ),

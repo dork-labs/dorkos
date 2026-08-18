@@ -2,7 +2,7 @@
 /**
  * What a mention's hover card says about an AGENT, end to end.
  *
- * `RoomEntryRow.mentions.test.tsx` pins that a pill's identity comes from the
+ * `RoomMessage.mentions.test.tsx` pins that a pill's identity comes from the
  * roster and nowhere else. This pins the half the roster cannot answer: a room
  * is never told how an agent runs (ADR 260726-170126 keeps even its path off
  * the wire), so the runtime and model on the card come from the fleet's own
@@ -34,11 +34,13 @@ import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import type { RoomEntry, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { Conversation } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { RoomTimeline } from '../ui/RoomTimeline';
 
 // A mention pill now reads route state to build its profile link
 // (`useProfileDeepLink`), and these tests mount it with no router. The link's
-// own behaviour has a dedicated file — `RoomEntryRow.click-to-profile.test.tsx`,
+// own behaviour has a dedicated file — `RoomMessage.click-to-profile.test.tsx`,
 // which mounts a real router and asserts the id that travels. Here it is stubbed
 // so the pill renders, which is what this file is actually about.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -160,7 +162,14 @@ function renderTimeline(overrides: Partial<Transport>) {
       wrapper: ({ children }) => (
         <QueryClientProvider client={queryClient}>
           <TransportProvider transport={createMockTransport(overrides)}>
-            <TooltipProvider>{children}</TooltipProvider>
+            <TooltipProvider>
+              {/* The same conversation the room mounts (`RoomSurface`): its rows read
+              capabilities from it, so a bench without one is testing a component
+              in a state the app never puts it in. */}
+              <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                {children}
+              </Conversation.Root>
+            </TooltipProvider>
           </TransportProvider>
         </QueryClientProvider>
       ),
@@ -168,7 +177,7 @@ function renderTimeline(overrides: Partial<Transport>) {
   );
 }
 
-/** A resolved mention pill by the name it drew — see `RoomEntryRow.mentions.test.tsx` for why it is queried this way. */
+/** A resolved mention pill by the name it drew — see `RoomMessage.mentions.test.tsx` for why it is queried this way. */
 function pillFor(displayName: string): HTMLElement {
   const content = document.querySelector('[data-slot="message-content"]') as HTMLElement;
   const found = [...content.querySelectorAll<HTMLElement>('[data-kind]')].find(
