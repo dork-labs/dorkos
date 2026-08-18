@@ -13,8 +13,8 @@ describe('deriveSessionActivity', () => {
   it('carries a file path as its basename, not the whole path', () => {
     // Purpose: the target is what a person reads at a glance in a sidebar row.
     expect(
-      deriveSessionActivity('Edit', '{"file_path":"/repo/apps/client/strip-state.ts"}')
-    ).toEqual({ toolName: 'Edit', target: 'strip-state.ts' });
+      deriveSessionActivity('Edit', '{"file_path":"/repo/apps/client/lane-state.ts"}')
+    ).toEqual({ toolName: 'Edit', target: 'lane-state.ts' });
     expect(deriveSessionActivity('Read', '{"file_path":"/repo/README.md"}')).toEqual({
       toolName: 'Read',
       target: 'README.md',

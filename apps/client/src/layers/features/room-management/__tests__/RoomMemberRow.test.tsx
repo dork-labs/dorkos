@@ -174,7 +174,13 @@ describe('RoomMemberRow', () => {
 
       cleanup();
       const { container: busy } = renderRow({
-        presence: { authorId: 'author-Ana', state: 'working', since: '', elapsedMs: 1000 },
+        presence: {
+          authorId: 'author-Ana',
+          entryId: 'entry-1',
+          state: 'working',
+          since: '',
+          elapsedMs: 1000,
+        },
       });
       expect(busy.querySelector('.bg-status-success')).not.toBeNull();
     });
@@ -189,7 +195,13 @@ describe('RoomMemberRow', () => {
       // rather than the movement. Whether it actually animates is the browser's
       // to say — jsdom runs no animations at all.
       const { container } = renderRow({
-        presence: { authorId: 'author-Ana', state: 'working', since: '', elapsedMs: 1000 },
+        presence: {
+          authorId: 'author-Ana',
+          entryId: 'entry-1',
+          state: 'working',
+          since: '',
+          elapsedMs: 1000,
+        },
       });
 
       const ping = container.querySelector('.animate-ping');

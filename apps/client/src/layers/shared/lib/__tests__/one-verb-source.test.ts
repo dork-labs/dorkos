@@ -168,7 +168,8 @@ describe('the honesty ladder is the only verb source (BC-37)', () => {
 
   it('proves the detector catches every shape that has actually escaped one', () => {
     // Red-before evidence, kept executable. Each of these is a real escape:
-    // the first is what `strip-state.ts` carried until this task rewired it,
+    // the first is what the session's status strip carried until BC-37 rewired
+    // it (the file is gone; `lane-state.ts` inherited the call),
     // and the other two walked past the first version of THIS file.
     const escapes = [
       // A named import of the rung, from anywhere.
@@ -192,7 +193,10 @@ describe('the honesty ladder is the only verb source (BC-37)', () => {
       "const mod = await import('../tool-labels');",
     ];
     for (const escape of escapes) {
-      expect(ladderEscape('features/chat/ui/status/strip-state.ts', escape), escape).not.toBeNull();
+      expect(
+        ladderEscape('features/conversation/model/lane-state.ts', escape),
+        escape
+      ).not.toBeNull();
     }
     // The barrel is held to the same rule for the rung and for namespaces…
     expect(ladderEscape('shared/lib/index.ts', "export * from './tool-labels';")).not.toBeNull();

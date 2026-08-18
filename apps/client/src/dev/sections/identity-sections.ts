@@ -12,7 +12,9 @@ import type { PlaygroundSection } from '../playground-registry';
  * composed from both halves in `playground-config.ts`. See §W4.2.
  *
  * Sources: IdentityMatrixShowcases, IdentityMotionShowcases, AgentIdentityShowcases,
- * RoomPresenceShowcases, TeamShowcases, ProfileShowcases, AccountShowcases.
+ * TeamShowcases, ProfileShowcases, AccountShowcases. The live lane's presence
+ * rung is BORROWED from the Chat page rather than owned here — see
+ * `IDENTITY_CROSS_LISTED`.
  */
 export const IDENTITY_SECTIONS: PlaygroundSection[] = [
   // IdentityMatrixShowcases
@@ -88,24 +90,6 @@ export const IDENTITY_SECTIONS: PlaygroundSection[] = [
     page: 'identity',
     category: 'Identity',
     keywords: ['agent', 'avatar', 'color', 'emoji', 'picker', 'grid', 'swatch', 'preset'],
-  },
-  // RoomPresenceShowcases
-  {
-    id: 'roompresenceline',
-    title: 'RoomPresenceLine',
-    page: 'identity',
-    category: 'Identity',
-    keywords: [
-      'room',
-      'presence',
-      'working',
-      'line',
-      'live',
-      'composer',
-      'elapsed',
-      'late',
-      'announcer',
-    ],
   },
   // TeamShowcases
   {

@@ -5,6 +5,7 @@ import { ToolShowcases } from '../showcases/ToolShowcases';
 import { ChipShowcases } from '../showcases/ChipShowcases';
 import { InputShowcases } from '../showcases/InputShowcases';
 import { StatusShowcases } from '../showcases/StatusShowcases';
+import { LiveLaneShowcase, LivePeekShowcase } from '../showcases/LiveLaneShowcases';
 import { StatusLineShowcases } from '../showcases/StatusLineShowcases';
 import { TrustDialShowcases } from '../showcases/TrustDialShowcases';
 import { SessionInspectorShowcases } from '../showcases/SessionInspectorShowcases';
@@ -23,6 +24,8 @@ export function ChatPage() {
       <ChipShowcases />
       <InputShowcases />
       <StatusShowcases />
+      <LiveLaneShowcase />
+      <LivePeekShowcase />
       <StatusLineShowcases />
       <TrustDialShowcases />
       <SessionInspectorShowcases />

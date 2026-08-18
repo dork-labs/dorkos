@@ -306,7 +306,10 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     db = createTestDb();
     runtimeA = new FakeAgentRuntime('fake-a');
     runtimeB = new FakeAgentRuntime('fake-b');
-    codex = new CodexRuntime({ threadMap: new CodexThreadMap(db), binaryPath: null });
+    codex = new CodexRuntime({
+      threadMap: new CodexThreadMap(db),
+      resolveBinary: async () => '/bin/codex',
+    });
     opencodeSidecar = makeOpenCodeSidecar();
     opencode = makeOpenCodeRuntime(opencodeSidecar);
     runtimeRegistry.setDb(db);

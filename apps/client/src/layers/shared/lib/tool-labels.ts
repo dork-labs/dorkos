@@ -198,7 +198,7 @@ const ACTIVITY_PHRASES: Record<string, ActivityPhrase> = {
  * The ladder, in order, each rung reached only when the one above it cannot be
  * answered honestly:
  *
- * 1. A tool this client recognizes, with its target — "Editing strip-state.ts…"
+ * 1. A tool this client recognizes, with its target — "Editing lane-state.ts…"
  * 2. The same tool without one — "Editing a file…"
  * 3. An MCP tool — the server it is talking to, "Using Slack…", because the
  *    method name is an implementation detail nobody outside that server reads.

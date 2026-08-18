@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(desktop): the packaged app can see the machine it runs on (DOR-1335)'
+  - 'fix(desktop): one precedence rule for cwd and boundary, and a shell-agnostic PATH probe (DOR-1335)'
 ---
 
 ### Fixed

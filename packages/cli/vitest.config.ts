@@ -15,6 +15,18 @@ export default defineConfig({
     // change what `--log-level warn` means. Read from a stale dist it pins the
     // old numbers and reports success.
     alias: [
+      // The CLI reaches narrow server modules through `../server/{services,lib}/*`
+      // specifiers that only resolve in the published dist layout; `scripts/build.ts`
+      // rewrites them at bundle time and `packages/cli/server/**.d.ts` mirrors them
+      // for tsc. Vitest is the third reader of that same mapping — without this it
+      // cannot resolve them at all, and a module that statically imports one is an
+      // untestable module (DOR-1334 review, `check-claude.ts`). Kept in step with
+      // `serverServicesRedirectPlugin`; `src/__tests__/server-shims.test.ts` guards
+      // the declaration half.
+      {
+        find: /^(?:\.\.\/)+server\/((?:services|lib)\/.*)\.js$/,
+        replacement: fileURLToPath(new URL('../../apps/server/src/$1.ts', import.meta.url)),
+      },
       {
         find: '@dorkos/shared/config-schema',
         replacement: fileURLToPath(new URL('../shared/src/config-schema.ts', import.meta.url)),

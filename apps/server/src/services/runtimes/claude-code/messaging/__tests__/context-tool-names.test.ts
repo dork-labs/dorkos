@@ -461,6 +461,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // here rather than something a `>` bound silently absorbs.
     expect(modules).toEqual([
       'agent-context.ts',
+      'asar-path.ts',
       'derive-title.ts',
       'gen-ui-context.ts',
       'mcp-content.ts',

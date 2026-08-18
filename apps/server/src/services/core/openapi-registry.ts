@@ -99,6 +99,7 @@ import {
   PostThreadReplyRequestSchema,
   PostToRoomRequestSchema,
   RoomAttachmentUploadResponseSchema,
+  RoomSessionsResponseSchema,
   PostToRoomResponseSchema,
   RoomEntryListResponseSchema,
   RoomEventSchema,
@@ -3350,6 +3351,27 @@ registry.registerPath({
     200: {
       description: 'The room and its members',
       content: { 'application/json': { schema: RoomWithRosterSchema } },
+    },
+    404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/sessions',
+  tags: ['Rooms'],
+  summary: "Where each of a room's agents does its work",
+  description:
+    'One `authorId → sessionId` pair per agent that has answered in this room, and nothing else — no session content, no working directory, no status. The narrowness is the point: this exists so a cockpit can turn "Meeting Notes is working on it" into a link you can follow, and a route that answered more would be a second way to read a session, reached through a room. A room the caller cannot see answers 404, exactly as reading the room does. **Only a person may ask** — a caller the server resolves as an agent (one presenting `X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`, because an agent enumerating its room-mates\' sessions is arbitration this domain has declined.',
+  request: { params: RoomIdParams },
+  responses: {
+    200: {
+      description: 'The bindings, one per agent that has answered here',
+      content: { 'application/json': { schema: RoomSessionsResponseSchema } },
+    },
+    403: {
+      description: 'The caller resolved to an agent, which may not ask this (`PEOPLE_ONLY`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: roomNotFound,
   },

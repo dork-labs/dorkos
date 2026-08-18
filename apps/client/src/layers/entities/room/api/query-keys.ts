@@ -65,4 +65,12 @@ export const roomKeys = {
   threads: () => ['rooms', 'threads'] as const,
   /** One room's history. */
   entries: (roomId: string) => ['rooms', 'entries', roomId] as const,
+  /**
+   * Where each of one room's agents does its work.
+   *
+   * Under `roomKeys` rather than at a bare `['room-sessions', roomId]` — one
+   * factory is how every other room read is spelled, and a second spelling is
+   * one more thing an invalidation has to remember exists.
+   */
+  sessions: (roomId: string) => ['rooms', 'sessions', roomId] as const,
 };

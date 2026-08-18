@@ -130,7 +130,7 @@ describe('what a Codex turn carries', () => {
   function makeRuntime(opts: { mesh?: AgentRegistryPort | null } = {}): CodexRuntime {
     const runtime = new CodexRuntime({
       threadMap: new CodexThreadMap(db),
-      binaryPath: null,
+      resolveBinary: async () => '/bin/codex',
       defaultCwd: agentDir,
     });
     const mesh = opts.mesh === undefined ? meshWithAgent(agentDir) : opts.mesh;

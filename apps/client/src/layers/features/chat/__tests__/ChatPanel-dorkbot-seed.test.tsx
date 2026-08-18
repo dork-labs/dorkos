@@ -71,7 +71,6 @@ vi.mock('../ui/MessageList', () => ({
 vi.mock('../ui/ChatMessageArea', () => ({
   ChatMessageArea: () => <div data-testid="chat-message-area" />,
 }));
-vi.mock('../ui/status/ChatStatusStrip', () => ({ ChatStatusStrip: () => null }));
 vi.mock('../ui/tasks/TaskListPanel', () => ({ TaskListPanel: () => null }));
 vi.mock('../ui/CelebrationOverlay', () => ({ CelebrationOverlay: () => null }));
 vi.mock('@/layers/features/status', () => ({

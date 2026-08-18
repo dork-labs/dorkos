@@ -64,24 +64,29 @@ test.describe('Rooms — the room says who is working on it', () => {
     });
 
     await expect(roomsPage.presenceLine).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-    await expect(roomsPage.presenceLine).toHaveText(
-      new RegExp(`${ana.name} is working on it · \\d+s`)
-    );
+    // The sentence and no number, because the claim is seconds old. A timer that
+    // starts at `0s` draws the eye for nothing, so the line waits ten seconds
+    // before it puts one up (`unified-conversation` design record; the constant
+    // is `LANE_TIMER_FLOOR_MS`). This assertion used to require `· \d+s` here
+    // and is the one place in this suite the live lane changed what a person
+    // sees rather than only where they see it.
+    await expect(roomsPage.presenceLine).toHaveText(`${ana.name} is working on it`);
     // The sentence, without the number that ticks: the region says what happened
     // once, rather than re-reading itself every second.
     await expect(roomsPage.presenceAnnouncer).toHaveText(`${ana.name} is working on it`);
 
     // It counts up on its own: nothing else is published between here and the
-    // assertion, so a line that only redrew on an event would sit at 0s.
+    // assertion, so a line that only redrew on an event would never show one at
+    // all. Ten past the floor, so the number has to have arrived AND advanced.
     await expect
       .poll(
         async () =>
           Number(/· (\d+)s/.exec((await roomsPage.presenceLine.textContent()) ?? '')?.[1] ?? 0),
         {
-          timeout: 15_000,
+          timeout: 20_000,
         }
       )
-      .toBeGreaterThanOrEqual(3);
+      .toBeGreaterThanOrEqual(11);
 
     await publishPresence(page, {
       authorId: anaAuthorId,

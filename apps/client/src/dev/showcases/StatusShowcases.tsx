@@ -9,7 +9,6 @@ import {
 import { cn } from '@/layers/shared/lib';
 import { AgentActivityBadge } from '@/layers/features/dashboard-sidebar';
 import { StreamingText } from '@/layers/features/chat/ui/message/StreamingText';
-import { ChatStatusStrip } from '@/layers/features/chat/ui/status/ChatStatusStrip';
 import { ErrorMessageBlock } from '@/layers/features/chat/ui/message/ErrorMessageBlock';
 import { UsageStatusItem } from '@/layers/features/status';
 import { TaskListPanel } from '@/layers/features/chat/ui/tasks/TaskListPanel';
@@ -90,13 +89,10 @@ npm install jsonwebtoken @types/jsonwebtoken
 npm run test -- --watch
 \`\`\``;
 
-/** Status-related component showcases: StreamingText, ChatStatusStrip, ErrorMessageBlock (transport error), TaskListPanel. */
+/** Status-related component showcases: StreamingText, ErrorMessageBlock (transport error), TaskListPanel. */
 export function StatusShowcases() {
   const [taskCollapsed, setTaskCollapsed] = useState(false);
   const [taskCollapsed2, setTaskCollapsed2] = useState(true);
-
-  // Stable timestamp computed once on mount via useState initializer (useMemo triggers react-hooks/purity)
-  const [streamStart] = useState(() => Date.now());
 
   return (
     <>
@@ -187,118 +183,6 @@ export function StatusShowcases() {
         <ShowcaseLabel>Streaming cursor active</ShowcaseLabel>
         <ShowcaseDemo>
           <StreamingText content="Working on it..." isStreaming />
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
-        title="ChatStatusStrip"
-        description="Unified status strip — one morphing container showing what the session is doing, system status, and completion summaries."
-      >
-        <ShowcaseLabel>Streaming — naming the tool the session is running</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ChatStatusStrip
-            status="streaming"
-            streamStartTime={streamStart}
-            estimatedTokens={1250}
-            systemStatus={null}
-            activity={{ toolName: 'Bash', target: 'pnpm verify' }}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Streaming — an MCP tool, named by its server</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ChatStatusStrip
-            status="streaming"
-            streamStartTime={streamStart}
-            estimatedTokens={900}
-            systemStatus={null}
-            activity={{ toolName: 'mcp__slack__send_message' }}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Streaming — nothing known yet, so it says only that</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ChatStatusStrip
-            status="streaming"
-            streamStartTime={streamStart}
-            estimatedTokens={120}
-            systemStatus={null}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Waiting for approval</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ChatStatusStrip
-            status="streaming"
-            streamStartTime={streamStart - 5000}
-            estimatedTokens={800}
-            isWaitingForUser
-            waitingType="approval"
-            systemStatus={null}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Waiting for question</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ChatStatusStrip
-            status="streaming"
-            streamStartTime={streamStart - 3000}
-            estimatedTokens={600}
-            isWaitingForUser
-            waitingType="question"
-            systemStatus={null}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Operation progress: compaction (indeterminate bar)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ChatStatusStrip
-            status="streaming"
-            streamStartTime={streamStart}
-            estimatedTokens={0}
-            systemStatus={null}
-            operationProgress={{
-              operation: 'compaction',
-              determinate: false,
-              message: 'Compacting context…',
-            }}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Operation progress: determinate bar (percent)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ChatStatusStrip
-            status="streaming"
-            streamStartTime={streamStart}
-            estimatedTokens={0}
-            systemStatus={null}
-            operationProgress={{
-              operation: 'compaction',
-              determinate: true,
-              percent: 65,
-              message: 'Compacting context…',
-            }}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>System message: session hook (preempts the activity mid-turn)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ChatStatusStrip
-            status="streaming"
-            streamStartTime={streamStart}
-            estimatedTokens={0}
-            systemStatus={{ message: 'Running hook "format"…' }}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Idle (renders nothing — height 0)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ChatStatusStrip
-            status="idle"
-            streamStartTime={null}
-            estimatedTokens={0}
-            systemStatus={null}
-          />
         </ShowcaseDemo>
       </PlaygroundSection>
 

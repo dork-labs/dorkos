@@ -343,6 +343,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // An idle room by default: a halt that stopped nothing is the shape a test
     // gets unless it is specifically about a room with turns in flight.
     haltRoom: vi.fn().mockResolvedValue({ stopped: 0 }),
+    // No bindings by default: a room whose agents have never answered is the
+    // shape a test gets unless it is specifically about where the work runs.
+    listRoomSessions: vi.fn().mockResolvedValue({ bindings: [] }),
     // Answers as if the emoji went ON, and hands back the shipped quick row —
     // the shape a capsule reads without a second request.
     toggleReaction: vi.fn().mockResolvedValue({
@@ -651,9 +654,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getMeshAgentHealth: vi.fn().mockResolvedValue(undefined),
     sendMeshHeartbeat: vi.fn().mockResolvedValue({ success: true }),
     // Mesh Topology
-    getMeshTopology: vi
-      .fn()
-      .mockResolvedValue({ callerNamespace: '*', namespaces: [], accessRules: [] }),
+    getMeshTopology: vi.fn().mockResolvedValue({
+      callerNamespace: '*',
+      namespaces: [],
+      accessRules: [],
+      openMesh: false,
+    }),
     updateMeshAccessRule: vi.fn().mockResolvedValue({
       sourceNamespace: '',
       targetNamespace: '',

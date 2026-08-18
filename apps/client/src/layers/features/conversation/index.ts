@@ -32,6 +32,26 @@ export type {
 } from './model/target';
 export type { BodyRenderContext, ConversationBodyRenderer } from './model/body-renderer';
 export type { ConversationRow } from './lib/row-kinds';
+export {
+  deriveLaneState,
+  laneElapsed,
+  LANE_TIMER_FLOOR_MS,
+  NO_ASKS,
+  NO_PRESENCE,
+} from './model/lane-state';
+export type {
+  LaneAsk,
+  LaneOperationProgress,
+  LanePresenceAuthor,
+  LaneState,
+  LaneStateInput,
+  LaneTurn,
+} from './model/lane-state';
+export type { LaneScope } from './ui/LiveLane';
+export type { LivePeekRow } from './ui/LivePeek';
+// `LiveLaneProps` and `LivePeekProps` stay inside the slice: a host writes
+// `<Conversation.LiveLane …>` and TypeScript infers them, so exporting the two
+// interfaces would be two more things to keep in step for no reader's benefit.
 export { messageItem, toolStatus } from './ui/message/message-variants';
 export { MessageAuthorAvatar } from './ui/message/MessageAuthorAvatar';
 export { formatTime } from './lib/format-entry-time';
@@ -48,6 +68,8 @@ export { attachmentsSummary } from './ui/message/MessageAttachments';
 // nine more things to keep in step for no reader's benefit.
 
 import { ConversationRoot } from './ui/ConversationRoot';
+import { LiveLane } from './ui/LiveLane';
+import { LivePeek } from './ui/LivePeek';
 import { MessageActions } from './ui/message/MessageActions';
 import { MessageAttachments } from './ui/message/MessageAttachments';
 import { MessageAuthor } from './ui/message/MessageAuthor';
@@ -59,16 +81,18 @@ import { MessageRoot } from './ui/message/MessageRoot';
 /**
  * The conversation compound, as a host composes it.
  *
- * `Root` is the whole of it in P1 — `LiveLane` lands in P2, and `Header`,
- * `Timeline`, `Composer` and `Footer` in P4. It is a namespace object rather
- * than six loose exports for the reason `Composer.*` already is one: a host
- * writes `<Conversation.Timeline>` beside `<Conversation.Composer>` and reads
- * the tree it is building. It is also the ONLY way in — the provider is not
- * exported loose beside it, so there is one spelling of `<Conversation.Root>`
- * in the codebase rather than two.
+ * `Root` and `LiveLane` are the whole of it after P2 — `Header`, `Timeline`,
+ * `Composer` and `Footer` land in P4. It is a namespace object rather than six
+ * loose exports for the reason `Composer.*` already is one: a host writes
+ * `<Conversation.Timeline>` beside `<Conversation.Composer>` and reads the tree
+ * it is building. It is also the ONLY way in — neither the provider nor the lane
+ * is exported loose beside it, so there is one spelling of each in the codebase
+ * rather than two.
  */
 export const Conversation = {
   Root: ConversationRoot,
+  LiveLane,
+  LivePeek,
 };
 
 /**

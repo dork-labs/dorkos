@@ -896,36 +896,51 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "peek": {
+      "specFile": "tests/conversation/peek.spec.ts",
+      "feature": "conversation",
+      "description": "two agents working: the peek names both, jumps to what one is answering, and stops the room honestly",
+      "lastRun": "2026-08-18T07:13:25.898Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 2,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/client/src/layers/features/conversation/ui/LivePeek.tsx",
+        "apps/client/src/layers/widgets/room-view/ui/RoomLiveLane.tsx"
+      ],
+      "lastModified": ""
+    },
+    "lane-no-shift": {
+      "specFile": "tests/conversation/lane-no-shift.spec.ts",
+      "feature": "conversation",
+      "description": "a room scrolled back to the middle stays exactly where it was when an agent picks something up",
+      "lastRun": "2026-08-18T07:13:25.898Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 2,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/client/src/layers/features/conversation/ui/LiveLane.tsx",
+        "apps/client/src/layers/widgets/room-view/ui/RoomSurface.tsx"
+      ],
+      "lastModified": ""
+    },
+    "multi-window": {
+      "specFile": "tests/streams/multi-window.spec.ts",
+      "feature": "streams",
+      "description": "stay responsive with four windows open on different sessions",
+      "lastRun": "2026-08-18T05:59:42.597Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-04T10-42-18",
-      "timestamp": "2026-08-04T10:42:18.727Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 43738
-    },
-    {
-      "id": "2026-08-04T15-10-31",
-      "timestamp": "2026-08-04T15:10:31.002Z",
-      "total": 8,
-      "passed": 4,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 140023
-    },
-    {
-      "id": "2026-08-04T15-11-12",
-      "timestamp": "2026-08-04T15:11:12.653Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 19613
-    },
     {
       "id": "2026-08-04T15-13-07",
       "timestamp": "2026-08-04T15:13:07.550Z",
@@ -1798,6 +1813,33 @@
       "failed": 0,
       "skipped": 0,
       "duration": 37847
+    },
+    {
+      "id": "2026-08-18T05-59-42",
+      "timestamp": "2026-08-18T05:59:42.597Z",
+      "total": 78,
+      "passed": 77,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 98719
+    },
+    {
+      "id": "2026-08-18T06-01-58",
+      "timestamp": "2026-08-18T06:01:58.156Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 30160
+    },
+    {
+      "id": "2026-08-18T07-13-25",
+      "timestamp": "2026-08-18T07:13:25.898Z",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 210147
     }
   ]
 }

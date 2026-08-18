@@ -21,7 +21,7 @@ import { configManager } from '../../core/config-manager.js';
 import { credentialProvider, type CredentialProvider } from '../../core/credential-provider.js';
 import { logger } from '../../../lib/logger.js';
 import { resolveRuntimeBinary } from '../shared/resolve-binary.js';
-import { runBinaryProbe, findBinaryOnPath } from '../shared/run-probe.js';
+import { runBinaryProbe, findBinaryOnPath, logProbeFailure } from '../shared/run-probe.js';
 import {
   OPENCODE_PACKAGE_VERSION,
   ensureProvisionedOpenCodeVersion,
@@ -161,8 +161,10 @@ async function checkCliBinary(binary: string | null): Promise<DependencyCheck> {
       const version = await runOpenCode(binary, ['--version']);
       const requiredVersion = warnIfVersionDrifted(binary, version);
       return { name, description, status: 'satisfied', version, requiredVersion };
-    } catch {
-      // Binary resolved but failed to launch — fall through to "missing".
+    } catch (err) {
+      // Binary resolved but failed to launch — fall through to "missing", with
+      // one log line saying why (DOR-1334 / F3).
+      logProbeFailure(name, binary, err);
     }
   }
 
@@ -279,8 +281,10 @@ async function checkCliAuth(binary: string | null): Promise<DependencyCheck> {
         description: 'Signed in with the OpenCode CLI.',
         status: 'satisfied',
       };
-    } catch {
-      // Non-zero exit — the CLI could not report auth state. Fall through.
+    } catch (err) {
+      // Non-zero exit — the CLI could not report auth state. Fall through,
+      // logged once so "missing" is never unexplainable (DOR-1334 / F3).
+      logProbeFailure(AUTH_CHECK_NAME, binary, err);
     }
   }
 
