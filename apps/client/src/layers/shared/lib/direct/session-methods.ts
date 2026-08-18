@@ -20,6 +20,7 @@ import type {
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
+import type { PendingInteractionsResponse } from '@dorkos/shared/interaction-events';
 import type { UiActionRequest, MessageDisposition, QueuedMessage } from '@dorkos/shared/schemas';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import type { DirectTransportServices } from './services';
@@ -272,6 +273,17 @@ export function createDirectSessionMethods(
     },
 
     // ── Tool Approval ───────────────────────────────────────────────────────
+
+    /**
+     * Every prompt the embedded fleet is parked on.
+     *
+     * The in-process twin of `GET /api/sessions/pending-interactions`, reading
+     * the same projector registry the HTTP route reads. No `warnings`: there is
+     * one runtime here, so there is no other source to degrade.
+     */
+    async listPendingInteractions(): Promise<PendingInteractionsResponse> {
+      return { interactions: services.pendingInteractions.list() };
+    },
 
     async approveTool(
       sessionId: string,

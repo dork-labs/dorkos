@@ -33,6 +33,7 @@ import {
   UpdateQueuedMessageResponseSchema,
   SessionQueueResponseSchema,
 } from '@dorkos/shared/schemas';
+import type { PendingInteractionsResponse } from '@dorkos/shared/interaction-events';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_REQUEST_TIMEOUT_MS } from '@dorkos/shared/command-intents';
@@ -400,6 +401,16 @@ export function createSessionMethods(
     },
 
     // ── Tool Approval ──────────────────────────────────────────────────────
+
+    /**
+     * Every prompt across the fleet that is waiting on a person.
+     *
+     * Read once per window mount and on reconnect, never polled: after the seed,
+     * `interaction_pending` and `interaction_resolved` keep the list current.
+     */
+    listPendingInteractions(): Promise<PendingInteractionsResponse> {
+      return fetchJSON<PendingInteractionsResponse>(baseUrl, '/sessions/pending-interactions');
+    },
 
     approveTool(
       sessionId: string,

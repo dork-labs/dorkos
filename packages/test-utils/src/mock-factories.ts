@@ -192,6 +192,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     fetchMcpAppResource: vi
       .fn()
       .mockResolvedValue({ mimeType: 'text/html', text: '', permissions: [] }),
+    // Nothing waiting on anybody, by default: a test that is about a prompt
+    // seeds its own, and every other test mounts a cockpit with a quiet tray.
+    listPendingInteractions: vi.fn().mockResolvedValue({ interactions: [] }),
     approveTool: vi.fn(),
     denyTool: vi.fn(),
     batchApprove: vi.fn().mockResolvedValue({ results: [] }),

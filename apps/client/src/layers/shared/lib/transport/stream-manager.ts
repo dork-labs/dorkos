@@ -232,6 +232,16 @@ export const GENERIC_EVENTS = [
   'approval_pending',
   'approval_resolved',
   'approval_grant_changed',
+  // An agent is parked on something only a person can answer — a tool approval,
+  // a question, or an MCP elicitation — and the answer is wanted from wherever
+  // the reader happens to be, not only inside that session. Raised once when the
+  // prompt appears and once when it is answered, cancelled or times out; the
+  // countdown in between is local, ticked from the start time inside the
+  // interaction. See `specs/unified-conversation` §3.
+  // (No apostrophes here, for the reason the rooms block above gives: the guard
+  // test parses this block with a single-quote regex.)
+  'interaction_pending',
+  'interaction_resolved',
   // Rooms (spec `rooms`, ADR 260726-170125). The ENTRIES of a room ride that
   // room on its own durable stream (`/api/rooms/:id/events`); these seven are
   // the global signals for a reader NOT connected to it — the room list
@@ -296,8 +306,14 @@ function sessionStreamUrl(
 }
 
 /**
- * Connection-only manager for the two durable streams. Single-consumer:
+ * Connection-only manager for this window's durable streams. Single-consumer:
  * {@link setListeners} replaces the listener set (the binding wires the store).
+ *
+ * The budget is THREE connections, not two: the attached session
+ * ({@link attachedSessionId}), the global list stream, and an optional pinned
+ * (picture-in-picture) session ({@link pinnedSessionId}) that stays live across
+ * active-session switches. The two slots share one connection while they name
+ * the same session, which is why the count reads as two most of the time.
  */
 export class StreamManager {
   private readonly createConnection: CreateConnection;

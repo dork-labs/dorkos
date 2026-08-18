@@ -27,6 +27,7 @@ import type {
   ReloadPluginsResult,
   ModelOption,
   SubagentInfo,
+  PendingInteractionDTO,
 } from '@dorkos/shared/types';
 
 export interface DirectTransportServices {
@@ -115,6 +116,23 @@ export interface DirectTransportServices {
       /** Trailing instructions after the intent token (see `Transport.runCommandIntent`). */
       instructions?: string;
     }): Promise<{ accepted: boolean }>;
+  };
+  /**
+   * Every prompt the embedded fleet is parked on, read straight out of the
+   * in-process projector registry.
+   *
+   * Required rather than optional, and that is the point: the embed implements
+   * all six ways of ANSWERING a prompt for real, so a listing that quietly
+   * answered "nothing is waiting" would be the one half-working half — a person
+   * in Obsidian would only ever find a prompt by opening the session that raised
+   * it, which is the hunting this whole feature removes. The host wires
+   * `listPendingInteractionsAcrossSessions` from `@dorkos/server/services/session`.
+   *
+   * Room bindings are deliberately absent: the embed has no rooms, so no
+   * envelope it produces carries a `roomId`.
+   */
+  pendingInteractions: {
+    list(): Array<{ sessionId: string; cwd: string; interaction: PendingInteractionDTO }>;
   };
   transcriptReader: {
     listSessions(vaultRoot: string): Promise<Session[]>;
