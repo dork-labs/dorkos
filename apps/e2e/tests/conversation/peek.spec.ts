@@ -89,7 +89,12 @@ test.describe('Conversation — the peek behind the live lane', () => {
     await expect(rows.nth(0)).toContainText(ana.name);
     await expect(rows.nth(0)).toContainText('1m');
     await expect(rows.nth(1)).toContainText(bo.name);
-    await expect(rows.nth(1)).toContainText('20s');
+    // Bo's claim was published twenty seconds old and has been ticking on the
+    // client's clock ever since — through the navigation, the stream tap and
+    // the click above. On a busy CI runner that is a few seconds, not zero, so
+    // the row is asserted to read twenty-something up to fifty-something
+    // seconds rather than the literal `20s` (which failed the merge queue once).
+    await expect(rows.nth(1)).toContainText(/\b[2-5]\ds\b/);
 
     // No per-row Stop with two agents working, and one footer action that says
     // exactly what it will do. A button never stops work you did not mean to.
