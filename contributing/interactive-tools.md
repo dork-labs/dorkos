@@ -53,7 +53,7 @@ useChatSession processes event
   v
 AssistantMessageContent renders interactive component
   |
-  |  QuestionPrompt or ToolApproval
+  |  QuestionPrompt or ApprovalPrompt
   |
   v
 User responds (clicks button / selects option)
@@ -211,7 +211,7 @@ onDecided?.(answers); // Optimistically clear waiting state, with the canonical 
 
 `onDecided` receives the canonical (index-keyed) answers so the chat model can persist them onto the tool-call part (`part.answers = answers`, see `markToolCallResponded` in `model/use-session-submit.ts`) — this keeps the answered row specific even if the message remounts before history reloads.
 
-Both `QuestionPrompt` and `ToolApproval` treat HTTP 409 (`INTERACTION_ALREADY_RESOLVED`) as success — this handles the race condition where the SDK resolves the interaction before the client's HTTP request arrives.
+Both `QuestionPrompt` and `ApprovalPrompt` treat HTTP 409 (`INTERACTION_ALREADY_RESOLVED`) as success — this handles the race condition where the SDK resolves the interaction before the client's HTTP request arrives.
 
 **Single vs. multi-question UX.** A single-question prompt renders the one question directly with a Submit button. A multi-question prompt instead renders a step indicator (the question's `header`, falling back to `Question N of M`) plus Back/Next navigation, showing one question at a time. `submit()` advances to the next question on each Enter and only calls the transport once the final question is reached, so the user answers the questions sequentially before anything is submitted.
 
@@ -374,18 +374,18 @@ case 'approval_required': {
 }
 ```
 
-**4. `AssistantMessageContent` renders `ToolApproval`**
+**4. `AssistantMessageContent` renders `ApprovalPrompt`**
 
 ```typescript
 // ui/message/AssistantMessageContent.tsx
 if (tc.interactiveType === 'approval') {
-  return <ToolApproval sessionId={sessionId} toolCallId={tc.toolCallId} toolName={tc.toolName} input={tc.input} />;
+  return <ApprovalPrompt sessionId={sessionId} toolCallId={tc.toolCallId} toolName={tc.toolName} input={tc.input} />;
 }
 ```
 
 **5. User clicks Approve, Always Allow, or Deny**
 
-`ToolApproval` shows the tool name, pretty-printed input JSON, SDK context fields (title, description, blocked path, decision reason), risk-level visual differentiation (high/medium/low Shield icon colors), and up to three buttons. On click:
+`ApprovalPrompt` shows the tool name, pretty-printed input JSON, SDK context fields (title, description, blocked path, decision reason), risk-level visual differentiation (high/medium/low Shield icon colors), and up to three buttons. On click:
 
 ```typescript
 // Approve
@@ -404,7 +404,7 @@ await transport.denyTool(sessionId, toolCallId, reason);
 onDecided?.();
 ```
 
-When multiple tool approvals are pending concurrently, a `BatchApprovalBar` appears allowing the user to approve or deny all queued approvals in a single action:
+When several tool approvals are pending at once, they collapse into one **burst card** (`AskStack`, `features/ask`) whose Allow all / Deny all answer the lot in a single call. It replaced `BatchApprovalBar` in DOR-1330; the two transport calls are unchanged:
 
 ```typescript
 // Batch approve all pending
@@ -418,7 +418,7 @@ await transport.batchDenyTool(sessionId, toolCallIds);
 
 After the user clicks Approve or Deny, the transport call resolves the server-side promise — but the server's `tool_result` event can take seconds for slow tools (e.g., Bash). Without an optimistic update, the `InferenceIndicator` would stay stuck on "Waiting for your approval" during that gap.
 
-The fix: `ToolApproval` receives an `onDecided` callback (threaded from `useChatSession` → `ChatPanel` → `MessageList` → `SessionMessage` → `MessageContext` → `AssistantMessageContent` → `ToolApproval`). This calls `markToolCallResponded(toolCallId)`, which immediately sets the tool call part's status from `'pending'` to `'running'` in the message state:
+The fix: `ApprovalPrompt` receives an `onDecided` callback (threaded from `useChatSession` → `ChatPanel` → `MessageList` → `SessionMessage` → `MessageContext` → `AssistantMessageContent` → `ApprovalPrompt`). This calls `markToolCallResponded(toolCallId)`, which immediately sets the tool call part's status from `'pending'` to `'running'` in the message state:
 
 ```typescript
 // useChatSession.ts — markToolCallResponded
@@ -699,7 +699,7 @@ Create a component in `apps/client/src/layers/features/chat/ui/` that:
 - Calls the transport method on user action
 - Shows a collapsed "completed" state after submission
 
-Follow the patterns in `QuestionPrompt.tsx` and `ToolApproval.tsx`.
+Follow the patterns in `QuestionPrompt.tsx` and `ApprovalPrompt.tsx`.
 
 ### Step 7: Wire into `AssistantMessageContent`
 
@@ -928,7 +928,7 @@ The `turn_end` reconcile reloads canonical history and clears the in-progress tu
 
 ### Timeout Visibility
 
-The `ToolApproval` component makes the server-side timeout visible to users via a countdown timer. The `approval_required` event on the session stream carries server-authoritative `startedAt`/`remainingMs` fields, which flow through the stream event handler to the component.
+The `ApprovalPrompt` component makes the server-side timeout visible to users via a countdown timer. The `approval_required` event on the session stream carries server-authoritative `startedAt`/`remainingMs` fields, which flow through the stream event handler to the component.
 
 **Visual indicators:**
 
@@ -943,7 +943,7 @@ The `ToolApproval` component makes the server-side timeout visible to users via 
 - Screen reader announcements via `aria-live="assertive"` fire only at threshold crossings (2 min, 1 min, timeout)
 - `prefers-reduced-motion` respected via `motion-safe:` Tailwind prefix — animation disabled, color transitions remain
 
-**Data flow:** Server `handleToolApproval()` → `approval_required` event on the session stream (server-authoritative `startedAt`/`remainingMs`, seeded from `SESSIONS.INTERACTION_TIMEOUT_MS`) → stream-event-handler passes to tool call part → `ToolApproval` renders the countdown, resuming at the true offset on recovery.
+**Data flow:** Server `handleToolApproval()` → `approval_required` event on the session stream (server-authoritative `startedAt`/`remainingMs`, seeded from `SESSIONS.INTERACTION_TIMEOUT_MS`) → stream-event-handler passes to tool call part → `ApprovalPrompt` renders the countdown, resuming at the true offset on recovery.
 
 ### Recovering Pending Interactions
 

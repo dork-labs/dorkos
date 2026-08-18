@@ -130,6 +130,10 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="border-border/60 w-full rounded-lg border border-dashed p-4">
           <PinnedTriageHeaderView
+            asks={[]}
+            settlingAsks={[]}
+            askAgentNames={{}}
+            onOpenSession={() => {}}
             approvals={[]}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -143,6 +147,10 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
+            settlingAsks={[]}
+            askAgentNames={{}}
+            onOpenSession={() => {}}
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -155,6 +163,10 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
+            settlingAsks={[]}
+            askAgentNames={{}}
+            onOpenSession={() => {}}
             approvals={[]}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -167,6 +179,10 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
+            settlingAsks={[]}
+            askAgentNames={{}}
+            onOpenSession={() => {}}
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -182,6 +198,10 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
+            settlingAsks={[]}
+            askAgentNames={{}}
+            onOpenSession={() => {}}
             approvals={APPROVALS_OVERFLOWING}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -196,6 +216,10 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
+            settlingAsks={[]}
+            askAgentNames={{}}
+            onOpenSession={() => {}}
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -212,6 +236,10 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
+            settlingAsks={[]}
+            askAgentNames={{}}
+            onOpenSession={() => {}}
             approvals={[]}
             approvalsUnavailable
             onRetryApprovals={() => {}}

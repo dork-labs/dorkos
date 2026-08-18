@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { ShieldAlert, ShieldCheck, TriangleAlert } from 'lucide-react';
 import {
@@ -9,7 +10,13 @@ import {
 } from '@/layers/shared/ui';
 import { useEventStream } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
-import { usePendingApprovals } from '@/layers/entities/attention';
+import {
+  useAskAgentNames,
+  usePendingApprovals,
+  usePendingInteractions,
+  useSettlingAsks,
+} from '@/layers/entities/attention';
+import { AskList, useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
 import {
   ApprovalList,
   ApprovalsUnavailable,
@@ -30,18 +37,46 @@ const DISPLAY_CAP = 9;
  * Carries the count and what clicking does, because the visible label is trimmed
  * to an icon and a number on narrow screens.
  *
- * @param count - How many approvals are waiting.
+ * **It does not call everything an approval.** Two different objects are counted
+ * here — a capability approval, and the three kinds of prompt an agent parks on
+ * — and a question is not a permission request. When the queue is only prompts
+ * the sentence says so; when it is mixed it names the neutral thing both are.
+ *
+ * @param approvals - Capability approvals waiting on a decision.
+ * @param asks - Prompts agents are parked on.
  */
-function waitingLabel(count: number): string {
-  return count === 1
-    ? '1 request needs your approval. Open to answer it.'
-    : `${count} requests need your approval. Open to answer them.`;
+function waitingLabel(approvals: number, asks: number): string {
+  const total = approvals + asks;
+  if (approvals === 0 && asks > 0) {
+    return asks === 1
+      ? '1 agent is waiting on your answer. Open to answer it.'
+      : `${asks} agents are waiting on your answer. Open to answer them.`;
+  }
+  if (asks === 0) {
+    return total === 1
+      ? '1 request needs your approval. Open to answer it.'
+      : `${total} requests need your approval. Open to answer them.`;
+  }
+  return `${total} things are waiting on you. Open to answer them.`;
 }
 
-/** The one-line summary inside the panel. */
-function waitingSummary(count: number): string {
-  const subject = count === 1 ? '1 request is' : `${count} requests are`;
-  return `${subject} waiting for your answer. Nothing runs until you decide.`;
+/**
+ * The one-line summary inside the panel, under the same rule.
+ *
+ * @param approvals - Capability approvals waiting on a decision.
+ * @param asks - Prompts agents are parked on.
+ */
+function waitingSummary(approvals: number, asks: number): string {
+  const total = approvals + asks;
+  if (approvals === 0 && asks > 0) {
+    const subject = asks === 1 ? '1 agent is' : `${asks} agents are`;
+    return `${subject} waiting on your answer before carrying on.`;
+  }
+  if (asks === 0) {
+    const subject = total === 1 ? '1 request is' : `${total} requests are`;
+    return `${subject} waiting for your answer. Nothing runs until you decide.`;
+  }
+  return `${total} things are waiting for your answer. Nothing runs until you decide.`;
 }
 
 /**
@@ -107,6 +142,22 @@ function trustedLabel(count: number): string {
  */
 export function ApprovalsIndicator() {
   const { approvals, isError, retry } = usePendingApprovals();
+  // The other half of "waiting on you": the prompts agents are parked on. Both
+  // are counted by the one pill, because a person does not hold two queues.
+  const { interactions: asks } = usePendingInteractions();
+  // Answered prompts, still on screen saying how they ended. They are NOT
+  // counted — nothing is waiting on them — but the pill has to stay mounted
+  // while one is being said, or the receipt is torn away in the frame it
+  // appears and the answer looks like a disappearance.
+  const settling = useSettlingAsks();
+  // What to call each asking agent. The wire carries ids only, so the roster is
+  // joined here — the same join the sidebar's rows make.
+  const agentNames = useAskAgentNames(asks);
+  const navigate = useNavigate();
+  // `⌘⇧Y`, registered here because this widget is on every route and the tray
+  // it opens is the surface that exists everywhere.
+  useAskShortcut();
+  const trayRequest = useAskTrayRequest();
   const {
     permissions,
     isError: permissionsUnreadable,
@@ -115,14 +166,34 @@ export function ApprovalsIndicator() {
   const { connectionState } = useEventStream();
   const [open, setOpen] = useState(false);
 
-  const count = approvals.length;
+  // Somebody pressed the shortcut with nothing on screen to jump to. Opening
+  // here is the whole of "opens whatever surface holds it" for a route that was
+  // showing none of them.
+  //
+  // Adjusted during RENDER rather than in an effect — the shape the live lane
+  // uses for the same class of problem, and the reason is the same: a `setState`
+  // inside an effect is the cascading render the lint rule is right to object
+  // to, and React re-runs this component before committing anything, so the
+  // correction costs a render pass rather than a frame of the wrong thing.
+  const [seenRequest, setSeenRequest] = useState(trayRequest);
+  if (seenRequest !== trayRequest) {
+    setSeenRequest(trayRequest);
+    setOpen(true);
+  }
+
+  const count = approvals.length + asks.length;
   const trustedCount = permissions.length;
   // A failed read while the whole link is down is not news about approvals — it is
   // the same outage the connection item already reports. Staying quiet keeps one
   // amber marker in the header meaning exactly one thing: an agent is blocked.
   const linkDown = connectionState !== 'connected';
   const unreadable = count === 0 && isError && !linkDown;
-  const quiet = count === 0 && trustedCount === 0 && !unreadable && !permissionsUnreadable;
+  const quiet =
+    count === 0 &&
+    settling.length === 0 &&
+    trustedCount === 0 &&
+    !unreadable &&
+    !permissionsUnreadable;
   // Trust that is live is worth showing and is NOT worth an alarm: nobody is
   // blocked and nothing is waiting. It takes the amber pill only when something
   // actually needs answering, and reads as a quiet neutral marker otherwise.
@@ -134,7 +205,7 @@ export function ApprovalsIndicator() {
       ? 'DorkOS could not check which standing permissions are live. Open for details.'
       : trustedOnly
         ? trustedLabel(trustedCount)
-        : waitingLabel(count);
+        : waitingLabel(approvals.length, asks.length);
 
   return (
     <>
@@ -209,10 +280,17 @@ export function ApprovalsIndicator() {
                 </>
               ) : (
                 <>
-                  <span className="tabular-nums">
-                    {count > DISPLAY_CAP ? `${DISPLAY_CAP}+` : count}
+                  {/* Never a zero. The pill stays mounted for the second a
+                      receipt is still being said, and "0 waiting on you" is a
+                      sentence about nothing. */}
+                  {count > 0 && (
+                    <span className="tabular-nums">
+                      {count > DISPLAY_CAP ? `${DISPLAY_CAP}+` : count}
+                    </span>
+                  )}
+                  <span className="hidden sm:inline">
+                    {count > 0 ? 'waiting on you' : 'answered'}
                   </span>
-                  <span className="hidden sm:inline">waiting on you</span>
                 </>
               )}
             </motion.button>
@@ -238,7 +316,9 @@ export function ApprovalsIndicator() {
                     Waiting On You
                   </h2>
                   {!unreadable && (
-                    <p className="text-muted-foreground text-xs md:mt-1">{waitingSummary(count)}</p>
+                    <p className="text-muted-foreground text-xs md:mt-1">
+                      {waitingSummary(approvals.length, asks.length)}
+                    </p>
                   )}
                 </div>
               )}
@@ -246,7 +326,25 @@ export function ApprovalsIndicator() {
                   results are still on screen — the list may be out of date, and
                   saying so beats a stale count nobody thinks to question. */}
               {isError && <ApprovalsUnavailable onRetry={retry} />}
-              {count > 0 && <ApprovalList approvals={approvals} />}
+              {/* The prompts first: their window is ten minutes and a
+                  capability approval's is two hours, so this IS time-left
+                  order — and the two lists stay separate objects, which is the
+                  decision §4.3 makes and this renders. */}
+              {(asks.length > 0 || settling.length > 0) && (
+                <AskList
+                  asks={asks}
+                  agentNames={agentNames}
+                  // The tray is the one surface that is never the session, so
+                  // "Open session" is the one action it owes a reader who wants
+                  // the whole conversation rather than the one question.
+                  onOpenSession={(sessionId) => {
+                    setOpen(false);
+                    void navigate({ to: '/session', search: { session: sessionId } });
+                  }}
+                  emptyState={<p className="text-muted-foreground text-xs">Nothing needs you</p>}
+                />
+              )}
+              {approvals.length > 0 && <ApprovalList approvals={approvals} />}
 
               {/* A permission list that cannot be read is NOT the same as no
                   permissions, and the difference is an agent still acting without

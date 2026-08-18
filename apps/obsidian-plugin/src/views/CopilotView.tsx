@@ -19,6 +19,7 @@ import {
 import {
   createEmbeddedTurnTrigger,
   createEmbeddedCommandIntentTrigger,
+  listPendingInteractionsAcrossSessions,
 } from '@dorkos/server/services/session';
 import type CopilotPlugin from '../main';
 // Vite extracts this to styles.css which Obsidian auto-loads
@@ -76,6 +77,10 @@ export class CopilotView extends ItemView {
       // The command-intent twin (DOR-109): runCommandIntent('compact') drives a
       // detached compact run the same trigger-only way.
       commandIntentTrigger: createEmbeddedCommandIntentTrigger(runtime),
+      // Every prompt waiting on a person, off the same in-process projector
+      // registry the HTTP route reads. The embed answers prompts for real, so it
+      // lists them for real too.
+      pendingInteractions: { list: () => listPendingInteractionsAcrossSessions() },
     });
 
     // Embedded mode has no HTTP server: source the StreamManager's durable

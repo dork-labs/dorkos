@@ -39,6 +39,7 @@ import { renderHook, render, cleanup } from '@testing-library/react';
 import { SHORTCUTS, getShortcutsGrouped, type ShortcutDef } from '@/layers/shared/lib';
 import { useRightPanelShortcut } from '@/layers/features/right-panel';
 import { useProfileShortcut } from '@/layers/features/profile';
+import { useAskShortcut } from '@/layers/features/ask';
 import { useAppTabShortcuts } from '@/layers/features/app-tabs';
 import { useSessionPopoverShortcut } from '@/layers/features/status';
 import { useNewSessionShortcut } from '@/layers/features/dashboard-sidebar';
@@ -99,6 +100,13 @@ const PROVED: Record<string, Prover> = {
   'agent-profile': () => {
     renderHook(() => useProfileShortcut());
     return press({ key: 'A', code: 'KeyA', metaKey: true, shiftKey: true });
+  },
+  'answer-next-ask': () => {
+    // Unconditional: the hook installs its listener whatever is waiting, which
+    // is what lets it be PROVED here rather than merely declared — and is the
+    // whole reason it has a chord of its own rather than sharing the Profile's.
+    renderHook(() => useAskShortcut());
+    return press({ key: 'Y', code: 'KeyY', metaKey: true, shiftKey: true });
   },
   'session-details': () => {
     renderHook(() => useSessionPopoverShortcut(() => {}));

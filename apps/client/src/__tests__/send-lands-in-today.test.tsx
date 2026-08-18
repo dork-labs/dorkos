@@ -120,7 +120,10 @@ const ATTENTION: unknown[] = [];
 vi.mock('@/layers/entities/mesh', () => ({
   useMeshAgentPaths: () => ({ data: { agents: AGENT_PATHS }, isSuccess: true }),
 }));
-vi.mock('@/layers/entities/attention', () => ({ useAttentionSignals: () => ATTENTION }));
+vi.mock('@/layers/entities/attention', () => ({
+  useAttentionSignals: () => ATTENTION,
+  usePendingInteractions: () => ({ interactions: [], isLoading: false }),
+}));
 vi.mock('@/layers/entities/agent', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/agent')>()),
   useResolvedAgents: () => ({ data: MANIFESTS, isSuccess: true }),

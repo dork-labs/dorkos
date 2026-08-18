@@ -23,12 +23,13 @@ import {
   sessionKeys,
 } from '@/layers/entities/session';
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
+
 import { useAppStore, useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
 import { playNotificationSound } from '@/layers/shared/lib';
 import { resolveTransportRetryText } from '../lib/resolve-retry-text';
 import type { MessageListHandle } from './MessageList';
 import type { ComposerInputHandle } from '@/layers/features/composer';
-import { Conversation } from '@/layers/features/conversation';
+import { Conversation, NO_ASKS } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES } from '../config/session-capabilities';
 import { ChatMessageArea } from './ChatMessageArea';
 import { BirthCertificate } from './BirthCertificate';
@@ -391,7 +392,21 @@ export function ChatPanel({
 
   // What the live lane says about this session. Derived here rather than inside
   // the lane so the lane stays a renderer every surface drives the same way.
+  // **The session's lane does NOT draw its own prompts, and that is the
+  // decision.** This surface already shows every one of them twice — the live
+  // card in the input zone, which is where a person answers it, and the receipt
+  // row in the transcript where it was asked. §4.1 promises one card in the
+  // transcript and one entry in the tray; a third line six pixels above the card
+  // it duplicates is the noise this programme exists to remove, and it would
+  // push the amber rung over the elapsed/tokens reading that IS this lane's job.
+  //
+  // The rung itself is not dead: the room's lane is the surface with no inline
+  // card, and it draws it (`RoomLiveLane`). The header tray covers this session
+  // from every OTHER route.
+  const sessionAsks = NO_ASKS;
+
   const laneState = useSessionLaneState({
+    asks: sessionAsks,
     status,
     streamStartTime,
     estimatedTokens,

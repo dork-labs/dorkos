@@ -1,5 +1,9 @@
 ---
 covers:
+  # The squash `main` actually landed P1 under. The per-task subjects below are
+  # the branch's own and no longer exist in the released history, so without
+  # this line the gate reads P1 as uncovered on every branch that follows it.
+  - 'refactor(client): one message row for sessions, channels and DMs — Message.* in features/conversation (P1, DOR-1328) (#1091)'
   - 'feat(client): P1.1 — the features/conversation slice and its model contract (DOR-1328)'
   - 'refactor(client): P1.3 — one hover-action surface, with run-with as its own slot (DOR-1328)'
   - 'refactor(client): P1.4 — the five non-message rows and the one time formatter move into the slice (DOR-1328)'

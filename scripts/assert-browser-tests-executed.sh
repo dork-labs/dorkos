@@ -193,6 +193,7 @@ REGISTERED_MODULES=(
   'chat/live-turn-visibility.ts'
   'chat/runtime-capability-parity.ts'
   'chat/session-read-state.ts'
+  'conversation/ask-anywhere.ts'
   'dashboard-sidebar/now-survives-reload.ts'
   'dashboard-sidebar/send-lands-in-today.ts'
 )

@@ -9,6 +9,7 @@ import { caretOffset, composerText, expectComposerText } from '../pages/composer
 import { registerCompactionTests } from './chat/compaction.js';
 import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-ime.js';
 import { registerInteractivePromptTests } from './chat/interactive-prompts.js';
+import { registerAskAnywhereTests } from './conversation/ask-anywhere.js';
 import { registerLiveTurnVisibilityTests } from './chat/live-turn-visibility.js';
 import { registerRuntimeCapabilityParityTests } from './chat/runtime-capability-parity.js';
 import { registerSessionReadStateTests } from './chat/session-read-state.js';
@@ -956,6 +957,12 @@ registerComposerEscapeAndImeTests({ apiUrl: API_URL, agentDir: () => agentDir })
 // down: a parked turn living on a concurrent worker would be disposed mid-click.
 // See the module header.
 registerInteractivePromptTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
+// A prompt answered from a route that is not the session's (DOR-1330).
+// Registered here for the same reason as the suite above: it parks a turn and
+// then LEAVES the session, so the turn has to survive a navigation on this
+// file's own worker rather than a concurrent reset.
+registerAskAnywhereTests({ apiUrl: API_URL, agentDir: () => agentDir });
 
 // What a live turn shows while it runs, and how Stop settles it (capability rows
 // C-10, R-05, R-06, R-07, DOR-1214). Same lock, same reason: these hold a turn

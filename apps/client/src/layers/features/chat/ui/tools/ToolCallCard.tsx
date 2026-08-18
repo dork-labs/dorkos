@@ -9,7 +9,8 @@ import {
   cn,
   formatDuration,
 } from '@/layers/shared/lib';
-import { getToolStatusIcon, CollapsibleCard, TruncatedOutput } from '../primitives';
+import { getToolStatusIcon, CollapsibleCard } from '../primitives';
+import { TruncatedOutput } from '@/layers/shared/ui';
 import { OutputRenderer } from '../message/OutputRenderer';
 
 interface HookRowProps {

@@ -425,6 +425,10 @@ describe('PinnedTriageHeader at its height cap', () => {
             grow
           </button>
           <PinnedTriageHeaderView
+            asks={[]}
+            settlingAsks={[]}
+            askAgentNames={{}}
+            onOpenSession={() => {}}
             approvals={Array.from({ length: count }, (_, i) =>
               buildApproval({ approvalId: `01JZ00000000000000000000${i}` })
             )}
@@ -651,5 +655,51 @@ describe('PinnedTriageHeader', () => {
     expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
     expect(await screen.findByText('Needs Attention')).toBeInTheDocument();
     expect(header()).not.toBeNull();
+  });
+
+  it('keeps the group open while an answered prompt is still saying how it ended', async () => {
+    // Answering the LAST thing waiting used to unmount the group around its own
+    // receipt — the card was gone inside a second with nothing said. Seeded
+    // defect: drop `settlingAsks` from `showsWaiting` and the group vanishes
+    // even though a receipt is on screen.
+    const settling = [
+      {
+        sessionId: 'session-1',
+        cwd: '/projects/meeting-notes',
+        interaction: {
+          type: 'approval' as const,
+          id: 'tc-settling',
+          startedAt: Date.now(),
+          remainingMs: 600_000,
+          timeoutMs: 600_000,
+          toolName: 'Write',
+          input: '{}',
+          hasSuggestions: false,
+        },
+      },
+    ];
+
+    // The list answers through the transport, so the view needs the same
+    // providers the app gives it.
+    const transport = createMockTransport();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <PinnedTriageHeaderView
+            asks={[]}
+            settlingAsks={settling}
+            askAgentNames={{}}
+            onOpenSession={() => {}}
+            approvals={[]}
+            approvalsUnavailable={false}
+            onRetryApprovals={() => {}}
+            attentionItems={[]}
+          />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    expect(screen.getByText('Waiting On You')).toBeInTheDocument();
   });
 });

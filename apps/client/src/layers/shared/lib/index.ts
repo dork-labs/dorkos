@@ -257,3 +257,9 @@ export { setAskDorkBotOrigin, takeAskDorkBotOrigin } from './ask-dorkbot-origin'
 // pulls in the transport, the sound player and a dozen other side effects).
 // Both callers deep-import the leaf module, which imports nothing.
 export { isNewer } from './version-compare';
+
+// A refused decision, in words a person can act on. Shared because two card
+// families answer things a server can refuse — capability approvals and the
+// Ask — and one of them would otherwise have to reach into the other's lib.
+export { describeDecisionRefusal } from './decision-refusal';
+export type { DecisionRefusal, RefusalTone } from './decision-refusal';

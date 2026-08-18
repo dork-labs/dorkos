@@ -31,17 +31,19 @@ vi.mock('../../tools/ToolCallCard', () => ({
   ),
 }));
 
-// Mock ToolApproval
-vi.mock('../../tools/ToolApproval', () => ({
-  ToolApproval: ({ toolName }: { toolName: string }) => (
-    <div data-testid="tool-approval">{toolName}</div>
-  ),
-}));
-
-// Mock QuestionPrompt
-vi.mock('../../tools/QuestionPrompt', () => ({
-  QuestionPrompt: () => <div data-testid="question-prompt" />,
-}));
+// Mock the Ask family — the three prompts and the receipt row the transcript
+// composes. One slice now, so one mock.
+vi.mock('@/layers/features/ask', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/layers/features/ask')>('@/layers/features/ask');
+  return {
+    ...actual,
+    ApprovalPrompt: ({ toolName }: { toolName: string }) => (
+      <div data-testid="tool-approval">{toolName}</div>
+    ),
+    QuestionPrompt: () => <div data-testid="question-prompt" />,
+  };
+});
 
 // Mock the approvals feature: ApprovalCard drives real decision mutations and
 // needs the query/transport providers, none of which this file is about. The

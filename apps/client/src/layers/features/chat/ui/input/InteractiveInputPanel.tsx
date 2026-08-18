@@ -1,8 +1,8 @@
+import { useMemo } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { ToolCallState } from '../../model/chat-types';
-import { ToolApproval } from '../tools/ToolApproval';
-import { BatchApprovalBar } from '../tools/BatchApprovalBar';
-import { QuestionPrompt } from '../tools/QuestionPrompt';
+import { ApprovalPrompt, AskStack, QuestionPrompt, useAnswerAsk } from '@/layers/features/ask';
+import { getToolLabel } from '@/layers/shared/lib';
 import type { InteractiveToolHandle } from '../message';
 
 /**
@@ -50,9 +50,56 @@ export function InteractiveInputPanel({
 
   const reducedMotion = useReducedMotion();
 
+  // The burst form, in place of the batch bar it replaced: two or more
+  // approvals queued in this session read as one decision and are answered
+  // once.
+  //
+  // Through the SHARED mutation, not a second copy of the two transport calls:
+  // this used to swallow a refusal into `console.error`, so an answer the
+  // server rejected looked exactly like one it took. `useAnswerAsk` writes the
+  // receipts, takes them back when the server says no, and hands back the
+  // sentence to show.
+  const { answerAll, isAnswering, error } = useAnswerAsk();
+  const burst = useMemo(
+    () =>
+      pendingApprovals.map((call) => ({
+        sessionId,
+        // The panel holds tool calls, not fleet envelopes; only the ids reach
+        // the transport, and the directory is the session's own.
+        cwd: '',
+        interaction: {
+          type: 'approval' as const,
+          id: call.toolCallId,
+          // Zero rather than a clock read: only the ids reach the transport
+          // from here, and a `Date.now()` in a render body is an unstable value
+          // the rules of React are right to object to. The burst card in the
+          // TRAY draws from real envelopes and has real times.
+          startedAt: call.approvalStartedAt ?? 0,
+          remainingMs: call.timeoutMs ?? 0,
+          toolName: call.toolName,
+          input: call.input ?? '',
+          hasSuggestions: call.approvalHasSuggestions ?? false,
+        },
+      })),
+    [pendingApprovals, sessionId]
+  );
+
   return (
     <>
-      <BatchApprovalBar sessionId={sessionId} pendingApprovals={pendingApprovals} />
+      {pendingApprovals.length >= 2 && (
+        <AskStack
+          className="mb-1.5"
+          headline={`${pendingApprovals.length} tools are waiting on you`}
+          items={pendingApprovals.map((call) => ({
+            id: call.toolCallId,
+            line: getToolLabel(call.toolName, call.input ?? ''),
+          }))}
+          onAllowAll={() => void answerAll(burst, 'allow')}
+          onDenyAll={() => void answerAll(burst, 'deny')}
+          isAnswering={isAnswering}
+          error={error}
+        />
+      )}
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={activeInteraction.toolCallId}
@@ -61,7 +108,7 @@ export function InteractiveInputPanel({
           transition={reducedMotion ? INSTANT_TRANSITION : NEXT_CARD_TRANSITION}
         >
           {activeInteraction.interactiveType === 'approval' ? (
-            <ToolApproval
+            <ApprovalPrompt
               ref={onToolRef}
               sessionId={sessionId}
               toolCallId={activeInteraction.toolCallId}

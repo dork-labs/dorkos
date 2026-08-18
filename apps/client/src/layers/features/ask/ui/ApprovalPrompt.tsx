@@ -1,26 +1,19 @@
 import { useState, useEffect, useRef, useMemo, useImperativeHandle, useCallback } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { Check, X, Shield, ShieldCheck } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import { DENY_REASON_MAX_LENGTH } from '@dorkos/shared/schemas';
 import { ToolArgumentsDisplay, cn, getToolLabel, getMcpServerBadge } from '@/layers/shared/lib';
-import { Kbd, Button, Input } from '@/layers/shared/ui';
-import { CompactResultRow, InteractiveCard } from '../primitives';
+import { Kbd, Button, Input, CompactResultRow } from '@/layers/shared/ui';
+import { AskCard, WARN_AT_S, URGENT_AT_S } from './AskCard';
 
 // --- Animation constants (module-scope to avoid per-render allocation) ---
-
-const fadeTransition = { duration: 0.15, ease: 'easeOut' as const } as const;
 
 /** The answered card's confirmation beat, before it compresses out of the way. */
 const confirmTransition = { duration: 0.12, ease: 'easeOut' as const } as const;
 
 /** Reduced motion gets the end state with no travel and no time. */
 const instantTransition = { duration: 0 } as const;
-
-const WARNING_THRESHOLD_S = 120; // 2 minutes — amber
-const URGENT_THRESHOLD_S = 60; // 1 minute — red
-
-type ApprovalPhase = 'normal' | 'warning' | 'urgent' | 'expired';
 
 // --- Risk classification for visual differentiation ---
 
@@ -49,18 +42,7 @@ function formatCountdown(seconds: number): string {
   return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
 }
 
-/** Format seconds as human-readable string for aria-valuetext. */
-function formatAriaTimeRemaining(seconds: number | null): string {
-  if (seconds === null) return '';
-  if (seconds <= 0) return 'Expired';
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  if (m > 0)
-    return `${m} minute${m !== 1 ? 's' : ''} and ${s} second${s !== 1 ? 's' : ''} remaining`;
-  return `${s} second${s !== 1 ? 's' : ''} remaining`;
-}
-
-interface ToolApprovalProps {
+interface ApprovalPromptProps {
   sessionId: string;
   toolCallId: string;
   toolName: string;
@@ -70,7 +52,7 @@ interface ToolApprovalProps {
   /** Called after user approves or denies, to optimistically clear waiting state */
   onDecided?: () => void;
   /** React 19 ref-as-prop for imperative approve/deny control */
-  ref?: React.Ref<ToolApprovalHandle>;
+  ref?: React.Ref<ApprovalPromptHandle>;
   /** Server-provided approval timeout duration in milliseconds */
   timeoutMs?: number;
   /** Server timestamp (ms since epoch) when approval timer started — used for drift-free countdown */
@@ -95,7 +77,7 @@ interface ToolApprovalProps {
   approvalHasSuggestions?: boolean;
 }
 
-export interface ToolApprovalHandle {
+export interface ApprovalPromptHandle {
   approve: () => void;
   alwaysAllow: () => void;
   deny: () => void;
@@ -107,7 +89,7 @@ export interface ToolApprovalHandle {
  * Supports imperative control via `ref` (approve/deny) for keyboard shortcut integration.
  * Shows a countdown timer when `timeoutMs` is provided, with warning phases at 2 min and 1 min.
  */
-export function ToolApproval({
+export function ApprovalPrompt({
   sessionId,
   toolCallId,
   toolName,
@@ -124,7 +106,7 @@ export function ToolApproval({
   approvalBlockedPath,
   approvalDecisionReason,
   approvalHasSuggestions,
-}: ToolApprovalProps) {
+}: ApprovalPromptProps) {
   const transport = useTransport();
   const reducedMotion = useReducedMotion();
   const riskLevel = useMemo(() => classifyToolRisk(toolName), [toolName]);
@@ -213,9 +195,9 @@ export function ToolApproval({
       setAnnouncement('');
       return;
     }
-    if (secondsRemaining === WARNING_THRESHOLD_S) {
+    if (secondsRemaining === WARN_AT_S) {
       setAnnouncement('Tool approval required. 2 minutes remaining.');
-    } else if (secondsRemaining === URGENT_THRESHOLD_S) {
+    } else if (secondsRemaining === URGENT_AT_S) {
       setAnnouncement('Urgent: 1 minute to approve or deny.');
     } else if (secondsRemaining === 0) {
       setAnnouncement('Tool approval timed out. Execution denied.');
@@ -227,14 +209,6 @@ export function ToolApproval({
   // component, so anything written to a region it owns is removed in the same
   // commit and never read. That announcement lives with the transcript, which
   // outlives the card — `model/stream/use-approval-announcer`.
-
-  const phase: ApprovalPhase = useMemo(() => {
-    if (secondsRemaining === null) return 'normal';
-    if (secondsRemaining <= 0) return 'expired';
-    if (secondsRemaining <= URGENT_THRESHOLD_S) return 'urgent';
-    if (secondsRemaining <= WARNING_THRESHOLD_S) return 'warning';
-    return 'normal';
-  }, [secondsRemaining]);
 
   const handleApprove = useCallback(async () => {
     if (responding || decided) return;
@@ -383,9 +357,17 @@ export function ToolApproval({
 
   return (
     <>
-      <InteractiveCard
+      <AskCard.Root
         isActive={isActive}
         isResolved={!!decided}
+        // `A` allows and `D` denies, and ONLY while focus is inside this card.
+        // ADDITIVE to the shipped keyboard model, not a replacement: the active
+        // card in the input zone still answers to bare Enter and Esc through
+        // `useInteractiveShortcuts`, and those are the keys the hints below
+        // advertise because those are the ones that work without focusing the
+        // card first. See {@link AskCardRoot} for why the letters are card-local.
+        onAllow={handleApprove}
+        onDeny={handleDeny}
         className="my-1"
         data-testid="tool-approval"
       >
@@ -398,72 +380,36 @@ export function ToolApproval({
               riskLevel === 'low' && 'text-muted-foreground'
             )}
           />
-          <span className="font-semibold">{approvalTitle || 'Tool approval required'}</span>
+          <AskCard.Headline className="font-semibold">
+            {approvalTitle || 'Tool approval required'}
+          </AskCard.Headline>
         </div>
 
         {/* SDK-provided context: description, decision reason, blocked path */}
         {(approvalDescription || approvalDecisionReason || approvalBlockedPath) && (
-          <div className="text-muted-foreground text-2xs mb-2 space-y-0.5">
+          <AskCard.Detail className="mb-2">
             {approvalDescription && <p>{approvalDescription}</p>}
             {approvalDecisionReason && !approvalDescription && <p>{approvalDecisionReason}</p>}
             {approvalBlockedPath && <p className="font-mono">Path: {approvalBlockedPath}</p>}
-          </div>
+          </AskCard.Detail>
         )}
 
-        {/* Progress bar — drains via CSS animation over timeoutMs */}
+        {/* The draining bar and the words beside it. The bar is decoration and
+            says so; the accessible countdown is the text, which is why the text
+            is present from the start rather than fading in at two minutes — a
+            reader who cannot see the bar had nothing until then. */}
         {timeoutMs && !decided && (
-          <div
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={Math.ceil(timeoutMs / 1000)}
-            aria-valuenow={secondsRemaining ?? 0}
-            aria-valuetext={formatAriaTimeRemaining(secondsRemaining)}
-            className="bg-muted mb-2 h-1 w-full overflow-hidden rounded-full"
-          >
-            <div
-              className={cn(
-                'h-full rounded-full transition-colors duration-500',
-                phase === 'normal' && 'bg-muted-foreground/30',
-                phase === 'warning' && 'bg-status-warning',
-                phase === 'urgent' && 'bg-status-error',
-                'motion-safe:animate-drain'
-              )}
-              style={{
-                animationDuration: `${timeoutMs}ms`,
-                // Negative delay = seek. The animation runs over the whole
-                // budget, so a card that mounts partway through starts partway
-                // through — otherwise every reload redraws a full bar over an
-                // ask that is nearly out of time (DOR-810).
-                animationDelay: `-${deadline?.elapsedMs ?? 0}ms`,
-                animationTimingFunction: 'linear',
-                animationFillMode: 'forwards',
-              }}
+          <div className="mb-2">
+            <AskCard.Countdown
+              secondsLeft={secondsRemaining}
+              timeoutMs={timeoutMs}
+              elapsedMs={deadline?.elapsedMs ?? 0}
+              label={
+                secondsRemaining === null ? '' : `${formatCountdown(secondsRemaining)} remaining`
+              }
             />
           </div>
         )}
-
-        {/* Text countdown — fades in at warning threshold, updates through urgent */}
-        <AnimatePresence>
-          {(phase === 'warning' || phase === 'urgent') && secondsRemaining !== null && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={fadeTransition}
-              className="mb-2"
-            >
-              <span
-                className={cn(
-                  'text-2xs tabular-nums',
-                  phase === 'warning' && 'text-status-warning',
-                  phase === 'urgent' && 'text-status-error'
-                )}
-              >
-                {formatCountdown(secondsRemaining)} remaining
-              </span>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         <div className="mb-2 flex items-center gap-1.5">
           {badge && (
@@ -513,7 +459,7 @@ export function ToolApproval({
             />
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-2">
+        <AskCard.Actions>
           <Button
             size="sm"
             onClick={handleApprove}
@@ -559,8 +505,8 @@ export function ToolApproval({
               Add a reason
             </button>
           )}
-        </div>
-      </InteractiveCard>
+        </AskCard.Actions>
+      </AskCard.Root>
       {liveRegion}
     </>
   );

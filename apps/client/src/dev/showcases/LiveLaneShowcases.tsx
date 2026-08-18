@@ -23,6 +23,7 @@ import {
   type LivePeekRow,
 } from '@/layers/features/conversation';
 import type { ConversationCapabilities } from '@/layers/features/conversation';
+import { InteractionAsk } from '@/layers/features/ask';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -110,12 +111,29 @@ function turn(overrides: Partial<LaneTurn> = {}): LaneState {
   });
 }
 
-/** The Ask rung's fixture. P3 replaces this placeholder with the real event. */
+/**
+ * The Ask rung's fixture — a real `InteractionPendingEvent`, pinned against a
+ * frozen clock so the countdown does not flap while the page is open.
+ */
+const NOW_ASK = Date.parse('2026-08-18T10:00:00.000Z');
+
 const PENDING_ASK: LaneAsk = {
   sessionId: 'session-1',
-  interactionId: 'interaction-1',
-  headline: 'Meeting Notes needs your OK to run pnpm verify',
+  cwd: '/projects/meeting-notes',
+  interaction: {
+    type: 'approval',
+    id: 'interaction-1',
+    startedAt: NOW_ASK - 60_000,
+    remainingMs: 540_000,
+    timeoutMs: 600_000,
+    toolName: 'Bash',
+    input: JSON.stringify({ command: 'pnpm verify' }),
+    hasSuggestions: false,
+  },
 };
+
+/** The line the lane draws for it. */
+const ASK_HEADLINE = 'Meeting Notes wants to run "pnpm verify"';
 
 /** The lane's composer footprint, so each state is seen where it lives. */
 function LaneBox({ children }: { children: React.ReactNode }) {
@@ -231,19 +249,27 @@ export function LiveLaneShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        An Ask — amber, and never amber alone: the word Answer carries the same fact. The card it
-        grows into lands in P3.
+        An Ask — amber, and never amber alone: the word Answer carries the same fact. Pressing it
+        grows the lane into the card, over the composer rather than inside the lane.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <LaneBox>
-          <Conversation.LiveLane state={{ kind: 'ask', ask: PENDING_ASK, count: 1 }} />
+          <Conversation.LiveLane
+            state={{ kind: 'ask', ask: PENDING_ASK, count: 1, headline: ASK_HEADLINE }}
+            // The card the lane grows into, which the host supplies in the app.
+            // Without it, pressing Answer opened an empty panel here.
+            askCard={<InteractionAsk ask={PENDING_ASK} agentName="Meeting Notes" />}
+          />
         </LaneBox>
       </ShowcaseDemo>
 
       <ShowcaseLabel>An Ask, with more behind it</ShowcaseLabel>
       <ShowcaseDemo>
         <LaneBox>
-          <Conversation.LiveLane state={{ kind: 'ask', ask: PENDING_ASK, count: 3 }} />
+          <Conversation.LiveLane
+            state={{ kind: 'ask', ask: PENDING_ASK, count: 3, headline: ASK_HEADLINE }}
+            askCard={<InteractionAsk ask={PENDING_ASK} agentName="Meeting Notes" />}
+          />
         </LaneBox>
       </ShowcaseDemo>
 

@@ -1,5 +1,5 @@
 import { RefreshCw, AlertTriangle } from 'lucide-react';
-import { CompactResultRow } from '../primitives';
+import { CompactResultRow } from '@/layers/shared/ui';
 import { formatTokenCount } from '../../lib/format-compaction';
 
 interface CompactBoundaryRowProps {

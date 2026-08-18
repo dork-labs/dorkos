@@ -34,10 +34,16 @@ export {
   rekeyProjector,
   onProjectorRekey,
   onProjectorStatusChange,
+  onProjectorInteractionChange,
+  listPendingInteractionsAcrossSessions,
   setSessionEventStore,
   getSessionEventStore,
 } from './session-state-projector.js';
-export type { RawSessionEvent, ProjectorStatusUpdate } from './session-state-projector.js';
+export type {
+  RawSessionEvent,
+  ProjectorStatusUpdate,
+  InteractionChange,
+} from './session-state-projector.js';
 export { persistenceModeFor } from './projector-persistence.js';
 export type { ProjectorPersistenceMode } from './projector-persistence.js';
 export { EventLog, EVENT_LOG_MAX_EVENTS } from './event-log.js';
@@ -132,6 +138,7 @@ export { countSessionsPerDay } from './session-daily-counts.js';
 
 // --- Global session-list discovery → unified SSE fan-out (Task #7, ADR-0265) ---
 export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-broadcaster.js';
+export type { RoomBindingsPort } from './session-list-broadcaster.js';
 
 // --- Session-origin overlays, room then Pulse (session-origin-legibility,
 // team-room-home §D2.3, ADR 260808-140954). The composite is the only seam:

@@ -42,7 +42,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
-import { TransportProvider } from '@/layers/shared/model';
+import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
 import { createPlaygroundTransport } from '../playground-transport';
 import { PAGE_CONFIGS } from '../playground-config';
 import { PAGE_COMPONENTS } from '../playground-pages';
@@ -115,11 +115,17 @@ async function renderPage(pageId: string): Promise<HTMLElement> {
   });
   const rootRoute = createRootRoute({
     component: () => (
-      <TooltipProvider>
-        <SidebarProvider defaultOpen>
-          <PageComponent />
-        </SidebarProvider>
-      </TooltipProvider>
+      // The global stream, exactly as `main.tsx` wraps the real router: a
+      // showcase that draws a live surface (the room's lane reads what is
+      // waiting on a person) subscribes to it, and a bench without it would be
+      // testing a state the app never puts the component in.
+      <EventStreamProvider>
+        <TooltipProvider>
+          <SidebarProvider defaultOpen>
+            <PageComponent />
+          </SidebarProvider>
+        </TooltipProvider>
+      </EventStreamProvider>
     ),
     // THE SECOND WAY A SHOWCASE CAN CRASH, and the one that nearly slipped
     // through this gate. `ShowcaseErrorBoundary` sits INSIDE `PlaygroundSection`

@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { CompactResultRow } from '../primitives';
+import { CompactResultRow } from '@/layers/shared/ui';
 
 interface StagedContextNoteProps {
   /** The text the person added, shown quietly beneath the note. */

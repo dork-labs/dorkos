@@ -1,4 +1,3 @@
-import type { ToolApprovalHandle } from '../tools/ToolApproval';
-import type { QuestionPromptHandle } from '../tools/QuestionPrompt';
+import type { ApprovalPromptHandle, QuestionPromptHandle } from '@/layers/features/ask';
 
-export type InteractiveToolHandle = ToolApprovalHandle | QuestionPromptHandle;
+export type InteractiveToolHandle = ApprovalPromptHandle | QuestionPromptHandle;

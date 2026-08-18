@@ -27,9 +27,18 @@ import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { SessionListEventSchema } from '@dorkos/shared/session-stream';
 import type { SessionLifecycle, SessionListEvent } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
+import {
+  InteractionPendingEventSchema,
+  InteractionResolvedEventSchema,
+} from '@dorkos/shared/interaction-events';
 import { SSE } from '../../config/constants.js';
 import { eventFanOut, encodeBroadcast, type FanOutClient } from '../core/event-fan-out.js';
-import { listProjectorStatuses, onProjectorStatusChange } from './session-state-projector.js';
+import {
+  listProjectorStatuses,
+  onProjectorStatusChange,
+  onProjectorInteractionChange,
+  type InteractionChange,
+} from './session-state-projector.js';
 import {
   overlayStoredSettings,
   type SessionSettingsOverlayPort,
@@ -161,15 +170,34 @@ export function sendSessionStatusSnapshot(client: FanOutClient): void {
 }
 
 /**
+ * Which room a session answers for, as the Ask's fan-out needs to know it.
+ *
+ * A PORT rather than an import: this module must not reach into
+ * `services/rooms/`. The composition root hands it the ledger, and a boot with
+ * no rooms hands it nothing — in which case every Ask goes out without a room,
+ * which is exactly true.
+ */
+export interface RoomBindingsPort {
+  /** The room binding a session answers for, or `undefined` when it answers for none. */
+  bindingForSession(sessionId: string): { roomId: string; authorId: string } | undefined;
+}
+
+/**
  * Subscribes to every registered runtime's global session-list stream and fans
  * each validated {@link SessionListEvent} onto the unified `/api/events` SSE
  * stream. Lifecycle is `start()`/`stop()`; `stop()` closes every underlying
  * runtime iterator (and therefore its directory watcher) via `.return()`.
+ *
+ * It also carries the fleet-wide Ask: every prompt a projector starts or stops
+ * holding goes out here as `interaction_pending` / `interaction_resolved`, which
+ * is what lets a person answer from a route that is not the session's.
  */
 export class SessionListBroadcaster {
   private iterators = new Set<AsyncIterator<SessionListEvent>>();
   private running = false;
   private unsubscribeStatus: (() => void) | undefined;
+  private unsubscribeInteractions: (() => void) | undefined;
+  private roomBindings: RoomBindingsPort | undefined;
   private settings: SessionSettingsOverlayPort | undefined;
   private originResolvers: SessionOriginResolvers = {};
 
@@ -191,6 +219,28 @@ export class SessionListBroadcaster {
    */
   setOriginResolvers(resolvers: SessionOriginResolvers): void {
     this.originResolvers = resolvers;
+  }
+
+  /**
+   * Wire the lookup that says which room an Ask belongs to.
+   *
+   * Its own call rather than a `start()` argument, for the reason
+   * {@link setOriginResolvers} states one method up: a live Claude account
+   * switch restarts discovery with `start(runtimeRegistry.listRuntimes(),
+   * runtimeRegistry)`, so anything passed only to `start()` has to be re-passed
+   * by every caller that ever restarts it. Missing it here would look like an
+   * Ask that stopped appearing in the room it came from, which is a silence
+   * nobody would connect to an account switch. Set once by the composition root,
+   * it survives every stop/start.
+   *
+   * The spec writes this as a `start()` argument; the module's own history is
+   * the reason it is not one.
+   *
+   * @param bindings - The rooms domain's session→room lookup, or nothing when
+   *   this boot has no rooms — in which case every Ask goes out room-less.
+   */
+  setRoomBindings(bindings: RoomBindingsPort): void {
+    this.roomBindings = bindings;
   }
 
   /**
@@ -225,6 +275,14 @@ export class SessionListBroadcaster {
     this.unsubscribeStatus ??= onProjectorStatusChange(
       ({ sessionId, cwd, retiredSessionId, status }) =>
         this.broadcast({ type: 'session_status', sessionId, cwd, retiredSessionId, status })
+    );
+
+    // The Ask, fleet-wide. Guarded the same way and installed for the same
+    // reason: a prompt waiting on a person must survive a watcher that failed
+    // to construct, because it is the one thing in this stream somebody is
+    // actively waiting to answer.
+    this.unsubscribeInteractions ??= onProjectorInteractionChange((change) =>
+      this.broadcastInteraction(change)
     );
 
     // Global discovery context. The contract is fleet-wide ("ALL sessions the
@@ -274,6 +332,8 @@ export class SessionListBroadcaster {
     // watcher start (running=false), so it cannot hide behind the guard below.
     this.unsubscribeStatus?.();
     this.unsubscribeStatus = undefined;
+    this.unsubscribeInteractions?.();
+    this.unsubscribeInteractions = undefined;
     if (!this.running) return;
     this.running = false;
     const iterators = [...this.iterators];
@@ -396,6 +456,53 @@ export class SessionListBroadcaster {
       });
       return session;
     }
+  }
+
+  /**
+   * Put one Ask transition on the global stream.
+   *
+   * Two events per parked turn for its whole life: one when the prompt is
+   * raised, one when it is answered, cancelled or times out. No timer, no
+   * republish loop, no per-second countdown — the countdown is the client's,
+   * ticked locally from `startedAt + timeoutMs`.
+   *
+   * `roomId` is joined here rather than carried by the projector, because which
+   * room a session answers for is the rooms domain's fact and the projector is
+   * runtime-agnostic. It leaks nothing a caller's own room list does not already
+   * show, and nothing else about the room goes on the event.
+   *
+   * `.parse` rather than `safeParse`: a malformed payload is a bug in this
+   * module, and it should fail here — inside the listener's own throw
+   * isolation — rather than reaching a client. A resolution carries no
+   * `resolvedBy` on a single-identity install, because "you" is the only
+   * possible answer and inventing a name would be the denormalization this wire
+   * shape exists to avoid.
+   *
+   * @param change - The transition a projector announced.
+   */
+  private broadcastInteraction(change: InteractionChange): void {
+    if (change.type === 'pending') {
+      const binding = this.roomBindings?.bindingForSession(change.sessionId);
+      eventFanOut.broadcast(
+        'interaction_pending',
+        InteractionPendingEventSchema.parse({
+          sessionId: change.sessionId,
+          cwd: change.cwd,
+          interaction: change.interaction,
+          ...(binding ? { roomId: binding.roomId, roomAuthorId: binding.authorId } : {}),
+        })
+      );
+      return;
+    }
+    eventFanOut.broadcast(
+      'interaction_resolved',
+      InteractionResolvedEventSchema.parse({
+        sessionId: change.sessionId,
+        interactionId: change.interactionId,
+        outcome: change.outcome,
+        resolvedAt: new Date().toISOString(),
+      })
+    );
   }
 
   /**

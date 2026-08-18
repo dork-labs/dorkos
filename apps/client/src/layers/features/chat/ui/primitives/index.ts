@@ -4,10 +4,6 @@
  * These are internal to `features/chat` and not exported from the feature barrel.
  */
 export { getToolStatusIcon, type ToolIconStatus } from './tool-status-icon';
-export { OptionRow } from './OptionRow';
-export { CompactResultRow } from './CompactResultRow';
 export { CompactPendingRow } from './CompactPendingRow';
 export { CollapsibleCard } from './CollapsibleCard';
-export { TruncatedOutput } from './TruncatedOutput';
-export { InteractiveCard } from './InteractiveCard';
 export { TypingDots } from './TypingDots';

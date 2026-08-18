@@ -17,7 +17,7 @@
  * feature could cause. Spec §3.5 is explicit that a caller who asked for two things
  * is told which one failed; this is the surface that was supposed to tell them.
  *
- * @module features/approvals/lib/decision-refusal
+ * @module shared/lib/decision-refusal
  */
 
 /** How loudly a refusal should read. */

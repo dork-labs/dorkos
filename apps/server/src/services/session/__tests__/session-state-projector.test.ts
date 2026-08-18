@@ -10,8 +10,14 @@ import {
   rekeyProjector,
   onProjectorRekey,
   onProjectorStatusChange,
+  onProjectorInteractionChange,
+  listPendingInteractionsAcrossSessions,
 } from '../session-state-projector.js';
-import type { RawSessionEvent, ProjectorStatusUpdate } from '../session-state-projector.js';
+import type {
+  RawSessionEvent,
+  ProjectorStatusUpdate,
+  InteractionChange,
+} from '../session-state-projector.js';
 import { EVENT_LOG_MAX_EVENTS } from '../event-log.js';
 import {
   StaleResumeCursorError,
@@ -1861,5 +1867,215 @@ describe('awaitTurnSettled', () => {
     // would make every later turn pay a wait that cannot end well.
     p.terminate();
     await expect(waiting).resolves.toBeUndefined();
+  });
+});
+
+describe('onProjectorInteractionChange (the Ask, fleet-wide)', () => {
+  // The seam the whole feature rides on: a prompt raised in ANY session reaches
+  // the cockpit through this, and the projector still imports no fan-out. It is
+  // exercised directly rather than through a runtime, because it is
+  // runtime-agnostic and that is the point.
+  const unsubs: Array<() => void> = [];
+  const listen = (fn: (change: InteractionChange) => void) => {
+    unsubs.push(onProjectorInteractionChange(fn));
+  };
+
+  afterEach(() => {
+    while (unsubs.length) unsubs.pop()?.();
+  });
+
+  /** One permission prompt, as a runtime emits it. */
+  function approvalRequired(id: string, startedAt = Date.now()): RawSessionEvent {
+    return {
+      type: 'approval_required',
+      id,
+      startedAt,
+      remainingMs: TIMEOUT_MS,
+      timeoutMs: TIMEOUT_MS,
+      toolName: 'Bash',
+      input: JSON.stringify({ command: 'pnpm verify' }),
+      hasSuggestions: false,
+    } as unknown as RawSessionEvent;
+  }
+
+  it('announces one pending prompt, with the DTO the card is drawn from', () => {
+    const projector = getOrCreateProjector('ask-1', '/work/alpha');
+    const changes: InteractionChange[] = [];
+    listen((change) => changes.push(change));
+
+    projector.ingest(approvalRequired('tc-1'));
+
+    // Filtered to THIS session: the projector registry is a module singleton,
+    // so a neighbouring file's parked session is announced to every listener
+    // registered while it runs — including this one.
+    const mine = changes.filter(
+      (change) => change.type === 'pending' && change.sessionId === 'ask-1'
+    );
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({
+      type: 'pending',
+      sessionId: 'ask-1',
+      cwd: '/work/alpha',
+      interaction: { type: 'approval', id: 'tc-1', toolName: 'Bash', remainingMs: TIMEOUT_MS },
+    });
+    disposeProjector('ask-1');
+  });
+
+  it('announces the prompt AFTER it is tracked, so a listener reading back finds it', () => {
+    // Load-bearing ordering: the broadcaster joins the room binding inside this
+    // callback, and the SSE ordering case downstream depends on the prompt
+    // already existing when the notification goes out.
+    const projector = getOrCreateProjector('ask-order', '/work/alpha');
+    let pendingWhenNotified = -1;
+    listen(() => {
+      pendingWhenNotified = projector.getPendingInteractions().length;
+    });
+
+    projector.ingest(approvalRequired('tc-order'));
+
+    expect(pendingWhenNotified).toBe(1);
+    disposeProjector('ask-order');
+  });
+
+  it('says a prompt was ANSWERED when a person answered it', () => {
+    const projector = getOrCreateProjector('ask-2', '/work/alpha');
+    projector.ingest(approvalRequired('tc-2'));
+    const changes: InteractionChange[] = [];
+    listen((change) => changes.push(change));
+
+    projector.resolveInteraction('tc-2', 'approved');
+
+    expect(changes).toEqual([
+      { type: 'resolved', sessionId: 'ask-2', interactionId: 'tc-2', outcome: 'answered' },
+    ]);
+    disposeProjector('ask-2');
+  });
+
+  it('says EXPIRED when the clock answered, and CANCELLED when nobody was ever asked', () => {
+    const projector = getOrCreateProjector('ask-3', '/work/alpha');
+    projector.ingest(approvalRequired('tc-expired'));
+    projector.ingest(approvalRequired('tc-cancelled'));
+    const changes: InteractionChange[] = [];
+    listen((change) => changes.push(change));
+
+    projector.ingest({
+      type: 'interaction_resolved',
+      id: 'tc-expired',
+      resolution: 'expired',
+    } as unknown as RawSessionEvent);
+    projector.ingest({
+      type: 'interaction_resolved',
+      id: 'tc-cancelled',
+      resolution: 'cancelled',
+    } as unknown as RawSessionEvent);
+
+    expect(changes.map((change) => change.type === 'resolved' && change.outcome)).toEqual([
+      'expired',
+      'cancelled',
+    ]);
+    disposeProjector('ask-3');
+  });
+
+  it('says nothing twice about one prompt, however often it is resolved', () => {
+    const projector = getOrCreateProjector('ask-4', '/work/alpha');
+    projector.ingest(approvalRequired('tc-4'));
+    const changes: InteractionChange[] = [];
+    listen((change) => changes.push(change));
+
+    projector.resolveInteraction('tc-4', 'approved');
+    // A stale click from a second window, or a retried request.
+    projector.ingest({
+      type: 'interaction_resolved',
+      id: 'tc-4',
+      resolution: 'approved',
+    } as unknown as RawSessionEvent);
+
+    expect(changes).toHaveLength(1);
+    disposeProjector('ask-4');
+  });
+
+  it('cancels what a torn-down turn was parked on, because nothing will answer it', () => {
+    const projector = getOrCreateProjector('ask-5', '/work/alpha');
+    projector.ingest({ type: 'turn_start' });
+    projector.ingest(approvalRequired('tc-5'));
+    const changes: InteractionChange[] = [];
+    listen((change) => changes.push(change));
+
+    projector.markInterrupted();
+
+    expect(changes).toEqual([
+      { type: 'resolved', sessionId: 'ask-5', interactionId: 'tc-5', outcome: 'cancelled' },
+    ]);
+    disposeProjector('ask-5');
+  });
+
+  it('survives a listener that throws, and still tells the next one', () => {
+    const projector = getOrCreateProjector('ask-6', '/work/alpha');
+    const seen: InteractionChange[] = [];
+    listen(() => {
+      throw new Error('listener exploded');
+    });
+    listen((change) => seen.push(change));
+
+    expect(() => projector.ingest(approvalRequired('tc-6'))).not.toThrow();
+    expect(seen).toHaveLength(1);
+    // And the projection itself is untouched by the throw.
+    expect(projector.getPendingInteractions()).toHaveLength(1);
+    disposeProjector('ask-6');
+  });
+
+  it('says nothing at all for a session whose directory nobody stamped', () => {
+    // `cwd` is the deep link and the name fallback; there is nothing honest to
+    // put on the wire without one, so the prompt stays where it was raised.
+    const projector = getOrCreateProjector('ask-7');
+    const changes: InteractionChange[] = [];
+    listen((change) => changes.push(change));
+
+    projector.ingest(approvalRequired('tc-7'));
+
+    expect(changes).toEqual([]);
+    expect(projector.getPendingInteractions()).toHaveLength(1);
+    disposeProjector('ask-7');
+  });
+});
+
+describe('listPendingInteractionsAcrossSessions', () => {
+  it('spans every live projector and drops what has already expired', () => {
+    const now = Date.now();
+    const live = getOrCreateProjector('fleet-live', '/work/alpha');
+    const stale = getOrCreateProjector('fleet-stale', '/work/beta');
+    const nameless = getOrCreateProjector('fleet-nameless');
+    const raise = (projector: SessionStateProjector, id: string, startedAt: number) =>
+      projector.ingest({
+        type: 'approval_required',
+        id,
+        startedAt,
+        remainingMs: TIMEOUT_MS,
+        timeoutMs: TIMEOUT_MS,
+        toolName: 'Bash',
+        input: '{}',
+        hasSuggestions: false,
+      } as unknown as RawSessionEvent);
+
+    raise(live, 'tc-live', now - 60_000);
+    // Older than its own budget: the selector drops it, and so must this.
+    raise(stale, 'tc-stale', now - TIMEOUT_MS - 1_000);
+    raise(nameless, 'tc-nameless', now);
+
+    // Scoped to the three sessions this case created. The registry is a module
+    // singleton shared with every other file in this worker, so asserting over
+    // the whole fleet would pass or fail on what a neighbour left behind.
+    const listed = listPendingInteractionsAcrossSessions(now).filter((row) =>
+      row.sessionId.startsWith('fleet-')
+    );
+
+    expect(listed.map((row) => row.interaction.id)).toEqual(['tc-live']);
+    expect(listed[0]).toMatchObject({ sessionId: 'fleet-live', cwd: '/work/alpha' });
+    // And the remaining time is recomputed at read, not frozen at emit.
+    expect(listed[0]!.interaction.remainingMs).toBe(TIMEOUT_MS - 60_000);
+
+    disposeProjector('fleet-live');
+    disposeProjector('fleet-stale');
+    disposeProjector('fleet-nameless');
   });
 });

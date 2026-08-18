@@ -1,6 +1,6 @@
 import { ToolCallCard } from '@/layers/features/chat/ui/tools/ToolCallCard';
-import { ToolApproval } from '@/layers/features/chat/ui/tools/ToolApproval';
-import { ApprovalReceiptShowcases } from './ApprovalReceiptShowcases';
+import { ApprovalPrompt } from '@/layers/features/ask';
+import { AskReceiptShowcases } from './AskReceiptShowcases';
 import { BackgroundTaskShowcases } from './BackgroundTaskShowcases';
 import { SubagentBlock } from '@/layers/features/chat/ui/message/SubagentBlock';
 import { ErrorMessageBlock } from '@/layers/features/chat/ui/message/ErrorMessageBlock';
@@ -19,7 +19,7 @@ import {
   ERROR_PARTS,
 } from '../mock-chat-data';
 
-/** Tool-related component showcases: ToolCallCard, ToolApproval. */
+/** Tool-related component showcases: ToolCallCard, ApprovalPrompt. */
 export function ToolShowcases() {
   return (
     <>
@@ -273,12 +273,12 @@ export function ToolShowcases() {
       </PlaygroundSection>
 
       <PlaygroundSection
-        title="ToolApproval"
+        title="ApprovalPrompt"
         description="Approval card for pending tool calls. Uses Transport (mock) for approve/deny."
       >
         <ShowcaseLabel>Inactive</ShowcaseLabel>
         <ShowcaseDemo>
-          <ToolApproval
+          <ApprovalPrompt
             sessionId={MOCK_SESSION_ID}
             toolCallId={TOOL_CALL_APPROVAL.toolCallId}
             toolName={TOOL_CALL_APPROVAL.toolName}
@@ -288,7 +288,7 @@ export function ToolShowcases() {
 
         <ShowcaseLabel>Active (keyboard shortcut target)</ShowcaseLabel>
         <ShowcaseDemo>
-          <ToolApproval
+          <ApprovalPrompt
             sessionId={MOCK_SESSION_ID}
             toolCallId={TOOL_CALL_APPROVAL.toolCallId + '-active'}
             toolName={TOOL_CALL_APPROVAL.toolName}
@@ -299,7 +299,7 @@ export function ToolShowcases() {
 
         <ShowcaseLabel>With countdown timer (10 min)</ShowcaseLabel>
         <ShowcaseDemo>
-          <ToolApproval
+          <ApprovalPrompt
             sessionId={MOCK_SESSION_ID}
             toolCallId={TOOL_CALL_APPROVAL.toolCallId + '-timer'}
             toolName={TOOL_CALL_APPROVAL.toolName}
@@ -310,7 +310,7 @@ export function ToolShowcases() {
 
         <ShowcaseLabel>Warning phase (2 min remaining)</ShowcaseLabel>
         <ShowcaseDemo>
-          <ToolApproval
+          <ApprovalPrompt
             sessionId={MOCK_SESSION_ID}
             toolCallId={TOOL_CALL_APPROVAL.toolCallId + '-warning'}
             toolName={TOOL_CALL_APPROVAL.toolName}
@@ -321,7 +321,7 @@ export function ToolShowcases() {
 
         <ShowcaseLabel>Urgent phase (30s remaining)</ShowcaseLabel>
         <ShowcaseDemo>
-          <ToolApproval
+          <ApprovalPrompt
             sessionId={MOCK_SESSION_ID}
             toolCallId={TOOL_CALL_APPROVAL.toolCallId + '-urgent'}
             toolName={TOOL_CALL_APPROVAL.toolName}
@@ -331,7 +331,7 @@ export function ToolShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <ApprovalReceiptShowcases />
+      <AskReceiptShowcases />
 
       <BackgroundTaskShowcases />
     </>

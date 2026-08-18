@@ -20,7 +20,7 @@ import { render, screen, act, cleanup, fireEvent, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomEntry, RoomRosterEntry, RoomSignalEvent } from '@dorkos/shared/room-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
 import { useRoomPresenceStore } from '@/layers/entities/room';
 import { RoomLiveLane } from '../ui/RoomLiveLane';
 
@@ -134,17 +134,19 @@ function renderLane(
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <RoomLiveLane
-          room={ROOM_WITH_ROSTER}
-          entries={ENTRIES}
-          laneScope="room"
-          stalled={false}
-          {...props}
-        />
-      </QueryClientProvider>
-    </TransportProvider>
+    <EventStreamProvider>
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <RoomLiveLane
+            room={ROOM_WITH_ROSTER}
+            entries={ENTRIES}
+            laneScope="room"
+            stalled={false}
+            {...props}
+          />
+        </QueryClientProvider>
+      </TransportProvider>
+    </EventStreamProvider>
   );
 }
 
@@ -560,5 +562,63 @@ describe('RoomLiveLane', () => {
 
     expect(document.activeElement).not.toBe(document.body);
     expect(document.activeElement).toBe(document.querySelector('[data-slot="live-lane"]'));
+  });
+
+  it('draws only THIS room’s prompt, never one raised in another room', async () => {
+    // The `roomId` filter is the whole reason the event carries a room. Seeded
+    // defect: filter with `() => true` and the lane names the other room's
+    // prompt, which is a card offering to answer for a conversation the reader
+    // is not looking at.
+    const transport = createMockTransport();
+    vi.mocked(transport.listPendingInteractions).mockResolvedValue({
+      interactions: [
+        {
+          sessionId: 'session-elsewhere',
+          cwd: '/projects/elsewhere',
+          roomId: 'some-other-room',
+          interaction: {
+            type: 'approval',
+            id: 'tc-elsewhere',
+            startedAt: Date.parse(STARTED),
+            remainingMs: 600_000,
+            timeoutMs: 600_000,
+            toolName: 'Edit',
+            displayName: 'Edit elsewhere.md',
+            input: '{}',
+            hasSuggestions: false,
+          },
+        },
+        {
+          sessionId: 'session-here',
+          cwd: '/projects/here',
+          roomId: ROOM,
+          roomAuthorId: 'kai',
+          interaction: {
+            type: 'approval',
+            id: 'tc-here',
+            startedAt: Date.parse(STARTED),
+            remainingMs: 600_000,
+            timeoutMs: 600_000,
+            toolName: 'Edit',
+            displayName: 'Edit here.md',
+            input: '{}',
+            hasSuggestions: false,
+          },
+        },
+      ],
+    });
+
+    renderLane({}, transport);
+    // This suite runs on fake timers, so the query is flushed by hand rather
+    // than by a poller that would never tick.
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+
+    const lane = screen.getByTestId('lane-ask');
+    expect(lane.textContent).toContain('here.md');
+    expect(lane.textContent).not.toContain('elsewhere.md');
+    // And it is named from the room's own roster, not from a directory.
+    expect(lane.textContent).toContain('Kai');
   });
 });

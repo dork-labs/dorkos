@@ -9,9 +9,11 @@
  * @module entities/attention/model/derive-attention-signals
  */
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import type { Session } from '@dorkos/shared/types';
+import type { PendingInteractionDTO, Session } from '@dorkos/shared/types';
 import type { AttentionSignal } from './attention-signal';
+import { describeInteraction } from './describe-interaction';
 
 /**
  * How long a session must sit untouched before the product says anything.
@@ -43,34 +45,6 @@ export const IDLE_NUDGE_WINDOW_MS = 24 * 60 * 60 * 1000;
  */
 const IDLE_NUDGE_LIMIT = 1;
 
-/**
- * What a session this client has ATTACHED to is waiting on.
- *
- * The fleet-wide session-list stream folds approvals, questions and MCP
- * elicitations into the single lifecycle `blocked` (see
- * `BLOCKING_INTERACTION_EVENT_TYPES`) — by design, because the projector's job
- * there is "is this agent working or waiting", not "waiting on what". A session
- * this window has hydrated carries the real answer in its own stream store, and
- * that is the only place `question` can be told apart from a permission prompt.
- * A session with no entry here is read at the coarse resolution, which is a
- * smaller lie than inventing a kind.
- */
-export interface AttentionInteraction {
-  /**
-   * Which of the three blocking interactions is open.
-   *
-   * Spelled `type`, matching `PendingInteractionDTO`, so the store's own
-   * records are assignable to this without a mapping step — a mapping is a
-   * second place for the vocabulary to drift, and this view exists to be
-   * narrower than the DTO, not different from it.
-   */
-  type: 'approval' | 'question' | 'elicitation';
-  /** Its id, so the signal's own id is stable across renders. */
-  id: string;
-  /** When the interaction's countdown started, epoch ms. */
-  startedAt: number;
-}
-
 /** Everything {@link deriveAttentionSignals} reads. */
 export interface AttentionSources {
   /** The instant to reason from, epoch ms. The only clock this module has. */
@@ -81,8 +55,16 @@ export interface AttentionSources {
   sessions: readonly Session[];
   /** Session id → coarse lifecycle, from the global session-list stream. */
   lifecycles: Readonly<Record<string, SessionLifecycle>>;
-  /** Session id → what it is blocked on, for the sessions this window attached. */
-  interactions: Readonly<Record<string, AttentionInteraction>>;
+  /**
+   * Every prompt anywhere in the fleet that is waiting on a person.
+   *
+   * Fleet-wide, not attached-only, and that is the whole of what changed here:
+   * the kind of a blockage used to be knowable only for the one session this
+   * window had hydrated, so every background agent's question was reported as a
+   * permission prompt. The prompt itself now rides the global stream, so the
+   * answer below is exact for every session.
+   */
+  interactions: readonly InteractionPendingEvent[];
   /** Agent directory → the disambiguated name to print. */
   agentNames: Readonly<Record<string, string>>;
   /** Idle nudges the operator waved away in this window (BC-10). */
@@ -170,6 +152,17 @@ function sessionSignal(
 export function deriveAttentionSignals(sources: AttentionSources): AttentionSignal[] {
   const signals: AttentionSignal[] = [];
 
+  // The oldest prompt each session is parked on — oldest because that is the one
+  // that runs out first, and a session parked on two says so with the one that
+  // needs answering soonest.
+  const promptBySession = new Map<string, PendingInteractionDTO>();
+  for (const pending of sources.interactions) {
+    const held = promptBySession.get(pending.sessionId);
+    if (held === undefined || pending.interaction.startedAt < held.startedAt) {
+      promptBySession.set(pending.sessionId, pending.interaction);
+    }
+  }
+
   // ── Capability approvals: the one blockage that is not a session ──
   for (const approval of sources.approvals) {
     signals.push({
@@ -189,29 +182,24 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
     const lifecycle = sources.lifecycles[session.id];
 
     if (lifecycle === 'blocked') {
-      const interaction = sources.interactions[session.id];
-      // `question` is the only kind the coarse stream cannot produce, so it is
-      // the only one that needs the attached session's own answer. An
-      // elicitation is a prompt from an MCP server that the operator answers
-      // exactly like a permission ask, so it reads as one.
+      const interaction = promptBySession.get(session.id);
+      // An elicitation is a prompt from an MCP server that the operator answers
+      // exactly like a permission ask, so it reads as one. A question is its own
+      // kind — and it is exact for every session now, attached or not, because
+      // the prompt rides the fleet-wide stream.
       //
-      // **The degradation has a cost worth stating.** A session this window has
-      // not attached to falls back to `permission-prompt`, which is BC-6's top
-      // tier — so a background agent's QUESTION is asked about before a real
-      // permission prompt, and `select-now-items.ts` gives it the shield glyph
-      // when the session has no `cwd` to draw a face from. The copy is kept
-      // neutral ("Waiting on you") rather than claiming a permission was asked
-      // for. Fixing it properly means either a fifth `NowKind` for "blocked,
-      // kind unknown" — which BC-5 closes at four — or the fleet-wide stream
-      // carrying the interaction kind, which is a server change. Both are
-      // spec-level decisions, so this stays honest in words and is raised
-      // rather than quietly re-tiered.
+      // A `blocked` session with no prompt in hand is still possible and still
+      // honest: a capability hold parks a turn on a person without raising one
+      // of these, and so does a runtime that reported `blocked` before its
+      // prompt arrived. It reads as a permission ask waiting on you, which is
+      // what it is.
       const isQuestion = interaction?.type === 'question';
       signals.push(
         sessionSignal(session, sources, {
           id: `blocked:${interaction?.id ?? session.id}`,
           kind: isQuestion ? 'question' : 'permission-prompt',
-          secondary: isQuestion ? 'Has a question' : 'Waiting on you',
+          secondary:
+            interaction === undefined ? 'Waiting on you' : describeInteraction(interaction),
           since:
             interaction === undefined
               ? session.updatedAt

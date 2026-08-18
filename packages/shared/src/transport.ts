@@ -97,6 +97,7 @@ import type {
   OllamaProvisionResult,
 } from './runtime-connect.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
+import type { PendingInteractionsResponse } from './interaction-events.js';
 import type {
   UiActionRequest,
   McpAppResourceRequest,
@@ -729,6 +730,16 @@ export interface Transport extends RoomTransport {
     sessionId: string,
     request: McpAppResourceRequest
   ): Promise<McpAppResourceResponse>;
+  /**
+   * Every prompt across the fleet that is waiting on a person, with
+   * server-authoritative time left.
+   *
+   * The seed for the live stream: a window that opens after a prompt was raised
+   * reads it here, then keeps it current from `interaction_pending` and
+   * `interaction_resolved`. Answering still goes through the six methods below —
+   * only listing is new. See `GET /api/sessions/pending-interactions`.
+   */
+  listPendingInteractions(): Promise<PendingInteractionsResponse>;
   /** Approve a pending tool call that requires user confirmation. */
   approveTool(
     sessionId: string,

@@ -47,16 +47,16 @@ vi.mock('motion/react', () => {
   };
 });
 
-const { ApprovalReceipt } = await import('../ui/tools/ApprovalReceipt');
+const { AskReceipt } = await import('../ui/AskReceipt');
 
 afterEach(cleanup);
 
-describe('ApprovalReceipt under reduced motion', () => {
+describe('AskReceipt under reduced motion', () => {
   it('lands in place with no travel and no duration', () => {
     // Purpose: reduced motion is a request for no movement, not for a shorter
     // movement. The receipt must appear already settled.
     render(
-      <ApprovalReceipt
+      <AskReceipt
         outcome="allowed"
         items={[{ toolCallId: 'tc-1', label: 'Run "npm test"' }]}
         resolvedAt={1_700_000_005_000}
@@ -77,7 +77,7 @@ describe('ApprovalReceipt under reduced motion', () => {
     // Purpose: the expander is information, not decoration — turning motion off
     // must not take the detail with it.
     render(
-      <ApprovalReceipt
+      <AskReceipt
         outcome="denied"
         items={[
           { toolCallId: 'tc-1', label: 'Run "a"' },

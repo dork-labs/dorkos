@@ -125,8 +125,13 @@ interface UseInteractiveShortcutsOptions {
 | `Cmd+.` / `Ctrl+.` | Toggle the right panel                                       |
 | `Cmd+Shift+.`      | Open the Session panel                                       |
 | `Cmd+Shift+A`      | Toggle the docked profile (`use-profile-shortcut.ts`)        |
+| `Cmd+Shift+Y`      | Answer the next thing waiting on you (`use-ask-shortcut.ts`) |
 | `?`                | Open keyboard shortcuts panel (`use-shortcuts-panel.ts`)     |
 | `Cmd+Shift+D`      | Dev playground — **`import.meta.env.DEV` only**              |
+
+**`Cmd+Shift+Y` takes you to the next thing waiting on you.** `useAskShortcut` (`features/ask/model/use-ask-shortcut.ts`) registers a **capture-phase** listener — always, not only while something is pending — that moves focus to the next Ask card on screen, cycling round at the end, and asks the header tray to open when none is drawn. It is the only thing that moves focus onto a card; an Ask that arrives while you are typing sits there quietly.
+
+It has its own chord rather than sharing `Cmd+Shift+A` with the Profile. Sharing was tried: "Answer while something is waiting, Profile otherwise" makes the `?` panel list one combo with two labels, and a reader discovers which meaning they got by watching the screen. `Y` is free in this registry and unbound in Chrome, Firefox and Safari.
 
 `Cmd+Shift+A` toggles rather than opens: with the right panel already showing the `profile` tab it closes the panel; anything else switches to that tab and opens it. Same document-level listener pattern as `useRightPanelShortcut`, mounted from both `App.tsx` and `AppShell.tsx`.
 
@@ -301,7 +306,7 @@ ChatPanel
         └── SessionMessage (receives activeToolCallId, onToolRef, focusedOptionIndex)
               └── MessageContext (the three props, put on context for the body)
                     └── AssistantMessageContent (reads them with useMessageContext)
-                          ├── ToolApproval (ref → ToolApprovalHandle)
+                          ├── ApprovalPrompt (ref → ApprovalPromptHandle)
                           │     isActive={toolCallId === activeToolCallId}
                           │     ref={isActive ? approvalRefCallback : undefined}
                           │
@@ -352,12 +357,12 @@ Threads three props from `ChatPanel` through `MessageList`:
 
 It does not consume them. The row itself is the shared `Message.*` chrome, so it puts all three on `MessageContext` and lets the body renderer read them: `AssistantMessageContent` calls `useMessageContext()`, checks `part.toolCallId === activeToolCallId` for each tool call part, and conditionally passes the `ref` callback. Only the active tool's ref is captured -- inactive tools do not register handles.
 
-### `ToolApproval.tsx`
+### `ApprovalPrompt.tsx`
 
-Exposes `ToolApprovalHandle` via `forwardRef` + `useImperativeHandle`:
+Exposes `ApprovalPromptHandle` via `forwardRef` + `useImperativeHandle`:
 
 ```typescript
-export interface ToolApprovalHandle {
+export interface ApprovalPromptHandle {
   approve: () => void;
   deny: () => void;
 }

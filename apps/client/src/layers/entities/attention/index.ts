@@ -23,3 +23,21 @@
 export { dismissIdleNudge, useIdleNudgeStore } from './model/idle-nudge-store';
 export { useAttentionSignals } from './model/use-attention-signals';
 export { usePendingApprovals, PENDING_APPROVALS_QUERY_KEY } from './model/use-pending-approvals';
+export {
+  usePendingInteractions,
+  PENDING_INTERACTIONS_QUERY_KEY,
+} from './model/use-pending-interactions';
+// The half-sentence that follows an agent's name ("wants to edit standup.md").
+// Exported because `features/ask` builds the card's headline from it, and one
+// phrasing is the point.
+export { describeInteraction, agentNameFromCwd } from './model/describe-interaction';
+export { useAskAgentNames } from './model/use-ask-agent-names';
+export {
+  recordAskReceipt,
+  forgetAskReceipt,
+  useAskReceipt,
+  settleAsk,
+  useSettlingAsks,
+  clearAskReceipts,
+  type AskReceipt,
+} from './model/ask-receipt-store';

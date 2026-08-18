@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import {
@@ -33,9 +33,17 @@ import {
   recordDispatchEnd,
   recordDispatchStart,
 } from '../services/observability/dispatch-buffers.js';
+import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
+import {
+  readCallerAuthority,
+  requireOperatorCookieUnderLogin,
+  type OperatorCookieRefusal,
+} from '../lib/caller-authority.js';
+import type { RoomBindingsPort } from '../services/session/index.js';
 import {
   aggregateSessionList,
   listRecentSessions,
+  listPendingInteractionsAcrossSessions,
   countSessionsPerDay,
   getOrCreateProjector,
   persistenceModeFor,
@@ -62,6 +70,61 @@ import { getWorkspaceManager } from '../services/workspace/index.js';
 const vaultRoot = DEFAULT_CWD;
 
 const router = Router();
+
+/**
+ * What a caller is told when it tried to answer a prompt without being a person
+ * signed in on this machine.
+ *
+ * Written for whoever ends up reading it, which is often an agent relaying it to
+ * a person: it says WHERE the answer has to happen, not which header was
+ * missing. A refusal that names a header reads as a hint about how to get around
+ * it. The same reasoning, and nearly the same sentence, as the capability
+ * approvals' `DECIDE_NEEDS_COCKPIT`.
+ */
+const ANSWERING_NEEDS_COCKPIT =
+  'Answering an agent has to happen inside DorkOS, by a person who is signed in. ' +
+  'A program holding an API key cannot answer for you. Open DorkOS and answer it there.';
+
+/**
+ * Refuse anything that is not a person in the cockpit answering for themselves.
+ *
+ * These six routes were protected by `sessionGate` alone, which was defensible
+ * while the only way to reach them was the session you were looking at.
+ * Broadcasting the Ask to every route makes them reachable from everywhere, and
+ * DOR-609's lesson is that _who acted_ is not _who may_.
+ *
+ * **Fail-closed and structural.** An agent that presents its identity header can
+ * never answer ANY prompt, its own included, because `readCallerAuthority`
+ * reports `agentIdentityPresented` for a header that did not even resolve — a
+ * revoked token still means a machine is calling. There is therefore no id to
+ * compare and no way to spoof one: "the requester never self-approves" is a
+ * property of what the path accepts, not a check it runs.
+ *
+ * Under login-on, a caller holding a per-user API key is refused too. An agent
+ * legitimately holds one of the person's keys — it is how a Codex or OpenCode
+ * agent reaches the operator surface at all — which is exactly the residual
+ * DOR-474 closed for capability approvals and this closes for tool prompts.
+ *
+ * With login off `requireOperatorCookieUnderLogin` allows, because there is no
+ * cookie for anyone to present. That is the named, documented residual, and it
+ * is identical to the one capability approvals carry: see
+ * `lib/caller-authority.ts`.
+ *
+ * Composed from shipped pieces, with no new predicate, so "who counts as a
+ * person" cannot mean one thing at an approval and another at a tool prompt.
+ *
+ * @param req - The incoming request.
+ * @param res - The response carrying `sessionGate`'s resolved user.
+ * @returns `undefined` when the caller may answer, or the refusal to answer with.
+ */
+function requirePersonToAnswer(req: Request, res: Response): OperatorCookieRefusal | undefined {
+  const authority = resolveDecisionAuthority(readCallerAuthority(req, res));
+  if (!authority.allowed) {
+    return { status: authority.status, code: authority.code, error: authority.error };
+  }
+  const notAPerson = requireOperatorCookieUnderLogin(res, 'whether a tool runs');
+  return notAPerson ? { ...notAPerson, error: ANSWERING_NEEDS_COCKPIT } : undefined;
+}
 
 // GET /api/sessions - List sessions aggregated across all registered runtimes
 // (ADR-0310). Responds with the { sessions, warnings? } envelope rather than a
@@ -151,6 +214,39 @@ router.get('/daily-counts', async (req, res) => {
     days,
   });
   res.json({ days, dailyCounts, warnings });
+});
+
+// GET /api/sessions/pending-interactions — every prompt anywhere on this
+// machine that is waiting on a person (spec `unified-conversation` §3.3).
+//
+// MUST be registered before the `/:id` routes below, or Express 5 captures
+// `pending-interactions` as an `:id` — the same trap `/recent` and
+// `/daily-counts` document, and the reason this route is not `/:id/…`-shaped.
+//
+// The live stream carries transitions (`interaction_pending` /
+// `interaction_resolved`), which is complete for a window that was open when
+// each fired and empty for one that was not. This is what a window reads on
+// mount so an Ask raised a minute ago shows up as fast as one raised now.
+//
+// AUTHORITY: `sessionGate` and nothing more, deliberately. Reading that
+// something needs a person is not deciding it, and the header pill must count
+// for a cockpit that has not yet proven itself for a decision. Deciding runs
+// `requirePersonToAnswer` below.
+router.get('/pending-interactions', (req, res) => {
+  const bindings = req.app.locals.roomSessionBindings as RoomBindingsPort | undefined;
+  const interactions = listPendingInteractionsAcrossSessions().map((row) => {
+    const binding = bindings?.bindingForSession(row.sessionId);
+    return {
+      sessionId: row.sessionId,
+      cwd: row.cwd,
+      interaction: row.interaction,
+      ...(binding ? { roomId: binding.roomId, roomAuthorId: binding.authorId } : {}),
+    };
+  });
+  // `warnings` is present in the schema and empty here. It exists because this
+  // is the natural home for a future runtime that cannot answer the question,
+  // and adding the field later would be a breaking response change.
+  res.json({ interactions });
 });
 
 // GET /api/sessions/:id/runtime-type — Lightweight endpoint for clients that
@@ -758,7 +854,15 @@ router.patch('/:id/queue/:messageId', sessionQueueUpdateHandler);
 router.delete('/:id/queue/:messageId', sessionQueueRemoveHandler);
 
 // POST /api/sessions/:id/approve - Approve pending tool call
+//
+// The answer guard runs first on all six of these routes. See
+// {@link requirePersonToAnswer}: the Ask is now reachable from every route in
+// the cockpit, so who may answer it is a property of the endpoint rather than of
+// where the card happened to be drawn.
 router.post('/:id/approve', async (req, res) => {
+  const refusal = requirePersonToAnswer(req, res);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
@@ -780,6 +884,12 @@ router.post('/:id/approve', async (req, res) => {
 
 // POST /api/sessions/:id/deny - Deny pending tool call
 router.post('/:id/deny', async (req, res) => {
+  // Guarded for the same reason as approve, not as a symmetry: an agent that can
+  // deny can suppress a person's decision and bury the card that would have told
+  // them. Same argument the capability approvals' deny route makes.
+  const refusal = requirePersonToAnswer(req, res);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
@@ -804,6 +914,9 @@ router.post('/:id/deny', async (req, res) => {
 
 // POST /api/sessions/:id/batch-approve - Approve multiple pending tool calls
 router.post('/:id/batch-approve', async (req, res) => {
+  const refusal = requirePersonToAnswer(req, res);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
@@ -826,6 +939,9 @@ router.post('/:id/batch-approve', async (req, res) => {
 // requests it was never about. Each refusal therefore reports honestly that
 // nobody explained it, and the transcript receipts say so.
 router.post('/:id/batch-deny', async (req, res) => {
+  const refusal = requirePersonToAnswer(req, res);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
@@ -843,6 +959,11 @@ router.post('/:id/batch-deny', async (req, res) => {
 
 // POST /api/sessions/:id/submit-answers - Submit answers for AskUserQuestion
 router.post('/:id/submit-answers', async (req, res) => {
+  // A question is answered by a person too. The three kinds of prompt share one
+  // bar, because they are one object to whoever is being asked.
+  const refusal = requirePersonToAnswer(req, res);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
@@ -895,6 +1016,9 @@ router.post('/:id/mcp-app/resource', sessionMcpAppResourceHandler);
 
 // POST /api/sessions/:id/submit-elicitation - Submit response to MCP elicitation
 router.post('/:id/submit-elicitation', async (req, res) => {
+  const refusal = requirePersonToAnswer(req, res);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 

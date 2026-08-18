@@ -9,6 +9,12 @@ const mockUseIsMobile = vi.fn(() => true);
 // The Trust Dial reads the standing Full-autonomy acknowledgement from user
 // config before it sends one. Stubbed to "nobody has acknowledged anything",
 // which is the shipped state and the one every case below assumes.
+// Nothing is waiting on anybody. The lane reads the fleet-wide list now, and a
+// bare render has no global stream behind it.
+vi.mock('@/layers/entities/attention', () => ({
+  usePendingInteractions: () => ({ interactions: [], isLoading: false }),
+}));
+
 vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
   useAutonomyAcknowledgement: () => ({
     acknowledgedAt: null,

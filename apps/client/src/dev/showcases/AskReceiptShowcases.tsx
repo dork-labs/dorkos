@@ -1,4 +1,4 @@
-import { ApprovalReceipt } from '@/layers/features/chat/ui/tools/ApprovalReceipt';
+import { AskReceipt } from '@/layers/features/ask';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -10,15 +10,15 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 const RECEIPT_ASKED_AT = new Date('2026-07-31T14:32:00Z').getTime();
 
 /** The record an answered permission request leaves in the transcript. */
-export function ApprovalReceiptShowcases() {
+export function AskReceiptShowcases() {
   return (
     <PlaygroundSection
-      title="ApprovalReceipt"
+      title="AskReceipt"
       description="What an answered approval leaves behind — a one-line record at the ask's own place in the transcript. Quiet by design: it is meant to be findable later, not loud now."
     >
       <ShowcaseLabel>Allowed</ShowcaseLabel>
       <ShowcaseDemo>
-        <ApprovalReceipt
+        <AskReceipt
           outcome="allowed"
           items={[{ toolCallId: 'r-1', label: 'Run "npm test"' }]}
           startedAt={RECEIPT_ASKED_AT}
@@ -28,7 +28,7 @@ export function ApprovalReceiptShowcases() {
 
       <ShowcaseLabel>Denied</ShowcaseLabel>
       <ShowcaseDemo>
-        <ApprovalReceipt
+        <AskReceipt
           outcome="denied"
           items={[{ toolCallId: 'r-2', label: 'Run "rm -rf build"' }]}
           startedAt={RECEIPT_ASKED_AT}
@@ -38,7 +38,7 @@ export function ApprovalReceiptShowcases() {
 
       <ShowcaseLabel>Expired (nobody answered — auto-denied after the full timeout)</ShowcaseLabel>
       <ShowcaseDemo>
-        <ApprovalReceipt
+        <AskReceipt
           outcome="expired"
           items={[{ toolCallId: 'r-3', label: 'Write config.json' }]}
           startedAt={RECEIPT_ASKED_AT}
@@ -48,7 +48,7 @@ export function ApprovalReceiptShowcases() {
 
       <ShowcaseLabel>Batch — one line, items behind the expander</ShowcaseLabel>
       <ShowcaseDemo>
-        <ApprovalReceipt
+        <AskReceipt
           outcome="allowed"
           items={[
             { toolCallId: 'r-4', label: 'Run "pnpm install"' },
@@ -62,10 +62,7 @@ export function ApprovalReceiptShowcases() {
 
       <ShowcaseLabel>No timestamp (a runtime that cannot say when)</ShowcaseLabel>
       <ShowcaseDemo>
-        <ApprovalReceipt
-          outcome="allowed"
-          items={[{ toolCallId: 'r-7', label: 'Read AGENTS.md' }]}
-        />
+        <AskReceipt outcome="allowed" items={[{ toolCallId: 'r-7', label: 'Read AGENTS.md' }]} />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

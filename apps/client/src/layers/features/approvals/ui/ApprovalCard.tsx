@@ -1,12 +1,10 @@
 import { useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Check, X } from 'lucide-react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { Badge, Button } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
-import { approvalExitTransition } from '../lib/approval-exit-transition';
-import { formatTimeLeft } from '../lib/format-time-left';
+import { AskCard, askExitTransition, formatTimeLeft } from '@/layers/features/ask';
 import { formatTrustWindow } from '../lib/format-trust-window';
 import { agentLabelFrom } from '../lib/agent-label';
 import { useGrantApproval, useDenyApproval } from '../model/use-approval-decision';
@@ -124,7 +122,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
       exit={{
         opacity: 0,
         height: 0,
-        transition: approvalExitTransition({
+        transition: askExitTransition({
           decided: decision !== null,
           reducedMotion: reducedMotion === true,
         }),
@@ -188,22 +186,15 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             colour, weight, and order instead — see the button itself. */}
         <div className="flex min-w-0 shrink-0 flex-col items-start gap-1.5 @[34rem]/approval:items-end">
           {decision ? (
-            <p
+            <AskCard.Receipt
               data-slot="approval-resolved"
-              // `role="status"` rather than a bare line: the buttons the reader
-              // was on have just gone, so the answer has to say itself.
-              role="status"
-              className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs"
+              tone={decision === 'granted' ? 'allowed' : 'denied'}
+              className="shrink-0"
             >
-              {decision === 'granted' ? (
-                <Check className="text-status-success size-3.5" aria-hidden />
-              ) : (
-                <X className="text-muted-foreground size-3.5" aria-hidden />
-              )}
               {decision === 'granted' ? 'Allowed' : 'Not allowed'}
-            </p>
+            </AskCard.Receipt>
           ) : (
-            <div className="flex items-center gap-2">
+            <AskCard.Actions className="gap-2">
               {/* The buttons stay small — they sit beside a summary, not under
                   it — so the target grows instead of the glyph, the way
                   `SidebarGroupAction` does. Phone only: a pointer does not need
@@ -235,7 +226,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               >
                 Allow
               </Button>
-            </div>
+            </AskCard.Actions>
           )}
 
           {/* The third answer. Quieter than Allow (ghost, no fill) because a

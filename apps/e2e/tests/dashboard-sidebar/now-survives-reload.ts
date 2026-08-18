@@ -49,9 +49,16 @@ function erroredRow(page: Page) {
   return nowZone(page).getByText('Stopped with an error');
 }
 
-/** The Heads up row a session waiting on a permission answer draws. */
+/**
+ * The Heads up row a session waiting on a permission answer draws.
+ *
+ * The row says what the agent actually asked for since DOR-1330 — the prompt
+ * itself rides the fleet-wide stream now, so the placeholder "Waiting on you"
+ * only remains for a session parked with no prompt in hand. `demo-approval`
+ * asks to edit a migration, and that is what the row reads.
+ */
 function blockedRow(page: Page) {
-  return nowZone(page).getByText('Waiting on you');
+  return nowZone(page).getByText(/wants to edit migrations\/0007_auth_tokens\.sql/);
 }
 
 /** What {@link registerNowSurvivesReloadTests} needs from its host spec. */

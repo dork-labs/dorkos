@@ -2,8 +2,8 @@ import { useState, useId, useImperativeHandle, useCallback, useRef, forwardRef }
 import { motion, AnimatePresence } from 'motion/react';
 import { Check } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
-import { Kbd, Button, RadioGroup, RadioGroupItem, Checkbox } from '@/layers/shared/ui';
-import { OptionRow, InteractiveCard } from '../primitives';
+import { Kbd, Button, RadioGroup, RadioGroupItem, Checkbox, OptionRow } from '@/layers/shared/ui';
+import { AskCard } from './AskCard';
 import { QuestionAnswerSummary, QuestionUnansweredRow } from './QuestionAnswerSummary';
 import type { QuestionItem, QuestionOutcome } from '@dorkos/shared/types';
 
@@ -429,7 +429,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
 
     // Pending state: render full question form
     return (
-      <InteractiveCard isActive={isActive} isResolved={submitted}>
+      <AskCard.Root isActive={isActive} isResolved={submitted}>
         {questions.length === 1 ? (
           // Single question — render directly without navigation
           renderQuestionContent(questions[0], 0)
@@ -524,7 +524,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
             )}
           </Button>
         )}
-      </InteractiveCard>
+      </AskCard.Root>
     );
   }
 );

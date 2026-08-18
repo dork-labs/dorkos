@@ -2,6 +2,7 @@ import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { CHAT_SECTIONS } from '../playground-registry';
 import { MessageShowcases } from '../showcases/MessageShowcases';
 import { ToolShowcases } from '../showcases/ToolShowcases';
+import { AskShowcases } from '../showcases/AskShowcases';
 import { ChipShowcases } from '../showcases/ChipShowcases';
 import { InputShowcases } from '../showcases/InputShowcases';
 import { StatusShowcases } from '../showcases/StatusShowcases';
@@ -21,6 +22,7 @@ export function ChatPage() {
     >
       <MessageShowcases />
       <ToolShowcases />
+      <AskShowcases />
       <ChipShowcases />
       <InputShowcases />
       <StatusShowcases />

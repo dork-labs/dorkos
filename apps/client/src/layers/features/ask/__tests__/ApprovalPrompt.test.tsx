@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, act, fireEvent } from '@testing-library/react';
 import { createRef } from 'react';
-import { ToolApproval, type ToolApprovalHandle } from '../ui/tools/ToolApproval';
+import { ApprovalPrompt, type ApprovalPromptHandle } from '../ui/ApprovalPrompt';
 
 const mockApproveTool = vi.fn().mockResolvedValue(undefined);
 const mockDenyTool = vi.fn().mockResolvedValue(undefined);
@@ -35,9 +35,9 @@ const baseProps = {
   input: '{"file_path": "/tmp/test.txt"}',
 };
 
-describe('ToolApproval', () => {
+describe('ApprovalPrompt', () => {
   it('renders tool name and approve/deny buttons', () => {
-    render(<ToolApproval {...baseProps} />);
+    render(<ApprovalPrompt {...baseProps} />);
     expect(screen.getByText('Write test.txt')).toBeDefined();
     expect(screen.getByText('Tool approval required')).toBeDefined();
     expect(screen.getByRole('button', { name: /approve/i })).toBeDefined();
@@ -45,7 +45,7 @@ describe('ToolApproval', () => {
   });
 
   it('renders tool arguments display', () => {
-    render(<ToolApproval {...baseProps} />);
+    render(<ApprovalPrompt {...baseProps} />);
     expect(screen.getByTestId('tool-args')).toBeDefined();
   });
 
@@ -53,13 +53,13 @@ describe('ToolApproval', () => {
     it('stays out of the way until asked for', () => {
       // The fast path is read the command, allow or deny. The field is an
       // affordance for the times you want to say more, not a step in the flow.
-      render(<ToolApproval {...baseProps} />);
+      render(<ApprovalPrompt {...baseProps} />);
       expect(screen.queryByLabelText('Reason for denying')).toBeNull();
       expect(screen.getByRole('button', { name: /add a reason/i })).toBeDefined();
     });
 
     it('sends what was typed with the denial', async () => {
-      render(<ToolApproval {...baseProps} />);
+      render(<ApprovalPrompt {...baseProps} />);
       fireEvent.click(screen.getByRole('button', { name: /add a reason/i }));
 
       const field = screen.getByLabelText('Reason for denying');
@@ -79,7 +79,7 @@ describe('ToolApproval', () => {
       // Enter inside the card normally means Approve. From inside this field it
       // must mean "send this refusal", or the reason someone typed would allow
       // the call they were refusing.
-      render(<ToolApproval {...baseProps} isActive />);
+      render(<ApprovalPrompt {...baseProps} isActive />);
       fireEvent.click(screen.getByRole('button', { name: /add a reason/i }));
 
       const field = screen.getByLabelText('Reason for denying');
@@ -93,7 +93,7 @@ describe('ToolApproval', () => {
     });
 
     it('sends nothing when the field was opened and left blank', async () => {
-      render(<ToolApproval {...baseProps} />);
+      render(<ApprovalPrompt {...baseProps} />);
       fireEvent.click(screen.getByRole('button', { name: /add a reason/i }));
       fireEvent.change(screen.getByLabelText('Reason for denying'), { target: { value: '   ' } });
       fireEvent.click(screen.getByRole('button', { name: /^deny/i }));
@@ -106,32 +106,35 @@ describe('ToolApproval', () => {
 
   describe('isActive prop', () => {
     it('adds ring-2 class when isActive is true', () => {
-      const { container } = render(<ToolApproval {...baseProps} isActive={true} />);
+      const { container } = render(<ApprovalPrompt {...baseProps} isActive={true} />);
       const wrapper = container.firstElementChild as HTMLElement;
       expect(wrapper.className).toContain('ring-2');
       expect(wrapper.className).toContain('ring-ring/30');
     });
 
     it('does not have ring-2 class when isActive is false', () => {
-      const { container } = render(<ToolApproval {...baseProps} isActive={false} />);
+      const { container } = render(<ApprovalPrompt {...baseProps} isActive={false} />);
       const wrapper = container.firstElementChild as HTMLElement;
-      expect(wrapper.className).not.toContain('ring-2');
+      // The ACTIVE ring, specifically. The card also carries a `focus-visible:`
+      // twin of it — the design system's parity rule — which contains the same
+      // `ring-2` substring and is not what this case is about.
+      expect(wrapper.className).not.toContain('ring-ring/30');
     });
 
     it('applies opacity-60 when isActive is false and not decided', () => {
-      const { container } = render(<ToolApproval {...baseProps} isActive={false} />);
+      const { container } = render(<ApprovalPrompt {...baseProps} isActive={false} />);
       const wrapper = container.firstElementChild as HTMLElement;
       expect(wrapper.className).toContain('opacity-60');
     });
 
     it('does not apply opacity-60 when isActive is true', () => {
-      const { container } = render(<ToolApproval {...baseProps} isActive={true} />);
+      const { container } = render(<ApprovalPrompt {...baseProps} isActive={true} />);
       const wrapper = container.firstElementChild as HTMLElement;
       expect(wrapper.className).not.toContain('opacity-60');
     });
 
     it('shows Kbd hints when isActive is true', () => {
-      render(<ToolApproval {...baseProps} isActive={true} />);
+      render(<ApprovalPrompt {...baseProps} isActive={true} />);
       // Kbd elements render as <kbd> tags
       const kbds = document.querySelectorAll('kbd');
       expect(kbds.length).toBe(2);
@@ -140,7 +143,7 @@ describe('ToolApproval', () => {
     });
 
     it('hides Kbd hints when isActive is false', () => {
-      render(<ToolApproval {...baseProps} isActive={false} />);
+      render(<ApprovalPrompt {...baseProps} isActive={false} />);
       const kbds = document.querySelectorAll('kbd');
       expect(kbds.length).toBe(0);
     });
@@ -148,8 +151,8 @@ describe('ToolApproval', () => {
 
   describe('imperative handle', () => {
     it('approve() calls transport.approveTool', async () => {
-      const ref = createRef<ToolApprovalHandle>();
-      render(<ToolApproval {...baseProps} ref={ref} />);
+      const ref = createRef<ApprovalPromptHandle>();
+      render(<ApprovalPrompt {...baseProps} ref={ref} />);
 
       ref.current!.approve();
 
@@ -159,8 +162,8 @@ describe('ToolApproval', () => {
     });
 
     it('deny() calls transport.denyTool', async () => {
-      const ref = createRef<ToolApprovalHandle>();
-      render(<ToolApproval {...baseProps} ref={ref} />);
+      const ref = createRef<ApprovalPromptHandle>();
+      render(<ApprovalPrompt {...baseProps} ref={ref} />);
 
       ref.current!.deny();
 
@@ -171,8 +174,8 @@ describe('ToolApproval', () => {
     });
 
     it('shows "Approved" with check icon and badge after approve', async () => {
-      const ref = createRef<ToolApprovalHandle>();
-      render(<ToolApproval {...baseProps} ref={ref} />);
+      const ref = createRef<ApprovalPromptHandle>();
+      render(<ApprovalPrompt {...baseProps} ref={ref} />);
 
       ref.current!.approve();
 
@@ -190,8 +193,8 @@ describe('ToolApproval', () => {
     });
 
     it('shows "Denied" with X icon and badge after deny', async () => {
-      const ref = createRef<ToolApprovalHandle>();
-      render(<ToolApproval {...baseProps} ref={ref} />);
+      const ref = createRef<ApprovalPromptHandle>();
+      render(<ApprovalPrompt {...baseProps} ref={ref} />);
 
       ref.current!.deny();
 
@@ -209,8 +212,8 @@ describe('ToolApproval', () => {
     });
 
     it('renders tool name in mono font in decided state', async () => {
-      const ref = createRef<ToolApprovalHandle>();
-      render(<ToolApproval {...baseProps} ref={ref} />);
+      const ref = createRef<ApprovalPromptHandle>();
+      render(<ApprovalPrompt {...baseProps} ref={ref} />);
 
       ref.current!.approve();
 
@@ -223,8 +226,8 @@ describe('ToolApproval', () => {
     });
 
     it('renders Approved badge with success styling', async () => {
-      const ref = createRef<ToolApprovalHandle>();
-      render(<ToolApproval {...baseProps} ref={ref} />);
+      const ref = createRef<ApprovalPromptHandle>();
+      render(<ApprovalPrompt {...baseProps} ref={ref} />);
 
       ref.current!.approve();
 
@@ -237,8 +240,8 @@ describe('ToolApproval', () => {
     });
 
     it('renders Denied badge with error styling', async () => {
-      const ref = createRef<ToolApprovalHandle>();
-      render(<ToolApproval {...baseProps} ref={ref} />);
+      const ref = createRef<ApprovalPromptHandle>();
+      render(<ApprovalPrompt {...baseProps} ref={ref} />);
 
       ref.current!.deny();
 
@@ -251,8 +254,8 @@ describe('ToolApproval', () => {
     });
 
     it('guards against action after decided', async () => {
-      const ref = createRef<ToolApprovalHandle>();
-      render(<ToolApproval {...baseProps} ref={ref} />);
+      const ref = createRef<ApprovalPromptHandle>();
+      render(<ApprovalPrompt {...baseProps} ref={ref} />);
 
       ref.current!.approve();
 
@@ -289,8 +292,8 @@ describe('ToolApproval', () => {
       // Purpose: benign UX on a raced approve. A duplicate/stale approve must not
       // dead-end the card in an error state; it resolves like a normal approve.
       mockApproveTool.mockRejectedValueOnce(alreadyResolvedError());
-      const ref = createRef<ToolApprovalHandle>();
-      render(<ToolApproval {...baseProps} ref={ref} />);
+      const ref = createRef<ApprovalPromptHandle>();
+      render(<ApprovalPrompt {...baseProps} ref={ref} />);
 
       ref.current!.approve();
 
@@ -306,8 +309,8 @@ describe('ToolApproval', () => {
       // Purpose: benign UX on a raced deny. Mirror of the approve case for the
       // deny path.
       mockDenyTool.mockRejectedValueOnce(alreadyResolvedError());
-      const ref = createRef<ToolApprovalHandle>();
-      render(<ToolApproval {...baseProps} ref={ref} />);
+      const ref = createRef<ApprovalPromptHandle>();
+      render(<ApprovalPrompt {...baseProps} ref={ref} />);
 
       ref.current!.deny();
 
@@ -322,8 +325,8 @@ describe('ToolApproval', () => {
       // Purpose: the 409 swallow must be narrow — a real failure (network, 500)
       // still shows the retry affordance, so we are not masking actual errors.
       mockApproveTool.mockRejectedValueOnce(new Error('HTTP 500'));
-      const ref = createRef<ToolApprovalHandle>();
-      render(<ToolApproval {...baseProps} ref={ref} />);
+      const ref = createRef<ApprovalPromptHandle>();
+      render(<ApprovalPrompt {...baseProps} ref={ref} />);
 
       ref.current!.approve();
 
@@ -344,20 +347,24 @@ describe('ToolApproval', () => {
     });
 
     // Helper: render inside async act so React flushes effects with fake timers active.
-    async function renderAsync(props: React.ComponentProps<typeof ToolApproval>) {
+    async function renderAsync(props: React.ComponentProps<typeof ApprovalPrompt>) {
       let result!: ReturnType<typeof render>;
       await act(async () => {
-        result = render(<ToolApproval {...props} />);
+        result = render(<ApprovalPrompt {...props} />);
       });
       return result;
     }
 
-    it('renders progress bar when timeoutMs is provided', async () => {
+    it('draws the countdown, with the bar as decoration and the words as the reading', async () => {
+      // The bar is `aria-hidden` on purpose (spec §4.4): a progress element that
+      // announced itself every second is the siren the design system forbids, so
+      // the ACCESSIBLE countdown is the text beside it.
       await renderAsync({ ...baseProps, timeoutMs: 600_000 });
-      const progressBar = screen.getByRole('progressbar');
-      expect(progressBar).toBeDefined();
-      expect(progressBar.getAttribute('aria-valuemax')).toBe('600');
-      expect(progressBar.getAttribute('aria-valuenow')).toBe('600');
+      const countdown = document.querySelector('[data-slot="ask-countdown"]') as HTMLElement;
+      expect(countdown).not.toBeNull();
+      expect(countdown.querySelector('[aria-hidden="true"]')).not.toBeNull();
+      expect(screen.queryByRole('progressbar')).toBeNull();
+      expect(countdown.textContent).toBe('10:00 remaining');
     });
 
     it('anchors the draining bar to the time actually left, not to a fresh start', async () => {
@@ -367,29 +374,36 @@ describe('ToolApproval', () => {
       // ask with a minute left. A negative delay of the elapsed time seeks the
       // animation to where the clock actually is.
       await renderAsync({ ...baseProps, timeoutMs: 600_000, approvalRemainingMs: 61_000 });
-      const drain = screen.getByRole('progressbar').firstElementChild as HTMLElement;
+      const countdown = document.querySelector('[data-slot="ask-countdown"]') as HTMLElement;
+      const drain = countdown.querySelector('[aria-hidden="true"] > div') as HTMLElement;
       expect(drain.style.animationDuration).toBe('600000ms');
       expect(drain.style.animationDelay).toBe('-539000ms');
-      // And the announced position agrees with the bar, rather than contradicting it.
-      expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('61');
+      // And the words agree with the bar, rather than contradicting it.
+      expect(countdown.textContent).toBe('1:01 remaining');
     });
 
     it('starts the bar at full when the ask is brand new', async () => {
       await renderAsync({ ...baseProps, timeoutMs: 600_000 });
-      const drain = screen.getByRole('progressbar').firstElementChild as HTMLElement;
+      const drain = document.querySelector(
+        '[data-slot="ask-countdown"] [aria-hidden="true"] > div'
+      ) as HTMLElement;
       expect(drain.style.animationDelay).toBe('0ms');
     });
 
-    it('does not render progress bar when timeoutMs is undefined', async () => {
+    it('draws no countdown at all when the ask has no deadline', async () => {
       await renderAsync(baseProps);
-      expect(screen.queryByRole('progressbar')).toBeNull();
+      expect(document.querySelector('[data-slot="ask-countdown"]')).toBeNull();
     });
 
-    it('does not show text countdown before warning threshold', async () => {
+    it('shows the time left from the start, in neutral colour until two minutes', async () => {
+      // Changed deliberately in P3: the words are the accessible countdown, so
+      // withholding them until two minutes left a screen-reader user with
+      // nothing at all for eight of the ten minutes. The THRESHOLDS still mean
+      // something — they decide the colour.
       await renderAsync({ ...baseProps, timeoutMs: 600_000 });
-      // Advance to 5 minutes elapsed (5 minutes remaining — still in normal phase)
       await act(async () => vi.advanceTimersByTime(300_000));
-      expect(screen.queryByText(/remaining/)).toBeNull();
+      const words = screen.getByText('5:00 remaining');
+      expect(words.className).toContain('text-muted-foreground');
     });
 
     it('shows text countdown at warning threshold (2 minutes remaining)', async () => {
@@ -401,6 +415,7 @@ describe('ToolApproval', () => {
       // The visible countdown element should be the non-sr-only span
       const visibleCountdown = elements.find((el) => !el.className.includes('sr-only'));
       expect(visibleCountdown).toBeDefined();
+      expect(visibleCountdown!.className).toContain('text-status-warning');
     });
 
     it('shows countdown with correct format at 1:30 remaining', async () => {
@@ -460,9 +475,9 @@ describe('ToolApproval', () => {
     });
 
     it('does not show timeout message on manual deny', async () => {
-      const ref = createRef<ToolApprovalHandle>();
+      const ref = createRef<ApprovalPromptHandle>();
       await act(async () => {
-        render(<ToolApproval {...baseProps} ref={ref} timeoutMs={600_000} />);
+        render(<ApprovalPrompt {...baseProps} ref={ref} timeoutMs={600_000} />);
       });
 
       // Advance 5 minutes then deny manually; flush promises and microtasks via runAllTimersAsync
@@ -478,9 +493,9 @@ describe('ToolApproval', () => {
     });
 
     it('approve works during countdown and stops timer display', async () => {
-      const ref = createRef<ToolApprovalHandle>();
+      const ref = createRef<ApprovalPromptHandle>();
       await act(async () => {
-        render(<ToolApproval {...baseProps} ref={ref} timeoutMs={600_000} />);
+        render(<ApprovalPrompt {...baseProps} ref={ref} timeoutMs={600_000} />);
       });
 
       // Advance 5 minutes then approve manually; flush promises and microtasks via runAllTimersAsync
@@ -491,8 +506,8 @@ describe('ToolApproval', () => {
       });
 
       expect(screen.getByText('Approved')).toBeDefined();
-      // No progress bar in decided state
-      expect(screen.queryByRole('progressbar')).toBeNull();
+      // No countdown in the decided state
+      expect(document.querySelector('[data-slot="ask-countdown"]')).toBeNull();
       // No timeout message
       expect(screen.queryByText(/Auto-denied/)).toBeNull();
     });
@@ -511,18 +526,17 @@ describe('ToolApproval', () => {
       expect(liveRegion.textContent).toBe('Urgent: 1 minute to approve or deny.');
     });
 
-    it('updates aria-valuenow as time passes', async () => {
+    it('counts the words down as time passes', async () => {
       await renderAsync({ ...baseProps, timeoutMs: 600_000 });
       await act(async () => vi.advanceTimersByTime(60_000)); // 1 minute elapsed
-      const progressBar = screen.getByRole('progressbar');
-      expect(progressBar.getAttribute('aria-valuenow')).toBe('540');
+      expect(screen.getByText('9:00 remaining')).toBeDefined();
     });
   });
 
   describe('friendly tool name formatting', () => {
     it('renders friendly label for MCP tool names with server badge', () => {
       render(
-        <ToolApproval
+        <ApprovalPrompt
           {...baseProps}
           toolName="mcp__slack__send_message"
           input='{"channel": "#general"}'
@@ -534,16 +548,16 @@ describe('ToolApproval', () => {
 
     it('suppresses badge for DorkOS tools but shows friendly label', () => {
       render(
-        <ToolApproval {...baseProps} toolName="mcp__dorkos__binding_list_sessions" input="{}" />
+        <ApprovalPrompt {...baseProps} toolName="mcp__dorkos__binding_list_sessions" input="{}" />
       );
       expect(screen.queryByText('DorkOS')).toBeNull();
       expect(screen.getByText('Binding List Sessions')).toBeDefined();
     });
 
     it('shows friendly label in decided state for MCP tools', async () => {
-      const ref = createRef<ToolApprovalHandle>();
+      const ref = createRef<ApprovalPromptHandle>();
       render(
-        <ToolApproval
+        <ApprovalPrompt
           {...baseProps}
           toolName="mcp__slack__send_message"
           input='{"channel": "#general"}'

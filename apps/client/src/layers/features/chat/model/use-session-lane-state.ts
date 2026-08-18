@@ -15,6 +15,7 @@ import type { SessionActivity } from '@dorkos/shared/session-stream';
 import {
   deriveLaneState,
   NO_ASKS,
+  type LaneAsk,
   NO_PRESENCE,
   type LaneState,
 } from '@/layers/features/conversation';
@@ -33,6 +34,14 @@ export interface SessionLaneInput {
   estimatedTokens: number;
   /** The session's permission mode, as its own runtime reports it. */
   permissionMode: PermissionMode;
+  /**
+   * Prompts this session is parked on, from the fleet-wide list.
+   *
+   * Rung 1, and the reason it is passed in rather than read here: the hook is
+   * about the session's TURN, and what is waiting on a person is a fact about
+   * the fleet that the host already holds for the transcript.
+   */
+  asks?: readonly LaneAsk[];
   /** True while the turn is parked on the person. */
   isWaitingForUser: boolean;
   /** Which kind of wait it is. */
@@ -124,7 +133,7 @@ export function useSessionLaneState(input: SessionLaneInput): LaneState {
 
   return deriveLaneState({
     capabilities: SESSION_CAPABILITIES,
-    asks: NO_ASKS,
+    asks: input.asks ?? NO_ASKS,
     stalled: false,
     presence: NO_PRESENCE,
     queueDepth: 0,

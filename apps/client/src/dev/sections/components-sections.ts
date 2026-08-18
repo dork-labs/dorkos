@@ -418,8 +418,8 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     keywords: ['collapsible', 'card', 'expand', 'collapse', 'thinking', 'chevron'],
   },
   {
-    id: 'interactivecard',
-    title: 'InteractiveCard',
+    id: 'askcard-root',
+    title: 'AskCard.Root',
     page: 'components',
     category: 'Chat Primitives',
     keywords: ['interactive', 'card', 'active', 'resolved', 'focus', 'ring'],
