@@ -588,6 +588,11 @@ export const RegisterAgentRequestSchema = z
      * of `path` and inside the server boundary — validated server-side. When
      * omitted, the server falls back to its default scan root (homedir), so the
      * namespace collapses to the first directory under `$HOME`.
+     *
+     * Ignored for an agent under the managed agents home dir
+     * (`{dorkHome}/agents`): those always take their namespace from that
+     * directory, so it stays the same when the reconciler next walks it
+     * (DOR-1342).
      */
     scanRoot: z.string().min(1).optional(),
   })

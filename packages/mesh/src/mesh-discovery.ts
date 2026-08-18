@@ -12,7 +12,7 @@ import type { AgentManifest, AgentRuntime, DiscoveryCandidate } from '@dorkos/sh
 import type { DiscoveryStrategy } from './types.js';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { DenialList } from './denial-list.js';
-import type { RelayBridge } from './relay-bridge.js';
+import { subjectForAgent, type RelayBridge } from './relay-bridge.js';
 import { resolveNamespace, normalizeNamespace } from './namespace-resolver.js';
 import { unifiedScan } from './discovery/unified-scanner.js';
 import type { ScanEvent, UnifiedScanOptions } from './discovery/types.js';
@@ -103,6 +103,12 @@ export interface DiscoveryDeps {
   relayBridge: RelayBridge;
   strategies: DiscoveryStrategy[];
   defaultScanRoot: string;
+  /**
+   * The managed agents home directory (`{dorkHome}/agents`), when the host has
+   * one. Every agent under it derives its namespace from it, whatever root a
+   * particular scan came in on — see {@link managedScanRoot}.
+   */
+  agentsHomeDir?: string;
   logger: import('@dorkos/shared/logger').Logger;
   generateUlid: ReturnType<typeof monotonicFactory>;
   /**
@@ -110,6 +116,35 @@ export interface DiscoveryDeps {
    * registered before. Optional — absent outside a wired-up {@link MeshCore}.
    */
   onAgentAdopted?: (agent: AdoptedAgent) => void;
+}
+
+/**
+ * The scan root a managed agent's namespace must be derived from, when the
+ * agent is one — otherwise `undefined`.
+ *
+ * Agents DorkOS creates for you (and DorkBot) live under
+ * `{dorkHome}/agents/<slug>`, and the reconciler walks that directory every
+ * five minutes. Deriving their namespace from anything else means two answers
+ * for one agent: creation used to fall back to the home directory and produce
+ * `dork` (the first segment of `.dork/agents/<slug>`), the reconciler produced
+ * `<slug>`, and the agent's Relay identity moved out from under it minutes
+ * after it was made (DOR-1342).
+ *
+ * So the agents home dir wins over every other candidate — the root a scan
+ * came in on included. A scan rooted at the home directory walking past
+ * `~/.dork/agents` is the same agent seen from further away, not a different
+ * agent, and it must not be re-namespaced.
+ *
+ * @param projectPath - Absolute path to the agent's project directory
+ * @param deps - Discovery dependencies (for the configured agents home dir)
+ * @returns The agents home dir when `projectPath` sits inside it, else undefined
+ */
+function managedScanRoot(projectPath: string, deps: DiscoveryDeps): string | undefined {
+  const home = deps.agentsHomeDir;
+  if (!home) return undefined;
+  const relative = path.relative(home, projectPath);
+  const inside = relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative);
+  return inside ? home : undefined;
 }
 
 /**
@@ -218,7 +253,10 @@ function announceAdoption(manifest: AgentManifest, projectPath: string, deps: Di
  * @param deps - Discovery dependencies
  * @param overrides - Optional manifest field overrides
  * @param approver - Identifier of the entity approving registration (default: "mesh")
- * @param scanRoot - Root directory for namespace derivation (default: deps.defaultScanRoot)
+ * @param scanRoot - Root directory for namespace derivation. Ignored for an agent
+ *   under the managed agents home dir, whose namespace always derives from that
+ *   directory (see {@link managedScanRoot}); otherwise defaults to
+ *   `deps.defaultScanRoot`.
  * @returns The created AgentManifest
  */
 export async function register(
@@ -230,7 +268,8 @@ export async function register(
 ): Promise<AgentManifest> {
   const id = deps.generateUlid();
   const now = new Date().toISOString();
-  const effectiveScanRoot = scanRoot ?? deps.defaultScanRoot;
+  const effectiveScanRoot =
+    managedScanRoot(candidate.path, deps) ?? scanRoot ?? deps.defaultScanRoot;
   const namespace = resolveNamespace(candidate.path, effectiveScanRoot, overrides?.namespace);
 
   const manifest: AgentManifest = {
@@ -264,7 +303,10 @@ export async function register(
  * @param partial - Manifest fields to set (name, runtime are required)
  * @param deps - Discovery dependencies
  * @param approver - Identifier of the entity approving registration (default: "mesh")
- * @param scanRoot - Root directory for namespace derivation (default: deps.defaultScanRoot)
+ * @param scanRoot - Root directory for namespace derivation. Ignored for an agent
+ *   under the managed agents home dir, whose namespace always derives from that
+ *   directory (see {@link managedScanRoot}); otherwise defaults to
+ *   `deps.defaultScanRoot`.
  * @returns The created AgentManifest
  */
 export async function registerByPath(
@@ -276,7 +318,7 @@ export async function registerByPath(
 ): Promise<AgentManifest> {
   const id = deps.generateUlid();
   const now = new Date().toISOString();
-  const effectiveScanRoot = scanRoot ?? deps.defaultScanRoot;
+  const effectiveScanRoot = managedScanRoot(projectPath, deps) ?? scanRoot ?? deps.defaultScanRoot;
   const namespace = resolveNamespace(projectPath, effectiveScanRoot, partial.namespace);
 
   const manifest: AgentManifest = {
@@ -379,13 +421,20 @@ async function registerInternal(
  *   duplicate irreversibly, and the guard would then refuse the true owner's
  *   return.
  *
- * The recorded scan root is, in order of preference: the root the manifest was
- * actually found under (`scanRoot`, passed by `discover()`), the scan root
- * already recorded on an existing registry entry (preserved by `syncFromDisk`,
- * which has no scan context), then `deps.defaultScanRoot` as a last resort.
- * Recording the real root matters: `defaultScanRoot` falls back to the homedir
- * in production, and a persisted `$HOME` scan root would make the reconciler's
- * rebuild-from-files walk the user's entire home directory every pass.
+ * The recorded scan root is, in order of preference: the managed agents home
+ * dir when the agent lives under it ({@link managedScanRoot} — the one root
+ * that must win, so a managed agent's namespace is the same at creation as it
+ * is after the next reconcile), the root the manifest was actually found under
+ * (`scanRoot`, passed by `discover()`), the scan root already recorded on an
+ * existing registry entry (preserved by `syncFromDisk`, which has no scan
+ * context), then `deps.defaultScanRoot` as a last resort. Recording the real
+ * root matters: `defaultScanRoot` falls back to the homedir in production, and
+ * a persisted `$HOME` scan root would make the reconciler's rebuild-from-files
+ * walk the user's entire home directory every pass.
+ *
+ * When the resolved namespace differs from the one the registry already held
+ * for this directory, the agent's previous Relay identity is retired — see
+ * {@link retirePreviousNamespace}.
  *
  * @param manifest - The auto-imported agent manifest
  * @param projectPath - Absolute path to the agent's project directory
@@ -402,9 +451,14 @@ export async function upsertAutoImported(
   scanRoot?: string,
   duplicates?: DuplicateManifestReport
 ): Promise<AutoImportResult> {
+  const existing = deps.registry.getByPath(projectPath);
   // Registry rows persist scanRoot as '' when unknown — treat that as absent.
-  const existingScanRoot = deps.registry.getByPath(projectPath)?.scanRoot || undefined;
-  const effectiveScanRoot = scanRoot ?? existingScanRoot ?? deps.defaultScanRoot;
+  // Taken from whatever row sits at this path, same id or not: a scan root
+  // describes where the DIRECTORY was found, so it stays true when a different
+  // manifest turns up in it.
+  const existingScanRoot = existing?.scanRoot || undefined;
+  const effectiveScanRoot =
+    managedScanRoot(projectPath, deps) ?? scanRoot ?? existingScanRoot ?? deps.defaultScanRoot;
   const namespace = resolveAutoImportNamespace(manifest, projectPath, effectiveScanRoot, deps);
   const entry: AgentRegistryEntry = {
     ...manifest,
@@ -412,6 +466,29 @@ export async function upsertAutoImported(
     namespace,
     scanRoot: effectiveScanRoot,
   };
+
+  // The identity THIS agent had before this write, so a namespace change can
+  // take its old Relay identity down with it. For a relocation the previous
+  // identity lives on the incumbent row, not on this path — set below.
+  //
+  // Same id or nothing. A row at this path carrying a DIFFERENT id is the
+  // branch-swap case (`AgentRegistry.upsert` deletes it and reports
+  // `'registered'`), and it is another agent's identity, not an earlier version
+  // of this one. Reading it as "the namespace this agent came from" would build
+  // a subject out of the old namespace and the new id — an address nobody ever
+  // registered — and then, finding the old namespace's last row gone, delete
+  // that namespace's catch-all deny while the displaced agent's real endpoint
+  // is still registered. That agent is left addressable with its ADR-0033
+  // secure default removed.
+  //
+  // The displaced agent's own identity is deliberately left alone: `upsert`
+  // drops its row directly rather than through `removeAgent`'s cascade, so
+  // nothing here has watched it go — and leaving an endpoint with its rules
+  // intact is the safe half of that trade.
+  let previous: { namespace: string; projectPath: string } | undefined =
+    existing && existing.id === manifest.id
+      ? { namespace: existing.namespace, projectPath: existing.projectPath }
+      : undefined;
 
   // Upsert handles both new and existing agents — and refuses, writing nothing,
   // when this id already belongs to another directory.
@@ -426,6 +503,7 @@ export async function upsertAutoImported(
       // second refusal would put the lie back one layer down.
       if (deps.registry.upsert(entry) === 'duplicate-id') return 'duplicate-id';
     } else if (await incumbentReleasedManifest(incumbent.projectPath, manifest.id, deps)) {
+      previous = { namespace: incumbent.namespace, projectPath: incumbent.projectPath };
       deps.registry.relocate(manifest.id, projectPath);
       // Re-run so the move carries the manifest's current fields too: `relocate`
       // moves the row, `upsert` syncs it, and the two together are what a
@@ -449,7 +527,68 @@ export async function upsertAutoImported(
 
   // Ensure Relay endpoint exists
   await deps.relayBridge.registerAgent(manifest, projectPath, namespace, effectiveScanRoot);
+
+  // The new identity is live before the old one is taken down, so the agent is
+  // never momentarily unaddressable.
+  if (previous && previous.namespace && previous.namespace !== namespace) {
+    await retirePreviousNamespace(manifest.id, previous, namespace, deps);
+  }
   return outcome;
+}
+
+/**
+ * Take down the Relay identity an agent had before its namespace changed.
+ *
+ * A managed agent's namespace no longer moves under it (see
+ * {@link managedScanRoot}), so a change here is either a one-time correction on
+ * an install that predates that fix, an agent that genuinely moved directories,
+ * or a manifest whose `namespace` a person edited. All three leave the same
+ * debris behind if nothing cleans up: an endpoint on a subject nobody reads,
+ * and — once the last agent leaves a namespace — that namespace's default
+ * access rules allowing and denying traffic for nobody.
+ *
+ * Warned, not logged quietly: for a managed agent this should now never
+ * happen, so a line here is a signal worth looking at.
+ *
+ * Every step is best-effort. A failure to tidy up the identity an agent used to
+ * have must never fail the write that gave it a working one.
+ *
+ * @param agentId - The agent whose namespace changed
+ * @param previous - The namespace and directory it had before
+ * @param namespace - The namespace it has now
+ * @param deps - Discovery dependencies (registry, relay bridge, logger)
+ */
+async function retirePreviousNamespace(
+  agentId: string,
+  previous: { namespace: string; projectPath: string },
+  namespace: string,
+  deps: DiscoveryDeps
+): Promise<void> {
+  deps.logger.warn('[mesh] an agent changed namespace', {
+    event: 'mesh.identity.namespace_changed',
+    agentId,
+    from: previous.namespace,
+    to: namespace,
+  });
+  try {
+    await deps.relayBridge.retireSubject(
+      subjectForAgent({
+        id: agentId,
+        namespace: previous.namespace,
+        projectPath: previous.projectPath,
+      })
+    );
+    if (deps.registry.listByNamespace(previous.namespace).length === 0) {
+      deps.relayBridge.cleanupNamespaceRules(previous.namespace);
+    }
+  } catch (err) {
+    deps.logger.warn('[mesh] could not retire the identity an agent used to have', {
+      event: 'mesh.identity.retire_failed',
+      agentId,
+      previousNamespace: previous.namespace,
+      err,
+    });
+  }
 }
 
 /**

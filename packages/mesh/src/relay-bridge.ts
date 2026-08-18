@@ -225,17 +225,66 @@ export class RelayBridge {
   }
 
   /**
-   * Clean up namespace access rules when the last agent in a namespace is removed.
+   * Retire a Relay endpoint an agent no longer answers on.
+   *
+   * Used when an agent's namespace changes and its subject moves with it: the
+   * old subject is nobody's address any more. Unlike {@link unregisterAgent}
+   * this emits no lifecycle signal — the agent was re-identified, not removed,
+   * and telling every listener it went away would be a lie.
+   *
+   * **This deletes the old mailbox, undelivered mail included, and that is a
+   * deliberate departure from {@link warnOnGuardedNamespace}'s "leave it to
+   * relay GC".** Two facts drive it. The mail is already unreadable: the agent
+   * reads the subject its registry row names, which is the new one from the
+   * moment the namespace changed, and Relay offers no way to unregister an
+   * endpoint while keeping its maildir — nor any way to move mail to the new
+   * subject, which is what preserving it would actually have to mean. And a
+   * registered endpoint is what keeps an abandoned subject addressable, and an
+   * address nothing answers on is worse than no address: a sender gets a
+   * delivery that is never read instead of an error it can act on.
+   *
+   * It only reaches a subject THIS process registered, because the endpoint
+   * registry is in-memory: a namespace an older version abandoned before the
+   * last restart has a mailbox directory and no registered endpoint, so this is
+   * a no-op for it and relay GC's orphan reap is what clears it.
+   *
+   * @param subject - The stale subject to unregister
+   */
+  async retireSubject(subject: string): Promise<void> {
+    if (!this.relayCore) return;
+    await this.relayCore.unregisterEndpoint(subject);
+  }
+
+  /**
+   * Clean up a namespace's default access rules once no agent lives in it —
+   * the last agent was removed, or the last one left for another namespace.
+   *
+   * Only ever called where DorkOS has just watched an identity it wrote go
+   * away: `removeAgent`'s unregister cascade, and the namespace-change path in
+   * `mesh-discovery`. Deliberately NOT a periodic sweep over Relay's rule file.
+   * "No registry row" does not mean "nothing lives here": the ADR-0043 recovery
+   * (delete the DB, let reconciliation rebuild it from files) rebuilds only
+   * from the agents home dir plus the scan roots recorded on surviving rows, so
+   * an agent in a project directory has no row for a while — and its
+   * `{ns}.* -> relay.agent.>` deny is the ADR-0033 secure default, which Relay
+   * would replace with its own default of allow. A sweep on that evidence
+   * deletes live protection to tidy up inert rules.
+   *
+   * Removes every rule {@link defaultAccessRuleSpecs} can write for a
+   * namespace, system-agent rules included, so nothing is left allowing or
+   * denying traffic for a namespace with no agents in it. Relay removes one
+   * rule per call, which is exactly right for the two specs that share a
+   * pattern pair (a system namespace's catch-all deny and its bidirectional
+   * allow): each is removed by its own call, and a call that matches nothing is
+   * a no-op, so this is safe for a namespace that never had system rules.
    *
    * @param namespace - The namespace to clean up rules for
    */
   cleanupNamespaceRules(namespace: string): void {
     if (!this.relayCore) return;
 
-    // Remove the same-namespace allow rule
-    this.relayCore.removeAccessRule(`relay.agent.${namespace}.*`, `relay.agent.${namespace}.*`);
-
-    // Remove the cross-namespace deny rule
-    this.relayCore.removeAccessRule(`relay.agent.${namespace}.*`, 'relay.agent.>');
+    for (const spec of defaultAccessRuleSpecs(namespace, true)) {
+      this.relayCore.removeAccessRule(spec.from, spec.to);
+    }
   }
 }

@@ -21,6 +21,27 @@ function makeMockRelayCore() {
   };
 }
 
+/**
+ * A RelayCore fake that actually holds its rules and removes the FIRST match
+ * per call, exactly as the real access-control store does — the semantics
+ * namespace-rule cleanup has to survive when two specs share a pattern pair.
+ */
+function makeStatefulRelayCore() {
+  const rules: { from: string; to: string; action: string; priority: number }[] = [];
+  return {
+    registerEndpoint: vi.fn().mockResolvedValue(undefined),
+    unregisterEndpoint: vi.fn().mockResolvedValue(true),
+    addAccessRule: vi.fn((rule: (typeof rules)[number]) => {
+      rules.push(rule);
+    }),
+    removeAccessRule: vi.fn((from: string, to: string) => {
+      const index = rules.findIndex((r) => r.from === from && r.to === to);
+      if (index !== -1) rules.splice(index, 1);
+    }),
+    listAccessRules: vi.fn(() => [...rules]),
+  };
+}
+
 function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   return {
     id: '01JKABC00001',
@@ -224,13 +245,37 @@ describe('unregisterAgent', () => {
 // ---------------------------------------------------------------------------
 
 describe('cleanupNamespaceRules', () => {
-  it('calls removeAccessRule twice for the namespace', () => {
+  it('removes every default rule the namespace could have been given', () => {
     const relay = makeMockRelayCore();
     const bridge = new RelayBridge(relay as never);
 
     bridge.cleanupNamespaceRules('test-ns');
 
-    expect(relay.removeAccessRule).toHaveBeenCalledTimes(2);
+    // One call per default spec, system-agent rules included: the catch-all
+    // deny and the system allow share a pattern pair and Relay removes one
+    // rule per call, so both need their own. A namespace that never held a
+    // system agent simply has two calls match nothing.
+    expect(relay.removeAccessRule.mock.calls).toEqual([
+      ['relay.agent.test-ns.*', 'relay.agent.test-ns.*'],
+      ['relay.agent.test-ns.*', 'relay.agent.>'],
+      ['relay.agent.test-ns.*', 'relay.agent.>'],
+      ['relay.agent.>', 'relay.agent.test-ns.*'],
+    ]);
+  });
+
+  it('leaves nothing behind for a namespace that held a system agent', async () => {
+    const relay = makeStatefulRelayCore();
+    const bridge = new RelayBridge(relay as never);
+    await bridge.registerAgent(
+      makeManifest({ id: '01JKSYSTEM0001', name: 'dorkbot', isSystem: true }),
+      '/agents/dorkbot',
+      'dorkbot'
+    );
+    expect(relay.listAccessRules()).not.toEqual([]);
+
+    bridge.cleanupNamespaceRules('dorkbot');
+
+    expect(relay.listAccessRules()).toEqual([]);
   });
 
   it('removes the same-namespace allow rule', () => {
