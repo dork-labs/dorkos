@@ -880,7 +880,7 @@ test.describe('Rooms — a thread on a phone', () => {
   }) => {
     // The push UNMOUNTS the room, so coming back mounts a brand new scroller at
     // the top — and neither the room id nor its newest entry changed, so
-    // nothing in `useStickToBottom` would re-pin it. Measured before the fix on
+    // nothing about the room changed, so nothing would re-pin it. Measured on
     // this exact viewport: 1148px before opening the thread, 0px after closing
     // it. The reader pressed Back and silently landed on the oldest message in
     // the room.
