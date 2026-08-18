@@ -9,9 +9,10 @@
  * tables. So the table is what varies here, and nothing else.
  */
 import { describe, expect, it, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup, renderHook } from '@testing-library/react';
+import { render, screen, cleanup, renderHook, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
+import { TIMING } from '@/layers/shared/lib';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { MessageAuthor } from '@/layers/shared/model';
 import type { EntryAction } from '@/layers/features/entry-actions';
@@ -27,11 +28,18 @@ vi.mock('../../entry-actions/ui/EntryRunWithMenu', () => ({
   EntryRunWithMenu: () => <button type="button" data-entry-action="run-with" />,
 }));
 
-beforeAll(() => {
+/**
+ * Answer `matchMedia` one way for every query.
+ *
+ * `useIsMobile` reads it, and it is what decides whether the row's menu is a
+ * right-click menu (pointer) or the touch drawer — and only the drawer draws a
+ * quick-reaction row, so a case about that row has to say which screen it is on.
+ */
+function setTouchScreen(matches: boolean) {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
-      matches: false,
+      matches,
       media: query,
       onchange: null,
       addListener: vi.fn(),
@@ -41,9 +49,14 @@ beforeAll(() => {
       dispatchEvent: vi.fn(),
     })),
   });
-});
+}
 
-afterEach(cleanup);
+beforeAll(() => setTouchScreen(false));
+
+afterEach(() => {
+  cleanup();
+  setTouchScreen(false);
+});
 
 const AUTHOR: MessageAuthor = { id: 'author-ana', kind: 'human', displayName: 'Ana' };
 const AT = '2026-08-18T09:45:00.000Z';
@@ -67,19 +80,31 @@ const REPLY: EntryAction = { id: 'reply', label: 'Reply in thread', icon: Reply,
 /** The pills a reacted-to message would draw. */
 const REACTION = { emoji: '👍', authorIds: ['author-kai'], firstAt: AT };
 
-/** One whole row, rendered inside a conversation with the given capabilities. */
-function renderRow(
-  capabilities: Partial<ConversationCapabilities>,
-  options: { anchor?: 'corner' | 'rail'; actions?: EntryAction[] } = {}
-) {
-  return render(
+/** How a row is put on screen — the same options for a first render and a rerender. */
+interface RowOptions {
+  anchor?: 'corner' | 'rail';
+  actions?: EntryAction[];
+  /** The pills ON this message. Defaults to one; `[]` is a message nobody has reacted to. */
+  pills?: (typeof REACTION)[];
+}
+
+/** One whole row, as the host composes it. */
+function row(capabilities: Partial<ConversationCapabilities>, options: RowOptions = {}) {
+  return (
     <TooltipProvider>
       <Conversation.Root
         surface="room"
         capabilities={{ ...NOTHING, ...capabilities }}
         anchor={options.anchor ?? 'rail'}
       >
-        <Message.Root position="first" actions={options.actions}>
+        <Message.Root
+          position="first"
+          actions={options.actions}
+          // The quick row the right-click menu and the touch drawer open with —
+          // the OTHER two ways into the same act the capsule offers, and the
+          // reason the row gates this itself rather than trusting each host.
+          reactions={{ quick: ['👍'], mine: [], onToggle: () => {} }}
+        >
           <Message.Gutter author={AUTHOR} at={AT} />
           <Message.Body>
             <Message.Author id="author-line" author={AUTHOR} at={AT} />
@@ -97,7 +122,7 @@ function renderRow(
               ]}
             />
             <Message.Reactions
-              reactions={[REACTION]}
+              reactions={options.pills ?? [REACTION]}
               viewerAuthorId="author-you"
               names={new Map([['author-kai', 'Kai']])}
               frequents={['👍']}
@@ -115,6 +140,11 @@ function renderRow(
       </Conversation.Root>
     </TooltipProvider>
   );
+}
+
+/** One whole row, rendered inside a conversation with the given capabilities. */
+function renderRow(capabilities: Partial<ConversationCapabilities>, options: RowOptions = {}) {
+  return render(row(capabilities, options));
 }
 
 /** The `data-slot` names present in the rendered row. */
@@ -138,7 +168,32 @@ describe('Message.* — what a row offers comes from its capabilities', () => {
     const { container } = renderRow({ reactions: true });
 
     expect(container.querySelector('[data-slot="message-reactions"]')).not.toBeNull();
-    expect(screen.getAllByRole('button', { name: /React with/ }).length).toBeGreaterThan(0);
+    // Exactly the one the fixture puts on this message. `toBeGreaterThan(0)`
+    // would pass just as well on a row that drew the pill twice.
+    expect(screen.getAllByRole('button', { name: /React with/ })).toHaveLength(1);
+  });
+
+  it('draws no socket for a message nobody has reacted to', () => {
+    // The overwhelmingly common row in a reactable room. A wrapper on every one
+    // of them would put an element answering to the reactions slot in a document
+    // where nothing has been reacted to — and stop "the slot is absent" meaning
+    // "this conversation has no reactions".
+    const { container } = renderRow({ reactions: true }, { pills: [] });
+
+    expect(container.querySelector('[data-slot="message-reactions"]')).toBeNull();
+  });
+
+  it('keeps the socket while the last pill leaves', () => {
+    // `EntryReactionRow` deliberately outlives its own emptiness to run the last
+    // pill's 120ms fade. Unmounting the socket under it the instant the set
+    // empties would take `AnimatePresence` with it and swallow the fade — so a
+    // message that HAS had a pill keeps its slot when the pill is taken back.
+    const { container, rerender } = renderRow({ reactions: true }, { pills: [REACTION] });
+    expect(container.querySelector('[data-slot="message-reactions"]')).not.toBeNull();
+
+    rerender(row({ reactions: true }, { pills: [] }));
+
+    expect(container.querySelector('[data-slot="message-reactions"]')).not.toBeNull();
   });
 
   it('withholds "run this with…" where the conversation does not offer it', () => {
@@ -199,6 +254,45 @@ describe('Message.* — what a row offers comes from its capabilities', () => {
 
     const runWithOnly = renderRow({ runWith: true });
     expect(runWithOnly.queryByTestId('entry-actions-reach')).toBeNull();
+  });
+
+  // The capsule is one of THREE ways into the same act, and the capability has
+  // to hold on all three or it holds on none: a host that handed the row a quick
+  // row for a conversation with `reactions: false` would offer by finger and by
+  // right-click exactly what the hover capsule withholds. Only the drawer draws
+  // the quick row (the desktop menu deliberately has nowhere to put it), so
+  // these two are the touch pair.
+  describe('the long-press drawer', () => {
+    /** Hold a real touch press on the row until the long-press threshold elapses. */
+    async function longPress(target: HTMLElement) {
+      fireEvent.pointerDown(target, { button: 0, clientX: 10, clientY: 10, pointerType: 'touch' });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, TIMING.LONG_PRESS_MS + 50));
+      });
+      fireEvent.pointerUp(target);
+    }
+
+    it('opens with a quick-reaction row where the conversation has reactions', async () => {
+      setTouchScreen(true);
+      const { container } = renderRow({ reactions: true }, { actions: [REPLY] });
+
+      await longPress(container.querySelector<HTMLElement>('[data-slot="message-root"]')!);
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('drawer-reactions')).toBeInTheDocument();
+    });
+
+    it('opens without one where it does not', async () => {
+      setTouchScreen(true);
+      const { container } = renderRow({ reactions: false }, { actions: [REPLY] });
+
+      await longPress(container.querySelector<HTMLElement>('[data-slot="message-root"]')!);
+
+      // The drawer still opens — the message has a command on it. What it does
+      // not do is offer a reaction the rest of the row refuses.
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(screen.queryByTestId('drawer-reactions')).toBeNull();
+    });
   });
 });
 

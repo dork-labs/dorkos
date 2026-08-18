@@ -91,7 +91,7 @@ export function MessageRoot({
   ref,
   ...rest
 }: MessageRootProps) {
-  const { density, anchor } = useConversation();
+  const { capabilities, density, anchor } = useConversation();
   // How the touch press is going, so the message can give under the finger
   // (room design record §5.6). Idle on a pointer device, which never reports one.
   const [press, setPress] = useState<LongPressState | null>(null);
@@ -144,7 +144,17 @@ export function MessageRoot({
   );
 
   return (
-    <EntryActionMenu actions={actions ?? []} reactions={reactions} onPressStateChange={setPress}>
+    <EntryActionMenu
+      actions={actions ?? []}
+      // The same gate `Message.Actions` puts on the capsule, on the other two
+      // ways into the same act. The right-click menu and the long-press drawer
+      // both open a quick-reaction row from this prop, so a host that passed
+      // one to a conversation with `reactions: false` would offer by finger and
+      // by right-click exactly what the hover capsule withholds — the surface
+      // check the capability table exists to prevent, arrived at by omission.
+      reactions={capabilities.reactions ? reactions : undefined}
+      onPressStateChange={setPress}
+    >
       {row}
     </EntryActionMenu>
   );
