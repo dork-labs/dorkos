@@ -43,7 +43,7 @@ const TICK_MS = 1000;
  *
  * It never steals focus: it arrives with the message-entrance grammar and sits
  * there. `A` and `D` answer it only while focus is inside the card, and the only
- * thing that puts focus there is a person pressing `⌘⇧A` or clicking it.
+ * thing that puts focus there is a person pressing `⌘⇧Y` or clicking it.
  *
  * When the prompt is answered — here, in another window, or by the clock — the
  * actions are removed in the same commit the receipt appears. The design rule is

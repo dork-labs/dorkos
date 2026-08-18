@@ -154,9 +154,8 @@ export function ApprovalsIndicator() {
   // joined here — the same join the sidebar's rows make.
   const agentNames = useAskAgentNames(asks);
   const navigate = useNavigate();
-  // `⌘⇧A`, registered here because this widget is on every route and the tray it
-  // opens is the surface that exists everywhere. It claims the chord only while
-  // something is waiting — see {@link useAskShortcut}.
+  // `⌘⇧Y`, registered here because this widget is on every route and the tray
+  // it opens is the surface that exists everywhere.
   useAskShortcut();
   const trayRequest = useAskTrayRequest();
   const {

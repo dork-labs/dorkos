@@ -112,7 +112,7 @@ function typingInto(target: EventTarget | null): boolean {
  * composer cannot swallow the letter `a`. A document-level hotkey could not make
  * that promise, and this is the one promise the design screen asked for by name.
  *
- * The card never takes focus on arrival. `⌘⇧A` moves focus here deliberately;
+ * The card never takes focus on arrival. `⌘⇧Y` moves focus here deliberately;
  * nothing else does.
  */
 function AskCardRoot({

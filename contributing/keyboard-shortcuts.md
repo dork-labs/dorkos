@@ -118,17 +118,20 @@ interface UseInteractiveShortcutsOptions {
 
 ### Navigation
 
-| Key                | Action                                                               |
-| ------------------ | -------------------------------------------------------------------- |
-| `Cmd+K` / `Ctrl+K` | Open command palette                                                 |
-| `Cmd+B` / `Ctrl+B` | Toggle sidebar (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`)         |
-| `Cmd+.` / `Ctrl+.` | Toggle the right panel                                               |
-| `Cmd+Shift+.`      | Open the Session panel                                               |
-| `Cmd+Shift+A`      | Answer the next thing waiting on you, else toggle the docked profile |
-| `?`                | Open keyboard shortcuts panel (`use-shortcuts-panel.ts`)             |
-| `Cmd+Shift+D`      | Dev playground — **`import.meta.env.DEV` only**                      |
+| Key                | Action                                                       |
+| ------------------ | ------------------------------------------------------------ |
+| `Cmd+K` / `Ctrl+K` | Open command palette                                         |
+| `Cmd+B` / `Ctrl+B` | Toggle sidebar (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`) |
+| `Cmd+.` / `Ctrl+.` | Toggle the right panel                                       |
+| `Cmd+Shift+.`      | Open the Session panel                                       |
+| `Cmd+Shift+A`      | Toggle the docked profile (`use-profile-shortcut.ts`)        |
+| `Cmd+Shift+Y`      | Answer the next thing waiting on you (`use-ask-shortcut.ts`) |
+| `?`                | Open keyboard shortcuts panel (`use-shortcuts-panel.ts`)     |
+| `Cmd+Shift+D`      | Dev playground — **`import.meta.env.DEV` only**              |
 
-**`Cmd+Shift+A` has two meanings, and which one you get is decided by whether anything is waiting on you.** `useAskShortcut` (`features/ask/model/use-ask-shortcut.ts`) registers a **capture-phase** listener that is installed only while at least one Ask is pending; it moves focus to the next Ask card on screen, or asks the header tray to open when none is drawn, and swallows the event. With nothing pending it registers nothing at all and the key falls through untouched. So: something waiting → Answer; nothing waiting → Profile. The capture phase is what makes that deterministic rather than dependent on which listener mounted first.
+**`Cmd+Shift+Y` takes you to the next thing waiting on you.** `useAskShortcut` (`features/ask/model/use-ask-shortcut.ts`) registers a **capture-phase** listener — always, not only while something is pending — that moves focus to the next Ask card on screen, cycling round at the end, and asks the header tray to open when none is drawn. It is the only thing that moves focus onto a card; an Ask that arrives while you are typing sits there quietly.
+
+It has its own chord rather than sharing `Cmd+Shift+A` with the Profile. Sharing was tried: "Answer while something is waiting, Profile otherwise" makes the `?` panel list one combo with two labels, and a reader discovers which meaning they got by watching the screen. `Y` is free in this registry and unbound in Chrome, Firefox and Safari.
 
 `Cmd+Shift+A` toggles rather than opens: with the right panel already showing the `profile` tab it closes the panel; anything else switches to that tab and opens it. Same document-level listener pattern as `useRightPanelShortcut`, mounted from both `App.tsx` and `AppShell.tsx`.
 
