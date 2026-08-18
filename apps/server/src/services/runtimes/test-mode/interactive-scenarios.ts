@@ -185,11 +185,12 @@ const BATCH_TOOLS = [
 
 /**
  * I-02 — three tools pending at once, which is the only state that draws the
- * batch approval bar (`BatchApprovalBar` mounts at two or more).
+ * burst card (`AskStack` mounts at two or more; it was `BatchApprovalBar` until
+ * DOR-1330 gave the behaviour the card family's chrome).
  *
  * Every ask is emitted before ANY of them is awaited, so all three are genuinely
  * pending together rather than arriving one at a time as each is answered — the
- * latter would render one card three times and never the bar.
+ * latter would render one card three times and never the burst.
  */
 const approvalBatch: ScenarioFn = async function* (_content, ctx) {
   yield sessionStatus();

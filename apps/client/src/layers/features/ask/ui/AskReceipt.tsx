@@ -5,7 +5,7 @@ import type { ToolApprovalOutcome } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 
 /** One answered request inside a receipt. */
-export interface AskReceiptItem {
+interface AskReceiptItem {
   /** The interaction's tool-call id — the stable key. */
   toolCallId: string;
   /** Human summary of what was asked for, e.g. `Run "npm test"`. */

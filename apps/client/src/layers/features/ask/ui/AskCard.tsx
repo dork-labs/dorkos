@@ -47,7 +47,7 @@ const ENTRANCE_REDUCED = {
 } as const;
 
 /** How urgent the countdown is. Drives colour, and nothing else. */
-export type AskUrgency = 'neutral' | 'warning' | 'urgent' | 'expired';
+type AskUrgency = 'neutral' | 'warning' | 'urgent' | 'expired';
 
 /** Seconds left at which the countdown turns amber. */
 export const WARN_AT_S = 120;
@@ -64,7 +64,7 @@ export const URGENT_AT_S = 60;
  * @param secondsLeft - Seconds until the prompt auto-denies, or `null` when it
  *   has no deadline at all.
  */
-export function askUrgency(secondsLeft: number | null): AskUrgency {
+function askUrgency(secondsLeft: number | null): AskUrgency {
   if (secondsLeft === null) return 'neutral';
   if (secondsLeft <= 0) return 'expired';
   if (secondsLeft <= URGENT_AT_S) return 'urgent';
@@ -73,7 +73,7 @@ export function askUrgency(secondsLeft: number | null): AskUrgency {
 }
 
 /** What {@link AskCardRoot} takes. */
-export interface AskCardRootProps {
+interface AskCardRootProps {
   /** The card's body — the parts below, in whatever order the prompt needs. */
   children: ReactNode;
   /** Whether this card is the keyboard shortcut's current target. */
@@ -115,7 +115,7 @@ function typingInto(target: EventTarget | null): boolean {
  * The card never takes focus on arrival. `⌘⇧A` moves focus here deliberately;
  * nothing else does.
  */
-export function AskCardRoot({
+function AskCardRoot({
   children,
   isActive = false,
   isResolved = false,
@@ -184,7 +184,7 @@ export function AskCardRoot({
 }
 
 /** What {@link AskCardFace} takes. */
-export interface AskCardFaceProps {
+interface AskCardFaceProps {
   /** The session's working directory — the fallback identity every prompt carries. */
   cwd: string;
   /** The agent behind that directory, when the surface holds the roster. */
@@ -203,7 +203,7 @@ export interface AskCardFaceProps {
  * and emoji; one that does not gets the deterministic pair the whole cockpit
  * already derives from a path, so the same session looks the same everywhere.
  */
-export function AskCardFace({ cwd, agent, size = 'sm', className }: AskCardFaceProps) {
+function AskCardFace({ cwd, agent, size = 'sm', className }: AskCardFaceProps) {
   const visual = useAgentVisual(agent ?? null, cwd);
   return (
     <AgentAvatar
@@ -217,13 +217,7 @@ export function AskCardFace({ cwd, agent, size = 'sm', className }: AskCardFaceP
 }
 
 /** The one sentence: who wants what. */
-export function AskCardHeadline({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+function AskCardHeadline({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <p data-slot="ask-headline" className={cn('text-foreground font-medium', className)}>
       {children}
@@ -232,13 +226,7 @@ export function AskCardHeadline({
 }
 
 /** Whatever the prompt itself said — a description, a path, the arguments. */
-export function AskCardDetail({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+function AskCardDetail({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div
       data-slot="ask-detail"
@@ -250,7 +238,7 @@ export function AskCardDetail({
 }
 
 /** What {@link AskCardCountdown} takes. */
-export interface AskCardCountdownProps {
+interface AskCardCountdownProps {
   /** Seconds until this prompt auto-denies, or `null` when it has no deadline. */
   secondsLeft: number | null;
   /** The full budget in ms, for the bar's own duration. */
@@ -269,12 +257,7 @@ export interface AskCardCountdownProps {
  * The accessible countdown is the text, which changes rarely enough to be worth
  * hearing.
  */
-export function AskCardCountdown({
-  secondsLeft,
-  timeoutMs,
-  elapsedMs = 0,
-  label,
-}: AskCardCountdownProps) {
+function AskCardCountdown({ secondsLeft, timeoutMs, elapsedMs = 0, label }: AskCardCountdownProps) {
   const urgency = askUrgency(secondsLeft);
   return (
     <div data-slot="ask-countdown" className="flex items-center gap-2">
@@ -316,13 +299,7 @@ export function AskCardCountdown({
 }
 
 /** The answers. Removed in the same commit a receipt appears. */
-export function AskCardActions({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+function AskCardActions({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div data-slot="ask-actions" className={cn('flex flex-wrap items-center gap-2', className)}>
       {children}
@@ -339,7 +316,7 @@ export type AskCardReceiptTone = 'allowed' | 'denied' | 'neutral';
  * `role="status"` rather than a plain line: the buttons the reader was on have
  * just gone, so the answer has to say itself.
  */
-export function AskCardReceipt({
+function AskCardReceipt({
   tone,
   children,
   className,

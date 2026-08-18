@@ -19,7 +19,7 @@ import { Button } from '@/layers/shared/ui';
 import { AskCard } from './AskCard';
 
 /** One prompt inside a burst. */
-export interface AskStackItem {
+interface AskStackItem {
   /** The interaction id — the stable key. */
   id: string;
   /** What it is asking for, in one line. */

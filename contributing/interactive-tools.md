@@ -404,7 +404,7 @@ await transport.denyTool(sessionId, toolCallId, reason);
 onDecided?.();
 ```
 
-When multiple tool approvals are pending concurrently, a `BatchApprovalBar` appears allowing the user to approve or deny all queued approvals in a single action:
+When several tool approvals are pending at once, they collapse into one **burst card** (`AskStack`, `features/ask`) whose Allow all / Deny all answer the lot in a single call. It replaced `BatchApprovalBar` in DOR-1330; the two transport calls are unchanged:
 
 ```typescript
 // Batch approve all pending

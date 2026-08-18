@@ -1,14 +1,14 @@
 # Implementation Summary: Unified conversation surfaces — one tree, approvals anywhere, a live lane
 
 **Created:** 2026-08-18
-**Last Updated:** 2026-08-18 (session 3 — P2, the live lane)
+**Last Updated:** 2026-08-18 (session 4 — P3, the Ask)
 **Spec:** specs/unified-conversation/02-specification.md
 **Tracker:** DOR-1327 (umbrella) — phases DOR-1328 (P1) · DOR-1329 (P2) · DOR-1330 (P3) · DOR-1331 (P4) · DOR-1332 (P5)
 
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 18 / 48
+**Tasks Completed:** 31 / 48
 
 ## Tasks Completed
 
@@ -186,6 +186,76 @@ Two independent reviews — spec compliance, then adversarial per `REVIEW.md`, t
 
 **Verification:** `pnpm format:check` exit 0 · client/server/e2e `typecheck` clean · client lint 0 errors / **118** warnings (the P1 baseline — a `set-state-in-effect` warning the first fix introduced is what sent the reset to render time) · server 0/48 · e2e 0/6 · `docs:export-api` + `generate:api-docs` produce no diff · the deleted-name grep over `apps/ packages/ contributing/ docs/ .claude/ scripts/` returns **12** hits, all of them prose inside the replacements' own TSDoc saying what they replaced, and **0** live references.
 
+### Session 4 - 2026-08-18 (P3, DOR-1330)
+
+**Worktree:** `~/.dork/workspaces/dorkos/DOR-1330` · branch `DOR-1330` (based on `DOR-1329`, merged again at the task-7 boundary once P2's review fixes landed)
+**Workers:** `p3-builder` (P3, DOR-1330)
+
+- Task #3.1: The interaction-events wire module — worker: p3-builder
+  - Created `packages/shared/src/interaction-events.ts` + the `exports` subpath. `InteractionPendingEvent` carries the `PendingInteractionDTO` verbatim plus `sessionId`, `cwd` and the optional room pair; `InteractionResolvedEvent` carries the id, the outcome and a timestamp.
+  - **Deviation, deliberate:** `Transport.listPendingInteractions` and both implementations landed in 3.5's commit rather than here. The task itself names the problem ("adding the interface method here will red the two implementations until then"), and the repo's `pre-commit` hook runs a whole-monorepo typecheck — so a commit carrying the interface alone could not exist. Nothing about the end state changed.
+
+- Task #3.2: The projector's interaction seam — worker: p3-builder
+  - `onProjectorInteractionChange` beside `onProjectorStatusChange`, throw-isolated the same way, plus `listPendingInteractionsAcrossSessions` beside `listProjectorStatuses`. The projector still imports no transport.
+  - **The three fire points are two in the code, and the spec's table is why.** `interaction_cancelled` does not exist as an event type: cancellation and expiry both ride `interaction_resolved` with a `resolution`, so `askOutcomeOf` maps the stream's five resolutions onto the three a receipt can say. The third point is `markInterrupted`, which announces `cancelled` for everything a torn-down turn was parked on — it deliberately does NOT clear the map, because `hasPendingInteractions` bounds a stranded entry by expiry and clearing it here would change the watchdog and lock semantics that path documents.
+  - **A prompt from a session with no `cwd` is dropped, loudly.** `cwd` is the deep link and the identity fallback, and there is nothing honest to put on the wire without one; every turn that can raise a prompt was started with one, so it logs a warning rather than dropping into silence.
+
+- Task #3.3: The broadcast, with the room joined on — worker: p3-builder
+  - One more subscription in `SessionListBroadcaster.start()`, `.parse()` on both payloads, unsubscribed in `stop()`. `RoomSessionLedger.bindingForSession` is one indexed read plus — only on a miss — the `successorFor` chase, so the id a turn started under still resolves after a rekey.
+  - **Deviation, and the module's own history is the reason:** the port is injected by `setRoomBindings()`, not as a `start()` argument. `setOriginResolvers` two methods up documents exactly why — a live Claude account switch restarts discovery, so anything passed only to `start()` has to be re-passed by every caller that ever restarts it, and missing it here would read as an Ask that stopped naming its room after an account switch.
+  - `resolvedBy` is never set on a single-identity install: the broadcaster has no HTTP caller to name, and inventing one would be the denormalization the wire shape exists to avoid. The receipt says "Already answered at 2:01" instead.
+
+- Task #3.4: The list route and the answer guard — worker: p3-builder
+  - `GET /api/sessions/pending-interactions` above `/:id`, joined per row with the ledger through `app.locals.roomSessionBindings` (the same indirection the origin overlays already use). `requirePersonToAnswer` on all six answer routes, composed from `readCallerAuthority` → `resolveDecisionAuthority` + `requireOperatorCookieUnderLogin`, with no new predicate.
+  - The refusal keeps the resolver's own `AGENT_CANNOT_DECIDE` sentence and supplies its own for the cookie bar, which is the split `routes/config.ts` already makes.
+
+- Task #3.5: Both ends of the allowlist, and the transport — worker: p3-builder
+  - `sse-event-allowlist.test.ts` caught the first attempt: an apostrophe in the new comment read as an event name to its single-quote scan, exactly as the rooms block above it warns. Fixed by writing the comment without one.
+  - `DirectTransport` gets a REAL implementation: a required `pendingInteractions` seam on `DirectTransportServices`, wired in `CopilotView` to the same `listPendingInteractionsAcrossSessions` the HTTP route reads. The embed answers prompts for real, so it lists them for real.
+  - Also the passing fix the spec asks for: `stream-manager.ts`'s "two durable streams" docstring now says three.
+
+- Task #3.6: The fleet-wide store, and Heads up stops guessing — worker: p3-builder
+  - `entities/attention/model/use-pending-interactions.ts` (list-on-mount + two subscriptions, upsert by id, dedupe against the per-session store), plus `ask-receipt-store.ts` and `describe-interaction.ts`.
+  - The degradation branch and its comment are gone: a background agent's question is a `question` on every session now, and the row says what the agent asked for.
+  - **`describeInteraction` lives in the entity, not in `features/ask`.** Both the sidebar row and the card's headline need the same half-sentence, and a feature may not read another feature's lib — so the phrasing is in the layer both can reach, and `askHeadline` is the agent's name in front of it.
+
+- Task #3.7: `features/ask` — worker: p3-builder
+  - New slice: `AskCard.{Root,Face,Headline,Detail,Countdown,Actions,Receipt}`, `InteractionAsk`, `AskStack`, `AskList`, `AskReceiptLine`, the four moved prompts and two moved receipts, `use-answer-ask`, `use-ask-shortcut`, `ask-tray-store`, `ask-headline`, `group-asks`, and the two moved libs.
+  - **Three primitives moved DOWN rather than sideways.** `OptionRow`, `CompactResultRow` and `TruncatedOutput` are now `shared/ui`: the moved prompts need them and so does the transcript, and `features/ask` importing `features/chat`'s internals is the barrel cycle P1 already refused once. `InteractiveCard` is deleted — `AskCard.Root` is what it was, and the playground bench follows.
+  - `decision-refusal.ts` moved to `shared/lib` for the same reason: two card families now surface a refusal, and one of them would otherwise reach into the other's lib.
+  - **`A`/`D` are additive, not a replacement.** They are React key handlers on the card, so they fire only while focus is inside one; the active card in the input zone still answers to bare Enter and Esc through `useInteractiveShortcuts`, and the `Kbd` hints still advertise those because those are the keys that work without focusing the card first.
+  - **The countdown changed on purpose:** the bar is `aria-hidden` decoration and the words are the accessible reading, so the words are present from the start instead of appearing at two minutes. Five shipped assertions were rewritten to the new contract rather than deleted.
+
+- Task #3.8: Five surfaces, and the lane's amber rung — worker: p3-builder
+  - Header pill and home triage count prompts and capability approvals together and draw both lists (prompts first — ten minutes against two hours, which IS time-left order). The room lane filters by `roomId`, the session lane by `sessionId`.
+  - **The lane grows into the card through the peek's own popover**, not by growing the lane: the 24 px promise is the reason the lane exists, so the card is drawn OVER the composer. It takes focus on open (a person opened it to answer something) where the peek deliberately does not.
+  - **`⌘⇧A` was already taken, and the spec did not know.** `SHORTCUTS.AGENT_PROFILE` has owned it since the profile panel shipped. Rather than take a key from a working feature or invent a chord nobody would guess, `useAskShortcut` claims it in the CAPTURE phase and only while something is actually waiting; with nothing pending it registers nothing and Profile opens exactly as before. Both are listed in the `?` panel, the registry test carries the new one in `DECLARED`, and `contributing/keyboard-shortcuts.md` states the rule.
+
+- Task #3.9 / #3.10: The tests — worker: p3-builder
+  - Server: `sessions-pending-interactions.test.ts` (29 cases — the list, the route ordering, and the six-routes × three-callers table written out), the projector seam exercised directly, `session-list-broadcaster-asks.test.ts` for the join and the ordering, `room-session-ledger.test.ts` for the rename chase.
+  - Client: `ask-headline`, `use-answer-ask`, `use-pending-interactions`, `AskCard.test.tsx`, and the attention derivation extended.
+  - Browser: `apps/e2e/tests/conversation/ask-anywhere.ts`, registered by `chat-mock.spec.ts` under the lock `interactive-prompts.ts` documents.
+  - **The browser test found a real defect before a person could.** An answered card left the list in the same frame it was answered, so the receipt had nothing to render into and the header pill unmounted around it. Answered prompts now SETTLE — out of what is waiting immediately, held on screen for 1.2 s saying how they ended — and `AskCard.Root` finally spends the shipped `RESOLVE_HOLD_S`/`MELT_S` exit it had been given a helper for and never used.
+  - Seeded defects run and confirmed red, then reverted: notify before `this.interactions.set` (11 projector cases red, including the ordering one); the guard removed from `batch-deny` (exactly that route's two refusal rows red); the key handler moved off the card (both focus cases red).
+
+- Task #3.11 / #3.12: Playground and changelog — worker: p3-builder
+  - Five sections on `/dev/chat` drawing the real components over fixture events, with the clock pinned against a frozen `now` so the countdown does not flap.
+  - One fragment for the phase, plus P1's squash subject claimed on P1's own fragment — `main` landed P1 as one commit no fragment named, so the gate read it as uncovered on every branch downstream.
+
+- Task #3.13: Phase 3 acceptance — the reviewer's browser check — worker: p3-builder
+  - Cockpit from this worktree: server `DORKOS_PORT=4277 DORK_HOME=~/.dork-verify-p3` (fresh), client on `:4427`, onboarding dismissed over the API, model pinned to `sonnet`. **Two real turns were spent** — DorkBot in `#team`, asked to write a file outside its working directory, which raises a genuine permission prompt.
+  - **The room**: the lane went amber within a second — `data-lane-state="ask"`, exactly 24 px, "DorkBot wants to write · Answer". The sidebar's Heads up row read "DorkBot wants to write" (it would have said "Waiting on you" before this phase).
+  - **Every route**: the header pill read "1 waiting on you" on `/channels` and on `/tasks`.
+  - **`⌘⇧A` on `/tasks`** opened the tray and landed focus inside the card (`focusInsideCard: true`) — and did NOT open the Profile panel. Answering there wrote `/tmp/p3-check.md`: the agent carried on, which is the half a vanished card cannot fake.
+  - **Typing**: with a second prompt live in the room, `half typed note` went into the composer and `a` typed the letter — composer value `half typed notea`, caret at the end, focus still the composer, the Ask still waiting.
+  - **Answering from the room**: clicking the lane grew it into the card over the composer (the composer's draft untouched), Allow wrote `/tmp/p3-check-two.md`, the pill cleared and the lane returned to `empty`.
+  - **The refusal**: all six answer routes answered **403 `AGENT_CANNOT_DECIDE`** to `curl` with an `X-DorkOS-Agent` header that resolves to no agent at all.
+  - **No leak into the room**: both durable notices read "DorkBot is waiting for you to approve something before it can carry on…" — word for word the shipped sentence, with no tool name, no path and no countdown.
+  - Screenshots (session scratchpad): `p3-room-lane-amber.png`, `p3-tasks-tray-card.png`, `p3-room-card-grown.png`.
+  - **Verification ladder:** `pnpm format:check` exit 0 · `pnpm verify` **exit 0** (29/29 turbo tasks; client 944 files / 11 692 tests, server 720 files / 11 985 tests) · client lint 0 errors / 118 warnings, server 0/48 · `docs:export-api` + `generate:api-docs` produce no diff · `chat-mock.spec.ts` 54 passed · `tests/conversation` + `tests/rooms` 76 passed (one unrelated room read-state flake under parallel load, green in isolation).
+  - **knip: totals fell.** Unused exports 556 → 555, unused exported types 586 → 585, duplicates 2 → 2. Eleven barrel exports and four types this phase introduced were trimmed rather than accepted: the `AskCard.*` parts are reached through the namespace, and `askHeadline`, `groupAsks`, `useAnswerAsk`, `requestAskTray` and friends have no reader outside the slice.
+  - Servers stopped afterwards; 4277 and 4427 answer nothing, `pgrep -f DOR-1330` is empty, `~/.dork-verify-p3` removed.
+
 ## Files Modified/Created
 
 108 files against `spec/unified-conversation`, by area. Client paths are relative to `apps/client/src/`.
@@ -246,6 +316,32 @@ Two independent reviews — spec compliance, then adversarial per `REVIEW.md`, t
 
 **Fixture-only edits (5 files):** the four presence fixtures that gained `entryId`, and the tool-label fixtures that named a file this phase deleted
 
+### P3 (DOR-1330) — 63 files
+
+**The wire (2 files):** `packages/shared/src/interaction-events.ts` (new), `packages/shared/package.json` (the subpath), `packages/shared/src/transport.ts` (`listPendingInteractions`)
+
+**Server (8 files):** `services/session/session-state-projector.ts` (the seam, three fire points, the fleet list), `services/session/session-list-broadcaster.ts` (the subscription, the port, the broadcast), `services/session/index.ts`, `services/rooms/room-session-ledger.ts` (`bindingForSession`), `routes/sessions.ts` (the list route + the guard on six routes), `services/core/openapi-registry.ts`, `index.ts` (the wiring), `services/runtimes/test-mode/interactive-scenarios.ts` (a comment naming the card that replaced the bar)
+
+**Server tests (4 files):** `routes/__tests__/sessions-pending-interactions.test.ts` (new), `services/session/__tests__/session-list-broadcaster-asks.test.ts` (new), `services/rooms/__tests__/room-session-ledger.test.ts` (new), `services/session/__tests__/session-state-projector.test.ts` (extended)
+
+**The new slice — `layers/features/ask/` (new, 17 files):** `ui/AskCard.tsx`, `ui/InteractionAsk.tsx`, `ui/AskStack.tsx`, `ui/AskList.tsx`, `ui/AskReceiptLine.tsx` (new); `ui/ApprovalPrompt.tsx`, `ui/QuestionPrompt.tsx`, `ui/ElicitationPrompt.tsx`, `ui/AskReceipt.tsx`, `ui/AskReceiptRow.tsx`, `ui/QuestionAnswerSummary.tsx` (moved from `features/chat/ui/tools/`); `model/use-answer-ask.ts`, `model/use-ask-shortcut.ts`, `model/ask-tray-store.ts` (new), `model/ask-exit-transition.ts` + `lib/format-time-left.ts` (moved from `features/approvals/lib/`), `lib/ask-headline.ts`, `lib/group-asks.ts` (new), `index.ts`; `__tests__/` — `AskCard.test.tsx`, `ask-headline.test.ts`, `use-answer-ask.test.tsx` (new) and four moved suites
+
+**The attention entity (5 files):** `model/use-pending-interactions.ts`, `model/ask-receipt-store.ts`, `model/describe-interaction.ts` (new), `model/derive-attention-signals.ts` + `model/use-attention-signals.ts` (the degradation gone), `index.ts`; `__tests__/use-pending-interactions.test.tsx` (new), `__tests__/derive-attention-signals.test.ts` (extended)
+
+**Deleted:** `features/chat/ui/tools/BatchApprovalBar.tsx`, `features/chat/ui/primitives/InteractiveCard.tsx` (+ its test)
+
+**Moved down to `shared/` (5 files):** `ui/option-row.tsx`, `ui/compact-result-row.tsx`, `ui/truncated-output.tsx`, `lib/decision-refusal.ts` (+ its test), and the two barrels
+
+**The surfaces (8 files):** `widgets/approvals-indicator/ui/ApprovalsIndicator.tsx`, `widgets/home/ui/PinnedTriageHeader.tsx` + `PinnedTriageHeaderView.tsx`, `widgets/room-view/ui/RoomLiveLane.tsx`, `features/chat/ui/ChatPanel.tsx`, `features/chat/model/use-session-lane-state.ts`, `features/conversation/model/lane-state.ts`, `features/conversation/ui/{LiveLane,LaneContent}.tsx`
+
+**Client plumbing (6 files):** `shared/lib/transport/stream-manager.ts` (both allowlist entries + the stale docstring), `shared/lib/transport/session-methods.ts`, `shared/lib/direct/{services,session-methods}.ts`, `shared/lib/shortcuts.ts`, `apps/obsidian-plugin/src/views/CopilotView.tsx`
+
+**Dev Playground (4 files):** `showcases/AskShowcases.tsx` (new), `showcases/AskReceiptShowcases.tsx` (renamed), `showcases/{ChatPrimitives,Tool,Input}Showcases.tsx`, `pages/ChatPage.tsx`, `sections/{chat,components}-sections.ts`
+
+**Browser (3 files):** `apps/e2e/tests/conversation/ask-anywhere.ts` (new), `tests/chat-mock.spec.ts`, `tests/chat/interactive-prompts.ts` + `tests/dashboard-sidebar/now-survives-reload.ts` (two assertions follow the behaviour)
+
+**Docs + artifacts:** `contributing/keyboard-shortcuts.md`, `contributing/interactive-tools.md`, `changelog/unreleased/260818-083627-answer-your-agents-from-anywhere.md`, this file
+
 ## Known Issues
 
 Six things this phase decided rather than finished. Each names who picks it up.
@@ -272,6 +368,18 @@ Five things this phase decided rather than finished.
 12. **The popover-reset invariant is now load-bearing, and P3/P4 must keep it.** `Conversation.LiveLane` closes its own peek when `offersPeek` falls, at render time, and reports the close to its host in an effect. A future rung that can also open a popover (P3's Ask card is the obvious one) needs the same treatment or it will inherit the same bug. Pinned by `features/conversation/__tests__/LiveLane.test.tsx` — "closes the peek when its trigger stops existing, and tells the host" and "hands the caret back rather than dropping it on the document".
 13. **P4 follow-up — the session lane's `stalled` and `queued` rungs are hard-coded.** `apps/client/src/layers/features/chat/model/use-session-lane-state.ts:123-125` passes `stalled: false` and `queueDepth: 0`. `stalled` wants `syncConnectionState` (available on the same hook that feeds the lane, `use-chat-session.ts`) once P4 decides whether the lane or `ChatStatusSection` owns the connection; `queued` wants `ConversationTarget.queueDepth`, which P4 introduces. The rungs themselves are built and tested — only the session's inputs are constants.
 14. **`GET /api/rooms/:id/sessions` now checks visibility before the person gate**, which is the order §5.3.3 writes and the OPPOSITE of `POST /:id/attachments` (that one refuses an agent before multer reads a byte, which is a different concern). The reason is in the route's own TSDoc: with the person gate first, an outsider learned 403 (this room exists) where a person learned 404, which is a difference in answers where there should be none. **The unresolved-header divergence in item 9 above still stands** and is P3's to reconcile.
+
+### P3 (DOR-1330)
+
+Seven things this phase decided rather than finished.
+
+12. **`⌘⇧A` is shared with the Profile, and which one you get depends on whether anything is waiting.** The spec assigns the chord to the Ask; `SHORTCUTS.AGENT_PROFILE` has owned it since the profile panel shipped. `useAskShortcut` registers a capture-phase listener ONLY while at least one prompt is pending, so the Ask wins exactly when "A" unambiguously means Answer and the key is untouched otherwise. Both entries are in the registry and the panel lists both. **If a reviewer prefers one meaning per chord, the change is one `key` in `SHORTCUTS.ANSWER_NEXT_ASK` and one line in the hook.**
+13. **The header tray names an agent by its directory, not its roster name.** The card in the room lane says "DorkBot" (the room joins its own roster); the same card in the tray says "dorkbot", because the pill has no roster join wired and falls back to the basename of `cwd`. `AskList` already takes `agentNames`; the indicator does not build one. It is the documented fallback rather than a defect, and it is one map away from being right — **P4 or a follow-up should build it from the fleet session list**, which is the join `derive-attention-signals` already makes.
+14. **`GET /api/rooms/:id/sessions` and the answer routes disagree about an unresolved agent header, and that is now deliberate.** P2 raised it (issue 9): `resolveCaller` treats a token it cannot verify as "no agent presented", so that route answers 200 to `curl -H 'X-DorkOS-Agent: garbage'`. `requirePersonToAnswer` refuses it, because `readCallerAuthority` reports the RAW header. The two gates are answering different questions — one is "may this caller see where work runs", the other is "may this caller decide something irreversible" — and the stricter answer belongs on the stricter question. Aligning the room route would be a change to every room route's caller model, which is a rooms-domain decision with its own review.
+15. **The browser suite covers the fleet half of the Ask, not the room half.** `ask-anywhere.ts` parks a session, leaves for `/tasks`, answers there and watches the agent carry on. A room-bound prompt appearing on that room's lane needs a room, an agent bound into it and a turn dispatched by the room runner, none of which the mock leg seeds — so that half is unit-tested (`RoomLiveLane` filters on `roomId`), server-tested (`session-list-broadcaster-asks`) and was walked by hand in a browser against a real room for the acceptance check above.
+16. **The "never steals a keystroke" promise is browser-verified by hand, not by the mock leg.** The session that raises a prompt replaces its composer with the prompt while it waits, so there is nothing to type into there; the room's composer stays, and rooms are not seeded on that leg. The unit suite pins the rule against `document.body`, the e2e pins that a focused card genuinely answers, and the acceptance check above typed into a real room composer with a real prompt live.
+17. **`resolvedBy` is never populated.** The broadcaster has no HTTP caller to name, so "Already allowed by Dorian at 2:01" is unreachable on a single-identity install and every cross-window receipt reads "Already answered at 2:01". The schema keeps the field because a bridged approver is exactly what it is for; wiring it means carrying the deciding caller from the route into the resolution, which is a change to `resolveInteraction`'s signature and belongs with the bridged-approver work.
+18. **The session's inline prompt and the fleet-wide card are two renderings of one object, and the transcript keeps its own.** `AssistantMessageContent` still renders `ApprovalPrompt` / `QuestionPrompt` / `ElicitationPrompt` from the per-session store; the lane, the tray, the sidebar and home render `InteractionAsk` from the fleet-wide one. That is the dedupe rule §4.1 states, and it is why an attached session shows one card in the transcript and one entry in the tray rather than two of either. **P4's timeline work should not "unify" these into one component** without re-reading that section: the transcript's question form is a form, and the tray's is a summary.
 
 ## Implementation Notes
 

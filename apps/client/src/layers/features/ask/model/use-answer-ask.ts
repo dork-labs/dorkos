@@ -21,7 +21,7 @@ import { useTransport } from '@/layers/shared/model';
 import { describeDecisionRefusal } from '@/layers/shared/lib';
 
 /** What a person can say to an Ask from a card that is not the full prompt. */
-export type AskAnswer = 'allow' | 'deny';
+type AskAnswer = 'allow' | 'deny';
 
 /** What {@link useAnswerAsk} hands back. */
 export interface AnswerAskState {
