@@ -17,16 +17,15 @@ Accepted. Shipped in P2 (`#1092`) and confirmed against the tree at P5
 is the reserved `h-6` line, mounted on every surface, documented under
 `contributing/design-system.md` → Components → Live lane.
 
-**One number in this record no longer matches the shipped stack.** The
-Decision section below still says "ten states" and lists a queue note as the
-lowest rung; P4's review (session 7, `04-implementation.md`) deleted the
-`queued` rung outright rather than reordering it — a queue only ever exists
-because a turn is already in flight, so it could never win against
-`turn-streaming` and would have hidden what the agent is doing to report a
-number. The shipped stack is **nine** rungs, ending at `turn-complete` then
-`empty`. Left uncorrected in the prose below because an ADR is a record of
-the decision as reasoned at the time, not a living spec; the accurate count
-lives in `contributing/design-system.md` and `lane-state.ts`'s own TSDoc.
+**One rung of the decided stack did not ship.** As decided, the lowest rung
+above `empty` was a queue note, making ten states; P4's review (session 7,
+`04-implementation.md`) deleted the `queued` rung outright rather than
+reordering it — a queue only ever exists because a turn is already in flight,
+so it could never win against `turn-streaming` and would have hidden what the
+agent is doing to report a number. The shipped stack is **nine** rungs, ending
+at `turn-complete` then `empty`, and the sections below carry that number so
+no reader takes a count from here that the tree contradicts. Held drafts live
+in the composer's queue panel instead.
 
 Amends ADR-152, which stays **accepted**. What survives is its whole decision: a `deriveStripState()`-shaped pure function mapping raw props to a discriminated union, rendered through one morphing container with `AnimatePresence mode="wait"` keyed on the variant. What is retired is its scope — "the chat UI's status strip", six states, in the session chat only, implemented as `features/chat/ui/status/strip-state.ts` (the file its `affects` glob names). Those move to `features/conversation/model/lane-state.ts`, shared by every surface, with nine states.
 
@@ -36,7 +35,8 @@ The session chat says what is happening in `ChatStatusStrip`, above its composer
 
 ## Decision
 
-We will reserve a fixed-height 24px line above every conversation's composer, always mounted, empty when there is nothing to say, and put everything in it — in one priority order, in one morphing container. The order is Ask, then stalled stream, then presence, then the session's own turn status (waiting, operation progress, system message, streaming, complete), then a queue note, then empty. `ChatStatusStrip`, `strip-state.ts`, `RoomPresenceLine` and `RoomStalledNotice` are deleted; `ChatStatusSection`, which is the composer's model and mode line rather than a busy indicator, is untouched and becomes `Conversation.Footer` content. Clicking presence content opens a peek listing each working agent with what it is replying to, a link to its session, and an honest Stop; clicking an Ask grows the same lane into the answer card.
+We will reserve a fixed-height 24px line above every conversation's composer, always mounted, empty when there is nothing to say, and put everything in it — in one priority order, in one morphing container. The order is Ask, then stalled stream, then presence, then the session's own turn status (waiting, operation progress, system message, streaming, complete), then empty. (As decided there was a
+queue note between the turn statuses and `empty`; it did not ship — see Status.) `ChatStatusStrip`, `strip-state.ts`, `RoomPresenceLine` and `RoomStalledNotice` are deleted; `ChatStatusSection`, which is the composer's model and mode line rather than a busy indicator, is untouched and becomes `Conversation.Footer` content. Clicking presence content opens a peek listing each working agent with what it is replying to, a link to its session, and an honest Stop; clicking an Ask grows the same lane into the answer card.
 
 ## Consequences
 
@@ -51,6 +51,6 @@ We will reserve a fixed-height 24px line above every conversation's composer, al
 ### Negative
 
 - Every quiet room and every idle session now carries a blank 24px line. The cost is real, was weighed, and was accepted over a floating pill that would hover exactly where the newest message lands.
-- `deriveLaneState` has ten variants where `deriveStripState` had six, and the two extra sources (presence and the Ask queue) come from different stores. A wrong rung is a state that silently never renders, so the priority table needs a test per rung rather than a test of the function.
+- `deriveLaneState` has nine variants where `deriveStripState` had six, and the two extra sources (presence and the pending Asks) come from different stores. A wrong rung is a state that silently never renders, so the priority table needs a test per rung rather than a test of the function.
 - The lane is a second live region in the app after the sidebar's, so it has to stay disciplined: it announces the sentence and never the elapsed tick, and Asks are announced by the transcript's existing approval announcer rather than by the lane, or a fleet of agents turns a screen reader into a siren.
 - The peek's Stop cannot be per-agent without a per-author room halt, which needs its own notice copy and a scoped buffer drop. Until then the peek offers a single-agent Stop or a room-wide one, and says which.
