@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
+import { DORKOS_MARKETPLACE_SOURCE_NAME } from '@dorkos/marketplace';
 import { sortPackages } from '../package-sort';
 
 // ---------------------------------------------------------------------------
@@ -220,5 +221,45 @@ describe('sortPackages — general', () => {
     const input = [ALPHA];
     const result = sortPackages(input, 'name');
     expect(result).not.toBe(input);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DorkOS-first ranking inside the Featured sort
+// ---------------------------------------------------------------------------
+
+describe('sortPackages — featured ranks DorkOS packages first', () => {
+  const NATIVE_PLAIN = pkg({ name: 'zulu', marketplace: DORKOS_MARKETPLACE_SOURCE_NAME });
+  const NATIVE_FEATURED = pkg({
+    name: 'yankee',
+    marketplace: DORKOS_MARKETPLACE_SOURCE_NAME,
+    featured: true,
+  });
+  const MIRRORED_FEATURED = pkg({
+    name: 'alpha',
+    marketplace: 'claude-plugins-official',
+    featured: true,
+  });
+  const MIRRORED_PLAIN = pkg({ name: 'bravo', marketplace: 'claude-plugins-official' });
+
+  it('puts every DorkOS package ahead of every mirrored one, featured or not', () => {
+    const result = sortPackages(
+      [MIRRORED_FEATURED, NATIVE_PLAIN, MIRRORED_PLAIN, NATIVE_FEATURED],
+      'featured'
+    );
+
+    expect(result.map((p) => p.name)).toEqual(['yankee', 'zulu', 'alpha', 'bravo']);
+  });
+
+  it('still ranks featured before the rest inside each source group', () => {
+    const result = sortPackages([NATIVE_PLAIN, NATIVE_FEATURED], 'featured');
+
+    expect(result.map((p) => p.name)).toEqual(['yankee', 'zulu']);
+  });
+
+  it('leaves the other sorts alone — A–Z is still purely alphabetical', () => {
+    const result = sortPackages([NATIVE_PLAIN, MIRRORED_PLAIN], 'name');
+
+    expect(result.map((p) => p.name)).toEqual(['bravo', 'zulu']);
   });
 });

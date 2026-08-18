@@ -10,6 +10,10 @@ vi.mock('../../services/runtimes/codex/provision.js', () => ({
   provisionCodex: vi.fn(),
 }));
 
+vi.mock('../../services/runtimes/claude-code/tooling/provision.js', () => ({
+  provisionClaudeCode: vi.fn(),
+}));
+
 vi.mock('../../services/runtimes/opencode/ollama-provision.js', () => ({
   provisionOllama: vi.fn(),
   detectOllamaInstallMethod: vi.fn().mockResolvedValue('manual'),
@@ -31,6 +35,7 @@ import { createApp } from '../../app.js';
 import runtimesRouter from '../runtimes.js';
 import { provisionOpenCode } from '../../services/runtimes/opencode/provision.js';
 import { provisionCodex } from '../../services/runtimes/codex/provision.js';
+import { provisionClaudeCode } from '../../services/runtimes/claude-code/tooling/provision.js';
 import { provisionOllama } from '../../services/runtimes/opencode/ollama-provision.js';
 
 const app = createApp();
@@ -142,6 +147,7 @@ describe('X-Forwarded-Host spoofing of the loopback gate', () => {
   it.each([
     ['/api/runtimes/opencode/provision', () => provisionOpenCode],
     ['/api/runtimes/codex/provision', () => provisionCodex],
+    ['/api/runtimes/claude-code/provision', () => provisionClaudeCode],
     ['/api/runtimes/opencode/ollama/provision', () => provisionOllama],
   ])('refuses %s and never installs anything', async (path, getSpy) => {
     const res = await request(app)
@@ -319,6 +325,64 @@ describe('POST /api/runtimes/codex/provision', () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);
     expect(provisionCodex).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * DOR-1334 / F4. The client's readiness projection offers "Install Claude" for a
+ * claude-code that resolves no binary, and the button POSTed to an endpoint that
+ * did not exist — a 404, which the person saw as nothing happening at all.
+ */
+describe('POST /api/runtimes/claude-code/provision', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('streams progress frames and a terminal result on success (loopback)', async () => {
+    vi.mocked(provisionClaudeCode).mockImplementation(async (onProgress) => {
+      onProgress?.({ stage: 'starting', message: 'Installing the Claude Code binary…' });
+      onProgress?.({ stage: 'installing', message: 'added 1 package' });
+      onProgress?.({ stage: 'done', message: 'Claude Code installed.' });
+      return { ok: true, binaryPath: '/dork/claude' };
+    });
+
+    const res = await request(app).post('/api/runtimes/claude-code/provision');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    // The SSE frame contract is identical to the codex/opencode endpoints.
+    expect(res.text).toContain('event: progress');
+    expect(res.text).toContain('event: result');
+    expect(res.text).toContain('"ok":true');
+    expect(res.text).toContain('/dork/claude');
+    expect(provisionClaudeCode).toHaveBeenCalledOnce();
+    expect(typeof vi.mocked(provisionClaudeCode).mock.calls[0][0]).toBe('function');
+  });
+
+  it('streams the honest error result when provisioning fails', async () => {
+    vi.mocked(provisionClaudeCode).mockResolvedValue({
+      ok: false,
+      error: 'Could not install Claude Code. Check your network and try again.',
+    });
+
+    const res = await request(app).post('/api/runtimes/claude-code/provision');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('event: result');
+    expect(res.text).toContain('"ok":false');
+    expect(res.text).toContain('Could not install Claude Code');
+  });
+
+  it('rejects a non-loopback request with 403 and never provisions', async () => {
+    connectTunnel();
+
+    const res = await request(app)
+      .post('/api/runtimes/claude-code/provision')
+      .set('Host', TUNNEL_HOST);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/locally/i);
+    expect(provisionClaudeCode).not.toHaveBeenCalled();
   });
 });
 

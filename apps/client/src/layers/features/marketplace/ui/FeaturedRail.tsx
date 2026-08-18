@@ -76,8 +76,9 @@ function RailGrid({
  * nothing is featured the rail renders nothing at all.
  *
  * The rail is a browse affordance, so it hides with a smooth transition the
- * moment the user narrows the catalog — any active search text, type filter, or
- * category filter collapses it, keeping the full result set in view.
+ * moment the user narrows the catalog — any active search text, type filter,
+ * source filter, or category filter collapses it, keeping the full result set
+ * in view.
  */
 export function FeaturedRail() {
   // One unfiltered catalog fetch, shared (via TanStack Query cache) with the
@@ -86,8 +87,9 @@ export function FeaturedRail() {
   const prefersReducedMotion = useReducedMotion();
 
   // Hide the rail whenever the user narrows the catalog by any axis.
-  const { search, type, categories } = useMarketplaceParams();
-  const hasActiveFilters = search.length > 0 || type !== 'all' || categories.length > 0;
+  const { search, type, categories, sources } = useMarketplaceParams();
+  const hasActiveFilters =
+    search.length > 0 || type !== 'all' || categories.length > 0 || sources.length > 0;
 
   // Determine the content to render (or null if nothing to show).
   let railContent: React.ReactNode = null;

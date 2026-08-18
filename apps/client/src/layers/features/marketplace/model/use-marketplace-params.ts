@@ -1,8 +1,8 @@
 /**
  * URL-synced browse state for the `/marketplace` route.
  *
- * Reads the type filter, sort order, free-text search, category, and open
- * package from the URL search params and provides setters that write back to
+ * Reads the type filter, sort order, free-text search, category, source, and
+ * open package from the URL search params and provides setters that write back to
  * the URL. Making the URL the source of truth (matching `/agents`, `/session`,
  * and the activity feed) means every browse selection survives refresh and is
  * shareable as a link. Transient install-flow state stays in
@@ -13,7 +13,7 @@
 import { useCallback } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { MarketplaceSort, MarketplaceTypeFilter, MarketplaceView } from './marketplace-search';
-import { normalizeCategoryParam } from './marketplace-search';
+import { normalizeFacetParam } from './marketplace-search';
 
 /** Browse state derived from the URL plus setters that write back to it. */
 export interface MarketplaceParams {
@@ -32,6 +32,12 @@ export interface MarketplaceParams {
    * for multiple, so single-category links stay clean and back-compatible.
    */
   categories: string[];
+  /**
+   * Selected marketplace source names, OR-combined by the filter (empty array =
+   * no source restriction). Serialized exactly like `categories`: a bare string
+   * for a lone selection, the array form beyond that.
+   */
+  sources: string[];
   /** Name of the package open in the detail drawer, or `null` when closed. */
   selectedPackageName: string | null;
   /** Switch the top-level view (browse vs installed). */
@@ -48,7 +54,11 @@ export interface MarketplaceParams {
   setCategories: (slugs: string[]) => void;
   /** Clear every selected category. */
   clearCategories: () => void;
-  /** Reset type, sort, search, and category to their defaults (keeps the drawer). */
+  /** Add the source if absent, remove it if present (multi-select OR facet). */
+  toggleSource: (name: string) => void;
+  /** Clear every selected source. */
+  clearSources: () => void;
+  /** Reset type, sort, search, category, and source to their defaults (keeps the drawer). */
   resetFilters: () => void;
   /** Open the detail drawer for a package (pushes history so Back closes it). */
   openDetail: (name: string) => void;
@@ -57,14 +67,14 @@ export interface MarketplaceParams {
 }
 
 /**
- * Serialize the selected category slugs back into the URL: dropped when empty,
- * a bare string for a single selection (clean + back-compatible with legacy
+ * Serialize a multi-select facet back into the URL: dropped when empty, a bare
+ * string for a single selection (clean + back-compatible with legacy
  * `?category=slug` links), and the array form only once more than one is picked.
  */
-function serializeCategories(slugs: string[]): string | string[] | undefined {
-  if (slugs.length === 0) return undefined;
-  if (slugs.length === 1) return slugs[0];
-  return slugs;
+function serializeFacet(values: string[]): string | string[] | undefined {
+  if (values.length === 0) return undefined;
+  if (values.length === 1) return values[0];
+  return values;
 }
 
 /**
@@ -80,7 +90,8 @@ function normalize(next: Record<string, unknown>): Record<string, unknown> {
     type: next.type === 'all' ? undefined : next.type,
     sort: next.sort === 'featured' ? undefined : next.sort,
     q,
-    category: serializeCategories(normalizeCategoryParam(next.category)),
+    category: serializeFacet(normalizeFacetParam(next.category)),
+    source: serializeFacet(normalizeFacetParam(next.source)),
     pkg: next.pkg ?? undefined,
   };
 }
@@ -101,7 +112,8 @@ export function useMarketplaceParams(): MarketplaceParams {
   const type = (typeof search.type === 'string' ? search.type : 'all') as MarketplaceTypeFilter;
   const sort = (typeof search.sort === 'string' ? search.sort : 'featured') as MarketplaceSort;
   const q = typeof search.q === 'string' ? search.q : undefined;
-  const categories = normalizeCategoryParam(search.category);
+  const categories = normalizeFacetParam(search.category);
+  const sources = normalizeFacetParam(search.source);
   const pkg = typeof search.pkg === 'string' ? search.pkg : undefined;
 
   const patch = useCallback(
@@ -140,10 +152,18 @@ export function useMarketplaceParams(): MarketplaceParams {
     [patch]
   );
   const clearCategories = useCallback(() => patch({ category: [] }, { replace: true }), [patch]);
+  const toggleSource = useCallback(
+    (name: string) => {
+      const next = sources.includes(name) ? sources.filter((s) => s !== name) : [...sources, name];
+      patch({ source: next }, { replace: true });
+    },
+    [patch, sources]
+  );
+  const clearSources = useCallback(() => patch({ source: [] }, { replace: true }), [patch]);
   const resetFilters = useCallback(
     () =>
       patch(
-        { type: undefined, sort: undefined, q: undefined, category: undefined },
+        { type: undefined, sort: undefined, q: undefined, category: undefined, source: undefined },
         { replace: true }
       ),
     [patch]
@@ -157,6 +177,7 @@ export function useMarketplaceParams(): MarketplaceParams {
     sort,
     search: q ?? '',
     categories,
+    sources,
     selectedPackageName: pkg ?? null,
     setView,
     setType,
@@ -165,6 +186,8 @@ export function useMarketplaceParams(): MarketplaceParams {
     toggleCategory,
     setCategories,
     clearCategories,
+    toggleSource,
+    clearSources,
     resetFilters,
     openDetail,
     closeDetail,

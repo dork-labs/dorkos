@@ -49,7 +49,11 @@ import { SessionStore } from './sessions/session-store.js';
 import { RuntimeCache } from './messaging/runtime-cache.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import type { AgentSession } from './agent-types.js';
-import { resolveClaudeCliPath, createIdlePrompt } from './sdk/sdk-utils.js';
+import {
+  resolveClaudeBinaryBeforePath,
+  resolveClaudeCliPath,
+  createIdlePrompt,
+} from './sdk/sdk-utils.js';
 import { claudeConfigDirEnv, resolveActiveClaudeRoot } from './claude-config-dir.js';
 import { withClaudeConfigDir } from './claude-config-env-lock.js';
 import { logger } from '../../../lib/logger.js';
@@ -109,7 +113,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   // Configuration
   private readonly cwd: string;
-  private readonly claudeCliPath: string | undefined;
+  /**
+   * The binary every spawn is pointed at, as last resolved. Read through
+   * {@link spawnBinaryPath}, never directly — while it is `undefined` the ladder
+   * is re-walked, which is what lets a one-click install reach the very next
+   * session (DOR-1334).
+   */
+  private claudeCliPath: string | undefined;
 
   // Injected dependencies
   private mcpServerFactory:
@@ -166,6 +176,40 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // works in the packaged desktop app (see setClaudeCliPath's doc).
     this.cache.setClaudeCliPath(this.claudeCliPath);
     this.transcriptReader = new TranscriptReader();
+  }
+
+  /**
+   * The Claude Code binary to spawn, refreshed when there wasn't one.
+   *
+   * Resolution at construction is the fast path and, once it has succeeded, the
+   * answer is kept: a resolved binary does not move underneath a running server.
+   * The case that DOES change underneath it is the empty one — a host with no
+   * `claude` anywhere is exactly the host where somebody presses "Install
+   * Claude", and the provisioner writes a binary the ladder can now see. Without
+   * this re-check the requirements payload flipped to Ready while every session
+   * started afterwards still spawned with no `pathToClaudeCodeExecutable`, so
+   * the SDK self-resolved and threw until the server was restarted (DOR-1334
+   * review).
+   *
+   * The re-check walks only the rungs that touch the filesystem
+   * ({@link resolveClaudeBinaryBeforePath}: env override → bundled →
+   * provisioned) — a few `existsSync` calls, never the synchronous `which`,
+   * which must not run on a spawn path. A newly-installed `claude` on `PATH`
+   * therefore still needs the next restart; a provisioned one does not, and
+   * provisioning is the path DorkOS itself offers.
+   */
+  private get spawnBinaryPath(): string | undefined {
+    if (this.claudeCliPath) return this.claudeCliPath;
+    const refreshed = resolveClaudeBinaryBeforePath() ?? undefined;
+    if (refreshed) {
+      this.claudeCliPath = refreshed;
+      // The warm-up query spawns too, and reads its own copy.
+      this.cache.setClaudeCliPath(refreshed);
+      logger.info('[ClaudeCode] resolved a Claude Code binary that was missing at startup', {
+        binary: refreshed,
+      });
+    }
+    return refreshed;
   }
 
   /** Warm up the model cache by fetching models from the SDK. */
@@ -334,7 +378,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return {
       cwd: this.cwd,
       sessionCwd: session.cwd,
-      claudeCliPath: this.claudeCliPath,
+      claudeCliPath: this.spawnBinaryPath,
       meshCore: this.meshCore,
       bindingRouter: this.bindingRouter,
       bindingStore: this.bindingStore,
@@ -1087,7 +1131,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           plugins,
           systemPrompt: { type: 'preset', preset: 'claude_code' },
           settingSources: ['local', 'project', 'user'],
-          ...(this.claudeCliPath ? { pathToClaudeCodeExecutable: this.claudeCliPath } : {}),
+          ...(this.spawnBinaryPath ? { pathToClaudeCodeExecutable: this.spawnBinaryPath } : {}),
           env: {
             // eslint-disable-next-line no-restricted-syntax -- full env needed for SDK subprocess inheritance
             ...process.env,

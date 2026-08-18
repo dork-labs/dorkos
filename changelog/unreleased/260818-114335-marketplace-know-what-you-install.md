@@ -1,0 +1,10 @@
+---
+covers:
+  - 'feat(client,marketplace): install preview names every file; Source facet and DorkOS-first browse (DOR-1339)'
+  - 'fix(client): marketplace preview wraps long paths, drops the always-true containment row, and the empty state names the source filter (DOR-1339)'
+---
+
+### Changed
+
+- See exactly which files an install will touch. The install dialog used to say only "134 files will be created, modified, or deleted". It now names the folder they land in, counts how many are new, changed, and removed, and lets you open the full list of paths. Removed files are listed first, because those are the ones an uninstall cannot give back. If a package writes anywhere outside that folder, the dialog says so and names those files. (DOR-1339)
+- Find DorkOS packages in the Marketplace without searching. The catalog carries nearly 300 packages, most of them mirrored from other registries. The browse page now opens with DorkOS's own packages first, and a new Source filter in the sidebar lets you narrow to any single marketplace. Each card names where the package came from. (DOR-1339)

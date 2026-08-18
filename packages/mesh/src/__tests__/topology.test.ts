@@ -580,6 +580,195 @@ describe('TopologyManager', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Open mesh — the "Let all my agents talk to each other" switch (DOR-1338)
+  // ---------------------------------------------------------------------------
+
+  describe('open mesh (* -> *)', () => {
+    it('is off by default', () => {
+      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), makeMockRelayCore());
+
+      expect(tm.isOpenMesh()).toBe(false);
+      expect(tm.getTopology('*').openMesh).toBe(false);
+    });
+
+    it('persists the * -> * pair in the rule store and reports openMesh', () => {
+      const store = makeFakeRuleStore();
+      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), makeMockRelayCore(), store);
+
+      tm.allowCrossNamespace('*', '*');
+
+      expect(store.list()).toEqual([{ sourceNamespace: '*', targetNamespace: '*' }]);
+      expect(tm.isOpenMesh()).toBe(true);
+      expect(tm.getTopology('*').openMesh).toBe(true);
+      expect(tm.getTopology('ns-a').openMesh).toBe(true);
+    });
+
+    it('projects into Relay as relay.agent.> -> relay.agent.> at the cross-namespace allow priority', () => {
+      const relay = makeMockRelayCore();
+      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), relay);
+
+      tm.allowCrossNamespace('*', '*');
+
+      expect(relay.addAccessRule).toHaveBeenCalledWith({
+        from: 'relay.agent.>',
+        to: 'relay.agent.>',
+        action: 'allow',
+        priority: 50,
+      });
+    });
+
+    it('outranks the per-namespace catch-all deny but not the system-agent allow', () => {
+      const relay = makeMockRelayCore();
+      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), relay);
+
+      tm.allowCrossNamespace('*', '*');
+
+      const open = relay
+        .listAccessRules()
+        .find((r) => r.from === 'relay.agent.>' && r.to === 'relay.agent.>');
+      expect(open).toBeDefined();
+      expect(open!.priority).toBeGreaterThan(10); // CROSS_NAMESPACE_DENY_PRIORITY
+      expect(open!.priority).toBeLessThan(200); // SYSTEM_AGENT_ALLOW_PRIORITY
+    });
+
+    it('makes every namespace visible and every agent reachable', () => {
+      const registry = makeMockRegistry([agentA1, agentA2, agentB1, agentC1]);
+      const tm = makeTopology(registry, makeMockRelayCore());
+
+      expect(tm.getTopology('ns-a').namespaces).toHaveLength(1);
+      expect(tm.getAgentAccess('A1')!.map((a) => a.id)).toEqual(['A2']);
+
+      tm.allowCrossNamespace('*', '*');
+
+      const view = tm.getTopology('ns-a');
+      expect(view.namespaces.map((ns) => ns.namespace).sort()).toEqual(['ns-a', 'ns-b', 'ns-c']);
+      expect(
+        tm
+          .getAgentAccess('A1')!
+          .map((a) => a.id)
+          .sort()
+      ).toEqual(['A2', 'B1', 'C1']);
+    });
+
+    it('reports the rule in accessRules for admin and scoped callers alike', () => {
+      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), makeMockRelayCore());
+
+      tm.allowCrossNamespace('*', '*');
+
+      const expected = {
+        sourceNamespace: '*',
+        targetNamespace: '*',
+        action: 'allow',
+        origin: 'explicit',
+      };
+      expect(tm.getTopology('*').accessRules).toContainEqual(expected);
+      expect(tm.getTopology('ns-a').accessRules).toContainEqual(expected);
+    });
+
+    it('un-projects from Relay and the store when turned off', () => {
+      const store = makeFakeRuleStore();
+      const registry = makeMockRegistry([agentA1, agentB1]);
+      const relay = makeMockRelayCore();
+      const tm = makeTopology(registry, relay, store);
+
+      tm.allowCrossNamespace('*', '*');
+      tm.denyCrossNamespace('*', '*');
+
+      expect(relay.removeAccessRule).toHaveBeenCalledWith('relay.agent.>', 'relay.agent.>');
+      expect(
+        relay.listAccessRules().find((r) => r.from === 'relay.agent.>' && r.to === 'relay.agent.>')
+      ).toBeUndefined();
+      expect(store.list()).toEqual([]);
+      expect(tm.isOpenMesh()).toBe(false);
+      expect(tm.getTopology('ns-a').namespaces).toHaveLength(1);
+    });
+
+    it('leaves explicit pair rules untouched when turned on and off', () => {
+      const store = makeFakeRuleStore();
+      const registry = makeMockRegistry([agentA1, agentB1, agentC1]);
+      const tm = makeTopology(registry, makeMockRelayCore(), store);
+
+      tm.allowCrossNamespace('ns-a', 'ns-b');
+      tm.allowCrossNamespace('*', '*');
+      tm.denyCrossNamespace('*', '*');
+
+      expect(store.list()).toEqual([{ sourceNamespace: 'ns-a', targetNamespace: 'ns-b' }]);
+      expect(
+        tm
+          .getTopology('ns-a')
+          .namespaces.map((ns) => ns.namespace)
+          .sort()
+      ).toEqual(['ns-a', 'ns-b']);
+    });
+
+    it('survives a restart — a stored * -> * is re-projected at boot', () => {
+      const store = makeFakeRuleStore([{ sourceNamespace: '*', targetNamespace: '*' }]);
+      const relay = makeMockRelayCore();
+      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), relay, store);
+
+      tm.syncNamespaceRulesFromRelay();
+
+      expect(relay.addAccessRule).toHaveBeenCalledWith({
+        from: 'relay.agent.>',
+        to: 'relay.agent.>',
+        action: 'allow',
+        priority: 50,
+      });
+      expect(tm.getTopology('*').openMesh).toBe(true);
+    });
+
+    it('re-seeds the switch from Relay when the rule store is lost (dork.db rebuild)', () => {
+      // ADR-0043: dork.db is a rebuildable cache. Relay's access-rules.json is
+      // NOT — so after a rebuild Relay still enforces the wildcard allow. If the
+      // store did not learn it back, the mesh would be open in fact and shut in
+      // the UI. The store, the flag and Relay have to agree again.
+      const store = makeFakeRuleStore();
+      const relay = makeMockRelayCore([
+        { from: 'relay.agent.>', to: 'relay.agent.>', action: 'allow', priority: 50 },
+      ]);
+      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), relay, store);
+
+      tm.syncNamespaceRulesFromRelay();
+
+      expect(store.list()).toEqual([{ sourceNamespace: '*', targetNamespace: '*' }]);
+      expect(tm.isOpenMesh()).toBe(true);
+      expect(tm.getTopology('*').openMesh).toBe(true);
+      expect(tm.getTopology('ns-a').namespaces).toHaveLength(2);
+    });
+
+    it('never seeds a namespace literally named ">" from a half-wildcard bridge rule', () => {
+      // The system-agent bridge writes `relay.agent.> -> relay.agent.{ns}.*`.
+      // Only an EXACT `>` on both sides is the switch; one side alone must not
+      // seed anything — least of all a namespace whose name is `>`.
+      const store = makeFakeRuleStore();
+      const relay = makeMockRelayCore([
+        { from: 'relay.agent.>', to: 'relay.agent.system.*', action: 'allow', priority: 200 },
+        { from: 'relay.agent.system.*', to: 'relay.agent.>', action: 'allow', priority: 200 },
+      ]);
+      const tm = makeTopology(makeMockRegistry(), relay, store);
+
+      tm.syncNamespaceRulesFromRelay();
+
+      expect(store.list()).toEqual([]);
+      expect(tm.isOpenMesh()).toBe(false);
+    });
+
+    it('rejects a one-sided wildcard in both directions', () => {
+      const store = makeFakeRuleStore();
+      const relay = makeMockRelayCore();
+      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), relay, store);
+
+      expect(() => tm.allowCrossNamespace('*', 'ns-b')).toThrow(/both.*or neither/i);
+      expect(() => tm.allowCrossNamespace('ns-a', '*')).toThrow(/both.*or neither/i);
+      expect(() => tm.denyCrossNamespace('*', 'ns-b')).toThrow(/both.*or neither/i);
+      expect(() => tm.denyCrossNamespace('ns-a', '*')).toThrow(/both.*or neither/i);
+      expect(store.list()).toEqual([]);
+      expect(relay.addAccessRule).not.toHaveBeenCalled();
+      expect(relay.removeAccessRule).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // No Relay scenario
   // ---------------------------------------------------------------------------
 

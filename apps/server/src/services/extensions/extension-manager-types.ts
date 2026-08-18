@@ -18,6 +18,33 @@ export interface ActiveServerExtension {
   router: Router;
   cleanup: (() => void) | null;
   scheduledCleanups: Array<() => void>;
+  /**
+   * What this instance was built from — see `buildSourceKey` in
+   * `extension-server-lifecycle.ts`. An `initialize` call carrying the same key
+   * is answered without a restart, which is what keeps the client's per-page-load
+   * init request from cycling every server-side extension.
+   */
+  sourceKey: string;
+}
+
+/**
+ * Turn a compiler failure into the `error` a discovery record carries, so the
+ * cockpit is told the same thing whichever compile produced it — the client
+ * bundle's (`ExtensionManager`'s `applyCompileResult`) or the server entry's
+ * ({@link ExtensionServerLifecycle.initialize}).
+ *
+ * @param error - The compiler's structured failure.
+ */
+export function toRecordError(error: {
+  code: string;
+  message: string;
+  errors: Array<{ text: string }>;
+}): NonNullable<ExtensionRecord['error']> {
+  return {
+    code: error.code,
+    message: error.message,
+    details: error.errors.map((e) => e.text).join('\n'),
+  };
 }
 
 /** Result of creating a new extension. */
@@ -95,6 +122,7 @@ export function toPublic(
     scope: record.scope,
     origin: record.origin,
     error: record.error,
+    serverError: record.serverError,
     bundleReady: record.bundleReady,
     hasServerEntry: record.hasServerEntry,
     hasDataProxy: record.hasDataProxy,

@@ -59,23 +59,37 @@ export function PackageGrid() {
   const { data: installed } = useInstalledPackages();
   const prefersReducedMotion = useReducedMotion();
 
-  const { type, categories, search, sort, resetFilters, clearCategories, openDetail } =
-    useMarketplaceParams();
+  const {
+    type,
+    categories,
+    sources,
+    search,
+    sort,
+    resetFilters,
+    clearCategories,
+    clearSources,
+    openDetail,
+  } = useMarketplaceParams();
   const requestInstall = useRequestInstall();
 
   const visible = useMemo(() => {
     if (!data) return [];
-    return sortPackages(filterPackages(data, { type, categories, search }), sort);
-  }, [data, type, categories, search, sort]);
+    return sortPackages(filterPackages(data, { type, categories, sources, search }), sort);
+  }, [data, type, categories, sources, search, sort]);
 
   const installedNames = useMemo(() => new Set((installed ?? []).map((p) => p.name)), [installed]);
 
   if (isLoading) return <PackageLoadingSkeleton />;
   if (error) return <PackageErrorState error={error as Error} onRetry={() => void refetch()} />;
   if (visible.length === 0) {
-    // A category filter with no matches gets a category-aware message and a
-    // single "Clear categories" affordance rather than the generic reset.
-    if (categories.length > 0) {
+    // A single narrowing facet gets a message that names it and a button that
+    // clears just it. With BOTH a source and a category on, neither of those is
+    // honest: naming one sends the reader hunting for a filter that is not the
+    // reason the grid is empty, and clearing one may still leave it empty.
+    const onlyCategories = categories.length > 0 && sources.length === 0;
+    const onlySources = sources.length > 0 && categories.length === 0;
+
+    if (onlyCategories) {
       const only = categories.length === 1 ? categories[0] : null;
       const known = only ? asMarketplaceCategory(only) : undefined;
       const label = only ? (known ? CATEGORY_LABELS[known] : only) : null;
@@ -88,6 +102,29 @@ export function PackageGrid() {
         />
       );
     }
+
+    if (onlySources) {
+      const only = sources.length === 1 ? sources[0] : null;
+      return (
+        <PackageEmptyState
+          title={only ? `No packages from ${only} yet` : 'No packages from these sources yet'}
+          description="Nothing in the selected marketplaces matches. Try another source or clear the filter."
+          resetLabel={sources.length === 1 ? 'Clear source' : 'Clear sources'}
+          onResetFilters={clearSources}
+        />
+      );
+    }
+
+    if (categories.length > 0 && sources.length > 0) {
+      return (
+        <PackageEmptyState
+          title="No packages match these filters"
+          description="Nothing matches this mix of source and category. Reset the filters to see the whole catalog again."
+          onResetFilters={resetFilters}
+        />
+      );
+    }
+
     return <PackageEmptyState onResetFilters={resetFilters} />;
   }
 

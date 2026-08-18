@@ -70,7 +70,7 @@ import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
 import { resolveAgentTokenEnv } from '../../core/agent-identity/index.js';
-import { checkCodexDependencies } from './check-dependencies.js';
+import { checkCodexDependencies, resolveCodexBinaryPath } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
 import { CodexSessionRegistry } from './session-registry.js';
 import {
@@ -99,10 +99,13 @@ export interface CodexRuntimeOptions {
   /** Durable sessionId ↔ threadId binding (backed by the `codex_threads` table). */
   threadMap: CodexThreadMap;
   /**
-   * Absolute path to the `codex` binary (`runtimes.codex.binaryPath` config).
-   * `null`/omitted lets the SDK resolve its own vendored binary.
+   * How this runtime finds its `codex` binary. Defaults to the shared ladder
+   * ({@link resolveCodexBinaryPath}: configured `binaryPath` → SDK-vendored →
+   * provisioned → `PATH`), which is the SAME resolution the dependency check
+   * reports on, so the status card and the turn can never disagree. Injectable
+   * for tests; production passes nothing.
    */
-  binaryPath?: string | null;
+  resolveBinary?: () => Promise<string | null>;
   /**
    * Loopback URL of the scoped `dorkos_ui` MCP server
    * ({@link ./codex-ui-mcp-server}) that exposes `control_ui` to Codex for
@@ -123,8 +126,10 @@ export interface CodexRuntimeOptions {
 /**
  * Build the {@link CodexOptions} for the SDK `Codex` client.
  *
- * `codexPathOverride` is set only when a binary path is configured (otherwise
- * the SDK resolves its own vendored binary). `config.mcp_servers` carries the
+ * `codexPathOverride` is set whenever a binary path is given, and every DorkOS
+ * caller now gives one ({@link CodexRuntime} resolves it through the shared
+ * ladder first) — leaving it unset falls back to the SDK's own binary discovery,
+ * which THROWS when it finds nothing rather than reporting it. `config.mcp_servers` carries the
  * agent's enabled managed servers (`managedServers`, spec
  * `mcp-server-management`) plus the scoped `dorkos_ui` bridge when a UI MCP URL
  * is provided — see {@link buildMcpServersConfig} for the merge and the
@@ -202,10 +207,19 @@ function inheritedEnv(): Record<string, string> {
 export class CodexRuntime implements AgentRuntime {
   readonly type = 'codex' as const;
 
-  private readonly codex: Codex;
-  /** Kept so a turn that carries an identity token can build its own client. */
-  private readonly binaryPath: string | null | undefined;
-  /** Kept for the same reason as {@link binaryPath}. */
+  /**
+   * The shared client and the binary it was built for, or `null` until the
+   * first turn resolves one. Built LAZILY: the SDK's `Codex` constructor
+   * resolves its own vendored binary and THROWS when it cannot find one, which
+   * in the packaged desktop app (where the vendor package is not shipped) took
+   * the whole runtime out of the registry — no Codex card, no honest status, no
+   * install hint (DOR-1334 / F9). Nothing here touches the SDK until a turn
+   * actually needs it, and by then DorkOS has resolved the path itself.
+   */
+  private sharedClient: { binary: string; client: Codex } | null = null;
+  /** How this runtime finds its `codex` binary — see {@link CodexRuntimeOptions.resolveBinary}. */
+  private readonly resolveBinary: () => Promise<string | null>;
+  /** Kept so every turn's client is built with the same UI-bridge wiring. */
   private readonly mcpUiUrl: string | undefined;
   /**
    * The agent registry, when the composition root injected it. Used only to
@@ -245,14 +259,9 @@ export class CodexRuntime implements AgentRuntime {
   constructor(options: CodexRuntimeOptions) {
     this.threadMap = options.threadMap;
     this.defaultCwd = options.defaultCwd ?? DEFAULT_CWD;
-    this.binaryPath = options.binaryPath;
+    this.resolveBinary = options.resolveBinary ?? resolveCodexBinaryPath;
     this.mcpUiUrl = options.mcpUiUrl;
-    // Set no `env` here: when provided the subprocess does NOT inherit
-    // process.env (PATH/HOME/CODEX_HOME would all vanish). Omitting it inherits
-    // everything (NOTES.md §Additional live-verified facts). A turn that mints an
-    // identity token builds its own client instead (see `clientForTurn`), where
-    // the parent environment is spread back in explicitly.
-    this.codex = new Codex(buildCodexOptions(options.binaryPath, options.mcpUiUrl));
+    // No SDK client is built here on purpose — see `sharedClient`.
   }
 
   /**
@@ -277,27 +286,60 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   /**
+   * The `codex` binary this turn will run, resolved through the same ladder the
+   * dependency check reports on.
+   *
+   * Resolved per turn rather than once at boot, and deliberately not cached: the
+   * ladder is a config read plus a couple of `existsSync` calls, which is
+   * nothing next to spawning `codex exec`, and paying it every turn means a
+   * one-click install or a `runtimes.codex.binaryPath` edit takes effect
+   * immediately instead of at the next server restart. Only the CLIENT is
+   * memoised, and only while the binary it was built for is still the answer.
+   *
+   * @throws When nothing resolves — the honest, actionable end of the ladder.
+   *   The runtime still registered and its status card still says `missing`
+   *   with an install hint; this is what a person sees if they start a turn
+   *   anyway.
+   */
+  private async resolveTurnBinary(): Promise<string> {
+    const binary = await this.resolveBinary();
+    if (!binary) {
+      throw new Error(
+        'Codex CLI not found — install it (`npm i -g @openai/codex`) or set `runtimes.codex.binaryPath` in your DorkOS config.'
+      );
+    }
+    return binary;
+  }
+
+  /**
    * The `Codex` client for one turn.
    *
-   * Returns the shared boot-time client (subprocess inherits `process.env`
-   * untouched, `dorkos_ui` bridge only) unless this turn needs a turn-scoped
-   * one: it carries an agent identity token (so the token reaches `codex exec`
-   * through its environment and nowhere else), or the agent has enabled managed
-   * MCP servers (which vary by session cwd, so they cannot ride the shared boot
-   * client). Constructing a client is cheap next to spawning the model
-   * subprocess: it resolves the binary path and stores options.
+   * Returns the shared client (subprocess inherits `process.env` untouched,
+   * `dorkos_ui` bridge only) unless this turn needs a turn-scoped one: it
+   * carries an agent identity token (so the token reaches `codex exec` through
+   * its environment and nowhere else), or the agent has enabled managed MCP
+   * servers (which vary by session cwd, so they cannot ride the shared client).
+   * Constructing a client is cheap next to spawning the model subprocess: it
+   * stores options — and, because DorkOS always passes `codexPathOverride`, the
+   * SDK never runs (nor throws from) its own binary discovery.
    *
    * @param tokenEnv - The identity-token env fragment, `{}` when unattributed.
    * @param managedServers - Enabled managed servers in Codex config shape, `{}` when none.
    */
-  private clientForTurn(
+  private async clientForTurn(
     tokenEnv: Record<string, string>,
     managedServers: CodexMcpServerRecord
-  ): Codex {
+  ): Promise<Codex> {
+    const binary = await this.resolveTurnBinary();
     const hasToken = Object.keys(tokenEnv).length > 0;
     const hasManaged = Object.keys(managedServers).length > 0;
-    if (!hasToken && !hasManaged) return this.codex;
-    return new Codex(buildCodexOptions(this.binaryPath, this.mcpUiUrl, tokenEnv, managedServers));
+    if (hasToken || hasManaged) {
+      return new Codex(buildCodexOptions(binary, this.mcpUiUrl, tokenEnv, managedServers));
+    }
+    if (this.sharedClient?.binary !== binary) {
+      this.sharedClient = { binary, client: new Codex(buildCodexOptions(binary, this.mcpUiUrl)) };
+    }
+    return this.sharedClient.client;
   }
 
   /**
@@ -573,7 +615,7 @@ export class CodexRuntime implements AgentRuntime {
     // session has no manifest and contributes none.
     const managedMcpServers = this.resolveManagedMcpServers(cwd);
     const threadOptions = projectThreadOptions(settings, cwd);
-    const client = this.clientForTurn(agentTokenEnv, managedMcpServers);
+    const client = await this.clientForTurn(agentTokenEnv, managedMcpServers);
     const thread =
       boundThreadId !== undefined
         ? client.resumeThread(boundThreadId, threadOptions)
@@ -923,7 +965,7 @@ export class CodexRuntime implements AgentRuntime {
    */
   private async warmMcpStatus(): Promise<void> {
     try {
-      const servers = await enumerateCodexMcpServers();
+      const servers = await enumerateCodexMcpServers(this.resolveBinary);
       if (servers !== null) {
         this.mcpStatusCache = servers;
         this.mcpStatusWarmedAt = Date.now();

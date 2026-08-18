@@ -114,7 +114,13 @@ afterAll(() => {
 runtimeConformance(
   // Fresh runtime per test over an isolated in-memory thread map; binaryPath
   // null lets the SDK resolve its own binary (vendored or PATH) in live mode.
-  () => new CodexRuntime({ threadMap: new CodexThreadMap(createTestDb()), binaryPath: null }),
+  () =>
+    new CodexRuntime({
+      threadMap: new CodexThreadMap(createTestDb()),
+      // LIVE runs resolve the real binary through the shared ladder (the
+      // default); mocked runs never spawn anything, so any path will do.
+      ...(LIVE ? {} : { resolveBinary: async () => '/bin/codex' }),
+    }),
   {
     name: LIVE
       ? 'CodexRuntime (LIVE codex binary) — AgentRuntime conformance'
@@ -159,7 +165,7 @@ runtimeConformance(
             failNextThread.value = true;
             return new CodexRuntime({
               threadMap: new CodexThreadMap(createTestDb()),
-              binaryPath: null,
+              ...(LIVE ? {} : { resolveBinary: async () => '/bin/codex' }),
             });
           },
         }),

@@ -824,10 +824,12 @@ async function start() {
     // start() are not fanned into the global session-list stream.
     const codexConfig = configManager.get('runtimes').codex;
     if (codexConfig.enabled) {
-      // Construction can throw synchronously (e.g. the Codex CLI binary isn't
-      // installed — the norm in the packaged desktop app, which bundles only
-      // the claude-code SDK). registerOptionalRuntime isolates that failure so
-      // it can't reject start() and kill the whole server process.
+      // Construction no longer depends on a resolvable `codex` binary: the
+      // runtime resolves one lazily, per turn, so a machine with no Codex still
+      // registers it and reports an honest `missing` with an install hint
+      // (DOR-1334 / F9). registerOptionalRuntime stays as the last-resort guard
+      // against any OTHER synchronous construction failure taking start() —
+      // and the whole server process — down with it.
       registerOptionalRuntime(
         'CodexRuntime',
         'install the Codex CLI or set runtimes.codex.enabled to false in config to silence this',
@@ -836,7 +838,6 @@ async function start() {
             // The thread map shares the consolidated Drizzle handle injected into
             // runtimeRegistry.setDb() above (one DB, one `codex_threads` table).
             threadMap: new CodexThreadMap(db),
-            binaryPath: codexConfig.binaryPath,
             // Loopback URL of the scoped `dorkos_ui` MCP server mounted below at
             // /codex-ui-mcp. Codex's MCP client sends no Origin header, so it clears
             // validateMcpOrigin via the non-browser early return (not the allowlist).

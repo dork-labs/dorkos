@@ -29,6 +29,7 @@ const mockParams = vi.hoisted(() => ({
   sort: 'featured' as string,
   search: '' as string,
   categories: [] as string[],
+  sources: [] as string[],
   selectedPackageName: null as string | null,
   setType: vi.fn(),
   setSort: vi.fn(),
@@ -36,6 +37,8 @@ const mockParams = vi.hoisted(() => ({
   toggleCategory: vi.fn(),
   setCategories: vi.fn(),
   clearCategories: vi.fn(),
+  toggleSource: vi.fn(),
+  clearSources: vi.fn(),
   resetFilters: vi.fn(),
   openDetail: vi.fn(),
   closeDetail: vi.fn(),
@@ -129,6 +132,7 @@ describe('PackageGrid', () => {
     mockParams.sort = 'featured';
     mockParams.search = '';
     mockParams.categories = [];
+    mockParams.sources = [];
     mockParams.selectedPackageName = null;
   });
 
@@ -163,6 +167,47 @@ describe('PackageGrid', () => {
     expect(screen.getByText(/no packages match your filters/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reset filters/i })).toBeInTheDocument();
     expect(screen.queryByLabelText('Loading packages')).not.toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // Empty state — the message must name the filters that are actually on
+  // -------------------------------------------------------------------------
+
+  it('names the category and offers to clear it when only a category is on', async () => {
+    const user = userEvent.setup();
+    mockParams.categories = ['security'];
+    setMarketplaceState({ data: [] });
+    render(<PackageGrid />);
+
+    expect(screen.getByText('No packages in Security yet')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear category' }));
+    expect(mockParams.clearCategories).toHaveBeenCalledTimes(1);
+  });
+
+  it('names the source and offers to clear it when only a source is on', async () => {
+    const user = userEvent.setup();
+    mockParams.sources = ['dorkos-community'];
+    setMarketplaceState({ data: [] });
+    render(<PackageGrid />);
+
+    expect(screen.getByText('No packages from dorkos-community yet')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear source' }));
+    expect(mockParams.clearSources).toHaveBeenCalledTimes(1);
+  });
+
+  it('mentions both, and resets both, when a source and a category are on', async () => {
+    const user = userEvent.setup();
+    mockParams.categories = ['security'];
+    mockParams.sources = ['dorkos-community'];
+    setMarketplaceState({ data: [] });
+    render(<PackageGrid />);
+
+    // Naming only the category would send the reader hunting for a category
+    // that is not the reason the grid is empty.
+    expect(screen.getByText('No packages match these filters')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear category' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /reset filters/i }));
+    expect(mockParams.resetFilters).toHaveBeenCalledTimes(1);
   });
 
   it('renders one PackageCard per package when data resolves', () => {

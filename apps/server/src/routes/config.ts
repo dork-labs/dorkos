@@ -12,6 +12,7 @@ import { describeExecutionDefaults } from '../services/session/resolve-session-d
 // hands over the capability map instead of the module reaching for it.
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { env } from '../env.js';
+import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import {
   SIDEBAR_PREFS_DEFAULTS,
   SHAPE_USER_PREFS_DEFAULTS,
@@ -112,7 +113,13 @@ router.get('/', async (_req, res) => {
         ?.dismissedUpgradeVersions ?? [],
     port: env.DORKOS_PORT,
     uptime: process.uptime(),
-    workingDirectory: process.cwd(),
+    // The resolved default working directory (lib/resolve-root.js) — the same
+    // value `GET /api/directory/default` reports, and for the same reason: a
+    // Finder-launched Mac app runs with `process.cwd()` at `/`, which every
+    // boundary-enforced route then refuses (DOR-1334 / F11). Resolved, not
+    // clamped: `DORKOS_DEFAULT_CWD` is validated against the boundary by
+    // whoever sets it (the CLI does; the desktop shell will).
+    workingDirectory: DEFAULT_CWD,
     platform: `${process.platform}-${process.arch}`,
     runtimes: configuredRuntimes(),
     // Which Claude account new work will run and bill on, RESOLVED, plus the

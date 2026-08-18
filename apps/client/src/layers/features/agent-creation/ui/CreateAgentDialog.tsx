@@ -12,6 +12,7 @@ import {
   DirectoryPicker,
 } from '@/layers/shared/ui';
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
+import { OpenMeshNotice } from '@/layers/entities/mesh';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
 import { useConfigureForm } from '../model/use-configure-form';
@@ -282,6 +283,13 @@ export function CreateAgentDialog() {
                 )}
               </motion.div>
             </AnimatePresence>
+
+            {/* The wall this agent is about to hit, said before it hits it: a
+                new agent lands in its own project and cannot message the ones
+                already here. Only on the steps that end in a Create button —
+                the gallery is still browsing — and only when there is another
+                agent to be cut off from and the switch is off. */}
+            {step !== 'gallery' && <OpenMeshNotice className="mt-6" />}
           </div>
         </div>
 

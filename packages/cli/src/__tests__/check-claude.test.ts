@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
-// Steer the three resolution primitives per test.
+// Steer the resolution primitives per test. `exists` is a PREDICATE because the
+// CLI now walks the server's own ladder (env override → bundled → provisioned →
+// PATH), and a test has to be able to say which of those rungs is present.
 const h = vi.hoisted(() => ({
   resolve: ((_s: string): string => {
     throw new Error('not found');
   }) as (s: string) => string,
-  exists: true,
+  exists: ((_p: string) => true) as (path: string) => boolean,
   which: null as string | null,
   versionOk: true,
 }));
@@ -15,8 +17,14 @@ vi.mock('node:module', () => ({
 }));
 
 vi.mock('node:fs', () => ({
-  existsSync: () => h.exists,
+  existsSync: (p: string) => h.exists(p),
 }));
+
+/** Where a one-click install writes; absent unless a test says otherwise. */
+const PROVISIONED = '/runtimes/claude-code/';
+
+/** A host that has never run the one-click install. */
+const nothingProvisioned = (p: string): boolean => !p.includes(PROVISIONED);
 
 vi.mock('node:child_process', () => ({
   execFileSync: (_cmd: string, args: string[]) => {
@@ -41,7 +49,7 @@ describe('checkClaude', () => {
     h.resolve = () => {
       throw new Error('not found');
     };
-    h.exists = true;
+    h.exists = nothingProvisioned;
     h.which = null;
     h.versionOk = true;
     mockConsoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -90,9 +98,23 @@ describe('checkClaude', () => {
 
   it('returns false when a binary resolves but fails to launch', () => {
     h.resolve = () => '/pkgs/claude-agent-sdk/claude';
-    h.exists = true;
     h.versionOk = false; // `--version` throws
 
     expect(checkClaude()).toBe(false);
+  });
+
+  // Purpose (DOR-1334 review): the CLI used to carry its OWN copy of the
+  // resolution ladder, which never learned about the one-click install — so
+  // `dorkos` start-up and `dorkos doctor` warned "not found" about a binary the
+  // server would have spawned happily. It walks the server's ladder now.
+  it('finds a provisioned install, which the CLI-local ladder never could', () => {
+    h.resolve = () => {
+      throw new Error('optional dep not installed');
+    };
+    h.which = null;
+    h.exists = (p) => p.includes(PROVISIONED);
+
+    expect(checkClaude()).toBe(true);
+    expect(mockConsoleWarn).not.toHaveBeenCalled();
   });
 });

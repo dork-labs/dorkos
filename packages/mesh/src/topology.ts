@@ -7,7 +7,7 @@
  *
  * @module mesh/topology
  */
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { OPEN_MESH_NAMESPACE, type AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RelayCore } from '@dorkos/relay';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { RelayBridge } from './relay-bridge.js';
@@ -39,10 +39,46 @@ export interface TopologyView {
   callerNamespace: string;
   namespaces: NamespaceInfo[];
   accessRules: CrossNamespaceRule[];
+  /**
+   * Whether the mesh-wide `* -> *` allow rule is on — the "Let all my agents
+   * talk to each other" switch. When true every agent may message every other
+   * agent on this machine, whatever namespace they landed in. See
+   * {@link TopologyManager.isOpenMesh}.
+   */
+  openMesh: boolean;
 }
 
 /** Priority for cross-namespace allow rules added via allowCrossNamespace(). */
 const CROSS_NAMESPACE_ALLOW_PRIORITY = 50;
+
+/**
+ * The Relay subject pattern a namespace's agents match.
+ *
+ * {@link OPEN_MESH_NAMESPACE} maps to `relay.agent.>` (every namespace,
+ * every agent); a concrete namespace maps to `relay.agent.{ns}.*`.
+ */
+function relayPattern(namespace: string): string {
+  return namespace === OPEN_MESH_NAMESPACE ? 'relay.agent.>' : `relay.agent.${namespace}.*`;
+}
+
+/**
+ * Reject a rule with {@link OPEN_MESH_NAMESPACE} on exactly one side.
+ *
+ * @param sourceNamespace - Source side of the rule
+ * @param targetNamespace - Target side of the rule
+ * @throws When exactly one side is the wildcard.
+ */
+function assertNamespacePair(sourceNamespace: string, targetNamespace: string): void {
+  const source = sourceNamespace === OPEN_MESH_NAMESPACE;
+  const target = targetNamespace === OPEN_MESH_NAMESPACE;
+  if (source !== target) {
+    throw new Error(
+      `A "${OPEN_MESH_NAMESPACE}" namespace has to be on both sides of an access rule or neither ` +
+        `(got ${sourceNamespace} -> ${targetNamespace}). Use "${OPEN_MESH_NAMESPACE}" -> ` +
+        `"${OPEN_MESH_NAMESPACE}" for the mesh-wide switch, or two concrete namespaces for a pair.`
+    );
+  }
+}
 
 /**
  * Manages network topology queries with invisible boundary enforcement.
@@ -63,6 +99,12 @@ const CROSS_NAMESPACE_ALLOW_PRIORITY = 50;
  * allow that outranks and shadows that namespace's own deny — see
  * {@link defaultAccessRules}. Tagged `origin: 'default'` so the view reflects
  * what's actually enforced, not just what a user configured on top.
+ *
+ * One stored pair is special: `* -> *` ({@link OPEN_MESH_NAMESPACE} on both
+ * sides) is the mesh-wide "Let all my agents talk to each other" switch. It
+ * lives in the same store as every other pair, projects into Relay as
+ * `relay.agent.> -> relay.agent.>`, and is reported as
+ * {@link TopologyView.openMesh}.
  *
  * @example
  * ```typescript
@@ -88,6 +130,15 @@ export class TopologyManager {
    * and only as a migration, never as a topology read. Then projects every
    * stored rule into Relay (idempotent) so Relay enforces exactly what the store
    * owns, even if Relay's `access-rules.json` was lost.
+   *
+   * The mesh-wide `relay.agent.> -> relay.agent.>` rule is seeded FIRST, by
+   * exact match, because the pair regex below cannot describe it. Without that,
+   * losing `dork.db` (a rebuildable cache under ADR-0043 — the reconciler
+   * restores it from the `.dork/agent.json` files, and this migration restores
+   * the rules) would leave Relay still enforcing the wildcard allow while the
+   * store, the topology view and the switch all reported the mesh closed: open
+   * in fact, shut in the UI. Pair rules already came back this way; the switch
+   * now does too.
    */
   syncNamespaceRulesFromRelay(): void {
     if (!this.relayCore) return;
@@ -95,6 +146,15 @@ export class TopologyManager {
     if (this.namespaceRules.list().length === 0) {
       for (const rule of this.relayCore.listAccessRules()) {
         if (rule.action !== 'allow') continue;
+        if (
+          rule.from === relayPattern(OPEN_MESH_NAMESPACE) &&
+          rule.to === relayPattern(OPEN_MESH_NAMESPACE)
+        ) {
+          this.namespaceRules.add(OPEN_MESH_NAMESPACE, OPEN_MESH_NAMESPACE);
+          continue;
+        }
+        // Pair rules only. `relay.agent.>` deliberately fails this match, so a
+        // half-wildcard bridge rule can never seed a namespace named `>`.
         const from = rule.from.match(/^relay\.agent\.(.*)\.\*$/);
         const to = rule.to.match(/^relay\.agent\.(.*)\.\*$/);
         if (from && to && from[1] !== to[1]) {
@@ -111,11 +171,20 @@ export class TopologyManager {
   /** Project a cross-namespace allow rule into Relay (the enforcer). */
   private projectAllowRule(sourceNamespace: string, targetNamespace: string): void {
     this.relayCore?.addAccessRule({
-      from: `relay.agent.${sourceNamespace}.*`,
-      to: `relay.agent.${targetNamespace}.*`,
+      from: relayPattern(sourceNamespace),
+      to: relayPattern(targetNamespace),
       action: 'allow',
       priority: CROSS_NAMESPACE_ALLOW_PRIORITY,
     });
+  }
+
+  /**
+   * Whether the mesh-wide switch is on — a stored `* -> *` allow pair.
+   *
+   * @returns True when every agent may message every other agent on this machine.
+   */
+  isOpenMesh(): boolean {
+    return this.namespaceRules.has(OPEN_MESH_NAMESPACE, OPEN_MESH_NAMESPACE);
   }
 
   /**
@@ -146,12 +215,16 @@ export class TopologyManager {
     }));
 
     const explicitRules = this.listCrossNamespaceRules();
-    // Filter explicit rules to only show rules involving accessible namespaces
+    // Filter explicit rules to only show rules involving accessible namespaces.
+    // The mesh-wide `* -> *` rule names no concrete namespace, so it would fall
+    // through that filter — it is always kept: it is precisely what a scoped
+    // caller needs to know to explain why it can suddenly reach everyone.
     const filteredExplicitRules =
       callerNamespace === '*'
         ? explicitRules
         : explicitRules.filter(
             (r) =>
+              r.sourceNamespace === OPEN_MESH_NAMESPACE ||
               accessibleNamespaces.has(r.sourceNamespace) ||
               accessibleNamespaces.has(r.targetNamespace)
           );
@@ -172,6 +245,7 @@ export class TopologyManager {
       callerNamespace,
       namespaces,
       accessRules: [...defaultRules, ...filteredExplicitRules],
+      openMesh: this.isOpenMesh(),
     };
   }
 
@@ -258,10 +332,17 @@ export class TopologyManager {
    * 50, above the default deny at 10 but below same-namespace allow at 100).
    * Requires Relay to project into; a no-op when Relay is absent.
    *
+   * Both sides may be {@link OPEN_MESH_NAMESPACE} — the mesh-wide switch, which
+   * projects `relay.agent.> -> relay.agent.>` at the same priority, so it
+   * outranks every namespace's catch-all deny (10) while staying below the
+   * system-agent bridge rules (200). A wildcard on only one side is rejected.
+   *
    * @param sourceNamespace - The namespace to allow messages from
    * @param targetNamespace - The namespace to allow messages to
+   * @throws When exactly one side is {@link OPEN_MESH_NAMESPACE}.
    */
   allowCrossNamespace(sourceNamespace: string, targetNamespace: string): void {
+    assertNamespacePair(sourceNamespace, targetNamespace);
     if (!this.relayCore) return;
     this.namespaceRules.add(sourceNamespace, targetNamespace);
     this.projectAllowRule(sourceNamespace, targetNamespace);
@@ -272,16 +353,18 @@ export class TopologyManager {
    *
    * Removes it from the Mesh rule store AND from Relay.
    *
+   * `* -> *` turns the mesh-wide switch back off; stored pair rules are
+   * untouched and keep enforcing on their own.
+   *
    * @param sourceNamespace - Source namespace
    * @param targetNamespace - Target namespace
+   * @throws When exactly one side is {@link OPEN_MESH_NAMESPACE}.
    */
   denyCrossNamespace(sourceNamespace: string, targetNamespace: string): void {
+    assertNamespacePair(sourceNamespace, targetNamespace);
     if (!this.relayCore) return;
     this.namespaceRules.remove(sourceNamespace, targetNamespace);
-    this.relayCore.removeAccessRule(
-      `relay.agent.${sourceNamespace}.*`,
-      `relay.agent.${targetNamespace}.*`
-    );
+    this.relayCore.removeAccessRule(relayPattern(sourceNamespace), relayPattern(targetNamespace));
   }
 
   /**
@@ -302,13 +385,15 @@ export class TopologyManager {
    *
    * Always includes the caller's own namespace, plus every namespace the caller
    * has an explicit cross-namespace allow rule for — read from the Mesh rule
-   * store, not from Relay rule strings.
+   * store, not from Relay rule strings. While the mesh-wide switch is on
+   * ({@link isOpenMesh}) every namespace is accessible, matching what Relay
+   * actually enforces.
    */
   private getAccessibleNamespaces(callerNamespace: string): Set<string> {
     const allEntries = this.registry.list();
     const allNamespaces = new Set(allEntries.map((e) => e.namespace));
 
-    if (callerNamespace === '*') return allNamespaces;
+    if (callerNamespace === '*' || this.isOpenMesh()) return allNamespaces;
 
     const accessible = new Set<string>([callerNamespace]);
     for (const rule of this.namespaceRules.list()) {

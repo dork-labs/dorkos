@@ -33,7 +33,7 @@
  */
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import { runBinaryProbe } from '../../shared/run-probe.js';
+import { logProbeFailure, runBinaryProbe } from '../../shared/run-probe.js';
 import { configManager } from '../../../core/config-manager.js';
 import { credentialProvider, type CredentialProvider } from '../../../core/credential-provider.js';
 import { ANTHROPIC_PROVIDER_ID } from '../../../core/credential-env.js';
@@ -92,8 +92,12 @@ async function checkCliBinary(binary: string | null): Promise<DependencyCheck> {
     try {
       const version = await runBinaryProbe(binary, ['--version'], PROBE_TIMEOUT_MS);
       return { name, description, status: 'satisfied', version };
-    } catch {
-      // Binary resolved but failed to launch (or the probe timed out) — fall through to "missing".
+    } catch (err) {
+      // Binary resolved but failed to launch (or the probe timed out) — fall
+      // through to "missing", but say so in the log: a resolvable binary that
+      // will not run is exactly the case a person cannot diagnose from the
+      // requirements payload alone (DOR-1334 / F3).
+      logProbeFailure(name, binary, err);
     }
   }
 
@@ -204,7 +208,8 @@ async function checkAuthState(
 
 /**
  * Check whether Claude Code's external dependencies are satisfied: (a) a runnable
- * `claude` CLI binary — SDK-bundled or on `PATH` — and (b) an authenticated
+ * `claude` CLI binary — env override, SDK-bundled, provisioned, or on `PATH`, the
+ * one ladder the SDK spawn seam walks too — and (b) an authenticated
  * Claude (a DorkOS-stored key, the host login, or an inherited env credential).
  * Surfaced by `GET /api/system/requirements`. The binary is resolved once and
  * shared by both checks; the two probes are otherwise independent.
