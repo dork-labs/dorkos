@@ -11,8 +11,9 @@
  * through the row, the list and the composer.
  *
  * The rule is mechanical, not aspirational: nothing under `Conversation.Root`
- * may read `surface`, and `__tests__/no-surface-switches.test.ts` scans this
- * slice's `ui/` for `surface ===` and fails on a hit.
+ * may read `surface`, and `__tests__/no-surface-switches.test.ts` scans every
+ * source file in this slice — `ui/`, `lib/` and `model/` — for a comparison
+ * against it or a switch on it, and fails on a hit.
  *
  * @module features/conversation/model/capabilities
  */

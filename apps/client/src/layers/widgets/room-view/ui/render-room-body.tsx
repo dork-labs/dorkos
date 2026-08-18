@@ -118,5 +118,10 @@ function RoomBody({ entry, authors }: RoomBodyProps) {
 export function makeRoomBodyRenderer(
   authors: ReadonlyMap<string, RosterAuthor>
 ): ConversationBodyRenderer {
-  return (payload) => <RoomBody entry={payload as RoomEntry} authors={authors} />;
+  // Named, not an arrow. The renderer returns JSX, so React DevTools and
+  // `react/display-name` both read it as a component — an anonymous one shows
+  // up in a stack trace as `Unknown`, on every row of every room.
+  return function RenderRoomBody(payload) {
+    return <RoomBody entry={payload as RoomEntry} authors={authors} />;
+  };
 }
