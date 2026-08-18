@@ -7,7 +7,7 @@
  *
  * @module widgets/room-view/model/room-target
  */
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import {
   isRoomMember,
@@ -75,22 +75,97 @@ export function useRoomTarget(input: RoomTargetInput): RoomTarget {
 
   const isMember = room !== undefined && isRoomMember(room.members, room.viewerAuthorId);
 
+  /**
+   * What the port's actions and `send` read at the moment they RUN.
+   *
+   * The target is the conversation's context value, so anything that churns its
+   * identity re-renders the entire transcript — once per streamed token, which
+   * is exactly what virtualizing the list was for. Three of this hook's inputs
+   * churn by construction: `useRoomAttachments` returns a fresh literal every
+   * render, and each `useMutation` mints a fresh result object. None of them is
+   * read while rendering, so they are read from here when somebody presses
+   * Enter instead, and the memos below depend only on facts that genuinely
+   * change.
+   */
+  const latest = useRef({ attachments, post, reply, room, threadRootId });
+  useEffect(() => {
+    latest.current = { attachments, post, reply, room, threadRootId };
+  });
+
+  const add = useCallback((files: File[]) => latest.current.attachments.addFiles(files), []);
+  const remove = useCallback((fileId: string) => latest.current.attachments.removeFile(fileId), []);
+  const retry = useCallback((fileId: string) => latest.current.attachments.retryFile(fileId), []);
+  const cancel = useCallback(() => latest.current.attachments.cancelUpload(), []);
+
+  const { pendingFiles, hasFailedUpload, isUploading } = attachments;
   const port = useMemo<ConversationAttachmentPort>(
     () => ({
-      staged: attachments.pendingFiles,
-      add: attachments.addFiles,
-      remove: attachments.removeFile,
-      retry: attachments.retryFile,
-      cancel: attachments.cancelUpload,
-      hasFailed: attachments.hasFailedUpload,
-      isUploading: attachments.isUploading,
+      staged: pendingFiles,
+      add,
+      remove,
+      retry,
+      cancel,
+      hasFailed: hasFailedUpload,
+      isUploading,
       // Uploading IS part of a room's send — `send` awaits `uploadAndGetIds`
       // itself — so Enter never has to wait, and Escape keeps meaning the one
       // thing it means in a channel: take the `@` picker down.
       holdsSendWhileUploading: false,
     }),
-    [attachments]
+    [pendingFiles, hasFailedUpload, isUploading, add, remove, retry, cancel]
   );
+
+  const send = useCallback(async (draft: ConversationDraft): Promise<void> => {
+    const {
+      attachments: files,
+      post: postNow,
+      reply: replyNow,
+      room: here,
+      threadRootId,
+    } = latest.current;
+    if (here === undefined) throw new Error('That conversation is not loaded yet.');
+    if (here.archived) throw new Error('This conversation is archived.');
+    // **Posting into a room is an interaction with it** (DOR-1156). Today is
+    // ordered by `max(userLastMessageAt, userLastOpenedAt)` and the client
+    // half was only written by opening a row — so the home surface, which IS
+    // #team and is arrived at rather than opened, could be written in all
+    // morning and hold no record at all. A thread reply records the ROOM: a
+    // thread reads its room's cursor, so one place has one record.
+    useInteractionStore.getState().recordOpened('room', here.id);
+    // Minted here, at the keystroke, because that is when the pending row
+    // has to appear — before there is any server id to call it by.
+    const clientId = newPendingId();
+    const attachmentNames = files.pendingFiles.map((file) => file.file.name);
+    // The batch identity, read in the same breath as the names: what this
+    // send is sending, and therefore exactly what it may clear when it lands.
+    const sentFileIds = files.pendingFiles.map((file) => file.id);
+    const attachmentIds = await files.uploadAndGetIds();
+    // Cleared only once the ids are safely in the message, and scoped to the
+    // batch this send took — clearing the bar wholesale silently ate a file
+    // dropped in during the upload.
+    files.clearFiles(sentFileIds);
+    // No per-call callbacks: a refusal is handled by the mutation itself,
+    // which still runs when this composer is gone. See `usePostToRoom`.
+    const rootId = draft.parentEntryId ?? threadRootId;
+    if (rootId !== undefined) {
+      replyNow.mutate({
+        roomId: here.id,
+        rootEntryId: rootId,
+        text: draft.text,
+        clientId,
+        attachmentIds,
+        attachmentNames,
+      });
+      return;
+    }
+    postNow.mutate({
+      roomId: here.id,
+      text: draft.text,
+      clientId,
+      attachmentIds,
+      attachmentNames,
+    });
+  }, []);
 
   const target = useMemo<ConversationTarget>(
     () => ({
@@ -111,56 +186,13 @@ export function useRoomTarget(input: RoomTargetInput): RoomTarget {
         : !isMember
           ? { canSendReason: 'You left this channel. You can read it, but not add to it.' }
           : {}),
-      async send(draft: ConversationDraft): Promise<void> {
-        if (room === undefined) throw new Error('That conversation is not loaded yet.');
-        if (room.archived) throw new Error('This conversation is archived.');
-        // **Posting into a room is an interaction with it** (DOR-1156). Today is
-        // ordered by `max(userLastMessageAt, userLastOpenedAt)` and the client
-        // half was only written by opening a row — so the home surface, which IS
-        // #team and is arrived at rather than opened, could be written in all
-        // morning and hold no record at all. A thread reply records the ROOM: a
-        // thread reads its room's cursor, so one place has one record.
-        useInteractionStore.getState().recordOpened('room', room.id);
-        // Minted here, at the keystroke, because that is when the pending row
-        // has to appear — before there is any server id to call it by.
-        const clientId = newPendingId();
-        const attachmentNames = attachments.pendingFiles.map((file) => file.file.name);
-        // The batch identity, read in the same breath as the names: what this
-        // send is sending, and therefore exactly what it may clear when it lands.
-        const sentFileIds = attachments.pendingFiles.map((file) => file.id);
-        const attachmentIds = await attachments.uploadAndGetIds();
-        // Cleared only once the ids are safely in the message, and scoped to the
-        // batch this send took — clearing the bar wholesale silently ate a file
-        // dropped in during the upload.
-        attachments.clearFiles(sentFileIds);
-        // No per-call callbacks: a refusal is handled by the mutation itself,
-        // which still runs when this composer is gone. See `usePostToRoom`.
-        const rootId = draft.parentEntryId ?? threadRootId;
-        if (rootId !== undefined) {
-          reply.mutate({
-            roomId: room.id,
-            rootEntryId: rootId,
-            text: draft.text,
-            clientId,
-            attachmentIds,
-            attachmentNames,
-          });
-          return;
-        }
-        post.mutate({
-          roomId: room.id,
-          text: draft.text,
-          clientId,
-          attachmentIds,
-          attachmentNames,
-        });
-      },
+      send,
       // No `queue`: a room has no queue, and the composer draws no queue chrome
       // at all rather than a disabled one.
       queueDepth: 0,
       attachments: port,
     }),
-    [room, threadRootId, isMember, attachments, port, post, reply]
+    [room, threadRootId, isMember, port, send]
   );
 
   return { target, attachments };
