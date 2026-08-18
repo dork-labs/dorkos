@@ -1,5 +1,6 @@
 ---
 covers:
+  - "fix(client): the 'N more steps' control announces its collapsed state, and the two auto-hiding parts get their tests (DOR-1331)"
   - 'refactor(client): P4.1 — one scroll hook for every conversation, and the two pieces that move with it (DOR-1331)'
   - 'feat(client): P4.2 — Conversation.Timeline, the one virtualized list, and the pending row that moves into it (DOR-1331)'
   - 'refactor(client): P4.3 — both surfaces mount the one timeline, and the two lists are gone (DOR-1331)'
