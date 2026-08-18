@@ -780,3 +780,21 @@ In Linear-ready form — one bullet each, owner named where the record above alr
 - **The timeline's prop is `renderRow`, not the spec's `renderBody`** (P4 Known Issue 20). The spec's shape would need `SessionMessage` and `RoomMessage`'s surface knowledge lifted into props, undoing P1's own seam. Owner: whoever revisits `ConversationBodyRenderer`, if anybody does — otherwise the spec is what is wrong, not the code.
 - **`ConversationTarget` has no mention port** (P4 Known Issue 21), so `capabilities.mentions` is the only fact about the `@` picker in the neutral tree and the picker itself rides the host's slot. The consequence to watch is a third surface wanting mentions and finding nothing shared to reuse. Owner: whoever adds that surface.
 - **No unit test can see a virtualization bug** (P4 Known Issue 23): `@tanstack/react-virtual` is mocked globally in `test-setup.ts`, without which the room and chat suites could assert nothing. The nets that do see them are named in the issue, both in `apps/e2e`. Owner: a testing-infrastructure pass, not a feature phase — and not worth opening until a virtualization regression actually escapes.
+
+## Post-programme follow-ups
+
+Work done after the programme closed, against the follow-ups above. Appended, not merged into the record — the phases stay as they were written.
+
+### 2026-08-18 — Known Issue 29 resolved (DOR-1353)
+
+**`render-session-body.tsx` and `SessionMessage.tsx` are in `widgets/session/ui/`.** The issue named exactly one change as what would free them, and that is the change that was made: `features/onboarding` composes `Message.*` for its scripted narration instead of rendering the session's row, which is features ← features and legal. Both files came up to the widget with the host, where §2.6 and P1's record always put them.
+
+What moved, and why only this much:
+
+- **`SessionMessage.tsx` had to move with the renderer**, not after it. `renderSessionBody` has exactly one caller — the row — so leaving the row in `features/chat` would have left a feature importing a widget, which is the violation the issue is about.
+- **`SESSION_CAPABILITIES` did not move**, because P4 already moved it. The follow-up's own text names it as still pending; the tree disagreed, and the tree was right.
+- **The blocks stayed in `features/chat`.** `AssistantMessageContent`, `UserMessageContent` and `MessageProvider` are what the renderer draws, not the host, so the barrel publishes them and the widget composes them — the same shape the chat barrel's header already described.
+- **The row's `presentation` prop was deleted.** Onboarding was its only caller. Both halves of what it did — no clock reading, no hover background — are now decided in `features/onboarding/ui/NarrationMessage.tsx` and asserted there.
+- **Three suites moved with the row** (`SessionMessage.test.tsx`, `chip-tray-survives-turn-end.test.tsx`, `QuestionOutcome.test.tsx`), and each dropped the hand-copied `SESSION_CAPABILITIES` block that P4's constraint forced on it. A widget test may import the real table.
+
+Not user-facing: the narration renders the same rows, from the same components, at the same sizes.
