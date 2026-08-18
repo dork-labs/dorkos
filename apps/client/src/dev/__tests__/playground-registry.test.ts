@@ -234,7 +234,6 @@ const CROSS_LISTED_RENDERERS: Record<string, string> = {
   agentidentitychip: 'AgentIdentityChipShowcase',
   roomavatar: 'RoomAvatarShowcase',
   roommemberrow: 'RoomMemberRowShowcase',
-  'live-lane': 'LiveLaneShowcase',
 };
 
 describe('the Identity page renders every section it borrows', () => {

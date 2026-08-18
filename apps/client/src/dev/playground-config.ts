@@ -89,8 +89,19 @@ export const IDENTITY_CROSS_LISTED: readonly string[] = [
   'agentidentitychip',
   'roomavatar',
   'roommemberrow',
-  'live-lane',
 ];
+
+/**
+ * The one section Subsystems owns that the Conversation page also renders
+ * (DOR-1332, P5). Same shape as {@link IDENTITY_CROSS_LISTED}: the
+ * capability-approval card (`ApprovalCard`) answers "may this agent do X at
+ * all", a different question from the Ask card family the Asks section holds,
+ * but a reader of that section still wants it beside the rest of the family.
+ * Its registry entry — and its canonical `/dev/features#approvalcard` anchor —
+ * stays on Subsystems; Conversation borrows it by rendering, never by
+ * registering it a second time.
+ */
+export const CONVERSATION_CROSS_LISTED: readonly string[] = ['approvalcard'];
 
 /**
  * Look up borrowed sections by id, in the order given.
@@ -178,7 +189,10 @@ export const PAGE_CONFIGS: PageConfig[] = [
       'The Conversation compound every messaging surface composes — session, room and DM side by side from one fixture, the Message.* row matrix, the timeline, the live lane and its Asks, and the composer against both targets.',
     icon: MessageSquare,
     group: 'session',
-    sections: CONVERSATION_SECTIONS,
+    // Owned sections first, then the one this page renders but Subsystems
+    // owns — see CONVERSATION_CROSS_LISTED for why cross-listing works this
+    // way.
+    sections: [...CONVERSATION_SECTIONS, ...crossListed(CONVERSATION_CROSS_LISTED)],
     path: 'conversation',
   },
   {

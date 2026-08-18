@@ -116,6 +116,95 @@ function WidthColumn({
 }
 
 /**
+ * The capability-approval card: one thing an agent wants to do, and the two
+ * buttons that answer it. Nothing is pre-selected and neither button is styled
+ * as the safe default.
+ *
+ * Its own export because the Conversation page's Asks section cross-lists it
+ * (the `maintaining-dev-playground` skill's borrow pattern) — a different
+ * question from the Ask card family (may this agent do X at all, not answer
+ * this one interaction), still worth seeing beside the rest of the family.
+ * Its registry entry stays on Subsystems, where this page renders it.
+ */
+export function ApprovalCardShowcase() {
+  return (
+    <PlaygroundSection
+      title="ApprovalCard"
+      description="One thing an agent wants to do, and the two buttons that answer it. Nothing is pre-selected and neither button is styled as the safe default."
+    >
+      <ShowcaseLabel>The same card at both decision widths</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex flex-wrap items-start gap-6">
+          <WidthColumn px={POPOVER_CONTENT_PX} caption="Header popover">
+            <ApprovalList approvals={[sample()]} />
+          </WidthColumn>
+          <WidthColumn px={DASHBOARD_CONTENT_PX} caption="Dashboard section">
+            <ApprovalList approvals={[sample()]} />
+          </WidthColumn>
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Tiers</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <ApprovalList
+          approvals={[
+            sample({ tier: 'destructive' }),
+            sample({
+              approvalId: '01JZ0000000000000000000011',
+              tier: 'act',
+              capabilityTitle: 'Create an agent',
+              summary: 'DorkBot wants to run "Create an agent" with name: release-bot',
+            }),
+            sample({
+              approvalId: '01JZ0000000000000000000012',
+              tier: 'observe',
+              capabilityTitle: 'List your agents',
+              summary: 'DorkBot wants to run "List your agents"',
+            }),
+          ]}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Who asked, and how long is left</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <ApprovalList
+          approvals={[
+            sample({ approvalId: '01JZ0000000000000000000021', requestedBy: 'DorkBot' }),
+            sample({
+              approvalId: '01JZ0000000000000000000022',
+              requestedBy: undefined,
+              // No agent path either, which is what makes this card ineligible to
+              // become a standing permission. The two travel together on a real
+              // anonymous request, and a showcase that split them would teach the
+              // wrong thing to whoever draws the third button off it.
+              hasAgentPath: false,
+              summary: 'An unidentified caller wants to run "Uninstall a marketplace package"',
+            }),
+            // Inside the last minute, where the countdown reads "expiring".
+            sample({
+              approvalId: '01JZ0000000000000000000023',
+              expiresAt: expiresIn(0.6),
+            }),
+          ]}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>A summary at the 500-character cap</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <ApprovalList
+          approvals={[
+            sample({
+              approvalId: '01JZ0000000000000000000031',
+              summary: `DorkBot wants to run "Uninstall a marketplace package" with ${'name: a-very-long-package-name, '.repeat(14)}purge: yes`,
+            }),
+          ]}
+        />
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/**
  * Action-approval showcases: the card, the queue, and the two widths those have
  * to survive.
  *
@@ -134,79 +223,7 @@ function WidthColumn({
 export function ApprovalsShowcases() {
   return (
     <>
-      <PlaygroundSection
-        title="ApprovalCard"
-        description="One thing an agent wants to do, and the two buttons that answer it. Nothing is pre-selected and neither button is styled as the safe default."
-      >
-        <ShowcaseLabel>The same card at both decision widths</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex flex-wrap items-start gap-6">
-            <WidthColumn px={POPOVER_CONTENT_PX} caption="Header popover">
-              <ApprovalList approvals={[sample()]} />
-            </WidthColumn>
-            <WidthColumn px={DASHBOARD_CONTENT_PX} caption="Dashboard section">
-              <ApprovalList approvals={[sample()]} />
-            </WidthColumn>
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Tiers</ShowcaseLabel>
-        <ShowcaseDemo responsive>
-          <ApprovalList
-            approvals={[
-              sample({ tier: 'destructive' }),
-              sample({
-                approvalId: '01JZ0000000000000000000011',
-                tier: 'act',
-                capabilityTitle: 'Create an agent',
-                summary: 'DorkBot wants to run "Create an agent" with name: release-bot',
-              }),
-              sample({
-                approvalId: '01JZ0000000000000000000012',
-                tier: 'observe',
-                capabilityTitle: 'List your agents',
-                summary: 'DorkBot wants to run "List your agents"',
-              }),
-            ]}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Who asked, and how long is left</ShowcaseLabel>
-        <ShowcaseDemo responsive>
-          <ApprovalList
-            approvals={[
-              sample({ approvalId: '01JZ0000000000000000000021', requestedBy: 'DorkBot' }),
-              sample({
-                approvalId: '01JZ0000000000000000000022',
-                requestedBy: undefined,
-                // No agent path either, which is what makes this card ineligible to
-                // become a standing permission. The two travel together on a real
-                // anonymous request, and a showcase that split them would teach the
-                // wrong thing to whoever draws the third button off it.
-                hasAgentPath: false,
-                summary: 'An unidentified caller wants to run "Uninstall a marketplace package"',
-              }),
-              // Inside the last minute, where the countdown reads "expiring".
-              sample({
-                approvalId: '01JZ0000000000000000000023',
-                expiresAt: expiresIn(0.6),
-              }),
-            ]}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>A summary at the 500-character cap</ShowcaseLabel>
-        <ShowcaseDemo responsive>
-          <ApprovalList
-            approvals={[
-              sample({
-                approvalId: '01JZ0000000000000000000031',
-                summary: `DorkBot wants to run "Uninstall a marketplace package" with ${'name: a-very-long-package-name, '.repeat(14)}purge: yes`,
-              }),
-            ]}
-          />
-        </ShowcaseDemo>
-      </PlaygroundSection>
+      <ApprovalCardShowcase />
 
       <PlaygroundSection
         title="ApprovalList"

@@ -11,7 +11,6 @@ import { IdentityShowcases } from '../showcases/IdentityShowcases';
 import { MessageAuthorAvatarShowcase } from '../showcases/MessageShowcases';
 import { AgentIdentityChipShowcase } from '../showcases/StatusLineShowcases';
 import { RoomAvatarShowcase, RoomMemberRowShowcase } from '../showcases/RoomsShowcases';
-import { LiveLaneShowcase } from '../showcases/LiveLaneShowcases';
 
 /** This page's own config, so the header and TOC cannot drift from the sidebar. */
 const CONFIG = PAGE_CONFIGS.find((config) => config.id === 'identity')!;
@@ -46,9 +45,9 @@ export function IdentityPage() {
         <h2 className="text-sm font-semibold">Also drawn here</h2>
         <p className="text-muted-foreground mt-1 text-sm">
           The rest of the identity language belongs to other pages — the shared discs and mentions
-          to Components, the author avatar, the agent chip and the live lane to Chat, the room faces
-          to Rooms — and is rendered below from those same showcases. Search still finds them under
-          the page that owns them, and their links still point there.
+          to Components, the author avatar and the agent chip to Conversation, the room faces to
+          Rooms — and is rendered below from those same showcases. Search still finds them under the
+          page that owns them, and their links still point there.
         </p>
       </div>
 
@@ -58,7 +57,6 @@ export function IdentityPage() {
       <AgentIdentityChipShowcase />
       <RoomAvatarShowcase />
       <RoomMemberRowShowcase />
-      <LiveLaneShowcase />
     </PlaygroundPageLayout>
   );
 }

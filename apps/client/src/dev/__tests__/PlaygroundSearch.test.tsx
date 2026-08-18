@@ -89,10 +89,10 @@ describe('PlaygroundSearch', () => {
     expect(screen.getByText('Dialog')).toBeInTheDocument();
   });
 
-  it('renders sections from the chat page', () => {
+  it('renders sections from the conversation page', () => {
     renderSearch();
     expect(screen.getByText('ToolCallCard')).toBeInTheDocument();
-    expect(screen.getByText('Composer.Input')).toBeInTheDocument();
+    expect(screen.getByText('Composer')).toBeInTheDocument();
   });
 
   it('calls onSelect with the section when a result is clicked', () => {

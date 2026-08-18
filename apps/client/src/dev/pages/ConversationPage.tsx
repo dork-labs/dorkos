@@ -1,10 +1,16 @@
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { CONVERSATION_SECTIONS } from '../playground-registry';
+import { SurfacesShowcase } from '../showcases/SurfacesShowcases';
 import { MessageShowcases } from '../showcases/MessageShowcases';
+import { TimelineShowcase } from '../showcases/TimelineShowcases';
 import { ToolShowcases } from '../showcases/ToolShowcases';
-import { AskShowcases } from '../showcases/AskShowcases';
+import { AsksShowcase } from '../showcases/AsksShowcases';
 import { ChipShowcases } from '../showcases/ChipShowcases';
-import { InputShowcases } from '../showcases/InputShowcases';
+import {
+  ComposerShowcases,
+  CommandPaletteShowcase,
+  QuestionPromptShowcase,
+} from '../showcases/ComposerShowcases';
 import { StatusShowcases } from '../showcases/StatusShowcases';
 import { LiveLaneShowcase, LivePeekShowcase } from '../showcases/LiveLaneShowcases';
 import { StatusLineShowcases } from '../showcases/StatusLineShowcases';
@@ -20,11 +26,15 @@ export function ConversationPage() {
       description="The Conversation compound every messaging surface composes — session, room and DM."
       sections={CONVERSATION_SECTIONS}
     >
+      <SurfacesShowcase />
       <MessageShowcases />
+      <TimelineShowcase />
       <ToolShowcases />
-      <AskShowcases />
+      <AsksShowcase />
       <ChipShowcases />
-      <InputShowcases />
+      <ComposerShowcases />
+      <CommandPaletteShowcase />
+      <QuestionPromptShowcase />
       <StatusShowcases />
       <LiveLaneShowcase />
       <LivePeekShowcase />

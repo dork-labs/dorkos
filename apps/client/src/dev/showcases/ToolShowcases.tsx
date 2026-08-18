@@ -1,6 +1,4 @@
 import { ToolCallCard } from '@/layers/features/chat/ui/tools/ToolCallCard';
-import { ApprovalPrompt } from '@/layers/features/ask';
-import { AskReceiptShowcases } from './AskReceiptShowcases';
 import { BackgroundTaskShowcases } from './BackgroundTaskShowcases';
 import { SubagentBlock } from '@/layers/features/chat/ui/message/SubagentBlock';
 import { ErrorMessageBlock } from '@/layers/features/chat/ui/message/ErrorMessageBlock';
@@ -10,16 +8,21 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import {
-  MOCK_SESSION_ID,
   TOOL_CALLS,
   TOOL_CALLS_EXTENDED,
   TOOL_CALLS_WITH_HOOKS,
-  TOOL_CALL_APPROVAL,
   BACKGROUND_TASK_PARTS,
   ERROR_PARTS,
 } from '../mock-chat-data';
 
-/** Tool-related component showcases: ToolCallCard, ApprovalPrompt. */
+/**
+ * Tool-related component showcases: ToolCallCard and friends.
+ *
+ * The tool-call APPROVAL prompt (`ApprovalPrompt`) and its receipt
+ * (`AskReceipt`) moved to `AsksShowcases.tsx` (DOR-1332, P5) — they are Ask
+ * surfaces, not tool-call rendering, and the Conversation page's Asks section
+ * is where the whole Ask card family lives now.
+ */
 export function ToolShowcases() {
   return (
     <>
@@ -271,67 +274,6 @@ export function ToolShowcases() {
           </CollapsibleRun>
         </ShowcaseDemo>
       </PlaygroundSection>
-
-      <PlaygroundSection
-        title="ApprovalPrompt"
-        description="Approval card for pending tool calls. Uses Transport (mock) for approve/deny."
-      >
-        <ShowcaseLabel>Inactive</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ApprovalPrompt
-            sessionId={MOCK_SESSION_ID}
-            toolCallId={TOOL_CALL_APPROVAL.toolCallId}
-            toolName={TOOL_CALL_APPROVAL.toolName}
-            input={TOOL_CALL_APPROVAL.input}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Active (keyboard shortcut target)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ApprovalPrompt
-            sessionId={MOCK_SESSION_ID}
-            toolCallId={TOOL_CALL_APPROVAL.toolCallId + '-active'}
-            toolName={TOOL_CALL_APPROVAL.toolName}
-            input={TOOL_CALL_APPROVAL.input}
-            isActive
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>With countdown timer (10 min)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ApprovalPrompt
-            sessionId={MOCK_SESSION_ID}
-            toolCallId={TOOL_CALL_APPROVAL.toolCallId + '-timer'}
-            toolName={TOOL_CALL_APPROVAL.toolName}
-            input={TOOL_CALL_APPROVAL.input}
-            timeoutMs={600_000}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Warning phase (2 min remaining)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ApprovalPrompt
-            sessionId={MOCK_SESSION_ID}
-            toolCallId={TOOL_CALL_APPROVAL.toolCallId + '-warning'}
-            toolName={TOOL_CALL_APPROVAL.toolName}
-            input={TOOL_CALL_APPROVAL.input}
-            timeoutMs={120_000}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Urgent phase (30s remaining)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ApprovalPrompt
-            sessionId={MOCK_SESSION_ID}
-            toolCallId={TOOL_CALL_APPROVAL.toolCallId + '-urgent'}
-            toolName={TOOL_CALL_APPROVAL.toolName}
-            input={TOOL_CALL_APPROVAL.input}
-            timeoutMs={30_000}
-          />
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <AskReceiptShowcases />
 
       <BackgroundTaskShowcases />
     </>

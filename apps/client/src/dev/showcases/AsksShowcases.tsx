@@ -1,27 +1,44 @@
 /**
- * The Ask card family: three kinds, a burst, a countdown and five endings.
+ * Asks — the card family every surface draws, in one section.
  *
- * One card is drawn on five surfaces, so a regression in it is a regression
- * everywhere at once — and four of those surfaces only appear when an agent
- * happens to be parked on something, which is not a state anybody can browse to.
- * Drawn here, the whole family is one glance.
+ * Consolidates what used to be five separate registry entries in
+ * `AskShowcases.tsx` (the card's three kinds, its countdown, a burst, five
+ * receipt endings and the tray), the inline transcript prompt and its receipt
+ * (`ToolShowcases.tsx`'s former "ApprovalPrompt" section and
+ * `AskReceiptShowcases.tsx`), and the capability-approval card — cross-listed
+ * here from **Subsystems** rather than duplicated, per the
+ * `maintaining-dev-playground` skill's borrow pattern (DOR-1332, P5).
  *
- * **These are the REAL components.** Every card below is `InteractionAsk` or
- * `AskStack` over a fixture `InteractionPendingEvent`, so a recreation cannot
- * drift from what a person actually answers. The one thing pinned rather than
- * live is the clock: `startedAt` is measured against a frozen `NOW`, because a
- * showcase whose countdown ticks against the wall clock flaps every time the
- * page is opened.
+ * **These are the REAL components.** Every card below is `InteractionAsk`,
+ * `AskStack`, `ApprovalPrompt`, `AskReceipt` or the cross-listed
+ * `ApprovalCardShowcase` over fixture data, so a recreation cannot drift from
+ * what a person actually answers. The clock is pinned rather than live:
+ * `startedAt` is measured against a frozen `NOW`, because a showcase whose
+ * countdown ticks against the wall clock flaps every time the page is opened.
  *
- * @module dev/showcases/AskShowcases
+ * @module dev/showcases/AsksShowcases
  */
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { PendingInteractionDTO } from '@dorkos/shared/types';
-import type { AskReceipt } from '@/layers/entities/attention';
-import { AskCard, AskList, AskReceiptLine, AskStack, InteractionAsk } from '@/layers/features/ask';
+import type { AskReceipt as AskReceiptShape } from '@/layers/entities/attention';
+import {
+  AskCard,
+  AskList,
+  AskReceipt,
+  AskReceiptLine,
+  AskStack,
+  ApprovalPrompt,
+  InteractionAsk,
+} from '@/layers/features/ask';
+import { TransportProvider } from '@/layers/shared/model';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { MOCK_SESSION_ID, TOOL_CALL_APPROVAL } from '../mock-chat-data';
+import { createPlaygroundTransport } from '../playground-transport';
+import { ApprovalCardShowcase } from './ApprovalsShowcases';
+
+const playgroundTransport = createPlaygroundTransport();
 
 /**
  * The instant every fixture below is measured against.
@@ -31,6 +48,11 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
  * showcase that cannot show what it claims is worse than none.
  */
 const NOW = Date.parse('2026-08-18T10:00:00.000Z');
+
+/** A subheading inside the one Asks section — not its own registry entry. */
+function Subhead({ children }: { children: string }) {
+  return <h3 className="text-foreground mt-2 text-sm font-semibold">{children}</h3>;
+}
 
 /** One prompt, from an agent in `/projects/meeting-notes`. */
 function ask(
@@ -68,12 +90,10 @@ function approval(
 }
 
 /** The three kinds, and the headline each one produces. */
-function AskKindsShowcase() {
+function AskKinds() {
   return (
-    <PlaygroundSection
-      title="Ask card"
-      description="One prompt an agent is parked on, drawn the same way on every surface it appears."
-    >
+    <>
+      <Subhead>Ask card — three kinds, drawn the same way on every surface</Subhead>
       <ShowcaseLabel>A permission prompt — the prompt named the action</ShowcaseLabel>
       <ShowcaseDemo>
         <InteractionAsk ask={ask('demo-1', approval(420))} agentName="Meeting Notes" />
@@ -143,17 +163,18 @@ function AskKindsShowcase() {
           onOpenSession={() => {}}
         />
       </ShowcaseDemo>
-    </PlaygroundSection>
+    </>
   );
 }
 
 /** The countdown's three bands. */
-function AskCountdownShowcase() {
+function AskCountdown() {
   return (
-    <PlaygroundSection
-      title="Ask countdown"
-      description="Neutral above two minutes, amber at two, red at one. The bar is decoration and says so; the words are the accessible reading."
-    >
+    <>
+      <Subhead>
+        Ask countdown — neutral above two minutes, amber at two, red at one. The bar is decoration;
+        the words are the accessible reading.
+      </Subhead>
       <ShowcaseLabel>Seven minutes left — neutral</ShowcaseLabel>
       <ShowcaseDemo>
         <InteractionAsk ask={ask('demo-neutral', approval(420))} agentName="Meeting Notes" />
@@ -168,21 +189,19 @@ function AskCountdownShowcase() {
       <ShowcaseDemo>
         <InteractionAsk ask={ask('demo-urgent', approval(45))} agentName="Meeting Notes" />
       </ShowcaseDemo>
-    </PlaygroundSection>
+    </>
   );
 }
 
 /** Bursts: what stacks, and what deliberately does not. */
-function AskStackShowcase() {
+function AskBurst() {
   const reads = Array.from({ length: 5 }, (_, index) => ({
     id: `read-${index}`,
     line: `wants to read notes/${index}.md`,
   }));
   return (
-    <PlaygroundSection
-      title="Ask burst"
-      description="Five reads from one agent are one decision. Two agents are two, and always will be."
-    >
+    <>
+      <Subhead>Ask burst — five reads from one agent are one decision</Subhead>
       <ShowcaseLabel>Five same-tool prompts from one agent — one card, one Allow all</ShowcaseLabel>
       <ShowcaseDemo>
         <AskStack
@@ -208,13 +227,13 @@ function AskStackShowcase() {
           ]}
         />
       </ShowcaseDemo>
-    </PlaygroundSection>
+    </>
   );
 }
 
 /** Every ending a prompt can have, in the words the card says it. */
-function AskReceiptLineShowcase() {
-  const receipts: Array<[string, AskReceipt]> = [
+function AskEndings() {
+  const receipts: Array<[string, AskReceiptShape]> = [
     [
       'You answered it here',
       {
@@ -257,10 +276,10 @@ function AskReceiptLineShowcase() {
   ];
 
   return (
-    <PlaygroundSection
-      title="Ask receipts"
-      description="Every way a prompt can end says so. A card never simply disappears, and never leaves a button that does nothing."
-    >
+    <>
+      <Subhead>
+        Ask receipts — every way a prompt can end says so; a card never simply disappears
+      </Subhead>
       {receipts.map(([label, receipt]) => (
         <div key={label}>
           <ShowcaseLabel>{label}</ShowcaseLabel>
@@ -274,17 +293,17 @@ function AskReceiptLineShowcase() {
           </ShowcaseDemo>
         </div>
       ))}
-    </PlaygroundSection>
+    </>
   );
 }
 
 /** The tray body, including the state it spends most of its life in. */
-function AskListShowcase() {
+function AskTray() {
   return (
-    <PlaygroundSection
-      title="Ask tray"
-      description="What the header pill and the home triage header both draw. Sorted by time left, soonest first."
-    >
+    <>
+      <Subhead>
+        Ask tray — what the header pill and the home triage header both draw, soonest first
+      </Subhead>
       <ShowcaseLabel>Three prompts from three agents</ShowcaseLabel>
       <ShowcaseDemo>
         <AskList
@@ -309,19 +328,146 @@ function AskListShowcase() {
           emptyState={<p className="text-muted-foreground text-xs">Nothing needs you</p>}
         />
       </ShowcaseDemo>
-    </PlaygroundSection>
+    </>
   );
 }
 
-/** Every Ask surface worth seeing at once. */
-export function AskShowcases() {
+/** The inline prompt a session's transcript shows at the tool call itself. */
+function InlineApprovalPrompt() {
+  return (
+    <TransportProvider transport={playgroundTransport}>
+      <Subhead>
+        Inline approval — ApprovalPrompt, the same permission request drawn at its place in a
+        session transcript
+      </Subhead>
+      <ShowcaseLabel>Inactive</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ApprovalPrompt
+          sessionId={MOCK_SESSION_ID}
+          toolCallId={TOOL_CALL_APPROVAL.toolCallId}
+          toolName={TOOL_CALL_APPROVAL.toolName}
+          input={TOOL_CALL_APPROVAL.input}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Active (keyboard shortcut target)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ApprovalPrompt
+          sessionId={MOCK_SESSION_ID}
+          toolCallId={TOOL_CALL_APPROVAL.toolCallId + '-active'}
+          toolName={TOOL_CALL_APPROVAL.toolName}
+          input={TOOL_CALL_APPROVAL.input}
+          isActive
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Warning phase (2 min remaining)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ApprovalPrompt
+          sessionId={MOCK_SESSION_ID}
+          toolCallId={TOOL_CALL_APPROVAL.toolCallId + '-warning'}
+          toolName={TOOL_CALL_APPROVAL.toolName}
+          input={TOOL_CALL_APPROVAL.input}
+          timeoutMs={120_000}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Urgent phase (30s remaining)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ApprovalPrompt
+          sessionId={MOCK_SESSION_ID}
+          toolCallId={TOOL_CALL_APPROVAL.toolCallId + '-urgent'}
+          toolName={TOOL_CALL_APPROVAL.toolName}
+          input={TOOL_CALL_APPROVAL.input}
+          timeoutMs={30_000}
+        />
+      </ShowcaseDemo>
+    </TransportProvider>
+  );
+}
+
+/**
+ * When the showcased inline-receipt requests were asked for. Fixed rather
+ * than `Date.now()` so the clock times on the page do not change between
+ * visits.
+ */
+const RECEIPT_ASKED_AT = new Date('2026-07-31T14:32:00Z').getTime();
+
+/** What an answered approval leaves behind in the transcript — quiet by design. */
+function TranscriptReceipt() {
   return (
     <>
-      <AskKindsShowcase />
-      <AskCountdownShowcase />
-      <AskStackShowcase />
-      <AskReceiptLineShowcase />
-      <AskListShowcase />
+      <Subhead>
+        Transcript receipt — AskReceipt, the one-line record an answered request leaves at its own
+        place in the transcript
+      </Subhead>
+      <ShowcaseLabel>Allowed</ShowcaseLabel>
+      <ShowcaseDemo>
+        <AskReceipt
+          outcome="allowed"
+          items={[{ toolCallId: 'r-1', label: 'Run "npm test"' }]}
+          startedAt={RECEIPT_ASKED_AT}
+          resolvedAt={RECEIPT_ASKED_AT + 8_000}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Denied</ShowcaseLabel>
+      <ShowcaseDemo>
+        <AskReceipt
+          outcome="denied"
+          items={[{ toolCallId: 'r-2', label: 'Run "rm -rf build"' }]}
+          startedAt={RECEIPT_ASKED_AT}
+          resolvedAt={RECEIPT_ASKED_AT + 21_000}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Expired (nobody answered — auto-denied after the full timeout)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <AskReceipt
+          outcome="expired"
+          items={[{ toolCallId: 'r-3', label: 'Write config.json' }]}
+          startedAt={RECEIPT_ASKED_AT}
+          resolvedAt={RECEIPT_ASKED_AT + 600_000}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Batch — one line, items behind the expander</ShowcaseLabel>
+      <ShowcaseDemo>
+        <AskReceipt
+          outcome="allowed"
+          items={[
+            { toolCallId: 'r-4', label: 'Run "pnpm install"' },
+            { toolCallId: 'r-5', label: 'Write vite.config.ts' },
+            { toolCallId: 'r-6', label: 'Edit package.json' },
+          ]}
+          startedAt={RECEIPT_ASKED_AT}
+          resolvedAt={RECEIPT_ASKED_AT + 12_000}
+        />
+      </ShowcaseDemo>
     </>
+  );
+}
+
+/**
+ * The whole Ask card family, in one section — every kind, the countdown, a
+ * burst, the endings, the tray, the inline transcript prompt and receipt, and
+ * the capability-approval card borrowed from Subsystems.
+ */
+export function AsksShowcase() {
+  return (
+    <PlaygroundSection
+      title="Asks"
+      description="Everything an agent parks the cockpit on, in one place. One prompt draws on five surfaces — the composer's takeover, the Live lane, the header tray, the home triage header, and the session transcript itself — so a regression here is a regression everywhere at once. The capability-approval card below answers a different question (may this agent do X at all) and is cross-listed from Subsystems rather than duplicated."
+    >
+      <AskKinds />
+      <AskCountdown />
+      <AskBurst />
+      <AskEndings />
+      <AskTray />
+      <InlineApprovalPrompt />
+      <TranscriptReceipt />
+      <Subhead>Capability approval — borrowed from Subsystems, not duplicated</Subhead>
+      <ApprovalCardShowcase />
+    </PlaygroundSection>
   );
 }
