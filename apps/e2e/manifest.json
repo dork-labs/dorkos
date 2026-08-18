@@ -25,7 +25,9 @@
       "runCount": 10,
       "passCount": 9,
       "failCount": 1,
-      "relatedCode": ["apps/client/src/App.tsx"],
+      "relatedCode": [
+        "apps/client/src/App.tsx"
+      ],
       "lastModified": ""
     },
     "send-message": {
@@ -69,7 +71,9 @@
       "runCount": 13,
       "passCount": 10,
       "failCount": 1,
-      "relatedCode": ["apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"],
+      "relatedCode": [
+        "apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"
+      ],
       "lastModified": ""
     },
     "pulse-scheduler": {
@@ -148,10 +152,10 @@
       "specFile": "tests/rooms/room-conversation.spec.ts",
       "feature": "rooms",
       "description": "create a channel from the sidebar, post to it, and read the post back, switching rooms swaps the history, the masthead and the browser tab, an arriving message does not yank a reader back from history, a room whose stream has died says so and comes back on its own",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-18T03:03:02.038Z",
       "lastStatus": "passed",
-      "runCount": 16,
-      "passCount": 15,
+      "runCount": 17,
+      "passCount": 16,
       "failCount": 0,
       "relatedCode": [
         "apps/client/src/layers/widgets/room-view/ui/ChannelsPage.tsx",
@@ -236,10 +240,10 @@
       "specFile": "tests/rooms/room-entry-actions.spec.ts",
       "feature": "rooms",
       "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread’s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and following it lands the reader and the keyboard on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
-      "lastRun": "2026-08-12T00:46:51.156Z",
+      "lastRun": "2026-08-18T03:03:02.038Z",
       "lastStatus": "passed",
-      "runCount": 57,
-      "passCount": 26,
+      "runCount": 58,
+      "passCount": 27,
       "failCount": 31,
       "relatedCode": [
         "apps/client/src/layers/widgets/room-view/ui/RoomThreadPanel.tsx",
@@ -351,7 +355,9 @@
       "runCount": 6,
       "passCount": 6,
       "failCount": 0,
-      "relatedCode": ["apps/client/src/layers/shared/ui/navigation-layout.tsx"],
+      "relatedCode": [
+        "apps/client/src/layers/shared/ui/navigation-layout.tsx"
+      ],
       "lastModified": ""
     },
     "adapter-wizard-fields": {
@@ -472,10 +478,10 @@
       "specFile": "tests/rooms/room-reactions.spec.ts",
       "feature": "rooms",
       "description": "a reaction from the capsule becomes a pill, and pressing the pill takes it back, a reaction made outside this page arrives on the stream, with no reload, the picker finds an emoji the quick row does not hold, the keyboard alone reaches the quick row, reacts, and then reaches the pill, a room that has stopped listening stops offering reactions, the long-press drawer opens with a reaction row on top, the drawer’s 🙂+ opens the same picker inline",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-18T03:03:02.038Z",
       "lastStatus": "passed",
-      "runCount": 5,
-      "passCount": 5,
+      "runCount": 6,
+      "passCount": 6,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -899,15 +905,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-04T10-42-18",
-      "timestamp": "2026-08-04T10:42:18.727Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 43738
-    },
     {
       "id": "2026-08-04T15-10-31",
       "timestamp": "2026-08-04T15:10:31.002Z",
@@ -1798,6 +1795,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 37847
+    },
+    {
+      "id": "2026-08-18T03-03-02",
+      "timestamp": "2026-08-18T03:03:02.038Z",
+      "total": 31,
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 85219
     }
   ]
 }
