@@ -19,14 +19,12 @@ import { useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomAttachment, RoomMoment, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import type { PendingPost, RoomEntry } from '@/layers/entities/room';
-import { Message } from '@/layers/features/conversation';
-import { RoomMessage, RoomPendingRow } from '@/layers/widgets/room-view';
+import { Conversation, Message } from '@/layers/features/conversation';
+import { ROOM_CAPABILITIES, RoomMessage, RoomPendingRow } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { THREAD_AGENT_ANA, THREAD_AGENT_KAI, THREAD_ROOM_ID } from './room-thread-showcase-data';
-import { Conversation } from '@/layers/features/conversation';
-import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 
 /**
  * Every notice the room can write, with the SERVER's own words.

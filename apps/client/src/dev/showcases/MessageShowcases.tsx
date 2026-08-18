@@ -7,7 +7,7 @@ import { PermissionDeniedChip } from '@/layers/features/chat/ui/message/Permissi
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { ConversationRowShowcases } from './ConversationRowShowcases';
+import { MessageRowShowcases } from './MessageRowShowcases';
 import {
   createUserMessage,
   createAssistantMessage,
@@ -83,7 +83,7 @@ const STANDALONE_CTX = {
 export function MessageShowcases() {
   return (
     <>
-      <ConversationRowShowcases />
+      <MessageRowShowcases />
       <PlaygroundSection
         title="PermissionDeniedChip"
         description="Read-only chip marking a tool call blocked before execution by the auto-mode safety classifier — distinct from a user denial, with no actions or re-approval."

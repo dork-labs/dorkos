@@ -6,7 +6,7 @@
  * one component, and a recreation is the one thing incapable of showing that
  * claim breaking.
  *
- * @module dev/showcases/ConversationRowShowcases
+ * @module dev/showcases/MessageRowShowcases
  */
 import {
   Conversation,
@@ -17,14 +17,14 @@ import {
 } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES } from '@/layers/features/chat';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
-import type { MessageGrouping } from '@/layers/features/chat/model/chat-types';
+import type { MessageGrouping } from '@/layers/shared/model';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { AGENT_AUTHOR, HUMAN_AUTHOR, MOCK_SESSION_ID } from '../mock-chat-data';
 
 /** Both of this file's sections, in the order the Chat page draws them. */
-export function ConversationRowShowcases() {
+export function MessageRowShowcases() {
   return (
     <>
       <MessageMatrixShowcase />

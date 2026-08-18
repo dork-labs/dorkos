@@ -24,7 +24,7 @@ import { Conversation, Message } from '../index';
 // The run-with menu reaches for the router and the session/runtime queries. The
 // question here is whether the row OFFERS it, so the menu itself is stubbed to
 // something observable, exactly as the chat suites stub it.
-vi.mock('../../entry-actions/ui/EntryRunWithMenu', () => ({
+vi.mock('@/layers/features/entry-actions/ui/EntryRunWithMenu', () => ({
   EntryRunWithMenu: () => <button type="button" data-entry-action="run-with" />,
 }));
 
