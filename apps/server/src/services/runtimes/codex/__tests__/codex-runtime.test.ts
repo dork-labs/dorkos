@@ -79,7 +79,10 @@ function makeRuntime(opts: { binaryPath?: string | null; db?: Db } = {}) {
   const threadMap = new CodexThreadMap(db);
   const runtime = new CodexRuntime({
     threadMap,
-    binaryPath: opts.binaryPath ?? null,
+    // The runtime resolves its binary lazily through this seam (production
+    // passes the shared ladder). `/bin/codex` is the ordinary "Codex is
+    // installed" host; a test that needs the missing-binary case says so.
+    resolveBinary: async () => ('binaryPath' in opts ? opts.binaryPath : '/bin/codex'),
     defaultCwd: DEFAULT_ROOT,
   });
   return { runtime, threadMap, db };
@@ -146,15 +149,60 @@ describe('CodexRuntime', () => {
       expect(checks).toEqual(SATISFIED_CHECKS);
     });
 
-    it('never sets env on the boot client, and only passes codexPathOverride when configured', () => {
-      makeRuntime();
-      makeRuntime({ binaryPath: '/opt/custom/codex' });
+    // Purpose (DOR-1334 / F9): the SDK's `Codex` constructor throws when it
+    // cannot find a binary, and in the packaged Mac app it never can — that
+    // throw kept Codex out of the registry entirely, so the requirements payload
+    // had no `codex` at all and the card had nothing honest to say.
+    it('constructs and reports its dependencies with no codex binary anywhere', async () => {
+      vi.mocked(checkCodexDependencies).mockReturnValue([
+        {
+          name: 'Codex CLI',
+          description: 'The OpenAI Codex CLI powers Codex agent sessions in DorkOS.',
+          status: 'missing',
+          installHint: 'npm i -g @openai/codex',
+        },
+      ]);
 
-      const [defaults, overridden] = sdkMocks.constructorOptions as Record<string, unknown>[];
-      expect(defaults).not.toHaveProperty('env');
-      expect(defaults).not.toHaveProperty('codexPathOverride');
-      expect(overridden).not.toHaveProperty('env');
-      expect(overridden).toMatchObject({ codexPathOverride: '/opt/custom/codex' });
+      const { runtime } = makeRuntime({ binaryPath: null });
+
+      expect(runtime.type).toBe('codex');
+      // No SDK client was built — the constructor never touches the SDK now.
+      expect(sdkMocks.constructorOptions).toHaveLength(0);
+      const [cli] = await runtime.checkDependencies();
+      expect(cli.status).toBe('missing');
+      expect(cli.installHint).toBe('npm i -g @openai/codex');
+    });
+
+    // Purpose: with no binary, a turn must fail with a sentence a person can act
+    // on — not an SDK stack trace about locating binaries.
+    it('fails a turn with a named, actionable error when no binary resolves', async () => {
+      const { runtime } = makeRuntime({ binaryPath: null });
+
+      await expect(
+        drain(runtime.sendMessage(crypto.randomUUID(), 'hi', { cwd: '/projects/demo' }))
+      ).rejects.toThrow(
+        /Codex CLI not found.*npm i -g @openai\/codex.*runtimes\.codex\.binaryPath/s
+      );
+      expect(sdkMocks.startThread).not.toHaveBeenCalled();
+    });
+
+    it('passes the resolved binary as codexPathOverride, and never sets env on the shared client', async () => {
+      const { runtime } = makeRuntime({ binaryPath: '/opt/custom/codex' });
+
+      await drain(runtime.sendMessage(crypto.randomUUID(), 'hi', { cwd: '/projects/demo' }));
+
+      const [shared] = sdkMocks.constructorOptions as Record<string, unknown>[];
+      expect(shared).toMatchObject({ codexPathOverride: '/opt/custom/codex' });
+      expect(shared).not.toHaveProperty('env');
+    });
+
+    it('reuses one shared client across turns while the resolved binary is unchanged', async () => {
+      const { runtime } = makeRuntime({ binaryPath: '/opt/custom/codex' });
+
+      await drain(runtime.sendMessage(crypto.randomUUID(), 'one', { cwd: '/projects/demo' }));
+      await drain(runtime.sendMessage(crypto.randomUUID(), 'two', { cwd: '/projects/demo' }));
+
+      expect(sdkMocks.constructorOptions).toHaveLength(1);
     });
   });
 
@@ -856,11 +904,13 @@ describe('CodexRuntime', () => {
       expect(servers).not.toHaveProperty('stream');
     });
 
-    it('builds no per-turn client (uses the shared boot client) when the agent has no managed servers', async () => {
+    it('builds no per-turn client (reuses the shared client) when the agent has no managed servers', async () => {
       const { runtime } = makeRuntime();
       runtime.setManagedMcpServers({ injectableServersForCwd: () => ({}) });
-      // One boot-client construction happened in makeRuntime; a turn with no
-      // managed servers and no identity token must not add a second.
+      // The shared client is built on the FIRST turn now (nothing touches the
+      // SDK before then); a second turn with no managed servers and no identity
+      // token must not add another.
+      await drain(runtime.sendMessage(crypto.randomUUID(), 'warm', { cwd: '/projects/demo' }));
       sdkMocks.constructorOptions.length = 0;
 
       await drain(runtime.sendMessage(crypto.randomUUID(), 'hi', { cwd: '/projects/demo' }));

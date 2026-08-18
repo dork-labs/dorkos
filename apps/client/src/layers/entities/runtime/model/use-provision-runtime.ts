@@ -66,10 +66,13 @@ export function useProvisionRuntime(runtimeType: string): UseProvisionRuntime {
   const rawMessage = mutation.isError
     ? (mutation.error as Error).message
     : (mutation.data?.error ?? null);
-  // A bare HTTP status line (e.g. "Not Found" when the server has no one-click
-  // install for this runtime) is jargon to the person reading it.
+  // A bare not-found line is jargon to the person reading it. It arrives in two
+  // spellings: the HTTP status line ("Not Found") and the DorkOS API's own 404
+  // body ("Not found"), which is what a runtime with no provision endpoint
+  // actually answers — matching only the first left a person staring at two
+  // unexplained words (DOR-1334 / F4).
   const errorMessage =
-    rawMessage === 'Not Found'
+    rawMessage?.trim().toLowerCase() === 'not found'
       ? 'One-click install is not available for this runtime.'
       : rawMessage;
 

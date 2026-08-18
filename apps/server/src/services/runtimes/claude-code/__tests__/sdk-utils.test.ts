@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import path from 'node:path';
 import { resolveClaudeCliPath, createIdlePrompt, createHeldUserPrompt } from '../sdk/sdk-utils.js';
 
 // Mutable holder so each test can steer the three resolution primitives.
@@ -29,7 +30,18 @@ vi.mock('node:child_process', () => ({
     if (h.which === null) throw new Error('not on PATH');
     return h.which;
   },
+  // Imported by the provisioning module the resolution ladder now consults;
+  // never called from these tests (no install is ever triggered here).
+  spawn: () => {
+    throw new Error('unexpected spawn in sdk-utils tests');
+  },
 }));
+
+/** Where a provisioned Claude install would live (dork-home-scoped). */
+const PROVISION_SEGMENT = `${path.sep}runtimes${path.sep}claude-code${path.sep}`;
+
+/** Nothing provisioned — the default host these tests describe. */
+const nothingProvisioned = (p: string): boolean => !p.includes(PROVISION_SEGMENT);
 
 describe('resolveClaudeCliPath — Hybrid native-binary resolution', () => {
   // Capture and clear the override env var so no test's setting can leak into
@@ -41,7 +53,10 @@ describe('resolveClaudeCliPath — Hybrid native-binary resolution', () => {
     h.resolve = () => {
       throw new Error('not found');
     };
-    h.exists = true;
+    // "Every path exists EXCEPT a provisioned install" — the pre-existing cases
+    // were written before the provisioned rung existed and all describe a host
+    // that has never run the one-click install.
+    h.exists = nothingProvisioned;
     h.which = null;
   });
   afterEach(() => {
@@ -133,6 +148,40 @@ describe('resolveClaudeCliPath — Hybrid native-binary resolution', () => {
     h.which = null;
 
     expect(resolveClaudeCliPath()).toBeUndefined();
+  });
+
+  // Purpose: inside the packaged app `require.resolve` lands INSIDE app.asar,
+  // which Electron's fs patch reports as existing but nothing can spawn — the
+  // whole of F2. The unpacked twin is the spawnable one (DOR-1334).
+  it('remaps a bundled path inside app.asar to its unpacked twin', () => {
+    h.resolve = () =>
+      '/Applications/DorkOS.app/Contents/Resources/app.asar/node_modules/sdk/claude';
+    h.exists = (p) => p.includes('app.asar.unpacked') || nothingProvisioned(p);
+
+    expect(resolveClaudeCliPath()).toBe(
+      '/Applications/DorkOS.app/Contents/Resources/app.asar.unpacked/node_modules/sdk/claude'
+    );
+  });
+
+  // Purpose: the one-click install (F4) is only worth anything if what it wrote
+  // is then found — it sits below the bundled binary and above PATH.
+  it('falls through to a provisioned install when nothing is bundled', () => {
+    h.resolve = () => {
+      throw new Error('optional dependency not installed');
+    };
+    h.exists = (p) => p.includes(PROVISION_SEGMENT); // only the provisioned tree exists
+    h.which = null;
+
+    expect(resolveClaudeCliPath()).toContain(PROVISION_SEGMENT);
+  });
+
+  // Purpose: a provisioned install must never outrank the SDK's own bundled,
+  // version-matched binary.
+  it('prefers the bundled binary over a provisioned install', () => {
+    h.resolve = () => '/pkgs/claude-agent-sdk/claude';
+    h.exists = () => true; // both are present
+
+    expect(resolveClaudeCliPath()).toBe('/pkgs/claude-agent-sdk/claude');
   });
 });
 

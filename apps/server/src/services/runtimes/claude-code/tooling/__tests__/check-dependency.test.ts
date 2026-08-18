@@ -1,22 +1,35 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { CredentialProvider } from '../../../../core/credential-provider.js';
-import { resolveBundledClaudeBinary } from '../../sdk/sdk-utils.js';
-import { findBinaryOnPath, runBinaryProbe } from '../../../shared/run-probe.js';
+import { resolveClaudeBinaryBeforePath } from '../../sdk/sdk-utils.js';
+import {
+  findBinaryOnPath,
+  runBinaryProbe,
+  resetProbeFailureNotices,
+} from '../../../shared/run-probe.js';
+import { logger } from '../../../../../lib/logger.js';
 import { checkClaudeDependencies } from '../check-dependency.js';
 
 // The dependency check must be fully async + bounded: bundled resolution is a
 // safe sync require.resolve, but the PATH locate, `--version`, and `auth status`
 // calls go through the shared run-probe helpers so a hung binary degrades to
 // `missing` instead of blocking the event loop.
+// The env-override / bundled / provisioned rungs are one function shared with
+// the SDK spawn seam (sdk-utils, tested there against a fake filesystem); here
+// it stands in for "what this host has locally".
 vi.mock('../../sdk/sdk-utils.js', () => ({
-  resolveBundledClaudeBinary: vi.fn(),
+  resolveClaudeBinaryBeforePath: vi.fn(),
 }));
-vi.mock('../../../shared/run-probe.js', () => ({
+vi.mock('../../../shared/run-probe.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../shared/run-probe.js')>()),
   findBinaryOnPath: vi.fn(),
   runBinaryProbe: vi.fn(),
 }));
+vi.mock('../../../../../lib/logger.js', () => ({
+  logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+  logError: vi.fn(() => ({ error: '' })),
+}));
 
-const mockedBundled = vi.mocked(resolveBundledClaudeBinary);
+const mockedBundled = vi.mocked(resolveClaudeBinaryBeforePath);
 const mockedFind = vi.mocked(findBinaryOnPath);
 const mockedProbe = vi.mocked(runBinaryProbe);
 
@@ -84,6 +97,7 @@ function stubConfig(providers: Record<string, string> = {}) {
 describe('checkClaudeDependencies — CLI binary check', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetProbeFailureNotices();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -141,6 +155,28 @@ describe('checkClaudeDependencies — CLI binary check', () => {
 
     expect(cli.status).toBe('missing');
     expect(cli.installHint).toBeTruthy();
+  });
+
+  // Purpose: F3. The packaged Mac app reported "missing" for a binary that was
+  // right there, and the server log said nothing at all — there was no way to
+  // tell "no binary" from "this binary would not spawn".
+  it('logs why the binary probe failed instead of swallowing it', async () => {
+    mockedBundled.mockReturnValue('/app.asar/node_modules/sdk/claude');
+    onProbe(() => Object.assign(new Error('spawn ENOTDIR'), { code: 'ENOTDIR' }));
+
+    const [cli] = await checkClaudeDependencies();
+
+    expect(cli.status).toBe('missing');
+    // Both probes fail on the same unspawnable binary and run concurrently, so
+    // pick the CLI check's notice out of the pair rather than assuming an order.
+    const cliWarning = vi
+      .mocked(logger.warn)
+      .mock.calls.find(([message]) => String(message).includes('Claude Code CLI'));
+    expect(cliWarning).toBeDefined();
+    expect(cliWarning?.[1]).toMatchObject({
+      binary: '/app.asar/node_modules/sdk/claude',
+      code: 'ENOTDIR',
+    });
   });
 });
 

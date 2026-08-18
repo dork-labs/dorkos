@@ -768,6 +768,18 @@ describe('GET /api/config', () => {
     expect(res.body.boundary).toBe('/Users/test-user');
   });
 
+  // The packaged Mac app is launched from Finder, where `process.cwd()` is `/`
+  // — a path outside the boundary that every boundary-enforced route then
+  // refuses. `DEFAULT_CWD` is the resolved, clamped default the rest of the
+  // server already agrees on (`GET /api/directory/default` reports it too).
+  it('reports the resolved default working directory, not process.cwd()', async () => {
+    const { DEFAULT_CWD } = await import('../../lib/resolve-root.js');
+
+    const res = await request(server).get('/api/config').expect(200);
+
+    expect(res.body.workingDirectory).toBe(DEFAULT_CWD);
+  });
+
   it('includes existing config fields alongside boundary', async () => {
     const res = await request(server).get('/api/config').expect(200);
 
