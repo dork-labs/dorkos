@@ -128,10 +128,13 @@ function line(): string {
 }
 
 /** Mount the lane with everything a room hands it. */
-function renderLane(props: Partial<Parameters<typeof RoomLiveLane>[0]> = {}) {
+function renderLane(
+  props: Partial<Parameters<typeof RoomLiveLane>[0]> = {},
+  transport = createMockTransport()
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <TransportProvider transport={createMockTransport()}>
+    <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <RoomLiveLane
           room={ROOM_WITH_ROSTER}
@@ -498,6 +501,46 @@ describe('RoomLiveLane', () => {
     act(() => working('kai'));
     expect(screen.getByTestId('room-presence')).toBeInTheDocument();
     expect(screen.queryByTestId('live-peek')).toBeNull();
+  });
+
+  it('offers the session an agent’s work runs in, and asks for it only on open', async () => {
+    // The client half of the one server change this phase made
+    // (`GET /api/rooms/:id/sessions`, whose own answers are pinned in
+    // `rooms-sessions.test.ts`). The join is `authorId → sessionId`, and the
+    // request is deliberately not made until somebody opens the peek — a room
+    // open is not a question about sessions.
+    // Real timers for this one: the assertion is about a QUERY resolving, and
+    // RTL's own polling never advances a fake clock.
+    vi.useRealTimers();
+    working('kai');
+    const transport = createMockTransport();
+    transport.listRoomSessions = vi
+      .fn()
+      .mockResolvedValue({ bindings: [{ authorId: 'kai', sessionId: 'session-kai' }] });
+
+    renderLane({}, transport);
+    expect(transport.listRoomSessions).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+
+    fireEvent.click(await screen.findByTestId('live-peek-open-session'));
+    expect(transport.listRoomSessions).toHaveBeenCalledWith(ROOM);
+    expect(navigateSpy).toHaveBeenCalledWith({
+      to: '/session',
+      search: { session: 'session-kai' },
+    });
+  });
+
+  it('draws no link at all for an agent this room holds no binding for', () => {
+    // Absent, never disabled: a control that cannot do anything is a promise the
+    // product is not keeping.
+    vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+    working('kai');
+
+    renderLane();
+    fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+
+    expect(screen.queryByTestId('live-peek-open-session')).toBeNull();
   });
 
   it('hands the caret back when the peek closes out from under it', () => {

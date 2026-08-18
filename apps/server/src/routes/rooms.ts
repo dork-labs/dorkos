@@ -175,6 +175,15 @@ router.patch('/:id', (req, res) => {
  *   declined; a person asking "where is that work running" is the reason the
  *   route exists.
  *
+ * **Visibility is checked first, and the order is deliberate.** `POST
+ * /:id/attachments` asks the other way round, for a reason that does not apply
+ * here — it refuses an agent before multer reads a byte. With the person gate
+ * first, an agent probing a room it is not in learns 403 (this room exists) or
+ * 404 (it does not) from the SAME request a person gets 404 for, which is a
+ * difference in answers where there should be none. Visibility first collapses
+ * both to 404 and leaves 403 for the one case that is honestly about the
+ * caller: a member that is not a person.
+ *
  * The body is ids and nothing else — no session content, no cwd, no status. It
  * is the minimum that makes a link, and the narrowness is the security claim.
  *
@@ -185,13 +194,16 @@ router.patch('/:id', (req, res) => {
 router.get('/:id/sessions', (req, res) => {
   try {
     const caller = resolveCaller(res);
+    // Throws `ROOM_NOT_FOUND` for a room this caller may not see, whoever they
+    // are — see the note above on why that comes first.
+    const bindings = getRoomService().listRoomSessions(req.params.id, caller.id);
     if (caller.kind !== 'human') {
-      // A 403 rather than a 404: there is nothing to hide from a caller that is
-      // already in the room, and telling an agent "this is not yours to read" is
-      // more useful than pretending the route does not exist.
+      // A 403 rather than a 404: this caller IS in the room, so there is nothing
+      // left to hide, and telling an agent "this is not yours to read" is more
+      // useful than pretending the route does not exist.
       throw new RoomError('PEOPLE_ONLY', "Only a person can see where a room's work runs.");
     }
-    res.json({ bindings: getRoomService().listRoomSessions(req.params.id, caller.id) });
+    res.json({ bindings });
   } catch (err) {
     sendRoomError(res, err, 'GET /:id/sessions');
   }

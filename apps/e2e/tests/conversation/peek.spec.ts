@@ -101,6 +101,15 @@ test.describe('Conversation — the peek behind the live lane', () => {
     // Neither agent has ever answered here, so nothing is bound — and the link
     // is ABSENT rather than disabled. A control that cannot do anything is a
     // promise the product is not keeping.
+    //
+    // **The positive case is deliberately not here.** A binding is written by a
+    // room TURN and by nothing else — there is no route that mints one — and
+    // this suite silences its agents precisely so no turn can run. Making one
+    // run would ask a real model for a real answer. So the two halves are pinned
+    // where each is free: the route's own answers in
+    // `apps/server/src/routes/__tests__/rooms-sessions.test.ts`, and the link
+    // this draws from them in `RoomLiveLane.test.tsx` ("offers the session an
+    // agent's work runs in, and asks for it only on open").
     await expect(page.getByTestId('live-peek-open-session')).toHaveCount(0);
 
     // "Replying to…" takes the reader to the entry, and leaves them standing on

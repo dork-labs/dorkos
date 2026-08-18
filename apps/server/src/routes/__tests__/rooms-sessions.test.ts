@@ -169,13 +169,11 @@ describe('GET /api/rooms/:id/sessions', () => {
     ]);
   });
 
-  it('refuses an outsider before it looks the room up at all', async () => {
-    // A person who is not a member would be the other outsider here, and this
-    // install cannot produce one: it is single-identity by decision (ADR
-    // 260727-184933 D6), so the only caller the server resolves as "somebody
-    // else" is an agent. It is refused twice over and the person gate is what
-    // lands first — which is the stronger of the two answers, because it does
-    // not depend on membership at all.
+  it('answers an outsider 404, the same way it answers a room that is not there', async () => {
+    // Visibility is checked BEFORE the person gate, and this is the case that
+    // decides the order: an outsider must not be able to tell "this room exists
+    // and I am not in it" (403) from "no such room" (404) — which is exactly
+    // what the other order leaked.
     const room = await roomWithAgents();
     bind(room.id, room.anaAuthorId, 'session-ana');
     const identity = initAgentIdentityService(db);
@@ -188,8 +186,9 @@ describe('GET /api/rooms/:id/sessions', () => {
       .get(`/api/rooms/${room.id}/sessions`)
       .set('X-DorkOS-Agent', token);
 
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PEOPLE_ONLY');
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    expect(res.body).not.toHaveProperty('bindings');
   });
 
   it('404s a room this caller cannot see, in the same words reading one does', async () => {
