@@ -11,7 +11,16 @@
  */
 import type { ConversationCapabilities } from '@/layers/features/conversation';
 
-/** What a channel offers. */
+/**
+ * What a channel offers — and a DM with it.
+ *
+ * A direct message is a room whose `kind` changes naming only (`RoomKind`), so
+ * it shares this table rather than aliasing it under a second name. A second
+ * exported name for the identical object buys a reader nothing and costs them a
+ * question — "how do these two differ?" — whose answer is "they do not". If DMs
+ * ever diverge, this splits into two tables at that point and the surface that
+ * needs the other one asks for it by name.
+ */
 export const ROOM_CAPABILITIES: ConversationCapabilities = {
   reactions: true,
   threads: true,
@@ -23,6 +32,3 @@ export const ROOM_CAPABILITIES: ConversationCapabilities = {
   turnStatus: false,
   asks: true,
 };
-
-/** A DM is a room whose kind changes naming only, so it shares the room's capabilities. */
-export const DM_CAPABILITIES = ROOM_CAPABILITIES;

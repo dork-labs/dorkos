@@ -15,7 +15,7 @@ import {
 } from '@/layers/entities/room';
 import { ConversationRoot } from '@/layers/features/conversation';
 import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
-import { DM_CAPABILITIES, ROOM_CAPABILITIES } from '../model/room-capabilities';
+import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
 import { useRestoreThreadFocus } from '../model/use-restore-thread-focus';
 import { useStickToBottom } from '../model/use-stick-to-bottom';
@@ -326,10 +326,11 @@ export function RoomSurface({
 
   // What this conversation IS and what it can do, published once for every part
   // below — the row, the thread panel's rows, and (from P2) the live lane. A DM
-  // is a room whose kind changes naming only, so the two share one table.
+  // is a room whose kind changes naming only, so `surface` tells them apart for
+  // the one place that has to choose a word, and the capability table is shared.
   const conversation = {
     surface: room.kind === 'dm' ? ('dm' as const) : ('room' as const),
-    capabilities: room.kind === 'dm' ? DM_CAPABILITIES : ROOM_CAPABILITIES,
+    capabilities: ROOM_CAPABILITIES,
     // A room's messages run long, so its action capsule rides a sticky rail
     // rather than being pinned to a corner that scrolls away.
     anchor: 'rail' as const,

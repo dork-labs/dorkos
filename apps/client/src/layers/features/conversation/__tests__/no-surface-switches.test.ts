@@ -12,43 +12,44 @@
  * `ConversationRoot.tsx` is the single exception: it is where a host says which
  * surface this is, and nothing below it may ask again.
  */
-import { readFileSync, readdirSync } from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-// Resolved from the repo root rather than from `import.meta.url`: this suite
-// runs under the client's Vite transform, where the module URL is not a `file:`
-// one and `fileURLToPath` refuses it.
-const UI_DIR = path.resolve(process.cwd(), 'apps/client/src/layers/features/conversation/ui');
+/**
+ * Every source file under the slice's `ui/`, as text.
+ *
+ * Read through Vite rather than off the filesystem: the working directory
+ * differs between `pnpm vitest run <path>` from the repo root and the
+ * per-package run turbo does, and a scan that resolved the wrong directory
+ * would report no violations and read exactly like a pass. `import.meta.glob`
+ * is resolved at build time against THIS file, so it cannot miss.
+ */
+const SOURCES = import.meta.glob('../ui/**/*.{ts,tsx}', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
 
 /** The one file allowed to compare a surface — the provider itself. */
 const ALLOWED = 'ConversationRoot.tsx';
 
-/** Every source file under the slice's `ui/`, recursively, path relative to it. */
-function sourceFiles(dir: string, prefix = ''): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const rel = prefix === '' ? entry.name : path.join(prefix, entry.name);
-    if (entry.isDirectory()) return sourceFiles(path.join(dir, entry.name), rel);
-    return entry.name.endsWith('.ts') || entry.name.endsWith('.tsx') ? [rel] : [];
-  });
-}
-
 describe('features/conversation — no part asks which surface it is on', () => {
-  const files = sourceFiles(UI_DIR);
+  const files = Object.keys(SOURCES).map((key) => key.replace('../ui/', ''));
 
   it('scans the whole of ui/, so a clean result means something', () => {
     // Without this, a scan that resolved the wrong directory would report an
     // empty violation list and read exactly like a pass.
     expect(files.length).toBeGreaterThan(10);
     expect(files).toContain(ALLOWED);
-    expect(files.some((f) => f.startsWith('message'))).toBe(true);
-    expect(files.some((f) => f.startsWith('rows'))).toBe(true);
+    expect(files.some((f) => f.startsWith('message/'))).toBe(true);
+    expect(files.some((f) => f.startsWith('rows/'))).toBe(true);
+    // And the text really arrived — an empty string includes nothing.
+    expect(SOURCES[`../ui/${ALLOWED}`]).toContain('ConversationRoot');
   });
 
   it('finds no `surface ===` outside the provider', () => {
     const offenders = files.filter((file) => {
       if (file === ALLOWED) return false;
-      return readFileSync(path.join(UI_DIR, file), 'utf8').includes('surface ===');
+      return (SOURCES[`../ui/${file}`] ?? '').includes('surface ===');
     });
 
     expect(

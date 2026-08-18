@@ -13,7 +13,7 @@ export { ChannelsPage } from './ui/ChannelsPage';
  * one table that says how this surface differs from the session's, read by the
  * `Conversation.Root` this widget mounts and by the Dev Playground's benches.
  */
-export { DM_CAPABILITIES, ROOM_CAPABILITIES } from './model/room-capabilities';
+export { ROOM_CAPABILITIES } from './model/room-capabilities';
 /**
  * The room itself, exported so the app shell can render #team as the home tab.
  * A host contributes an address and the chrome above the feed — never a second
