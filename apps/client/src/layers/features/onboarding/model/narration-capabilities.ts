@@ -18,7 +18,6 @@ export const NARRATION_CAPABILITIES: ConversationCapabilities = {
   threads: false,
   runWith: false,
   attachments: false,
-  toolCards: false,
   mentions: false,
   presence: false,
   turnStatus: false,

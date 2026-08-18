@@ -31,7 +31,6 @@ export const ROOM_CAPABILITIES: ConversationCapabilities = {
   threads: true,
   runWith: false,
   attachments: true,
-  toolCards: false,
   mentions: true,
   presence: true,
   turnStatus: false,

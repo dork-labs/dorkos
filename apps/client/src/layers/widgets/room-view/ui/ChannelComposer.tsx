@@ -400,18 +400,20 @@ export function ChannelComposer({
           {mentions.isOpen && mentions.rows.length === 0 ? 'No one by that name.' : ''}
         </span>
       }
+      mentionPicker={
+        <AnimatePresence>
+          {mentions.isOpen && (
+            <MentionPalette
+              rows={mentions.rows}
+              selectedIndex={mentions.selectedIndex}
+              onSelect={takeRow}
+            />
+          )}
+        </AnimatePresence>
+      }
       overlays={
         <>
-          <AnimatePresence>
-            {mentions.isOpen && (
-              <MentionPalette
-                rows={mentions.rows}
-                selectedIndex={mentions.selectedIndex}
-                onSelect={takeRow}
-              />
-            )}
-          </AnimatePresence>
-          {/* Never up at the same time as the picker above it: the recents panel
+          {/* Never up at the same time as the `@` picker above it: the recents panel
               yields to `@`, and typing at all takes it down. */}
           {jumpBackIn.isOpen && (
             <JumpBackInPopover

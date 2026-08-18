@@ -20,7 +20,6 @@ const BASE: ConversationCapabilities = {
   threads: false,
   runWith: false,
   attachments: false,
-  toolCards: false,
   mentions: false,
   presence: false,
   turnStatus: false,
@@ -153,6 +152,24 @@ describe('Conversation.Composer', () => {
     );
 
     expect(screen.queryByText(/didn’t upload/u)).not.toBeInTheDocument();
+  });
+
+  it('offers no @ picker on a surface that declares it has no mentions', () => {
+    // **Seeded defect:** render `mentionPicker` unconditionally, and a session —
+    // where `@` means nothing — grows a picker the moment its host passes one.
+    // Run and red.
+    mount({ mentionPicker: <p data-testid="mention-picker">@dorkbot</p> });
+
+    expect(screen.queryByTestId('mention-picker')).not.toBeInTheDocument();
+  });
+
+  it('draws the @ picker on a surface that has mentions', () => {
+    mount(
+      { mentionPicker: <p data-testid="mention-picker">@dorkbot</p> },
+      { capabilities: { mentions: true } }
+    );
+
+    expect(screen.getByTestId('mention-picker')).toBeInTheDocument();
   });
 
   it('offers no paperclip on a surface that does not take files', () => {

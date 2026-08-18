@@ -24,6 +24,8 @@
  *   refusing a send.
  * - **The chip bar and the paperclip come from the attachment port**, never
  *   from a flag: a surface has attach because its target staged files.
+ * - **The `@` picker is drawn only where `capabilities.mentions` says so**, so a
+ *   surface that declares it has none cannot grow one by passing a node.
  *
  * **A note on `features/composer`'s doctrine.** That slice says composition IS
  * the capability declaration, and that there will never be a config object.
@@ -77,7 +79,17 @@ export interface ConversationComposerProps {
    * live region for its `@` picker.
    */
   head?: ReactNode;
-  /** Stacked over the field: the palettes, the recents panel. */
+  /**
+   * The `@` picker, stacked over the field.
+   *
+   * Its own slot rather than part of {@link ConversationComposerProps.overlays}
+   * because it is the one overlay a surface DECLARES: drawn only where
+   * `capabilities.mentions` is true, so a conversation that says it has no
+   * mentions cannot grow a picker by passing a node — the same shape the
+   * paperclip has with `capabilities.attachments`.
+   */
+  mentionPicker?: ReactNode;
+  /** Stacked over the field: the surface's own palettes and the recents panel. */
   overlays?: ReactNode;
   /**
    * The held drafts.
@@ -122,6 +134,7 @@ export function ConversationComposer({
   onSubmit,
   inputRef,
   head,
+  mentionPicker,
   overlays,
   queue,
   aboveInput,
@@ -167,6 +180,7 @@ export function ConversationComposer({
       {/* Stacking is child order: palettes first, the armed-clear hint last, so
           the hint never lands on the queue rows' controls. */}
       <Composer.OverlayLane>
+        {capabilities.mentions && mentionPicker}
         {overlays}
         {clearArmed && <Composer.ClearArmedHint />}
       </Composer.OverlayLane>

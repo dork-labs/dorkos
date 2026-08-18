@@ -43,7 +43,6 @@ const SESSION_CAPABILITIES: ConversationCapabilities = {
   threads: false,
   runWith: true,
   attachments: true,
-  toolCards: true,
   mentions: false,
   presence: false,
   turnStatus: true,

@@ -31,9 +31,19 @@ export interface ConversationCapabilities {
   runWith: boolean;
   /** The composer accepts files. */
   attachments: boolean;
-  /** Bodies may contain tool cards, thinking blocks and inline prompts. */
-  toolCards: boolean;
-  /** The composer offers an @mention picker and bodies render mention pills. */
+  /**
+   * The composer offers an `@` picker.
+   *
+   * Read by `Conversation.Composer`, which draws the `mentionPicker` slot only
+   * where this is true — so a surface that declares `mentions: false` cannot
+   * grow a picker by passing a node.
+   *
+   * There is no `toolCards` flag beside it, and its absence is a decision: what
+   * a body may contain is settled by which body renderer the HOST hands the
+   * timeline (`renderSessionBody` vs `renderRoomBody`), which is §2.6's gate and
+   * already discriminates. A boolean two capability tables had to keep in step
+   * while nothing read it was a check that could not fail.
+   */
   mentions: boolean;
   /** The lane may show presence for other authors. */
   presence: boolean;

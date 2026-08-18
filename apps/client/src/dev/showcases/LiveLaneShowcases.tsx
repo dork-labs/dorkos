@@ -42,7 +42,6 @@ const ROOM_LIKE: ConversationCapabilities = {
   threads: true,
   runWith: false,
   attachments: true,
-  toolCards: false,
   mentions: true,
   presence: true,
   turnStatus: false,
