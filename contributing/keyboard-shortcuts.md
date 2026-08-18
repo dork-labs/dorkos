@@ -177,7 +177,7 @@ list in a browser.
 
 `Cmd/Ctrl+W` is deliberately **absent** from that hook. In the browser it belongs to the browser; on
 desktop it belongs to the shell's Window menu, which sends it back over IPC — see
-`app/use-electron-close-tab.ts` and `contributing/desktop-app-development.md` §6.
+`app/use-electron-close-tab.ts` and `contributing/desktop-app-development.md` §5.
 
 ### Command Palette
 

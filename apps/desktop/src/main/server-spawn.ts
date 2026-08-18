@@ -4,7 +4,9 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import log from 'electron-log';
 import { resolveDataDirectory } from './dork-home';
+import { resolveServerCwd, type ServerWorkingDirectory } from './server-cwd';
 import { createStderrTail, type StderrTail } from './server-output';
+import { resolveChildPath } from './shell-path';
 
 /**
  * Spawning the desktop app's Express server as a child process.
@@ -37,6 +39,32 @@ const PACKAGED_CLAUDE_BINARY_SUBPATH = path.join(
   '@anthropic-ai',
   `claude-agent-sdk-${process.platform}-${process.arch}`,
   process.platform === 'win32' ? 'claude.exe' : 'claude'
+);
+
+/**
+ * Location of esbuild's native binary inside a packaged build, relative to
+ * `process.resourcesPath`, for the platform/arch this build runs on.
+ *
+ * esbuild ships its compiler as a per-platform optional dependency named
+ * `@esbuild/<platform>-<arch>`, with the executable at `bin/esbuild`
+ * (`esbuild.exe` at the package root on Windows) — the layout esbuild's own
+ * `pkgAndSubpathForCurrentPlatform` looks for. The server compiles extension
+ * source with it on every boot, so a packaged app without it fails to compile
+ * the bundled marketplace extension every single launch.
+ *
+ * Handed to the server as `ESBUILD_BINARY_PATH` for the same reason the Claude
+ * binary is handed over explicitly: esbuild finds the package by
+ * `require.resolve`, which inside a packaged app answers with an
+ * `…/app.asar/…` path — and *spawning* one of those fails with `ENOTDIR`,
+ * because Electron's asar shim covers `execFile` but not `spawn` (measured
+ * against the shipped 0.61.0 app). The unpacked path sidesteps the question.
+ */
+const PACKAGED_ESBUILD_BINARY_SUBPATH = path.join(
+  'app.asar.unpacked',
+  'node_modules',
+  '@esbuild',
+  `${process.platform}-${process.arch}`,
+  ...(process.platform === 'win32' ? ['esbuild.exe'] : ['bin', 'esbuild'])
 );
 
 /**
@@ -93,6 +121,23 @@ export interface ServerChild {
 function resolvePackagedClaudeBinary(): string | null {
   if (!app.isPackaged) return null;
   const candidate = path.join(process.resourcesPath, PACKAGED_CLAUDE_BINARY_SUBPATH);
+  return existsSync(candidate) ? candidate : null;
+}
+
+/**
+ * Resolve the packaged esbuild binary the bundled server should compile with.
+ *
+ * See {@link PACKAGED_ESBUILD_BINARY_SUBPATH} for why the server is told rather
+ * than left to find it. Returns `null` in dev — where esbuild resolves its own
+ * binary out of `node_modules` perfectly well — or if the expected file is
+ * absent, in which case esbuild falls back to its own resolution and reports
+ * its own (clear) error.
+ *
+ * @returns Absolute path to the unpacked `esbuild` binary, or `null`.
+ */
+function resolvePackagedEsbuildBinary(): string | null {
+  if (!app.isPackaged) return null;
+  const candidate = path.join(process.resourcesPath, PACKAGED_ESBUILD_BINARY_SUBPATH);
   return existsSync(candidate) ? candidate : null;
 }
 
@@ -219,8 +264,13 @@ function forwardOutputToLog(
  * Compose the environment the server child runs with.
  *
  * @param port - The port the server should listen on.
+ * @param workingDirectory - Where the packaged server should work, or `null` in
+ *   dev, where the child inherits this process's own directory as it always has.
  */
-function buildServerEnv(port: number): Record<string, string> {
+function buildServerEnv(
+  port: number,
+  workingDirectory: ServerWorkingDirectory | null
+): Record<string, string> {
   // In dev, electron-vite serves the renderer over HTTP (ELECTRON_RENDERER_URL,
   // e.g. http://localhost:5173). That cross-origin request is rejected by the
   // server's CORS allowlist, so whitelist the renderer origin explicitly. In a
@@ -257,6 +307,19 @@ function buildServerEnv(port: number): Record<string, string> {
   // what `resolveDataDirectory()` returns for that mode, so the directory the
   // port scan read `config.json` out of is the one the child opens either way.
   const dorkHome = app.isPackaged ? resolveDataDirectory() : undefined;
+  // Same story as the Claude binary, for the compiler the extension host runs
+  // on every boot. Unset in dev.
+  const esbuildBinaryPath = resolvePackagedEsbuildBinary();
+  if (app.isPackaged && !esbuildBinaryPath) {
+    log.error(
+      '[server] Packaged esbuild binary missing at',
+      path.join(process.resourcesPath, PACKAGED_ESBUILD_BINARY_SUBPATH)
+    );
+  }
+  // The PATH a Finder-launched app inherits is launchd's four system
+  // directories, which is why the packaged app could not find tools the same
+  // machine's terminal finds instantly. See shell-path.ts; a no-op in dev.
+  const childPath = resolveChildPath(process.env.PATH);
 
   return {
     DORKOS_PORT: String(port),
@@ -273,6 +336,15 @@ function buildServerEnv(port: number): Record<string, string> {
     ...(rendererUrl ? { DORKOS_CORS_ORIGIN: new URL(rendererUrl).origin } : {}),
     ...(clientDistPath ? { CLIENT_DIST_PATH: clientDistPath } : {}),
     ...(claudeCliPath ? { DORKOS_CLAUDE_CLI_PATH: claudeCliPath } : {}),
+    ...(esbuildBinaryPath ? { ESBUILD_BINARY_PATH: esbuildBinaryPath } : {}),
+    ...(childPath ? { PATH: childPath } : {}),
+    // Where the cockpit opens, decided here because the server cannot work it
+    // out for itself inside an app bundle (see server-cwd.ts). Packaged only:
+    // in dev the server's own resolution already lands on the repo.
+    ...(workingDirectory ? { DORKOS_DEFAULT_CWD: workingDirectory.cwd } : {}),
+    // Only when the person set one. The server defaults the boundary to home,
+    // and inventing a value here would turn that default into a setting.
+    ...(workingDirectory?.boundary ? { DORKOS_BOUNDARY: workingDirectory.boundary } : {}),
   };
 }
 
@@ -294,7 +366,8 @@ function buildServerEnv(port: number): Record<string, string> {
  */
 export function spawnServer(port: number): ServerChild {
   const entryPath = resolveServerEntry();
-  const env: NodeJS.ProcessEnv = { ...process.env, ...buildServerEnv(port) };
+  const workingDirectory = app.isPackaged ? resolveServerCwd() : null;
+  const env: NodeJS.ProcessEnv = { ...process.env, ...buildServerEnv(port, workingDirectory) };
   if (app.isPackaged) {
     // A packaged app inherits whatever the launching environment exported, and
     // spreading an object that simply omits this key cannot unset an inherited
@@ -306,7 +379,15 @@ export function spawnServer(port: number): ServerChild {
   const tail = createStderrTail();
 
   if (app.isPackaged) {
-    const proc = utilityProcess.fork(entryPath, [], { env, stdio: 'pipe' });
+    // `cwd` as well as DORKOS_DEFAULT_CWD: anything that reads `process.cwd()`
+    // rather than the resolved default — a spawned tool, a relative path in a
+    // config file — otherwise gets `/`, which is what a Finder-launched app
+    // inherits.
+    const proc = utilityProcess.fork(entryPath, [], {
+      env,
+      stdio: 'pipe',
+      cwd: workingDirectory?.cwd,
+    });
     forwardOutputToLog(proc.stdout, proc.stderr, tail);
     return wrapUtilityProcess(proc, tail);
   }

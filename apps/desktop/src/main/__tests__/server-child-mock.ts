@@ -20,6 +20,8 @@ export interface SpawnOptions {
   env?: NodeJS.ProcessEnv;
   execPath?: string;
   stdio?: unknown;
+  /** Packaged only: the directory the server child starts in (see `server-cwd.ts`). */
+  cwd?: string;
 }
 
 /**
