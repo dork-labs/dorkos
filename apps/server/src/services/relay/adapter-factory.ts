@@ -98,15 +98,10 @@ export async function createAdapter(
         traceStore: deps.traceStore,
         taskStore: deps.taskStore,
         agentSessionStore: deps.agentSessionStore,
-        // What the turn runs on. Keyed off the runtime this adapter was handed
-        // rather than off the literal above, with the same `?? 'claude-code'`
-        // the registration uses (`type` is optional on `AgentRuntimeLike`, and
-        // `adapter-manager.ts` files a runtime that declares none under that
-        // key). So a runtime whose model defaults live in another `runtimes.*`
-        // section resolves against its own section rather than Claude Code's.
-        resolveExecutionSettings: createTurnExecutionSettingsResolver(
-          agentManager.type ?? 'claude-code'
-        ),
+        // What the turn runs on. The literal is the honest key here and not a
+        // guess: this is the `'claude-code'` branch, and the runtime it resolves
+        // against is the one the lookup above took from that exact map entry.
+        resolveExecutionSettings: createTurnExecutionSettingsResolver('claude-code'),
         logger,
       });
     }

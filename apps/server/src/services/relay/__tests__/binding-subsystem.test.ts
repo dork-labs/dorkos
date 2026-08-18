@@ -26,7 +26,7 @@
  * live in the tree.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AgentRuntimeLike } from '@dorkos/relay';
@@ -38,6 +38,14 @@ vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     getDefaultType: () => getDefaultType(),
     getSessionRuntimeType: (id: string) => getSessionRuntimeType(id),
+    // A chat-created session is always brand new — the id is minted in the same
+    // breath — so it can never have a settings row of its own.
+    getSessionSettings: () => Promise.resolve(null),
+    get: () => ({
+      getCapabilities: () => ({
+        settings: { configSection: 'claudeCode', supportsEffort: true, sections: [] },
+      }),
+    }),
   },
 }));
 
@@ -54,17 +62,24 @@ import type { AdapterMeshCoreLike } from '../adapter-manager.js';
  */
 function fakeRuntime(type: string) {
   const ensured: string[] = [];
+  /** What each `ensureSession` was asked for — the model included. */
+  const ensuredOpts: Record<string, unknown>[] = [];
   const runtime = {
     type,
     ensured,
-    ensureSession: vi.fn((id: string) => {
+    ensuredOpts,
+    ensureSession: vi.fn((id: string, opts: Record<string, unknown>) => {
       ensured.push(id);
+      ensuredOpts.push(opts);
     }),
     sendMessage: vi.fn(),
     getSdkSessionId: vi.fn(() => undefined),
     approveTool: vi.fn(() => false),
   };
-  return runtime as unknown as AgentRuntimeLike & { ensured: string[] };
+  return runtime as unknown as AgentRuntimeLike & {
+    ensured: string[];
+    ensuredOpts: Record<string, unknown>[];
+  };
 }
 
 const relayCore = {
@@ -172,6 +187,46 @@ describe('BindingSubsystem.init runtime selection', () => {
     ).deps.agentManager.createSession('/tmp/project', 'default');
 
     expect((claude as unknown as { ensured: string[] }).ensured).toHaveLength(1);
+  });
+
+  it("creates a chat-originated session on the addressed agent's own model", async () => {
+    // The session a Telegram or Slack message opens is created HERE, not by the
+    // relay adapter: the router mints the id and calls this, then publishes to
+    // `relay.agent.*`. By the time the adapter's own `ensureSession` runs with a
+    // model, the session already exists and that call is a no-op — so a model
+    // resolved only there reached nothing on this path, and the agent answered
+    // strangers on the SDK default while answering rooms on its own model.
+    const agentDir = await mkdtemp(path.join(tmpdir(), 'dorkos-binding-agent-'));
+    try {
+      await mkdir(path.join(agentDir, '.dork'), { recursive: true });
+      await writeFile(
+        path.join(agentDir, '.dork', 'agent.json'),
+        JSON.stringify({
+          id: 'ana',
+          name: 'Ana',
+          runtime: 'claude-code',
+          model: 'claude-haiku-4-5',
+          registeredAt: '2026-08-18T10:00:00.000Z',
+          registeredBy: 'test',
+        })
+      );
+      const claude = fakeRuntime('claude-code');
+      const subsystem = await init(new Map([['claude-code', claude]]));
+
+      await (
+        subsystem.getBindingRouter() as unknown as {
+          deps: { agentManager: { createSession(cwd: string, mode: string): Promise<unknown> } };
+        }
+      ).deps.agentManager.createSession(agentDir, 'default');
+
+      expect(claude.ensuredOpts[0]).toEqual({
+        permissionMode: 'default',
+        cwd: agentDir,
+        model: 'claude-haiku-4-5',
+      });
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
   });
 
   it('throws when the relay holds no runtimes at all', async () => {

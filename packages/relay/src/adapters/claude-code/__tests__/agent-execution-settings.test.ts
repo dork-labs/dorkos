@@ -136,16 +136,37 @@ describe('a relay turn runs on the agent it addressed', () => {
     });
   });
 
-  it('asks about the directory the turn will actually run in', async () => {
-    // A binding that names its own cwd moves the whole turn there, so that is
-    // the project whose manifest applies — the same directory the server would
-    // record as this session's `agentPath`.
+  it("asks about the agent's own directory even when the turn runs elsewhere", async () => {
+    // A payload cwd moves where the turn RUNS. Which model the agent is, is a
+    // property of the agent, so it keeps being read where the agent lives — the
+    // session still runs in the directory the payload named.
     await adapter.start(relay);
     const envelope = createTestEnvelope({
       payload: { content: 'What is the status?', cwd: '/projects/other' },
     });
 
     await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
+
+    expect(resolveExecutionSettings).toHaveBeenCalledWith({
+      sessionId: 'agent-ulid-1',
+      agentDirectory: '/projects/ana',
+    });
+    expect(agentManager.ensureSession).toHaveBeenCalledWith(
+      'agent-ulid-1',
+      expect.objectContaining({ cwd: '/projects/other' })
+    );
+  });
+
+  it("falls back to the payload's directory when no agent was resolved", async () => {
+    // A binding-created session whose subject Mesh cannot resolve still has a
+    // project directory, and a project directory is a better guess at a
+    // manifest than nothing.
+    await adapter.start(relay);
+    const envelope = createTestEnvelope({
+      payload: { content: 'What is the status?', cwd: '/projects/other' },
+    });
+
+    await adapter.deliver(envelope.subject, envelope, undefined);
 
     expect(resolveExecutionSettings).toHaveBeenCalledWith({
       sessionId: 'agent-ulid-1',

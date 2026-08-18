@@ -40,9 +40,10 @@ export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'>;
  * runs the turn anyway. A settings problem must never drop somebody's message.
  *
  * @param opts.sessionId - The session key this turn runs under (`ccaSessionKey`).
- * @param opts.agentDirectory - The addressed agent's project directory, the one
- *   holding `.dork/agent.json`. Absent when nothing resolved an agent for this
- *   subject, and the manifest tier then has nothing to read.
+ * @param opts.agentDirectory - The addressed AGENT's project directory, the one
+ *   holding `.dork/agent.json` — not necessarily where the turn runs, which a
+ *   payload can move without changing who is answering. Absent when nothing
+ *   resolved either, and the manifest tier then has nothing to read.
  */
 export type ExecutionSettingsResolver = (opts: {
   sessionId: string;

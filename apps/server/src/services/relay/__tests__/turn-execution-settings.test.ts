@@ -133,6 +133,44 @@ describe('createTurnExecutionSettingsResolver', () => {
     expect(settings).toEqual({ model: 'opus', effort: 'high', fastMode: true });
   });
 
+  it('still uses the manifest model for a row that names only a permission mode', async () => {
+    // Moving the trust dial writes a row with every other column NULL, and
+    // `rowToSettings` omits NULLs — so "this session has a row" is not "this
+    // session has a model". Reading it as one would cost the agent its model
+    // permanently, for that conversation, the moment somebody touched its
+    // permissions. The other surfaces never had the hazard: their rows are
+    // written by `persistSessionRuntime`, which fills the NULL columns from
+    // this same ladder.
+    await writeManifest({ model: 'claude-haiku-4-5' });
+    storedSettings = { permissionMode: 'plan' };
+
+    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+      sessionId: 'sdk-uuid-42',
+      agentDirectory: agentDir,
+    });
+
+    expect(settings).toEqual({ model: 'claude-haiku-4-5' });
+  });
+
+  it('fills the keys a row leaves unanswered, and keeps the ones it names', async () => {
+    // Per key, exactly as `fillNullsWith` fills a row: `fastMode` is the
+    // person's, the model is still the agent's, and the effort still the
+    // server's.
+    runtimesConfig = {
+      ...USER_CONFIG_DEFAULTS.runtimes,
+      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultEffort: 'high' },
+    };
+    await writeManifest({ model: 'claude-haiku-4-5' });
+    storedSettings = { fastMode: true };
+
+    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+      sessionId: 'sdk-uuid-42',
+      agentDirectory: agentDir,
+    });
+
+    expect(settings).toEqual({ model: 'claude-haiku-4-5', effort: 'high', fastMode: true });
+  });
+
   it('never answers with a permission mode, whatever the row holds', async () => {
     // The relay resolves its own mode from the binding that carried the message
     // and treats an absent one as prompting rather than as consent (DOR-604).

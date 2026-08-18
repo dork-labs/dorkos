@@ -206,12 +206,21 @@ export async function handleAgentMessage(
   // that used to default to 'acceptEdits' were the bug and are gone.
   const effectivePermissionMode: PermissionMode = bindingPerms?.permissionMode ?? 'default';
 
+  // Which model an agent is, is a property of the AGENT — so the manifest is
+  // looked for where the agent lives, and NOT at `effectiveCwd`. The two differ
+  // exactly when a payload names its own working directory: that moves where
+  // the turn runs, which is a fact about this message, and it must not silently
+  // re-decide who the answering agent is. Falls back to the payload's directory
+  // only when nothing resolved an agent at all, because a project directory is
+  // a better guess at a manifest than nothing.
+  const agentManifestDir = context?.agent?.directory ?? payloadCwd;
+
   // What this turn runs on. Asked BEFORE `ensureSession`, because that call is
   // the only one that can answer it: the claude-code runtime reads
   // `session.model` when it launches a query, and that field is written once,
   // when the session record is created. A model handed over afterwards reaches
   // nothing (see `messaging/launch-resolver.ts`).
-  const executionSettings = await resolveTurnSettings(deps, ccaSessionKey, effectiveCwd, log);
+  const executionSettings = await resolveTurnSettings(deps, ccaSessionKey, agentManifestDir, log);
 
   log.debug?.(
     `[CCA] handleAgentMessage agentId=${agentId} ccaSessionKey=${ccaSessionKey}, ` +

@@ -13,18 +13,28 @@
  * {@link resolveUnattendedSessionDefaults} — because "which model is this agent"
  * must not depend on who is asking it.
  *
- * ## Two branches, one rule
+ * ## Stored settings win PER KEY, not per row
  *
- * A session that already has stored settings is a running conversation and
- * keeps them: "applies to new conversations, running ones keep their settings."
- * Everywhere else that rule is kept by handing the runtime nothing and letting
- * it hydrate the row itself, which is what `ensureForMessage` does. The relay
- * cannot do that — it calls `ensureSession` first, which creates the session
- * record before any hydration would run — so it reads the row here and passes
- * the values through. Same promise, one step earlier.
+ * A setting a person chose for this conversation wins: "applies to new
+ * conversations, running ones keep their settings." Everywhere else that rule
+ * is kept by handing the runtime nothing and letting it hydrate the row itself,
+ * which is what `ensureForMessage` does. The relay cannot do that — it calls
+ * `ensureSession` first, which creates the session record before any hydration
+ * would run — so the row is read here and merged in. Same promise, one step
+ * earlier.
  *
- * The permission mode is not in either branch. The relay resolves its own from
- * the binding that carried the message, and treats an absent one as prompting
+ * **Key by key, because a row is not an answer to every question.** Moving the
+ * trust dial writes a row that names a permission mode and NOTHING else, and a
+ * row-shaped rule would read that as "this conversation has settings" and skip
+ * the ladder entirely — so an agent would lose its model the moment somebody
+ * touched its permissions, permanently, for that conversation. The other
+ * surfaces do not have that hazard because `persistSessionRuntime` fills the
+ * row's NULL columns from the same ladder (`fillNullsWith(seedForNewRow(…))`),
+ * and nothing on the relay path calls it. Merging per key is what makes this
+ * path yield what those already yield.
+ *
+ * The permission mode is in neither half. The relay resolves its own from the
+ * binding that carried the message, and treats an absent one as prompting
  * rather than as consent (DOR-604); an answer from here would be a second
  * answer to a settled question.
  *
@@ -51,38 +61,43 @@ export function createTurnExecutionSettingsResolver(
 ): ExecutionSettingsResolver {
   return async ({ sessionId, agentDirectory }) => {
     const stored = await readStoredSettings(sessionId);
-    if (stored) return stored;
     const declared = runtimeRegistry.get(runtimeType)?.getCapabilities().settings;
-    const { model, effort } = await resolveUnattendedSessionDefaults({
+    const ladder = await resolveUnattendedSessionDefaults({
       runtimeType,
       ...(agentDirectory ? { agentPath: agentDirectory } : {}),
       ...(declared ? { declared } : {}),
     });
-    // Picked out by name rather than spread: the resolver's return type also
-    // admits a permission mode (for the attended callers that ask it for one),
-    // and this path must never carry one back to the relay.
-    return { ...(model !== undefined && { model }), ...(effort !== undefined && { effort }) };
+    // Picked out by name rather than spread, in both halves: `SessionSettings`
+    // also admits a permission mode (the attended callers ask the ladder for
+    // one, and a stored row usually holds one), and neither may travel back to
+    // the relay. `fastMode` has no tier below the row — no manifest field and no
+    // server default name it — so the row is the only place it can come from.
+    const model = stored.model ?? ladder.model;
+    const effort = stored.effort ?? ladder.effort;
+    return {
+      ...(model !== undefined && { model }),
+      ...(effort !== undefined && { effort }),
+      ...(stored.fastMode !== undefined && { fastMode: stored.fastMode }),
+    };
   };
 }
 
 /**
- * What this session already runs with, or `null` when it is a new one.
- *
- * `fastMode` travels with the other two: it is a session setting a person can
- * change, and the whole point of this branch is that their choices survive an
- * eviction or a restart.
+ * What a person has already chosen for this conversation — an empty object when
+ * they have chosen nothing, which a session with no row and a row that names
+ * only a permission mode both are, and both truthfully.
  *
  * Tolerant of a failing read on purpose. A locked database here means the
- * question "has this conversation got settings?" is unanswerable for a moment,
- * and the honest fallback is the ladder every new session starts on — not a
- * refused turn.
+ * question "what has this conversation got?" is unanswerable for a moment, and
+ * the honest fallback is the ladder every new session starts on — not a refused
+ * turn.
  *
  * @param sessionId - The key the relay turn runs under.
  */
-async function readStoredSettings(sessionId: string): Promise<TurnExecutionSettings | null> {
+async function readStoredSettings(sessionId: string): Promise<TurnExecutionSettings> {
   try {
     const stored = await runtimeRegistry.getSessionSettings(sessionId);
-    if (!stored) return null;
+    if (!stored) return {};
     return {
       ...(stored.model !== undefined && { model: stored.model }),
       ...(stored.effort !== undefined && { effort: stored.effort }),
@@ -93,6 +108,6 @@ async function readStoredSettings(sessionId: string): Promise<TurnExecutionSetti
       sessionId,
       error: err instanceof Error ? err.message : String(err),
     });
-    return null;
+    return {};
   }
 }
