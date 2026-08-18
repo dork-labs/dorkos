@@ -4552,6 +4552,34 @@
         "apps/server/src/services/identity/aggregate-team.ts",
         "apps/server/src/services/identity/member-rooms.ts"
       ]
+    },
+    {
+      "id": "260818-002803",
+      "slug": "interaction-prompts-are-fleet-wide-asks",
+      "title": "An agent's prompt is a fleet-wide Ask, broadcast from the projector and answerable only by a person",
+      "status": "draft",
+      "created": "2026-08-18",
+      "extractedFrom": "unified-conversation",
+      "specSlug": "unified-conversation"
+    },
+    {
+      "id": "260818-002805",
+      "slug": "one-conversation-compound-with-capability-flags",
+      "title": "One Conversation compound, with capability flags instead of surface switches",
+      "status": "draft",
+      "created": "2026-08-18",
+      "extractedFrom": "unified-conversation",
+      "specSlug": "unified-conversation"
+    },
+    {
+      "id": "260818-002806",
+      "slug": "a-reserved-live-lane-above-every-composer",
+      "title": "A reserved live lane above every composer replaces the status strip and the under-composer presence line",
+      "status": "draft",
+      "created": "2026-08-18",
+      "extractedFrom": "unified-conversation",
+      "specSlug": "unified-conversation",
+      "amends": 152
     }
   ]
 }

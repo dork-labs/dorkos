@@ -13,6 +13,18 @@ superseded-by: null
 
 Accepted
 
+Amended by `260818-002806` (spec `unified-conversation`, 2026-08-18), which retires the SCOPE of this
+decision and keeps its mechanism. Retired: "the chat UI's" unified status strip — six states, session
+chat only, implemented as `ChatStatusStrip` plus
+`apps/client/src/layers/features/chat/ui/status/strip-state.ts` (the path this record's `affects` glob
+names). Both files are deleted there. No Consequences bullet falls with it.
+
+Still governing, unchanged and now on every conversation surface: a `derive*State()` pure function
+mapping raw props to a discriminated union, priority encoded as an if/else chain inside it, rendered
+through one morphing container with `AnimatePresence mode="wait"` keyed on the variant — the Dynamic
+Island principle this ADR chose over a switcher, a queue and a compound component. The successor is
+`features/conversation/model/lane-state.ts`, same shape, ten states.
+
 ## Context
 
 The chat UI needs to consolidate two status display components (InferenceIndicator and SystemStatusZone) into a single unified strip. The strip must show exactly one status type at a time from 6 possible states (rate-limited, waiting, system-message, streaming, complete, idle), selected by an explicit priority order. Four architectural approaches were evaluated: simple if/else switcher, priority queue, state machine, and compound component.
