@@ -16,6 +16,7 @@
  *
  * @module dev/showcases/SurfacesShowcases
  */
+import { useState } from 'react';
 import {
   Conversation,
   deriveLaneState,
@@ -47,20 +48,41 @@ import {
 } from './entry-actions-showcase-data';
 import { buildRoomTarget, buildSessionTarget } from './ComposerShowcases';
 
-/** The one fixture: four turns of a conversation, oldest first. */
-const TURNS: readonly { from: 'human' | 'agent'; text: string }[] = [
-  { from: 'human', text: 'Can you check why the deploy is stuck?' },
-  { from: 'agent', text: 'Looking at the deploy logs now.' },
-  { from: 'agent', text: 'Found it — the migration step timed out waiting on a lock.' },
-  { from: 'human', text: 'Can you retry it, once the lock clears?' },
+/**
+ * The one fixture: four turns of a conversation, oldest first.
+ *
+ * Each turn carries its own `at`, and BOTH row builders below are handed it —
+ * otherwise each builder falls back to its own default (the session factory's
+ * `new Date()`, the room factory's written-out date) and the three columns
+ * print three different clocks for what is supposed to be one conversation.
+ * A reader comparing the columns would be reading a difference the surfaces do
+ * not actually have.
+ */
+const TURNS: readonly { from: 'human' | 'agent'; text: string; at: string }[] = [
+  {
+    from: 'human',
+    text: 'Can you check why the deploy is stuck?',
+    at: '2026-08-18T14:02:00.000Z',
+  },
+  { from: 'agent', text: 'Looking at the deploy logs now.', at: '2026-08-18T14:02:30.000Z' },
+  {
+    from: 'agent',
+    text: 'Found it — the migration step timed out waiting on a lock.',
+    at: '2026-08-18T14:03:10.000Z',
+  },
+  {
+    from: 'human',
+    text: 'Can you retry it, once the lock clears?',
+    at: '2026-08-18T14:04:00.000Z',
+  },
 ];
 
 /** The same turns, as a session's messages. */
 const SESSION_ROWS: ConversationRow[] = TURNS.map((turn, index) => {
   const message =
     turn.from === 'human'
-      ? createUserMessage({ content: turn.text })
-      : createAssistantMessage({ content: turn.text });
+      ? createUserMessage({ content: turn.text, timestamp: turn.at })
+      : createAssistantMessage({ content: turn.text, timestamp: turn.at });
   return {
     kind: 'message',
     id: `session-row-${index}`,
@@ -82,6 +104,7 @@ const ROOM_ENTRIES: readonly {
 }[] = TURNS.map((turn) => ({
   entry: benchEntry(turn.text, {
     authorId: turn.from === 'human' ? BENCH_VIEWER_ID : BENCH_AGENT.id,
+    createdAt: turn.at,
   }),
   author: turn.from === 'human' ? BENCH_VIEWER : BENCH_AGENT,
   authorRef: turn.from === 'human' ? BENCH_VIEWER_REF : BENCH_AGENT_REF,
@@ -113,6 +136,11 @@ function SurfaceColumn({
   capabilities: ConversationCapabilities;
   placeholder: string;
 }) {
+  // The column's own draft. A controlled field pinned to `''` with a noop
+  // `onChange` looks identical and cannot be typed into — and the composer is
+  // the one part of the four a reviewer reaches for first, so an inert one
+  // makes this section claim more than it shows.
+  const [value, setValue] = useState('');
   const target =
     surface === 'session' ? buildSessionTarget({ placeholder }) : buildRoomTarget({ placeholder });
   const rows = surface === 'session' ? SESSION_ROWS : ROOM_ROWS;
@@ -168,8 +196,8 @@ function SurfaceColumn({
             scope={surface === 'session' ? 'session' : 'room'}
           />
           <Conversation.Composer
-            value=""
-            onChange={() => {}}
+            value={value}
+            onChange={setValue}
             onSubmit={() => {}}
             input={{ placeholder, isStreaming: false }}
           />
