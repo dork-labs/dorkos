@@ -26,8 +26,6 @@ export type { ConversationCapabilities, ConversationSurface } from './model/capa
 export type {
   ConversationAttachmentPort,
   ConversationDraft,
-  ConversationMentionCandidate,
-  ConversationMentionPort,
   ConversationTarget,
 } from './model/target';
 export type { BodyRenderContext, ConversationBodyRenderer } from './model/body-renderer';
