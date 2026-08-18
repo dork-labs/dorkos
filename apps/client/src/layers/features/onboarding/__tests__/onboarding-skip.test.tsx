@@ -106,10 +106,13 @@ vi.mock('@/layers/entities/runtime', () => ({
   selectRuntimeReadiness: () => ({ state: 'ready' }),
 }));
 
-vi.mock('@/layers/features/chat', () => ({
-  SessionMessage: ({ message }: { message: { content: string } }) => (
+vi.mock('../ui/NarrationMessage', () => ({
+  NarrationMessage: ({ message }: { message: { content: string } }) => (
     <div data-testid="msg">{message.content}</div>
   ),
+}));
+
+vi.mock('@/layers/features/chat', () => ({
   resolveMessageAuthor: () => ({ kind: 'agent', id: 'dorkbot', displayName: 'DorkBot' }),
   TypingDots: () => <div data-testid="typing" />,
   FirstLight: () => <div data-testid="first-light" />,
