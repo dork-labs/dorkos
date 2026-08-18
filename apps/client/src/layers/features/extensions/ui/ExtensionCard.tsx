@@ -27,7 +27,7 @@ export function ExtensionCard({
   onSetRunApproval,
   isSettingApproval,
 }: ExtensionCardProps) {
-  const { manifest, status, scope, error, origin, approvedToRun } = extension;
+  const { manifest, status, scope, error, serverError, origin, approvedToRun } = extension;
   const [errorExpanded, setErrorExpanded] = useState(false);
 
   const isEnabled = !TERMINAL_STATUSES.has(status);
@@ -122,6 +122,17 @@ export function ExtensionCard({
                 </pre>
               )}
             </div>
+          )}
+
+          {/* The extension's server half could not be rebuilt, so DorkOS kept the
+              version it already had running. Said beside an otherwise healthy
+              extension rather than through the status badge: everything else
+              about it — including the part that draws in this window — is fine. */}
+          {serverError && (
+            <p className="text-sm text-amber-600 dark:text-amber-400">
+              Server side failed to rebuild: {serverError.message}. The previous version is still
+              running.
+            </p>
           )}
 
           {/* Permission to run code inside DorkOS (DOR-516). Core extensions ship

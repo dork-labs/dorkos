@@ -39,10 +39,11 @@ export function resetKeyCache(): void {
  * Each extension gets its own JSON file under `{dorkHome}/extension-secrets/`.
  * A shared host key at `{dorkHome}/host.key` is used to derive the encryption
  * key via scrypt. The derived key is cached per-process to avoid repeated
- * key derivation.
+ * key derivation; the secrets themselves are read from disk on every access, so
+ * a store held by a running extension always sees what was last saved (see
+ * {@link ExtensionSecretStore.loadSecrets}).
  */
 export class ExtensionSecretStore {
-  private cache: Record<string, string> | null = null;
   private readonly secretsFilePath: string;
   private readonly hostKeyPath: string;
 
@@ -138,17 +139,21 @@ export class ExtensionSecretStore {
     return key;
   }
 
-  private async loadSecrets(): Promise<Record<string, string>> {
-    if (this.cache) return this.cache;
-    this.cache = await this.readFromDisk();
-    return this.cache;
-  }
-
   /**
-   * Read the on-disk secrets, bypassing {@link cache}. A missing or unreadable
-   * file is an empty store, matching the original read behaviour.
+   * Read the on-disk secrets. A missing or unreadable file is an empty store.
+   *
+   * Deliberately uncached. A store instance can outlive many writes to the file
+   * it reads: an extension's `ctx.secrets` and a dataProxy's store are built
+   * once, when the extension starts, while the settings routes that save a
+   * secret build their own store and write straight to disk. An in-memory copy
+   * taken at the first read therefore froze the running extension's view of its
+   * own secrets — a key pasted in Settings never arrived, and only a server
+   * restart fixed it (DOR-1336 review). Nothing here was ever a hot path: the
+   * file is a small JSON object, reads are per proxied request or per credential
+   * lookup, and the expensive part — the scrypt key derivation — is still cached
+   * per process by {@link getDerivedKey}.
    */
-  private async readFromDisk(): Promise<Record<string, string>> {
+  private async loadSecrets(): Promise<Record<string, string>> {
     try {
       const data = await readFile(this.secretsFilePath, 'utf-8');
       return JSON.parse(data) as Record<string, string>;
@@ -160,19 +165,17 @@ export class ExtensionSecretStore {
   /**
    * Apply `change` to the secrets file as one serialised read-modify-write.
    *
-   * Every mutation re-reads from disk inside the path lock rather than trusting
-   * {@link cache}: a store instance is constructed per request, so two callers
-   * setting different keys would otherwise each save their own view and drop
-   * the other's secret. The lock makes the read and the write one step, and
+   * Every mutation re-reads from disk INSIDE the path lock: two callers setting
+   * different keys would otherwise each save their own view and drop the other's
+   * secret. The lock makes the read and the write one step, and
    * `runtime-credentials.json` is the file that cannot afford a lost update.
    *
    * @param change - Mutates the freshly-read secrets map in place.
    */
   private async mutate(change: (secrets: Record<string, string>) => void): Promise<void> {
     await withFileLock(this.secretsFilePath, async (write) => {
-      const secrets = await this.readFromDisk();
+      const secrets = await this.loadSecrets();
       change(secrets);
-      this.cache = secrets;
       await write(JSON.stringify(secrets, null, 2));
     });
   }

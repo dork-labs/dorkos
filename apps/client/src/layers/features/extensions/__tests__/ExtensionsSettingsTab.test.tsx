@@ -319,6 +319,36 @@ describe('ExtensionsSettingsTab', () => {
     expect(screen.getByText(/unexpected token/i)).toBeInTheDocument();
   });
 
+  /**
+   * A server-side rebuild that failed while the previous version keeps running
+   * is said beside an otherwise healthy extension — never through `status`,
+   * which is what the loader and `readBundle` gate the client bundle on
+   * (DOR-1336 review round 2).
+   */
+  it('warns that the server half is stale without calling the extension broken', async () => {
+    const ext = makeExtension({
+      id: 'stale-srv',
+      status: 'compiled',
+      hasServerEntry: true,
+      serverError: {
+        code: 'compilation_failed',
+        message: 'Server Compilation failed for stale-srv',
+      },
+    });
+    mockFetch({ '/api/extensions': [ext] });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('extension-card-stale-srv')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/server side failed to rebuild/i)).toBeInTheDocument();
+    expect(screen.getByText(/previous version is still running/i)).toBeInTheDocument();
+    // Not dressed up as a compile failure of the whole extension.
+    expect(screen.queryByText(/compilation error/i)).not.toBeInTheDocument();
+  });
+
   it('shows global badge for global-scoped extensions', async () => {
     mockFetch({ '/api/extensions': [makeExtension({ scope: 'global' })] });
 

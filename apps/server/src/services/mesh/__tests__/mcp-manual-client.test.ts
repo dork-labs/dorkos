@@ -100,9 +100,10 @@ async function makeService(fetchImpl: typeof fetch): Promise<{
 /**
  * The raw encrypted record stored under one key, decrypted.
  *
- * A FRESH store instance every call, deliberately: `ExtensionSecretStore` caches
- * the decrypted map per instance, so a long-lived handle would keep answering
- * from before the service wrote — which is a stale reader, not a passing test.
+ * A fresh store instance every call. `ExtensionSecretStore` reads the file on
+ * every access now (DOR-1336 review), so a long-lived handle would work too —
+ * this stays the way it is because a reader built after the write is the plainest
+ * way to say "what is on disk", with nothing to reason about.
  */
 async function storedRecord(
   dorkHome: string,
