@@ -425,6 +425,7 @@ describe('PinnedTriageHeader at its height cap', () => {
             grow
           </button>
           <PinnedTriageHeaderView
+            asks={[]}
             approvals={Array.from({ length: count }, (_, i) =>
               buildApproval({ approvalId: `01JZ00000000000000000000${i}` })
             )}

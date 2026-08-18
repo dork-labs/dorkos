@@ -33,7 +33,21 @@ function informativeToolLabel(toolName: string, input: string): string | undefin
   return label === toolName ? undefined : label;
 }
 
-/** The last segment of a path, which is what a person calls the file. */
+/**
+ * What to call the agent behind a prompt when nothing has resolved its name.
+ *
+ * The last segment of the working directory, which is what the operator calls it
+ * anyway. The wire carries no name on purpose — a copied name goes stale the
+ * moment an agent is renamed — so this is the honest floor, and a surface that
+ * holds the roster passes the real name instead.
+ *
+ * @param cwd - The session's working directory.
+ */
+export function agentNameFromCwd(cwd: string): string {
+  return basename(cwd);
+}
+
+/** The last segment of a path — what a person calls the file, or the folder. */
 function basename(filePath: string): string {
   return filePath.split('/').filter(Boolean).pop() ?? filePath;
 }

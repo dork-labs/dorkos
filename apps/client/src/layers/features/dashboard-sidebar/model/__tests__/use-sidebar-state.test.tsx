@@ -57,7 +57,10 @@ vi.mock('@/layers/entities/mesh', () => ({
 // `entities/attention/__tests__/use-attention-signals.test.tsx`, against the
 // same hundred injected activity events.
 const ATTENTION: unknown[] = [];
-vi.mock('@/layers/entities/attention', () => ({ useAttentionSignals: () => ATTENTION }));
+vi.mock('@/layers/entities/attention', () => ({
+  useAttentionSignals: () => ATTENTION,
+  usePendingInteractions: () => ({ interactions: [], isLoading: false }),
+}));
 
 /** The prefs writer, hoisted so its identity never moves the snapshot's. */
 const UPDATE_PREFS = { update: vi.fn(), updateAsync: vi.fn(), isPending: false, isError: false };

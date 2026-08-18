@@ -17,7 +17,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { TransportProvider } from '@/layers/shared/model';
+import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
 import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSearch } from '../PlaygroundSearch';
 import { getPageFromPath, PAGE_CONFIGS } from '../playground-config';
@@ -72,9 +72,11 @@ afterEach(cleanup);
  */
 async function openSheet(props: RoomSheetDemoProps): Promise<void> {
   render(
-    <TransportProvider transport={createPlaygroundTransport()}>
-      <RoomSheetDemo {...props} />
-    </TransportProvider>
+    <EventStreamProvider>
+      <TransportProvider transport={createPlaygroundTransport()}>
+        <RoomSheetDemo {...props} />
+      </TransportProvider>
+    </EventStreamProvider>
   );
   fireEvent.click(screen.getByRole('button', { name: props.label }));
   await screen.findByRole('dialog');
@@ -276,9 +278,11 @@ describe('the page itself draws every section', () => {
    */
   it('renders all seven, and none of them crashes into the boundary', async () => {
     render(
-      <TransportProvider transport={createPlaygroundTransport()}>
-        <RoomsPage />
-      </TransportProvider>
+      <EventStreamProvider>
+        <TransportProvider transport={createPlaygroundTransport()}>
+          <RoomsPage />
+        </TransportProvider>
+      </EventStreamProvider>
     );
     await settle();
 
@@ -293,9 +297,11 @@ describe('the page itself draws every section', () => {
 
   it('draws every loudness level and every rung the two room kinds offer', async () => {
     render(
-      <TransportProvider transport={createPlaygroundTransport()}>
-        <RoomsPage />
-      </TransportProvider>
+      <EventStreamProvider>
+        <TransportProvider transport={createPlaygroundTransport()}>
+          <RoomsPage />
+        </TransportProvider>
+      </EventStreamProvider>
     );
     await settle();
 

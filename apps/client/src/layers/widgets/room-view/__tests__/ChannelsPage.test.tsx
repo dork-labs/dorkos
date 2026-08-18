@@ -29,7 +29,7 @@ import {
   useRoomOpenThreadStore,
 } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
-import { TransportProvider } from '@/layers/shared/model';
+import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { ChannelsPage } from '../ui/ChannelsPage';
 
@@ -161,11 +161,13 @@ function renderPage(overrides: Partial<Transport> = {}) {
   });
   const { rerender } = render(
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>
-        <TooltipProvider>
-          <ChannelsPage />
-        </TooltipProvider>
-      </TransportProvider>
+      <EventStreamProvider>
+        <TransportProvider transport={transport}>
+          <TooltipProvider>
+            <ChannelsPage />
+          </TooltipProvider>
+        </TransportProvider>
+      </EventStreamProvider>
     </QueryClientProvider>
   );
 
@@ -174,11 +176,13 @@ function renderPage(overrides: Partial<Transport> = {}) {
     openRoomId = id;
     rerender(
       <QueryClientProvider client={queryClient}>
-        <TransportProvider transport={transport}>
-          <TooltipProvider>
-            <ChannelsPage />
-          </TooltipProvider>
-        </TransportProvider>
+        <EventStreamProvider>
+          <TransportProvider transport={transport}>
+            <TooltipProvider>
+              <ChannelsPage />
+            </TooltipProvider>
+          </TransportProvider>
+        </EventStreamProvider>
       </QueryClientProvider>
     );
     await screen.findByRole('combobox');
@@ -620,11 +624,13 @@ describe('ChannelsPage — whose unread rule is this', () => {
     });
     render(
       <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
-        <TransportProvider transport={transport}>
-          <TooltipProvider>
-            <ChannelsPage />
-          </TooltipProvider>
-        </TransportProvider>
+        <EventStreamProvider>
+          <TransportProvider transport={transport}>
+            <TooltipProvider>
+              <ChannelsPage />
+            </TooltipProvider>
+          </TransportProvider>
+        </EventStreamProvider>
       </QueryClientProvider>
     );
 
@@ -704,11 +710,13 @@ describe('ChannelsPage — a thread reply still clears the badge', () => {
     });
     render(
       <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
-        <TransportProvider transport={transport}>
-          <TooltipProvider>
-            <ChannelsPage />
-          </TooltipProvider>
-        </TransportProvider>
+        <EventStreamProvider>
+          <TransportProvider transport={transport}>
+            <TooltipProvider>
+              <ChannelsPage />
+            </TooltipProvider>
+          </TransportProvider>
+        </EventStreamProvider>
       </QueryClientProvider>
     );
     return transport;
@@ -814,11 +822,13 @@ describe('ChannelsPage — switching between threads', () => {
     });
     render(
       <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
-        <TransportProvider transport={transport}>
-          <TooltipProvider>
-            <ChannelsPage />
-          </TooltipProvider>
-        </TransportProvider>
+        <EventStreamProvider>
+          <TransportProvider transport={transport}>
+            <TooltipProvider>
+              <ChannelsPage />
+            </TooltipProvider>
+          </TransportProvider>
+        </EventStreamProvider>
       </QueryClientProvider>
     );
     return transport;

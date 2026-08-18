@@ -23,6 +23,8 @@ import {
   sessionKeys,
 } from '@/layers/entities/session';
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { usePendingInteractions } from '@/layers/entities/attention';
+import { InteractionAsk } from '@/layers/features/ask';
 import { useAppStore, useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
 import { playNotificationSound } from '@/layers/shared/lib';
 import { resolveTransportRetryText } from '../lib/resolve-retry-text';
@@ -391,7 +393,17 @@ export function ChatPanel({
 
   // What the live lane says about this session. Derived here rather than inside
   // the lane so the lane stays a renderer every surface drives the same way.
+  // This session's own prompts, off the fleet-wide list — the same objects the
+  // header tray and the room lane draw, so answering in any of them resolves
+  // all of them.
+  const { interactions } = usePendingInteractions();
+  const sessionAsks = useMemo(
+    () => (sessionId === null ? [] : interactions.filter((ask) => ask.sessionId === sessionId)),
+    [interactions, sessionId]
+  );
+
   const laneState = useSessionLaneState({
+    asks: sessionAsks,
     status,
     streamStartTime,
     estimatedTokens,
@@ -437,7 +449,11 @@ export function ChatPanel({
           always 24px tall, so a turn starting or ending moves nothing that is
           already on screen — which the collapsing strip it replaces did on
           every turn. */}
-        <Conversation.LiveLane state={laneState} scope="session" />
+        <Conversation.LiveLane
+          state={laneState}
+          scope="session"
+          askCard={laneState.kind === 'ask' ? <InteractionAsk ask={laneState.ask} /> : undefined}
+        />
 
         <AnimatePresence>
           {showSuggestions && (

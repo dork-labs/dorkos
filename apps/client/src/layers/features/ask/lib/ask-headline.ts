@@ -4,21 +4,7 @@
  * @module features/ask/lib/ask-headline
  */
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
-import { describeInteraction } from '@/layers/entities/attention';
-
-/**
- * What to call the agent behind a prompt when nothing has resolved its name.
- *
- * The last segment of the working directory, which is what the operator calls
- * it anyway. The wire carries no name on purpose — a copied name goes stale the
- * moment an agent is renamed — so this is the honest floor, and a surface that
- * holds the roster passes the real name instead.
- *
- * @param cwd - The session's working directory.
- */
-export function agentNameFromCwd(cwd: string): string {
-  return cwd.split('/').filter(Boolean).pop() ?? cwd;
-}
+import { agentNameFromCwd, describeInteraction } from '@/layers/entities/attention';
 
 /**
  * The headline for one Ask.

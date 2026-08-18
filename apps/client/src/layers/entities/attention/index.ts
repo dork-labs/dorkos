@@ -30,5 +30,5 @@ export {
 // The half-sentence that follows an agent's name ("wants to edit standup.md").
 // Exported because `features/ask` builds the card's headline from it, and one
 // phrasing is the point.
-export { describeInteraction } from './model/describe-interaction';
+export { describeInteraction, agentNameFromCwd } from './model/describe-interaction';
 export { recordAskReceipt, useAskReceipt, type AskReceipt } from './model/ask-receipt-store';

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { ShieldAlert, ShieldCheck, TriangleAlert } from 'lucide-react';
 import {
@@ -9,7 +9,8 @@ import {
 } from '@/layers/shared/ui';
 import { useEventStream } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
-import { usePendingApprovals } from '@/layers/entities/attention';
+import { usePendingApprovals, usePendingInteractions } from '@/layers/entities/attention';
+import { AskList, useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
 import {
   ApprovalList,
   ApprovalsUnavailable,
@@ -107,6 +108,14 @@ function trustedLabel(count: number): string {
  */
 export function ApprovalsIndicator() {
   const { approvals, isError, retry } = usePendingApprovals();
+  // The other half of "waiting on you": the prompts agents are parked on. Both
+  // are counted by the one pill, because a person does not hold two queues.
+  const { interactions: asks } = usePendingInteractions();
+  // `⌘⇧A`, registered here because this widget is on every route and the tray it
+  // opens is the surface that exists everywhere. It claims the chord only while
+  // something is waiting — see {@link useAskShortcut}.
+  useAskShortcut();
+  const trayRequest = useAskTrayRequest();
   const {
     permissions,
     isError: permissionsUnreadable,
@@ -115,7 +124,17 @@ export function ApprovalsIndicator() {
   const { connectionState } = useEventStream();
   const [open, setOpen] = useState(false);
 
-  const count = approvals.length;
+  // Somebody pressed the shortcut with nothing on screen to jump to. Opening
+  // here is the whole of "opens whatever surface holds it" for a route that was
+  // showing none of them.
+  const lastRequestRef = useRef(trayRequest);
+  useEffect(() => {
+    if (trayRequest === lastRequestRef.current) return;
+    lastRequestRef.current = trayRequest;
+    setOpen(true);
+  }, [trayRequest]);
+
+  const count = approvals.length + asks.length;
   const trustedCount = permissions.length;
   // A failed read while the whole link is down is not news about approvals — it is
   // the same outage the connection item already reports. Staying quiet keeps one
@@ -246,7 +265,12 @@ export function ApprovalsIndicator() {
                   results are still on screen — the list may be out of date, and
                   saying so beats a stale count nobody thinks to question. */}
               {isError && <ApprovalsUnavailable onRetry={retry} />}
-              {count > 0 && <ApprovalList approvals={approvals} />}
+              {/* The prompts first: their window is ten minutes and a
+                  capability approval's is two hours, so this IS time-left
+                  order — and the two lists stay separate objects, which is the
+                  decision §4.3 makes and this renders. */}
+              {asks.length > 0 && <AskList asks={asks} />}
+              {approvals.length > 0 && <ApprovalList approvals={approvals} />}
 
               {/* A permission list that cannot be read is NOT the same as no
                   permissions, and the difference is an agent still acting without

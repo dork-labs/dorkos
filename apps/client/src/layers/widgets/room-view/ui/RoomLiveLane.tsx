@@ -28,11 +28,12 @@ import {
   Conversation,
   MessageAuthorAvatar,
   deriveLaneState,
-  NO_ASKS,
   type LaneScope,
   type LanePresenceAuthor,
   type LivePeekRow,
 } from '@/layers/features/conversation';
+import { usePendingInteractions } from '@/layers/entities/attention';
+import { InteractionAsk } from '@/layers/features/ask';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import {
   authorsById,
@@ -105,12 +106,34 @@ export function RoomLiveLane({
   const sessions = useRoomSessions(room.id, { enabled: peekOpen });
   const halt = useHaltRoom();
   const agents = useRoomAgentDirectory();
-
   const authors = useMemo(() => authorsById(room.members), [room.members]);
   const nameOf = useCallback(
     (authorId: string): string => authors.get(authorId)?.displayName ?? UNKNOWN_AGENT,
     [authors]
   );
+
+  const { interactions } = usePendingInteractions();
+
+  // Filtered by ROOM, which is what the event's `roomId` is on it for: a prompt
+  // raised by a session bound to this room belongs on this room's lane, whoever
+  // happens to be looking at the session it came from.
+  const asks = useMemo(
+    () => interactions.filter((ask) => ask.roomId === room.id),
+    [interactions, room.id]
+  );
+
+  // What to CALL the asking agent. The prompt carries ids only, so the roster is
+  // joined here — by the author the ledger bound to that session, which is the
+  // same join the presence line makes.
+  const askAgentNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const ask of asks) {
+      if (ask.roomAuthorId === undefined) continue;
+      const name = authors.get(ask.roomAuthorId)?.displayName;
+      if (name !== undefined) names[ask.sessionId] = name;
+    }
+    return names;
+  }, [asks, authors]);
 
   const presence = useMemo<LanePresenceAuthor[]>(
     () =>
@@ -127,8 +150,8 @@ export function RoomLiveLane({
     () =>
       deriveLaneState({
         capabilities: ROOM_CAPABILITIES,
-        // Rung 1's input lands in P3 (DOR-1330, task 3.8); see `LaneAsk`.
-        asks: NO_ASKS,
+        asks,
+        agentNames: askAgentNames,
         stalled,
         presence,
         // A room has no turn of its own and no composer queue: `turnStatus` is
@@ -137,7 +160,7 @@ export function RoomLiveLane({
         turn: null,
         queueDepth: 0,
       }),
-    [presence, stalled]
+    [asks, askAgentNames, presence, stalled]
   );
 
   const sessionByAuthor = useMemo(() => {
@@ -243,6 +266,20 @@ export function RoomLiveLane({
       unavailable={unavailable}
       faces={faces}
       onPeekOpenChange={setPeekOpen}
+      askCard={
+        state.kind === 'ask' ? (
+          <InteractionAsk
+            ask={state.ask}
+            {...(askAgentNames[state.ask.sessionId]
+              ? { agentName: askAgentNames[state.ask.sessionId] }
+              : {})}
+            onOpenSession={(sessionId) => {
+              void navigate({ to: '/session', search: { session: sessionId } });
+            }}
+            className="border-l-0"
+          />
+        ) : undefined
+      }
       peek={
         <Conversation.LivePeek
           rows={peekRows}

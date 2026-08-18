@@ -91,6 +91,15 @@ export interface LiveLaneProps {
   /** What the peek's trigger is called, for a reader who cannot see the line. */
   peekLabel?: string;
   /**
+   * The Ask card this lane's amber rung grows into, supplied by the host.
+   *
+   * A node rather than a component, for the reason the peek is one: the card
+   * needs the roster and the router, and neither belongs in a surface-neutral
+   * slice. Absent leaves the amber line a readout — true, and not answerable
+   * here.
+   */
+  askCard?: ReactNode;
+  /**
    * Force the reduced-motion branch, for the Dev Playground alone.
    *
    * **Playground-only, and the product never passes it.** `useReducedMotion()`
@@ -130,6 +139,7 @@ export function LiveLane({
   peek,
   onPeekOpenChange,
   peekLabel = 'Show who is working',
+  askCard,
   reducedMotionOverride,
 }: LiveLaneProps) {
   const [peekOpen, setPeekOpen] = useState(false);
@@ -141,7 +151,15 @@ export function LiveLane({
   const reducedMotion = reducedMotionOverride ?? systemReducedMotion;
   const announcement = laneAnnouncement(state, unavailable);
   const empty = state.kind === 'empty';
+  // Two rungs open something over the lane, and they share one popover: the
+  // presence line opens the peek, and the amber Ask grows into its card. Sharing
+  // it is what keeps the 24 px promise — the card is drawn OVER the composer,
+  // never inside the lane, so nothing below it moves when it opens.
   const offersPeek = state.kind === 'presence' && peek !== undefined;
+  const offersAsk = state.kind === 'ask' && askCard !== undefined;
+  const offersPopover = offersPeek || offersAsk;
+  const popoverBody = offersAsk ? askCard : peek;
+  const popoverLabel = offersAsk ? 'Answer this' : peekLabel;
 
   // **Close the peek when its trigger stops existing.** The rung leaves
   // `presence` the moment the work ends, which unmounts the popover — and Radix
@@ -153,8 +171,8 @@ export function LiveLane({
   // component before committing anything, so the correction costs a render pass
   // rather than a frame of the wrong thing — and a `setState` inside an effect
   // is a cascading render the lint rule is right to object to.
-  if (peekOpen && !offersPeek) setPeekOpen(false);
-  const peekIsOpen = peekOpen && offersPeek;
+  if (peekOpen && !offersPopover) setPeekOpen(false);
+  const peekIsOpen = peekOpen && offersPopover;
 
   // Telling the HOST is a side effect and belongs in one. It is what stops
   // `useRoomSessions` staying enabled for the life of the view — the second
@@ -229,12 +247,12 @@ export function LiveLane({
           aria-hidden={empty ? 'true' : undefined}
           className="flex min-w-0 flex-1 items-center"
         >
-          {offersPeek ? (
+          {offersPopover ? (
             <ResponsivePopover open={peekIsOpen} onOpenChange={setPeekOpen}>
               <ResponsivePopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label={peekLabel}
+                  aria-label={popoverLabel}
                   className={cn(
                     'focus-ring flex min-w-0 items-center rounded text-left',
                     // The hover step and its focus-visible twin, per the design
@@ -249,14 +267,15 @@ export function LiveLane({
               <ResponsivePopoverContent
                 side="top"
                 align="start"
-                // The composer keeps the caret. Radix pulls focus into the panel
-                // on open by default, which would take a reader out of a
-                // half-typed message to look at a status readout.
-                onOpenAutoFocus={(event) => event.preventDefault()}
+                // The composer keeps the caret for the PEEK, which is a
+                // readout. The Ask card is the opposite — a person opened it to
+                // answer something — so it takes focus, and its own `A`/`D` keys
+                // only work once it has.
+                onOpenAutoFocus={offersAsk ? undefined : (event) => event.preventDefault()}
                 className="w-88 p-0"
               >
-                <ResponsivePopoverTitle>{peekLabel}</ResponsivePopoverTitle>
-                {peek}
+                <ResponsivePopoverTitle>{popoverLabel}</ResponsivePopoverTitle>
+                {popoverBody}
               </ResponsivePopoverContent>
             </ResponsivePopover>
           ) : (

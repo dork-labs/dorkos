@@ -37,7 +37,7 @@ export { useAnswerAsk } from './model/use-answer-ask';
 export { useAskShortcut } from './model/use-ask-shortcut';
 export { requestAskTray, useAskTrayRequest } from './model/ask-tray-store';
 export { askExitTransition, RESOLVE_HOLD_S, MELT_S } from './model/ask-exit-transition';
-export { askHeadline, agentNameFromCwd } from './lib/ask-headline';
+export { askHeadline } from './lib/ask-headline';
 export { groupAsks } from './lib/group-asks';
 export type { AskGroup } from './lib/group-asks';
 export { formatTimeLeft, formatAskTimeLeft } from './lib/format-time-left';

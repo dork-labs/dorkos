@@ -26,32 +26,23 @@ import {
   presenceSentence,
   type PresenceCopyState,
 } from '@/layers/entities/room';
+import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
+import { agentNameFromCwd, describeInteraction } from '@/layers/entities/attention';
 import type { ConversationCapabilities } from './capabilities';
 
 /**
- * A prompt an agent is parked on, as the lane will read it in P3.
+ * A prompt an agent is parked on, exactly as the fleet-wide stream carries it.
  *
- * **A placeholder, and the rung it types is deliberately unreachable in P2.**
- * The real shape is `InteractionPendingEvent` (`@dorkos/shared/interaction-events`),
- * which does not exist until phase 3 (DOR-1330, task 3.1). Rung 1 of the stack
- * below is written, tested and dead: every host passes {@link NO_ASKS}, so
- * nothing can reach it until task 3.8 seeds the input from
- * `usePendingInteractions()` and swaps this interface for the import. It is here
- * rather than absent so the stack lands complete and the two rungs that must not
- * collapse into each other (`ask` and `turn-waiting`) are both in the tested
- * table from the start.
+ * The wire shape itself, not a view of it: the lane's Ask grows into the same
+ * card the header tray and the transcript draw, and a second shape here would be
+ * one more thing to keep in step for no reader's benefit. What the lane needs
+ * beyond it — what to CALL the agent — comes from the host, because only a host
+ * holds a roster (see {@link LaneStateInput.agentNames}).
  */
-export interface LaneAsk {
-  /** The session whose turn is parked. */
-  sessionId: string;
-  /** The prompt's own id, stable across the pending event and its resolution. */
-  interactionId: string;
-  /** One line naming what is being asked, already phrased. */
-  headline: string;
-}
+export type LaneAsk = InteractionPendingEvent;
 
 /**
- * The empty ask list every host passes in P2.
+ * The empty ask list a surface with no prompts passes.
  *
  * Shared rather than a fresh `[]` per render so a quiet conversation never
  * re-derives its lane for a new array identity.
@@ -128,10 +119,18 @@ export interface LaneStateInput {
   /** What this conversation can do. Five of the ten rungs are gated by it. */
   capabilities: ConversationCapabilities;
   /**
-   * Prompts addressed to this conversation. Always {@link NO_ASKS} in P2 —
-   * see {@link LaneAsk}.
+   * Prompts addressed to this conversation — filtered by the host, by
+   * `sessionId` for a session and by `roomId` for a room.
    */
   asks: readonly LaneAsk[];
+  /**
+   * Session id → what to call its agent, when the host holds a roster.
+   *
+   * The prompt itself carries no name on purpose (a copied name goes stale on a
+   * rename), so a host that knows better says so here and one that does not
+   * leaves it out — the lane then names the agent by its directory.
+   */
+  agentNames?: Readonly<Record<string, string>>;
   /** True when this surface's own event stream has given up. */
   stalled: boolean;
   /** Who is working here, oldest claim first. */
@@ -144,7 +143,15 @@ export interface LaneStateInput {
 
 /** Everything the live lane can be showing. One at a time, always. */
 export type LaneState =
-  | { kind: 'ask'; ask: LaneAsk; count: number }
+  | {
+      kind: 'ask';
+      /** The prompt itself, so the card the lane grows into needs nothing else. */
+      ask: LaneAsk;
+      /** How many prompts this conversation is holding, including this one. */
+      count: number;
+      /** The one line the lane shows: who wants what. */
+      headline: string;
+    }
   | { kind: 'stalled' }
   | {
       kind: 'presence';
@@ -253,7 +260,13 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
 
   // 1. An Ask, which outranks even a stream that has stopped.
   if (capabilities.asks && input.asks.length > 0) {
-    return { kind: 'ask', ask: input.asks[0]!, count: input.asks.length };
+    const ask = input.asks[0]!;
+    return {
+      kind: 'ask',
+      ask,
+      count: input.asks.length,
+      headline: `${input.agentNames?.[ask.sessionId] ?? agentNameFromCwd(ask.cwd)} ${describeInteraction(ask.interaction)}`,
+    };
   }
 
   // 2. A stream this client cannot read.

@@ -66,12 +66,24 @@ const SESSION_CAPABILITIES: ConversationCapabilities = {
 
 const NOW = Date.parse('2026-08-18T10:00:00.000Z');
 
-/** A parked prompt, as P3 will hand one over. */
+/** A parked prompt, exactly as the fleet-wide stream carries one. */
 const ASK: LaneAsk = {
   sessionId: 'session-1',
-  interactionId: 'interaction-1',
-  headline: 'Meeting Notes needs your OK to run pnpm verify',
+  cwd: '/projects/meeting-notes',
+  interaction: {
+    type: 'approval',
+    id: 'interaction-1',
+    startedAt: NOW - 60_000,
+    remainingMs: 540_000,
+    timeoutMs: 600_000,
+    toolName: 'Bash',
+    input: JSON.stringify({ command: 'pnpm verify' }),
+    hasSuggestions: false,
+  },
 };
+
+/** The line the lane builds from it, with no roster to name the agent. */
+const ASK_HEADLINE = 'meeting-notes wants to run "pnpm verify"';
 
 /** One agent working, `minutesIn` minutes ago. */
 function claim(
@@ -133,14 +145,14 @@ describe('deriveLaneState — the priority stack', () => {
       input({ asks: [ASK], stalled: true, presence: [claim('Kai', 2)] })
     );
 
-    expect(state).toEqual({ kind: 'ask', ask: ASK, count: 1 });
+    expect(state).toEqual({ kind: 'ask', ask: ASK, count: 1, headline: ASK_HEADLINE });
   });
 
   it('counts the Asks it is not showing', () => {
-    const second: LaneAsk = { ...ASK, interactionId: 'interaction-2' };
+    const second: LaneAsk = { ...ASK, interaction: { ...ASK.interaction, id: 'interaction-2' } };
     const state = deriveLaneState(input({ asks: [ASK, second] }));
 
-    expect(state).toEqual({ kind: 'ask', ask: ASK, count: 2 });
+    expect(state).toEqual({ kind: 'ask', ask: ASK, count: 2, headline: ASK_HEADLINE });
   });
 
   it('withholds the Ask rung from a conversation that cannot hold one', () => {

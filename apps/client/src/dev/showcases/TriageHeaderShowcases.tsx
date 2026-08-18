@@ -130,6 +130,7 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="border-border/60 w-full rounded-lg border border-dashed p-4">
           <PinnedTriageHeaderView
+            asks={[]}
             approvals={[]}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -143,6 +144,7 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -155,6 +157,7 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
             approvals={[]}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -167,6 +170,7 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -182,6 +186,7 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
             approvals={APPROVALS_OVERFLOWING}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -196,6 +201,7 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -212,6 +218,7 @@ export function TriageHeaderShowcases() {
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
+            asks={[]}
             approvals={[]}
             approvalsUnavailable
             onRetryApprovals={() => {}}

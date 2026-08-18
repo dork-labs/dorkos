@@ -155,6 +155,18 @@ export const SHORTCUTS = {
   DENY_TOOL: { id: 'deny-tool', key: 'esc', label: 'Deny tool', group: 'chat' },
   TOGGLE_OPTION: { id: 'toggle-option', key: '1-9', label: 'Toggle option', group: 'chat' },
   SUBMIT_ANSWER: { id: 'submit-answer', key: 'enter', label: 'Submit answer', group: 'chat' },
+  // The SAME chord as `AGENT_PROFILE`, and deliberately so — see
+  // `features/ask/model/use-ask-shortcut`. While something is actually waiting
+  // on a person, "A" means Answer and this wins; the rest of the time the key is
+  // untouched and the Profile opens exactly as it always has. Both are listed
+  // because the panel is a promise about what a key does, and the honest answer
+  // here has two halves.
+  ANSWER_NEXT_ASK: {
+    id: 'answer-next-ask',
+    key: 'mod+shift+a',
+    label: 'Answer the next thing waiting on you',
+    group: 'chat',
+  },
 
   // Global
   CLOSE_OVERLAY: { id: 'close-overlay', key: 'esc', label: 'Close overlay', group: 'global' },

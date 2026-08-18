@@ -20,7 +20,7 @@ import {
   type RoomEvent,
   type RoomWithRoster,
 } from '@dorkos/shared/room-schemas';
-import { TransportProvider } from '@/layers/shared/model';
+import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { ChannelsPage } from '../ui/ChannelsPage';
 
@@ -120,11 +120,13 @@ function renderPage() {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>
-        <TooltipProvider>
-          <ChannelsPage />
-        </TooltipProvider>
-      </TransportProvider>
+      <EventStreamProvider>
+        <TransportProvider transport={transport}>
+          <TooltipProvider>
+            <ChannelsPage />
+          </TooltipProvider>
+        </TransportProvider>
+      </EventStreamProvider>
     </QueryClientProvider>
   );
 }

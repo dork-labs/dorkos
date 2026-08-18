@@ -128,6 +128,12 @@ const PROVED: Record<string, Prover> = {
 
 /** Shortcuts listed with the module that registers them, not fired here. */
 const DECLARED: Record<string, string> = {
+  // Registered only while something is actually waiting on a person — the
+  // condition IS the design, because the chord otherwise belongs to the Profile
+  // (see `SHORTCUTS.ANSWER_NEXT_ASK`). Proving it here would mean standing up a
+  // query client, a transport and a seeded pending list, which is the whole
+  // provider stack this file exists to avoid.
+  'answer-next-ask': 'features/ask/model/use-ask-shortcut',
   // Opens the palette. Its hook pulls in the URL-backed dialog deep links, so
   // mounting it here would mean standing up the router as well.
   'command-palette': 'features/command-palette/model/use-global-palette',

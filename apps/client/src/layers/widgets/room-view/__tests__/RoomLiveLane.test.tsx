@@ -20,7 +20,7 @@ import { render, screen, act, cleanup, fireEvent, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomEntry, RoomRosterEntry, RoomSignalEvent } from '@dorkos/shared/room-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
 import { useRoomPresenceStore } from '@/layers/entities/room';
 import { RoomLiveLane } from '../ui/RoomLiveLane';
 
@@ -134,17 +134,19 @@ function renderLane(
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <RoomLiveLane
-          room={ROOM_WITH_ROSTER}
-          entries={ENTRIES}
-          laneScope="room"
-          stalled={false}
-          {...props}
-        />
-      </QueryClientProvider>
-    </TransportProvider>
+    <EventStreamProvider>
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <RoomLiveLane
+            room={ROOM_WITH_ROSTER}
+            entries={ENTRIES}
+            laneScope="room"
+            stalled={false}
+            {...props}
+          />
+        </QueryClientProvider>
+      </TransportProvider>
+    </EventStreamProvider>
   );
 }
 

@@ -112,7 +112,7 @@ export function laneAnnouncement(state: LaneState, unavailable: boolean): string
 export function laneMotionKey(state: LaneState): string {
   switch (state.kind) {
     case 'ask':
-      return `ask:${state.ask.interactionId}`;
+      return `ask:${state.ask.interaction.id}`;
     case 'presence':
       return `presence:${state.sentence}`;
     case 'turn-waiting':
@@ -231,7 +231,7 @@ function AskLine({
   return (
     <span data-testid="lane-ask" className="flex min-w-0 items-center gap-2">
       <LaneDot signal="needs-you" reducedMotion={reducedMotion} />
-      <span className="text-foreground truncate">{state.ask.headline}</span>
+      <span className="text-foreground truncate">{state.headline}</span>
       {state.count > 1 && (
         <span aria-hidden="true" className="text-muted-foreground shrink-0 tabular-nums">
           +{state.count - 1}

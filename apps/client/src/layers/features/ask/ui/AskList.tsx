@@ -6,8 +6,7 @@
 import { useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
-import { describeInteraction } from '@/layers/entities/attention';
-import { agentNameFromCwd } from '../lib/ask-headline';
+import { agentNameFromCwd, describeInteraction } from '@/layers/entities/attention';
 import { groupAsks } from '../lib/group-asks';
 import { useAnswerAsk } from '../model/use-answer-ask';
 import { AskStack } from './AskStack';

@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { RoomEntry, RoomRosterEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useRoomPresenceStore } from '@/layers/entities/room';
-import { TransportProvider } from '@/layers/shared/model';
+import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomThreadPanel } from '../ui/RoomThreadPanel';
 import { Conversation } from '@/layers/features/conversation';
@@ -129,16 +129,18 @@ function renderPanel(overrides: Partial<Parameters<typeof RoomThreadPanel>[0]> =
             })
           }
         >
-          <TransportProvider transport={createMockTransport()}>
-            <TooltipProvider>
-              {/* The same conversation the room mounts (`RoomSurface`): its rows read
+          <EventStreamProvider>
+            <TransportProvider transport={createMockTransport()}>
+              <TooltipProvider>
+                {/* The same conversation the room mounts (`RoomSurface`): its rows read
                   capabilities from it, so a bench without one is testing a component
                   in a state the app never puts it in. */}
-              <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
-                {children}
-              </Conversation.Root>
-            </TooltipProvider>
-          </TransportProvider>
+                <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                  {children}
+                </Conversation.Root>
+              </TooltipProvider>
+            </TransportProvider>
+          </EventStreamProvider>
         </QueryClientProvider>
       ),
     }

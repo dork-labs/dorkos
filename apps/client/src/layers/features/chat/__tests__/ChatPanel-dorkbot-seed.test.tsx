@@ -25,6 +25,12 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 
 // The durable stream: attach/connect must never open a real fetch in jsdom.
+// Nothing is waiting on anybody. The lane reads the fleet-wide list now, and a
+// bare render has no global stream behind it.
+vi.mock('@/layers/entities/attention', () => ({
+  usePendingInteractions: () => ({ interactions: [], isLoading: false }),
+}));
+
 vi.mock('@/layers/shared/lib/transport', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/lib/transport');
   return {
