@@ -9,7 +9,7 @@
  * @module dev/showcases/ConversationRowShowcases
  */
 import {
-  ConversationRoot,
+  Conversation,
   DayDivider,
   Message,
   UnreadDivider,
@@ -58,7 +58,7 @@ function BenchRow({
   body?: string;
 }) {
   return (
-    <ConversationRoot
+    <Conversation.Root
       surface={anchor === 'rail' ? 'room' : 'session'}
       capabilities={capabilities}
       anchor={anchor}
@@ -92,7 +92,7 @@ function BenchRow({
           />
         </Message.Body>
       </Message.Root>
-    </ConversationRoot>
+    </Conversation.Root>
   );
 }
 

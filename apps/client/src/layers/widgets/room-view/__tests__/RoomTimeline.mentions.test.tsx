@@ -34,7 +34,7 @@ import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import type { RoomEntry, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { RoomTimeline } from '../ui/RoomTimeline';
 
@@ -166,9 +166,9 @@ function renderTimeline(overrides: Partial<Transport>) {
               {/* The same conversation the room mounts (`RoomSurface`): its rows read
               capabilities from it, so a bench without one is testing a component
               in a state the app never puts it in. */}
-              <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+              <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
                 {children}
-              </ConversationRoot>
+              </Conversation.Root>
             </TooltipProvider>
           </TransportProvider>
         </QueryClientProvider>

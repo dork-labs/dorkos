@@ -25,7 +25,7 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { THREAD_AGENT_ANA, THREAD_AGENT_KAI, THREAD_ROOM_ID } from './room-thread-showcase-data';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 
 /**
@@ -248,7 +248,7 @@ function MomentsSection() {
           <div key={label}>
             <ShowcaseLabel>{label}</ShowcaseLabel>
             <ShowcaseDemo>
-              <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+              <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
                 <RoomMessage
                   roomId={THREAD_ROOM_ID}
                   entry={entry}
@@ -265,7 +265,7 @@ function MomentsSection() {
                   reactionFrequents={[]}
                   grouping={{ position: 'only' }}
                 />
-              </ConversationRoot>
+              </Conversation.Root>
             </ShowcaseDemo>
           </div>
         );
@@ -285,7 +285,7 @@ function NoticesSection() {
         <div key={code}>
           <ShowcaseLabel>{label}</ShowcaseLabel>
           <ShowcaseDemo>
-            <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+            <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
               <RoomMessage
                 roomId={THREAD_ROOM_ID}
                 entry={noticeEntry(code, text)}
@@ -297,7 +297,7 @@ function NoticesSection() {
                 reactionFrequents={[]}
                 grouping={{ position: 'only' }}
               />
-            </ConversationRoot>
+            </Conversation.Root>
           </ShowcaseDemo>
         </div>
       ))}

@@ -15,7 +15,7 @@ import { useState } from 'react';
 import { Button } from '@/layers/shared/ui';
 import type { RoomEntry } from '@/layers/entities/room';
 import { useRoomPresenceStore } from '@/layers/entities/room';
-import { ConversationRoot, ThreadReplyRow } from '@/layers/features/conversation';
+import { Conversation, ThreadReplyRow } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -63,14 +63,14 @@ function ReplyRowDemo({
   return (
     // The row reads its conversation for `capabilities.threads`, so the bench
     // brings the same Root the room mounts rather than a stand-in.
-    <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+    <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
       <ThreadReplyRow
         replies={replies}
         lastReadSeq={lastReadSeq}
         open={open}
         onOpen={() => setOpen((prev) => !prev)}
       />
-    </ConversationRoot>
+    </Conversation.Root>
   );
 }
 
@@ -79,14 +79,14 @@ function GrowingReplyRowDemo() {
   const [replies, setReplies] = useState<RoomEntry[]>(() => threeReplies());
   return (
     <div className="flex flex-col items-start gap-2">
-      <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+      <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
         <ThreadReplyRow
           replies={replies}
           lastReadSeq={null}
           open={false}
           onOpen={() => setReplies((prev) => [...prev, threadReply(ROOT_FOR_ROW, 'and again')])}
         />
-      </ConversationRoot>
+      </Conversation.Root>
       <Button
         variant="outline"
         size="sm"

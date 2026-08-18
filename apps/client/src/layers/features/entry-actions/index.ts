@@ -22,7 +22,6 @@ export { EMOJI_GROUPS, emojiLabel, searchEmoji } from './lib/emoji-catalog';
 export type { RovingGroupHandle } from './model/use-roving-buttons';
 export { EntryActionBar } from './ui/EntryActionBar';
 export type { EntryActionBarHandle, EntryActionBarReactions } from './ui/EntryActionBar';
-export { EntryRunWithMenu } from './ui/EntryRunWithMenu';
 export type { EntryRunWith } from './ui/EntryRunWithMenu';
 export { EntryActionMenu } from './ui/EntryActionMenu';
 export type { EntryActionMenuReactions } from './ui/EntryActionMenu';

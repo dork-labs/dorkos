@@ -1,5 +1,5 @@
 import { SessionMessage } from '@/layers/features/chat/ui/message/SessionMessage';
-import { ConversationRoot, MessageAuthorAvatar } from '@/layers/features/conversation';
+import { Conversation, MessageAuthorAvatar } from '@/layers/features/conversation';
 import { UserMessageContent } from '@/layers/features/chat/ui/message/UserMessageContent';
 import { AssistantMessageContent } from '@/layers/features/chat/ui/message/AssistantMessageContent';
 import { MessageProvider } from '@/layers/features/chat/ui/message/MessageContext';
@@ -266,7 +266,7 @@ export function MessageShowcases() {
           <div key={grouping.position}>
             <ShowcaseLabel>{`User — position: ${grouping.position}`}</ShowcaseLabel>
             <ShowcaseDemo>
-              <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+              <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
                 <SessionMessage
                   message={createUserMessage({
                     content: `Message with position="${grouping.position}"`,
@@ -275,14 +275,14 @@ export function MessageShowcases() {
                   author={HUMAN_AUTHOR}
                   sessionId={MOCK_SESSION_ID}
                 />
-              </ConversationRoot>
+              </Conversation.Root>
             </ShowcaseDemo>
           </div>
         ))}
 
         <ShowcaseLabel>Assistant — position: only</ShowcaseLabel>
         <ShowcaseDemo>
-          <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+          <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
             <SessionMessage
               message={createAssistantMessage({
                 content: 'Here is a short assistant reply.',
@@ -291,12 +291,12 @@ export function MessageShowcases() {
               author={AGENT_AUTHOR}
               sessionId={MOCK_SESSION_ID}
             />
-          </ConversationRoot>
+          </Conversation.Root>
         </ShowcaseDemo>
 
         <ShowcaseLabel>Assistant with tool calls — position: only</ShowcaseLabel>
         <ShowcaseDemo>
-          <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+          <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
             <SessionMessage
               message={createAssistantMessage({
                 content: 'Let me check that file for you.',
@@ -317,20 +317,20 @@ export function MessageShowcases() {
               author={AGENT_AUTHOR}
               sessionId={MOCK_SESSION_ID}
             />
-          </ConversationRoot>
+          </Conversation.Root>
         </ShowcaseDemo>
 
         <ShowcaseLabel>Local command (/context) — prompt + full-width output</ShowcaseLabel>
         <ShowcaseDemo>
-          <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+          <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
             <SessionMessage
               message={createUserMessage({ content: '/context', messageType: 'command' })}
               grouping={{ position: 'first' }}
               author={HUMAN_AUTHOR}
               sessionId={MOCK_SESSION_ID}
             />
-          </ConversationRoot>
-          <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+          </Conversation.Root>
+          <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
             <SessionMessage
               message={createUserMessage({
                 content:
@@ -341,7 +341,7 @@ export function MessageShowcases() {
               author={SYSTEM_AUTHOR}
               sessionId={MOCK_SESSION_ID}
             />
-          </ConversationRoot>
+          </Conversation.Root>
         </ShowcaseDemo>
       </PlaygroundSection>
 

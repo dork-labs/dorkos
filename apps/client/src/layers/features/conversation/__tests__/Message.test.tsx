@@ -16,10 +16,9 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import type { MessageAuthor } from '@/layers/shared/model';
 import type { EntryAction } from '@/layers/features/entry-actions';
 import { Reply } from 'lucide-react';
-import { ConversationRoot } from '../ui/ConversationRoot';
 import { useConversation } from '../model/conversation-context';
 import type { ConversationCapabilities } from '../model/capabilities';
-import { Message } from '../index';
+import { Conversation, Message } from '../index';
 
 // The run-with menu reaches for the router and the session/runtime queries. The
 // question here is whether the row OFFERS it, so the menu itself is stubbed to
@@ -75,7 +74,7 @@ function renderRow(
 ) {
   return render(
     <TooltipProvider>
-      <ConversationRoot
+      <Conversation.Root
         surface="room"
         capabilities={{ ...NOTHING, ...capabilities }}
         anchor={options.anchor ?? 'rail'}
@@ -113,7 +112,7 @@ function renderRow(
             />
           </Message.Body>
         </Message.Root>
-      </ConversationRoot>
+      </Conversation.Root>
     </TooltipProvider>
   );
 }
@@ -212,9 +211,9 @@ describe('useConversation', () => {
 
   it('answers what the host declared', () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <ConversationRoot surface="dm" capabilities={{ ...NOTHING, reactions: true }} anchor="rail">
+      <Conversation.Root surface="dm" capabilities={{ ...NOTHING, reactions: true }} anchor="rail">
         {children}
-      </ConversationRoot>
+      </Conversation.Root>
     );
     const { result } = renderHook(() => useConversation(), { wrapper });
 

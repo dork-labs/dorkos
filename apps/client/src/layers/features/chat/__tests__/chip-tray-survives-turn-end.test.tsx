@@ -27,7 +27,7 @@ import { buildListRows } from '../lib/build-list-rows';
 import { selectRenderedMessages } from '../model/stream/derive-rendered-state';
 import { SessionMessage } from '../ui/message';
 import { useTrayExpansionStore } from '../model/view/use-tray-expansion';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES } from '../config/session-capabilities';
 
 const SESSION_ID = 'session-under-test';
@@ -91,7 +91,7 @@ function Transcript() {
   return (
     // The conversation a session page mounts — the row reads its capabilities
     // from it.
-    <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+    <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
       {rows.map((row) =>
         row.kind === 'message' && row.message.role === 'assistant' ? (
           <div key={row.key} data-testid="assistant-row" data-row-key={row.key}>
@@ -104,7 +104,7 @@ function Transcript() {
           </div>
         ) : null
       )}
-    </ConversationRoot>
+    </Conversation.Root>
   );
 }
 

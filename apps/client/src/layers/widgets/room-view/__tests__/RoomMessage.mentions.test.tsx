@@ -22,7 +22,7 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { RosterAuthor } from '../lib/room-timeline';
 import { RoomMessage } from '../ui/RoomMessage';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
 // A mention pill now reads route state to build its profile link
@@ -140,9 +140,9 @@ function renderRow(target: RoomEntry, authors: ReadonlyMap<string, RosterAuthor>
             {/* The same conversation the room mounts (`RoomSurface`): its rows read
                 capabilities from it, so a bench without one is testing a component
                 in a state the app never puts it in. */}
-            <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+            <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
               {children}
-            </ConversationRoot>
+            </Conversation.Root>
           </TooltipProvider>
         </TransportProvider>
       </QueryClientProvider>

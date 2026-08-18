@@ -19,7 +19,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { PostToRoomResponse } from '@dorkos/shared/room-schemas';
 import type { RoomEntry, RoomWithRoster } from '@/layers/entities/room';
 import { TransportProvider } from '@/layers/shared/model';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES, RoomThreadPanel } from '@/layers/widgets/room-view';
 import { createPlaygroundTransport } from '../playground-transport';
 import { threadEntry, THREAD_REACTION_FREQUENTS, THREAD_ROOM } from './room-thread-showcase-data';
@@ -142,7 +142,7 @@ export function ThreadPanelDemo({
           style={{ height: 480 }}
         >
           {/* The same conversation `RoomSurface` mounts around the panel. */}
-          <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+          <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
             <RoomThreadPanel
               room={room}
               rootEntryId={rootEntryId}
@@ -154,7 +154,7 @@ export function ThreadPanelDemo({
               historyLoaded
               onClose={() => {}}
             />
-          </ConversationRoot>
+          </Conversation.Root>
         </div>
       </QueryClientProvider>
     </TransportProvider>

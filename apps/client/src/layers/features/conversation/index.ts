@@ -20,7 +20,6 @@
  *
  * @module features/conversation
  */
-export { ConversationRoot } from './ui/ConversationRoot';
 export { useConversation } from './model/conversation-context';
 export type { ConversationContextValue } from './model/conversation-context';
 export type { ConversationCapabilities, ConversationSurface } from './model/capabilities';
@@ -37,7 +36,7 @@ export { messageItem, toolStatus } from './ui/message/message-variants';
 export { MessageAuthorAvatar } from './ui/message/MessageAuthorAvatar';
 export type { MessageAuthorAvatarProps } from './ui/message/MessageAuthorAvatar';
 export type { MessagePosition } from './ui/message/message-styles-context';
-export { formatAbsoluteTime, formatTime } from './lib/format-entry-time';
+export { formatTime } from './lib/format-entry-time';
 export { DayDivider } from './ui/rows/DayDivider';
 export { UnreadDivider } from './ui/rows/UnreadDivider';
 export { NoticeRow } from './ui/rows/NoticeRow';
@@ -70,7 +69,9 @@ import { MessageRoot } from './ui/message/MessageRoot';
  * `Timeline`, `Composer` and `Footer` in P4. It is a namespace object rather
  * than six loose exports for the reason `Composer.*` already is one: a host
  * writes `<Conversation.Timeline>` beside `<Conversation.Composer>` and reads
- * the tree it is building.
+ * the tree it is building. It is also the ONLY way in — the provider is not
+ * exported loose beside it, so there is one spelling of `<Conversation.Root>`
+ * in the codebase rather than two.
  */
 export const Conversation = {
   Root: ConversationRoot,

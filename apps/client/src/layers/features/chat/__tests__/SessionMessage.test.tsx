@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render as renderBare, screen, cleanup, act } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES } from '../config/session-capabilities';
 import { SessionMessage } from '../ui/message';
 import { useAppStore } from '@/layers/shared/model';
@@ -19,9 +19,9 @@ import type { MessageAuthor } from '@/layers/shared/model';
  */
 function SessionConversation({ children }: { children: ReactNode }) {
   return (
-    <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+    <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
       {children}
-    </ConversationRoot>
+    </Conversation.Root>
   );
 }
 

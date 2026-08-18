@@ -28,7 +28,7 @@ import { playNotificationSound } from '@/layers/shared/lib';
 import { resolveTransportRetryText } from '../lib/resolve-retry-text';
 import type { MessageListHandle } from './MessageList';
 import type { ComposerInputHandle } from '@/layers/features/composer';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES } from '../config/session-capabilities';
 import { ChatMessageArea } from './ChatMessageArea';
 import { BirthCertificate } from './BirthCertificate';
@@ -393,7 +393,7 @@ export function ChatPanel({
     // The session's conversation, declared once by the surface every session
     // mounts — the route, the Obsidian embed and the dev simulator alike. Every
     // row, and from P2 the live lane, reads what it can do from here.
-    <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+    <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
       <div data-testid="chat-panel" className="flex h-full w-full flex-col">
         <BirthCertificate sessionId={sessionId} />
 
@@ -514,6 +514,6 @@ export function ChatPanel({
           }}
         />
       </div>
-    </ConversationRoot>
+    </Conversation.Root>
   );
 }

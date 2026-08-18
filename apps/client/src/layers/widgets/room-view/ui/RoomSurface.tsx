@@ -13,7 +13,7 @@ import {
   roomDisplayTitle,
   threadRootIdOf,
 } from '@/layers/entities/room';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
@@ -349,7 +349,7 @@ export function RoomSurface({
   // real drill-in both ways.
   if (isMobile) {
     return (
-      <ConversationRoot {...conversation}>
+      <Conversation.Root {...conversation}>
         <AnimatePresence initial={false} mode="wait">
           <motion.div
             key={panel ? `thread-${openThreadId}` : 'room'}
@@ -381,16 +381,16 @@ export function RoomSurface({
             {panel === false ? roomColumn : panel}
           </motion.div>
         </AnimatePresence>
-      </ConversationRoot>
+      </Conversation.Root>
     );
   }
 
   return (
-    <ConversationRoot {...conversation}>
+    <Conversation.Root {...conversation}>
       <div className="flex h-full overflow-hidden">
         {roomColumn}
         {panel}
       </div>
-    </ConversationRoot>
+    </Conversation.Root>
   );
 }

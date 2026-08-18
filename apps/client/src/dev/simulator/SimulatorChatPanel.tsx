@@ -1,5 +1,5 @@
 import { MessageList } from '@/layers/features/chat/ui/MessageList';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES } from '@/layers/features/chat';
 import { MessageCircle } from 'lucide-react';
 import type { TextEffectConfig } from '@/layers/shared/lib';
@@ -25,7 +25,7 @@ export function SimulatorChatPanel({ sim, textEffect }: SimulatorChatPanelProps)
             </div>
           </div>
         ) : (
-          <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+          <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
             <MessageList
               messages={sim.messages}
               sessionId="simulator-session"
@@ -36,7 +36,7 @@ export function SimulatorChatPanel({ sim, textEffect }: SimulatorChatPanelProps)
               onRetry={() => {}}
               textEffect={textEffect}
             />
-          </ConversationRoot>
+          </Conversation.Root>
         )}
       </div>
 

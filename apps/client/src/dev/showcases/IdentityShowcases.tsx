@@ -14,7 +14,7 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { MOCK_IDENTITIES, type MockIdentity } from '../mock-samples';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 
 /**
@@ -195,7 +195,7 @@ function MentionInAMessageSection() {
       <ShowcaseDemo>
         <QueryClientProvider client={client}>
           <AgentInfoProvider known={BENCH_DIRECTORY}>
-            <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+            <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
               <RoomMessage
                 roomId="bench-room"
                 entry={BENCH_ENTRY}
@@ -207,7 +207,7 @@ function MentionInAMessageSection() {
                 reactionFrequents={[]}
                 grouping={{ position: 'only' }}
               />
-            </ConversationRoot>
+            </Conversation.Root>
           </AgentInfoProvider>
         </QueryClientProvider>
       </ShowcaseDemo>

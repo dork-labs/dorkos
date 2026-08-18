@@ -10,7 +10,7 @@ import { useRoomPresenceStore } from '@/layers/entities/room';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomThreadPanel } from '../ui/RoomThreadPanel';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
 // The entry rows inside the panel read route state to decide where an author
@@ -134,9 +134,9 @@ function renderPanel(overrides: Partial<Parameters<typeof RoomThreadPanel>[0]> =
               {/* The same conversation the room mounts (`RoomSurface`): its rows read
                   capabilities from it, so a bench without one is testing a component
                   in a state the app never puts it in. */}
-              <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+              <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
                 {children}
-              </ConversationRoot>
+              </Conversation.Root>
             </TooltipProvider>
           </TransportProvider>
         </QueryClientProvider>

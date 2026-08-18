@@ -6,7 +6,7 @@ import type { ToolCallPart } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
 import { SessionMessage } from '../../message';
 import type { MessageAuthor } from '@/layers/shared/model';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES } from '../../../config/session-capabilities';
 
 // Streamdown pulls in a full markdown pipeline this suite has no use for.
@@ -61,14 +61,14 @@ function renderQuestionPart(overrides: Partial<ToolCallPart>) {
     <TransportProvider transport={createMockTransport()}>
       {/* The conversation a session page mounts — the row reads its
           capabilities from it. */}
-      <ConversationRoot surface="session" capabilities={SESSION_CAPABILITIES}>
+      <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
         <SessionMessage
           message={message}
           sessionId="s1"
           grouping={{ position: 'only' }}
           author={AGENT}
         />
-      </ConversationRoot>
+      </Conversation.Root>
     </TransportProvider>
   );
 }

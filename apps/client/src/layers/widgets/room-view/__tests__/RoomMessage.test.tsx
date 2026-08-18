@@ -11,7 +11,7 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { MessageGrouping } from '@/layers/shared/model';
 import { RoomMessage } from '../ui/RoomMessage';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
 // The row reads route state to decide where its author face and its mention
@@ -176,9 +176,9 @@ function renderRow(
             {/* The same conversation the room mounts (`RoomSurface`): its rows read
                 capabilities from it, so a bench without one is testing a component
                 in a state the app never puts it in. */}
-            <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+            <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
               {children}
-            </ConversationRoot>
+            </Conversation.Root>
           </TooltipProvider>
         </TransportProvider>
       </QueryClientProvider>
@@ -815,9 +815,9 @@ describe('RoomMessage — the origin mark beside an entry (chats-as-channels spe
                 {/* The same conversation the room mounts (`RoomSurface`): its rows read
                     capabilities from it, so a bench without one is testing a component
                     in a state the app never puts it in. */}
-                <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
                   {children}
-                </ConversationRoot>
+                </Conversation.Root>
               </TooltipProvider>
             </TransportProvider>
           </QueryClientProvider>

@@ -31,7 +31,7 @@ import { agentFacesByRef, type RosterAgentInfo } from '../lib/agent-details';
 import type { RosterAuthor } from '../lib/room-timeline';
 import { AgentInfoProvider, type RoomAgentDirectory } from '../model/agent-info-context';
 import { RoomMessage } from '../ui/RoomMessage';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
 beforeAll(() => {
@@ -166,9 +166,9 @@ function renderMention(text: string, spans: MentionSpan[], fleet: RoomAgentDirec
               <harness.Wrapper>
                 <AgentInfoProvider known={fleet}>
                   {/* The same conversation the room mounts (`RoomSurface`). */}
-                  <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+                  <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
                     {children}
-                  </ConversationRoot>
+                  </Conversation.Root>
                 </AgentInfoProvider>
               </harness.Wrapper>
             </TooltipProvider>

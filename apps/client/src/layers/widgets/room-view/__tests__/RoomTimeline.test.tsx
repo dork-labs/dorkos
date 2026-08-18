@@ -9,7 +9,7 @@ import type { AuthorOrigin, RoomEntry, RoomRosterEntry } from '@dorkos/shared/ro
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { authorColor } from '@/layers/entities/room';
-import { ConversationRoot } from '@/layers/features/conversation';
+import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { RoomTimeline } from '../ui/RoomTimeline';
 import { unreadPlacement } from '@/layers/shared/lib';
@@ -115,9 +115,9 @@ function Wrapper({ children }: { children: React.ReactNode }) {
           {/* The same conversation the room mounts (`RoomSurface`): its rows read
               capabilities from it, so a bench without one is testing a component
               in a state the app never puts it in. */}
-          <ConversationRoot surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+          <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
             {children}
-          </ConversationRoot>
+          </Conversation.Root>
         </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
