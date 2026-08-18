@@ -34,10 +34,16 @@ export {
   rekeyProjector,
   onProjectorRekey,
   onProjectorStatusChange,
+  onProjectorInteractionChange,
+  listPendingInteractionsAcrossSessions,
   setSessionEventStore,
   getSessionEventStore,
 } from './session-state-projector.js';
-export type { RawSessionEvent, ProjectorStatusUpdate } from './session-state-projector.js';
+export type {
+  RawSessionEvent,
+  ProjectorStatusUpdate,
+  InteractionChange,
+} from './session-state-projector.js';
 export { persistenceModeFor } from './projector-persistence.js';
 export type { ProjectorPersistenceMode } from './projector-persistence.js';
 export { EventLog, EVENT_LOG_MAX_EVENTS } from './event-log.js';

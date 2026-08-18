@@ -319,6 +319,95 @@ function notifyStatusChange(projector: SessionStateProjector, retiredSessionId?:
 }
 
 /**
+ * One projector starting or stopping holding a prompt only a person can answer.
+ *
+ * `pending` carries the whole DTO because the card that draws it is the card the
+ * per-session stream already draws; `resolved` carries the id and how it ended,
+ * because that is all a receipt needs.
+ */
+export type InteractionChange =
+  | { type: 'pending'; sessionId: string; cwd: string; interaction: PendingInteractionDTO }
+  | {
+      type: 'resolved';
+      sessionId: string;
+      interactionId: string;
+      outcome: 'answered' | 'cancelled' | 'expired';
+    };
+
+/** Notified when a projector starts or stops holding a pending interaction. */
+type InteractionChangeListener = (change: InteractionChange) => void;
+
+/** Global interaction listeners (registry-level, not per-projector). */
+const interactionChangeListeners = new Set<InteractionChangeListener>();
+
+/**
+ * Subscribe to interaction transitions across every live projector.
+ *
+ * The seam that lets the Ask reach the whole cockpit without the projector
+ * knowing a fan-out exists: it imports no transport today, is unit-tested in
+ * isolation, and this keeps both true. The broadcaster subscribes here and turns
+ * each change into an `interaction_pending` / `interaction_resolved` on the
+ * global stream.
+ *
+ * Runtime-agnostic on purpose. `trackInteraction` folds the blocking events of
+ * ANY runtime, so Codex and OpenCode raise an Ask through this seam with no
+ * adapter work at all.
+ *
+ * @param listener - Receives every pending and resolved transition.
+ * @returns Unsubscribe function.
+ */
+export function onProjectorInteractionChange(listener: InteractionChangeListener): () => void {
+  interactionChangeListeners.add(listener);
+  return () => interactionChangeListeners.delete(listener);
+}
+
+/**
+ * Tell every interaction listener about one transition (throw-isolated).
+ *
+ * Isolated for the same reason {@link notifyStatusChange} is: a listener that
+ * throws must not break the fold that was mid-flight when it did. A broken
+ * broadcast costs one card its liveness; a broken projection costs the session.
+ */
+function notifyInteractionChange(change: InteractionChange): void {
+  if (interactionChangeListeners.size === 0) return;
+  for (const listener of interactionChangeListeners) {
+    try {
+      listener(change);
+    } catch (err) {
+      logger.warn('[SessionStateProjector] interaction-change listener threw', {
+        sessionId: change.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
+
+/**
+ * How an `interaction_resolved` ended, in the three words a receipt can say.
+ *
+ * The stream's own five resolutions collapse to three because that is what a
+ * card has to draw: a person answered it, it stopped mattering, or the clock
+ * answered instead. `approved`, `denied` and `answered` are all "a person
+ * answered"; the receipt line that follows reads the transcript's own record for
+ * WHICH, and this is only deciding whether to say "already answered" or
+ * "no longer needed".
+ *
+ * A resolution with no outcome at all — the stream's generic clear — is
+ * `cancelled` rather than `answered`, because nobody can say a person did
+ * anything. "No longer needed" is the honest thing to put on a card whose
+ * request quietly went away.
+ *
+ * @param resolution - The resolution the stream carried, when it carried one.
+ */
+function askOutcomeOf(
+  resolution: 'approved' | 'denied' | 'answered' | 'expired' | 'cancelled' | undefined
+): 'answered' | 'cancelled' | 'expired' {
+  if (resolution === 'expired') return 'expired';
+  if (resolution === undefined || resolution === 'cancelled') return 'cancelled';
+  return 'answered';
+}
+
+/**
  * Sentinel resolved into a {@link SessionStateProjector.subscribe} wait when its
  * {@link AbortSignal} fires. Distinct from any {@link SessionEvent} (which always
  * carries a `seq`), so the generator can tell an abort from a real event.
@@ -824,7 +913,21 @@ export class SessionStateProjector {
         // resolution alone cannot say whether a `expired` was a permission
         // prompt or a question.
         this.backfillResolution(event);
-        this.untrackInteraction(event.id);
+        // Read whether this projector was actually holding it BEFORE the drop:
+        // a double-resolve (a stale click, a retried request) must not tell the
+        // fleet a second time about a card every window has already retired.
+        {
+          const wasHeld = this.interactions.has(event.id);
+          this.untrackInteraction(event.id);
+          if (wasHeld) {
+            notifyInteractionChange({
+              type: 'resolved',
+              sessionId: this.sessionId,
+              interactionId: event.id,
+              outcome: askOutcomeOf(event.resolution),
+            });
+          }
+        }
         break;
       default:
         break;
@@ -1111,12 +1214,44 @@ export class SessionStateProjector {
     const { type, seq, id, startedAt, remainingMs, ...snapshot } = event;
     void seq;
     void remainingMs;
-    this.interactions.set(id, {
+    const entry = {
       type: this.interactionKind(type),
       startedAt,
       snapshot,
-    });
+    };
+    this.interactions.set(id, entry);
     this.status.lifecycle = 'blocked';
+    // AFTER the set, and that ordering is load-bearing: a listener that reads
+    // this projector back — the fan-out's room join does — must find the entry
+    // already there. It is also what puts `interaction_pending` on the global
+    // stream ahead of the per-session event, which `project()` has not yet
+    // logged, buffered or handed to a subscriber.
+    //
+    // The DTO comes from the canonical selector, on a map of this one entry, so
+    // the `remainingMs` on the wire is computed exactly as the recovery
+    // snapshot's is. An entry that is somehow already past its budget (a replay
+    // of an old event) yields nothing here rather than a card that is born dead.
+    const [dto] = listPendingInteractions(new Map([[id, entry]]), Date.now());
+    if (dto === undefined) return;
+    // A session whose directory nobody stamped cannot be deep-linked or named
+    // from its path, which are the two things `cwd` is on the wire for. Every
+    // turn that can raise a prompt was started with one, so this is a "should
+    // not happen" — and it says so out loud rather than dropping an Ask into
+    // silence, because the fleet-wide card is the only place a person who is not
+    // looking at this session would ever see it.
+    if (this.cwd === undefined) {
+      logger.warn('[SessionStateProjector] a prompt was raised on a session with no cwd', {
+        sessionId: this.sessionId,
+        interactionId: id,
+      });
+      return;
+    }
+    notifyInteractionChange({
+      type: 'pending',
+      sessionId: this.sessionId,
+      cwd: this.cwd,
+      interaction: dto,
+    });
   }
 
   /** Map a session-event interaction type to the pending-map discriminator. */
@@ -1216,6 +1351,23 @@ export class SessionStateProjector {
       // here (DOR-1100) — and with nothing left to watch there is nothing left to
       // arm (DOR-1104).
       this.cancelSubagentExpiry();
+      // Whatever this turn was parked on is not going to be answered: the turn
+      // is gone and nothing will ever ingest its resolution. Every card for it
+      // becomes "no longer needed" rather than a button that does nothing.
+      //
+      // The set itself is deliberately NOT emptied — {@link hasPendingInteractions}
+      // bounds a stranded entry by its own expiry, and clearing it here would
+      // change the watchdog and lock semantics this path documents. So a late
+      // resolution for one of these can still arrive and be told to the fleet a
+      // second time; removing an id twice is a no-op on every reader.
+      for (const dto of this.getPendingInteractions()) {
+        notifyInteractionChange({
+          type: 'resolved',
+          sessionId: this.sessionId,
+          interactionId: dto.id,
+          outcome: 'cancelled',
+        });
+      }
       // This path mutates lifecycle WITHOUT an ingest, so fan out here — and
       // through the activity path, so an armed trailing flush cannot land after
       // it and re-assert the tool this just cleared.
@@ -1889,6 +2041,45 @@ export function listProjectorStatuses(): ProjectorStatusUpdate[] {
     cwd: projector.cwd,
     status: projector.getStatus(),
   }));
+}
+
+/**
+ * Every pending interaction across every live projector, with
+ * server-authoritative `remainingMs` and expired entries excluded.
+ *
+ * The standing counterpart to {@link onProjectorInteractionChange}, exactly as
+ * {@link listProjectorStatuses} is to {@link onProjectorStatusChange}: the
+ * listener reports transitions, and a window that opened afterwards has
+ * witnessed none of them. This is what it reads on mount.
+ *
+ * Expiry is not recomputed here. Each projector answers through
+ * {@link SessionStateProjector.getPendingInteractions}, which delegates to the
+ * canonical `listPendingInteractions` selector, so the rule about what counts as
+ * still-live is defined exactly once and this cannot fork it.
+ *
+ * A session whose directory was never stamped is skipped, for the same reason
+ * the live path skips it: `cwd` is the deep link and the name fallback, and
+ * there is nothing honest to put there.
+ *
+ * **Bounded exactly as {@link listProjectorStatuses} is**: a projector lives
+ * until its session is evicted or the process restarts, so this answers for the
+ * recent fleet and never for all history. That is the same bound the live
+ * fan-out has always had.
+ *
+ * @param now - Server epoch ms to evaluate each countdown against.
+ */
+export function listPendingInteractionsAcrossSessions(
+  now: number = Date.now()
+): Array<{ sessionId: string; cwd: string; interaction: PendingInteractionDTO }> {
+  const out: Array<{ sessionId: string; cwd: string; interaction: PendingInteractionDTO }> = [];
+  for (const [sessionId, projector] of projectors) {
+    const { cwd } = projector;
+    if (cwd === undefined) continue;
+    for (const interaction of projector.getPendingInteractions(now)) {
+      out.push({ sessionId, cwd, interaction });
+    }
+  }
+  return out;
 }
 
 /**
