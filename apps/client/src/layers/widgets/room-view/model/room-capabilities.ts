@@ -32,6 +32,7 @@ export const ROOM_CAPABILITIES: ConversationCapabilities = {
   runWith: false,
   attachments: true,
   mentions: true,
+  streamHealth: true,
   presence: true,
   turnStatus: false,
   asks: true,

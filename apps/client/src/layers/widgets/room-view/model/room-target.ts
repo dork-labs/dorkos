@@ -189,7 +189,6 @@ export function useRoomTarget(input: RoomTargetInput): RoomTarget {
       send,
       // No `queue`: a room has no queue, and the composer draws no queue chrome
       // at all rather than a disabled one.
-      queueDepth: 0,
       attachments: port,
     }),
     [room, threadRootId, isMember, port, send]

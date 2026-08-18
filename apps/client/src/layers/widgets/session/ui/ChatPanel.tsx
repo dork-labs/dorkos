@@ -444,7 +444,6 @@ export function ChatPanel({
     placeholder: defaultPlaceholder,
     submit: submitContent,
     enqueue: enqueueContent,
-    queueDepth: waiting.length,
     files: fileUpload,
   });
 
@@ -459,8 +458,6 @@ export function ChatPanel({
     operationProgress,
     systemStatus,
     activity,
-    connection: syncConnectionState,
-    queueDepth: waiting.length,
   });
 
   return (

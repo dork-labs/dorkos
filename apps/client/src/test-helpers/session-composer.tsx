@@ -102,7 +102,6 @@ export function SessionComposerBench({
     placeholder: 'Send a message...',
     submit: () => props.handleSubmit(),
     enqueue: props.enqueueContent,
-    queueDepth: held.length,
     files,
   });
   return (

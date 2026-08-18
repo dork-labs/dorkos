@@ -1,9 +1,8 @@
 /**
  * Where a conversation's words go when you press Enter.
  *
- * `Conversation.Composer` is what consumes it; the live lane reads
- * {@link ConversationTarget.queueDepth} for its "1 queued" rung, and anything
- * that has to address the conversation reads `id`.
+ * `Conversation.Composer` is what consumes it; anything that has to address the
+ * conversation reads `id`.
  *
  * It is a PORT, not a store: each host widget implements it over whatever it
  * already has (`useChatSession` for a session, the room's post mutation for a
@@ -104,8 +103,6 @@ export interface ConversationTarget {
    * when this is undefined rather than showing a disabled one.
    */
   queue?(draft: ConversationDraft): Promise<void>;
-  /** How many drafts are already held. `0` when `queue` is absent. */
-  readonly queueDepth: number;
   /** Staged files, or `null` when `capabilities.attachments` is false. */
   readonly attachments: ConversationAttachmentPort | null;
 }

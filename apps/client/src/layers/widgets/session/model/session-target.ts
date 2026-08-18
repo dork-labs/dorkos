@@ -33,8 +33,6 @@ export interface SessionTargetInput {
   submit: (content: string) => void;
   /** Hold these words for the current turn instead. Resolves once the server has them. */
   enqueue: (content: string) => Promise<boolean>;
-  /** How many messages are genuinely waiting on the server's queue. */
-  queueDepth: number;
   /** The staged files, and what can be done to them. */
   files: {
     pendingFiles: PendingFile[];
@@ -59,7 +57,7 @@ export interface SessionTargetInput {
  * @returns The target the conversation publishes to its composer.
  */
 export function useSessionTarget(input: SessionTargetInput): ConversationTarget {
-  const { sessionId, placeholder, queueDepth, files } = input;
+  const { sessionId, placeholder, files } = input;
 
   /**
    * What the port's actions, `send` and `queue` read at the moment they RUN.
@@ -132,9 +130,8 @@ export function useSessionTarget(input: SessionTargetInput): ConversationTarget 
       canSend: true,
       send,
       queue,
-      queueDepth,
       attachments,
     }),
-    [sessionId, placeholder, queueDepth, attachments, send, queue]
+    [sessionId, placeholder, attachments, send, queue]
   );
 }

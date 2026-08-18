@@ -68,6 +68,7 @@ const NOTHING: ConversationCapabilities = {
   runWith: false,
   attachments: false,
   mentions: false,
+  streamHealth: false,
   presence: false,
   turnStatus: false,
   asks: false,

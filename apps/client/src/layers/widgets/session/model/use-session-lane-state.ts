@@ -10,7 +10,7 @@
  * @module widgets/session/model/use-session-lane-state
  */
 import { useEffect, useRef, useState } from 'react';
-import type { ConnectionState, PermissionMode } from '@dorkos/shared/types';
+import type { PermissionMode } from '@dorkos/shared/types';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import {
   deriveLaneState,
@@ -55,28 +55,6 @@ export interface SessionLaneInput {
   systemStatus?: SystemStatusState | null;
   /** What this session is doing, from the fleet-wide reading. */
   activity: SessionActivity | null;
-  /**
-   * How this window's connection to the session's stream is doing.
-   *
-   * Rung 2. P2 left it hard-coded `false` and gave the decision to P4, because
-   * `ChatStatusSection` already reports the connection inside the composer card
-   * and two lines saying one thing is the duplication this programme removes.
-   * P4's answer: they are not the same sentence. The status line says what the
-   * CONNECTION is doing, as one chip among the model, the mode and the branch;
-   * the lane says the conversation has stopped hearing, in the one place a
-   * reader looks before pressing Enter. A room draws exactly that, from the same
-   * rung, and a session that stayed silent about it would be the odd one out.
-   */
-  connection: ConnectionState;
-  /**
-   * How many messages are waiting on the server's queue.
-   *
-   * Rung 5, and P4 is where its source arrived: `ConversationTarget.queueDepth`.
-   * It outlives the composer's own queue panel, which is unmounted for the whole
-   * time a prompt has taken the box — the one moment a person most wants to know
-   * their queued messages are still there.
-   */
-  queueDepth: number;
 }
 
 /** Format a token count for display (e.g. 3200 -> "~3.2k tokens"). */
@@ -95,17 +73,21 @@ function formatTokens(count: number): string {
  * that — so the last reading is snapshotted while the turn runs and dismissed on
  * a timer afterwards. Everything else here is a straight read.
  *
- * **Three of the lane's ten rungs are deliberately dark on this surface**, and
- * each has a reason rather than a gap:
+ * **Two of the lane's nine rungs are deliberately dark on this surface**, and
+ * each is a decision rather than a gap:
  *
- * - `ask` — its input does not exist until P3 (DOR-1330); see `LaneAsk`.
- * **One of the ten rungs is deliberately dark on this surface.** `ask` draws
- * nothing here: the prompt already has a live card in the composer's own slot,
- * which is where a person answers it, and a receipt row in the transcript where
- * it was asked. A third line six pixels above the card it duplicates is the
- * noise this programme exists to remove — see `ChatPanel`, which passes
- * `NO_ASKS` and says so at length. The room's lane, which has no inline card,
- * draws it.
+ * - `ask` draws nothing here: the prompt already has a live card in the
+ *   composer's own slot, which is where a person answers it, and a receipt row
+ *   in the transcript where it was asked. A third line six pixels above the card
+ *   it duplicates is the noise this programme exists to remove — see
+ *   `ChatPanel`, which passes `NO_ASKS` and says so at length. The room's lane,
+ *   which has no inline card, draws it.
+ * - `stalled` draws nothing here either: `ChatStatusSection`'s connection chip,
+ *   under the same box, is the cockpit's app-wide home for connection health,
+ *   and two alarms about one fact teach people to read neither. The lane's
+ *   sentence is a room's vocabulary anyway — a session has a turn, not new
+ *   messages that have stopped coming through. `SESSION_CAPABILITIES` says so
+ *   with `streamHealth: false`, and `deriveLaneState` is where that is read.
  *
  * @param input - The session's own state.
  * @returns What the lane should say right now.
@@ -158,11 +140,10 @@ export function useSessionLaneState(input: SessionLaneInput): LaneState {
   return deriveLaneState({
     capabilities: SESSION_CAPABILITIES,
     asks: input.asks ?? NO_ASKS,
-    // A connection that has given up, or is trying to come back. `connecting`
-    // is the opening handshake and says nothing worth a line.
-    stalled: input.connection === 'disconnected' || input.connection === 'reconnecting',
+    // Never from here: `SESSION_CAPABILITIES.streamHealth` is false, and the
+    // status chip under the box is where a session reports its connection.
+    stalled: false,
     presence: NO_PRESENCE,
-    queueDepth: input.queueDepth,
     turn: {
       status: input.status,
       isWaitingForUser: input.isWaitingForUser,

@@ -23,6 +23,7 @@ export const SESSION_CAPABILITIES: ConversationCapabilities = {
   runWith: true,
   attachments: true,
   mentions: false,
+  streamHealth: false,
   presence: false,
   turnStatus: true,
   asks: true,

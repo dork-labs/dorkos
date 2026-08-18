@@ -34,7 +34,6 @@ function input(overrides: Partial<SessionTargetInput> = {}): SessionTargetInput 
     placeholder: 'Message DorkBot…',
     submit: vi.fn(),
     enqueue: vi.fn(async () => true),
-    queueDepth: 0,
     files: {
       pendingFiles: NOTHING_STAGED,
       addFiles: ADD_FILES,

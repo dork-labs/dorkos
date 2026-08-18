@@ -21,6 +21,7 @@ const BASE: ConversationCapabilities = {
   runWith: false,
   attachments: false,
   mentions: false,
+  streamHealth: false,
   presence: false,
   turnStatus: false,
   asks: false,
@@ -34,7 +35,6 @@ function target(overrides: Partial<ConversationTarget> = {}): ConversationTarget
     placeholder: 'Message #mio…',
     canSend: true,
     send: vi.fn(async () => {}),
-    queueDepth: 0,
     attachments: null,
     ...overrides,
   };
@@ -95,7 +95,7 @@ describe('Conversation.Composer', () => {
   it('draws the queue chrome on a surface that has a queue', () => {
     mount(
       { queue: <p data-testid="queue-panel">1 queued</p> },
-      { target: target({ kind: 'session', queue: vi.fn(async () => {}), queueDepth: 1 }) }
+      { target: target({ kind: 'session', queue: vi.fn(async () => {}) }) }
     );
 
     expect(screen.getByTestId('queue-panel')).toHaveTextContent('1 queued');

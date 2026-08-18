@@ -166,11 +166,9 @@ export function RoomLiveLane({
         agentNames: askAgentNames,
         stalled,
         presence,
-        // A room has no turn of its own and no composer queue: `turnStatus` is
-        // off in its capability table, and the queue's source is the
-        // `ConversationTarget` P4 introduces.
+        // A room has no turn of its own: `turnStatus` is off in its capability
+        // table.
         turn: null,
-        queueDepth: 0,
       }),
     [asks, askAgentNames, presence, stalled]
   );
