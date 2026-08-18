@@ -155,8 +155,10 @@ let mockApprovalsError = false;
 // The queue itself is an ENTITY now, so its stub lives on the entity — the
 // approvals feature owns the cards it is rendered into and nothing else.
 vi.mock('@/layers/entities/attention', () => ({
-  // Nothing waiting on anybody: the tray and the pill both read this list now.
+  // Nothing waiting on anybody, and nothing on its way out: the tray and the
+  // pill both read these now.
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
+  useSettlingAsks: () => [],
   usePendingApprovals: () => ({
     approvals: mockPendingApprovals,
     isLoading: false,

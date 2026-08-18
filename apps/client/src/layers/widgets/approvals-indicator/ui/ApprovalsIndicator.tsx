@@ -9,7 +9,11 @@ import {
 } from '@/layers/shared/ui';
 import { useEventStream } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
-import { usePendingApprovals, usePendingInteractions } from '@/layers/entities/attention';
+import {
+  usePendingApprovals,
+  usePendingInteractions,
+  useSettlingAsks,
+} from '@/layers/entities/attention';
 import { AskList, useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
 import {
   ApprovalList,
@@ -111,6 +115,11 @@ export function ApprovalsIndicator() {
   // The other half of "waiting on you": the prompts agents are parked on. Both
   // are counted by the one pill, because a person does not hold two queues.
   const { interactions: asks } = usePendingInteractions();
+  // Answered prompts, still on screen saying how they ended. They are NOT
+  // counted — nothing is waiting on them — but the pill has to stay mounted
+  // while one is being said, or the receipt is torn away in the frame it
+  // appears and the answer looks like a disappearance.
+  const settling = useSettlingAsks();
   // `⌘⇧A`, registered here because this widget is on every route and the tray it
   // opens is the surface that exists everywhere. It claims the chord only while
   // something is waiting — see {@link useAskShortcut}.
@@ -141,7 +150,12 @@ export function ApprovalsIndicator() {
   // amber marker in the header meaning exactly one thing: an agent is blocked.
   const linkDown = connectionState !== 'connected';
   const unreadable = count === 0 && isError && !linkDown;
-  const quiet = count === 0 && trustedCount === 0 && !unreadable && !permissionsUnreadable;
+  const quiet =
+    count === 0 &&
+    settling.length === 0 &&
+    trustedCount === 0 &&
+    !unreadable &&
+    !permissionsUnreadable;
   // Trust that is live is worth showing and is NOT worth an alarm: nobody is
   // blocked and nothing is waiting. It takes the amber pill only when something
   // actually needs answering, and reads as a quiet neutral marker otherwise.
@@ -269,7 +283,7 @@ export function ApprovalsIndicator() {
                   capability approval's is two hours, so this IS time-left
                   order — and the two lists stay separate objects, which is the
                   decision §4.3 makes and this renders. */}
-              {asks.length > 0 && <AskList asks={asks} />}
+              {(asks.length > 0 || settling.length > 0) && <AskList asks={asks} />}
               {approvals.length > 0 && <ApprovalList approvals={approvals} />}
 
               {/* A permission list that cannot be read is NOT the same as no

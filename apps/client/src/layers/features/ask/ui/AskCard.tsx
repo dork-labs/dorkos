@@ -18,6 +18,7 @@ import { useCallback, type KeyboardEvent, type ReactNode, type Ref } from 'react
 import { motion, useReducedMotion } from 'motion/react';
 import { Check, X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { askExitTransition } from '../model/ask-exit-transition';
 import {
   AgentAvatar,
   useAgentVisual,
@@ -148,6 +149,20 @@ export function AskCardRoot({
   return (
     <motion.div
       ref={ref}
+      // How it LEAVES, which is as load-bearing as how it arrives: an answered
+      // card holds its receipt long enough to read and only then melts. Reduced
+      // motion drops the melt and keeps the hold, because a receipt nobody had
+      // time to read is not a calmer interface, it is a missing one. The card
+      // needs the clip or its text spills over the row beneath on the way out.
+      exit={{
+        opacity: 0,
+        height: 0,
+        overflow: 'hidden',
+        transition: askExitTransition({
+          decided: isResolved,
+          reducedMotion: reducedMotion === true,
+        }),
+      }}
       data-slot="ask-card"
       // Mirrors the reduced-motion branch onto the DOM, because the test harness
       // strips motion props — the same trick the live lane uses.

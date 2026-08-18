@@ -12,7 +12,11 @@
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
-import { PENDING_INTERACTIONS_QUERY_KEY, recordAskReceipt } from '@/layers/entities/attention';
+import {
+  PENDING_INTERACTIONS_QUERY_KEY,
+  recordAskReceipt,
+  settleAsk,
+} from '@/layers/entities/attention';
 import { useTransport } from '@/layers/shared/model';
 import { describeDecisionRefusal } from '@/layers/shared/lib';
 
@@ -52,17 +56,26 @@ export function useAnswerAsk(): AnswerAskState {
   const [error, setError] = useState<string | null>(null);
 
   const send = useCallback(
-    async (ids: string[], run: () => Promise<unknown>, decision: AskAnswer) => {
+    async (
+      answered: readonly InteractionPendingEvent[],
+      run: () => Promise<unknown>,
+      decision: AskAnswer
+    ) => {
+      const ids = answered.map((ask) => ask.interaction.id);
       setIsAnswering(true);
       setError(null);
       const resolvedAt = new Date().toISOString();
-      for (const id of ids) {
-        recordAskReceipt(id, {
+      for (const ask of answered) {
+        recordAskReceipt(ask.interaction.id, {
           outcome: 'answered',
           resolvedAt,
           byThisWindow: true,
           decision: decision === 'allow' ? 'allowed' : 'denied',
         });
+        // Keep it drawn while it says so. Without this the refetch below takes
+        // the card away in the same frame the answer lands, which is the
+        // disappearance the design rules out.
+        settleAsk(ask);
       }
       try {
         await run();
@@ -84,7 +97,7 @@ export function useAnswerAsk(): AnswerAskState {
       const { sessionId, interaction } = ask;
       const allow = decision === 'allow';
       await send(
-        [interaction.id],
+        [ask],
         () => {
           if (interaction.type === 'question') {
             // A question has no yes/no. "Deny" on a question card is the
@@ -116,7 +129,7 @@ export function useAnswerAsk(): AnswerAskState {
       if (first === undefined) return;
       const ids = asks.map((ask) => ask.interaction.id);
       await send(
-        ids,
+        asks,
         () =>
           decision === 'allow'
             ? transport.batchApprove(first.sessionId, ids)

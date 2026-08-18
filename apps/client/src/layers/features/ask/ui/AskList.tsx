@@ -6,7 +6,11 @@
 import { useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
-import { agentNameFromCwd, describeInteraction } from '@/layers/entities/attention';
+import {
+  agentNameFromCwd,
+  describeInteraction,
+  useSettlingAsks,
+} from '@/layers/entities/attention';
 import { groupAsks } from '../lib/group-asks';
 import { useAnswerAsk } from '../model/use-answer-ask';
 import { AskStack } from './AskStack';
@@ -39,12 +43,18 @@ export interface AskListProps {
  */
 export function AskList({ asks, agentNames, onOpenSession, emptyState }: AskListProps) {
   const { answerAll, isAnswering, error } = useAnswerAsk();
+  // The answered ones are still drawn for a beat, saying how they ended. They
+  // are NOT part of what is waiting — the count belongs to `asks` alone.
+  const settling = useSettlingAsks();
   const groups = useMemo(() => {
     const soonestFirst = [...asks].sort(
       (a, b) => a.interaction.remainingMs - b.interaction.remainingMs
     );
-    return groupAsks(soonestFirst);
-  }, [asks]);
+    const held = settling.filter(
+      (ask) => !asks.some((waiting) => waiting.interaction.id === ask.interaction.id)
+    );
+    return groupAsks([...soonestFirst, ...held]);
+  }, [asks, settling]);
 
   if (groups.length === 0) return <>{emptyState ?? null}</>;
 

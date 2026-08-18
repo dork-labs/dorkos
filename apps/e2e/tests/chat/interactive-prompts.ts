@@ -268,19 +268,21 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
   });
 
   test.describe('batch approval — several tools pending at once (I-02)', () => {
-    test('the bar appears with the count, and Approve All answers every ask', async ({
+    test('the burst card appears with the count, and Allow all answers every ask', async ({
       page,
       request,
     }) => {
       const { chatPage } = await openScenario(page, request, 'approval-batch');
       await chatPage.sendAndLand('do the three things');
 
-      // The bar is the surface this row is about, and it mounts only at two or
-      // more pending — so the count IS the assertion, not decoration.
-      const bar = page.getByText('3 tools awaiting approval');
+      // The burst card is the surface this row is about, and it mounts only at
+      // two or more pending — so the count IS the assertion, not decoration. It
+      // was the batch bar until DOR-1330 replaced it with the stacked card;
+      // behaviour and the two transport calls are unchanged.
+      const bar = page.getByText('3 tools are waiting on you');
       await expect(bar).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
-      await page.getByRole('button', { name: /^Approve All/ }).click();
+      await page.getByRole('button', { name: /^Allow all/ }).click();
 
       // Every one of the three was answered: the scenario counts them itself and
       // only reaches this sentence once all three have come back.
@@ -294,10 +296,12 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
       const { chatPage } = await openScenario(page, request, 'approval-batch');
       await chatPage.sendAndLand('do the three things');
 
-      await expect(page.getByText('3 tools awaiting approval')).toBeVisible({
+      // The burst card the batch bar became (DOR-1330): the same behaviour,
+      // the same two calls, drawn in the card family's own chrome.
+      await expect(page.getByText('3 tools are waiting on you')).toBeVisible({
         timeout: SERVER_ROUND_TRIP_MS,
       });
-      await page.getByRole('button', { name: /^Deny All/ }).click();
+      await page.getByRole('button', { name: /^Deny all/ }).click();
 
       // `0 of 3` rather than merely "the bar went away": a Deny All that quietly
       // approved would clear the bar just as convincingly.

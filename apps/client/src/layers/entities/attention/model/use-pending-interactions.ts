@@ -20,7 +20,7 @@ import {
 import type { PendingInteractionDTO } from '@dorkos/shared/types';
 import { useSessionStreamStore } from '@/layers/entities/session';
 import { useEventSubscription, useTransport } from '@/layers/shared/model';
-import { recordAskReceipt } from './ask-receipt-store';
+import { recordAskReceipt, settleAsk } from './ask-receipt-store';
 
 /** Query key for the fleet-wide pending-prompt list. */
 export const PENDING_INTERACTIONS_QUERY_KEY = ['pending-interactions'] as const;
@@ -102,11 +102,20 @@ export function usePendingInteractions(): PendingInteractionsState {
       PENDING_INTERACTIONS_QUERY_KEY,
       (current) => {
         if (!current) return current;
-        const interactions = current.interactions.filter(
-          (entry) => entry.interaction.id !== parsed.data.interactionId
+        const settled = current.interactions.find(
+          (entry) => entry.interaction.id === parsed.data.interactionId
         );
-        if (interactions.length === current.interactions.length) return current;
-        return { ...current, interactions };
+        if (settled === undefined) return current;
+        // Hold the card on screen just long enough to say how it ended. It is
+        // out of THIS list the moment it is answered, because it is not waiting
+        // any more and no count may claim it is.
+        settleAsk(settled);
+        return {
+          ...current,
+          interactions: current.interactions.filter(
+            (entry) => entry.interaction.id !== parsed.data.interactionId
+          ),
+        };
       }
     );
   });

@@ -11,7 +11,10 @@
  * @module entities/attention/model/ask-receipt-store
  */
 import { create } from 'zustand';
-import type { InteractionOutcome } from '@dorkos/shared/interaction-events';
+import type {
+  InteractionOutcome,
+  InteractionPendingEvent,
+} from '@dorkos/shared/interaction-events';
 
 /**
  * How many endings are remembered at once.
@@ -23,6 +26,16 @@ import type { InteractionOutcome } from '@dorkos/shared/interaction-events';
  * files is five) and small enough to be free.
  */
 const RECEIPT_LIMIT = 50;
+
+/**
+ * How long an answered card stays on screen holding its receipt.
+ *
+ * Long enough to read, and no longer. The card's own exit spends
+ * `RESOLVE_HOLD_S + MELT_S` (0.6s) on the hold and the melt; this is that plus a
+ * beat, so the sentence is still there while the animation runs and the row is
+ * gone before anybody wonders whether it is still answerable.
+ */
+const SETTLE_MS = 1_200;
 
 /** What one answered prompt left behind. */
 export interface AskReceipt {
@@ -54,9 +67,23 @@ interface AskReceiptState {
   receipts: Record<string, AskReceipt>;
   /** Insertion order, so the cap drops the oldest rather than an arbitrary key. */
   order: string[];
+  /**
+   * Prompts that have been answered and are still on screen saying so.
+   *
+   * The list of what is WAITING drops an answered prompt immediately — it is not
+   * waiting any more, and the header's count must not claim it is. But a card
+   * that vanished at the same instant would be exactly the disappearance the
+   * design rules out ("never a button that does nothing"), so the envelope is
+   * held here for {@link SETTLE_MS} and every surface draws it as a receipt.
+   */
+  settling: readonly InteractionPendingEvent[];
 }
 
-const useAskReceiptStore = create<AskReceiptState>(() => ({ receipts: {}, order: [] }));
+const useAskReceiptStore = create<AskReceiptState>(() => ({
+  receipts: {},
+  order: [],
+  settling: [],
+}));
 
 /**
  * Record how one prompt ended.
@@ -89,6 +116,32 @@ export function recordAskReceipt(interactionId: string, receipt: AskReceipt): vo
 }
 
 /**
+ * Keep an answered prompt on screen long enough to say how it ended.
+ *
+ * Called by whichever half learns first — the window that answered, or the
+ * resolution event from another one. A second call for the same id is a no-op,
+ * so the card is not held twice as long by a race it did not cause.
+ *
+ * @param ask - The envelope the card was drawn from.
+ */
+export function settleAsk(ask: InteractionPendingEvent): void {
+  const id = ask.interaction.id;
+  const { settling } = useAskReceiptStore.getState();
+  if (settling.some((held) => held.interaction.id === id)) return;
+  useAskReceiptStore.setState({ settling: [...settling, ask] });
+  setTimeout(() => {
+    useAskReceiptStore.setState((state) => ({
+      settling: state.settling.filter((held) => held.interaction.id !== id),
+    }));
+  }, SETTLE_MS);
+}
+
+/** The answered prompts still on screen saying so. */
+export function useSettlingAsks(): readonly InteractionPendingEvent[] {
+  return useAskReceiptStore((state) => state.settling);
+}
+
+/**
  * How one prompt ended, or `undefined` while it is still waiting.
  *
  * @param interactionId - The prompt to ask about.
@@ -99,5 +152,5 @@ export function useAskReceipt(interactionId: string): AskReceipt | undefined {
 
 /** Forget every receipt. Test seam; nothing in the app calls it. */
 export function clearAskReceipts(): void {
-  useAskReceiptStore.setState({ receipts: {}, order: [] });
+  useAskReceiptStore.setState({ receipts: {}, order: [], settling: [] });
 }
