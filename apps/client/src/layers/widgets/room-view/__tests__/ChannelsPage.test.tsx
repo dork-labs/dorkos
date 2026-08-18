@@ -201,10 +201,16 @@ describe('ChannelsPage — saying the room has stopped hearing', () => {
     // the moment it had something to say, and a live region that ARRIVES with
     // its text in it is the classic case assistive technology never announces.
     // So the announcer is here from the start, empty, watching.
+    //
+    // It is the LANE's announcer now, not a second one of the stall's own: the
+    // live lane says one thing at a time and carries one live region, so a
+    // stalled room and a working agent cannot both be read out at once
+    // (`design-system.md` §Zones, "One live region"). The guarantee this test
+    // was written for is unchanged — mounted first, empty, watching.
     renderPage();
     await screen.findByRole('combobox', { name: /Message/ });
 
-    const announcer = screen.getByTestId('room-stalled-announcer');
+    const announcer = screen.getByTestId('room-presence-announcer');
     expect(announcer).toHaveAttribute('aria-live', 'polite');
     expect(announcer).toBeEmptyDOMElement();
     // And nothing is drawn, because nothing is wrong.

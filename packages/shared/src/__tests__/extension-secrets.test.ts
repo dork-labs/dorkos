@@ -303,6 +303,54 @@ describe('ExtensionSecretStore', () => {
     });
   });
 
+  /**
+   * A store instance outlives what wrote to it. An extension's `ctx.secrets` and
+   * a dataProxy's store are built once, when the extension starts, and live for
+   * as long as it runs; the settings routes that save a secret build their own
+   * store and write to disk. So a store that answered once must not keep
+   * answering with what it saw then (DOR-1336 review) — the person pastes an API
+   * key, and the running extension has to see it.
+   */
+  describe('freshness against writes from elsewhere', () => {
+    it('sees a secret written after this instance already read', async () => {
+      const dorkHome = await makeTempDir();
+      const running = new ExtensionSecretStore('test-ext', dorkHome);
+      expect(await running.get('api-key')).toBeNull();
+
+      // What `PUT /api/extensions/:id/secrets/:key` does: its own store, its own
+      // write, no word to the one already running.
+      await new ExtensionSecretStore('test-ext', dorkHome).set('api-key', 'sk-live-1');
+
+      expect(await running.get('api-key')).toBe('sk-live-1');
+      expect(await running.has('api-key')).toBe(true);
+      expect(await running.keys()).toEqual(['api-key']);
+    });
+
+    it('sees a secret replaced after this instance already read', async () => {
+      const dorkHome = await makeTempDir();
+      await new ExtensionSecretStore('test-ext', dorkHome).set('api-key', 'sk-old');
+      const running = new ExtensionSecretStore('test-ext', dorkHome);
+      expect(await running.get('api-key')).toBe('sk-old');
+
+      await new ExtensionSecretStore('test-ext', dorkHome).set('api-key', 'sk-new');
+
+      expect(await running.get('api-key')).toBe('sk-new');
+    });
+
+    it('sees a secret deleted after this instance already read', async () => {
+      const dorkHome = await makeTempDir();
+      await new ExtensionSecretStore('test-ext', dorkHome).set('api-key', 'sk-old');
+      const running = new ExtensionSecretStore('test-ext', dorkHome);
+      expect(await running.get('api-key')).toBe('sk-old');
+
+      await new ExtensionSecretStore('test-ext', dorkHome).delete('api-key');
+
+      expect(await running.get('api-key')).toBeNull();
+      expect(await running.has('api-key')).toBe(false);
+      expect(await running.keys()).toEqual([]);
+    });
+  });
+
   describe('persistence across instances', () => {
     it('reads previously set secrets from a new store instance', async () => {
       const dorkHome = await makeTempDir();

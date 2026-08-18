@@ -40,6 +40,12 @@ vi.mock('../model/use-uninstall-with-toast', () => ({
   useUninstallWithToast: vi.fn(),
 }));
 
+// The install preview names the folder the files land in, so the dialog reads
+// `dorkHome` from the server config. A fixed value keeps the assertion stable.
+vi.mock('@/layers/entities/config', () => ({
+  useConfig: () => ({ data: { dorkHome: '/Users/kai/.dork' } }),
+}));
+
 // The sheet reads which package is open from the URL (`useMarketplaceParams`)
 // and resolves it against the catalog (`useMarketplacePackages`). Install-flow
 // actions stay on the store.
@@ -48,6 +54,7 @@ const mockParams = vi.hoisted(() => ({
   sort: 'featured' as string,
   search: '' as string,
   categories: [] as string[],
+  sources: [] as string[],
   selectedPackageName: null as string | null,
   setType: vi.fn(),
   setSort: vi.fn(),
@@ -55,6 +62,8 @@ const mockParams = vi.hoisted(() => ({
   toggleCategory: vi.fn(),
   setCategories: vi.fn(),
   clearCategories: vi.fn(),
+  toggleSource: vi.fn(),
+  clearSources: vi.fn(),
   resetFilters: vi.fn(),
   openDetail: vi.fn(),
   closeDetail: vi.fn(),
@@ -333,9 +342,12 @@ describe('PackageDetailSheet', () => {
     // The "Permissions & Effects" heading is the section wrapper rendered by
     // the sheet around PermissionPreviewSection.
     expect(screen.getByText('Permissions & Effects')).toBeInTheDocument();
-    // formatPermissionPreview emits a single aggregate label per file group
-    // ("1 file will be created, modified, or deleted") rather than each path.
-    expect(screen.getByText('1 file will be created, modified, or deleted')).toBeInTheDocument();
+    // formatPermissionPreview emits one headline per file group naming the
+    // shared folder and a count per action; the paths themselves sit behind a
+    // disclosure.
+    expect(
+      screen.getByText('1 file under agents: 1 new, 0 changed, 0 removed')
+    ).toBeInTheDocument();
     // Secret rows render their key as the label.
     expect(screen.getByText('GITHUB_TOKEN')).toBeInTheDocument();
     // The "Secrets required" section heading is also rendered.

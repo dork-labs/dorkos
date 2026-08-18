@@ -9,6 +9,7 @@
  * @module entities/room
  */
 export { roomKeys } from './api/query-keys';
+export { useRoomSessions } from './api/use-room-sessions';
 export { useRooms, useRoomsByKind } from './model/use-rooms';
 export { useTeamRoom } from './model/use-team-room';
 export type { TeamRoomState } from './model/use-team-room';
@@ -20,6 +21,7 @@ export type { RoomStreamState } from './model/use-room-stream';
 export {
   useRoomPresence,
   useRoomPresenceAuthorIds,
+  useRoomPresenceClaims,
   useRoomPresenceEverywhere,
   useRoomPresenceStore,
   PRESENCE_TICK_MS,
@@ -28,6 +30,7 @@ export type {
   PresenceScope,
   RoomPresenceAuthor,
   RoomPresenceClaim,
+  RoomPresenceClaimRow,
 } from './model/use-room-presence';
 export { useRoomWorking, useRoomWorkingStore, useOpenRoomWorking } from './model/use-room-working';
 export { usePostToRoom } from './model/use-post-to-room';
@@ -105,7 +108,6 @@ export {
   presenceCountSentence,
   presenceDetail,
   presenceElapsed,
-  presenceListRow,
   presenceRow,
   presenceSentence,
 } from './lib/presence-copy';

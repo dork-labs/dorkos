@@ -282,6 +282,13 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     category: 'Mesh',
     keywords: ['mesh', 'empty', 'state', 'topology', 'preview', 'agent'],
   },
+  {
+    id: 'openmeshswitch',
+    title: 'OpenMeshSwitch',
+    page: 'features',
+    category: 'Mesh',
+    keywords: ['mesh', 'switch', 'access', 'namespace', 'talk', 'topology', 'permission', 'relay'],
+  },
   // TasksShowcases
   {
     id: 'tasktemplatecard',

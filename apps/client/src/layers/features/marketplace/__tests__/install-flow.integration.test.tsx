@@ -71,6 +71,12 @@ vi.mock('@/layers/entities/mesh', () => ({
   useMeshAgentPaths: vi.fn().mockReturnValue({ data: { agents: [] } }),
 }));
 
+// The install preview names the folder the files land in, so the dialog reads
+// `dorkHome` from the server config. A fixed value keeps the assertion stable.
+vi.mock('@/layers/entities/config', () => ({
+  useConfig: () => ({ data: { dorkHome: '/Users/kai/.dork' } }),
+}));
+
 // Mock the install-with-toast wrapper directly so we can spy on `mutate`
 // without depending on TanStack Query lifecycle or sonner side effects.
 vi.mock('../model/use-install-with-toast', () => ({

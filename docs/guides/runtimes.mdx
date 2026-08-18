@@ -54,9 +54,12 @@ Run the commands in your terminal, then check the runtime picker in the chat sta
 - A known runtime that isn't installed at all appears under **"Add a runtime"** with the same guided setup.
 
 <Callout type="info">
-  There is nothing to configure on the DorkOS side. Both runtimes are enabled by default and
-  detected automatically. If a runtime's CLI lives somewhere unusual, point DorkOS at it with
-  `runtimes.opencode.binaryPath` or `runtimes.codex.binaryPath` in `~/.dork/config.json`.
+  There is nothing to configure on the DorkOS side. Both runtimes are enabled by default, and DorkOS
+  looks for each one in turn: the copy it ships with, a copy it installed for you, then your PATH.
+  If a runtime's CLI lives somewhere unusual, point DorkOS straight at it with
+  `runtimes.opencode.binaryPath` or `runtimes.codex.binaryPath` in `~/.dork/config.json` — a path
+  you set is the one it uses, and if nothing is there it says so rather than quietly running
+  something else.
 </Callout>
 
 ## Choose a Runtime

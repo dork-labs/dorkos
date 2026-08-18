@@ -48,6 +48,7 @@ import {
   useInstalledPackages,
   usePackageInstallations,
 } from '@/layers/entities/marketplace';
+import { useConfig } from '@/layers/entities/config';
 import { useRequestInstall } from '../model/use-request-install';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
@@ -347,6 +348,10 @@ export function PackageDetailSheet() {
     enabled: enabled && !isInstalled && !isInstalledListLoading,
   });
 
+  // This sheet always previews the global scope (it passes no `projectPath`),
+  // so the folder the install must stay inside is the DorkOS data directory.
+  const { data: config } = useConfig();
+
   const uninstall = useUninstallWithToast();
 
   // While the installed list is still loading the install-state is unknown, so
@@ -470,7 +475,10 @@ export function PackageDetailSheet() {
               ) : permissionPreview ? (
                 <section>
                   <h3 className="mb-3 text-sm font-semibold">Permissions & Effects</h3>
-                  <PermissionPreviewSection preview={permissionPreview} />
+                  <PermissionPreviewSection
+                    preview={permissionPreview}
+                    installBase={config?.dorkHome}
+                  />
                 </section>
               ) : (
                 <p className="text-muted-foreground text-sm">No special permissions required.</p>

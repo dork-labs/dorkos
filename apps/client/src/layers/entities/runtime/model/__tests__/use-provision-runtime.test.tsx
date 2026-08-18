@@ -47,6 +47,28 @@ describe('useProvisionRuntime', () => {
     expect(result.current.errorMessage).not.toMatch(/\bagent\b/i);
   });
 
+  // DOR-1334 / F4. The mapping above only ever matched the HTTP status line
+  // ("Not Found"). The DorkOS server answers an unknown /api route with a JSON
+  // body of its own — `{ error: 'Not found' }` — which the transport throws
+  // verbatim, so a person clicking Install on a runtime with no endpoint read a
+  // bare "Not found" and nothing else.
+  it('maps the DorkOS API 404 body ("Not found") to the same plain sentence', async () => {
+    const transport = createMockTransport({
+      provisionRuntime: vi.fn().mockRejectedValue(new Error('Not found')),
+    });
+    const { Wrapper } = createWrapper(transport);
+
+    const { result } = renderHook(() => useProvisionRuntime('claude-code'), { wrapper: Wrapper });
+
+    act(() => result.current.provision());
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(result.current.errorMessage).toBe(
+      'One-click install is not available for this runtime.'
+    );
+  });
+
   it('passes through an honest server error message untouched', async () => {
     const transport = createMockTransport({
       provisionRuntime: vi.fn().mockResolvedValue({ ok: false, error: 'Disk is full' }),

@@ -15,7 +15,7 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { ExtensionCompiler } from './extension-compiler.js';
 import { createProxyRouter } from './extension-proxy.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
-import type { ActiveServerExtension } from './extension-manager-types.js';
+import { toRecordError, type ActiveServerExtension } from './extension-manager-types.js';
 import {
   EXTENSION_NOT_APPROVED_CODE,
   describeExtensionLoadRefusal,
@@ -25,6 +25,43 @@ import { configManager } from '../core/config-manager.js';
 import { logger } from '../../lib/logger.js';
 
 const require = createRequire(import.meta.url);
+
+/**
+ * Everything the running instance of an extension was built from, as one
+ * comparable string: the directory it was read from, the manifest fields that
+ * decide what gets mounted, and — for an extension with a server entry — the
+ * content hash of its server ENTRY FILE.
+ *
+ * This is what makes {@link ExtensionServerLifecycle.initialize} idempotent. The
+ * client asks the server to initialize every server-side extension on every page
+ * load and every tab, and before this each of those tore the extension down and
+ * re-evaluated its module (DOR-1336).
+ *
+ * The server bundle's hash is the one that matters, not `record.sourceHash` —
+ * that field is the CLIENT bundle's hash, which answers a different question and
+ * would have missed an edited `server.ts`.
+ *
+ * **Its limit, worth knowing before trusting it:** the hash covers the entry
+ * file's own bytes, nothing it imports (`ExtensionCompiler.compileServer` hashes
+ * the entry it reads, and its bundle cache is keyed the same way). So editing a
+ * helper module that `server.ts` imports does not change this key and does not
+ * restart the extension — the same blind spot the compile cache has always had,
+ * now also deciding whether to restart. `reload_extensions --id <ext>` restarts
+ * unconditionally and is the way out.
+ *
+ * @param record - The extension's discovery record.
+ * @param serverSourceHash - Content hash of the compiled server entry file, or
+ *   `null` for a proxy-only extension (there is no server source to hash).
+ */
+function buildSourceKey(record: ExtensionRecord, serverSourceHash: string | null): string {
+  return JSON.stringify({
+    path: path.resolve(record.path),
+    version: record.manifest.version,
+    serverEntryPath: record.serverEntryPath ?? null,
+    dataProxy: record.manifest.dataProxy ?? null,
+    serverSourceHash,
+  });
+}
 
 /**
  * Manages the lifecycle of server-side extensions: compile, load, route, and teardown.
@@ -57,11 +94,35 @@ export class ExtensionServerLifecycle {
    * left every route walking around it — the DOR-467 shape. A new caller inherits
    * the gate by construction instead of having to remember it.
    *
+   * ## Idempotent: asking twice is not asking for a restart
+   *
+   * An extension that is already running, built from the same source
+   * ({@link buildSourceKey}), is left alone. The client POSTs
+   * `/api/extensions/:id/init-server` for every server-side extension on every
+   * page load and every tab, so the unconditional shutdown this used to start
+   * with restarted the marketplace extension seconds after boot and again on
+   * every tab — cancelling its scheduled work and re-evaluating its module for
+   * no reason (DOR-1336).
+   *
+   * A caller that means "restart this, unchanged or not" calls {@link shutdown}
+   * first, which is exactly what {@link ExtensionManager.reloadExtension} — the
+   * `reload_extensions --id` tool — already does.
+   *
+   * Compilation now happens BEFORE the teardown, since its hash is what decides
+   * whether to tear anything down. A compile failure therefore leaves the
+   * running instance serving its old code rather than killing it, which is the
+   * better of the two: a typo saved into an extension's `server.ts` no longer
+   * takes the working version down with it. The record's `serverError` records
+   * that, so "the old version is still serving" is something the cockpit shows
+   * rather than something it hides — while `status` stays as it was, leaving the
+   * extension's own client bundle loadable.
+   *
    * @param id - Extension identifier
    * @param record - The extension's discovery record
    * @returns Result with ok flag and optional error message
    */
   async initialize(id: string, record: ExtensionRecord): Promise<{ ok: boolean; error?: string }> {
+    const active = this.serverExtensions.get(id);
     const hasServerCapability = record.hasServerEntry || record.hasDataProxy;
     if (!hasServerCapability || !['enabled', 'compiled', 'active'].includes(record.status)) {
       return { ok: false, error: 'Extension has no server entry or is not enabled' };
@@ -80,17 +141,22 @@ export class ExtensionServerLifecycle {
       return { ok: false, error: describeExtensionLoadRefusal(id) };
     }
 
-    // Shut down existing instance if reloading
-    await this.shutdown(id);
-
     // Proxy-only (dataProxy without server.ts) — no compilation needed
     if (record.hasDataProxy && !record.hasServerEntry) {
+      const sourceKey = buildSourceKey(record, null);
+      if (active?.sourceKey === sourceKey) {
+        logger.debug(`[Extensions] Proxy router for ${id} is already running, unchanged`);
+        return { ok: true };
+      }
+
+      await this.shutdown(id);
       const proxyRouter = createProxyRouter(id, record.manifest.dataProxy!, this.dorkHome);
       this.serverExtensions.set(id, {
         extensionId: id,
         router: proxyRouter,
         cleanup: null,
         scheduledCleanups: [],
+        sourceKey,
       });
       logger.info(`[Extensions] Proxy router mounted for ${id}`);
       return { ok: true };
@@ -99,8 +165,36 @@ export class ExtensionServerLifecycle {
     // Compile server bundle
     const compiled = await this.compiler.compileServer(record);
     if ('error' in compiled) {
+      // The compile now happens before the teardown, so a broken `server.ts`
+      // leaves the previous version answering requests. Say so on the record —
+      // an extension quietly serving code that no longer matches its source must
+      // not read as healthy in the cockpit (DOR-1336 review). Nothing is marked
+      // when there was nothing running: that failure is the caller's to report,
+      // and the client bundle it may still have is not in question.
+      //
+      // `serverError`, NOT `status`/`error`: `status` is one field for the whole
+      // extension and it is what `ExtensionManager.readBundle` and the client
+      // loader gate the CLIENT bundle on, so writing `compile_error` here would
+      // pull a working UI off the screen in every new tab over a server-side
+      // failure (DOR-1336 review round 2).
+      if (active) {
+        record.serverError = toRecordError(compiled.error);
+        logger.warn(
+          `[Extensions] ${id} failed to compile, so the version already running keeps serving ` +
+            `until this is fixed: ${compiled.error.message}`
+        );
+      }
       return { ok: false, error: compiled.error.message };
     }
+
+    const sourceKey = buildSourceKey(record, compiled.sourceHash);
+    if (active?.sourceKey === sourceKey) {
+      logger.debug(`[Extensions] Server for ${id} is already running, unchanged`);
+      return { ok: true };
+    }
+
+    // Shut down the stale instance before its replacement takes over
+    await this.shutdown(id);
 
     // Write temp file for require()
     const tempDir = path.join(this.dorkHome, 'cache', 'extensions', 'server', '_run');
@@ -142,7 +236,12 @@ export class ExtensionServerLifecycle {
         router,
         cleanup,
         scheduledCleanups: getScheduledCleanups(),
+        sourceKey,
       });
+
+      // A fixed `server.ts` took over, so the failure mark this method wrote
+      // above no longer describes anything.
+      record.serverError = undefined;
 
       logger.info(`[Extensions] Server initialized for ${id}`);
       return { ok: true };

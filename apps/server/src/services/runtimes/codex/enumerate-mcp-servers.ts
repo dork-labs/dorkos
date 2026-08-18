@@ -55,10 +55,17 @@ function mapTransportType(transport: CodexMcpTransport | undefined): McpServerEn
  * Returns `[]` when none are configured, and `null` only when enumeration
  * genuinely fails (the binary is unresolvable, the probe errors or times out, or
  * the output is not parseable JSON).
+ *
+ * @param resolveBinary - How to find the `codex` binary. The runtime passes its
+ *   OWN resolver so that what gets enumerated is the same install a turn will
+ *   spawn — a test that injects a fake binary would otherwise have this reach
+ *   past it to the real machine (DOR-1334 review). Defaults to the shared ladder.
  */
-export async function enumerateCodexMcpServers(): Promise<McpServerEntry[] | null> {
+export async function enumerateCodexMcpServers(
+  resolveBinary: () => Promise<string | null> = resolveCodexBinaryPath
+): Promise<McpServerEntry[] | null> {
   try {
-    const binary = await resolveCodexBinaryPath();
+    const binary = await resolveBinary();
     if (!binary) return null;
 
     const stdout = await runBinaryProbe(binary, ['mcp', 'list', '--json'], MCP_LIST_TIMEOUT_MS);

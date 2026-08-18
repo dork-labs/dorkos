@@ -22,6 +22,25 @@ import cronstrue from 'cronstrue';
 export type PermissionSeverity = 'info' | 'warning' | 'error';
 
 /**
+ * One line inside a row's expandable detail list — a file path plus the plain
+ * word for what happens to it. Rendered monospace, because these are literal
+ * paths and a person is checking them character by character.
+ */
+export interface PermissionDetailItem {
+  /**
+   * The path itself. Relative to the folder the row's label names on the file
+   * headline, where that folder is stated once and repeating it on 135 lines
+   * would bury the part that differs. Absolute on the escape warning, where the
+   * whole point of the row is that these paths are somewhere else.
+   */
+  text: string;
+  /** Plain-language action word: `'new'`, `'changed'`, or `'removed'`. */
+  tag?: string;
+  /** Severity used to tint the tag. Defaults to `'info'` when absent. */
+  severity?: PermissionSeverity;
+}
+
+/**
  * A single permission row ready for UI rendering.
  *
  * `icon` is a string identifier (e.g. `'file'`, `'key'`) — icon components
@@ -41,6 +60,25 @@ export interface FormattedPermission {
    * shell command, so it is never mistaken for prose the UI wrote.
    */
   mono?: boolean;
+  /**
+   * Lines revealed by an inline disclosure on this row. A summary sentence is
+   * what a person skims; this is what they check before consenting.
+   */
+  details?: PermissionDetailItem[];
+  /** Label for the disclosure that reveals {@link details}. */
+  detailsLabel?: string;
+}
+
+/** Options for {@link formatPermissionPreview}. */
+export interface FormatPermissionOptions {
+  /**
+   * The folder every changed file is expected to stay inside — the DorkOS data
+   * directory for a global install, the project's `.dork` folder for an
+   * agent-local one. When given, any path that escapes it earns a warning row.
+   * When omitted, the check is skipped entirely rather than run against a
+   * folder we are only guessing at.
+   */
+  installBase?: string;
 }
 
 /**
@@ -65,33 +103,208 @@ export interface FormattedPermissionGroups {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers — file paths
 // ---------------------------------------------------------------------------
+
+/**
+ * The path separator a server-supplied path uses. Preview paths are built with
+ * Node's `path.join` on the host, so a Windows host sends backslashes and the
+ * browser must echo them back rather than normalising them into something the
+ * user cannot paste into their own shell.
+ */
+function detectSeparator(path: string): '/' | '\\' {
+  return path.includes('\\') && !path.includes('/') ? '\\' : '/';
+}
+
+/** Split a path on either separator, so mixed input still segments correctly. */
+function segments(path: string): string[] {
+  return path.split(/[\\/]/);
+}
+
+/**
+ * The deepest folder that contains every one of `paths`.
+ *
+ * Returns `''` when the paths share no folder at all (bare relative file names),
+ * so the caller can drop the "under X" clause instead of claiming a root that
+ * does not exist.
+ */
+function commonDirectory(paths: string[]): string {
+  const first = paths[0];
+  if (first === undefined) return '';
+  const separator = detectSeparator(first);
+
+  let common = segments(first).slice(0, -1);
+  for (const path of paths.slice(1)) {
+    const parts = segments(path).slice(0, -1);
+    let shared = 0;
+    while (shared < common.length && shared < parts.length && common[shared] === parts[shared]) {
+      shared += 1;
+    }
+    common = common.slice(0, shared);
+    if (common.length === 0) break;
+  }
+
+  if (common.length === 0) return '';
+  // A single empty segment is the POSIX filesystem root, which joins to ''.
+  if (common.length === 1 && common[0] === '') return separator;
+  return common.join(separator);
+}
+
+/** Strip `root` from the front of `path`, leaving the path untouched if it does not match. */
+function relativeTo(path: string, root: string): string {
+  if (root === '') return path;
+  const separator = detectSeparator(path);
+  const prefix = root.endsWith(separator) ? root : root + separator;
+  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+}
+
+/**
+ * Reduce a path to the form segment comparison can trust: forward slashes, no
+ * repeated or trailing separators, no `.` segments.
+ *
+ * The two sides being compared are built differently. The server writes preview
+ * paths with Node's `path.join`, which already normalises; the client assembles
+ * the install base by concatenating a stored `projectPath` with `/.dork`, which
+ * does not. A stored path with a trailing slash or a `./` prefix would otherwise
+ * read as "outside your folder" for every single file — a false alarm on an
+ * install that is perfectly ordinary.
+ */
+function normalizeForCompare(path: string): string {
+  return path
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .replace(/(^|\/)\.(?=\/|$)/g, '$1')
+    .replace(/\/+/g, '/')
+    .replace(/(.)\/$/, '$1');
+}
+
+/**
+ * Whether `path` sits inside `base`. Compares whole segments, so
+ * `~/.dork-backup/x` is correctly outside `~/.dork`.
+ */
+function isInside(path: string, base: string): boolean {
+  if (base === '') return false;
+  const root = normalizeForCompare(base);
+  // `base` was nothing but separators, i.e. the filesystem root: everything is inside.
+  if (root === '/' || root === '') return true;
+  const candidate = normalizeForCompare(path);
+  return candidate === root || candidate.startsWith(`${root}/`);
+}
+
+// ---------------------------------------------------------------------------
+// File changes
+// ---------------------------------------------------------------------------
+
+/** Plain words for the three things an install does to a file. */
+const ACTION_WORD = {
+  delete: 'removed',
+  modify: 'changed',
+  create: 'new',
+} as const;
+
+/** Render order: what disappears first, what changes next, what arrives last. */
+const ACTION_ORDER = ['delete', 'modify', 'create'] as const;
+
+type FileChange = PermissionPreview['fileChanges'][number];
+
+/** Turn file changes into detail lines, removed first, alphabetical within each action. */
+function toDetailItems(changes: FileChange[], root: string): PermissionDetailItem[] {
+  const items: PermissionDetailItem[] = [];
+  for (const action of ACTION_ORDER) {
+    const matching = changes
+      .filter((change) => change.action === action)
+      .map((change) => relativeTo(change.path, root))
+      .sort((a, b) => a.localeCompare(b));
+    for (const text of matching) {
+      items.push({
+        text,
+        tag: ACTION_WORD[action],
+        // A deletion is the one effect an uninstall cannot give back, so it is
+        // the one that carries a warning tint.
+        ...(action === 'delete' ? { severity: 'warning' as const } : {}),
+      });
+    }
+  }
+  return items;
+}
+
+/**
+ * Build the file rows of the effects group: one headline naming the shared
+ * folder and a count per action, with the full path list behind a disclosure,
+ * plus a warning row naming anything that lands outside the install folder.
+ *
+ * A count alone is not consent — the person approving an install needs to know
+ * where the files go and, above all, which existing files disappear.
+ */
+function formatFileChanges(
+  changes: FileChange[],
+  installBase: string | undefined
+): FormattedPermission[] {
+  if (changes.length === 0) return [];
+
+  const root = commonDirectory(changes.map((change) => change.path));
+  const counts = {
+    create: changes.filter((change) => change.action === 'create').length,
+    modify: changes.filter((change) => change.action === 'modify').length,
+    delete: changes.filter((change) => change.action === 'delete').length,
+  };
+  const noun = changes.length === 1 ? 'file' : 'files';
+  const where = root === '' ? '' : ` under ${root}`;
+
+  const rows: FormattedPermission[] = [
+    {
+      icon: 'file',
+      // Every action is named even at zero: "0 removed" is the answer to the
+      // question a person actually has before approving an install.
+      label: `${changes.length} ${noun}${where}: ${counts.create} new, ${counts.modify} changed, ${counts.delete} removed`,
+      details: toDetailItems(changes, root),
+      detailsLabel: `Show ${changes.length} ${noun}`,
+    },
+  ];
+
+  // No install folder (or an empty one from a config that has not loaded) means
+  // there is nothing to check the paths against, so say nothing.
+  if (!installBase) return rows;
+
+  // Escapes only. The reassuring "everything stays inside X" twin was dropped:
+  // the headline already names the folder every file shares, and the preview
+  // builder resolves every path against the install root, so the positive row
+  // could never be false — it spent the dialog's scarcest resource, vertical
+  // space, restating the line above it. The warning stays as a guard, so a
+  // future install flow that writes outside the target cannot do it quietly.
+  const outside = changes.filter((change) => !isInside(change.path, installBase));
+  if (outside.length > 0) {
+    rows.push({
+      icon: 'alert-triangle',
+      label: `${outside.length} ${outside.length === 1 ? 'file lands' : 'files land'} outside ${installBase}.`,
+      severity: 'warning' satisfies PermissionSeverity,
+      // Full paths here, not relative ones — the point of this row is where.
+      details: toDetailItems(outside, ''),
+      detailsLabel: `Show ${outside.length} ${outside.length === 1 ? 'file' : 'files'}`,
+    });
+  }
+
+  return rows;
+}
 
 /**
  * Format the `fileChanges`, `npmDependencies`, and `extensions` fields of a
  * `PermissionPreview` into the `effects` group.
  *
  * The npm row sits here rather than under "Dependencies" — that group is other
- * marketplace packages this one needs, which are a different thing from third-
- * party libraries fetched off the npm registry. It says "download" because that
- * is the part a person is consenting to: an install that reaches the network
- * before the package has run a single line. It counts only what the package
- * DECLARED and says "and everything they depend on", because the transitive
- * total is unknown until npm resolves it and is routinely an order of magnitude
- * larger.
+ * marketplace packages this one needs, which are a different thing from
+ * third-party libraries fetched off the npm registry. It says "download"
+ * because that is the part a person is consenting to: an install that reaches
+ * the network before the package has run a single line.
  *
  * @param preview - Full permission preview from the server.
+ * @param installBase - Folder every path is expected to stay inside, if known.
  */
-function formatEffects(preview: PermissionPreview): FormattedPermission[] {
-  const rows: FormattedPermission[] = [];
-
-  if (preview.fileChanges.length > 0) {
-    rows.push({
-      icon: 'file',
-      label: `${preview.fileChanges.length} file${preview.fileChanges.length === 1 ? '' : 's'} will be created, modified, or deleted`,
-    });
-  }
+function formatEffects(
+  preview: PermissionPreview,
+  installBase: string | undefined
+): FormattedPermission[] {
+  const rows: FormattedPermission[] = formatFileChanges(preview.fileChanges, installBase);
 
   if (preview.npmDependencies.length > 0) {
     const count = preview.npmDependencies.length;
@@ -215,14 +428,19 @@ function formatSchedules(preview: PermissionPreview): FormattedPermission[] {
  *
  * The returned object mirrors the sections of the install confirmation dialog.
  * Each entry carries an `icon` string, a `label`, an optional `description`,
- * and an optional `severity`.
+ * an optional `severity`, and — for the file effects — an optional `details`
+ * list of paths behind a disclosure.
  *
  * @param preview - Raw `PermissionPreview` from the server.
+ * @param options - Formatting context, e.g. the folder the install targets.
  * @returns Grouped and formatted permission rows.
  */
-export function formatPermissionPreview(preview: PermissionPreview): FormattedPermissionGroups {
+export function formatPermissionPreview(
+  preview: PermissionPreview,
+  options: FormatPermissionOptions = {}
+): FormattedPermissionGroups {
   return {
-    effects: formatEffects(preview),
+    effects: formatEffects(preview, options.installBase),
 
     commands: formatCommands(preview),
 

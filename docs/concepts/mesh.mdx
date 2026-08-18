@@ -139,6 +139,8 @@ Under the hood, Mesh writes Relay access-control rules with a priority scheme. H
 | **50**   | Cross-namespace allow | Explicitly permitted cross-namespace communication |
 | **10**   | Cross-namespace deny  | Default deny for all other cross-namespace traffic |
 
+The **Let all my agents talk to each other** switch in Team → Access is one cross-namespace allow at priority 50, written with `*` on both sides. It outranks every namespace's catch-all deny, so while it is on, any agent can message any other agent on this machine. Turning it off removes that one rule and leaves the pairs you added untouched. `GET /api/mesh/topology` reports it as `openMesh`.
+
 ### Storage tables and Relay integration
 
 Mesh stores its data in `~/.dork/dork.db`, managed by Drizzle ORM: the **agent registry** (`agents` table) holds every registered agent with its manifest, project path, namespace, and health fields, and the **denial list** (`agent_denials` table) holds the paths excluded from discovery. Because the `.dork/agent.json` files are the canonical source (ADR-0043), the database is a rebuildable cache: on a missing `dork.db`, the reconciler walks the managed agents home (`~/.dork/agents/`) and the scan roots of surviving agents, re-importing every `.dork/agent.json` it finds.

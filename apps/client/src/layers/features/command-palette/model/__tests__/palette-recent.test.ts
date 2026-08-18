@@ -104,10 +104,10 @@ describe('selectContinueEntries', () => {
 
   it('carries the tool a conversation is on, so the row can name it', () => {
     const [entry] = selectContinueEntries(
-      { live: status({ activity: { toolName: 'Edit', target: 'strip-state.ts' } }) },
+      { live: status({ activity: { toolName: 'Edit', target: 'lane-state.ts' } }) },
       []
     );
-    expect(entry.activity).toEqual({ toolName: 'Edit', target: 'strip-state.ts' });
+    expect(entry.activity).toEqual({ toolName: 'Edit', target: 'lane-state.ts' });
   });
 
   it('reports no activity rather than undefined when the server sent none', () => {

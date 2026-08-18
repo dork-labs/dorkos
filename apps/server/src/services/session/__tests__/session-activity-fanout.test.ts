@@ -50,12 +50,12 @@ describe('projector activity fan-out', () => {
     p.ingest({ type: 'turn_start' });
     expect(updates.at(-1)?.status.activity).toBeUndefined();
 
-    p.ingest(toolCall('Edit', { file_path: '/repo/strip-state.ts' }));
+    p.ingest(toolCall('Edit', { file_path: '/repo/lane-state.ts' }));
     expect(updates).toHaveLength(2);
     expect(updates.at(-1)).toMatchObject({
       sessionId: 'act-1',
       cwd: '/work/alpha',
-      status: { lifecycle: 'streaming', activity: { toolName: 'Edit', target: 'strip-state.ts' } },
+      status: { lifecycle: 'streaming', activity: { toolName: 'Edit', target: 'lane-state.ts' } },
     });
 
     disposeProjector('act-1');

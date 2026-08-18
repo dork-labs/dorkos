@@ -24,7 +24,7 @@ import type {
 export const MOCK_PKG_FEATURED_AGENT: AggregatedPackage = {
   name: 'code-reviewer',
   source: 'https://github.com/dorkos-marketplace/code-reviewer',
-  marketplace: 'dorkos-official',
+  marketplace: 'dorkos-community',
   description:
     'Automated code review that surfaces style violations, security issues, and performance hints directly in your workflow.',
   version: '1.4.2',
@@ -39,7 +39,7 @@ export const MOCK_PKG_FEATURED_AGENT: AggregatedPackage = {
 export const MOCK_PKG_PLUGIN: AggregatedPackage = {
   name: 'obsidian-sync',
   source: 'https://github.com/dorkos-marketplace/obsidian-sync',
-  marketplace: 'dorkos-official',
+  marketplace: 'dorkos-community',
   description: 'Bidirectional sync between DorkOS agent sessions and your Obsidian vault.',
   version: '0.8.1',
   type: 'plugin',
@@ -52,7 +52,7 @@ export const MOCK_PKG_PLUGIN: AggregatedPackage = {
 export const MOCK_PKG_SKILL_PACK_NO_DESC: AggregatedPackage = {
   name: 'python-skills',
   source: 'https://github.com/dorkos-marketplace/python-skills',
-  marketplace: 'dorkos-official',
+  marketplace: 'dorkos-community',
   type: 'skill-pack',
   icon: '🐍',
 };
@@ -61,7 +61,7 @@ export const MOCK_PKG_SKILL_PACK_NO_DESC: AggregatedPackage = {
 export const MOCK_PKG_ADAPTER_LONG_DESC: AggregatedPackage = {
   name: 'slack-adapter',
   source: 'https://github.com/dorkos-marketplace/slack-adapter',
-  marketplace: 'community-registry',
+  marketplace: 'claude-plugins-official',
   description:
     'Full Slack integration: receive DMs, reply from agent, post to channels, react to mentions, schedule digests, and surface thread summaries — all without leaving your workflow.',
   version: '2.1.0',
@@ -75,7 +75,7 @@ export const MOCK_PKG_ADAPTER_LONG_DESC: AggregatedPackage = {
 export const MOCK_PKG_FEATURED_DEPLOY: AggregatedPackage = {
   name: 'deploy-bot',
   source: 'https://github.com/dorkos-marketplace/deploy-bot',
-  marketplace: 'dorkos-official',
+  marketplace: 'dorkos-community',
   description: 'Orchestrates CI/CD pipelines, monitors deployments, and pages on failure.',
   version: '3.0.0',
   type: 'agent',
@@ -89,7 +89,7 @@ export const MOCK_PKG_FEATURED_DEPLOY: AggregatedPackage = {
 export const MOCK_PKG_FEATURED_DOCS: AggregatedPackage = {
   name: 'doc-writer',
   source: 'https://github.com/dorkos-marketplace/doc-writer',
-  marketplace: 'dorkos-official',
+  marketplace: 'dorkos-community',
   description:
     'Auto-generates API docs, README files, and architecture decision records from your codebase.',
   version: '1.1.0',
@@ -110,7 +110,7 @@ export const MOCK_PACKAGES: AggregatedPackage[] = [
   {
     name: 'github-actions-skill',
     source: 'https://github.com/dorkos-marketplace/github-actions-skill',
-    marketplace: 'community-registry',
+    marketplace: 'claude-plugins-official',
     description: 'SKILL.md definitions for common GitHub Actions workflows.',
     version: '1.0.0',
     type: 'skill-pack',
@@ -120,7 +120,7 @@ export const MOCK_PACKAGES: AggregatedPackage[] = [
   {
     name: 'linear-agent',
     source: 'https://github.com/dorkos-marketplace/linear-agent',
-    marketplace: 'dorkos-official',
+    marketplace: 'dorkos-community',
     description: 'Manages Linear issues, triages inbox, and auto-closes resolved tickets.',
     version: '0.5.0',
     type: 'agent',
@@ -133,11 +133,19 @@ export const MOCK_PACKAGES: AggregatedPackage[] = [
 // PermissionPreview mocks
 // ---------------------------------------------------------------------------
 
+/**
+ * Preview paths mirror what the server sends: absolute destinations under the
+ * user's DorkOS data directory, built with `path.join` against the install root.
+ * The showcases pass this same value as `installBase` so the containment line
+ * reads the way it does in the real dialog.
+ */
+export const MOCK_DORK_HOME = '/Users/dev/.dork';
+
 /** Minimal preview — no secrets, no external hosts, no conflicts. */
 export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
   fileChanges: [
-    { path: '.dork/agents/code-reviewer/agent.json', action: 'create' },
-    { path: '.dork/agents/code-reviewer/SKILL.md', action: 'create' },
+    { path: `${MOCK_DORK_HOME}/agents/code-reviewer/agent.json`, action: 'create' },
+    { path: `${MOCK_DORK_HOME}/agents/code-reviewer/SKILL.md`, action: 'create' },
   ],
   extensions: [{ id: 'code-reviewer-ext', slots: ['sidebar', 'chat-toolbar'] }],
   hooks: [],
@@ -160,9 +168,9 @@ export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
 /** Full preview with all sections populated. */
 export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
   fileChanges: [
-    { path: '.dork/agents/deploy-bot/agent.json', action: 'create' },
-    { path: '.dork/agents/deploy-bot/config.json', action: 'create' },
-    { path: '.dork/data/deploy-bot/', action: 'create' },
+    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/agent.json`, action: 'create' },
+    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/config.json`, action: 'modify' },
+    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/legacy-hooks.json`, action: 'delete' },
   ],
   extensions: [{ id: 'deploy-bot-ext', slots: ['dashboard-panel', 'task-runner'] }],
   hooks: [
@@ -218,7 +226,7 @@ export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
 
 /** Preview with a blocking (error-level) conflict. */
 export const MOCK_PERMISSION_PREVIEW_BLOCKING: PermissionPreview = {
-  fileChanges: [{ path: '.dork/agents/linear-agent/agent.json', action: 'create' }],
+  fileChanges: [{ path: `${MOCK_DORK_HOME}/agents/linear-agent/agent.json`, action: 'create' }],
   extensions: [],
   hooks: [],
   unreadableHooks: [],
@@ -294,3 +302,52 @@ export const MOCK_SOURCES: MarketplaceSource[] = [
     addedAt: '2026-03-05T12:45:00Z',
   },
 ];
+
+/**
+ * A large install — the case F12 was reported against, where the dialog said
+ * "134 files will be created, modified, or deleted" and nothing else. Exercises
+ * the scrolling path list, the per-action counts, and the "0 removed" line.
+ */
+export const MOCK_PERMISSION_PREVIEW_MANY_FILES: PermissionPreview = {
+  fileChanges: [
+    ...Array.from({ length: 60 }, (_, i) => ({
+      path: `${MOCK_DORK_HOME}/plugins/flow/commands/flow-${String(i).padStart(2, '0')}.md`,
+      action: 'create' as const,
+    })),
+    ...Array.from({ length: 70 }, (_, i) => ({
+      path: `${MOCK_DORK_HOME}/plugins/flow/skills/skill-${String(i).padStart(2, '0')}/SKILL.md`,
+      action: 'create' as const,
+    })),
+    { path: `${MOCK_DORK_HOME}/plugins/flow/config/config.json`, action: 'modify' },
+    { path: `${MOCK_DORK_HOME}/plugins/flow/config/config.schema.json`, action: 'modify' },
+    { path: `${MOCK_DORK_HOME}/plugins/flow/scripts/dispatch-policy.ts`, action: 'modify' },
+    { path: `${MOCK_DORK_HOME}/plugins/flow/scripts/flow-state.ts`, action: 'modify' },
+  ],
+  extensions: [],
+  hooks: [],
+  unreadableHooks: [],
+  npmDependencies: [],
+  schedules: [],
+  secrets: [],
+  externalHosts: [],
+  requires: [],
+  conflicts: [],
+};
+
+/** A package that writes outside the DorkOS folder — the warning path. */
+export const MOCK_PERMISSION_PREVIEW_ESCAPES: PermissionPreview = {
+  fileChanges: [
+    { path: `${MOCK_DORK_HOME}/plugins/rogue/plugin.json`, action: 'create' },
+    { path: '/Users/dev/.claude/settings.json', action: 'modify' },
+    { path: '/Users/dev/.zshrc', action: 'modify' },
+  ],
+  extensions: [],
+  hooks: [],
+  unreadableHooks: [],
+  npmDependencies: [],
+  schedules: [],
+  secrets: [],
+  externalHosts: [],
+  requires: [],
+  conflicts: [],
+};

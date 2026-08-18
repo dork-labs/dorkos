@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import { WILDCARD_NAMESPACE_BOTH_SIDES_MESSAGE } from '@dorkos/shared/mesh-schemas';
 import { createMeshRouter, type MeshRouterDeps } from '../mesh.js';
 import type { MeshCore } from '@dorkos/mesh';
 
@@ -119,6 +120,20 @@ describe('Mesh topology routes', () => {
       expect(res.body.namespaces[0].namespace).toBe('ns-a');
       expect(meshCore.getTopology).toHaveBeenCalledWith('ns-a');
     });
+
+    it.each([true, false])('carries the openMesh flag (%s) through enrichment', async (open) => {
+      meshCore.getTopology.mockReturnValue({
+        callerNamespace: '*',
+        namespaces: [{ namespace: 'ns-a', agentCount: 1, agents: [MOCK_MANIFEST] }],
+        accessRules: [],
+        openMesh: open,
+      });
+
+      const res = await request(app).get('/api/mesh/topology');
+
+      expect(res.status).toBe(200);
+      expect(res.body.openMesh).toBe(open);
+    });
   });
 
   // --- PUT /topology/access ---
@@ -190,6 +205,70 @@ describe('Mesh topology routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
+    });
+
+    // --- The mesh-wide switch (DOR-1338) ---
+
+    it('turns the mesh-wide switch on with * -> * allow', async () => {
+      const res = await request(app).put('/api/mesh/topology/access').send({
+        sourceNamespace: '*',
+        targetNamespace: '*',
+        action: 'allow',
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        sourceNamespace: '*',
+        targetNamespace: '*',
+        action: 'allow',
+        origin: 'explicit',
+      });
+      expect(meshCore.allowCrossNamespace).toHaveBeenCalledWith('*', '*');
+    });
+
+    it('turns the mesh-wide switch off with * -> * deny', async () => {
+      const res = await request(app).put('/api/mesh/topology/access').send({
+        sourceNamespace: '*',
+        targetNamespace: '*',
+        action: 'deny',
+      });
+
+      expect(res.status).toBe(200);
+      expect(meshCore.denyCrossNamespace).toHaveBeenCalledWith('*', '*');
+    });
+
+    it.each([
+      ['*', 'ns-b'],
+      ['ns-a', '*'],
+    ])('returns 400 for a one-sided wildcard (%s -> %s)', async (source, target) => {
+      const res = await request(app).put('/api/mesh/topology/access').send({
+        sourceNamespace: source,
+        targetNamespace: target,
+        action: 'allow',
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Validation failed');
+      // The caller gets the schema's own wording, not a paraphrase.
+      expect(res.body.details.fieldErrors.targetNamespace).toContain(
+        WILDCARD_NAMESPACE_BOTH_SIDES_MESSAGE
+      );
+      expect(meshCore.allowCrossNamespace).not.toHaveBeenCalled();
+    });
+
+    it('answers 400, not 500, when the mesh rejects the pair', async () => {
+      meshCore.allowCrossNamespace.mockImplementation(() => {
+        throw new Error('nope');
+      });
+
+      const res = await request(app).put('/api/mesh/topology/access').send({
+        sourceNamespace: 'ns-a',
+        targetNamespace: 'ns-b',
+        action: 'allow',
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('nope');
     });
   });
 

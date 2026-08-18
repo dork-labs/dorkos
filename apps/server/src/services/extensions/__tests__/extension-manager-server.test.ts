@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ExtensionRecord } from '@dorkos/extension-api';
+import { logger } from '../../../lib/logger.js';
 
 // --- Hoisted mocks (available before module-level code runs) ---
 
@@ -171,6 +172,8 @@ describe('ExtensionManager — server lifecycle', () => {
         'throw-srv',
         'obj-srv',
         'reinit-ext',
+        'idem-ext',
+        'proxy-ext',
         'shutdown-ext',
         'router-ext',
         'auto-srv',
@@ -308,7 +311,7 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(result.error).toBe('Server entry does not export a register function');
     });
 
-    it('shuts down existing server instance before reinitializing', async () => {
+    it('shuts down the existing instance when the server source changed', async () => {
       const record = makeRecord('reinit-ext', {
         status: 'compiled',
         hasServerEntry: true,
@@ -321,18 +324,189 @@ describe('ExtensionManager — server lifecycle', () => {
         sourceHash: 'srvhash',
       });
 
+      // `initialize` already started it once.
       await manager.initialize(null);
+      const first = manager.getServerRouter('reinit-ext');
+      expect(first).not.toBeNull();
 
-      // First init
+      // The extension's server.ts changed, so the running instance is stale.
+      mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash-v2' });
       await manager.initializeServer('reinit-ext');
-      expect(manager.getServerRouter('reinit-ext')).not.toBeNull();
 
-      // Second init should shut down the first
-      await manager.initializeServer('reinit-ext');
-      expect(manager.getServerRouter('reinit-ext')).not.toBeNull();
-
+      expect(manager.getServerRouter('reinit-ext')).not.toBe(first);
       // The scheduled cleanup from the first init should have been called
       expect(mockScheduledCleanup).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining('Server shutdown for reinit-ext')
+      );
+    });
+
+    /**
+     * The client POSTs `/api/extensions/:id/init-server` for every server-side
+     * extension on every page load and every tab, so an unconditional restart
+     * meant the marketplace extension tore itself down and re-evaluated its
+     * module seconds after boot, and again on each new tab (DOR-1336 / F10).
+     */
+    describe('idempotence', () => {
+      it('leaves an unchanged running server extension alone', async () => {
+        const record = makeRecord('idem-ext', {
+          status: 'compiled',
+          hasServerEntry: true,
+          serverEntryPath: '/fake/extensions/idem-ext/server.ts',
+        });
+        mockDiscover.mockResolvedValue([record]);
+        mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+        mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash' });
+
+        await manager.initialize(null);
+        const router = manager.getServerRouter('idem-ext');
+        expect(mockCreateDataProviderContext).toHaveBeenCalledTimes(1);
+
+        // What every page load asks for.
+        const result = await manager.initializeServer('idem-ext');
+
+        expect(result).toEqual({ ok: true });
+        expect(manager.getServerRouter('idem-ext')).toBe(router);
+        expect(mockCreateDataProviderContext).toHaveBeenCalledTimes(1);
+        expect(mockScheduledCleanup).not.toHaveBeenCalled();
+        expect(logger.info).not.toHaveBeenCalledWith(
+          expect.stringContaining('Server shutdown for idem-ext')
+        );
+      });
+
+      it('leaves an unchanged proxy-only extension mounted', async () => {
+        const record = makeRecord('proxy-ext', {
+          status: 'compiled',
+          hasDataProxy: true,
+          manifest: {
+            id: 'proxy-ext',
+            name: 'proxy-ext',
+            version: '1.0.0',
+            dataProxy: { baseUrl: 'https://api.example.com', authSecret: 'api_key' },
+          },
+        });
+        mockDiscover.mockResolvedValue([record]);
+        mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+
+        await manager.initialize(null);
+        const router = manager.getServerRouter('proxy-ext');
+        expect(router).not.toBeNull();
+
+        await manager.initializeServer('proxy-ext');
+
+        expect(manager.getServerRouter('proxy-ext')).toBe(router);
+        expect(logger.info).not.toHaveBeenCalledWith(
+          expect.stringContaining('Server shutdown for proxy-ext')
+        );
+      });
+
+      /**
+       * "The old version keeps serving" is the normal outcome of a failed
+       * recompile now that the compile happens before the teardown, so the
+       * cockpit has to say so — otherwise the extension reads as `compiled`,
+       * `bundleReady`, healthy, while the code it is running is the previous one
+       * (DOR-1336 review).
+       */
+      it('reports a failed recompile without taking the client bundle down with it', async () => {
+        // A fully healthy extension: client bundle compiled and servable, server
+        // half running. Only the server half is about to break.
+        const record = makeRecord('stale-srv', {
+          status: 'compiled',
+          bundleReady: true,
+          sourceHash: 'clienthash',
+          hasServerEntry: true,
+          serverEntryPath: '/fake/extensions/stale-srv/server.ts',
+        });
+        mockConfigGet.mockReturnValue({
+          enabled: ['stale-srv'],
+          disabled: [],
+          approvedToRun: ['stale-srv'],
+        });
+        mockDiscover.mockResolvedValue([record]);
+        mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+        mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash' });
+
+        await manager.initialize(null);
+        const router = manager.getServerRouter('stale-srv');
+        expect(router).not.toBeNull();
+
+        // Somebody saved a typo into server.ts.
+        mockCompileServer.mockResolvedValue({
+          error: {
+            code: 'compilation_failed',
+            message: 'Server Compilation failed for stale-srv',
+            errors: [{ text: 'Unexpected token' }],
+          },
+          sourceHash: 'brokenhash',
+        });
+        const result = await manager.initializeServer('stale-srv');
+
+        expect(result).toEqual({ ok: false, error: 'Server Compilation failed for stale-srv' });
+        // The working version is still mounted rather than torn down.
+        expect(manager.getServerRouter('stale-srv')).toBe(router);
+        expect(mockScheduledCleanup).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('the version already running keeps serving')
+        );
+        // The cockpit is told — through `serverError`, which is about the server
+        // half only.
+        expect(manager.listPublic()[0]).toMatchObject({
+          id: 'stale-srv',
+          serverError: {
+            code: 'compilation_failed',
+            message: 'Server Compilation failed for stale-srv',
+            details: 'Unexpected token',
+          },
+        });
+        // ...and NOT through `status`, which is the single field the client
+        // bundle hangs off: `readBundle` refuses anything but `compiled`/`active`
+        // and the client loader only loads `compiled`. A server-side failure must
+        // not take the extension's UI off the screen in the next tab
+        // (DOR-1336 review round 2).
+        expect(manager.listPublic()[0]).toMatchObject({ status: 'compiled', bundleReady: true });
+        expect(manager.listPublic()[0].error).toBeUndefined();
+        mockReadBundle.mockResolvedValue('the client bundle');
+        expect(await manager.readBundle('stale-srv')).toBe('the client bundle');
+
+        // Asking again re-attempts rather than being turned away, so the fix can
+        // land without a full reload.
+        expect(await manager.initializeServer('stale-srv')).toEqual({
+          ok: false,
+          error: 'Server Compilation failed for stale-srv',
+        });
+
+        // And when the typo is fixed, the next attempt takes over and clears it.
+        mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'fixedhash' });
+        expect(await manager.initializeServer('stale-srv')).toEqual({ ok: true });
+        expect(manager.getServerRouter('stale-srv')).not.toBe(router);
+        expect(manager.listPublic()[0]).toMatchObject({ id: 'stale-srv', status: 'compiled' });
+        expect(manager.listPublic()[0].serverError).toBeUndefined();
+      });
+
+      it('restarts an extension whose reload the operator asked for', async () => {
+        const record = makeRecord('reload-ext', {
+          status: 'compiled',
+          hasServerEntry: true,
+          serverEntryPath: '/fake/extensions/reload-ext/server.ts',
+        });
+        mockConfigGet.mockReturnValue({
+          enabled: ['reload-ext'],
+          disabled: [],
+          approvedToRun: ['reload-ext'],
+        });
+        mockDiscover.mockResolvedValue([record]);
+        mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+        mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash' });
+
+        await manager.initialize(null);
+        const router = manager.getServerRouter('reload-ext');
+
+        // `reload_extensions --id` means "run this again", even byte-for-byte.
+        await manager.reloadExtension('reload-ext');
+
+        expect(manager.getServerRouter('reload-ext')).not.toBe(router);
+        expect(mockScheduledCleanup).toHaveBeenCalled();
+      });
     });
   });
 

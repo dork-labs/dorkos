@@ -35,6 +35,7 @@ export {
   OwnerSchema,
   MetadataSchema,
   RESERVED_MARKETPLACE_NAMES,
+  DORKOS_MARKETPLACE_SOURCE_NAME,
 } from './marketplace-json-schema.js';
 export type {
   MarketplaceJson,

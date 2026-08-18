@@ -89,6 +89,7 @@ export const IDENTITY_CROSS_LISTED: readonly string[] = [
   'agentidentitychip',
   'roomavatar',
   'roommemberrow',
+  'live-lane',
 ];
 
 /**

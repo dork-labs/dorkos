@@ -429,7 +429,7 @@ export function RoomComposer({
           something to say. The picker itself cannot carry this: it arrives with
           its "No one by that name." already in it, which is the classic case
           assistive technology does not announce — the region has to be watched
-          BEFORE the words land in it. Same shape as `RoomPresenceLine`'s
+          BEFORE the words land in it. Same shape as `Conversation.LiveLane`'s
           announcer, and the same reason.
 
           Only the empty answer is spoken. A picker with rows in it already

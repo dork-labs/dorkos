@@ -14,6 +14,7 @@
  *
  * @module services/extensions/extension-manager
  */
+import path from 'path';
 import type { Router } from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
@@ -27,6 +28,7 @@ import { logConfigWrite } from '../core/operator/config-write.js';
 import type { ExtensionTemplate } from './extension-templates.js';
 import {
   toPublic,
+  toRecordError,
   type CreateExtensionResult,
   type ReloadExtensionResult,
   type TestExtensionResult,
@@ -36,6 +38,21 @@ import { logger } from '../../lib/logger.js';
 
 export type { CreateExtensionResult, ReloadExtensionResult, TestExtensionResult };
 
+/**
+ * Whether two working directories are the same one, comparing normalized
+ * absolute paths so a trailing slash or a `.` segment does not read as a move.
+ * Purely lexical — nothing here touches the filesystem — because this decides
+ * whether to re-scan, and a directory that does not exist yet still deserves the
+ * cheap answer.
+ *
+ * @param a - One working directory, or `null` for none.
+ * @param b - The other working directory, or `null` for none.
+ */
+function isSameCwd(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return path.resolve(a) === path.resolve(b);
+}
+
 /** Apply a compile result to an extension record (DRY: used by enable, reload, compileEnabled). */
 function applyCompileResult(
   record: ExtensionRecord,
@@ -43,11 +60,7 @@ function applyCompileResult(
 ): boolean {
   if ('error' in result) {
     record.status = 'compile_error';
-    record.error = {
-      code: result.error.code,
-      message: result.error.message,
-      details: result.error.errors.map((e) => e.text).join('\n'),
-    };
+    record.error = toRecordError(result.error);
     record.sourceHash = result.sourceHash;
     record.bundleReady = false;
     return false;
@@ -485,8 +498,29 @@ export class ExtensionManager {
     }
   }
 
-  /** Update the CWD and return the diff of extension IDs (added/removed). */
+  /**
+   * Update the CWD and return the diff of extension IDs (added/removed).
+   *
+   * A cwd that is already the current one changes nothing, so it re-scans
+   * nothing: the cockpit announces its working directory once per page load
+   * (`POST /api/extensions/cwd-changed`), and that is almost always the
+   * directory the server booted with. That second discovery pass existed to
+   * answer a question nobody asked, and re-printed the first pass's warnings
+   * doing it (DOR-1336).
+   *
+   * The trade, stated plainly: opening a page no longer re-scans the extensions
+   * directories, so an extension folder dropped in by hand while the server runs
+   * shows up when something asks for a scan — the Reload button
+   * (`POST /api/extensions/reload`), the `reload_extensions` tool, or an actual
+   * change of working directory — rather than on the next page load.
+   *
+   * @param newCwd - The working directory now in effect, or `null` for none.
+   */
   async updateCwd(newCwd: string | null): Promise<{ added: string[]; removed: string[] }> {
+    if (isSameCwd(newCwd, this.currentCwd)) {
+      return { added: [], removed: [] };
+    }
+
     const oldIds = new Set(this.extensions.keys());
     this.currentCwd = newCwd;
     await this.reload();

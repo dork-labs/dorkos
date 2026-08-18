@@ -149,7 +149,7 @@ The default (and only bundled) runtime is claude-code. The Agent SDK ships the a
 
 1. `apps/desktop/package.json` declares `@anthropic-ai/claude-agent-sdk-darwin-arm64` as an os/cpu-guarded `optionalDependency` (so pnpm links it at the desktop top-level and electron-builder collects it). **Keep it version-locked to `@anthropic-ai/claude-agent-sdk`** — a lone SDK bump silently ships a skewed binary.
 2. `electron-builder.yml` `asarUnpack`s it (native binary → real file on disk).
-3. `src/main/server-spawn.ts` resolves the unpacked path in packaged mode and passes it to the server via `DORKOS_CLAUDE_CLI_PATH`; `sdk-utils.ts` honors that env override first, then falls back to the SDK's own bundled→PATH resolution (dev + npm CLI are unchanged — the env var is unset there).
+3. `src/main/server-spawn.ts` resolves the unpacked path in packaged mode and passes it to the server via `DORKOS_CLAUDE_CLI_PATH`. The server has ONE ladder for that binary — env override → SDK-bundled (remapped out of `app.asar` into `app.asar.unpacked` when needed) → provisioned → PATH — walked by both the SDK spawn seam (`resolveClaudeCliPath`) and the readiness probe (`resolveClaudeBinaryPath`). They used to differ, which is how the packaged app came to run sessions on a `claude` its own setup screen called missing (DOR-1334). Dev + npm CLI are unchanged: the env var is unset and no path contains an asar.
 
 This adds ~213 MB to the DMG (the binary itself). That is inherent to "runs Claude Code out of the box"; the arch-guard keeps it to the one target arch.
 

@@ -16,7 +16,8 @@ import path from 'node:path';
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import { configManager } from '../../core/config-manager.js';
 import { resolveRuntimeBinary } from '../shared/resolve-binary.js';
-import { runBinaryProbe, findBinaryOnPath } from '../shared/run-probe.js';
+import { runBinaryProbe, findBinaryOnPath, logProbeFailure } from '../shared/run-probe.js';
+import { resolveAsarUnpacked } from '../shared/asar-path.js';
 import { resolveProvisionedCodexPath } from './provision.js';
 
 /**
@@ -87,7 +88,12 @@ export function resolveCodexVendoredBinary(): string | null {
     const codexRequire = createRequire(codexPkgJson);
     const platformPkgJson = codexRequire.resolve(`${platformPackage}/package.json`);
     const binary = process.platform === 'win32' ? 'codex.exe' : 'codex';
-    return path.join(path.dirname(platformPkgJson), 'vendor', triple, 'bin', binary);
+    // Inside the packaged desktop app this lands INSIDE `app.asar`, which
+    // Electron's fs patch reports as existing but nothing can spawn; the
+    // `app.asar.unpacked` twin is the real file (DOR-1334).
+    return resolveAsarUnpacked(
+      path.join(path.dirname(platformPkgJson), 'vendor', triple, 'bin', binary)
+    );
   } catch {
     // Optional platform package not installed (e.g. --no-optional) — no vendored binary.
     return null;
@@ -129,8 +135,10 @@ async function checkCliBinary(binary: string | null): Promise<DependencyCheck> {
     try {
       const version = await runCodex(binary, ['--version']);
       return { name, description, status: 'satisfied', version };
-    } catch {
-      // Binary resolved but failed to launch — fall through to "missing".
+    } catch (err) {
+      // Binary resolved but failed to launch — fall through to "missing", with
+      // one log line saying why (DOR-1334 / F3).
+      logProbeFailure(name, binary, err);
     }
   }
 
@@ -157,8 +165,9 @@ async function checkLoginState(binary: string | null): Promise<DependencyCheck> 
       // or environment variables ourselves.
       await runCodex(binary, ['login', 'status']);
       return { name, description, status: 'satisfied' };
-    } catch {
-      // Non-zero exit — not logged in. Fall through to "missing".
+    } catch (err) {
+      // Non-zero exit — not logged in. Fall through to "missing", logged once.
+      logProbeFailure(name, binary, err);
     }
   }
 

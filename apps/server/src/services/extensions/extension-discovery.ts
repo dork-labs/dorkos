@@ -19,7 +19,8 @@ const HOST_VERSION = '0.1.0';
  * and local (`{cwd}/.dork/extensions/`) scopes, with local overriding global
  * when an extension ID appears in both — except for an id that ships with
  * DorkOS or that a person approved to run code, which a project directory can
- * never take over. See {@link ExtensionDiscovery.discover}.
+ * never take over. When the two scopes name the same directory on disk it is
+ * scanned once, as global. See {@link ExtensionDiscovery.discover}.
  */
 export class ExtensionDiscovery {
   private dorkHome: string;
@@ -51,7 +52,19 @@ export class ExtensionDiscovery {
     let localRecords: Array<Omit<ExtensionRecord, 'origin'>> = [];
     if (cwd) {
       const localDir = path.join(cwd, '.dork', 'extensions');
-      localRecords = await this.scanDirectory(localDir, 'local');
+      if (await this.isSameDirectory(localDir, globalDir)) {
+        // The working directory holds the DorkOS home — `$HOME` for a
+        // Finder-launched Mac app, or `dorkos` started from `~`. Scanning it a
+        // second time re-found every installed extension as a "project copy" of
+        // itself and warned about each one on every discovery pass (DOR-1336).
+        // One directory, one scan: nothing here is a project copy of anything.
+        logger.debug(
+          `[Extensions] Skipping the project scan: ${localDir} is the installed extensions ` +
+            `directory, not a project copy of it`
+        );
+      } else {
+        localRecords = await this.scanDirectory(localDir, 'local');
+      }
     }
 
     // Merge: local overrides global by extension ID
@@ -124,6 +137,39 @@ export class ExtensionDiscovery {
       }`
     );
     return results;
+  }
+
+  /**
+   * Whether two paths name the same directory on disk.
+   *
+   * Answered by `fs.realpath` when a path exists, so a project `.dork` that is a
+   * SYMLINK to the DorkOS home counts as the same directory — the lexical
+   * comparison alone would call the two different and scan the same extensions
+   * twice. Neither path is required to exist: a path that cannot be resolved
+   * falls back to its lexically-normalized form, which is exactly right for the
+   * ordinary case of a project with no `.dork/extensions` directory at all (it
+   * compares unequal, and the scan of it finds nothing anyway).
+   *
+   * @param a - First path.
+   * @param b - Second path.
+   */
+  private async isSameDirectory(a: string, b: string): Promise<boolean> {
+    const [ra, rb] = await Promise.all([this.canonicalize(a), this.canonicalize(b)]);
+    return ra === rb;
+  }
+
+  /**
+   * Resolve a path to its canonical form, degrading to lexical normalization when
+   * the path does not exist (or cannot be read).
+   *
+   * @param target - Path to canonicalize.
+   */
+  private async canonicalize(target: string): Promise<string> {
+    try {
+      return await fs.realpath(target);
+    } catch {
+      return path.resolve(target);
+    }
   }
 
   /**

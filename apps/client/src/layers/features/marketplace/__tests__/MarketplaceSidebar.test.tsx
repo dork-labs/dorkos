@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { DORKOS_MARKETPLACE_SOURCE_NAME } from '@dorkos/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { MarketplaceSidebar } from '../ui/MarketplaceSidebar';
 
@@ -27,6 +28,7 @@ const mockParams = vi.hoisted(() => ({
   sort: 'featured' as string,
   search: '' as string,
   categories: [] as string[],
+  sources: [] as string[],
   selectedPackageName: null as string | null,
   setView: vi.fn(),
   setType: vi.fn(),
@@ -35,6 +37,8 @@ const mockParams = vi.hoisted(() => ({
   toggleCategory: vi.fn(),
   setCategories: vi.fn(),
   clearCategories: vi.fn(),
+  toggleSource: vi.fn(),
+  clearSources: vi.fn(),
   resetFilters: vi.fn(),
   openDetail: vi.fn(),
   closeDetail: vi.fn(),
@@ -122,6 +126,11 @@ function categoryRow(label: string): HTMLElement {
   return within(group).getByRole('button', { name: new RegExp(`^${label}\\d`) });
 }
 
+function sourceRow(label: string): HTMLElement {
+  const group = screen.getByRole('group', { name: 'Filter by source' });
+  return within(group).getByRole('button', { name: new RegExp(`^${label}\\d`) });
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -131,6 +140,7 @@ describe('MarketplaceSidebar', () => {
     vi.clearAllMocks();
     mockParams.type = 'all';
     mockParams.categories = [];
+    mockParams.sources = [];
     setPackages(CATALOG);
   });
 
@@ -293,6 +303,93 @@ describe('MarketplaceSidebar', () => {
     const clear = screen.getByRole('button', { name: 'Clear' });
     await user.click(clear);
     expect(mockParams.clearCategories).toHaveBeenCalledTimes(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // Source facet — where each package came from
+  // -------------------------------------------------------------------------
+
+  it('lists every source that has packages, with a live count', () => {
+    setPackages([
+      pkg({ name: 'flow', marketplace: DORKOS_MARKETPLACE_SOURCE_NAME }),
+      pkg({ name: 'a', marketplace: 'claude-plugins-official' }),
+      pkg({ name: 'b', marketplace: 'claude-plugins-official' }),
+    ]);
+    render(<MarketplaceSidebar />);
+
+    expect(sourceRow(DORKOS_MARKETPLACE_SOURCE_NAME)).toHaveTextContent('1');
+    expect(sourceRow('claude-plugins-official')).toHaveTextContent('2');
+  });
+
+  it("puts DorkOS's own source first, then the biggest sources", () => {
+    setPackages([
+      pkg({ name: 'a', marketplace: 'claude-plugins-official' }),
+      pkg({ name: 'b', marketplace: 'claude-plugins-official' }),
+      pkg({ name: 'c', marketplace: 'a-small-registry' }),
+      pkg({ name: 'flow', marketplace: DORKOS_MARKETPLACE_SOURCE_NAME }),
+    ]);
+    render(<MarketplaceSidebar />);
+
+    const group = screen.getByRole('group', { name: 'Filter by source' });
+    const labels = within(group)
+      .getAllByRole('button')
+      .map((b) => b.textContent?.replace(/\d+$/, '') ?? '');
+    expect(labels).toEqual([
+      DORKOS_MARKETPLACE_SOURCE_NAME,
+      'claude-plugins-official',
+      'a-small-registry',
+    ]);
+  });
+
+  it('toggles a source through the URL', async () => {
+    const user = userEvent.setup();
+    setPackages([
+      pkg({ name: 'flow', marketplace: DORKOS_MARKETPLACE_SOURCE_NAME }),
+      pkg({ name: 'a', marketplace: 'claude-plugins-official' }),
+    ]);
+    render(<MarketplaceSidebar />);
+
+    await user.click(sourceRow('claude-plugins-official'));
+    expect(mockParams.toggleSource).toHaveBeenCalledWith('claude-plugins-official');
+  });
+
+  it('marks selected sources via aria-pressed', () => {
+    mockParams.sources = ['claude-plugins-official'];
+    setPackages([
+      pkg({ name: 'flow', marketplace: DORKOS_MARKETPLACE_SOURCE_NAME }),
+      pkg({ name: 'a', marketplace: 'claude-plugins-official' }),
+    ]);
+    render(<MarketplaceSidebar />);
+
+    expect(sourceRow('claude-plugins-official')).toHaveAttribute('aria-pressed', 'true');
+    expect(sourceRow(DORKOS_MARKETPLACE_SOURCE_NAME)).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('clears every selected source from the group header', async () => {
+    const user = userEvent.setup();
+    mockParams.sources = ['claude-plugins-official'];
+    setPackages([
+      pkg({ name: 'flow', marketplace: DORKOS_MARKETPLACE_SOURCE_NAME }),
+      pkg({ name: 'a', marketplace: 'claude-plugins-official' }),
+    ]);
+    render(<MarketplaceSidebar />);
+
+    const group = screen.getByRole('group', { name: 'Filter by source' });
+    // The Clear affordance sits in the group's own header, not the category one.
+    const clear = within(group.parentElement as HTMLElement).getByRole('button', { name: 'Clear' });
+    await user.click(clear);
+    expect(mockParams.clearSources).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the facet when every package comes from one source', () => {
+    setPackages([
+      pkg({ name: 'flow', marketplace: DORKOS_MARKETPLACE_SOURCE_NAME }),
+      pkg({ name: 'other', marketplace: DORKOS_MARKETPLACE_SOURCE_NAME }),
+    ]);
+    render(<MarketplaceSidebar />);
+
+    // A facet that cannot narrow anything is chrome the data has not earned.
+    expect(screen.queryByRole('group', { name: 'Filter by source' })).not.toBeInTheDocument();
   });
 
   // -------------------------------------------------------------------------

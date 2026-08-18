@@ -136,6 +136,44 @@ describe('PackageCard', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Source label — which marketplace this package came from
+  // -------------------------------------------------------------------------
+
+  describe('source label', () => {
+    it('names the marketplace the package came from', () => {
+      const pkg = makePackage({ marketplace: 'claude-plugins-official' });
+      render(<PackageCard pkg={pkg} onClick={() => {}} />);
+
+      expect(screen.getByText('claude-plugins-official')).toBeInTheDocument();
+    });
+
+    it('shows the author and the source side by side, not one instead of the other', () => {
+      const pkg = makePackage({ author: 'Test Author', marketplace: 'dorkos-community' });
+      render(<PackageCard pkg={pkg} onClick={() => {}} />);
+
+      expect(screen.getByText('Test Author')).toBeInTheDocument();
+      expect(screen.getByText('dorkos-community')).toBeInTheDocument();
+    });
+
+    it('tells a screen reader which name is the source', () => {
+      const pkg = makePackage({ author: 'Test Author', marketplace: 'dorkos-community' });
+      render(<PackageCard pkg={pkg} onClick={() => {}} />);
+
+      // The store and person icons are aria-hidden and the separator is a bare
+      // "·", so without this the two names read as one undifferentiated run.
+      const card = screen.getByTestId('package-card-@dorkos/code-reviewer');
+      expect(card.textContent).toContain('from dorkos-community');
+    });
+
+    it('hides the source on the compact variant', () => {
+      const pkg = makePackage({ marketplace: 'claude-plugins-official' });
+      render(<PackageCard pkg={pkg} onClick={() => {}} variant="compact" />);
+
+      expect(screen.queryByText('claude-plugins-official')).not.toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Compact variant
   // -------------------------------------------------------------------------
 
