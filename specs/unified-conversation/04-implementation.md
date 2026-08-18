@@ -1,7 +1,7 @@
 # Implementation Summary: Unified conversation surfaces — one tree, approvals anywhere, a live lane
 
 **Created:** 2026-08-18
-**Last Updated:** 2026-08-18
+**Last Updated:** 2026-08-18 (session 2 — review fixes)
 **Spec:** specs/unified-conversation/02-specification.md
 **Tracker:** DOR-1327 (umbrella) — phases DOR-1328 (P1) · DOR-1329 (P2) · DOR-1330 (P3) · DOR-1331 (P4) · DOR-1332 (P5)
 
@@ -47,7 +47,7 @@
   - Anchor, not surface, decides the capsule's holder: a small `cva` (`corner` → `contents`, `rail` → the sticky band moved from `RoomEntryActions`).
   - One behaviour unified rather than preserved twice: the `showTimestamps` preference now governs the continuation gutter on BOTH surfaces (a room ignored it before). It defaults to `false`, so nothing changes for a reader who has not turned it on. The session's gutter and author line also gained `<time dateTime title>` semantics the room already had.
 
-- Task #1.5: Wire both hosts to Message.* and delete the two old rows — worker: p1-builder
+- Task #1.5: Wire both hosts to Message.\* and delete the two old rows — worker: p1-builder
   - Deleted: `features/chat/ui/message/MessageItem.tsx` (228), `widgets/room-view/ui/RoomEntryRow.tsx` (400), `RoomEntryHeader.tsx` (171), `RoomEntryBody.tsx` (166), `RoomEntryActions.tsx` (149); `messageItem`'s export from `features/chat/index.ts`
   - Created: `features/chat/ui/message/SessionMessage.tsx` and `widgets/room-view/ui/RoomMessage.tsx` (188 and 389 lines against the 228 and 400 they replace — the layout, the grouping rhythm, the identity line, the capsule and the pills all left; what stays is the surface's own data resolution and its prop documentation, carried over verbatim); `features/chat/ui/render-session-body.tsx`; `widgets/room-view/ui/render-room-body.tsx`; `features/conversation/model/body-renderer.ts` (the `ConversationBodyRenderer` contract); `features/chat/config/session-capabilities.ts`; `features/onboarding/model/narration-capabilities.ts`
   - `Conversation.Root` is mounted by `ChatPanel` (the session surface the route, the Obsidian embed and the dev simulator all mount), by `RoomSurface` (room/DM, task 1.4) and by `OnboardingConversation` (the scripted narration, which declares its own all-off table because it is a third host of the row)
@@ -58,11 +58,12 @@
 
 - Task #1.6: Test the row — capability gating, data-slots, row kinds, and the surface-switch scan — worker: p1-builder
   - Created: `features/conversation/__tests__/Message.test.tsx` (9 cases), `features/conversation/__tests__/no-surface-switches.test.ts` (a source scan over `ui/`, plus a case proving the scan actually sees the tree), `features/conversation/lib/__tests__/row-kinds.test.ts` (6 cases)
-  - Four seeded defects, each run and each red: reactions rendered unconditionally → "draws no reactions at all…" red; `runWith` hard-coded in → "withholds run this with…" red; `surface === 'room'` added to `NoticeRow` → the scan red; `GROUP_GAP_MS` 5 min → 60 min → "breaks a group on silence" red.
+  - Three seeded defects on the ROW, each run and each red: reactions rendered unconditionally → "draws no reactions at all…" red; `runWith` hard-coded in → "withholds run this with…" red; `surface === 'room'` added to `NoticeRow` → the scan red.
+  - **The fourth defect certifies something else, and the record was wrong to list it beside the others.** `GROUP_GAP_MS` 5 min → 60 min → "breaks a group on silence" red proves `buildTimelineRows` — the surface-neutral grouping math that predates this programme and is untouched by it. It says nothing about `ConversationRow`, whose `notice`, `moment` and `thread-reply` members this file never reached: its local `kindOf` could only ever return `message | day-divider | unread-divider`, so those three could have been deleted from the union and the suite would have stayed green. Corrected in session 2 — see below.
   - One assertion the task named differently: `anchor` changes the ACTIONS slot, not the gutter (the gutter is identical under both anchors — the anchor holds the capsule, not the identity column), so the case pins the real difference rather than a claim the variant does not make.
 
-- Task #1.7: Show the Message.* matrix in the Dev Playground — worker: p1-builder
-  - New `dev/showcases/ConversationRowShowcases.tsx` holds two sections, both rendering the REAL components: **Message.\* matrix** (the two shipped capability tables side by side, then anchor × role × position × density, then one capability flag at a time) and **Conversation dividers** (`DayDivider`, `UnreadDivider` — neither had a bench anywhere before). Rendered from `MessageShowcases` and registered on the existing `chat` page in `dev/sections/chat-sections.ts`; the page rename and the five-section restructure stay P5's.
+- Task #1.7: Show the Message.\* matrix in the Dev Playground — worker: p1-builder
+  - New `dev/showcases/MessageRowShowcases.tsx` (minted as `ConversationRowShowcases.tsx`, renamed in session 2) holds two sections, both rendering the REAL components: **Message.\* matrix** (the two shipped capability tables side by side, then anchor × role × position × density, then one capability flag at a time) and **Conversation dividers** (`DayDivider`, `UnreadDivider` — neither had a bench anywhere before). Rendered from `MessageShowcases` and registered on the existing `chat` page in `dev/sections/chat-sections.ts`; the page rename and the five-section restructure stay P5's.
   - No duplicates added: `NoticeRow`, `MomentRow` and `ThreadReplyRow` are already benched on `/dev/rooms` against real room fixtures ("Room notices", "Room moments", "ThreadReplyRow"), and those benches now render the moved components. Drawing them a second time on Chat is the duplicate the task tells us to retire.
   - The two authors the benches share moved into `dev/mock-samples.ts` rather than being declared twice; the bench names `Message.Root`'s `role` variant `voice` on its own props, because `jsx-a11y` reads a literal `role=` on any JSX element as an ARIA role and this one is typography (the DOM role is `article` either way).
   - Two capability flags are shown as having nothing to show on the row, and the section says so rather than implying coverage: `threads` surfaces as the reply line (benched on Rooms) and `toolCards` inside the host's body renderer.
@@ -84,19 +85,73 @@
   - **knip:** four findings this phase introduced were fixed rather than accepted — `DM_CAPABILITIES` (a duplicate export of one object), `formatAbsoluteTime` and `EntryRunWithMenu` (barrel exports with no reader outside their slice), and `ConversationRoot` (a second spelling of `Conversation.Root`), plus the nine part prop-types nothing names. Totals fell rather than rose: unused exports 560 → 557, duplicate exports 3 → 2. What remains from this phase is the model contract task 1.1 mandates declaring now — `ConversationTarget` and its two ports, `ConversationRow`, `BodyRenderContext` — which P2–P4 consume, in a 602-item bucket knip already reports on `main`.
   - Servers stopped afterwards; ports 4250 and 4400 answer nothing.
 
+### Session 2 - 2026-08-18 (P1 review fixes, DOR-1328)
+
+**Workers:** `p1-fixer` (the original builder could not be resumed)
+
+Two independent reviews — spec compliance, then adversarial per `REVIEW.md` — found four blocking items and nine nits. All thirteen fixed; one commit per item group.
+
+- **The Prettier CI gate was red** (`.github/workflows/typecheck.yml`, `pnpm format:check` — not part of `pnpm verify`, which is why session 1's ladder missed it). `apps/e2e/manifest.json` carried test-runner churn a local Playwright run left behind: three reflowed `relatedCode` arrays, four run counters, a dropped `runHistory` entry, and no trailing newline. Restored to the base blob so the file's diff is three path fixes and nothing else. The branch also picked up `spec/unified-conversation`'s one newer commit, which is where the design mockup's own formatting fix lives.
+- **Three `relatedCode` paths in the e2e manifest pointed at deleted files** — `MessageItem.tsx`, `RoomThreadReplyRow.tsx`, `RoomNoticeRow.tsx`. Repointed and each target verified on disk.
+- **17 references outside `apps/client/src` still named the old components.** Repointed across four `contributing/` guides, the rooms self-test command, an e2e page object and two fixtures, and two server-side TSDoc comments. Three were more than a rename: `interactive-tools.md`'s Step 7 was rewritten against how `render-session-body.tsx` and `AssistantMessageContent` actually work, `keyboard-shortcuts.md`'s wiring diagram now shows the props travelling by `MessageContext`, and `link-dispatch-policy.md` credits `Message.Root` with the `ContextMenuTrigger`. Left alone on purpose: `RoomEntryBody` (the shared Zod type) and `RoomEntryRow` (the drizzle row type) are unrelated server names, and records of the past keep their own words.
+- **`row-kinds.test.ts` could not discriminate** — see the correction under task 1.6. Fixed by giving the rule a name (`roomEntryRowKind` in `widgets/room-view/lib/room-timeline.ts`, a discriminated result `RoomMessage` now branches on) and moving the suite to `widgets/room-view/__tests__/conversation-row-kinds.test.ts`, the only layer that can see both the union and its producer. It puts one room log through the host's own `groupByThread` → `buildTimelineRows` → `roomEntryRowKind` pipeline and expects each of the six kinds exactly once. Two seeded defects, two different reds: dropping the `body.moment` branch turns two cases red; dropping `moment` from `ConversationRow` turns typecheck red in three files.
+- **The reactions capability did not hold on all three ways in.** `Message.Root` handed `EntryActionMenu` its quick row ungated while `Message.Actions` gated the identical prop, so the right-click menu and the touch drawer would have offered what the hover capsule withholds. Gated, with two long-press cases.
+- **`Message.Reactions` drew its `data-slot` wrapper on every message**, reacted to or not. It now draws nothing until the message has carried a pill — latched, not read fresh, because `EntryReactionRow` outlives its own emptiness to run the last pill's fade.
+- **The surface scan read only `ui/` and only `surface ===`.** It now globs `{ui,lib,model}` and matches both a comparison in either direction and a `switch` on the surface.
+- Nits: `room-capabilities.ts`'s TSDoc pointed at a path that does not exist; a `toBeGreaterThan(0)` where the fixture has exactly one; a new `react/display-name` warning in `render-room-body.tsx`; a deep import of `MessageGrouping`, two doubled imports, and a relative `vi.mock` path; `ConversationRowShowcases.tsx` renamed to `MessageRowShowcases.tsx` (the old name reads as a bench for `features/relay`'s `ConversationRow`).
+
+**Verification:** `pnpm format:check` exit 0 · `pnpm --filter @dorkos/client typecheck` clean · `lint` 0 errors / 118 warnings (one fewer than the P1 gate) · `pnpm verify` exit 0 · the dangling-reference grep over the whole tree returns nothing but two unrelated server homonyms and one line of prose.
+
 ## Files Modified/Created
 
-**Source files:**
+108 files against `spec/unified-conversation`, by area. Client paths are relative to `apps/client/src/`.
 
-- `apps/client/src/layers/features/conversation/**` (new slice)
+**The new slice — `layers/features/conversation/` (new, 22 files):**
 
-**Test files:**
+- `model/`: `capabilities.ts`, `conversation-context.ts`, `target.ts`, `body-renderer.ts` — the contract P2–P4 consume
+- `lib/`: `row-kinds.ts` (new), `format-entry-time.ts` (moved from `widgets/room-view/lib/entry-time.ts`)
+- `ui/`: `ConversationRoot.tsx`
+- `ui/message/`: `MessageRoot`, `MessageGutter`, `MessageAuthor`, `MessageBody`, `MessageReactions`, `MessageActions`, `message-styles-context` (new); `MessageAttachments.tsx` (from `widgets/room-view/ui/RoomEntryAttachments.tsx`), `MessageAuthorAvatar.tsx` + `message-variants.ts` (from `features/chat/ui/message/`)
+- `ui/rows/`: `NoticeRow`, `MomentRow`, `ThreadReplyRow` (from `widgets/room-view/ui/Room*Row.tsx`), `DayDivider`, `UnreadDivider` (from `features/chat/ui/message/`)
+- `__tests__/`: `Message.test.tsx`, `no-surface-switches.test.ts` (new); `MessageAttachments.test.tsx`, `MessageAuthorAvatar.test.tsx` (moved with their subjects)
+- `index.ts` — the barrel, exporting only what a host names
 
-- `apps/client/src/layers/features/conversation/__tests__/MessageAuthorAvatar.test.tsx` (moved)
+**The session host — `layers/features/chat/` (16 files):**
+
+- New: `config/session-capabilities.ts`, `ui/render-session-body.tsx`
+- `ui/message/SessionMessage.tsx` (replaces `MessageItem.tsx`); deleted `ui/message/RunWithMenu.tsx`
+- Repointed: `index.ts`, `ui/message/index.ts`, `ui/ChatPanel.tsx` (mounts `Conversation.Root`), `ui/MessageList.tsx`, `ui/message/UserMessageContent.tsx`, `ui/primitives/tool-status-icon.tsx`, `model/stream/project-session-turn.ts`
+- Tests: `SessionMessage.test.tsx` (renamed), `MessageList*.test.tsx` ×4, `chip-tray-survives-turn-end.test.tsx`, `message-list-test-helpers.tsx`, `ui/tools/__tests__/QuestionOutcome.test.tsx`
+
+**The room host — `layers/widgets/room-view/` (24 files):**
+
+- New: `ui/RoomMessage.tsx` (replaces `RoomEntryRow.tsx`), `ui/render-room-body.tsx`, `model/room-capabilities.ts`, `__tests__/conversation-row-kinds.test.ts`
+- Deleted: `ui/RoomEntryRow.tsx` (400), `ui/RoomEntryHeader.tsx` (171), `ui/RoomEntryBody.tsx` (166), `ui/RoomEntryActions.tsx` (149)
+- Modified: `index.ts`, `ui/RoomSurface.tsx` (mounts `Conversation.Root`), `ui/RoomTimeline.tsx`, `ui/RoomThreadPanel.tsx`, `ui/MentionPillRenderer.tsx`, `lib/room-timeline.ts` (gains `roomEntryRowKind`), `lib/entry-row-article.ts`, `lib/mention-markup.ts`, `model/agent-info-context.tsx`, `model/mention-roster-context.tsx`
+- Tests: five `RoomEntryRow.*` suites renamed to `RoomMessage.*`, plus `RoomMomentRow`, `RoomThreadPanel`, `RoomTimeline`, `RoomTimeline.mentions`, `room-agent-faces` rehomed under the `Conversation.Root` the widget mounts
+
+**Hover actions — `layers/features/entry-actions/` (5 files):** `ui/EntryRunWithMenu.tsx` (new, from chat), `lib/entry-actions.ts` (the `run-with` slot), `ui/EntryActionBar.tsx`, `ui/EntryActionMenu.tsx`, `index.ts`, `__tests__/EntryRunWithMenu.test.tsx` (renamed)
+
+**Third host — `layers/features/onboarding/` (5 files):** `model/narration-capabilities.ts` (new, an all-off table), `ui/OnboardingConversation.tsx`, `model/onboarding-script.ts`, two tests
+
+**Elsewhere in the client (5 files):** `layers/entities/room/lib/thread.ts`, `layers/shared/ui/markdown-content.tsx`, `layers/shared/ui/markdown-link.tsx`, `layers/features/composer/__tests__/DispositionMenu.test.tsx`
+
+**Dev Playground — `src/dev/` (13 files):** `showcases/MessageRowShowcases.tsx` (new — the row matrix and the dividers), `showcases/MessageShowcases.tsx`, `sections/chat-sections.ts`, `sections/rooms-sections.ts`, `mock-samples.ts`, `showcases/{EntryActions,Identity,RoomDelivery,RoomThread}Showcases.tsx`, `showcases/entry-actions-showcase-data.ts`, `showcases/room-thread-showcase-helpers.tsx`, `simulator/SimulatorChatPanel.tsx`
+
+**Outside `apps/client` (10 files):** `apps/e2e/manifest.json` + `pages/RoomsPage.ts` + `fixtures/{rooms,team-room}-api.ts`; `apps/server/src/services/rooms/room-service.ts`; `packages/shared/src/room-schemas.ts`; `contributing/{interactive-tools,keyboard-shortcuts,link-dispatch-policy,animations}.md`; `.claude/commands/chat/rooms-test.md` — all TSDoc/prose repointed at the rows that exist
+
+**Artifacts:** `changelog/unreleased/260818-023659-one-message-row-everywhere.md`, this file
 
 ## Known Issues
 
-_(None yet)_
+Six things this phase decided rather than finished. Each names who picks it up.
+
+1. **`SESSION_CAPABILITIES` and `render-session-body.tsx` are in the wrong layer, deliberately — P4's to move.** The spec puts both in `widgets/session/`; ESLint refused it (`no-restricted-imports`, four test files), because `ChatPanel`, `MessageList`, the row and their tests are all in `features/chat` and a feature may not import a widget's model. They sit at `features/chat/config/session-capabilities.ts` and `features/chat/ui/render-session-body.tsx` until P4's composer host lands in `widgets/session`, at which point both move up with it. `config/` rather than `model/` only because the `dir-size` hook errors at 25 files in `features/chat/model`. Both files say this in their own TSDoc, and so does `widgets/room-view/model/room-capabilities.ts`.
+2. **`capabilities.toolCards` is declared by both hosts and read by nothing — P4 owns proving it.** Each host's body renderer is fixed in P1, so there is no branch for the flag to switch and no check that can go red on it today. Inventing one would be a check that cannot discriminate. P4's renderer map is where it goes live, and P4 is where the first honest test of it can be written.
+3. **`DM_CAPABILITIES` does not exist, and P5 task 5.1 names it.** It was dropped as a duplicate export of `ROOM_CAPABILITIES` — a second name for the identical object costs a reader the question "how do these two differ?" whose answer is "they do not". **What P5 should do instead: render the DM column from `ROOM_CAPABILITIES` with `surface="dm"`.** If DMs ever diverge, `room-capabilities.ts` splits into two tables at that point.
+4. **Run-with is a bar SLOT, and is absent from the right-click menu and the long-press drawer.** It is reachable on hover and by keyboard only, which is what it was before this phase — `EntryActionMenu` has nowhere to put a menu that opens a second menu, and its own TSDoc says so. **P4 must not assume the menu path carries it.** Its trigger keeps its own tab stop for exactly this reason: a capsule holding only run-with is still reachable by every reader.
+5. **The `showTimestamps` preference now governs channels, which it silently ignored before.** A behaviour unified rather than preserved twice — the same preference, one gutter. It defaults to `false`, so nothing changes for a reader who has not turned it on, and the changelog fragment says so. Flagged here because it is the one place P1 changed what a person sees rather than only how it is drawn.
+6. **The Dev Playground row matrix lives on `/dev/chat`, not on a page of its own.** `dev/showcases/MessageRowShowcases.tsx` renders both sections (`message-matrix`, `conversation-dividers`), `MessageShowcases` draws it, and `dev/sections/chat-sections.ts` registers it. `NoticeRow`, `MomentRow` and `ThreadReplyRow` stay benched on `/dev/rooms` against real room fixtures rather than being drawn a second time here. **The page rename and the five-section restructure are P5's** — this phase deliberately added to the existing page rather than pre-empting that.
 
 ## Implementation Notes
 
