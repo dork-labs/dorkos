@@ -838,6 +838,9 @@
           "approvalRemainingMs": {
             "type": "number"
           },
+          "approvalParked": {
+            "type": "boolean"
+          },
           "approvalTitle": {
             "type": "string",
             "description": "Full permission prompt sentence from SDK"

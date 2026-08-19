@@ -1479,8 +1479,10 @@ export class SessionStateProjector {
    * watchdog could never fire and the lock could never expire, so a turn frozen
    * before DOR-782 would become immortal after it. Delegating to
    * {@link listPendingInteractions} bounds that by the same
-   * `INTERACTION_TIMEOUT_MS` the recovery DTOs already use, so the two answers
-   * to "what is pending" cannot disagree.
+   * `INTERACTION_PARK_CEILING_MS` the recovery DTOs already use — a prompt
+   * PARKS at `INTERACTION_TIMEOUT_MS` and stays legitimately pending until the
+   * ceiling (spec `ask-parks-on-timeout`) — so the two answers to "what is
+   * pending" cannot disagree. The window widened; it did not open.
    *
    * @param now - Server epoch ms to evaluate expiry against (injected for tests).
    */
