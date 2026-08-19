@@ -28,8 +28,12 @@ export interface ProfileHeaderProps {
   owner?: TeamMember;
   /** Push the owner's profile. Drawn only when there is an owner to push. */
   onOpenOwner?: () => void;
-  /** Send a message. Omitted when there is nowhere for one to go. */
-  onMessage?: () => void;
+  /**
+   * Open a session with this identity. Omitted when there is nowhere to open
+   * one — which is most identities today (`messageTarget` answers `null` for
+   * every person, and for any agent the roster cannot place on disk).
+   */
+  onOpenSession?: () => void;
   /**
    * Open the face + personality picker.
    *
@@ -55,7 +59,7 @@ export function ProfileHeader({
   relationship,
   owner,
   onOpenOwner,
-  onMessage,
+  onOpenSession,
   onFaceActivate,
   actionsMenu,
 }: ProfileHeaderProps) {
@@ -196,9 +200,12 @@ export function ProfileHeader({
         )
       )}
 
-      {onMessage && (
-        <Button size="sm" className="mt-3 w-full max-w-64" onClick={onMessage}>
-          Message
+      {/* "Open session", not "Message": the button lands on `/session` with
+          this agent's directory, which is a session and not a DM. The old word
+          promised the other surface (spec `sidebar-simplification` §D2). */}
+      {onOpenSession && (
+        <Button size="sm" className="mt-3 w-full max-w-64" onClick={onOpenSession}>
+          Open session
         </Button>
       )}
     </div>

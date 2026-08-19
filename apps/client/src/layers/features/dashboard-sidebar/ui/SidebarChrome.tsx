@@ -26,7 +26,6 @@ import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { reportClientError } from '@/layers/shared/lib';
 import {
   useAgentCreationStore,
-  useAppStore,
   useImportProjectsStore,
   useProfileDeepLink,
   useTransport,
@@ -161,8 +160,6 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   const startNewSession = useStartNewSession();
   const { open: openProfile } = useProfileDeepLink();
   const memberIdByPath = useMeshMemberIds();
-  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
-  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
   const { update } = useUpdateSidebarPrefs();
 
   const { data: meshData } = useMeshAgentPaths();
@@ -349,6 +346,11 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           // stands for open underneath it (BC-19). Pressing it again puts them
           // away.
           if (target.rollup === 'automated') toggleTodayAutomated();
+          // `section-count` ("N inactive") is deliberately not handled: it is
+          // being replaced outright by an `All N agents →` command row that
+          // navigates to /team (spec `sidebar-simplification` §D3, task 2.2).
+          // Wiring it here would be a destination written twice and deleted
+          // once.
           return;
         case 'digest':
           // "While you were away…" is a door into the welcome-back note, and
@@ -405,8 +407,6 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       activeTarget,
       openTarget,
       startNewSession,
-      setRightPanelOpen,
-      setActiveRightPanelTab,
       memberIdByPath,
       openProfile,
       groupCreation,
