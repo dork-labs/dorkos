@@ -143,6 +143,7 @@ import {
 import { createPumpLauncher, decideProcessReuse, type PumpLaunchPlan } from './pump-launch.js';
 import { streamTurnWindow } from './pump-turn-stream.js';
 import { SessionCrashLoopError, SessionCrashRecovery } from './session-crash-recovery.js';
+import { isWaitingOnPerson } from './session-store.js';
 import { PumpRefusedError } from './session-pump-contract.js';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionPump } from './session-pump.js';
@@ -796,7 +797,13 @@ export class PersistentDispatch {
         }
         bundle.recovery.noteStateChange(change);
       },
-      hasPendingInteraction: () => session.pendingInteractions.size > 0,
+      // The map's raw SIZE was the wrong answer, for the same reason it is
+      // wrong in the projector: an entry CAN strand, and a stranded one would
+      // decline every reap and refuse every message into this session forever.
+      // {@link isWaitingOnPerson} bounds it by the wait this session actually
+      // allows, so all three answers to "is somebody still expected back"
+      // agree (spec `ask-parks-on-timeout`).
+      hasPendingInteraction: () => isWaitingOnPerson(session, Date.now()),
     });
 
     bundle.windows = new SessionTurnWindows({

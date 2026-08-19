@@ -31,17 +31,28 @@ import { awaitStopAck, type StopAck } from './bounded-stop.js';
 /**
  * Is this session holding a prompt somebody could still come back and answer?
  *
- * The exemption's bound is the park ceiling measured from when the prompt was
- * raised, so a stranded entry ages out on exactly the clock
- * `listPendingInteractions` and the stall watchdog use (spec
- * `ask-parks-on-timeout` §8).
+ * The one bounded answer for the whole runtime: record eviction here, and the
+ * dispatch refusal and warm reap in `persistent-dispatch.ts`, which used the
+ * pending map's raw size and so would have refused messages into a session with
+ * a STRANDED entry forever.
+ *
+ * The exemption's bound is the wait THIS session actually allows, measured from
+ * when the prompt was raised: the park ceiling for a session a person may come
+ * back to, and the plain countdown for an unattended run, whose prompts never
+ * park (spec `ask-parks-on-timeout` §7, §8). So a stranded entry ages out on
+ * exactly the clock its own runtime would have refused it on, and a scheduled
+ * run gets no four-hour reprieve it could never have used.
  *
  * @param session - The session to weigh.
  * @param now - Server epoch ms.
  */
-function isWaitingOnPerson(session: AgentSession, now: number): boolean {
+export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
+  const ceilingMs =
+    session.unattended === true
+      ? SESSIONS.INTERACTION_TIMEOUT_MS
+      : SESSIONS.INTERACTION_PARK_CEILING_MS;
   for (const pending of session.pendingInteractions.values()) {
-    if (now - pending.startedAt < SESSIONS.INTERACTION_PARK_CEILING_MS) return true;
+    if (now - pending.startedAt < ceilingMs) return true;
   }
   return false;
 }

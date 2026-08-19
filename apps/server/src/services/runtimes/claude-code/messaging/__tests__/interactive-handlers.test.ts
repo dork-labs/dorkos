@@ -1079,6 +1079,45 @@ describe('a prompt nobody answers parks, then is refused', () => {
     }
   });
 
+  it('writes one info line naming the prompt it is now waiting on', async () => {
+    // The park's only durable trace, and the half DOR-1158 could not reach: a
+    // long silence has to be explainable to somebody reading the log later, and
+    // "which prompt" is the first thing they need. `info`, not `warn`, because
+    // nothing was thrown away.
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const result = handleToolApproval(session, 'park-log', 'Bash', { command: 'ls' }, {
+        signal: new AbortController().signal,
+        toolUseID: 'park-log',
+      } as ToolApprovalContext);
+
+      vi.advanceTimersByTime(COUNTDOWN_MS);
+
+      const said = info.mock.calls.filter(
+        ([message]) => message === '[claude-code] nobody answered in time, so the agent is waiting'
+      );
+      expect(said.map(([, fields]) => fields)).toEqual([
+        {
+          interactionId: 'park-log',
+          kind: 'approval',
+          toolName: 'Bash',
+          sessionId: 'session-under-test',
+          waitsForMs: CEILING_MS,
+        },
+      ]);
+      // Nothing from the prompt's input, for the reason its sibling gives.
+      expect(JSON.stringify(said)).not.toContain('ls');
+
+      session.pendingInteractions.get('park-log')?.reject('done');
+      await result;
+    } finally {
+      vi.useRealTimers();
+      info.mockRestore();
+    }
+  });
+
   it('says the agent is waiting at ten minutes, and cancels nothing', async () => {
     vi.useFakeTimers();
     try {

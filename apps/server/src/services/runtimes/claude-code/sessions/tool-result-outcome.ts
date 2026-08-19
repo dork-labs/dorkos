@@ -74,9 +74,11 @@ export type ToolResultOutcome = 'complete' | 'expired' | 'denied' | 'cancelled' 
  * @param waitedMs - How long the prompt actually went unanswered.
  */
 export function describeWaited(waitedMs: number): string {
-  return waitedMs >= 3_600_000
-    ? `${Math.round(waitedMs / 3_600_000)} hours`
-    : `${Math.ceil(waitedMs / 60_000)} minutes`;
+  const [count, unit] =
+    waitedMs >= 3_600_000
+      ? ([Math.round(waitedMs / 3_600_000), 'hour'] as const)
+      : ([Math.ceil(waitedMs / 60_000), 'minute'] as const);
+  return `${count} ${unit}${count === 1 ? '' : 's'}`;
 }
 
 /**

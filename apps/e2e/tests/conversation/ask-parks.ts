@@ -5,7 +5,9 @@
  * The park is a visual state that spans four things no unit test sees at once:
  * the server's derivation of `parked` from `startedAt` and the declared budget,
  * the fan-out that carries it, the store that holds it, and the card that draws
- * it. So it is walked here, in a browser, end to end.
+ * it. So it is walked here, in a browser, end to end — including a reload
+ * mid-park, the one path where the transcript's own card is rebuilt from the
+ * recovery snapshot rather than from the live turn.
  *
  * **What makes it able to fail.** The `approval-parks` scenario raises its
  * prompt with `timeoutMs: 0`, so the SERVER's own selector — the real one, not a
@@ -89,6 +91,19 @@ export function registerAskParksTests(deps: AskParksDeps): void {
       request,
     }) => {
       const { sessionId } = await parkOnAnsweredNothing(page, request);
+
+      // RELOAD MID-PARK, first, because this is the shape that shipped a lie:
+      // the recovery snapshot carries a parked DTO with no budget and a
+      // remainder to the four-hour ceiling, and the transcript card read that
+      // as a countdown — "228:59 remaining", with a draining bar, over a prompt
+      // the agent was quietly holding.
+      await page.reload();
+      await new ChatPage(page).basePage.waitForAppReady();
+      const inlineCard = page.getByTestId('tool-approval');
+      await expect(inlineCard).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+      await expect(inlineCard).toContainText('waiting for you');
+      await expect(inlineCard).not.toContainText('remaining');
+      await expect(inlineCard.locator('[data-slot="ask-countdown"] [aria-hidden]')).toHaveCount(0);
 
       // The fleet-wide surfaces are where the parked DTO is drawn, so this
       // leaves the session the way a person who walked away would.

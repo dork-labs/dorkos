@@ -138,7 +138,8 @@ export interface InteractiveSession {
   /**
    * The session's working directory — the ONLY thing the in-session surface
    * resolves an agent identity from, and therefore what decides who the
-   * owner-facing verbs act as ({@link IDENTITY_SCOPED_TOOLS}).
+   * owner-facing verbs act as (`IDENTITY_SCOPED_TOOLS` in
+   * `interactive-handlers.ts`).
    *
    * Optional for the same reason `sdkSessionId` is: a real `AgentSession`
    * always carries it, a test fake need not. Absent means no identity, which is
@@ -227,18 +228,21 @@ function logInteractionTimeout(
  * reason its sibling gives.
  *
  * @param session - The session holding the prompt.
+ * @param interaction.id - The interaction's id (the tool-use id, for a tool).
  * @param interaction.kind - Which of the three kinds of prompt parked.
  * @param interaction.toolName - The tool an approval was about, when there is one.
  */
 function logInteractionParked(
   session: InteractiveSession,
-  interaction: { kind: 'approval' | 'question' | 'elicitation'; toolName?: string }
+  interaction: { id: string; kind: 'approval' | 'question' | 'elicitation'; toolName?: string }
 ): void {
   logger.info('[claude-code] nobody answered in time, so the agent is waiting', {
+    interactionId: interaction.id,
     kind: interaction.kind,
     toolName: interaction.toolName,
     ...(session.sdkSessionId !== undefined ? { sessionId: session.sdkSessionId } : {}),
-    waitsUntilMs: SESSIONS.INTERACTION_PARK_CEILING_MS,
+    // The whole wait, measured from `startedAt` — not what is left of it.
+    waitsForMs: SESSIONS.INTERACTION_PARK_CEILING_MS,
   });
 }
 
@@ -373,6 +377,15 @@ export function elicitationTimeoutNotice(serverName: string, waited: string): st
  * denials the model reads, the notice the operator sees, the log line — is
  * built from this number, so none of them can claim a wait that did not happen.
  *
+ * **A relay-bound turn is NOT unattended here, and that is a decision.**
+ * `core/unattended-autonomy` counts two unattended drivers, a binding and a
+ * scheduled task, and only the scheduler passes this flag. The difference is
+ * whether anybody can still answer: a scheduled run's prompt reaches nobody,
+ * while a bridged agent's prompt is listed fleet-wide and is answerable from
+ * the cockpit by the same person the room is talking to. It does NOT reach
+ * Slack or Telegram (spec "What is not done" #1), so a bridged Ask parks
+ * quietly and is answerable in the cockpit only.
+ *
  * @param session - The session holding the prompt.
  */
 export function refusalDeadlineMs(session: InteractiveSession): number {
@@ -440,7 +453,7 @@ export function armInteractionWait(
     // say, and saying it would push a notice over a card that is already gone.
     const entry = session.pendingInteractions.get(interactionId);
     if (entry === undefined) return;
-    logInteractionParked(session, log);
+    logInteractionParked(session, { id: interactionId, ...log });
     notifyInteractionTimeoutNotice(session, notices.parked);
     // The REMAINDER, not a fresh ceiling, so the deadline is
     // `startedAt + INTERACTION_PARK_CEILING_MS` — the same instant

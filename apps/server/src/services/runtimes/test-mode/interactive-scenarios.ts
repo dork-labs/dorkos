@@ -571,10 +571,11 @@ const questionExpires: ScenarioFn = async function* (_content, ctx) {
  * exercises the REAL derivation in `listPendingInteractions` rather than a
  * scenario-authored flag, so a regression in the rule goes red here.
  *
- * The park is ANSWERABLE — that is the whole point of it — so the branch after
- * the barrier does what a person's answer does. The refusal four hours on is the
- * other branch, released by a second step, and it is the `MOVED-ON` marker a
- * test asserts never appears when somebody did answer.
+ * The park is ANSWERABLE — that is the whole point of it — so this scenario
+ * waits on a real answer and then says which one it got. The refusal four hours
+ * on is NOT modelled here: `questionExpires` already covers that half through
+ * the same `interaction_cancelled` / `timeout` path, and a scenario cannot
+ * usefully wait out a clock nothing can advance.
  */
 const approvalParks: ScenarioFn = async function* (_content, ctx) {
   const toolCallId = 'parked-edit-1';

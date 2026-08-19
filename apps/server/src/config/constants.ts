@@ -201,6 +201,14 @@ export const SESSIONS = {
    *    parked sessions shrink the twelve-slot ceiling by N. At twelve, every new
    *    agent launch on the machine is refused — and the person who hits that
    *    refusal is not the person who walked away.
+   * 4. A room turn is given up after `rooms.lateReplyCeilingMinutes` (60 by
+   *    default). Before the park every prompt settled inside ten minutes, so
+   *    that bound was unreachable; now a room-raised Ask answered after an hour
+   *    still runs its tool and still lands in the session's transcript, but the
+   *    room gets no reply posted. The two numbers are deliberately NOT tied
+   *    together: one is how long an agent waits for a person, the other is how
+   *    long a room waits for an agent, and the second is a setting somebody may
+   *    have already tuned.
    *
    * **Why four hours.** Twenty-four times the countdown. It covers every failure
    * on record with a wide margin — DOR-784's forty-one minutes, a lunch, a

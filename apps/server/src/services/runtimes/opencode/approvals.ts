@@ -18,8 +18,20 @@
  * answered at. Past it the card PARKS — `listPendingInteractions` derives that
  * from the same two numbers, so OpenCode gets it without a line of its own —
  * and the auto-deny timer here fires only at
- * `SESSIONS.INTERACTION_PARK_CEILING_MS`, so the countdown can never end on a
- * ghost either way.
+ * `SESSIONS.INTERACTION_PARK_CEILING_MS`.
+ *
+ * **One thing here is unverified, and it is stated rather than assumed.**
+ * Whether the OpenCode sidecar applies an expiry of its own to an unanswered
+ * `Permission` is not settled by anything in `@opencode-ai/sdk`'s surface or in
+ * this directory, and it cannot be settled by reading — it needs one live turn
+ * held past ten minutes (spec `ask-parks-on-timeout`, "What is not done"). If
+ * the sidecar DOES expire one, DorkOS's park outlives it: the card stays
+ * answerable here, and an answer given after that point meets a permission the
+ * sidecar has already dropped — the respond call fails, or its
+ * `permission.replied` echo arrives with nobody's decision on it and
+ * {@link PendingApprovalStore.consumeExpired} is the only thing that could tell
+ * the two apart. Until somebody runs that turn, this module claims a park for
+ * OpenCode only as far as DorkOS's own timer goes.
  *
  * **What OpenCode does NOT get: a park notice.** The Claude adapter pushes a
  * `system_status` line at ten minutes through its own event queue. This pass is

@@ -55,6 +55,9 @@ describe('formatAskTimeLeft', () => {
     expect(formatAskTimeLeft(0)).toBe(ASK_PARKED_LABEL);
     expect(formatAskTimeLeft(-30)).toBe(ASK_PARKED_LABEL);
     expect(formatAskTimeLeft(Number.NaN)).toBe(ASK_PARKED_LABEL);
+    // `null` is how a card that KNOWS it parked says so — the server stamped it,
+    // rather than this clock running out. One phrase, one place.
+    expect(formatAskTimeLeft(null)).toBe(ASK_PARKED_LABEL);
     expect(ASK_PARKED_LABEL).toBe('waiting for you');
   });
 });

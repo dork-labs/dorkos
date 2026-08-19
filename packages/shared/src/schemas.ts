@@ -2130,6 +2130,17 @@ export const ToolCallPartSchema = z
      * (both ride on this tool_call part). Client-only — never serialized to the transcript.
      */
     approvalRemainingMs: z.number().optional(),
+    /**
+     * True once nobody answered inside the budget and the agent is simply
+     * waiting (spec `ask-parks-on-timeout`). Carried from the pending-interaction
+     * DTO, never derived here: a parked DTO ships NO `timeoutMs` while its
+     * `approvalRemainingMs` counts down to the four-hour ceiling, so a card that
+     * read that remainder against the ten-minute budget the turn supplied
+     * announced "228:59 remaining" with a draining bar on every reload
+     * mid-park. Client-only, like `approvalRemainingMs` — never serialized to
+     * the transcript.
+     */
+    approvalParked: z.boolean().optional(),
     // SDK-provided rich context for approval UI
     approvalTitle: z.string().optional().describe('Full permission prompt sentence from SDK'),
     approvalDisplayName: z.string().optional().describe('Short noun phrase for the tool action'),

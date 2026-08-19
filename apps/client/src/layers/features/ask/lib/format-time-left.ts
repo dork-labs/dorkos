@@ -48,12 +48,14 @@ export const ASK_PARKED_LABEL = 'waiting for you';
  * over an agent that is still holding the tool call is the exact lie that item
  * removes.
  *
- * @param secondsLeft - Seconds until the prompt parks.
+ * @param secondsLeft - Seconds until the prompt parks, or `null` when it has
+ *   already parked and there is no countdown left to say.
  * @returns e.g. `4 min left`, `35s left`, or {@link ASK_PARKED_LABEL} once the
- *   countdown is out.
+ *   countdown is out — however the caller learned it was out.
  */
-export function formatAskTimeLeft(secondsLeft: number): string {
-  if (!Number.isFinite(secondsLeft) || secondsLeft <= 0) return ASK_PARKED_LABEL;
+export function formatAskTimeLeft(secondsLeft: number | null): string {
+  if (secondsLeft === null || !Number.isFinite(secondsLeft) || secondsLeft <= 0)
+    return ASK_PARKED_LABEL;
   if (secondsLeft < 60) return `${Math.ceil(secondsLeft)}s left`;
   return `${Math.floor(secondsLeft / 60)} min left`;
 }

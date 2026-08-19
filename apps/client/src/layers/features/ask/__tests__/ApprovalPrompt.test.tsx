@@ -452,6 +452,43 @@ describe('ApprovalPrompt', () => {
       expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
     });
 
+    it('a card recovered MID-PARK says waiting, and never counts the ceiling down', async () => {
+      // The blocker this test exists for: a parked DTO ships no `timeoutMs` and
+      // a remainder to the four-hour ceiling, while the replayed ask still
+      // carries the ten-minute budget. Read as a countdown, that rendered
+      // "228:59 remaining" with a draining bar over a prompt the agent was
+      // quietly holding. Reachable by any reload during a park.
+      await renderAsync({
+        ...baseProps,
+        timeoutMs: 600_000,
+        approvalRemainingMs: 4 * 60 * 60_000 - 11 * 60_000,
+        approvalParked: true,
+      });
+
+      expect(screen.getByText('waiting for you')).toBeDefined();
+      expect(screen.queryByText(/remaining/)).toBeNull();
+      expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
+      expect(screen.getByRole('button', { name: /approve/i })).toBeDefined();
+
+      // And it stays that way: no interval is ticking a ceiling down behind it.
+      await act(async () => vi.advanceTimersByTime(120_000));
+      expect(screen.getByText('waiting for you')).toBeDefined();
+      expect(screen.queryByText(/remaining/)).toBeNull();
+    });
+
+    it('says waiting on a parked card that carries no budget at all', async () => {
+      // The other recovery shape: the turn was cleared, so the card is built
+      // from the DTO alone and has no `timeoutMs` to gate the line on.
+      await renderAsync({
+        ...baseProps,
+        approvalRemainingMs: 4 * 60 * 60_000 - 11 * 60_000,
+        approvalParked: true,
+      });
+
+      expect(screen.getByText('waiting for you')).toBeDefined();
+      expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
+    });
+
     it('a recovered card whose remainder has run out reads as waiting, not as gone', async () => {
       // A card recovered on reconnect (Path A pull / Path B re-emit) carries a
       // server-authoritative `approvalRemainingMs`. The server never lists a

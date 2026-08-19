@@ -64,6 +64,11 @@ describe('classifyToolResult', () => {
     // every transcript recorded before the park existed. Both keep their
     // receipts.
     expect(questionTimeoutDenial(TEN_MINUTES)).toBe('User did not respond within 10 minutes');
+    // And exactly one of anything is singular — "1 hours" is the shape a
+    // template with a hard-coded plural produces.
+    expect(questionTimeoutDenial(60 * 60_000)).toBe('User did not respond within 1 hour');
+    expect(approvalTimeoutDenial(60_000)).toBe('Tool approval timed out after 1 minute');
+    expect(classifyToolResult(questionTimeoutDenial(60 * 60_000), true)).toBe('expired');
     expect(approvalTimeoutDenial(TEN_MINUTES)).toBe('Tool approval timed out after 10 minutes');
     expect(classifyToolResult('User did not respond within 10 minutes', true)).toBe('expired');
     expect(classifyToolResult('Tool approval timed out after 10 minutes', true)).toBe('expired');

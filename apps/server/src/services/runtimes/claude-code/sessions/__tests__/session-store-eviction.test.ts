@@ -12,7 +12,7 @@
  * raised, so a STRANDED entry cannot make a record immortal.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SessionStore } from '../session-store.js';
+import { SessionStore, isWaitingOnPerson } from '../session-store.js';
 import { SessionLockManager } from '../../../../session/session-lock.js';
 import { SESSIONS } from '../../../../../config/constants.js';
 import type { PendingInteraction } from '../../messaging/interaction-wait.js';
@@ -67,6 +67,19 @@ describe('checkSessionHealth exempts a session waiting on a person', () => {
 
     expect(store.checkSessionHealth(new SessionLockManager())).toEqual([SESSION_ID]);
     expect(store.findSession(SESSION_ID)).toBeUndefined();
+  });
+
+  it('gives an UNATTENDED session only the wait it can actually use', () => {
+    // A scheduled run's prompt is refused at the countdown and never parks, so a
+    // four-hour reprieve for a stranded entry is time the session could never
+    // have spent waiting (spec `ask-parks-on-timeout` §7).
+    const store = storeHoldingPrompt(11 * 60_000);
+    const session = store.findSession(SESSION_ID)!;
+    const now = Date.now();
+
+    expect(isWaitingOnPerson(session, now)).toBe(true);
+    session.unattended = true;
+    expect(isWaitingOnPerson(session, now)).toBe(false);
   });
 
   it('still evicts an idle session with nothing pending at thirty-one minutes', () => {

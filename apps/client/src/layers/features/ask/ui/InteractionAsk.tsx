@@ -15,7 +15,7 @@ import { useAskReceipt } from '@/layers/entities/attention';
 import { useNow } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { askHeadline } from '../lib/ask-headline';
-import { ASK_PARKED_LABEL, formatAskTimeLeft } from '../lib/format-time-left';
+import { formatAskTimeLeft } from '../lib/format-time-left';
 import { useAnswerAsk } from '../model/use-answer-ask';
 import { AskCard } from './AskCard';
 import { AskReceiptLine } from './AskReceiptLine';
@@ -138,7 +138,7 @@ export function InteractionAsk({
             secondsLeft={secondsLeft}
             {...(budgetMs !== undefined ? { timeoutMs: budgetMs } : {})}
             elapsedMs={Math.max(0, now - interaction.startedAt)}
-            label={secondsLeft === null ? ASK_PARKED_LABEL : formatAskTimeLeft(secondsLeft)}
+            label={formatAskTimeLeft(secondsLeft)}
           />
         </div>
       )}

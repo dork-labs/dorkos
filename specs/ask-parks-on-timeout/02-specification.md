@@ -876,6 +876,28 @@ Named so a cold reader does not improve a deliberate gap back into a bug.
    true.
 9. **The park ceiling is a constant, not a setting.** Every `SESSIONS.*` sibling
    is, and there is no evidence yet of somebody who hits four hours and minds.
+10. **A relay-bound turn parks, and its Ask reaches the cockpit only.**
+    `core/unattended-autonomy` counts a binding as an unattended driver, and this
+    item deliberately does not: a bridged agent's prompt is listed fleet-wide and
+    the person the room is talking to can answer it in the cockpit, which is not
+    true of a scheduled run. So a Slack- or Telegram-bound agent parks for four
+    hours and says nothing on the surface that asked — the notification gap named
+    in #1 — while holding a warm slot. Refusing it fast instead would answer for
+    somebody who can, in fact, still answer.
+11. **A room turn is still given up after `rooms.lateReplyCeilingMinutes`**
+    (60 by default). Before the park every prompt settled inside ten minutes, so
+    that bound was unreachable; now a room-raised Ask answered after an hour runs
+    its tool and lands in the session's transcript, but no reply is posted back
+    to the room. The two are deliberately not tied: one is how long an agent
+    waits for a person, the other how long a room waits for an agent, and the
+    second is a setting somebody may have tuned. **Follow-on to file: "a room
+    turn that outlived its ceiling still says something when the answer lands."**
+12. **Whether the OpenCode sidecar expires an unanswered `Permission` is still
+    unverified**, and the module says so rather than claiming a parity it has not
+    earned (`services/runtimes/opencode/approvals.ts`). It needs one live
+    OpenCode turn held past ten minutes; nothing in the SDK surface settles it.
+    If the sidecar does expire one, DorkOS's park outlives it and a late answer
+    meets a permission that is already gone.
 
 ## Open Questions
 
