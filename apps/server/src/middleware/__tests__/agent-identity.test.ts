@@ -6,7 +6,11 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
-import { resolveAgentIdentity, getRequestAgentIdentity } from '../agent-identity.js';
+import {
+  resolveAgentIdentity,
+  getRequestAgentIdentity,
+  presentsAgentIdentity,
+} from '../agent-identity.js';
 import { logger } from '../../lib/logger.js';
 
 vi.mock('../../lib/logger.js', () => ({
@@ -184,5 +188,56 @@ describe('resolveAgentIdentity — unresolved token visibility', () => {
     await resolveAgentIdentity(req, res, next);
 
     expect(logger.debug).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `presentsAgentIdentity` is the wider question — "is a machine calling" rather
+ * than "which agent is this" — and two surfaces refuse on it now:
+ * `readCallerAuthority`'s `agentIdentityPresented` (the Ask's answer routes,
+ * capability approvals) and `GET /api/rooms/:id/sessions` (DOR-1357). The case
+ * that matters is the middle one: a token that did NOT resolve leaves `locals`
+ * empty, so anything reading only {@link getRequestAgentIdentity} calls a revoked
+ * agent a person.
+ *
+ * **Seeded defect:** drop the raw-header disjunct → "a token that resolved to
+ * nothing" goes red, and only it.
+ */
+describe('presentsAgentIdentity', () => {
+  beforeEach(() => {
+    resetAgentIdentityService();
+  });
+
+  afterEach(() => {
+    resetAgentIdentityService();
+  });
+
+  it('is true for a token the middleware resolved', async () => {
+    const service = initAgentIdentityService(createTestDb());
+    const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
+    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
+    await resolveAgentIdentity(req, res, next);
+
+    expect(getRequestAgentIdentity(res)).toBeDefined();
+    expect(presentsAgentIdentity(req, res)).toBe(true);
+  });
+
+  it('is true for a token that resolved to nothing, which is what a revoked agent looks like', async () => {
+    const service = initAgentIdentityService(createTestDb());
+    const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
+    await service.revoke(AGENT_PATH);
+    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
+    await resolveAgentIdentity(req, res, next);
+
+    // Nothing resolved — so the narrow reader says "no agent here", and the
+    // wide one still says a machine called.
+    expect(getRequestAgentIdentity(res)).toBeUndefined();
+    expect(presentsAgentIdentity(req, res)).toBe(true);
+  });
+
+  it('is false when no header was presented at all, which is every person in the cockpit', () => {
+    const { req, res } = makeReqRes();
+
+    expect(presentsAgentIdentity(req, res)).toBe(false);
   });
 });

@@ -4580,6 +4580,16 @@
       "extractedFrom": "unified-conversation",
       "specSlug": "unified-conversation",
       "amends": 152
+    },
+    {
+      "id": "260818-234541",
+      "slug": "a-busy-agents-message-is-held-not-refused",
+      "title": "A busy agent's message is held, not refused, and the promise lives only where it can be kept",
+      "status": "proposed",
+      "created": "2026-08-18",
+      "extractedFrom": "room-hold-when-busy",
+      "specSlug": "room-hold-when-busy",
+      "amends": "260726-170125"
     }
   ]
 }

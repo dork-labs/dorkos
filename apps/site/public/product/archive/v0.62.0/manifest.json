@@ -1,0 +1,94 @@
+{
+  "label": "v0.62.0",
+  "archivedAt": "2026-08-18T23:42:01.362Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-08-18T23:41:48.232Z",
+    "runId": "20260818-183617"
+  },
+  "shots": [
+    {
+      "id": "tool-approval",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "topology",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "marketplace-detail",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["docs"]
+    }
+  ],
+  "count": 5,
+  "totalBytes": 1394585,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "marketplace-detail-light.png",
+      "surface": "marketplace-detail",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 143129,
+      "runId": "20260818-183617",
+      "capturedAt": "2026-08-18T23:40:13.146Z"
+    },
+    {
+      "source": "auto",
+      "file": "tool-approval-light.png",
+      "surface": "tool-approval",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 100949,
+      "runId": "20260818-183617",
+      "capturedAt": "2026-08-18T23:40:13.146Z"
+    },
+    {
+      "source": "auto",
+      "file": "topology-dark.png",
+      "surface": "topology",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 131422,
+      "runId": "20260818-183617",
+      "capturedAt": "2026-08-18T23:40:13.146Z"
+    },
+    {
+      "source": "auto",
+      "file": "topology-dark.webm",
+      "surface": "topology",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 884818,
+      "durationMs": 6635,
+      "runId": "20260818-183617",
+      "capturedAt": "2026-08-18T23:40:13.146Z"
+    },
+    {
+      "source": "auto",
+      "file": "topology-light.png",
+      "surface": "topology",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 134267,
+      "runId": "20260818-183617",
+      "capturedAt": "2026-08-18T23:40:13.146Z"
+    }
+  ]
+}
