@@ -218,6 +218,29 @@ describe('a hold that outlives its window', () => {
     expect(hold.waiting).toBe(0);
   });
 
+  it('takes the shorter of the line ceiling and the one the caller passed', async () => {
+    const hold = oneSlot({ holdCeilingMs: 60_000 });
+    await hold.acquire({ mayWait: true });
+    // A message with five seconds of life left may not wait a minute for a
+    // slot: the turn takes its deadline from that same remaining time.
+    const held = hold.acquire({ mayWait: true, ceilingMs: 5_000 });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    // Seeded defect: use `request.ceilingMs ?? this.holdCeilingMs` without the
+    // `Math.min`. A caller passing a LONGER ceiling would then escape the
+    // line's own bound, and this one would still be waiting here.
+    await expect(held).resolves.toBe('held_too_long');
+  });
+
+  it('never lets a caller ceiling extend the line bound', async () => {
+    const hold = oneSlot({ holdCeilingMs: 60_000 });
+    await hold.acquire({ mayWait: true });
+    const held = hold.acquire({ mayWait: true, ceilingMs: 10 * 60_000 });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(held).resolves.toBe('held_too_long');
+  });
+
   it('leaves the slot count untouched when a wait expires', async () => {
     const hold = oneSlot({ holdCeilingMs: 60_000 });
     await hold.acquire({ mayWait: true });
