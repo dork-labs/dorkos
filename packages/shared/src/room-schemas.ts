@@ -1538,12 +1538,20 @@ export type RoomPresencePayload = Required<Pick<RoomSignalEvent, 'state' | 'entr
  * A function rather than a comment on each call site because there are two call
  * sites today, and the third one somebody adds is the one that would forget.
  *
+ * Constrained on `object` with the field intersected in rather than on the field
+ * itself: a constraint that is nothing BUT optional properties is a weak type,
+ * so passing the ordinary payload — one that carries no reading — failed to
+ * compile with an error about having "no properties in common", which is the
+ * opposite of what this function is for.
+ *
  * @param payload - The presence a producer is about to hand outward.
  * @returns The same payload with `activity.target` gone. A payload carrying no
  *   activity at all comes back untouched — never with an empty one invented for
  *   it.
  */
-export function withoutActivityTarget<T extends { activity?: SessionActivity }>(payload: T): T {
+export function withoutActivityTarget<T extends object>(
+  payload: T & { activity?: SessionActivity }
+): T & { activity?: SessionActivity } {
   if (payload.activity === undefined) return payload;
   return { ...payload, activity: { toolName: payload.activity.toolName } };
 }

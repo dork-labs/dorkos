@@ -16,7 +16,6 @@ import {
   RoomNoticeCodeSchema,
   ToggleReactionRequestSchema,
   withoutActivityTarget,
-  type RoomPresencePayload,
   type SignableRoomEntry,
 } from '../room-schemas.js';
 import { AgentBehaviorSchema, ResponseModeSchema } from '../mesh-schemas.js';
@@ -581,14 +580,10 @@ describe('withoutActivityTarget', () => {
   it('leaves a payload with no reading exactly as it was', () => {
     // Never an empty `activity: {}` invented for a frame that had none: that
     // would put a reading on the wire for a turn nobody has heard from.
-    // Typed as a producer holds it, which is also what the helper's weak-type
-    // constraint asks for: a bare literal with no `activity` key shares no
-    // property with it and TypeScript says so.
-    const payload: Partial<RoomPresencePayload> = {
-      state: 'working',
-      entryId: '01JZENTRY',
-      since: 'now',
-    };
+    // A bare literal, with no annotation and no `activity` key — the shape most
+    // presence publishes actually have, and the one the helper's constraint has
+    // to accept without complaint.
+    const payload = { state: 'working' as const, entryId: '01JZENTRY', since: 'now' };
     const stripped = withoutActivityTarget(payload);
     expect(stripped).toEqual(payload);
     expect('activity' in stripped).toBe(false);

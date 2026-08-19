@@ -329,6 +329,20 @@ export interface RoomTriggerDeps {
 const PRESENCE_REPUBLISH_MS = 10_000;
 
 /**
+ * Whether two readings say the same thing about a turn.
+ *
+ * The same tool on the same target is not a change, so it is neither worth a
+ * frame nor worth restarting anything on screen for.
+ *
+ * @param a - One reading, or `undefined` for none.
+ * @param b - The other.
+ */
+function sameActivity(a: SessionActivity | undefined, b: SessionActivity | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.toolName === b.toolName && a.target === b.target;
+}
+
+/**
  * Runs addressing, the cascade guard, and the turns that survive both.
  *
  * Construction is deliberately cheap and side-effect free: an install with no
@@ -2186,6 +2200,10 @@ export class RoomTriggerDispatcher {
     // landing AFTER the `done` that retired it, which is a lane that never
     // clears. `halt` releases through this seam and inherits it.
     this.disarmActivityFlush(claim);
+    // And the `done` itself carries no reading. A turn that has ended is not
+    // doing anything, which is what `RoomSignalEvent.activity` promises — and a
+    // halt reaches here without the runner ever having cleared.
+    claim.activity = undefined;
     this.publishPresence(claim, 'done');
     this.publishWorkingCount(claim.roomId, before);
     if (this.republishing !== null && this.claimed.size === 0) {
@@ -2236,25 +2254,17 @@ export class RoomTriggerDispatcher {
       if (claim.activity === undefined) return;
       claim.activity = undefined;
       this.disarmActivityFlush(claim);
-      this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
-      claim.activityPublishedAt = Date.now();
+      this.publishActivityNow(claim);
       return;
     }
 
-    if (
-      claim.activity !== undefined &&
-      claim.activity.toolName === activity.toolName &&
-      claim.activity.target === activity.target
-    ) {
-      return;
-    }
+    if (sameActivity(claim.activity, activity)) return;
 
     claim.activity = activity;
     const waited = Date.now() - claim.activityPublishedAt;
     if (waited >= ACTIVITY_FANOUT_THROTTLE_MS) {
       this.disarmActivityFlush(claim);
-      this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
-      claim.activityPublishedAt = Date.now();
+      this.publishActivityNow(claim);
       return;
     }
     if (claim.activityFlush !== undefined) return;
@@ -2262,14 +2272,32 @@ export class RoomTriggerDispatcher {
       claim.activityFlush = undefined;
       // Whatever the claim holds WHEN THIS FIRES, not what it held when the
       // timer was armed: a burst of six tools inside one window should leave
-      // the sixth on screen, not the second.
-      this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
-      claim.activityPublishedAt = Date.now();
+      // the sixth on screen, not the second. And if the burst ended where it
+      // started — A → B → A — the room is already showing the right thing, so
+      // the flush costs nothing.
+      if (sameActivity(claim.activity, claim.activityPublished)) return;
+      this.publishActivityNow(claim);
     }, ACTIVITY_FANOUT_THROTTLE_MS - waited);
     // A trailing repaint is not a reason for the process to stay alive, for the
     // reason the republish interval is unref'd.
     flush.unref?.();
     claim.activityFlush = flush;
+  }
+
+  /**
+   * Put a claim's current reading on the room's stream, and remember that the
+   * room has now seen it.
+   *
+   * The one place an activity publish happens, so `activityPublished` and
+   * `activityPublishedAt` cannot fall out of step with what actually went out —
+   * which is what the trailing flush's own equality check depends on.
+   *
+   * @param claim - The claim whose reading is going out.
+   */
+  private publishActivityNow(claim: ActiveClaim): void {
+    this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
+    claim.activityPublished = claim.activity;
+    claim.activityPublishedAt = Date.now();
   }
 
   /**

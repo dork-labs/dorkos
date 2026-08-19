@@ -1275,6 +1275,30 @@ describe('a claim lives until its turn is done', () => {
       }
     });
 
+    it('spends no frame on a burst that ends where it started', async () => {
+      // A → B → A inside one throttle window. The room is already showing A when
+      // the flush fires, so publishing it again would repaint every reader of
+      // this room to tell them nothing.
+      await anaWorking();
+      try {
+        runner.doing(ana, 'Read', '{"file_path":"/repo/standup.md"}');
+        expect(presenceFor(ana)).toHaveLength(2);
+
+        vi.advanceTimersByTime(100);
+        runner.doing(ana, 'Bash', '{"command":"pnpm test"}');
+        vi.advanceTimersByTime(100);
+        runner.doing(ana, 'Read', '{"file_path":"/repo/standup.md"}');
+
+        vi.advanceTimersByTime(5_000);
+
+        expect(presenceFor(ana)).toHaveLength(2);
+        expect(readingsFor(ana).at(-1)).toEqual({ toolName: 'Read', target: 'standup.md' });
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('carries the current reading on every ten-second re-statement', async () => {
       // The cold-connect hole: signals never replay, so a client that opens the
       // room mid-turn learns what is happening from a republish and from nothing
@@ -1313,6 +1337,10 @@ describe('a claim lives until its turn is done', () => {
         // all do.
         await service.haltRoom(room.id, human);
         expect(statesFor(ana).at(-1)).toBe('done');
+        // And the `done` says the turn is over rather than what it was doing:
+        // a halt reaches the release without the runner ever having cleared, so
+        // this is the only thing making the frame honest.
+        expect(readingsFor(ana).at(-1)).toBeUndefined();
         const afterRelease = presenceFor(ana).length;
 
         vi.advanceTimersByTime(10_000);

@@ -140,6 +140,15 @@ export interface ActiveClaim {
    * that connects mid-turn sees the verb on its first frame.
    */
   activity?: SessionActivity;
+  /**
+   * The reading the room has actually SEEN, which is not always the one above:
+   * between arming a trailing flush and its firing, `activity` has moved on and
+   * this has not.
+   *
+   * It is what the flush compares against, so a burst that ends where it started
+   * (A → B → A inside one window) costs no frame at all.
+   */
+  activityPublished?: SessionActivity;
   /** This client's clock at the last activity publish — the throttle's floor. */
   activityPublishedAt: number;
   /** An armed trailing publish, or `undefined` when none is. */
