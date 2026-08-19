@@ -247,7 +247,8 @@ export const SESSIONS = {
    * interrupts the runtime and closes the turn with a typed error. Resets on
    * every StreamEvent; suspended while the session holds a live pending
    * interaction (an approval, question or elicitation can legitimately sit for
-   * as long as the person takes, bounded by INTERACTION_TIMEOUT_MS).
+   * as long as the person takes, bounded by INTERACTION_PARK_CEILING_MS — a
+   * prompt parks at the countdown and is only refused at the ceiling).
    * Trade-off: a legitimately silent tool run longer than this is interrupted.
    */
   TURN_STALL_TIMEOUT_MS: 10 * 60 * 1000,

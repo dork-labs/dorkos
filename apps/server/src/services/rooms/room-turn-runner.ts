@@ -472,10 +472,10 @@ const MESSAGE_BOUNDARY = new Set(['tool_call', 'tool_result']);
  * the approvals somebody is already handling, which need no announcement at
  * all. Above it is the incident this notice exists for: agents stopped for
  * twenty to forty-one minutes with nothing said anywhere (DOR-784). And it
- * spends only a tenth of the ten-minute auto-deny window
+ * spends only a tenth of the ten-minute countdown
  * (`SESSIONS.INTERACTION_TIMEOUT_MS`), so a person reading the line still has
- * about nine minutes to act on it — the room is late to speak, never too late
- * to be useful.
+ * about nine minutes before the card even parks, and hours before the agent
+ * gives up — the room is late to speak, never too late to be useful.
  *
  * Deliberately a constant rather than configuration: it changes how chatty one
  * notice is, never what the room does, and there is no honest guidance to give
