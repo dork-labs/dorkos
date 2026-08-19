@@ -1,7 +1,7 @@
 ---
 id: 260819-034718
 title: The relay holds a bridged chat message for a busy agent, and holds for nobody else
-status: proposed
+status: accepted
 created: 2026-08-19
 supersedes: null
 superseded-by: null

@@ -1,7 +1,7 @@
 ---
 id: 260819-022636
 title: An unanswered prompt parks instead of being refused, and the park is derived from elapsed time and bounded by a ceiling
-status: proposed
+status: accepted
 created: 2026-08-18
 extractedFrom: ask-parks-on-timeout
 spec: ask-parks-on-timeout

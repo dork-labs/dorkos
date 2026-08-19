@@ -1,7 +1,7 @@
 ---
 id: 260819-022127
 title: A presence glimpse carries structure, not prose, and its target stops at the operator's cockpit
-status: proposed
+status: accepted
 created: 2026-08-18
 spec: presence-verb-glimpse
 extractedFrom: presence-verb-glimpse

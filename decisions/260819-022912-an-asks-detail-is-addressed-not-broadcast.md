@@ -1,7 +1,7 @@
 ---
 id: 260819-022912
 title: An Ask's detail is addressed, not broadcast
-status: proposed
+status: accepted
 created: 2026-08-19
 spec: ask-entitlement
 extractedFrom: ask-entitlement

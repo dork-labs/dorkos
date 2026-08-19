@@ -1,7 +1,7 @@
 ---
 id: 260819-023317
 title: Stopping one agent is the room halt scoped, not a new verb, and scoping it is not arbitration
-status: proposed
+status: accepted
 created: 2026-08-19
 spec: room-per-agent-stop
 extractedFrom: room-per-agent-stop

@@ -1046,3 +1046,34 @@ added there or it is silently dropped.
 
 Tests: `routes/__tests__/room-capabilities-unverified-agent.test.ts`, driving both
 surfaces through their real routers.
+
+### 2026-08-19 — every follow-up from the programme is shipped
+
+The follow-ups section above is closed. Thirteen PRs landed between 2026-08-18 and
+2026-08-19, each built in its own worktree by a named agent, reviewed twice before
+the PR opened (spec compliance and an adversarial pass against `REVIEW.md`), fixed,
+verified by a third agent, and merged through the queue:
+
+| Issue    | What a person gets                                                                                                                                                       | PR                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
+| DOR-1357 | the sessions route no longer reads an unverifiable agent token as the operator                                                                                           | #1113               |
+| DOR-1358 | after you rejoin a channel, the sidebar stops saying you left it                                                                                                         | #1117               |
+| DOR-1355 | a receipt names who answered an Ask                                                                                                                                      | #1116               |
+| DOR-1353 | Known Issue 29 closed                                                                                                                                                    | #1115               |
+| DOR-1359 | a bridged chat hears when an agent is waiting                                                                                                                            | #1114               |
+| DOR-1354 | Known Issue 28 closed                                                                                                                                                    | #1119               |
+| DOR-1345 | a busy agent's room message is held, not refused; nobody is asked to send it again                                                                                       | #1112 (spec), #1121 |
+| DOR-1362 | the relay's at-capacity notice holds a bridged message for its turn instead of asking for a resend                                                                       | #1123               |
+| DOR-1351 | the room's live lane says what an agent is doing; the target never leaves your screen                                                                                    | #1124               |
+| DOR-1361 | every room route, the room streams, the capability/MCP door and the managed-MCP audit label refuse an unverifiable agent token; the CLI passes a route's own 401 through | #1125               |
+| DOR-1350 | an unanswered Ask parks for up to four hours and still takes your answer, reload included; scheduled runs never wait                                                     | #1126               |
+| DOR-1352 | stop one agent in a room without stopping the room                                                                                                                       | #1127               |
+| DOR-1356 | an Ask's detail is addressed, not broadcast: the fleet-wide list, the live streams and the bridged card answer only whoever may act on it                                | #1128               |
+
+Specs `ask-parks-on-timeout`, `presence-verb-glimpse`, `room-per-agent-stop` and
+`ask-entitlement` are `implemented`; their ADRs (`260819-022127`, `260819-022636`,
+`260819-022912`, `260819-023317`) and the relay hold's (`260819-034718`) are
+`accepted`. Two things the night surfaced are filed, not fixed here: the CI
+durations and runner-mirror hangs that cost several hours of queue time
+(DOR-1363; #1129 and #1130 carry the workflow fixes), and the room-thread scroll
+restore that flakes about half the time on main as well (DOR-1364).
