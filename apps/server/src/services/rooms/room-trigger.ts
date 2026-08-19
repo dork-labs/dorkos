@@ -2288,15 +2288,18 @@ export class RoomTriggerDispatcher {
    * Put a claim's current reading on the room's stream, and remember that the
    * room has now seen it.
    *
-   * The one place an activity publish happens, so `activityPublished` and
-   * `activityPublishedAt` cannot fall out of step with what actually went out —
-   * which is what the trailing flush's own equality check depends on.
+   * The one place an activity-DRIVEN publish happens — not the only frame that
+   * carries a reading, which is the distinction worth keeping straight: the
+   * claim frame, both `working_late` publishes, every republish and the `done`
+   * all carry `claim.activity` too, because {@link
+   * RoomTriggerDispatcher.publishPresence} spreads it unconditionally. This is
+   * the one that happens BECAUSE the reading changed, and it is what stamps the
+   * throttle's floor.
    *
    * @param claim - The claim whose reading is going out.
    */
   private publishActivityNow(claim: ActiveClaim): void {
     this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
-    claim.activityPublished = claim.activity;
     claim.activityPublishedAt = Date.now();
   }
 
@@ -2370,6 +2373,13 @@ export class RoomTriggerDispatcher {
    * @param state - Where it is in its life.
    */
   private publishPresence(claim: ActiveClaim, state: RoomPresenceState): void {
+    // Every frame carries the current reading, so every frame is one the room
+    // has now SEEN — including a republish or a `working_late` that lands
+    // between a trailing flush being armed and firing. Recording it here rather
+    // than only on the activity path is what stops that flush repeating a
+    // reading already on screen. It can never suppress a needed frame: this only
+    // ever equals what actually went out.
+    claim.activityPublished = claim.activity;
     this.deps.publishPresence(claim.roomId, claim.authorId, {
       state,
       entryId: claim.entryId,
