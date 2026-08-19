@@ -1352,6 +1352,12 @@ async function start() {
         // delivery hook on the room service.
         roomStore,
         roomAuthors,
+        // The three seams the bridged Approve/Deny card needs beyond outbound
+        // delivery's set (spec `ask-entitlement` §5): which room a session
+        // answers for, who is on the other end of the chat, and — supplied by
+        // the manager itself — that adapter's approver allowlist.
+        roomSessionBindings: roomStore.sessionLedger,
+        roomMembers: roomStore,
         registerEntryCommitListener: (listener) => roomService.setEntryCommitListener(listener),
         // The bridge's presence forwarder (§6.8): a room's live `progress`
         // signal becomes a relay signal on the bridged chat's subject, reusing

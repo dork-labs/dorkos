@@ -751,7 +751,7 @@ export class AuthorRegistry {
     }
     if (input.kind === 'human' && isExternalNaturalKey(input.naturalKey)) {
       const taken = this.handles.spokenFor(claimant);
-      const { platform, platformUserId } = externalKeyParts(input.naturalKey);
+      const { platform, platformUserId } = externalAuthorParts(input.naturalKey);
       return (
         deriveQualifiedHandle(input.displayName, platform, taken) ??
         // A name written entirely outside the charset — Cyrillic, CJK, emoji —
@@ -1303,18 +1303,20 @@ export function isExternalNaturalKey(naturalKey: string): boolean {
  */
 export function authorOrigin(naturalKey: string): AuthorOrigin {
   if (!isExternalNaturalKey(naturalKey)) return 'local';
-  return { platform: externalKeyParts(naturalKey).platform };
+  return { platform: externalAuthorParts(naturalKey).platform };
 }
 
 /**
  * The platform and the platform's own user id, read back off a stored external
  * key.
  *
- * **One parse, two readers.** {@link authorOrigin} needs the platform to draw a
- * trust boundary, and the handle derivation needs both — the platform to qualify
+ * **One parse, three readers.** {@link authorOrigin} needs the platform to draw
+ * a trust boundary, the handle derivation needs both — the platform to qualify
  * the namespace, and the user id as the fallback when somebody's name spells
- * nothing the grammar can hold. Two parses of one key shape is how they come to
- * disagree about where a person is.
+ * nothing the grammar can hold — and the bridged Ask card needs the user id to
+ * ask an adapter's approver allowlist about it (spec `ask-entitlement` §5.1).
+ * Two parses of one key shape is how they come to disagree about where a person
+ * is, which is why the third reader exported this rather than writing its own.
  *
  * `platformUserId` is everything after the second separator, joined back
  * together, because a platform's ids may contain one; the two segments before it
@@ -1328,7 +1330,10 @@ export function authorOrigin(naturalKey: string): AuthorOrigin {
  *
  * @param naturalKey - An external author's stored natural key.
  */
-function externalKeyParts(naturalKey: string): { platform: string; platformUserId: string } {
+export function externalAuthorParts(naturalKey: string): {
+  platform: string;
+  platformUserId: string;
+} {
   const segments = naturalKey.slice(EXTERNAL_KEY_PREFIX.length).split(KEY_SEPARATOR);
   const platform = segments[0] ?? '';
   return {

@@ -142,7 +142,7 @@ describe('ClaudeCodeAdapter', () => {
     traceStore = createMockTraceStore();
     taskStore = createMockTasksStore();
     relay = createMockRelay();
-    deps = { agentManager, traceStore, taskStore };
+    deps = { agentManager, traceStore, taskStore, approvalAuthorizer: () => true };
     adapter = new ClaudeCodeAdapter('claude-code', { defaultCwd: '/default/cwd' }, deps);
   });
 
@@ -365,7 +365,7 @@ describe('ClaudeCodeAdapter', () => {
     const cappedAdapter = new ClaudeCodeAdapter(
       'capped',
       { maxConcurrent: 1, defaultCwd: '/tmp' },
-      { agentManager: hangingManager, traceStore }
+      { agentManager: hangingManager, traceStore, approvalAuthorizer: () => true }
     );
     await cappedAdapter.start(relay);
 
@@ -441,7 +441,7 @@ describe('ClaudeCodeAdapter', () => {
     const isolated = new ClaudeCodeAdapter(
       'claude-code',
       { defaultCwd: '/tmp' },
-      { agentManager, traceStore, agentSessionStore }
+      { agentManager, traceStore, agentSessionStore, approvalAuthorizer: () => true }
     );
     await isolated.start(relay);
 
@@ -459,7 +459,7 @@ describe('ClaudeCodeAdapter', () => {
     const isolated = new ClaudeCodeAdapter(
       'claude-code',
       { defaultCwd: '/tmp' },
-      { agentManager, traceStore, agentSessionStore }
+      { agentManager, traceStore, agentSessionStore, approvalAuthorizer: () => true }
     );
     await isolated.start(relay);
 
@@ -493,7 +493,7 @@ describe('ClaudeCodeAdapter', () => {
     const isolated = new ClaudeCodeAdapter(
       'claude-code',
       { defaultCwd: '/tmp' },
-      { agentManager, traceStore, agentSessionStore }
+      { agentManager, traceStore, agentSessionStore, approvalAuthorizer: () => true }
     );
     await isolated.start(relay);
 
@@ -1063,7 +1063,7 @@ describe('ClaudeCodeAdapter', () => {
       const adapterWithStore = new ClaudeCodeAdapter(
         'cca-persist',
         { defaultCwd: '/tmp' },
-        { agentManager, traceStore, agentSessionStore }
+        { agentManager, traceStore, agentSessionStore, approvalAuthorizer: () => true }
       );
       await adapterWithStore.start(relay);
 
@@ -1082,7 +1082,7 @@ describe('ClaudeCodeAdapter', () => {
       const adapterWithStore = new ClaudeCodeAdapter(
         'cca-resume',
         { defaultCwd: '/tmp' },
-        { agentManager, traceStore, agentSessionStore }
+        { agentManager, traceStore, agentSessionStore, approvalAuthorizer: () => true }
       );
       await adapterWithStore.start(relay);
 
@@ -1149,7 +1149,7 @@ describe('ClaudeCodeAdapter', () => {
       const serializedAdapter = new ClaudeCodeAdapter(
         'serialized',
         { defaultCwd: '/tmp', maxConcurrent: 10 },
-        { agentManager: serializedManager, traceStore }
+        { agentManager: serializedManager, traceStore, approvalAuthorizer: () => true }
       );
       await serializedAdapter.start(relay);
 
@@ -1211,7 +1211,7 @@ describe('ClaudeCodeAdapter', () => {
       const parallelAdapter = new ClaudeCodeAdapter(
         'parallel',
         { defaultCwd: '/tmp', maxConcurrent: 10 },
-        { agentManager: parallelManager, traceStore }
+        { agentManager: parallelManager, traceStore, approvalAuthorizer: () => true }
       );
       await parallelAdapter.start(relay);
 
@@ -1432,7 +1432,7 @@ describe('ClaudeCodeAdapter', () => {
       const adapterWithLogger = new ClaudeCodeAdapter(
         'diagnostic-test',
         { defaultCwd: '/tmp' },
-        { agentManager, traceStore, logger: mockLogger }
+        { agentManager, traceStore, logger: mockLogger, approvalAuthorizer: () => true }
       );
       await adapterWithLogger.start({
         ...relay,
@@ -1465,7 +1465,7 @@ describe('ClaudeCodeAdapter', () => {
       const adapterWithLogger = new ClaudeCodeAdapter(
         'diagnostic-done',
         { defaultCwd: '/tmp' },
-        { agentManager, traceStore, logger: mockLogger }
+        { agentManager, traceStore, logger: mockLogger, approvalAuthorizer: () => true }
       );
       await adapterWithLogger.start({
         ...relay,

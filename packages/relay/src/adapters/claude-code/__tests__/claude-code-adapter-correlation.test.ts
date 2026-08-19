@@ -77,7 +77,7 @@ describe('ClaudeCodeAdapter correlation ID', () => {
     agentManager = createMockAgentManager();
     traceStore = createMockTraceStore();
     relay = createMockRelay();
-    deps = { agentManager, traceStore };
+    deps = { agentManager, traceStore, approvalAuthorizer: () => true };
     adapter = new ClaudeCodeAdapter('claude-code', { defaultCwd: '/default/cwd' }, deps);
   });
 
@@ -124,7 +124,7 @@ describe('ClaudeCodeAdapter correlation ID', () => {
     // Use events that do NOT include a natural done, so the adapter generates one
     const events: StreamEvent[] = [{ type: 'text_delta', data: { text: 'partial' } }];
     agentManager = createMockAgentManager(events);
-    deps = { agentManager, traceStore };
+    deps = { agentManager, traceStore, approvalAuthorizer: () => true };
     adapter = new ClaudeCodeAdapter('claude-code', { defaultCwd: '/default/cwd' }, deps);
 
     await adapter.start(relay);
@@ -171,7 +171,12 @@ describe('ClaudeCodeAdapter correlation ID', () => {
       { type: 'done', data: {} },
     ];
     agentManager = createMockAgentManager(tasksEvents);
-    deps = { agentManager, traceStore, taskStore: { updateRun: vi.fn() } };
+    deps = {
+      agentManager,
+      traceStore,
+      taskStore: { updateRun: vi.fn() },
+      approvalAuthorizer: () => true,
+    };
     adapter = new ClaudeCodeAdapter('claude-code', { defaultCwd: '/default/cwd' }, deps);
 
     await adapter.start(relay);

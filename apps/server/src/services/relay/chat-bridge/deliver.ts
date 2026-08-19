@@ -62,6 +62,7 @@ import { logger } from '../../../lib/logger.js';
 import type { AuthorRecord } from '../../rooms/author-registry.js';
 import {
   bridgeTurnFailedText,
+  bridgeWaitingText,
   buildBridgeBlockedNotice,
   buildBridgeUndeliveredNotice,
   type BridgeBlockedReason,
@@ -71,11 +72,21 @@ import type { Bridge, BridgeStore, ExternalRef } from './bridge-store.js';
 
 /**
  * The room notices a bridge delivers when `deliverNotices` is on (spec §6.2).
- * Deliberately exactly two: `turn_failed` and `halted`, the two a person on the
- * other end of a bridged DM needs to hear. Every other notice is cockpit-shaped
- * and stays in the room.
+ * Deliberately few: `turn_failed`, `halted` and `awaiting_approval` — the ones
+ * a person on the other end of a bridged DM needs to hear. Every other notice
+ * is cockpit-shaped and stays in the room.
+ *
+ * `awaiting_approval` joined them with per-person Ask entitlement (spec
+ * `ask-entitlement` §5.4): an agent that stops for a person and says nothing to
+ * the chat it stopped in is indistinguishable from one that crashed. It is
+ * RE-RENDERED for the far end rather than forwarded, exactly as `turn_failed`
+ * is — see {@link ChatBridgeDelivery.buildNoticeContent}.
  */
-const DELIVERABLE_NOTICES: ReadonlySet<string> = new Set(['turn_failed', 'halted']);
+const DELIVERABLE_NOTICES: ReadonlySet<string> = new Set([
+  'turn_failed',
+  'halted',
+  'awaiting_approval',
+]);
 
 /**
  * How long a bridge notice (`bridge_blocked`, `bridge_undelivered`) stays quiet
@@ -190,6 +201,17 @@ export interface DeliverPublisher {
   publish(subject: string, payload: unknown, options: PublishOptions): Promise<PublishResult>;
 }
 
+/** Whether a bridged Ask card is standing, so its waiting sentence is redundant. */
+export interface StandingAskCards {
+  /**
+   * Whether a card this process sent is still standing for one room's agent.
+   *
+   * @param roomId - The room the notice is about.
+   * @param authorId - The agent the notice is about (`subjectAuthorId`).
+   */
+  hasStandingCard(roomId: string, authorId: string | undefined): boolean;
+}
+
 /** Archive a bridge on a terminal delivery failure — {@link BridgeLifecycle.unbridge}. */
 export interface DeliverLifecycle {
   /**
@@ -246,6 +268,13 @@ export interface ChatBridgeDeliveryDeps {
   sleep?: (ms: number) => Promise<void>;
   /** The retry backoff schedule (spec §10.1); overridable for tests. */
   retryBackoffMs?: readonly number[];
+  /**
+   * Whether an Approve/Deny card is already standing in this chat for the agent
+   * a waiting notice is about (spec `ask-entitlement` §5.4). Absent when the
+   * bridged-card path is not wired, in which case every waiting notice is
+   * delivered — today's behaviour.
+   */
+  asks?: StandingAskCards;
 }
 
 /** The in-process serialization key for one platform chat. */
@@ -406,6 +435,17 @@ export class ChatBridgeDelivery {
     if (entry.kind === 'notice') {
       if (!bridge.deliverNotices) return 'skipped';
       if (!entry.body.notice || !DELIVERABLE_NOTICES.has(entry.body.notice)) return 'skipped';
+      // A turn that already got a real Approve/Deny card does not also get the
+      // sentence: the approver would see the card immediately and a
+      // near-duplicate line a minute later (spec `ask-entitlement` §5.4). The
+      // room's own entry is written either way — only its DELIVERY is
+      // suppressed — so the cockpit's reading of the room is unchanged.
+      if (
+        entry.body.notice === 'awaiting_approval' &&
+        this.deps.asks?.hasStandingCard(bridge.roomId, entry.body.subjectAuthorId)
+      ) {
+        return 'skipped';
+      }
     } else if (entry.kind !== 'post') {
       return 'skipped';
     }
@@ -618,11 +658,26 @@ export class ChatBridgeDelivery {
    */
   private buildNoticeContent(entry: RoomEntry): string {
     if (entry.body.notice === 'turn_failed') {
-      const subjectId = entry.body.subjectAuthorId;
-      const subject = subjectId ? this.deps.authors.getById(subjectId) : null;
-      return bridgeTurnFailedText(subject?.displayName ?? 'The agent');
+      return bridgeTurnFailedText(this.subjectName(entry));
+    }
+    if (entry.body.notice === 'awaiting_approval') {
+      // `waitingKind` is absent on entries written before it existed, and
+      // `bridgeWaitingText` reads that as an approval — the commonest kind and
+      // the one whose sentence says least.
+      return bridgeWaitingText(this.subjectName(entry), entry.body.waitingKind);
     }
     return entry.body.text;
+  }
+
+  /**
+   * The display name of whoever a notice is ABOUT, for the far-end rendering.
+   *
+   * @param entry - The notice entry, carrying `subjectAuthorId`.
+   */
+  private subjectName(entry: RoomEntry): string {
+    const subjectId = entry.body.subjectAuthorId;
+    const subject = subjectId ? this.deps.authors.getById(subjectId) : null;
+    return subject?.displayName ?? 'The agent';
   }
 
   /** The outbound payload: content, plus reply/topic targeting for a reply (spec §6.5). */

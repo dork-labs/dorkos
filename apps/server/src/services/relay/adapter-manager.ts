@@ -19,11 +19,13 @@ import {
   SLACK_MANIFEST,
   CLAUDE_CODE_MANIFEST,
   parseAgentSubject,
+  toIdList,
 } from '@dorkos/relay';
 import type { AgentRuntimeLike, TraceStoreLike, TasksStoreLike } from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
 import type { AdapterStatus } from '@dorkos/relay';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { askEntitlement } from '../session/asks/ask-entitlement.js';
 import { logger } from '../../lib/logger.js';
 import { AdapterError } from './adapter-error.js';
 import {
@@ -184,6 +186,10 @@ export interface AdapterManagerDeps {
   roomStore?: BindingSubsystemDeps['roomStore'];
   /** The author registry, for the delivering-author check and name prefix (§6.6, §6.7). */
   roomAuthors?: BindingSubsystemDeps['roomAuthors'];
+  /** Which room a session answers for, for the bridged Ask card (`ask-entitlement` §5.2). */
+  roomSessionBindings?: BindingSubsystemDeps['roomSessionBindings'];
+  /** A room's membership rows, for that card's audience check (`ask-entitlement` §5.1). */
+  roomMembers?: BindingSubsystemDeps['roomMembers'];
   /** Build a chat's outbound subject from its bridge row (§6.4). */
   resolveBridgeSubject?: BindingSubsystemDeps['resolveBridgeSubject'];
   /** Register the outbound bridge's inline-delivery hook on the room service (§6.1). */
@@ -395,6 +401,11 @@ export class AdapterManager {
       operatorDisplayName: this.deps.operatorDisplayName,
       roomStore: this.deps.roomStore,
       roomAuthors: this.deps.roomAuthors,
+      roomSessionBindings: this.deps.roomSessionBindings,
+      roomMembers: this.deps.roomMembers,
+      // The one seam that has to come from here: the adapter configs live on
+      // this manager, and the approver allowlist is a field on one of them.
+      approverAllowlistFor: (adapterId) => this.approverAllowlistFor(adapterId),
       resolveBridgeSubject: this.deps.resolveBridgeSubject,
       registerEntryCommitListener: this.deps.registerEntryCommitListener,
       relaySignal: this.deps.relaySignal,
@@ -678,6 +689,72 @@ export class AdapterManager {
   /** Get the MeshCore dependency, or undefined if not provided. */
   getMeshCore(): AdapterMeshCoreLike | undefined {
     return this.deps.meshCore;
+  }
+
+  /**
+   * The approver allowlist one adapter is configured with, in whatever shape
+   * config held it.
+   *
+   * Read off the masked view rather than the raw config on purpose: masking
+   * only rewrites `password` fields, and `approverAllowlist` is a textarea, so
+   * the value comes through intact while nothing here can reach a secret.
+   *
+   * @param adapterId - The adapter instance.
+   * @returns The configured value, or `undefined` when there is no such
+   *   adapter — which authorizes nobody, because `mayApprove` fails closed.
+   */
+  private approverAllowlistFor(adapterId: string): unknown {
+    const config = this.getAdapter(adapterId)?.config.config as Record<string, unknown> | undefined;
+    return config?.approverAllowlist;
+  }
+
+  /**
+   * Whether a click on a chat platform may authorize one session's tool call
+   * (spec `ask-entitlement` §5.3).
+   *
+   * **The second of two independent gates, and neither is trusted to be the
+   * only one.** The adapter's own `mayApprove` runs in process on the click and
+   * is unchanged; this runs server-side, before the runtime is touched, because
+   * the relay bus carries no authority of its own and a room-bound Ask reaches
+   * it by a path no adapter binding covers.
+   *
+   * Two branches:
+   *
+   * - **the session is room-bound** — {@link askEntitlement} must say `answer`,
+   *   which means the clicking person is named on that room's bridge adapter's
+   *   approver allowlist. A `respondedBy` of `undefined` fails it, the same
+   *   answer the adapters give an unidentified caller.
+   * - **the session is NOT room-bound** — allowed, the direct-bind path keeping
+   *   the shipped gate it has. A stated boundary, not a fail-open default: the
+   *   spec's Non-Goals say the direct-bind path is not widened here, and
+   *   `approver-allowlist.ts`'s own module doc records the residual.
+   *
+   * @param decision - What arrived on the approval bus.
+   * @returns Whether to forward the decision to the runtime.
+   */
+  authorizeBridgedApproval(decision: {
+    sessionId: string;
+    platform: string;
+    respondedBy: string | undefined;
+  }): boolean {
+    const binding = this.deps.roomSessionBindings?.bindingForSession(decision.sessionId);
+    if (!binding) return true;
+
+    const bridge = this.deps.roomBridges?.findBridgeByRoom(binding.roomId);
+    return (
+      askEntitlement(
+        {
+          kind: 'bridged',
+          platform: decision.platform,
+          platformUserId: decision.respondedBy ?? '',
+        },
+        {
+          sessionId: decision.sessionId,
+          roomId: binding.roomId,
+          approvers: bridge ? toIdList(this.approverAllowlistFor(bridge.adapterId)) : [],
+        }
+      ) === 'answer'
+    );
   }
 
   /**
@@ -1172,6 +1249,7 @@ export class AdapterManager {
         traceStore: this.deps.traceStore,
         taskStore: this.deps.taskStore,
         agentSessionStore: this.bindingSubsystem?.getAgentSessionStore(),
+        approvalAuthorizer: (decision) => this.authorizeBridgedApproval(decision),
       },
       this.configPath,
       (type, manifest) => this.registerPluginManifest(type, manifest)

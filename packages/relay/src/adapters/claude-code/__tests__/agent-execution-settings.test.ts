@@ -86,6 +86,7 @@ describe('a relay turn runs on the agent it addressed', () => {
     });
     deps = {
       agentManager,
+      approvalAuthorizer: () => true,
       traceStore: createMockTraceStore(),
       resolveExecutionSettings,
     };

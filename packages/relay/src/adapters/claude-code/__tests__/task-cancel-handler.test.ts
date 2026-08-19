@@ -258,7 +258,15 @@ describe('ClaudeCodeAdapter — stopping a relay-dispatched run', () => {
       onSignal: vi.fn().mockReturnValue(() => {}),
       subscribe: vi.fn().mockReturnValue(() => {}),
     };
-    const deps: ClaudeCodeAdapterDeps = { agentManager, traceStore, taskStore };
+    // This suite is about the CANCEL bus, not the approval one, so the
+    // approval gate is a permissive stand-in — `approval-handler.test.ts` owns
+    // proving it refuses.
+    const deps: ClaudeCodeAdapterDeps = {
+      agentManager,
+      traceStore,
+      taskStore,
+      approvalAuthorizer: () => true,
+    };
     adapter = new ClaudeCodeAdapter('claude-code', { defaultCwd: '/default/cwd' }, deps);
   });
 
@@ -292,7 +300,7 @@ describe('ClaudeCodeAdapter — stopping a relay-dispatched run', () => {
     const single = new ClaudeCodeAdapter(
       'claude-code',
       { defaultCwd: '/default/cwd', maxConcurrent: 1 },
-      { agentManager, traceStore, taskStore }
+      { agentManager, traceStore, taskStore, approvalAuthorizer: () => true }
     );
     await single.start(relay);
     const turn = parkedTurn();
