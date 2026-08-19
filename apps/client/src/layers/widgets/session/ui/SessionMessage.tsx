@@ -23,18 +23,17 @@
  * reader say "message 12 of 30, DorkBot" as Page Down crosses the transcript. It
  * is a consumer of the name, not its cause.
  *
- * @module features/chat/ui/message/SessionMessage
+ * @module widgets/session/ui/SessionMessage
  */
 import { useCallback, useId, useRef } from 'react';
-import { cn, getPlatform } from '@/layers/shared/lib';
+import { getPlatform } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { feedArticleProps } from '@/layers/shared/model';
 import type { FeedPosition, MessageAuthor } from '@/layers/shared/model';
 import { Message, formatTime } from '@/layers/features/conversation';
 import type { ChatMessage, MessageGrouping } from '@/layers/shared/model';
-import { renderSessionBody } from '../render-session-body';
-import { MessageProvider } from './MessageContext';
-import type { InteractiveToolHandle } from './types';
+import { MessageProvider, type InteractiveToolHandle } from '@/layers/features/chat';
+import { renderSessionBody } from './render-session-body';
 
 interface SessionMessageProps {
   message: ChatMessage;
@@ -65,22 +64,15 @@ interface SessionMessageProps {
   inputZoneToolCallId?: string | null;
   /** Text animation effect for streaming text. When undefined, StreamingText uses its default. */
   textEffect?: TextEffectConfig;
-  /**
-   * Presentation mode for off-session, scripted lines (e.g. the onboarding
-   * conversation): suppress the timestamp, the hover background, and the hover
-   * actions so a synthetic line reads as narration, not an interactive chat
-   * message.
-   */
-  presentation?: boolean;
   /** Display name of the session's runtime (e.g. "Claude"), for auth-error copy. */
   runtimeLabel?: string;
   /**
    * Where this message sits in the transcript's feed, when it is rendering
    * inside one.
    *
-   * Omitted off a transcript — the onboarding narration and the dev showcase
-   * render real message rows with no feed around them, and a position in a set
-   * nothing navigates would promise a Page Down that has nowhere to go.
+   * Omitted off a transcript — the dev showcase renders real message rows with
+   * no feed around them, and a position in a set nothing navigates would
+   * promise a Page Down that has nowhere to go.
    */
   feedPosition?: FeedPosition;
 }
@@ -101,7 +93,6 @@ export function SessionMessage({
   onRetry,
   inputZoneToolCallId = null,
   textEffect,
-  presentation = false,
   runtimeLabel,
   feedPosition,
 }: SessionMessageProps) {
@@ -121,24 +112,20 @@ export function SessionMessage({
   // typography rather than reading as something the human typed (DOR-126).
   const isUserPrompt = isUser && message.messageType !== 'local_command_output';
   // "Run this with…" hangs off an actual prompt — not slash commands or
-  // compaction markers, which are not re-runnable prompts, and not scripted
-  // narration. Web only: it launches a fresh routed session, which the embedded
-  // (Obsidian) shell — a single store-bound session with no route navigation —
-  // cannot host.
+  // compaction markers, which are not re-runnable prompts. Web only: it
+  // launches a fresh routed session, which the embedded (Obsidian) shell — a
+  // single store-bound session with no route navigation — cannot host.
   const showRunWith =
     isUserPrompt &&
-    !presentation &&
     !getPlatform().isEmbedded &&
     message.messageType !== 'command' &&
     message.messageType !== 'compaction' &&
     message.content.trim().length > 0;
 
   const time = message.timestamp ? formatTime(message.timestamp) : '';
-  const showTime = !presentation && time.length > 0;
+  const showTime = time.length > 0;
   // One timestamp for the whole row: the author line draws it on a group start
-  // and the gutter draws it on hover for a continuation. Withheld entirely from
-  // scripted narration, where a clock reading would make a line of a story read
-  // as something somebody typed.
+  // and the gutter draws it on hover for a continuation.
   const at = showTime ? message.timestamp : undefined;
   const focusRow = useCallback(() => rowRef.current?.focus(), []);
 
@@ -170,7 +157,6 @@ export function SessionMessage({
           : { 'aria-label': showTime ? `${author.displayName}, ${time}` : author.displayName })}
         aria-describedby={contentId}
         {...feedArticleProps(feedPosition)}
-        className={cn(presentation && 'hover:bg-transparent')}
       >
         <Message.Gutter author={author} at={at} />
         <Message.Body>
