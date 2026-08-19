@@ -49,6 +49,11 @@ export interface PresenceSignal {
   entryId: string;
   /** ISO 8601 — when the work started. The elapsed time is derived from it. */
   since: string;
+  /**
+   * What the turn is doing right now, when the dispatcher has heard a tool call
+   * for it. Structure only — the client owns the words (DOR-1351).
+   */
+  activity?: { toolName: string; target?: string };
 }
 
 /**
@@ -140,6 +145,7 @@ export async function publishPresence(page: Page, signal: PresenceSignal): Promi
     state: signal.state,
     entryId: signal.entryId,
     since: signal.since,
+    ...(signal.activity ? { activity: signal.activity } : {}),
   };
   await pushFrame(page, '__roomStream', 'signal', event);
 }

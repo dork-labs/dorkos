@@ -288,7 +288,13 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   path that drops a claim releases through the same seam rather than deleting
   from the map itself — RP8's halt does, and the test pinning it uses a runtime
   that IGNORES the interrupt, because a runtime that stops promptly releases
-  through `runOne` anyway and would let a bypass pass unnoticed.
+  through `runOne` anyway and would let a bypass pass unnoticed. The indicator
+  may also carry WHAT the turn is doing — the tool and its one argument, as
+  `SessionActivity` (DOR-1351) — and that argument never leaves this operator's
+  own cockpit: it is stripped at the chat-bridge forwarder and at the
+  `CommunityAdapter` port (`withoutActivityTarget`, ADR `260819-022127`), for the
+  same reason the waiting notice above refuses to name a file or a command in
+  front of everybody else.
 - **A slow turn is late, never lost.** The room's wait deadline bounds the WAIT,
   never the turn. An answer that outruns it is posted when it lands, saying how
   long it took. Never post a fragment of an unfinished answer as though it were
