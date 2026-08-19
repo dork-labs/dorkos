@@ -547,6 +547,123 @@ describe('/api/rooms', () => {
     });
   });
 
+  describe('POST /:id/halt/:authorId', () => {
+    /**
+     * A channel holding Ana, with her author id and the operator's.
+     *
+     * @param title - The room's title, so parallel cases cannot collide.
+     */
+    async function channelWithAna(
+      title = 'Stop one'
+    ): Promise<{ id: string; ana: string; me: string }> {
+      const room = await createChannel(title);
+      await request(app).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
+      const roster = (await request(app).get(`/api/rooms/${room.id}`)).body.members as Array<{
+        authorId: string;
+        author: { kind: string; displayName: string };
+      }>;
+      return {
+        id: room.id,
+        ana: roster.find((member) => member.author.displayName === 'Ana')!.authorId,
+        me: roster.find((member) => member.author.kind === 'human')!.authorId,
+      };
+    }
+
+    /** Every `halted` notice stored in a room. */
+    async function haltedIn(roomId: string): Promise<Array<{ body: Record<string, string> }>> {
+      const entries = (await request(app).get(`/api/rooms/${roomId}/entries`)).body
+        .entries as Array<{ body: Record<string, string> }>;
+      return entries.filter((entry) => entry.body.notice === 'halted');
+    }
+
+    it('answers whether a turn was stopped, and names the agent in the room', async () => {
+      const room = await channelWithAna();
+
+      const res = await request(app).post(`/api/rooms/${room.id}/halt/${room.ana}`);
+
+      // Nothing was running, and that is a real answer rather than a failure:
+      // pressing Stop is a question, and the room answers it either way.
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ stopped: 0 });
+      const halted = await haltedIn(room.id);
+      expect(halted).toHaveLength(1);
+      // The subject is what tells a per-agent stop from a room-wide one on the
+      // wire — the code is the same `halted` either way.
+      expect(halted[0].body.subjectAuthorId).toBe(room.ana);
+      expect(halted[0].body.text).toContain('Ana was not working here at the time');
+    });
+
+    it('refuses an agent trying to stop a room-mate, and the room stays silent', async () => {
+      // Scoping the verb makes it more tempting rather than less, so the gate is
+      // asserted at the route rather than assumed from the service. A refusal
+      // that still wrote a line would be a way to make a room say things.
+      const room = await channelWithAna('Agents do not stop agents');
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
+
+      const res = await request(app)
+        .post(`/api/rooms/${room.id}/halt/${room.ana}`)
+        .set('X-DorkOS-Agent', token);
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('PEOPLE_ONLY');
+      expect(await haltedIn(room.id)).toHaveLength(0);
+    });
+
+    it('answers a room the caller cannot see exactly as it answers one that is not there', async () => {
+      // The room gate runs BEFORE the roster check, so a caller who cannot see
+      // the room learns nothing about who is on it. Bo is an agent in no room at
+      // all, so this room is invisible to it.
+      const room = await channelWithAna('Not yours');
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: BO_PATH, displayName: 'Bo' });
+
+      const unseen = await request(app)
+        .post(`/api/rooms/${room.id}/halt/${room.ana}`)
+        .set('X-DorkOS-Agent', token);
+      const missing = await request(app)
+        .post(`/api/rooms/no-such-room/halt/${room.ana}`)
+        .set('X-DorkOS-Agent', token);
+
+      expect(unseen.status).toBe(404);
+      expect(unseen.body.code).toBe('ROOM_NOT_FOUND');
+      // Identical bodies: a room id must never be a way to enumerate a roster,
+      // and a `PEOPLE_ONLY` here would say the caller had found a real room.
+      expect(unseen.body).toEqual(missing.body);
+    });
+
+    it('404s an author that is not an agent on this roster', async () => {
+      // Answering `{ stopped: 0 }` for a name that is not there would hide a
+      // client bug behind a success.
+      const room = await channelWithAna('No such member');
+
+      const stranger = await request(app).post(`/api/rooms/${room.id}/halt/01NOSUCHAUTHOR`);
+      expect(stranger.status).toBe(404);
+      expect(stranger.body.code).toBe('MEMBER_NOT_FOUND');
+
+      // A PERSON on the roster is refused by the same code, and the sentence is
+      // literally true: there is no agent by that id here.
+      const person = await request(app).post(`/api/rooms/${room.id}/halt/${room.me}`);
+      expect(person.status).toBe(404);
+      expect(person.body.code).toBe('MEMBER_NOT_FOUND');
+      expect(await haltedIn(room.id)).toHaveLength(0);
+    });
+
+    it('still works on an archived room', async () => {
+      // The carve-out the room-wide stop has, for the same reason: archiving
+      // stops a room GAINING messages, and a turn that was already running when
+      // it was archived is still running. Red if somebody adds an archive guard
+      // here by symmetry with `post`.
+      const room = await channelWithAna('Archived');
+      await request(app).patch(`/api/rooms/${room.id}`).send({ archived: true });
+
+      const res = await request(app).post(`/api/rooms/${room.id}/halt/${room.ana}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ stopped: 0 });
+    });
+  });
+
   describe('GET /:id/entries', () => {
     it('pages backwards from a seq', async () => {
       const room = await createChannel();

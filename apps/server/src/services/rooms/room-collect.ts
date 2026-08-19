@@ -348,6 +348,53 @@ export class RoomCollector {
   }
 
   /**
+   * Forget what ONE agent in one room is waiting to answer, cancelling any
+   * window still open for it.
+   *
+   * The per-agent twin of {@link RoomCollector.drop}, and it exists for the same
+   * reason at a smaller scope: stopping one agent has to stop what that agent is
+   * about to do, or the messages the person pressed Stop over become its next
+   * turn a macrotask later. Nothing another agent is waiting on is touched,
+   * which is what makes "the others keep working" a property of this code rather
+   * than of a test.
+   *
+   * **It returns a LIST, exactly as `drop` does, because one key can hold two
+   * collections.** The cap takes a full collection out of the map and leaves it
+   * in {@link RoomCollector.closing} for one macrotask, and a message arriving in
+   * that window opens a fresh collection under the same key. Both are turns this
+   * room has not taken, both hold one of the dispatcher's in-flight credits, and
+   * handing back only one would leak the other's credit — which is `idle()`
+   * never resolving again.
+   *
+   * @param roomId - The room the agent is being stopped in.
+   * @param authorId - The agent whose waiting messages are dropped.
+   * @returns The dropped collections, oldest first, so the caller can settle
+   *   whatever each one owed. Empty when the agent was waiting on nothing.
+   */
+  dropOne(roomId: string, authorId: string): RoomCollection[] {
+    const key = agentKey(roomId, authorId);
+    // Oldest first: anything the cap already closed was gathered before whatever
+    // opened the collection standing in the map behind it.
+    const dropped: RoomCollection[] = this.closing.filter(
+      (collection) => agentKey(collection.room.id, collection.authorId) === key
+    );
+    if (dropped.length > 0) {
+      this.closing = this.closing.filter(
+        (collection) => agentKey(collection.room.id, collection.authorId) !== key
+      );
+    }
+    const open = this.collections.get(key);
+    if (open) {
+      this.collections.delete(key);
+      dropped.push(open);
+    }
+    // Re-armed rather than cleared: another agent's window may still be open,
+    // and this one going quiet is not a reason to stop counting for it.
+    this.schedule();
+    return dropped;
+  }
+
+  /**
    * Give a collection a deadline, if it does not already have one.
    *
    * @param collection - The collection to close.
