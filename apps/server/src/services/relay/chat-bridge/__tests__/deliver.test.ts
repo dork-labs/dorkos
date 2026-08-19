@@ -17,7 +17,11 @@ import type { PublishOptions, PublishResult } from '@dorkos/relay';
 import type { DeliveryResult } from '@dorkos/relay';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import { createInitiateConsentGate } from '../../initiate-consent.js';
-import { buildBusyNotice, buildWaitingNotice } from '../../../rooms/notices/notice-copy.js';
+import {
+  buildBusyNotice,
+  buildTurnFailedNotice,
+  buildWaitingNotice,
+} from '../../../rooms/notices/notice-copy.js';
 import { externalSenderIdentity } from '../../platform-identity.js';
 import {
   agentLookupFor,
@@ -836,6 +840,124 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         expect(await delivery.deliverEntry(notice)).toBe('delivered');
         expect(await delivery.deliverEntry(notice)).toBe('noop');
         expect(publish).toHaveBeenCalledTimes(1);
+      });
+
+      it('three busy refusals in one DM buzz the chat ONCE — the room writes three, the bridge sends one', async () => {
+        // The defect this closes: `RoomNoticeLog.reportSilence` deliberately
+        // does NOT damp a message that directly asked the agent, and in a `dm`
+        // every human message counts as asking — which is what a bridged
+        // private chat is. So the room log legitimately holds one busy line per
+        // message, and without a damper of its own the bridge would push one
+        // notification per message typed.
+        const { dm, delivery, inbound, ana } = bridgedDm('619');
+        const outcomes: string[] = [];
+        for (let i = 0; i < 3; i += 1) {
+          const notice = harness.service.postNotice(
+            dm.id,
+            buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+            { root: inbound.id, depth: 1 }
+          );
+          outcomes.push(await delivery.deliverEntry(notice));
+        }
+
+        // Three DISTINCT entries in the room log — this is not idempotence on
+        // one entry, which the case above already covers.
+        expect(noticesOf(dm.id, 'agent_busy')).toHaveLength(3);
+        expect(outcomes).toEqual(['delivered', 'damped', 'damped']);
+        expect(publish).toHaveBeenCalledTimes(1);
+      });
+
+      it("the damp lifts on the agent's next turn in that room: it answers, goes busy again, and the chat is told again", async () => {
+        const { dm, delivery, inbound, ana } = bridgedDm('620');
+        const first = harness.service.postNotice(
+          dm.id,
+          buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+          { root: inbound.id, depth: 1 }
+        );
+        expect(await delivery.deliverEntry(first)).toBe('delivered');
+
+        const damped = harness.service.postNotice(
+          dm.id,
+          buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+          { root: inbound.id, depth: 1 }
+        );
+        expect(await delivery.deliverEntry(damped)).toBe('damped');
+
+        // Ana answers here — her turn in this room reached an outcome, which is
+        // the same re-arm `RoomNoticeLog.recovered` uses.
+        expect(await delivery.deliverEntry(agentPost(dm.id, 'back now', inbound.id))).toBe(
+          'delivered'
+        );
+
+        const afterRecovery = harness.service.postNotice(
+          dm.id,
+          buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+          { root: inbound.id, depth: 1 }
+        );
+        expect(await delivery.deliverEntry(afterRecovery)).toBe('delivered');
+        // Two busy lines and one answer reached the chat, in that order.
+        expect(publish).toHaveBeenCalledTimes(3);
+      });
+
+      it('a turn_failed about that agent also re-arms the busy line — a broken turn is an outcome too', async () => {
+        const { dm, delivery, inbound, ana } = bridgedDm('621');
+        const first = harness.service.postNotice(dm.id, buildBusyNotice('Ana', ana.id, 'unknown'), {
+          root: inbound.id,
+          depth: 1,
+        });
+        expect(await delivery.deliverEntry(first)).toBe('delivered');
+
+        const failed = harness.service.postNotice(dm.id, buildTurnFailedNotice('Ana', ana.id), {
+          root: inbound.id,
+          depth: 1,
+        });
+        expect(await delivery.deliverEntry(failed)).toBe('delivered');
+
+        const afterFailure = harness.service.postNotice(
+          dm.id,
+          buildBusyNotice('Ana', ana.id, 'unknown'),
+          { root: inbound.id, depth: 1 }
+        );
+        expect(await delivery.deliverEntry(afterFailure)).toBe('delivered');
+      });
+
+      it('a waiting line is NOT damped by the busy damper — two different agents, two different states', async () => {
+        // The busy damper keys on `(room, agent)`; a waiting notice about the
+        // same agent must still get through, because it reports a different
+        // state with a different remedy.
+        const { dm, delivery, inbound, ana } = bridgedDm('622');
+        const busy = harness.service.postNotice(dm.id, buildBusyNotice('Ana', ana.id, 'unknown'), {
+          root: inbound.id,
+          depth: 1,
+        });
+        expect(await delivery.deliverEntry(busy)).toBe('delivered');
+
+        const waiting = harness.service.postNotice(
+          dm.id,
+          buildWaitingNotice('Ana', ana.id, 'approval'),
+          { root: inbound.id, depth: 1 }
+        );
+        expect(await delivery.deliverEntry(waiting)).toBe('delivered');
+        expect(publish).toHaveBeenCalledTimes(2);
+      });
+
+      it('the damp is per ROOM: a second bridged DM hears about the same agent on its own account', async () => {
+        const a = bridgedDm('623');
+        const b = bridgedDm('624');
+        const ana = a.ana;
+        const first = harness.service.postNotice(
+          a.dm.id,
+          buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+          { root: a.inbound.id, depth: 1 }
+        );
+        expect(await a.delivery.deliverEntry(first)).toBe('delivered');
+
+        const second = harness.service.postNotice(
+          b.dm.id,
+          buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+          { root: b.inbound.id, depth: 1 }
+        );
+        expect(await b.delivery.deliverEntry(second)).toBe('delivered');
       });
 
       it('both still obey deliverNotices: a bridged CHANNEL hears neither by default', async () => {

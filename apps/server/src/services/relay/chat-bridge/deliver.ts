@@ -101,6 +101,17 @@ import type { Bridge, BridgeStore, ExternalRef } from './bridge-store.js';
  * approver allowlist (`mayApprove`, `adapters/approver-allowlist.ts`) and today
  * only covers agents bound straight to a chat, not rooms projected into one.
  * That is DOR-1356.
+ *
+ * **`agent_busy` carries its own damper, `awaiting_approval` does not, and the
+ * asymmetry is measured rather than assumed.** `RoomNoticeLog.reportWaiting`
+ * damps a waiting line per `(room, agent)` for the life of the turn with no
+ * exception, so one wait is already one room entry. `reportSilence` damps the
+ * busy line the same way EXCEPT for a message that directly asked the agent —
+ * and in a `dm` that is every message a person types, which is exactly what a
+ * bridged private chat is. Three messages in one breath at an agent busy
+ * elsewhere therefore write three room notices. The room is right to; a phone
+ * buzzing three times is not, so the bridge damps it itself
+ * ({@link ChatBridgeDelivery.busyIsARepeat}).
  */
 const DELIVERABLE_NOTICES: ReadonlySet<RoomNoticeCode> = new Set<RoomNoticeCode>([
   'turn_failed',
@@ -165,6 +176,12 @@ export type DeliverOutcome =
   | 'noop'
   /** Not a delivery candidate: an undeliverable notice, or a kind that never delivers. */
   | 'skipped'
+  /**
+   * A repeat of a state the chat has already been told about — today only
+   * `agent_busy` (DOR-1359). Settled, not stopped: it will never become
+   * deliverable on a later pass, so the catch-up cursor moves past it.
+   */
+  | 'damped'
   /** A post whose author is neither the bound agent nor the operator — refused before any publish. */
   | 'refused_author'
   /** The room has no live bridge. */
@@ -285,6 +302,30 @@ function serialKey(adapterId: string, chatId: string): string {
   return `${adapterId} ${chatId}`;
 }
 
+/**
+ * Separator for the busy damper's key. Named, and a PRINTABLE character on
+ * purpose: `notice-log.ts` records what an invisible NUL in this exact position
+ * cost the last reader who met one, and a separator nobody can see in a diff is
+ * a separator nobody can check.
+ */
+const BUSY_DAMP_KEY_SEPARATOR = '::';
+
+/** The `(room, agent)` key of the busy damper. Nothing parses it back apart. */
+function busyDampKey(roomId: string, agentAuthorId: string): string {
+  return `${roomId}${BUSY_DAMP_KEY_SEPARATOR}${agentAuthorId}`;
+}
+
+/**
+ * The agent an `agent_busy` notice is about, or `undefined` when this entry is
+ * not one (or names nobody).
+ *
+ * @param entry - The entry to read.
+ */
+function busySubjectOf(entry: RoomEntry): string | undefined {
+  if (entry.kind !== 'notice' || entry.body.notice !== 'agent_busy') return undefined;
+  return entry.body.subjectAuthorId;
+}
+
 /** Whether a publish came back refused by the consent gate (spec §6.6). */
 function wasConsentDenied(result: PublishResult): boolean {
   return (result.rejected ?? []).some((r) => r.reason === 'initiate_denied');
@@ -312,6 +353,27 @@ export class ChatBridgeDelivery {
   private readonly chains = new Map<string, Promise<unknown>>();
   /** Per-`(roomId, noticeCode)` last-written time, for the notice damper. */
   private readonly noticedAt = new Map<string, number>();
+  /**
+   * `(roomId, agentAuthorId)` pairs whose `agent_busy` line the CHAT has already
+   * been sent, until that agent's next outcome in that room
+   * ({@link ChatBridgeDelivery.rearmsBusy}).
+   *
+   * **The bridge needs its own memory here because the room's deliberately
+   * stops damping in a DM (DOR-1359).** `RoomNoticeLog.reportSilence` damps on
+   * `(room, agent, reason)` — except for a message that directly ASKED the
+   * agent, and `directlyAsked` counts every human depth-0 message in a `dm` as
+   * asking (`notice-log.ts`). That is the right conduct rule for the room: a
+   * person who types "are you there?" is owed an answer every time. It is the
+   * wrong rule for a platform chat, where each line is a push notification —
+   * and a bridged private chat is exactly a `dm` with `deliverNotices` seeded
+   * on, so three messages typed in one breath at an agent that is busy
+   * elsewhere would buzz a phone three times. The room log still answers every
+   * one of them; only the delivery is damped.
+   *
+   * Bounded by the number of live bridged rooms (a bridged room holds exactly
+   * one agent, spec §3.4), so it needs no FIFO of its own.
+   */
+  private readonly busyToldChat = new Set<string>();
   /** The catch-up scan to re-run after a delivery recovers (spec §6.1's third trigger). */
   private onRecovered?: (roomId: string) => void;
 
@@ -456,6 +518,13 @@ export class ChatBridgeDelivery {
       if (!isOperator && !isAgent) return 'refused_author';
     }
 
+    // The busy damper's two halves, in the order that keeps them honest: an
+    // entry that proves this agent got somewhere re-arms the line BEFORE the
+    // next one is weighed, so an agent that answers and then goes busy again
+    // says so again (DOR-1359).
+    this.rearmsBusy(entry, author);
+    if (this.busyIsARepeat(entry, bridge)) return 'damped';
+
     const subject = this.deps.resolveSubject(bridge);
     if (!subject) {
       logger.warn('[chat-bridge] could not build an outbound subject; refusing delivery', {
@@ -536,6 +605,11 @@ export class ChatBridgeDelivery {
           ar.responseMessageId ?? result.messageId
         );
         this.deps.bridges.stampActivity(bridge.roomId, new Date(this.now()).toISOString());
+        // The busy damper arms only on a line that actually LANDED. Arming it
+        // before the send would let a blocked or exhausted delivery silence
+        // every later busy line about a state the chat was never told about
+        // (DOR-1359).
+        this.armBusyDamp(entry, bridge);
         // Recovered from a transient failure: re-scan the room to flush whatever
         // queued behind it (spec §6.1's third trigger). Only after a real retry —
         // a first-attempt success has nothing stranded behind it.
@@ -698,6 +772,76 @@ export class ChatBridgeDelivery {
     if (provenance.classification === 'reply') return 'reply_off';
     if (entry.kind === 'post' && author?.kind === 'agent') return 'lost_provenance';
     return 'initiate_off';
+  }
+
+  /**
+   * Whether this `agent_busy` notice repeats one the chat has already had.
+   *
+   * Only `agent_busy` is damped here, and the asymmetry with
+   * `awaiting_approval` is not an oversight: `RoomNoticeLog.reportWaiting`
+   * already writes at most one waiting line per `(room, agent)` for the life of
+   * the turn, with no direct-question exception, so one wait is already one
+   * room entry and the bridge has nothing left to merge. The busy line has that
+   * exception and needs this.
+   *
+   * A notice with no `subjectAuthorId` names no agent, so there is nothing to
+   * key on and it is never damped — it delivers, which is the safe side.
+   *
+   * @param entry - The entry being delivered.
+   * @param bridge - Its room's bridge row.
+   */
+  private busyIsARepeat(entry: RoomEntry, bridge: Bridge): boolean {
+    const agentAuthorId = busySubjectOf(entry);
+    if (!agentAuthorId) return false;
+    return this.busyToldChat.has(busyDampKey(bridge.roomId, agentAuthorId));
+  }
+
+  /**
+   * Record that the chat has now been told this agent is busy.
+   *
+   * @param entry - The entry that was just delivered.
+   * @param bridge - Its room's bridge row.
+   */
+  private armBusyDamp(entry: RoomEntry, bridge: Bridge): void {
+    const agentAuthorId = busySubjectOf(entry);
+    if (agentAuthorId) this.busyToldChat.add(busyDampKey(bridge.roomId, agentAuthorId));
+  }
+
+  /**
+   * Clear the busy damp when an entry shows that agent's turn here reached an
+   * OUTCOME — the same re-arm `RoomNoticeLog.recovered` uses, read off the log
+   * instead of off a callback, because the bridge sees every committed entry in
+   * a bridged room and needs no new signal.
+   *
+   * Exactly two entries qualify, and the narrowness is deliberate:
+   *
+   * - **an agent's own post** — it answered here, so the next time it cannot is
+   *   news again; and
+   * - **a `turn_failed` notice about it** — it tried here and broke, which is
+   *   an outcome too.
+   *
+   * An `awaiting_approval` notice does NOT re-arm: it says the agent is working
+   * in THIS room, which is not the state a busy line describes (busy means a
+   * claim somewhere else), so treating it as recovery would re-open the line
+   * without anything having changed about it.
+   *
+   * The consequence worth naming: an agent that stays busy elsewhere and never
+   * speaks here leaves the chat with exactly one busy line until it does. That
+   * is the intended trade — the room's own log still answers every message
+   * (`notice-log.ts`'s direct-question rule), and the chat is the surface where
+   * a repeat is a push notification.
+   *
+   * @param entry - The entry being delivered.
+   * @param author - Its resolved author, already looked up by the caller.
+   */
+  private rearmsBusy(entry: RoomEntry, author: AuthorRecord | null | undefined): void {
+    const agentAuthorId =
+      entry.kind === 'post' && author?.kind === 'agent'
+        ? entry.authorId
+        : entry.kind === 'notice' && entry.body.notice === 'turn_failed'
+          ? entry.body.subjectAuthorId
+          : undefined;
+    if (agentAuthorId) this.busyToldChat.delete(busyDampKey(entry.roomId, agentAuthorId));
   }
 
   /** Write one `bridge_blocked` notice, damped per `(room, reason)` (spec §6.6). */
