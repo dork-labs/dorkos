@@ -482,6 +482,7 @@ Each adapter is self-contained in its directory (see [Adapter Lineup](#adapter-l
 | `messaging/message-sender.ts`        | Extracted send-message logic (streaming, tool-group resolution, context building) |
 | `messaging/context-builder.ts`       | Runtime context injection for system prompt                                       |
 | `messaging/interactive-handlers.ts`  | Tool approval, question flows, and MCP elicitation                                |
+| `messaging/interaction-wait.ts`      | A prompt's two-stage wait: park at the countdown, refuse at the ceiling           |
 | `messaging/permission-mode-guard.ts` | Resolves the effective permission mode (incl. auto-mode fallback)                 |
 | `messaging/runtime-cache.ts`         | `RuntimeCache` — caches models, subagents, and other slow-fetch runtime data      |
 | `sdk/sdk-event-mapper.ts`            | Thin dispatcher: SDK message to `StreamEvent` (routes to `event-mappers/`)        |
@@ -774,6 +775,7 @@ apps/
             message-sender.ts -- Extracted send-message logic
             context-builder.ts -- Runtime context for systemPrompt (XML blocks)
             interactive-handlers.ts -- Tool approval & question flows
+            interaction-wait.ts -- One prompt's two-stage wait (park, then refuse)
             permission-mode-guard.ts -- Resolves effective permission mode (incl. auto-mode fallback)
             plugin-activation.ts -- Builds options.plugins from installed marketplace plugins
             runtime-cache.ts  -- Caches models/commands/MCP status/subagents

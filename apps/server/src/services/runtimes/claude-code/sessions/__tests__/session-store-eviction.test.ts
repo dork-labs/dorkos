@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SessionStore } from '../session-store.js';
 import { SessionLockManager } from '../../../../session/session-lock.js';
 import { SESSIONS } from '../../../../../config/constants.js';
-import type { PendingInteraction } from '../../messaging/interactive-handlers.js';
+import type { PendingInteraction } from '../../messaging/interaction-wait.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ forkSession: vi.fn() }));
 vi.mock('../../../../../lib/logger.js', () => ({

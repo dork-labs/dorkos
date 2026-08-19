@@ -6,10 +6,9 @@ import {
   handleElicitation,
   handleToolApproval,
   resolveModeDecision,
-  type InteractiveSession,
-  type PendingInteraction,
   type ToolApprovalContext,
 } from '../interactive-handlers.js';
+import type { InteractiveSession, PendingInteraction } from '../interaction-wait.js';
 import { resolveApprovalDecision } from '../../../opencode/approvals.js';
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { PermissionModeSchema, type PermissionMode } from '@dorkos/shared/schemas';

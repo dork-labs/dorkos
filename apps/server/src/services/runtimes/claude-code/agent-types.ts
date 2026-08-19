@@ -7,7 +7,7 @@ import type {
   ContextUsage,
   UsageStatus,
 } from '@dorkos/shared/types';
-import type { PendingInteraction } from './messaging/interactive-handlers.js';
+import type { PendingInteraction } from './messaging/interaction-wait.js';
 
 /** Input-side token usage of a single model request (one API round-trip). */
 export interface RequestUsage {
