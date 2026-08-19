@@ -59,7 +59,7 @@ import type {
   LoginEnabledLookup,
 } from '../services/core/approvals/index.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
-import { AGENT_IDENTITY_HEADER, getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { configManager } from '../services/core/config-manager.js';
 
@@ -69,7 +69,9 @@ import { configManager } from '../services/core/config-manager.js';
  * An agent counts as present if EITHER the middleware resolved one or the raw
  * `X-DorkOS-Agent` header is there at all: a header that did not resolve (a
  * revoked or expired agent) still means a machine is calling, and a person in the
- * cockpit never sends it.
+ * cockpit never sends it. That is {@link presentsAgentIdentity}, which lives in
+ * the module that owns the header because a second surface reads it now
+ * (`GET /api/rooms/:id/sessions`) and the two must not diverge.
  *
  * @param req - The incoming request.
  * @param res - The response carrying `sessionGate`'s resolved user.
@@ -78,9 +80,7 @@ import { configManager } from '../services/core/config-manager.js';
 export function readCallerAuthority(req: Request, res: Response): DecisionAuthorityRequest {
   const user = res.locals.user as RequestUser | undefined;
   return {
-    agentIdentityPresented:
-      getRequestAgentIdentity(res) !== undefined ||
-      req.headers[AGENT_IDENTITY_HEADER] !== undefined,
+    agentIdentityPresented: presentsAgentIdentity(req, res),
     approvalTokenPresented: req.headers[APPROVAL_TOKEN_HEADER] !== undefined,
     ...(user ? { user } : {}),
   };

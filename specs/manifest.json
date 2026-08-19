@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260818-234135",
+      "slug": "room-hold-when-busy",
+      "title": "A room holds a message for a busy agent instead of asking you to resend",
+      "created": "2026-08-18",
+      "status": "specified",
+      "project": "Unified Conversation Surfaces"
+    },
+    {
       "id": "260818-001825",
       "slug": "unified-conversation",
       "title": "Unified conversation surfaces: one tree, approvals anywhere, a live lane",
