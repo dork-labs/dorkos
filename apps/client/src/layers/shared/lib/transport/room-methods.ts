@@ -194,6 +194,19 @@ export function createRoomMethods(baseUrl: string) {
     },
 
     /**
+     * Stop one agent's turn here and leave the rest of the room working. A path
+     * segment rather than a body field, because a target that can be omitted is
+     * a stop that can quietly take the whole room with it.
+     */
+    haltRoomAgent(id: string, authorId: string): Promise<HaltRoomResponse> {
+      return fetchJSON<HaltRoomResponse>(
+        baseUrl,
+        `/rooms/${id}/halt/${encodeURIComponent(authorId)}`,
+        { method: 'POST' }
+      );
+    },
+
+    /**
      * Ask for this room to be the next one that agent answers. Reorders; the
      * turn in the way is untouched.
      */

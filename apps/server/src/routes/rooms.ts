@@ -757,6 +757,35 @@ router.post('/:id/halt', (req, res) => {
 });
 
 /**
+ * POST /:id/halt/:authorId — stop one agent's turn in this room.
+ *
+ * A sibling of `POST /:id/halt` rather than a field on it, and the difference is
+ * the failure mode. That route takes no body on purpose (Express 5 leaves
+ * `req.body` undefined on an empty POST), and an optional `authorId` in one
+ * would fail OPEN: a client that forgot to send it would stop the whole room. A
+ * path segment cannot be forgotten. `PATCH` and `DELETE /:id/members/:authorId`
+ * are the precedent for an author-scoped room sub-path.
+ *
+ * Same gate as the room-wide stop: only a person, and only in a room they can
+ * see. Allowed on an archived room for the same reason.
+ */
+router.post('/:id/halt/:authorId', (req, res) => {
+  void (async () => {
+    try {
+      const caller = resolveCaller(res);
+      const stopped = await getRoomService().haltAgent(
+        req.params.id,
+        req.params.authorId,
+        caller.id
+      );
+      res.json({ stopped });
+    } catch (err) {
+      sendRoomError(res, err, 'POST /:id/halt/:authorId');
+    }
+  })();
+});
+
+/**
  * POST /:id/holds/:authorId/promote — ask for this room to be answered first.
  *
  * The one control a person has over a message that is waiting on an agent busy

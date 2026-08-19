@@ -149,9 +149,12 @@ export class BridgeCatchUp {
       // past this entry: the ref was rolled back (undelivered) or the room was
       // archived (terminal), and either way the cursor must not skip it.
       if (STOP_OUTCOMES.has(outcome)) break;
-      // Everything else — delivered, blocked, echo, noop, skipped,
+      // Everything else — delivered, blocked, echo, noop, skipped, damped,
       // refused_author — is settled: it will not become deliverable on a later
-      // pass, so the cursor may move past it.
+      // pass, so the cursor may move past it. `damped` belongs on this side and
+      // not with the stoppers: a repeat of a state the chat already heard never
+      // becomes news again (DOR-1359), so parking the cursor on it would stall
+      // the room and strand every entry behind it.
       settled = candidate.seq;
     }
 

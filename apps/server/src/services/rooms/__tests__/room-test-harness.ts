@@ -28,7 +28,13 @@ import { RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
 import { RoomBroadcaster } from '../room-stream.js';
 import { RoomTurnBudget } from '../turn-budget.js';
-import type { RoomTurnRequest, RoomTurnResult, RoomTurnRunner } from '../room-trigger.js';
+import type {
+  LateRoomReply,
+  RoomTurnRequest,
+  RoomTurnResult,
+  RoomTurnRunner,
+  RoomTurnWaiting,
+} from '../room-trigger.js';
 
 /** How many macrotask hops a room gets to reach a state before a test gives up. */
 const SETTLE_HOPS = 500;
@@ -163,6 +169,150 @@ export function outcomeRunner(
         sessionId: ranOn ?? request.sessionId ?? `session-${(minted += 1)}`,
         ...reply,
       });
+    },
+  };
+}
+
+/** A runner whose turns only finish when the test says so. */
+export interface GatedRunner extends ScriptedTurnRunner {
+  /** How many turns are being held for one agent right now. */
+  holdsFor(authorId: string): number;
+  /** Let one agent's oldest held turn answer now. */
+  release(authorId: string): void;
+  /** Let every held turn, for every agent, answer now. */
+  releaseAll(): void;
+  /**
+   * Make one agent's oldest held turn report that it has stopped for a person.
+   *
+   * The turn keeps running — that is the whole state being modelled. A turn
+   * parked on an approval is not over; it is producing nothing until somebody
+   * acts, which is why the report rides a callback rather than the result.
+   */
+  waitOnPerson(authorId: string, waiting: RoomTurnWaiting): void;
+}
+
+/**
+ * Build a runner that holds every turn open until released.
+ *
+ * Holding is what makes any of this observable: a turn that answered would take
+ * and release its claim inside one `await`, and every state in between — parked
+ * on a person, blocking another room, interruptible — is a state the test never
+ * gets to look at.
+ *
+ * @param opts.interruptEndsTurn - Whether an interrupt finishes the turn it
+ *   stops. `true` is the ordinary runtime: the query aborts, the stream closes,
+ *   and the turn settles a moment later. `false` is the runtime that does not
+ *   come back — a hung subprocess, a lost socket — which is the case a halt's
+ *   own claim release exists for, and the only runtime a test can use to prove
+ *   the release went through the seam at all.
+ * @param opts.interruptedTurnStillAnswers - Whether the turn an interrupt ends
+ *   comes back WITH what the model had already produced. That is what a real
+ *   runtime does when the interrupt loses its race with a model that had all but
+ *   finished (DOR-1232, measured 2026-08-15) — `interrupt` is delivered, and the
+ *   stream closes a moment later carrying the complete answer.
+ * @param opts.answersLate - Whether every turn outruns the room's WAIT: `run`
+ *   returns at once with `{ text: null, late }`, the way the real runner reports
+ *   the deadline passing, and the answer arrives on the `late` promise whenever
+ *   the test lands it. It is the only way to reach `deliverLate`, which is a
+ *   whole delivery path with its own claim release — and the one a Stop pressed
+ *   during the late window has to reach.
+ */
+export function gatedRunner({
+  interruptEndsTurn = true,
+  interruptedTurnStillAnswers = false,
+  answersLate = false,
+} = {}): GatedRunner {
+  const turns: ScriptedTurnRunner['turns'] = [];
+  const interrupted: ScriptedTurnRunner['interrupted'] = [];
+  const held = new Map<
+    string,
+    Array<{ request: RoomTurnRequest; finish: () => void; stop: () => void }>
+  >();
+  /** The oldest held turn for one agent, or a failure naming what was wanted. */
+  const oldest = (authorId: string, verb: string) => {
+    const turn = held.get(authorId)?.[0];
+    if (!turn) throw new Error(`no turn is being held for ${authorId}, so it cannot ${verb}`);
+    return turn;
+  };
+  return {
+    turns,
+    interrupted,
+    interrupt(request): Promise<void> {
+      interrupted.push(request);
+      // A real interrupt ENDS the turn: the runtime stops, the stream closes,
+      // and the collector resolves with whatever there was. A fake that only
+      // recorded the call would leave the dispatcher awaiting a turn nothing can
+      // finish — which is not what a halt does, and would let a halt that never
+      // reached the runtime pass.
+      if (!interruptEndsTurn) return Promise.resolve();
+      for (const [authorId, queued] of held) {
+        if (queued[0]?.request.agentPath !== request.agentPath) continue;
+        for (const turn of queued.splice(0)) turn.stop();
+        held.delete(authorId);
+      }
+      return Promise.resolve();
+    },
+    run(request: RoomTurnRequest): Promise<RoomTurnResult> {
+      turns.push({
+        roomId: request.room.id,
+        authorId: request.authorId,
+        agentPath: request.agentPath,
+        sessionId: request.sessionId,
+        prompt: request.entry.body.text,
+        roomContext: request.roomContext,
+        attachmentProjection: request.attachmentProjection,
+      });
+      const sessionId = request.sessionId ?? 'session-1';
+      // What a stopped turn hands back. Nothing, for a runtime that dropped what
+      // it was saying — but `interruptedTurnStillAnswers` models the one that
+      // measurably does not: the interrupt is delivered and the stream still
+      // closes with the whole answer in it. The room has to throw that away
+      // either way (DOR-1232), which is what makes the second shape worth having
+      // a fake for.
+      const stoppedText = interruptedTurnStillAnswers ? 'on it' : null;
+      /** Park this turn's two endings where the test's levers can reach them. */
+      const park = (finish: () => void, stop: () => void): void => {
+        const queued = held.get(request.authorId) ?? [];
+        queued.push({ request, finish, stop });
+        held.set(request.authorId, queued);
+      };
+      if (answersLate) {
+        // The room stopped WAITING and the turn did not stop: `run` resolves now
+        // with no text, and the answer lands on `late` when the test says so.
+        return Promise.resolve({
+          sessionId,
+          text: null,
+          late: new Promise<LateRoomReply>((resolve) => {
+            park(
+              () => resolve({ text: 'on it', waitedMs: 1 }),
+              () => resolve({ text: stoppedText, waitedMs: 1 })
+            );
+          }),
+        });
+      }
+      return new Promise<RoomTurnResult>((resolve) => {
+        park(
+          () => resolve({ sessionId, text: 'on it' }),
+          () => resolve({ sessionId, text: stoppedText })
+        );
+      });
+    },
+    holdsFor(authorId) {
+      return held.get(authorId)?.length ?? 0;
+    },
+    release(authorId) {
+      held.get(authorId)?.shift()?.finish();
+    },
+    releaseAll() {
+      // Snapshot the values first: finishing a turn can put the next one in
+      // behind it, and iterating the live map would then answer a turn this call
+      // never saw.
+      for (const queued of [...held.values()]) {
+        for (const turn of queued.splice(0)) turn.finish();
+      }
+    },
+    waitOnPerson(authorId, waiting) {
+      oldest(authorId, 'wait on a person').request.onWaiting(waiting);
     },
   };
 }

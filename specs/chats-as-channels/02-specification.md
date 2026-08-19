@@ -404,6 +404,8 @@ Room notices (`cascade_stopped`, `budget_reached`, `agent_busy`, `turn_failed`, 
 
 `deliverNotices` is a per-bridge boolean, **seeded by room kind** (D-6 Q5): **`true` for a bridged `dm`**, **`false` for a bridged `channel`**, with a single per-bridge override. Scope when on is exactly `turn_failed` and `halted`, rendered as one plain sentence. The rationale is who is standing on the other end: a bridged DM is usually the operator's own account, and silence after a crashed turn is the failure `.claude/rules/room-conduct.md` exists to prevent; a bridged group is other people, who do not need this machine's internals.
 
+**Amended 2026-08-18 (DOR-1359) — the scope is now four codes, not two.** `awaiting_approval` and `agent_busy` deliver as well. The paragraph above reads them as "cockpit-shaped", which held for `cascade_stopped` and `budget_reached` (this install's own limits) and for `agent_gone` and `agent_unavailable` (a registration and a database the platform person cannot act on), but not for these two: both say an agent has **stopped**, which is precisely what somebody waiting on a chat is missing. Both forward the room's stored words unchanged — the waiting line stays vague, late and damped, carrying no tool name, path or command — and neither is actionable from the chat. Making a bridged Ask answerable needs the approver-allowlist entitlement (`adapters/approver-allowlist.ts`), which is DOR-1356. `deliverNotices`, its seeding rule, and its per-bridge override are unchanged.
+
 ### 6.3 Echo suppression, and the write-before-send ordering
 
 The only mechanism is the external-ref table — structural, never heuristic. No text comparison, no time window, no recently-sent cache.
