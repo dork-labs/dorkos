@@ -105,37 +105,15 @@
  */
 
 import path from 'path';
+import {
+  SHELL_WRAPPERS,
+  splitSegments,
+  extractSubstitutions,
+  tokenize,
+  stripCommandPrefixes,
+} from './lib/shell-command.mjs';
 
 const { basename } = path;
-
-/** Shell operators that separate one command from the next. */
-const TWO_CHAR_OPERATORS = ['&&', '||', '|&'];
-const ONE_CHAR_OPERATORS = [';', '|', '&', '\n'];
-
-/** Wrappers whose `-c` argument is itself a command line. */
-const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
-
-/** Words that can precede the real command without changing it. */
-const COMMAND_PREFIXES = new Set([
-  'sudo',
-  'command',
-  'env',
-  'nohup',
-  'nice',
-  'time',
-  'builtin',
-  // Shell grouping and control keywords. Without these, the command inside a
-  // loop body or a subshell reads as a command named `do` or `(git`, and the
-  // whole segment is skipped. `for f in ...; do git checkout -- $f; done` is a
-  // spelling agents reach for unprompted.
-  'then',
-  'do',
-  'else',
-  'elif',
-  '!',
-  '(',
-  '{',
-]);
 
 /** git global options that consume the following token when not written with `=`. */
 const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
@@ -232,162 +210,6 @@ Also allowed, but read this before reaching for it: git restore
 --source=<commit> <path> when you name a commit other than HEAD. That is for
 pulling back one specific old version on purpose. It overwrites your
 uncommitted edits just as badly, so it is not a way around this message.`;
-
-/**
- * Split a command line into the individual commands it runs, ignoring
- * operators that appear inside quotes.
- *
- * @param {string} command - Raw command line.
- * @returns {string[]} Non-empty, trimmed command segments.
- */
-function splitSegments(command) {
-  const segments = [];
-  let current = '';
-  let quote = null;
-
-  for (let i = 0; i < command.length; i++) {
-    const char = command[i];
-
-    if (quote) {
-      if (char === '\\' && quote === '"' && i + 1 < command.length) {
-        current += char + command[++i];
-        continue;
-      }
-      if (char === quote) quote = null;
-      current += char;
-      continue;
-    }
-
-    if (char === "'" || char === '"') {
-      quote = char;
-      current += char;
-      continue;
-    }
-    if (char === '\\' && i + 1 < command.length) {
-      current += char + command[++i];
-      continue;
-    }
-    if (TWO_CHAR_OPERATORS.includes(command.slice(i, i + 2))) {
-      segments.push(current);
-      current = '';
-      i++;
-      continue;
-    }
-    if (ONE_CHAR_OPERATORS.includes(char)) {
-      segments.push(current);
-      current = '';
-      continue;
-    }
-    current += char;
-  }
-  segments.push(current);
-
-  return segments.map((segment) => segment.trim()).filter(Boolean);
-}
-
-/**
- * Pull out the bodies of one level of `$(...)` and backtick substitution so
- * `echo $(git stash pop)` is inspected rather than skipped as an `echo`.
- *
- * @param {string} command - Raw command line.
- * @returns {string[]} Substitution bodies, which may be empty.
- */
-function extractSubstitutions(command) {
-  const bodies = [];
-  const pattern = /\$\(([^()]*)\)|`([^`]*)`/g;
-  let match;
-  while ((match = pattern.exec(command)) !== null) {
-    bodies.push(match[1] ?? match[2]);
-  }
-  return bodies;
-}
-
-/**
- * Split a single command segment into arguments, dropping quotes and
- * collapsing runs of whitespace (so `git  stash` reads as `git stash`).
- *
- * @param {string} segment - One command segment.
- * @returns {string[]} Unquoted argument tokens.
- */
-function tokenize(segment) {
-  const tokens = [];
-  let current = '';
-  let quoted = false;
-  let quote = null;
-
-  for (let i = 0; i < segment.length; i++) {
-    const char = segment[i];
-
-    if (quote) {
-      if (char === '\\' && quote === '"' && i + 1 < segment.length) {
-        current += segment[++i];
-        continue;
-      }
-      if (char === quote) {
-        quote = null;
-        continue;
-      }
-      current += char;
-      continue;
-    }
-
-    if (char === "'" || char === '"') {
-      quote = char;
-      quoted = true;
-      continue;
-    }
-    if (char === '\\' && i + 1 < segment.length) {
-      current += segment[++i];
-      continue;
-    }
-    if (/\s/.test(char)) {
-      if (current || quoted) tokens.push(current);
-      current = '';
-      quoted = false;
-      continue;
-    }
-    current += char;
-  }
-  if (current || quoted) tokens.push(current);
-
-  return tokens;
-}
-
-/**
- * Drop leading `VAR=value` assignments and wrapper words like `sudo`.
- *
- * @param {string[]} tokens - Argument tokens for one segment.
- * @returns {string[]} Tokens starting at the real command name.
- */
-function stripCommandPrefixes(tokens) {
-  let index = 0;
-  while (index < tokens.length) {
-    const token = tokens[index];
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
-      index++;
-      continue;
-    }
-    if (COMMAND_PREFIXES.has(basename(token))) {
-      index++;
-      continue;
-    }
-    break;
-  }
-
-  // Strip the grouping punctuation that can sit flush against the command:
-  // `(git stash pop)` tokenizes as `(git` ... `pop)`, and without this the
-  // first token is not `git` and the segment is skipped entirely. The trailing
-  // half matters just as much in the other direction — leaving `)` attached to
-  // `list` in `(git stash list)` would turn a read-only command into a block.
-  const rest = tokens.slice(index);
-  if (rest.length > 0) {
-    rest[0] = rest[0].replace(/^[({]+/, '');
-    const last = rest.length - 1;
-    rest[last] = rest[last].replace(/[)};]+$/, '');
-    if (rest[0] === '') rest.shift();
-  }
-  return rest;
-}
 
 /**
  * Skip git's global options to reach the subcommand and its arguments.
