@@ -5,6 +5,7 @@ covers:
   - 'feat(server,shared): a session waiting on a person is not idle, and a scheduled run never waits (DOR-1350)'
   - 'feat(client,server): a parked Ask says the agent is waiting, and still takes an answer (DOR-1350)'
   - "refactor(server): one prompt's wait lives in its own module (DOR-1350)"
+  - 'fix(client): a card that parks while somebody is watching reads like one that arrived parked (DOR-1350)'
 ---
 
 ### Changed
