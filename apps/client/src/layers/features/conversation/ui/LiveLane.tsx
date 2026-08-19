@@ -155,7 +155,12 @@ export function LiveLane({
   // presence line opens the peek, and the amber Ask grows into its card. Sharing
   // it is what keeps the 24 px promise — the card is drawn OVER the composer,
   // never inside the lane, so nothing below it moves when it opens.
-  const offersPeek = state.kind === 'presence' && peek !== undefined;
+  // The waiting line opens the same peek, because it is the same list read a
+  // second way: who is working here, then what is waiting to start. A held line
+  // that could not be opened would say a message is waiting and offer no way to
+  // find out where — which is the un-followable remedy the old refusal notice
+  // was retired for.
+  const offersPeek = (state.kind === 'presence' || state.kind === 'held') && peek !== undefined;
   const offersAsk = state.kind === 'ask' && askCard !== undefined;
   const offersPopover = offersPeek || offersAsk;
   const popoverBody = offersAsk ? askCard : peek;
