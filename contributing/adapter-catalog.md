@@ -235,6 +235,8 @@ Four adapters ship with DorkOS. Their manifests are defined as static constants 
 - **Multi-instance**: No
 - **Config fields**: `maxConcurrent` (number, default 3), `defaultTimeoutMs` (number, default 300000)
 - **Note**: Auto-configured; typically not modified by users
+- **Capacity**: `maxConcurrent` is a waiting line, not a wall (`capacity-hold.ts`, ADR `260819-034718`). A delivery that finds every slot busy parks and starts when one frees. Bounds: `WAITING_PER_SLOT = 10` waiters per slot (30 by default), a hold ceiling of `min(defaultTimeoutMs, envelope TTL remaining)`, and a `HOLD_ANNOUNCE_AFTER_MS = 10_000` floor before the chat is told anything. The ceiling is **not** the ceiling on the blocking turn, which runs to its own envelope TTL (1 h default) — so a hold can expire while the agent is still busy, and the held notice therefore promises no arrival.
+- **Who may be held**: only a delivery whose `replyTo` is a bridged human chat (`requiresInitiateConsent`). The publish pipeline marks these by setting `AdapterContext.onHeld` and nothing else does. Awaited deliveries (Tasks dispatch, control messages) and detached-but-watched callers (`relay_send_and_wait` at 60 s, the A2A executor at 120 s) keep the immediate `at_capacity` refusal — holding one destroys its reply rather than delaying it.
 
 ## CatalogEntry and Instances
 

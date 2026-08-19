@@ -15,6 +15,19 @@
  * to the same chat subject the message arrived on, so the person reads it in
  * the conversation they were already looking at.
  *
+ * One reason here is not a stop at all. `agent_held` reports a message that is
+ * **waiting** for a busy agent rather than one that was turned away, and it
+ * exists because the alternative was asking a person to send their message
+ * again before the machine had even tried (ADR `260819-034718`).
+ *
+ * It promises nothing, on purpose. The hold's ceiling is not the ceiling on the
+ * turn in its way, so "it will be picked up" is a sentence the code cannot
+ * guarantee; "your message is waiting its turn" is one it can, and it answers
+ * the only question the person actually has. If the wait then runs out,
+ * `agent_busy` says so — and that line may ask for a resend, because by then
+ * the machine has genuinely tried and failed, and resending is the one thing
+ * that works. Asking FIRST, instead of waiting, is what this work removed.
+ *
  * ## Two rules that keep this from becoming a new bug
  *
  * 1. **The principal must be one the binding router skips.**
@@ -62,6 +75,18 @@ export type ChatNoticeReason =
   | 'agent_missing'
   | 'session_failed'
   | 'agent_busy'
+  /**
+   * The agent was already running everything it can, so this message is waiting
+   * its turn. **Not a refusal** — nothing was dropped, and this is the one
+   * notice here that reports work still to come rather than work declined.
+   *
+   * Reachable only for a message a person is waiting on in a bridged chat, and
+   * only once the wait has lasted long enough to be worth a line
+   * (`adapters/claude-code/capacity-hold.ts`), so an ordinary two-second wait
+   * says nothing at all. It has no {@link RefusalReason} because nothing was
+   * refused.
+   */
+  | 'agent_held'
   | 'delivery_failed'
   | 'rate_limited'
   | 'budget_exceeded'
@@ -102,8 +127,9 @@ const NOTICE_TEXT: Record<ChatNoticeReason, string> = {
     'I could not start a session for this chat, so your message was not passed on. ' +
     'The DorkOS server log says why.',
   agent_busy:
-    'The agent is handling as much as it can right now, so your message was not picked up. ' +
-    'Send it again in a moment.',
+    'Your agent was too busy to take this message, so it was not picked up. You can send it again now.',
+  agent_held:
+    'Your agent was busy when your message arrived, so your message is waiting its turn. There is nothing you need to do.',
   delivery_failed: 'Your message did not reach the agent.',
   rate_limited:
     'That was a lot of messages very quickly, so this one was not passed on. ' +

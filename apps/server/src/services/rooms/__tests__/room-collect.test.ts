@@ -831,6 +831,34 @@ describe('a room gathers a burst into one turn', () => {
       await service.triggersIdle();
     });
   });
+
+  describe('stopping one agent', () => {
+    it('drops every batch that agent was waiting on, including one the cap already closed', async () => {
+      // **Why `dropOne` hands back a LIST.** At a cap of one, two messages in a
+      // tick leave two collections under one `(room, agent)` key: the cap takes
+      // the first out of the map and parks it for a macrotask, and the second
+      // opens a fresh one behind it. Both are turns this room has not taken and
+      // both hold one of the dispatcher's in-flight credits, so a drop that
+      // handed back only one would leak the other's — and `triggersIdle()` would
+      // never resolve again. Its resolving here is half of this assertion.
+      open(scriptedRunner(), { debounceMs: 60_000, maxEntries: 1 }, ['/agents/ana', '/agents/bo']);
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+      service.post(room.id, { authorId: human, text: '@ana the build is red' });
+      service.post(room.id, { authorId: human, text: '@ana and so is the deploy' });
+      service.post(room.id, { authorId: human, text: '@bo what about the cache?' });
+
+      expect(await service.haltAgent(room.id, ana, human)).toBe(0);
+
+      // Bo was never stopped, so Bo's batch is still owed a turn — which is what
+      // makes `triggersIdle` a real wait rather than a formality. Landing it is
+      // also what proves the stop left another agent's collection alone.
+      await settleUntil(() => runner.turns.length === 1, "Bo's own batch to run");
+      await service.triggersIdle();
+
+      expect(runner.turns.map((turn) => turn.authorId)).toEqual([bo]);
+      expect(postsBy(ana)).toHaveLength(0);
+    });
+  });
 });
 
 /**

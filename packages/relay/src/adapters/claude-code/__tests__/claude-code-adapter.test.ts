@@ -346,46 +346,295 @@ describe('ClaudeCodeAdapter', () => {
     });
   });
 
-  it('enforces concurrency semaphore — rejects when at capacity', async () => {
-    // Create adapter with maxConcurrent: 1 and a sendMessage that never resolves
-    let resolveFirst!: () => void;
-    const hangingStream = (async function* () {
-      await new Promise<void>((resolve) => {
-        resolveFirst = resolve;
+  describe('the concurrency ceiling', () => {
+    /**
+     * A turn that occupies its slot until the test lets it go.
+     *
+     * `defaultTimeoutMs` is the hold ceiling. It is set well BELOW the
+     * envelope's own TTL so the two clocks cannot race: a hold expires while
+     * the turn in its way is still running, which is the case worth pinning.
+     */
+    function hangingAdapter(maxConcurrent: number, defaultTimeoutMs = 60_000) {
+      let release!: () => void;
+      const hanging = new Promise<void>((resolve) => {
+        release = resolve;
       });
-    })();
+      const manager: AgentRuntimeLike = {
+        ensureSession: vi.fn(),
+        // A fresh generator per call: two deliveries to different sessions must
+        // not share one stream, or the second would end the moment the first did.
+        sendMessage: vi.fn().mockImplementation(() =>
+          (async function* () {
+            await hanging;
+            yield { type: 'done', data: {} } as StreamEvent;
+          })()
+        ),
+        getSdkSessionId: vi.fn().mockReturnValue(undefined),
+        approveTool: vi.fn(),
+        interruptQuery: vi.fn().mockResolvedValue(true),
+      };
+      const adapter = new ClaudeCodeAdapter(
+        'capped',
+        { maxConcurrent, defaultTimeoutMs, defaultCwd: '/tmp' },
+        { agentManager: manager, traceStore }
+      );
+      return { adapter, manager, release };
+    }
 
-    const hangingManager: AgentRuntimeLike = {
-      ensureSession: vi.fn(),
-      sendMessage: vi.fn().mockReturnValue(hangingStream),
-      getSdkSessionId: vi.fn().mockReturnValue(undefined),
-      approveTool: vi.fn(),
-      interruptQuery: vi.fn().mockResolvedValue(true),
-    };
-    const cappedAdapter = new ClaudeCodeAdapter(
-      'capped',
-      { maxConcurrent: 1, defaultCwd: '/tmp' },
-      { agentManager: hangingManager, traceStore }
-    );
-    await cappedAdapter.start(relay);
+    /**
+     * The context the publish pipeline builds for a DETACHED delivery.
+     *
+     * Its `onHeld` is the adapter's licence to wait: an awaited delivery gets
+     * no context at all, which is what keeps it out of the waiting line.
+     */
+    function detached(onHeld: () => void = () => {}): AdapterContext {
+      return { onHeld };
+    }
 
-    const envelope = createTestEnvelope();
+    it('holds an agent message until a slot frees instead of turning it away', async () => {
+      vi.useFakeTimers();
+      try {
+        const { adapter: capped, manager, release } = hangingAdapter(1);
+        await capped.start(relay);
 
-    // First call occupies the slot (don't await)
-    const firstCall = cappedAdapter.deliver(envelope.subject, envelope);
+        const first = capped.deliver(
+          'relay.agent.claude-code.busy-one',
+          createTestEnvelope(),
+          detached()
+        );
+        await vi.advanceTimersByTimeAsync(1);
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
 
-    // Give the first call time to increment activeCount
-    await Promise.resolve();
-    await Promise.resolve();
+        // The second message is for a DIFFERENT session, so the per-session
+        // queue does not cover it. Before the hold this returned `at_capacity`
+        // and the message was dead-lettered — the drop this change exists to end.
+        const second = capped.deliver(
+          'relay.agent.claude-code.busy-two',
+          createTestEnvelope(),
+          detached()
+        );
+        // Fake time, so "it has not started" is a drained scheduler rather than
+        // a sleep long enough to have probably drained it.
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
 
-    // Second call should be rejected immediately
-    const secondResult = await cappedAdapter.deliver(envelope.subject, envelope);
-    expect(secondResult.success).toBe(false);
-    expect(secondResult.error).toMatch(/Adapter at capacity/);
+        release();
+        await vi.advanceTimersByTimeAsync(1);
+        await expect(first).resolves.toMatchObject({ success: true });
+        // Seeded defect: put the old `if (activeCount >= maxConcurrent) return
+        // at_capacity` back. `second` resolves `success: false` and the second
+        // turn never runs.
+        await expect(second).resolves.toMatchObject({ success: true });
+        expect(manager.sendMessage).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
 
-    // Clean up: let first call finish
-    resolveFirst();
-    await firstCall;
+    it('refuses a delivery somebody is awaiting rather than holding it', async () => {
+      const { adapter: capped, manager, release } = hangingAdapter(1);
+      await capped.start(relay);
+
+      const first = capped.deliver(
+        'relay.agent.claude-code.busy-one',
+        createTestEnvelope(),
+        detached()
+      );
+      await vi.waitFor(() => expect(manager.sendMessage).toHaveBeenCalledTimes(1));
+
+      // A Tasks dispatch is AWAITED by the publish pipeline under its own 120s
+      // ceiling, so it arrives with no `onHeld` and must be answered now.
+      // Holding one would spend the caller's budget and report a timeout where
+      // the truth was capacity.
+      // Seeded defect: make `mayWait` anything other than "the pipeline gave me
+      // an onHeld" — `mayWait: !isTasks`, say. Every awaited control message
+      // then parks behind the running turn and its publish hangs, which is
+      // exactly how `task-cancel-roundtrip` catches it.
+      const task = await capped.deliver('relay.system.tasks.dispatch', createTasksEnvelope());
+      expect(task).toMatchObject({ success: false, code: 'at_capacity' });
+
+      release();
+      await first;
+    });
+
+    it('tells the caller a held message is waiting, once the wait is worth a word', async () => {
+      vi.useFakeTimers();
+      try {
+        const { adapter: capped, manager, release } = hangingAdapter(1);
+        await capped.start(relay);
+
+        const first = capped.deliver(
+          'relay.agent.claude-code.busy-one',
+          createTestEnvelope(),
+          detached()
+        );
+        await vi.advanceTimersByTimeAsync(1);
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
+
+        const onHeld = vi.fn();
+        const second = capped.deliver(
+          'relay.agent.claude-code.busy-two',
+          createTestEnvelope(),
+          detached(onHeld)
+        );
+
+        await vi.advanceTimersByTimeAsync(9_000);
+        expect(onHeld).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1_000);
+        // Seeded defect: drop the `onHeld` spread from the `acquire()` call.
+        // The chat is never told, and a person watching a silent bot has no way
+        // to tell a hold from a broken bridge.
+        expect(onHeld).toHaveBeenCalledTimes(1);
+
+        release();
+        await vi.advanceTimersByTimeAsync(0);
+        await Promise.all([first, second]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('gives up on a hold that outlives the turn ceiling, and says why', async () => {
+      vi.useFakeTimers();
+      try {
+        const { adapter: capped, manager, release } = hangingAdapter(1);
+        await capped.start(relay);
+
+        const first = capped.deliver(
+          'relay.agent.claude-code.busy-one',
+          createTestEnvelope(),
+          detached()
+        );
+        await vi.advanceTimersByTimeAsync(1);
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
+
+        const second = capped.deliver(
+          'relay.agent.claude-code.busy-two',
+          createTestEnvelope(),
+          detached()
+        );
+        // The adapter's hold ceiling, which is NOT the blocking turn's: that
+        // turn runs to its own envelope's TTL, so it is still going here.
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        // Seeded defect: let the hold wait forever. The envelope is never
+        // dead-lettered, the chat is never told, and the message vanishes in
+        // silence — strictly worse than the refusal being replaced.
+        await expect(second).resolves.toMatchObject({ success: false, code: 'at_capacity' });
+
+        release();
+        await vi.advanceTimersByTimeAsync(0);
+        await first;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('never holds a message past its own TTL', async () => {
+      vi.useFakeTimers();
+      try {
+        // Hold ceiling 60s, but this envelope has only 5s of budget left.
+        const { adapter: capped, manager, release } = hangingAdapter(1);
+        await capped.start(relay);
+
+        const first = capped.deliver(
+          'relay.agent.claude-code.busy-one',
+          createTestEnvelope(),
+          detached()
+        );
+        await vi.advanceTimersByTimeAsync(1);
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
+
+        const shortLived = createTestEnvelope({
+          budget: { ...createTestEnvelope().budget, ttl: Date.now() + 5_000 },
+        });
+        const second = capped.deliver('relay.agent.claude-code.busy-two', shortLived, detached());
+
+        await vi.advanceTimersByTimeAsync(5_000);
+        // Seeded defect: drop `ceilingMs` from the `acquire()` call. The wait
+        // runs the full 60s, and `handleAgentMessage` then finds no TTL left
+        // and falls back to `defaultTimeoutMs` — so a message that waited out
+        // its own deadline runs on a FRESH full budget, as if it had just
+        // arrived.
+        await expect(second).resolves.toMatchObject({ success: false, code: 'at_capacity' });
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
+
+        release();
+        await vi.advanceTimersByTimeAsync(1);
+        await first;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('refuses a message whose TTL is already spent instead of waiting on it', async () => {
+      vi.useFakeTimers();
+      try {
+        const { adapter: capped, manager, release } = hangingAdapter(1);
+        await capped.start(relay);
+
+        const first = capped.deliver(
+          'relay.agent.claude-code.busy-one',
+          createTestEnvelope(),
+          detached()
+        );
+        await vi.advanceTimersByTimeAsync(1);
+
+        const expired = createTestEnvelope({
+          budget: { ...createTestEnvelope().budget, ttl: Date.now() - 1 },
+        });
+        // No wait at all: there is no time to wait with. Answered now, so the
+        // dead-letter and its chat line happen while anyone still cares.
+        const second = await capped.deliver(
+          'relay.agent.claude-code.busy-two',
+          expired,
+          detached()
+        );
+        expect(second).toMatchObject({ success: false, code: 'at_capacity' });
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
+
+        release();
+        await vi.advanceTimersByTimeAsync(1);
+        await first;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('ends every wait when the adapter stops, rather than dropping it in silence', async () => {
+      vi.useFakeTimers();
+      const { adapter: capped, manager, release } = hangingAdapter(1);
+      await capped.start(relay);
+
+      const first = capped.deliver(
+        'relay.agent.claude-code.busy-one',
+        createTestEnvelope(),
+        detached()
+      );
+      await vi.advanceTimersByTimeAsync(1);
+      expect(manager.sendMessage).toHaveBeenCalledTimes(1);
+      const second = capped.deliver(
+        'relay.agent.claude-code.busy-two',
+        createTestEnvelope(),
+        detached()
+      );
+      await vi.advanceTimersByTimeAsync(1);
+
+      await capped.stop();
+
+      // Seeded defect: drop `this.capacity.drain()` from `stop()`. The promise
+      // outlives the machinery that could keep it: `second` hangs until the
+      // process exits and nothing is ever said in the chat.
+      const settled = await second;
+      expect(settled.success).toBe(false);
+      expect(settled.code).toBeUndefined();
+      expect(settled.error).toMatch(/stopped while this message was waiting/);
+
+      release();
+      await vi.advanceTimersByTimeAsync(1);
+      await first;
+      vi.useRealTimers();
+    });
   });
 
   it('publishes response events to envelope.replyTo', async () => {
@@ -1161,12 +1410,13 @@ describe('ClaudeCodeAdapter', () => {
       const first = serializedAdapter.deliver(sameSubject, envelope1);
       const second = serializedAdapter.deliver(sameSubject, envelope2);
 
-      // Flush microtasks so first call can enter the queue
-      await Promise.resolve();
-      await Promise.resolve();
+      // Wait for the first call to reach the runtime, rather than counting
+      // microtasks: how many awaits sit between `deliver()` and `sendMessage`
+      // is an implementation detail (taking a concurrency slot added one), and
+      // the property under test is the ORDER, not the tick count.
+      await vi.waitFor(() => expect(callOrder).toContain('first:start'));
 
       // At this point, only the first call should have started
-      expect(callOrder).toContain('first:start');
       expect(callOrder).not.toContain('second:start');
 
       // Unblock the first call

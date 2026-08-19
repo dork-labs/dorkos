@@ -547,12 +547,16 @@ const THREE_ROWS: LivePeekRow[] = [
   },
 ];
 
+/** Who is being stopped in the third demo below, so its own button can say so. */
+const STOPPING_RELEASE_BOT: ReadonlySet<string> = new Set(['release-bot']);
+
 /**
  * One agent working and one waiting to start — the peek's two halves.
  *
  * The waiting row sits BELOW the working one, which is the order the peek reads
- * in: who is working here, then what is waiting. Stop counts the working row
- * only, so this reads as one agent rather than two.
+ * in: who is working here, then what is waiting. Both rows offer a Stop: the
+ * working one ends its turn, the held one stops this conversation waiting for
+ * it (`specs/room-per-agent-stop` §5.2).
  */
 const MIXED_ROWS: LivePeekRow[] = [
   ONE_ROW[0]!,
@@ -570,16 +574,14 @@ const MIXED_ROWS: LivePeekRow[] = [
   },
 ];
 
-/** The peek, in the two shapes its Stop takes. */
+/** The peek, and the two scopes its Stop comes in. */
 export function LivePeekShowcase() {
   return (
     <PlaygroundSection
       title="Live peek"
-      description="What the lane opens into: one row per working agent, with its face, how long it has been going, what it is answering, and a way into its session. Stop is the room-wide halt and the label never claims otherwise. With exactly one agent working, stopping the room and stopping the agent are the same act, so the row offers Stop. With two or more there is no per-row Stop at all — one footer action that says how many it takes down. The drawn box is the popover's; on a phone the same content is a bottom sheet."
+      description="What the lane opens into: one row per working agent, with its face, how long it has been going, what it is answering, and a way into its session. Two stops, and the difference is the scope rather than the verb. A row's Stop ends THAT agent's turn and leaves everybody else working; the footer's ends everything in the room and says how many that is, so it only appears when there is more than one. A surface with no per-agent stop behind it draws no row button at all rather than a dead one. The drawn box is the popover's; on a phone the same content is a bottom sheet."
     >
-      <ShowcaseLabel>
-        One agent — Stop on its row, because it is the only thing running
-      </ShowcaseLabel>
+      <ShowcaseLabel>One agent — its own Stop, and no footer: there is nothing else</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="bg-popover w-88 rounded-lg border shadow-md">
           <Conversation.LivePeek
@@ -587,12 +589,14 @@ export function LivePeekShowcase() {
             onScrollToRow={() => {}}
             onOpenSession={() => {}}
             onStopAll={() => {}}
+            onStopAgent={() => {}}
           />
         </div>
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Three agents — no per-row Stop, and a footer that counts what it will take down
+        Three agents — a Stop per row, each named for its own agent, over a footer that counts what
+        it would take down
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="bg-popover w-88 rounded-lg border shadow-md">
@@ -601,14 +605,32 @@ export function LivePeekShowcase() {
             onScrollToRow={() => {}}
             onOpenSession={() => {}}
             onStopAll={() => {}}
+            onStopAgent={() => {}}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        One stop in flight — only the row it was pressed on says so. The other two are still
+        working, and a person can still stop them.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="bg-popover w-88 rounded-lg border shadow-md">
+          <Conversation.LivePeek
+            rows={THREE_ROWS}
+            onScrollToRow={() => {}}
+            onOpenSession={() => {}}
+            onStopAll={() => {}}
+            onStopAgent={() => {}}
+            stoppingAgents={STOPPING_RELEASE_BOT}
           />
         </div>
       </ShowcaseDemo>
 
       <ShowcaseLabel>
         One working, one waiting — the wait sits below the work, offers a way into the conversation
-        in the way, and can ask to be answered first. Stop still counts one, because a waiting agent
-        is not something this room can stop.
+        in the way, and can ask to be answered first. Both rows can be stopped: the working one ends
+        its turn, the waiting one stops this conversation waiting for it.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="bg-popover w-88 rounded-lg border shadow-md">
@@ -619,6 +641,7 @@ export function LivePeekShowcase() {
             onOpenRoom={() => {}}
             onAnswerFirst={() => {}}
             onStopAll={() => {}}
+            onStopAgent={() => {}}
           />
         </div>
       </ShowcaseDemo>
@@ -637,6 +660,7 @@ export function LivePeekShowcase() {
             onAnswerFirst={() => {}}
             promoted={new Set(['mio-clicker-pm'])}
             onStopAll={() => {}}
+            onStopAgent={() => {}}
           />
         </div>
       </ShowcaseDemo>

@@ -414,13 +414,13 @@ describe('RoomLiveLane', () => {
     expect(screen.queryByTestId('room-presence-announcer')).toBeNull();
   });
 
-  it('offers one Stop for one agent, and an honest count for several', () => {
+  it('offers a Stop per agent, and an honest count in the footer for several', () => {
     vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
     working('kai');
     renderLane();
     fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
 
-    // One agent: stopping the room and stopping the agent are the same act.
+    // One agent: its own Stop, and no footer — there is nothing else to stop.
     expect(screen.getByTestId('live-peek-stop')).toHaveTextContent('Stop');
     expect(screen.queryByTestId('live-peek-stop-all')).toBeNull();
 
@@ -429,11 +429,47 @@ describe('RoomLiveLane', () => {
     renderLane();
     fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
 
-    // Two: no per-row stop at all, and the footer says how many it takes down.
-    expect(screen.queryByTestId('live-peek-stop')).toBeNull();
+    // Two: a Stop on each row, each naming its own agent, and the footer for
+    // the "and everything else" case with the count that keeps it honest.
+    expect(screen.getAllByTestId('live-peek-stop')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Stop Kai' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop Ana' })).toBeInTheDocument();
     const all = screen.getByTestId('live-peek-stop-all');
     expect(all).toHaveTextContent('Stop everything in this room');
     expect(all).toHaveTextContent('Stops all 2');
+  });
+
+  it('sends a row’s Stop to that agent, and the footer’s to the whole room', async () => {
+    // **The single most likely wiring mistake here**: both controls reaching one
+    // mutation. They are different verbs at different scopes, so they are
+    // asserted against two different transport methods with two different
+    // arguments.
+    vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+    working('kai');
+    act(() => working('ana', 'working', '2026-07-30T10:00:30.000Z'));
+    const transport = createMockTransport();
+    renderLane({}, transport);
+    fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Ana' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Ana's row, Ana's id — not Kai's, which a `.map` closing over the wrong row
+    // makes easy and no snapshot would catch.
+    expect(transport.haltRoomAgent).toHaveBeenCalledWith(ROOM, 'ana');
+    expect(transport.haltRoom).not.toHaveBeenCalled();
+    // And only Ana's button says a stop is on its way.
+    expect(screen.getByRole('button', { name: 'Stop Kai' })).toBeEnabled();
+
+    fireEvent.click(screen.getByTestId('live-peek-stop-all'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(transport.haltRoom).toHaveBeenCalledWith(ROOM);
+    expect(transport.haltRoomAgent).toHaveBeenCalledTimes(1);
   });
 
   it('takes the reader to the row an agent’s trigger is drawn on', () => {
@@ -703,7 +739,7 @@ describe('RoomLiveLane', () => {
       );
     });
 
-    it('puts the wait under the working rows in the peek, and counts only work in Stop', () => {
+    it('puts the wait under the working rows in the peek, and both can be stopped', () => {
       vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
       working('ana');
       waiting('kai');
@@ -716,11 +752,16 @@ describe('RoomLiveLane', () => {
       expect(rows[1].textContent).toContain('Kai');
       expect(rows[1].textContent).toContain('waiting to start');
 
-      // **Stop counts working rows only.** A waiting agent is not something this
-      // room can stop, so with one live turn beside one wait the peek still
-      // offers the single-agent Stop rather than a footer claiming two.
-      expect(screen.getByTestId('live-peek-stop')).toHaveTextContent('Stop');
-      expect(screen.queryByTestId('live-peek-stop-all')).toBeNull();
+      // **Every row can be stopped, held ones included** — this sentence used to
+      // read "Stop counts working rows only", and `specs/room-per-agent-stop`
+      // §5.2 amends it: a row's Stop is `haltAgent` now, so pressing it on the
+      // wait stops this conversation waiting for Kai and touches nothing Ana is
+      // doing. The footer counts both, honestly, because the room-wide halt
+      // really does drop held collections along with live claims.
+      expect(screen.getAllByTestId('live-peek-stop')).toHaveLength(2);
+      expect(screen.getByRole('button', { name: 'Stop Ana' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Stop Kai' })).toBeInTheDocument();
+      expect(screen.getByTestId('live-peek-stop-all')).toHaveTextContent('Stops all 2');
     });
 
     it('offers a way into the room in the way, and none when it cannot name it', async () => {
