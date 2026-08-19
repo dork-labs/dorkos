@@ -1364,10 +1364,9 @@ describe('reliability pipeline integration', () => {
       expect(mockAdapter.deliver).toHaveBeenCalledWith(
         'relay.agent.test-session',
         expect.objectContaining({ subject: 'relay.agent.test-session' }),
-        // The detached path adds `onHeld` even when the caller built no
-        // context: it is how an adapter that parks a message for a busy
-        // runtime says so in the chat the message came from.
-        { onHeld: expect.any(Function) }
+        // No `onHeld`: this publish names no reply subject, so there is no
+        // person in a chat to hold the message for.
+        undefined
       );
 
       await relayWithAdapter.close();
@@ -1508,13 +1507,11 @@ describe('reliability pipeline integration', () => {
         { from: 'relay.test.sender' }
       );
 
-      // Everything the context builder said reaches the adapter, plus the
-      // `onHeld` callback the detached path adds — the builder's fields are
-      // carried through rather than replaced.
-      expect(mockAdapter.deliver).toHaveBeenCalledWith('relay.agent.ctx', expect.any(Object), {
-        ...mockContext,
-        onHeld: expect.any(Function),
-      });
+      expect(mockAdapter.deliver).toHaveBeenCalledWith(
+        'relay.agent.ctx',
+        expect.any(Object),
+        mockContext
+      );
 
       await relayWithContext.close();
     });

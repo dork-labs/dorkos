@@ -166,10 +166,10 @@ describe('the notice for a turn that died', () => {
     expect(registry.dispatches).toHaveLength(1);
     expect(registry.notices()).toHaveLength(1);
     // This registry refuses at capacity outright, which is what an adapter that
-    // cannot hold does. The line it produces states what happened and asks for
-    // nothing — it used to end "Send it again in a moment."
-    expect(registry.notices()[0]!.text).toContain('stayed busy');
-    expect(registry.notices()[0]!.text).not.toMatch(/again/i);
+    // cannot hold does. The line names the resend only because the attempt is
+    // over — it used to be the FIRST thing a busy runtime said.
+    expect(registry.notices()[0]!.text).toContain('too busy to take this message');
+    expect(registry.notices()[0]!.text).toContain('send it again now');
   });
 
   it('says a held message is waiting, and that line does not start a turn either', async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { AdapterDelivery, type AdapterDeliveryDeps } from '../adapter-delivery.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import type { AdapterRegistryLike, DeliveryResult } from '../types.js';
+import type { AdapterContext, AdapterRegistryLike, DeliveryResult } from '../types.js';
 import type { SqliteIndex } from '../sqlite-index.js';
 import type { MaildirStore } from '../maildir-store.js';
 import type { DeadLetterQueue } from '../dead-letter-queue.js';
@@ -269,10 +269,9 @@ describe('AdapterDelivery', () => {
       expect(deps.adapterRegistry!.deliver).toHaveBeenCalledWith(
         AGENT_SUBJECT,
         expect.objectContaining({ subject: AGENT_SUBJECT }),
-        // The detached path always hands the adapter a context, even when the
-        // caller built none: it carries `onHeld`, the adapter's way of saying
-        // this message is waiting for a free slot rather than lost.
-        { onHeld: expect.any(Function) }
+        // Untouched: this envelope has no reply subject, so nobody could be
+        // told about a hold and none is licensed.
+        undefined
       );
     });
 
@@ -446,6 +445,11 @@ describe('AdapterDelivery', () => {
       );
     });
 
+    /** The context the registry was handed on the most recent delivery. */
+    function contextGiven(): AdapterContext | undefined {
+      return vi.mocked(deps.adapterRegistry!.deliver).mock.calls.at(-1)?.[2];
+    }
+
     it('never licenses an AWAITED delivery to wait for capacity', async () => {
       const delivery = new AdapterDelivery(deps);
 
@@ -459,8 +463,49 @@ describe('AdapterDelivery', () => {
       // `deliverDetached()`. Every Tasks dispatch and control message then
       // becomes holdable, and a stop published while a run is parked never
       // resolves at all.
-      const context = vi.mocked(deps.adapterRegistry!.deliver).mock.calls[0]![2];
-      expect(context?.onHeld).toBeUndefined();
+      expect(contextGiven()?.onHeld).toBeUndefined();
+    });
+
+    it.each([
+      ['a reply inbox (relay_send_and_wait)', 'relay.inbox.query.abc'],
+      ['an A2A reply subject', 'relay.a2a.reply.task-7'],
+      ['another agent', 'relay.agent.claude-code.peer'],
+      ['the in-app console', 'relay.human.console.client-1'],
+    ])('refuses at once rather than holding for %s', async (_name, replyTo) => {
+      const delivery = new AdapterDelivery(deps);
+
+      await delivery.deliver(AGENT_SUBJECT, createEnvelope({ subject: AGENT_SUBJECT, replyTo }));
+
+      // Detached is NOT the same as unwatched. `relay_send_and_wait` (60s) and
+      // the A2A executor (120s) both publish to `relay.agent.*` and then block
+      // on a reply inbox — a hold longer than their deadline does not delay
+      // their reply, it destroys it, and the turn still runs afterwards into a
+      // reader who has given up.
+      // Seeded defect: attach `onHeld` to every detached delivery, as the first
+      // cut did. Each of these callers then times out saying "timed out" where
+      // the truth was capacity, and a retry runs the same turn twice.
+      expect(contextGiven()?.onHeld).toBeUndefined();
+    });
+
+    it('licenses a hold when a person in a bridged chat is the one waiting', async () => {
+      const delivery = new AdapterDelivery(deps);
+
+      await delivery.deliver(
+        AGENT_SUBJECT,
+        createEnvelope({ subject: AGENT_SUBJECT, replyTo: CHANNEL_SUBJECT })
+      );
+
+      // The same predicate the chat notice itself uses, so a message can never
+      // be parked somewhere nobody could be told about it.
+      expect(contextGiven()?.onHeld).toBeTypeOf('function');
+    });
+
+    it('refuses at once rather than holding a message with no reader at all', async () => {
+      const delivery = new AdapterDelivery(deps);
+
+      await delivery.deliver(AGENT_SUBJECT, createEnvelope({ subject: AGENT_SUBJECT }));
+
+      expect(contextGiven()?.onHeld).toBeUndefined();
     });
 
     it('tells the chat its message is waiting when the adapter parks it', async () => {
@@ -492,8 +537,11 @@ describe('AdapterDelivery', () => {
       expect(chatNotice.mock.calls.map((call) => call[1])).toEqual(['agent_held']);
     });
 
-    it('says nothing about a hold in a chat that has no reply subject', async () => {
+    it('says nothing about a hold an adapter announced against the rules', async () => {
       const chatNotice = vi.fn().mockResolvedValue(true);
+      // An adapter calling a callback it was never given: `onHeld` is absent
+      // for an envelope with no reply subject, so this stands in for one that
+      // kept a stale reference. The notifier must still say nothing.
       vi.mocked(deps.adapterRegistry!.deliver).mockImplementation(
         async (_subject, _envelope, context) => {
           context?.onHeld?.();
@@ -504,7 +552,9 @@ describe('AdapterDelivery', () => {
       delivery.setChatFailureNotifier(chatNotice);
 
       await delivery.deliver(AGENT_SUBJECT, createEnvelope({ subject: AGENT_SUBJECT }));
-      await new Promise((r) => setTimeout(r, 20));
+      // The registry has already run, and `onHeld` (if any) fired inside it, so
+      // there is nothing left to wait for.
+      await vi.waitFor(() => expect(deps.adapterRegistry!.deliver).toHaveBeenCalled());
 
       expect(chatNotice).not.toHaveBeenCalled();
     });

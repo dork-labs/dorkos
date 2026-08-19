@@ -392,34 +392,43 @@ describe('ClaudeCodeAdapter', () => {
     }
 
     it('holds an agent message until a slot frees instead of turning it away', async () => {
-      const { adapter: capped, manager, release } = hangingAdapter(1);
-      await capped.start(relay);
+      vi.useFakeTimers();
+      try {
+        const { adapter: capped, manager, release } = hangingAdapter(1);
+        await capped.start(relay);
 
-      const first = capped.deliver(
-        'relay.agent.claude-code.busy-one',
-        createTestEnvelope(),
-        detached()
-      );
-      await vi.waitFor(() => expect(manager.sendMessage).toHaveBeenCalledTimes(1));
+        const first = capped.deliver(
+          'relay.agent.claude-code.busy-one',
+          createTestEnvelope(),
+          detached()
+        );
+        await vi.advanceTimersByTimeAsync(1);
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
 
-      // The second message is for a DIFFERENT session, so the per-session queue
-      // does not cover it. Before the hold this returned `at_capacity` and the
-      // message was dead-lettered — the drop this whole change exists to end.
-      const second = capped.deliver(
-        'relay.agent.claude-code.busy-two',
-        createTestEnvelope(),
-        detached()
-      );
-      await new Promise((r) => setTimeout(r, 20));
-      expect(manager.sendMessage).toHaveBeenCalledTimes(1);
+        // The second message is for a DIFFERENT session, so the per-session
+        // queue does not cover it. Before the hold this returned `at_capacity`
+        // and the message was dead-lettered — the drop this change exists to end.
+        const second = capped.deliver(
+          'relay.agent.claude-code.busy-two',
+          createTestEnvelope(),
+          detached()
+        );
+        // Fake time, so "it has not started" is a drained scheduler rather than
+        // a sleep long enough to have probably drained it.
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
 
-      release();
-      await expect(first).resolves.toMatchObject({ success: true });
-      // Seeded defect: put the old `if (activeCount >= maxConcurrent) return
-      // at_capacity` back. `second` resolves `success: false` and the second
-      // turn never runs.
-      await expect(second).resolves.toMatchObject({ success: true });
-      expect(manager.sendMessage).toHaveBeenCalledTimes(2);
+        release();
+        await vi.advanceTimersByTimeAsync(1);
+        await expect(first).resolves.toMatchObject({ success: true });
+        // Seeded defect: put the old `if (activeCount >= maxConcurrent) return
+        // at_capacity` back. `second` resolves `success: false` and the second
+        // turn never runs.
+        await expect(second).resolves.toMatchObject({ success: true });
+        expect(manager.sendMessage).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('refuses a delivery somebody is awaiting rather than holding it', async () => {
@@ -521,7 +530,79 @@ describe('ClaudeCodeAdapter', () => {
       }
     });
 
+    it('never holds a message past its own TTL', async () => {
+      vi.useFakeTimers();
+      try {
+        // Hold ceiling 60s, but this envelope has only 5s of budget left.
+        const { adapter: capped, manager, release } = hangingAdapter(1);
+        await capped.start(relay);
+
+        const first = capped.deliver(
+          'relay.agent.claude-code.busy-one',
+          createTestEnvelope(),
+          detached()
+        );
+        await vi.advanceTimersByTimeAsync(1);
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
+
+        const shortLived = createTestEnvelope({
+          budget: { ...createTestEnvelope().budget, ttl: Date.now() + 5_000 },
+        });
+        const second = capped.deliver('relay.agent.claude-code.busy-two', shortLived, detached());
+
+        await vi.advanceTimersByTimeAsync(5_000);
+        // Seeded defect: drop `ceilingMs` from the `acquire()` call. The wait
+        // runs the full 60s, and `handleAgentMessage` then finds no TTL left
+        // and falls back to `defaultTimeoutMs` — so a message that waited out
+        // its own deadline runs on a FRESH full budget, as if it had just
+        // arrived.
+        await expect(second).resolves.toMatchObject({ success: false, code: 'at_capacity' });
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
+
+        release();
+        await vi.advanceTimersByTimeAsync(1);
+        await first;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('refuses a message whose TTL is already spent instead of waiting on it', async () => {
+      vi.useFakeTimers();
+      try {
+        const { adapter: capped, manager, release } = hangingAdapter(1);
+        await capped.start(relay);
+
+        const first = capped.deliver(
+          'relay.agent.claude-code.busy-one',
+          createTestEnvelope(),
+          detached()
+        );
+        await vi.advanceTimersByTimeAsync(1);
+
+        const expired = createTestEnvelope({
+          budget: { ...createTestEnvelope().budget, ttl: Date.now() - 1 },
+        });
+        // No wait at all: there is no time to wait with. Answered now, so the
+        // dead-letter and its chat line happen while anyone still cares.
+        const second = await capped.deliver(
+          'relay.agent.claude-code.busy-two',
+          expired,
+          detached()
+        );
+        expect(second).toMatchObject({ success: false, code: 'at_capacity' });
+        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
+
+        release();
+        await vi.advanceTimersByTimeAsync(1);
+        await first;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('ends every wait when the adapter stops, rather than dropping it in silence', async () => {
+      vi.useFakeTimers();
       const { adapter: capped, manager, release } = hangingAdapter(1);
       await capped.start(relay);
 
@@ -530,13 +611,14 @@ describe('ClaudeCodeAdapter', () => {
         createTestEnvelope(),
         detached()
       );
-      await vi.waitFor(() => expect(manager.sendMessage).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(1);
+      expect(manager.sendMessage).toHaveBeenCalledTimes(1);
       const second = capped.deliver(
         'relay.agent.claude-code.busy-two',
         createTestEnvelope(),
         detached()
       );
-      await new Promise((r) => setTimeout(r, 20));
+      await vi.advanceTimersByTimeAsync(1);
 
       await capped.stop();
 
@@ -549,7 +631,9 @@ describe('ClaudeCodeAdapter', () => {
       expect(settled.error).toMatch(/stopped while this message was waiting/);
 
       release();
+      await vi.advanceTimersByTimeAsync(1);
       await first;
+      vi.useRealTimers();
     });
   });
 

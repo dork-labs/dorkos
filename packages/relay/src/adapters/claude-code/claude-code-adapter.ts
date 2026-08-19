@@ -137,14 +137,17 @@ function slotRefusal(
         // The code, not the prose, is what downstream reacts to: the chat
         // notice for a busy runtime must not hinge on this sentence's wording.
         code: 'at_capacity',
-        error: `Adapter at capacity (${config.maxConcurrent} concurrent sessions) with no room left to wait`,
+        // Covers all three reasons a delivery took no slot and did not wait:
+        // the line was full, nobody licensed it to wait, or its own TTL was
+        // already spent. All of them are this sentence.
+        error: `Adapter at capacity (${config.maxConcurrent} concurrent sessions) and this message could not wait`,
         durationMs,
       };
     case 'held_too_long':
       return {
         success: false,
         code: 'at_capacity',
-        error: `Waited ${config.defaultTimeoutMs}ms for a free session slot and none came free`,
+        error: `Waited up to ${config.defaultTimeoutMs}ms for a free session slot and none came free`,
         durationMs,
       };
     case 'stopped':
@@ -186,7 +189,8 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    * The concurrency ceiling, and the line of deliveries waiting on it.
    *
    * A message that arrives with every slot taken **waits** rather than being
-   * turned away (ADR `260818-234541` applied to this ceiling). See
+   * turned away (ADR `260819-034718`, following `260818-234541`'s shape for
+   * rooms). See
    * `capacity-hold.ts` for what makes that promise keepable.
    */
   private readonly capacity: CapacityHold;
@@ -226,9 +230,11 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     this.deps = deps;
     this.capacity = new CapacityHold({
       maxConcurrent: this.config.maxConcurrent,
-      // The hold's ceiling is the ceiling on the turn that is in the way: a
-      // running turn is aborted at this same number (`agent-handler.ts`), so a
-      // slot cannot stay taken for longer than one of these.
+      // NOT the ceiling on the turn that is in the way: that turn runs to its
+      // own envelope's TTL (an hour by default), so a hold can expire while the
+      // agent is still legitimately busy. This is the longest we are willing to
+      // hold a person's message without an answer, reusing the only duration
+      // this adapter already has rather than inventing a setting.
       holdCeilingMs: this.config.defaultTimeoutMs,
     });
     this.runtimeAdapter = new ClaudeCodeRuntimeAdapter(
@@ -318,14 +324,22 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       },
     };
 
+    // A hold may not outlive the message it holds. `handleAgentMessage` gives
+    // the turn whatever is left of the envelope's TTL, and falls back to
+    // `defaultTimeoutMs` when nothing is — so a wait that ate the whole TTL
+    // would start the turn on a FRESH full budget, an hour-old message running
+    // as if it had just arrived. The wait stops when the message's own time is
+    // up, and a message with no time left never waits at all.
+    const ttlRemainingMs = envelope.budget.ttl - Date.now();
     const slot = await this.capacity.acquire({
-      // Only a delivery nobody is awaiting may wait, and the pipeline is the
-      // only thing that knows which those are: it sets `onHeld` on the detached
-      // path and nowhere else (see {@link AdapterContext.onHeld}). Deciding
-      // this from the subject here instead would put the same rule in two
-      // modules, where a change to one silently breaks the other — an awaited
-      // delivery parked in this line spends its caller's whole timeout.
-      mayWait: context?.onHeld !== undefined,
+      // Only a delivery the pipeline licensed may wait, and the pipeline is the
+      // only thing that can tell which those are: it sets `onHeld` when a
+      // person in a bridged chat is the reader, and on nothing else (see
+      // {@link AdapterContext.onHeld}). Deciding this from the subject here
+      // instead would put the same rule in two modules — and an awaited caller
+      // parked in this line loses its reply rather than waiting for it.
+      mayWait: context?.onHeld !== undefined && ttlRemainingMs > 0,
+      ceilingMs: ttlRemainingMs,
       ...(context?.onHeld ? { onHeld: context.onHeld } : {}),
     });
     if (slot !== 'acquired') {

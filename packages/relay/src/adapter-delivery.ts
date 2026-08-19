@@ -24,6 +24,7 @@ import type { MaildirStore } from './maildir-store.js';
 import type { DeadLetterQueue } from './dead-letter-queue.js';
 import type { AdapterRegistryLike, AdapterContext, DeliveryResult } from './types.js';
 import type { ChatNoticeSender } from './chat-notice.js';
+import { requiresInitiateConsent } from './lib/consent-scope.js';
 
 import type { Logger } from '@dorkos/shared/logger';
 
@@ -56,6 +57,41 @@ function classifyChatFailure(
   return /\b(at capacity|capacity|too busy|queue full|concurren\w+ limit)\b/i.test(reason)
     ? 'agent_busy'
     : 'delivery_failed';
+}
+
+/**
+ * Whether this delivery may be held for a busy runtime, rather than refused.
+ *
+ * **Only a message a person is waiting on in a bridged chat.** Being detached
+ * is not enough, and assuming it was is a bug this shipped with for one review
+ * cycle: `relay_send_and_wait` and the A2A executor also publish to
+ * `relay.agent.*` — the pipeline detaches them all — but each then BLOCKS on a
+ * reply inbox with its own, much shorter deadline (60 s and 120 s against a
+ * hold that could last five minutes). Holding one of those does not delay a
+ * reply, it destroys it: the caller times out saying "timed out" where the
+ * truth was capacity, tears down its inbox, and the turn still runs minutes
+ * later into a reply nobody is reading. A retry then runs the same turn twice.
+ * A fast refusal is the kind answer for a caller that can act on it.
+ *
+ * The predicate is {@link requiresInitiateConsent}, which is exactly "a bound
+ * external human chat" — the same test {@link ChatNoticeSender} applies before
+ * it will say anything. So the licence to hold and the ability to explain the
+ * hold are one decision, and a message can never be parked in a place where
+ * nobody could be told about it.
+ *
+ * **Known gap, deliberately not closed here.** The binding's paused /
+ * receive-denied state is checked by `BindingRouter` BEFORE this publish, and
+ * nothing re-asks across the park. A chat paused while its message waits still
+ * gets that turn when the slot frees. The hold is bounded in minutes and the
+ * message was already accepted when the binding said yes, so this is the same
+ * window an in-flight turn has always had; closing it means giving this module
+ * a binding store it has deliberately never had (`chat-notice.ts` resolves
+ * through an injected resolver for exactly that reason).
+ *
+ * @param envelope - The envelope being delivered; its `replyTo` is the reader.
+ */
+function mayHold(envelope: RelayEnvelope): boolean {
+  return envelope.replyTo !== undefined && requiresInitiateConsent(envelope.replyTo);
 }
 
 /**
@@ -197,14 +233,15 @@ export class AdapterDelivery {
   ): DeliveryResult {
     const startTime = Date.now();
 
-    // The adapter may park this delivery to wait for a free slot. It knows the
-    // message is waiting; only this module knows where the person who wrote it
-    // is reading. Adding the callback HERE rather than in the context builder
-    // keeps it on the detached path only — the awaited path never waits.
-    const heldContext: AdapterContext = {
-      ...context,
-      onHeld: () => void this.noticeHeld(subject, envelope),
-    };
+    // The adapter may park this delivery to wait for a free slot, but ONLY when
+    // a person in a bridged chat is the one waiting — see `mayHold`. Adding the
+    // callback here rather than in the context builder keeps it off the awaited
+    // path, which never reaches this method at all.
+    // Passed through untouched when this message may not be held, so a delivery
+    // that cannot wait is handed exactly what it was handed before.
+    const heldContext: AdapterContext | undefined = mayHold(envelope)
+      ? { ...context, onHeld: () => void this.noticeHeld(subject, envelope) }
+      : context;
 
     void this.deps
       .adapterRegistry!.deliver(subject, envelope, heldContext)

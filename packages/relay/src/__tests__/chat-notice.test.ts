@@ -162,16 +162,28 @@ describe('chat notices', () => {
     }
   });
 
-  it('never asks a person to resend a message the machine could have kept', () => {
-    // The scheduling lines only. `rate_limited` is excluded on purpose: that
-    // one is about something the person did (a burst of their own messages),
-    // and waiting a minute is a remedy they can actually follow.
-    for (const reason of ['agent_busy', 'agent_held', 'delivery_failed'] as const) {
-      // Seeded defect: restore `agent_busy`'s old second sentence, "Send it
-      // again in a moment." A person is then asked to do work the machine now
-      // does for them — the whole point of the hold (ADR 260818-234541).
-      expect(chatNoticeText(reason)).not.toMatch(/again/i);
-    }
+  it('never asks for a resend instead of waiting, and promises nothing while it waits', () => {
+    const held = chatNoticeText('agent_held');
+    // Seeded defect: restore the old `agent_busy` line, "The agent is handling
+    // as much as it can right now… Send it again in a moment", as the answer to
+    // a busy runtime. A person is then asked to do work the machine now does
+    // for them, which is the whole point of the hold.
+    expect(held).not.toMatch(/again/i);
+    // And it must not promise an arrival it cannot guarantee: the hold's
+    // ceiling is NOT the ceiling on the turn in its way, so the wait can run
+    // out while the agent is still busy.
+    expect(held).not.toMatch(/will be|as soon as|shortly|soon/i);
+    expect(held).toMatch(/waiting its turn/);
+  });
+
+  it('asks for a resend only after the machine has tried and failed', () => {
+    // `agent_busy` is now reached only when a hold ran out of time or room. By
+    // then the machine has genuinely tried, and sending again is the one thing
+    // that works — so naming it is help, not the refusal this work removed.
+    const busy = chatNoticeText('agent_busy');
+    expect(busy).toMatch(/was too busy/);
+    expect(busy).toMatch(/was not picked up/);
+    expect(busy).toMatch(/send it again now/i);
   });
 
   it('tells a chat its message is waiting, not that it was dropped', async () => {
@@ -179,10 +191,10 @@ describe('chat notices', () => {
     expect(await notify(CHAT, 'agent_held')).toBe(true);
 
     const text = chatNoticeText('agent_held');
-    // The one notice here that is about work still to come. It must promise the
-    // turn, because that is exactly what the adapter's waiting line will do.
+    // The one notice here that is about work still to come, and it states only
+    // the fact — the message is waiting — with no arrival attached to it.
     expect(text).toMatch(/waiting its turn/);
-    expect(text).toMatch(/will be picked up/);
+    expect(text).toMatch(/nothing you need to do/i);
     expect(publish).toHaveBeenCalledWith(CHAT, { content: text }, { from: CHAT_NOTICE_SENDER });
 
     // Damped on its own key: a chat that has been told it is waiting is not

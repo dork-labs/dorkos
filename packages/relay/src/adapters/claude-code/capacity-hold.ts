@@ -10,12 +10,13 @@
  * chat, one hop upstream) was asked to send it again.
  *
  * That is the same mistake the room dispatcher made at its own second ceiling,
- * and ADR `260818-234541` settled it there: **a busy agent's message is held,
- * not refused.** This is that decision applied to the adapter's ceiling. The
- * message keeps its place, the next slot to free runs it, and nobody is asked
- * to type anything twice.
+ * and ADR `260818-234541` decided it there: **a busy agent's message is held,
+ * not refused.** That decision is proposed and its room half lands separately;
+ * this is the same shape applied to the adapter's ceiling, recorded as ADR
+ * `260819-034718`. The message keeps its place, the next slot to free runs it,
+ * and nobody is asked to type anything twice.
  *
- * ## The promise this can keep, and the one it cannot
+ * ## The promise this can keep, and the ones it cannot
  *
  * A hold is a promise that a turn will run, so it may only be made where it can
  * be kept. Three properties are what make it keepable here:
@@ -24,18 +25,25 @@
  *    slot in a `finally`, so a turn that answers, throws, times out or is
  *    stopped all reach {@link CapacityHold.release} — the same "every terminal
  *    reaches one function" property the room hold relies on.
- * 2. **The wait is bounded by a ceiling that already exists.** A held delivery
- *    waits at most `holdCeilingMs`, which the adapter sets to its own turn
- *    timeout: no new setting, and the bound is exactly the ceiling on the turn
- *    that is in the way.
- * 3. **Nobody is blocked by the wait.** Only deliveries the publish pipeline has
- *    already detached may wait (see `mayWait`); an awaited delivery would spend
- *    its caller's timeout sitting in this line.
+ * 2. **The wait is bounded, twice.** `holdCeilingMs` bounds every hold, and
+ *    {@link SlotRequest.ceilingMs} bounds one that would otherwise outlive its
+ *    own envelope's TTL. Whichever is shorter wins.
+ * 3. **Only a person waiting in a bridged chat is held for.** The delivery
+ *    pipeline grants the licence (`AdapterContext.onHeld`); a caller blocked on
+ *    a reply inbox keeps the fast refusal, because a hold longer than its
+ *    deadline destroys its reply rather than delaying it.
  *
- * What it cannot keep is a restart: the line is process memory and dies with the
- * process. {@link CapacityHold.drain} is what makes an orderly stop honest —
- * every waiter settles `stopped`, which becomes a line in the chat rather than
- * silence.
+ * Two things it cannot promise, both stated where a person can read them:
+ *
+ * - **It is not the ceiling on the turn in the way.** That turn runs to its own
+ *   envelope's TTL, which is an hour by default, so a hold can time out while
+ *   the agent is still perfectly busy. This is why the held notice states only
+ *   that the message is waiting and promises no arrival.
+ * - **It does not survive the process.** The line is memory.
+ *   {@link CapacityHold.drain} settles every waiter on an adapter stop, so an
+ *   adapter restart reports rather than hangs; a whole-server stop tears down
+ *   the bus and the chat adapters first, so nothing is delivered and the
+ *   message is simply dropped.
  *
  * @module relay/adapters/claude-code/capacity-hold
  */
@@ -89,6 +97,16 @@ export interface SlotRequest {
    * called more than once.
    */
   readonly onHeld?: () => void;
+  /**
+   * The longest THIS delivery may wait, when that is shorter than the line's
+   * own ceiling.
+   *
+   * Exists because a hold must not outlive the message it is holding: a turn
+   * takes its deadline from the envelope's remaining TTL, so a wait that ate
+   * that TTL would start a turn on a budget that is already gone. The caller
+   * passes what is left; the shorter of the two wins.
+   */
+  readonly ceilingMs?: number;
 }
 
 /** Construction options for {@link CapacityHold}. */
@@ -178,7 +196,10 @@ export class CapacityHold {
         },
       };
       const announce = setTimeout(() => request.onHeld?.(), this.announceAfterMs);
-      const ceiling = setTimeout(() => waiter.settle('held_too_long'), this.holdCeilingMs);
+      const ceiling = setTimeout(
+        () => waiter.settle('held_too_long'),
+        Math.min(this.holdCeilingMs, request.ceilingMs ?? this.holdCeilingMs)
+      );
       // A pending hold must never be the reason this process stays alive: the
       // message is unanswered either way, and an orderly stop drains the line.
       announce.unref?.();
@@ -208,9 +229,11 @@ export class CapacityHold {
   /**
    * End every wait because the adapter is stopping.
    *
-   * The waiters settle `'stopped'`, which their callers report as a failed
-   * delivery — so an orderly shutdown tells the chats that were waiting instead
-   * of dropping them into silence.
+   * The waiters settle `'stopped'` rather than hanging, so an adapter restart
+   * reports each held message as a failed delivery and the chats that were
+   * waiting are told. On a whole-server stop the bus and the chat adapters are
+   * already torn down by the time this runs, so the notice reaches nobody and
+   * the message is dropped — which is what the guide says happens.
    */
   drain(): void {
     for (const waiter of this.line.splice(0)) waiter.settle('stopped');

@@ -692,21 +692,25 @@ export interface AdapterContext {
     parentSpanId?: string;
   };
   /**
-   * Set by the delivery pipeline on deliveries **nobody is awaiting**, and by
-   * nothing else. It carries two things at once, and both matter:
+   * Set by the delivery pipeline on deliveries whose reply goes to **a person
+   * in a bridged chat**, and on nothing else. It carries two things at once,
+   * and both matter:
    *
-   * 1. **Its presence is the adapter's licence to wait for capacity.** A
-   *    delivery the pipeline awaits (a Tasks dispatch, a control message) must
-   *    be answered now: waiting there spends the caller's own timeout and
-   *    reports a timeout where the truth was capacity. Only the detached path
-   *    sets this field, so an adapter that keys on it cannot get that wrong.
+   * 1. **Its presence is the adapter's licence to wait for capacity.** Every
+   *    other delivery must be answered now. A Tasks dispatch or control message
+   *    is awaited by the pipeline itself; `relay_send_and_wait` and the A2A
+   *    executor are detached but block on a reply inbox with their own, shorter
+   *    deadlines. Parking either kind turns a fast, actionable "at capacity"
+   *    into a timeout, and leaves a turn running for a reader who has already
+   *    given up. The pipeline is the only thing that can tell these apart, so
+   *    an adapter that keys on this field cannot get it wrong.
    * 2. **Calling it announces the wait**, once the wait has lasted long enough
    *    to be worth mentioning. The adapter knows a message is waiting; only the
    *    pipeline knows where the person who wrote it is reading.
    *
    * Together they are what turns a busy runtime into "your message is waiting"
    * instead of the refusal that used to ask people to send it again (ADR
-   * `260818-234541`). Called at most once per delivery, never for a hold that
+   * `260819-034718`). Called at most once per delivery, never for a hold that
    * clears quickly, and implementations must neither throw nor block.
    */
   onHeld?: () => void;
