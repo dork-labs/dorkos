@@ -152,14 +152,26 @@ function requirePersonToAnswer(req: Request, res: Response): OperatorCookieRefus
  * a per-caller entitlement filter.
  *
  * @param res - The response carrying `sessionGate`'s resolved user.
- * @returns The name to put on the receipt, or `undefined` when none is known.
+ * @returns The name to put on the receipt, or `undefined` when none is known or
+ *   the lookup failed.
  */
 function answeredBy(res: Response): string | undefined {
   const user = res.locals.user as RequestUser | undefined;
-  return resolveAnswererName({
-    account: () => (user ? getUserById(user.userId) : readOwnerAccount()),
-    configDisplayName: () => configManager.get('profile')?.displayName ?? null,
-  });
+  try {
+    return resolveAnswererName({
+      account: () => (user ? getUserById(user.userId) : readOwnerAccount()),
+      configDisplayName: () => configManager.get('profile')?.displayName ?? null,
+    });
+  } catch (err) {
+    // Two disk reads for a cosmetic label sit inside the path that decides
+    // whether a tool runs. A locked database or an unreadable config must cost
+    // the receipt its name, never the person their answer, so the throw is
+    // swallowed here rather than 500ing an approve.
+    logger.warn('[POST /answer] could not resolve who is answering; the receipt goes unnamed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
 }
 
 // GET /api/sessions - List sessions aggregated across all registered runtimes

@@ -81,12 +81,12 @@ export interface OperatorProfileSources extends AnswererNameSources {
 }
 
 /** The first source with something in it, ignoring blanks. */
-function firstNamed(...candidates: (string | null | undefined)[]): string | null {
+function firstNamed(...candidates: (string | null | undefined)[]): string | undefined {
   for (const candidate of candidates) {
     const trimmed = candidate?.trim();
     if (trimmed) return trimmed;
   }
-  return null;
+  return undefined;
 }
 
 /**
@@ -127,12 +127,15 @@ export function resolveOperatorProfile(
  * in the same order, so a receipt and the roster can never call one person two
  * different things.
  *
- * The config value is passed through `sanitizeIdentity` and the account name is
- * not, which is not an oversight: `config.profile.displayName` is
- * agent-writable (a `config_patch` can set it mid-conversation), so it gets the
- * same label treatment every other agent-writable profile value gets before it
- * reaches a line DorkOS drew. The account name is operator-authored at signup
- * through Better Auth and is already what a room roster renders.
+ * **Both rungs go through `sanitizeIdentity`.** The config value has to:
+ * `config.profile.displayName` is agent-writable, since a `config_patch` can set
+ * it mid-conversation. The account name used to be exempt on the grounds that a
+ * person typed it at signup, and that stopped being enough when the receipt
+ * arrived: a name is now broadcast to every window and printed inside a sentence
+ * DorkOS wrote, and Better Auth enforces no cap and strips no control character,
+ * so "typed by a person" says nothing about length or about what is in it. Both
+ * rungs are labels going into a line we drew, which is exactly what this
+ * sanitizer is for.
  *
  * **It stops where that ladder's fallbacks begin, and that is the whole
  * difference.** A roster row must render something, so it falls back to the
@@ -147,9 +150,13 @@ export function resolveOperatorProfile(
  * @returns The name to print, or `undefined` when this install knows none.
  */
 export function resolveAnswererName(sources: AnswererNameSources): string | undefined {
-  const configured = sources.configDisplayName();
-  return (
-    firstNamed(sources.account()?.name, configured ? sanitizeIdentity(configured) : null) ??
-    undefined
-  );
+  // Each rung is sanitized BEFORE the precedence runs, not after it picks. A
+  // name made entirely of control characters is not a name, so it has to fall
+  // through to the next source rather than winning and then vanishing.
+  return firstNamed(asLabel(sources.account()?.name), asLabel(sources.configDisplayName()));
+}
+
+/** One name source, sanitized for a line DorkOS wrote. `undefined` if empty after. */
+function asLabel(value: string | null | undefined): string | undefined {
+  return value ? sanitizeIdentity(value) : undefined;
 }

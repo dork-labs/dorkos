@@ -2,6 +2,7 @@
 covers:
   - 'feat(shared,server): carry who answered an Ask from the route to the wire (DOR-1355)'
   - 'feat(client): a receipt says who answered when DorkOS knows the name (DOR-1355)'
+  - 'fix(server,docs): sanitize the account name and never 500 an answer over it (DOR-1355 review)'
 ---
 
 ### Changed

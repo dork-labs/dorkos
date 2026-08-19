@@ -33,10 +33,12 @@
  * - Freeze `remainingMs` at emit (return the tracked value instead of asking
  *   the selector) → "recomputed at read time" goes red.
  * - Drop the `answeredBy` argument from any one of the six calls → that route's
- *   two naming rows go red.
+ *   naming rows go red.
  * - Return a constant from `answeredBy` instead of reading what this install
  *   knows → all six "names nobody" rows go red and all six named rows stay
  *   green, which is the pair that tells a resolved name from an invented one.
+ * - Remove the try/catch around `answeredBy` → all six "answers the prompt
+ *   anyway when the name lookup throws" rows 500.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
@@ -68,6 +70,27 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 
 /** What this install has been told to call the person, per case. */
 let profileDisplayName: string | null = null;
+/** The account the answer routes resolve a name from, per case. */
+let ownerAccount: { id: string; name: string } | null = null;
+/** When set, the account lookup throws instead of answering. */
+let accountLookupError: Error | null = null;
+
+// The auth barrel is left REAL except for the two readers the answer routes
+// consult for a name: the router imports the rest of it, and a wholesale mock
+// would decide more than this file is about. `readOwnerAccount` and
+// `getUserById` both return null against an uninitialized auth db, so a case
+// that wants an account has to say so.
+vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
+  readOwnerAccount: vi.fn(() => {
+    if (accountLookupError) throw accountLookupError;
+    return ownerAccount;
+  }),
+  getUserById: vi.fn(() => {
+    if (accountLookupError) throw accountLookupError;
+    return ownerAccount ? { ...ownerAccount, email: 'owner@example.test' } : null;
+  }),
+}));
 
 // `requireOperatorCookieUnderLogin` reads `auth.enabled` from here, which is the
 // only thing that decides whether a per-user API key is refused; `answeredBy`
@@ -160,6 +183,8 @@ beforeEach(() => {
   fakeRuntime = new FakeAgentRuntime();
   loginEnabled = false;
   profileDisplayName = null;
+  ownerAccount = null;
+  accountLookupError = null;
   vi.clearAllMocks();
   disposeProjector(SESSION_ID);
   disposeProjector(OTHER_SESSION_ID);
@@ -372,12 +397,15 @@ describe('who may answer a prompt', () => {
         expect(res.status).toBe(200);
       });
 
-      it('hands the runtime the name to put on the receipt', async () => {
+      it('hands the runtime the account name, ahead of the one in config', async () => {
         // DOR-1355. The name is resolved HERE, from what this install knows
         // about the person, and never taken off the request — a caller that
         // could name itself could sign somebody else's decision. Everything
         // downstream only relays it, so this call is where it becomes true.
-        profileDisplayName = 'Ada';
+        // Account first is the precedence `resolveOperatorProfile` defines, so
+        // the receipt and the roster cannot call one person two different things.
+        ownerAccount = { id: 'user_owner', name: 'Ada Lovelace' };
+        profileDisplayName = 'Ada from config';
 
         const res = await request(buildApp())
           .post(`/api/sessions/${SESSION_ID}/${route.path}`)
@@ -386,7 +414,36 @@ describe('who may answer a prompt', () => {
         expect(res.status).toBe(200);
         const args = answerArgs(route.name);
         expect(args).toHaveLength(route.answers);
-        for (const arg of args) expect(arg).toMatchObject({ answeredBy: 'Ada' });
+        for (const arg of args) expect(arg).toMatchObject({ answeredBy: 'Ada Lovelace' });
+      });
+
+      it('falls back to the config name when there is no account', async () => {
+        profileDisplayName = 'Ada';
+
+        const res = await request(buildApp())
+          .post(`/api/sessions/${SESSION_ID}/${route.path}`)
+          .send(route.body);
+
+        expect(res.status).toBe(200);
+        for (const arg of answerArgs(route.name)) {
+          expect(arg).toMatchObject({ answeredBy: 'Ada' });
+        }
+      });
+
+      it('answers the prompt anyway when the name lookup throws', async () => {
+        // Two disk reads for a cosmetic label sit inside the path that decides
+        // whether a tool runs. A locked database costs the receipt its name and
+        // must not cost the person their answer.
+        accountLookupError = new Error('database is locked');
+
+        const res = await request(buildApp())
+          .post(`/api/sessions/${SESSION_ID}/${route.path}`)
+          .send(route.body);
+
+        expect(res.status).toBe(200);
+        const args = answerArgs(route.name);
+        expect(args).toHaveLength(route.answers);
+        for (const arg of args) expect(arg).not.toHaveProperty('answeredBy');
       });
 
       it('names nobody when this install has never been told a name', async () => {
