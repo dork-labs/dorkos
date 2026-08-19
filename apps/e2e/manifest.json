@@ -38,10 +38,9 @@
       "passCount": 0,
       "failCount": 1,
       "relatedCode": [
-        "apps/client/src/layers/features/chat/ui/ChatPanel.tsx",
+        "apps/client/src/layers/widgets/session/ui/ChatPanel.tsx",
         "apps/client/src/layers/features/conversation/ui/Timeline.tsx",
-        "apps/client/src/layers/features/chat/ui/message/SessionMessage.tsx",
-        "apps/client/src/layers/features/chat/ui/InferenceIndicator.tsx"
+        "apps/client/src/layers/widgets/session/ui/SessionMessage.tsx"
       ],
       "lastModified": ""
     },

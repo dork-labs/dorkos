@@ -23,32 +23,14 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { useSessionStreamStore, useSessionStreamState } from '@/layers/entities/session';
 import { useAppStore, type MessageAuthor } from '@/layers/shared/model';
 import { setPlatformAdapter } from '@/layers/shared/lib';
-import { buildListRows } from '../lib/build-list-rows';
-import { selectRenderedMessages } from '../model/stream/derive-rendered-state';
-import { SessionMessage } from '../ui/message';
-import { useTrayExpansionStore } from '../model/view/use-tray-expansion';
+import { buildListRows, selectRenderedMessages } from '@/layers/features/chat';
+// The tray's own view store, reached by its module path: resetting it between
+// cases is a test's business and the chat barrel deliberately does not publish
+// it to the app.
+import { useTrayExpansionStore } from '@/layers/features/chat/model/view/use-tray-expansion';
 import { Conversation } from '@/layers/features/conversation';
-import type { ConversationCapabilities } from '@/layers/features/conversation';
-
-/**
- * The session's capability table, declared here rather than imported.
- *
- * `SESSION_CAPABILITIES` moved to `widgets/session/model` with its host in P4,
- * and a feature may not import a widget's model — ESLint refuses it. The
- * shipped table is exercised where it is mounted (`widgets/session`); what this
- * suite needs is a conversation for the row to read, and that is data.
- */
-const SESSION_CAPABILITIES: ConversationCapabilities = {
-  reactions: false,
-  threads: false,
-  runWith: true,
-  attachments: true,
-  mentions: false,
-  streamHealth: false,
-  presence: false,
-  turnStatus: true,
-  asks: true,
-};
+import { SESSION_CAPABILITIES } from '../model/session-capabilities';
+import { SessionMessage } from '../ui/SessionMessage';
 
 const SESSION_ID = 'session-under-test';
 const NOW = Date.parse('2026-08-01T12:00:00Z');
