@@ -1,16 +1,13 @@
 /**
  * What a room conversation can do.
  *
- * This table and the session's twin (`features/chat/config/session-capabilities.ts`)
+ * This table and the session's twin (`widgets/session/model/session-capabilities.ts`)
  * are the WHOLE of "what is different between the surfaces". Nothing else in the
  * tree may encode it: a row, a lane or a composer that wanted to know whether it
  * is in a room reads one of these booleans instead. When a session gains
  * reactions, one boolean moves and no component changes.
  *
- * The twin sits in `features/chat` rather than beside this one in a widget
- * because the session's conversation is hosted by that feature today, and a
- * feature may not import a widget's model. P4 moves it up to
- * `widgets/session/model/` with the composer host; that file says so too.
+ * Each sits beside the host that publishes it, which is why both are widgets.
  *
  * @module widgets/room-view/model/room-capabilities
  */

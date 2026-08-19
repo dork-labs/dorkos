@@ -2,7 +2,8 @@
  * The scripted DorkBot onboarding conversation (ADR 260722-111314).
  *
  * DorkBot arrives (first light), then speaks a fixed script built from the real
- * chat components: message bubbles, a typing indicator, inline personality and
+ * components: the shared message row (composed here as {@link NarrationMessage}),
+ * a typing indicator, inline personality and
  * discovery widgets, and — at the final beat — a live composer. The user's first
  * real message dissolves the overlay into a real session (ADR 260722-111316).
  * Every DorkBot line here is client-generated; no tokens are spent until the
@@ -21,13 +22,9 @@ import { fireCelebration, resolveAgentVisual } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { Conversation } from '@/layers/features/conversation';
 import { NARRATION_CAPABILITIES } from '../model/narration-capabilities';
-import {
-  SessionMessage,
-  TypingDots,
-  FirstLight,
-  resolveMessageAuthor,
-  type MessageAuthorAgent,
-} from '@/layers/features/chat';
+import { TypingDots, FirstLight, resolveMessageAuthor } from '@/layers/features/chat';
+import type { MessageAuthorAgent } from '@/layers/features/chat';
+import { NarrationMessage } from './NarrationMessage';
 import { Composer } from '@/layers/features/composer';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 import { PersonalityPicker, useUpdateAgent, useResolvedAgents } from '@/layers/entities/agent';
@@ -375,13 +372,11 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
               answer here is nothing. */}
           <Conversation.Root surface="session" capabilities={NARRATION_CAPABILITIES}>
             {convo.messages.map((message, i) => (
-              <SessionMessage
+              <NarrationMessage
                 key={message.id}
                 message={message}
                 grouping={convo.grouping[i]}
                 author={resolveMessageAuthor(message, { agent: dorkbotAuthor })}
-                sessionId=""
-                presentation
               />
             ))}
           </Conversation.Root>
