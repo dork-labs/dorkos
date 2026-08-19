@@ -209,6 +209,43 @@ describe('useRoomListStream', () => {
       expect(badge(queryClient, 'room-1')).toBe(0);
     });
 
+    it('asks again for the list fetch it cancelled, so nothing else that read carried is lost', async () => {
+      // The other half of the cancel above (DOR-1358). A cancelled fetch is
+      // REVERTED and nothing schedules a replacement, so every fact that
+      // response was carrying — a membership after a rejoin, a room somebody
+      // created, a rename — is dropped with the stale count. The sidebar then
+      // keeps drawing the world as it was until the next room event.
+      //
+      // Seed the defect by deleting the re-ask in `applyReadCursor` and this
+      // goes red: `invalidated` stays empty and the list is never asked again.
+      const { invalidated, queryClient } = setup();
+      seedRoomList(queryClient, 3);
+      const inFlight = queryClient
+        .fetchQuery({
+          queryKey: ['rooms', 'list', null],
+          queryFn: () => new Promise<RoomSummary[]>(() => {}),
+        })
+        .catch(() => undefined);
+
+      handlers.get('read_cursor')!(cursorEvent());
+      await inFlight;
+
+      expect(invalidated).toContainEqual(['rooms', 'list']);
+    });
+
+    it('does not ask for a list nothing was fetching, so the badge still costs no round trip', () => {
+      // The re-ask above is paid for by an interrupted fetch, never by the
+      // event itself: with nothing in flight there is nothing to make good,
+      // and turning every cursor into a refetch is exactly what patching the
+      // badge in place exists to avoid.
+      const { invalidated, queryClient } = setup();
+      seedRoomList(queryClient, 3);
+
+      handlers.get('read_cursor')!(cursorEvent());
+
+      expect(invalidated).toEqual([]);
+    });
+
     it('never walks the open room cursor backwards', () => {
       // The same monotonic rule the server keeps. This client can be AHEAD of the
       // event: it read to seq 9 a moment ago, and a cursor event for seq 7 is one
