@@ -77,15 +77,22 @@ export function InteractionAsk({
   // exactly this; a DTO recorded before it existed falls back to counting from
   // NOW, which is the only honest reading of a bare remainder.
   //
-  // A prompt the server already reports as PARKED carries no budget at all, and
-  // gets `null` here rather than a number: the countdown is over, the agent is
-  // waiting, and a card that arrives parked must read exactly like one that
-  // parked while somebody was looking at it (spec `ask-parks-on-timeout` §9).
-  const budgetMs = interaction.parked === true ? undefined : interaction.timeoutMs;
+  // A prompt is PARKED once its countdown is out, and a card that ARRIVES parked
+  // must read exactly like one that parked while somebody was looking at it
+  // (spec `ask-parks-on-timeout` §9). Two facts say the same thing, so both are
+  // read: the server drops `timeoutMs` and stamps `parked` on a prompt it
+  // already knows has run out, and a card holding an older DTO gets there on its
+  // own clock. Either way the countdown becomes `null` and the draining bar has
+  // no budget to draw against — the agent is waiting, not running out of time.
+  const declaredMs = interaction.timeoutMs;
   const deadline =
-    budgetMs === undefined ? mountedAt + interaction.remainingMs : interaction.startedAt + budgetMs;
-  const secondsLeft =
-    interaction.parked === true ? null : Math.max(0, Math.ceil((deadline - now) / 1000));
+    declaredMs === undefined
+      ? mountedAt + interaction.remainingMs
+      : interaction.startedAt + declaredMs;
+  const secondsRun = Math.max(0, Math.ceil((deadline - now) / 1000));
+  const parked = interaction.parked === true || secondsRun <= 0;
+  const secondsLeft = parked ? null : secondsRun;
+  const budgetMs = parked ? undefined : declaredMs;
 
   // What the prompt itself said, when it said anything. The inline card in the
   // transcript has always shown this; a fleet-wide card that showed only the

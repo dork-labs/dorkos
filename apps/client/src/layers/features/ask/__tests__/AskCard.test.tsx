@@ -278,6 +278,27 @@ describe('what the card says', () => {
     expect(document.querySelector('[data-slot="ask-deny"]')).not.toBeNull();
   });
 
+  it('reads the same when it parks while somebody is watching it', () => {
+    // The card holding an older DTO — one raised before the countdown ran out —
+    // reaches the park on its own clock, and must not look different from one
+    // the server already handed over parked.
+    wrap(
+      <InteractionAsk
+        ask={ask('tc-parked-live-clock', {
+          interaction: {
+            startedAt: NOW - 10 * 60_000,
+            remainingMs: 0,
+            timeoutMs: 10 * 60_000,
+          },
+        })}
+      />
+    );
+
+    expect(screen.getByText('waiting for you')).toBeDefined();
+    expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
+    expect(document.querySelector('[data-slot="ask-allow"]')).not.toBeNull();
+  });
+
   it('is unchanged with two minutes left, because the first ten minutes did not move', () => {
     wrap(
       <InteractionAsk
