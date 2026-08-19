@@ -262,12 +262,12 @@ describe('BridgeCatchUp (chats-as-channels §6.1)', () => {
     const cascade = { root: inbound.id, depth: 1 };
     const first = harness.service.postNotice(
       room.id,
-      buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+      buildBusyNotice('Ana', ana.id, 'held-too-long'),
       cascade
     );
     const repeat = harness.service.postNotice(
       room.id,
-      buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+      buildBusyNotice('Ana', ana.id, 'held-too-long'),
       cascade
     );
     const behind = agentPost(room.id, 'queued behind the repeat', inbound.id);

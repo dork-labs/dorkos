@@ -790,7 +790,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
 
       it('an agent_busy notice reaches the chat, word for word as the room wrote it — both busy variants', async () => {
         const { dm, delivery, inbound, ana } = bridgedDm('613');
-        const body = buildBusyNotice('Ana', ana.id, 'working-elsewhere');
+        const body = buildBusyNotice('Ana', ana.id, 'held-too-long');
         const notice = harness.service.postNotice(dm.id, body, { root: inbound.id, depth: 1 });
 
         expect(await delivery.deliverEntry(notice)).toBe('delivered');
@@ -798,7 +798,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         // It still never names the other conversation (`notice-copy.ts`'s own
         // rule), so nothing about somebody else's room crosses to this chat.
         expect(deliveredText()).toBe(
-          "Ana is working in another conversation right now, so it didn't pick this up. Send it again in a few minutes."
+          "Ana has been working in another conversation for a long time, so it hasn't got to your message yet. It will read it the next time it picks up work here."
         );
       });
 
@@ -833,7 +833,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         const { dm, delivery, inbound, ana } = bridgedDm('616');
         const notice = harness.service.postNotice(
           dm.id,
-          buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
           { root: inbound.id, depth: 1 }
         );
 
@@ -854,7 +854,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         for (let i = 0; i < 3; i += 1) {
           const notice = harness.service.postNotice(
             dm.id,
-            buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+            buildBusyNotice('Ana', ana.id, 'held-too-long'),
             { root: inbound.id, depth: 1 }
           );
           outcomes.push(await delivery.deliverEntry(notice));
@@ -871,14 +871,14 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         const { dm, delivery, inbound, ana } = bridgedDm('620');
         const first = harness.service.postNotice(
           dm.id,
-          buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
           { root: inbound.id, depth: 1 }
         );
         expect(await delivery.deliverEntry(first)).toBe('delivered');
 
         const damped = harness.service.postNotice(
           dm.id,
-          buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
           { root: inbound.id, depth: 1 }
         );
         expect(await delivery.deliverEntry(damped)).toBe('damped');
@@ -891,7 +891,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
 
         const afterRecovery = harness.service.postNotice(
           dm.id,
-          buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
           { root: inbound.id, depth: 1 }
         );
         expect(await delivery.deliverEntry(afterRecovery)).toBe('delivered');
@@ -947,14 +947,14 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         const ana = a.ana;
         const first = harness.service.postNotice(
           a.dm.id,
-          buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
           { root: a.inbound.id, depth: 1 }
         );
         expect(await a.delivery.deliverEntry(first)).toBe('delivered');
 
         const second = harness.service.postNotice(
           b.dm.id,
-          buildBusyNotice('Ana', ana.id, 'working-elsewhere'),
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
           { root: b.inbound.id, depth: 1 }
         );
         expect(await b.delivery.deliverEntry(second)).toBe('delivered');
