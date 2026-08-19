@@ -6,7 +6,7 @@
       "slug": "ask-entitlement",
       "title": "Per-person Ask entitlement: the fleet-wide list and the fan-out filter by who may answer",
       "created": "2026-08-19",
-      "status": "specified",
+      "status": "implemented",
       "project": "Unified Conversation Surfaces"
     },
     {
@@ -14,7 +14,7 @@
       "slug": "room-per-agent-stop",
       "title": "Stop one agent without stopping the room",
       "created": "2026-08-19",
-      "status": "specified",
+      "status": "implemented",
       "project": "Unified Conversation Surfaces"
     },
     {
@@ -22,7 +22,7 @@
       "slug": "presence-verb-glimpse",
       "title": "Presence tier 3: the live lane says what the agent is doing",
       "created": "2026-08-19",
-      "status": "specified",
+      "status": "implemented",
       "project": "Unified Conversation Surfaces"
     },
     {
@@ -30,7 +30,7 @@
       "slug": "ask-parks-on-timeout",
       "title": "An Ask that times out parks the agent instead of refusing for it",
       "created": "2026-08-19",
-      "status": "specified",
+      "status": "implemented",
       "project": "Unified Conversation Surfaces"
     },
     {
