@@ -4,6 +4,7 @@ import {
   getMcpServerBadge,
   parseMcpToolName,
   formatActivityLabel,
+  activityClause,
 } from '../tool-labels';
 
 describe('getToolLabel', () => {
@@ -352,7 +353,11 @@ const SHIPPED_LABELS: ReadonlyArray<[string, string | undefined, string]> = [
   ['WebSearch', undefined, 'Searching the web…'],
   ['WebFetch', 'dorkos.ai', 'Reading dorkos.ai…'],
   ['WebFetch', undefined, 'Reading a web page…'],
-  ['Task', 'review the diff', 'Running an agent — review the diff…'],
+  // THE ONE ROW THAT MOVED. It read `Running an agent — review the diff…` until
+  // the clause refactor, and the em dash went because these clauses are now
+  // printed as user-facing sentences in a room, where `writing-for-humans` rules
+  // it out. Every other row above is byte-identical to what shipped.
+  ['Task', 'review the diff', 'Running an agent: review the diff…'],
   ['Task', undefined, 'Running an agent…'],
   ['Skill', 'writing-for-humans', 'Using the writing-for-humans skill…'],
   ['Skill', undefined, 'Using a skill…'],
@@ -379,5 +384,24 @@ describe('formatActivityLabel — the shipped labels, pinned', () => {
     expect(SHIPPED_LABELS.length).toBe(31);
     const bare = SHIPPED_LABELS.filter(([, target]) => target === undefined);
     expect(bare.length).toBe(17);
+  });
+});
+
+describe('activityClause — the rung both framings share', () => {
+  it('says the same reading as a clause that follows "is"', () => {
+    expect(activityClause({ toolName: 'Read', target: 'standup.md' })).toBe('reading standup.md');
+    expect(activityClause({ toolName: 'Bash', target: 'pnpm test' })).toBe('running pnpm test');
+    expect(activityClause({ toolName: 'Edit' })).toBe('editing a file');
+    expect(activityClause({ toolName: 'mcp__slack__send_message' })).toBe('using Slack');
+    expect(activityClause({ toolName: 'some_future_tool' })).toBe('using some_future_tool');
+  });
+
+  it('answers null where the session\u2019s label answers "Working…"', () => {
+    // The two floors are different on purpose: a room says its own less specific
+    // truth ("Kai is working on it") rather than borrowing the session's word.
+    expect(activityClause(null)).toBeNull();
+    expect(activityClause(undefined)).toBeNull();
+    expect(activityClause({ toolName: '   ' })).toBeNull();
+    expect(formatActivityLabel(null)).toBe('Working…');
   });
 });

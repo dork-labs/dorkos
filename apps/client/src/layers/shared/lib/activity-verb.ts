@@ -20,7 +20,33 @@
  * @module shared/lib/activity-verb
  */
 import type { SessionActivity, SessionLifecycle } from '@dorkos/shared/session-stream';
-import { formatActivityLabel } from './tool-labels';
+import { activityClause, formatActivityLabel } from './tool-labels';
+
+/**
+ * The clause a room's sentence puts after "is" — `reading standup.md`.
+ *
+ * Re-exported from the rung rather than re-derived, so the room lane and the
+ * session lane cannot describe one tool call two ways (BC-37). `null` means the
+ * caller should say its own less specific truth, never that it should invent
+ * one.
+ */
+export { activityClause };
+
+/**
+ * The same reading as a standalone line — `Reading standup.md` — or `null` when
+ * nothing is known.
+ *
+ * Capitalised and WITHOUT the trailing ellipsis {@link activityVerb}'s session
+ * framing carries: the ellipsis says "this line is a status that keeps moving",
+ * which is true of a strip that is always on screen and false of a row inside a
+ * card somebody opened on purpose.
+ *
+ * @param activity - The reading, or `null`/`undefined` when there is none.
+ */
+export function activitySentence(activity: SessionActivity | null | undefined): string | null {
+  const clause = activityClause(activity);
+  return clause === null ? null : `${clause[0]!.toUpperCase()}${clause.slice(1)}`;
+}
 
 /**
  * What a blocked session says, and the one phrase the ladder writes itself.
