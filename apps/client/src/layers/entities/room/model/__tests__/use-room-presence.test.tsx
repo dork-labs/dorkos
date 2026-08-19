@@ -12,7 +12,9 @@ import { useRoomStream } from '../use-room-stream';
 import {
   PRESENCE_TICK_MS,
   PRESENCE_TTL_MS,
+  useRoomHolds,
   useRoomPresence,
+  useRoomPresenceClaims,
   useRoomPresenceStore,
 } from '../use-room-presence';
 
@@ -26,6 +28,26 @@ function signal(
   since = '2026-07-30T10:00:00.000Z'
 ): RoomSignalEvent {
   return { type: 'signal', signal: 'progress', authorId, at: since, state, entryId, since };
+}
+
+/** A `held` publish — this room's message waiting on a turn somewhere else. */
+function heldSignal(
+  authorId: string,
+  entryId: string,
+  behindRoomId = 'room-elsewhere',
+  since = '2026-07-30T10:00:00.000Z',
+  othersWaiting = false
+): RoomSignalEvent {
+  return {
+    type: 'signal',
+    signal: 'progress',
+    authorId,
+    at: since,
+    state: 'held',
+    entryId,
+    since,
+    heldBehind: { roomId: behindRoomId, othersWaiting },
+  };
 }
 
 /** A committed entry, as the room's stream delivers it. */
@@ -396,5 +418,78 @@ describe('the room stream feeds the store', () => {
     } finally {
       unmount();
     }
+  });
+});
+
+describe('a message waiting on an agent busy elsewhere', () => {
+  it('is stored, and kept out of every reader that means "who is working"', () => {
+    // The split that makes the two halves safe to share one store. A waiting
+    // agent has NOT started, so drawing it as a claim would put a pulsing dot
+    // and a stoppable peek row under an agent doing nothing in this room —
+    // which is exactly what happens if `useRoomPresenceClaims` stops excluding
+    // it. Seeded defect: drop the `state !== 'held'` filter in `summarize`.
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'working', 'entry-1'));
+    store.observe(ROOM, heldSignal('mio', 'entry-2'));
+
+    const claims = renderHook(() => useRoomPresenceClaims(ROOM));
+    expect(claims.result.current.map((row) => row.authorId)).toEqual(['kai']);
+
+    const holds = renderHook(() => useRoomHolds(ROOM));
+    expect(holds.result.current).toEqual([
+      {
+        authorId: 'mio',
+        entryId: 'entry-2',
+        since: '2026-07-30T10:00:00.000Z',
+        behindRoomId: 'room-elsewhere',
+        othersWaiting: false,
+      },
+    ]);
+  });
+
+  it('carries the room in the way and whether anywhere else is waiting', () => {
+    useRoomPresenceStore
+      .getState()
+      .observe(ROOM, heldSignal('mio', 'entry-2', 'room-engagement', undefined, true));
+
+    const { result } = renderHook(() => useRoomHolds(ROOM));
+    expect(result.current[0]).toMatchObject({
+      behindRoomId: 'room-engagement',
+      othersWaiting: true,
+    });
+  });
+
+  it('is cleared by its own `done`, so the wait resolves rather than lingering', () => {
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, heldSignal('mio', 'entry-2'));
+    store.observe(ROOM, signal('mio', 'done', 'entry-2'));
+
+    expect(keysIn(ROOM)).toEqual([]);
+  });
+
+  it('is cleared when that agent speaks here, and restored by the next republish', () => {
+    // `specs/room-presence` §5.1 clears every `(author, *)` indicator in a room
+    // when that author posts. A waiting agent that posts here through
+    // `post_to_room` mid-wait therefore loses its line — for up to the republish
+    // interval, which is the same bound a live claim already accepts.
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, heldSignal('mio', 'entry-2'));
+    store.clearAuthor(ROOM, 'mio');
+    expect(keysIn(ROOM)).toEqual([]);
+
+    store.observe(ROOM, heldSignal('mio', 'entry-2'));
+    expect(keysIn(ROOM)).toEqual([key('mio', 'entry-2')]);
+  });
+
+  it('expires like any other indicator when the server stops restating it', () => {
+    vi.useFakeTimers();
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, heldSignal('mio', 'entry-2'), 0);
+
+    store.prune(PRESENCE_TTL_MS - 1);
+    expect(keysIn(ROOM)).toEqual([key('mio', 'entry-2')]);
+
+    store.prune(PRESENCE_TTL_MS);
+    expect(keysIn(ROOM)).toEqual([]);
   });
 });

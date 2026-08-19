@@ -88,8 +88,20 @@ export interface LiveLaneProps {
    * only ever wanted by this affordance, so they are not fetched on room mount.
    */
   onPeekOpenChange?: (open: boolean) => void;
-  /** What the peek's trigger is called, for a reader who cannot see the line. */
+  /**
+   * What the peek's trigger is called over a WORKING line, for a reader who
+   * cannot see it.
+   */
   peekLabel?: string;
+  /**
+   * What it is called over a WAITING line.
+   *
+   * Its own prop rather than the same words, because nobody is working there.
+   * "Show who is working" over a line that exists precisely to say work has not
+   * started is the sentence this whole change retires, handed to the one reader
+   * who cannot see that the visible text says otherwise.
+   */
+  heldPeekLabel?: string;
   /**
    * The Ask card this lane's amber rung grows into, supplied by the host.
    *
@@ -139,6 +151,7 @@ export function LiveLane({
   peek,
   onPeekOpenChange,
   peekLabel = 'Show who is working',
+  heldPeekLabel = 'Show what is waiting',
   askCard,
   reducedMotionOverride,
 }: LiveLaneProps) {
@@ -155,11 +168,25 @@ export function LiveLane({
   // presence line opens the peek, and the amber Ask grows into its card. Sharing
   // it is what keeps the 24 px promise — the card is drawn OVER the composer,
   // never inside the lane, so nothing below it moves when it opens.
-  const offersPeek = state.kind === 'presence' && peek !== undefined;
+  // The waiting line opens the same peek, because it is the same list read a
+  // second way: who is working here, then what is waiting to start. A held line
+  // that could not be opened would say a message is waiting and offer no way to
+  // find out where — which is the un-followable remedy the old refusal notice
+  // was retired for.
+  const offersPeek = (state.kind === 'presence' || state.kind === 'held') && peek !== undefined;
   const offersAsk = state.kind === 'ask' && askCard !== undefined;
   const offersPopover = offersPeek || offersAsk;
   const popoverBody = offersAsk ? askCard : peek;
-  const popoverLabel = offersAsk ? 'Answer this' : peekLabel;
+  // The label follows the RUNG, not just the popover. `offersPeek` covers two
+  // states that mean opposite things — somebody is working here, and nobody is —
+  // and an accessible name that could not tell them apart would be the visible
+  // text and the announced one disagreeing on the only surface where a reader
+  // has just one of them.
+  const popoverLabel = offersAsk
+    ? 'Answer this'
+    : state.kind === 'held'
+      ? heldPeekLabel
+      : peekLabel;
 
   // **Close the peek when its trigger stops existing.** The rung leaves
   // `presence` the moment the work ends, which unmounts the popover — and Radix

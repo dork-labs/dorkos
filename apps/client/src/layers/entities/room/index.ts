@@ -22,6 +22,7 @@ export {
   useRoomPresence,
   useRoomPresenceAuthorIds,
   useRoomPresenceClaims,
+  useRoomHolds,
   useRoomPresenceEverywhere,
   useRoomPresenceStore,
   PRESENCE_TICK_MS,
@@ -31,12 +32,15 @@ export type {
   RoomPresenceAuthor,
   RoomPresenceClaim,
   RoomPresenceClaimRow,
+  RoomHoldRow,
 } from './model/use-room-presence';
 export { useRoomWorking, useRoomWorkingStore, useOpenRoomWorking } from './model/use-room-working';
 export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
 export { useHaltRoom } from './model/use-halt-room';
 export type { HaltRoomInput } from './model/use-halt-room';
+export { usePromoteHold } from './model/use-promote-hold';
+export type { PromoteHoldInput } from './model/use-promote-hold';
 export {
   usePendingPosts,
   usePendingPostStore,
@@ -105,6 +109,8 @@ export { replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';
 export type { ThreadReplySummary } from './lib/thread';
 export {
   PRESENCE_NAME_LIMIT,
+  heldCountSentence,
+  heldSentence,
   presenceCountSentence,
   presenceDetail,
   presenceElapsed,

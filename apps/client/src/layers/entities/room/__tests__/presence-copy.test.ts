@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   PRESENCE_NAME_LIMIT,
+  heldCountSentence,
+  heldSentence,
   presenceCountSentence,
   presenceDetail,
   presenceRow,
@@ -84,6 +86,53 @@ describe('presenceDetail', () => {
   it('carries the long wait behind the binding', () => {
     expect(presenceDetail('replying in #team', 'working_late')).toBe(
       'replying in #team · taking longer than usual'
+    );
+  });
+});
+
+describe('heldSentence', () => {
+  it('names the conversation in the way when this reader can see it', () => {
+    expect(heldSentence(['Mio Clicker PM'], '#mio-engagement')).toBe(
+      'Mio Clicker PM will pick this up when it finishes in #mio-engagement'
+    );
+  });
+
+  it('stays vague when this reader cannot', () => {
+    // The disclosure rule, in one assertion. The wire carries a room ID and the
+    // reader resolves it against the rooms they can already see; a reader who
+    // cannot see that room is told THAT something is in the way and never which
+    // conversation. Red the moment this falls back to an id, a slug or nothing.
+    expect(heldSentence(['Mio Clicker PM'], null)).toBe(
+      'Mio Clicker PM will pick this up when it finishes in another conversation'
+    );
+  });
+
+  it('drops the room once more than one agent is waiting', () => {
+    // With two there is more than one conversation in the way, and naming one of
+    // them would be picking a favourite that the sentence cannot justify.
+    expect(heldSentence(['Mio Clicker PM', 'Ana'], '#mio-engagement')).toBe(
+      "Mio Clicker PM and Ana will pick this up when they're free"
+    );
+  });
+
+  it('never asks anybody to send anything again', () => {
+    // The whole point of the change: the sentence this replaced ended "Send it
+    // again in a few minutes."
+    for (const sentence of [
+      heldSentence(['Mio Clicker PM'], '#mio-engagement'),
+      heldSentence(['Mio Clicker PM'], null),
+      heldSentence(['Mio Clicker PM', 'Ana'], null),
+      heldCountSentence(4),
+    ]) {
+      expect(sentence).not.toContain('again');
+    }
+  });
+});
+
+describe('heldCountSentence', () => {
+  it('counts past the naming limit', () => {
+    expect(heldCountSentence(PRESENCE_NAME_LIMIT + 1)).toBe(
+      "4 agents will pick this up when they're free"
     );
   });
 });
