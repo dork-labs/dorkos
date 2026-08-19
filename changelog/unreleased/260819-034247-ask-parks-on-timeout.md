@@ -6,6 +6,7 @@ covers:
   - 'feat(client,server): a parked Ask says the agent is waiting, and still takes an answer (DOR-1350)'
   - "refactor(server): one prompt's wait lives in its own module (DOR-1350)"
   - 'fix(client): a card that parks while somebody is watching reads like one that arrived parked (DOR-1350)'
+  - 'fix(client,server): a prompt recovered mid-park says the agent is waiting, and three bounds get honest (DOR-1350)'
 ---
 
 ### Changed
