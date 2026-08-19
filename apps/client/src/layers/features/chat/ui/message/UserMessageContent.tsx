@@ -32,7 +32,7 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
   }
 
   // Output of a local slash command (/context, /usage, /rename, …). Rendered
-  // across the full content column (see SessionMessage) via the shared tool-output
+  // across the full content column (see `widgets/session`'s `SessionMessage`) via the shared tool-output
   // renderer so ANSI, JSON, and plain text all display correctly (DOR-126).
   if (message.messageType === 'local_command_output') {
     return <OutputRenderer content={message.content} toolName="" />;

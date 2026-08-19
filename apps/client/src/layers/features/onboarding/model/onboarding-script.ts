@@ -98,7 +98,8 @@ export function buildScriptMessage(
 
 /**
  * Compute per-message grouping for the message list, grouping consecutive
- * same-role messages so the real `SessionMessage` styling reads correctly.
+ * same-role messages so the shared row (`NarrationMessage` over `Message.*`)
+ * groups the way a real transcript does.
  *
  * @param messages - The revealed messages, in order.
  */

@@ -4,30 +4,10 @@ import { render, screen, cleanup } from '@testing-library/react';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { ToolCallPart } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
-import { SessionMessage } from '../../message';
 import type { MessageAuthor } from '@/layers/shared/model';
 import { Conversation } from '@/layers/features/conversation';
-import type { ConversationCapabilities } from '@/layers/features/conversation';
-
-/**
- * The session's capability table, declared here rather than imported.
- *
- * `SESSION_CAPABILITIES` moved to `widgets/session/model` with its host in P4,
- * and a feature may not import a widget's model — ESLint refuses it. The
- * shipped table is exercised where it is mounted (`widgets/session`); what this
- * suite needs is a conversation for the row to read, and that is data.
- */
-const SESSION_CAPABILITIES: ConversationCapabilities = {
-  reactions: false,
-  threads: false,
-  runWith: true,
-  attachments: true,
-  mentions: false,
-  streamHealth: false,
-  presence: false,
-  turnStatus: true,
-  asks: true,
-};
+import { SESSION_CAPABILITIES } from '../model/session-capabilities';
+import { SessionMessage } from '../ui/SessionMessage';
 
 // Streamdown pulls in a full markdown pipeline this suite has no use for.
 vi.mock('streamdown', () => ({
