@@ -142,7 +142,8 @@ Non-negotiable, enforced by ESLint/CI/convention:
 4. **TSDoc on exports** — enforced by `eslint-plugin-jsdoc`
 5. **Prettier + Tailwind class sorting** are automatic — never hand-sort
 6. **`git stash` and `git checkout -- <path>` are refused** — the stash is shared by every worktree and holds your auto-checkpoints; the pathspec checkout silently reverts uncommitted work. Both have eaten work here. Park files in the session scratchpad and restore with `cp`. Enforced by `.claude/hooks/git-guard.mjs`; `git stash list`/`show` and branch switching still work
-7. Path-specific rules in `.claude/rules/` load when editing matching files (see `.claude/README.md`)
+7. **`pkill`, `killall`, and group/all-process `kill` are refused** — several agents plus the operator's own `pnpm dev` (:6242) and dogfood cockpit (:4242) run the same source on one machine, so a kill by name is a kill of everyone's process (a broad `pkill -f` took the operator's dev server down on 2026-08-18). Stop only the process you started, by the PID you already hold or `lsof -ti :<your port>`. Enforced by `.claude/hooks/process-guard.mjs`
+8. Path-specific rules in `.claude/rules/` load when editing matching files (see `.claude/README.md`)
 
 ## Testing
 

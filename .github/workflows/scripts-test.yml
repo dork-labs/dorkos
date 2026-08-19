@@ -69,7 +69,7 @@ name: scripts-test
 ### fires when it matters.
 ###
 ### `.claude/hooks/**` is in the filter for the `fixtures` job, which tests the
-### git-guard hook that lives there rather than under scripts/.
+### git-guard and process-guard hooks that live there rather than under scripts/.
 ### The ESLint configs are in the filter for the same reason as
 ### claude-code-review.yml: test-homedir-guard.sh asserts against them. The
 ### os.homedir() ban lives in apps/server/eslint.config.js and its severity
@@ -154,6 +154,14 @@ jobs:
 
       - name: Git-guard hook fixtures
         run: bash scripts/test-git-guard.sh
+
+      # process-guard is the same shape of control for `pkill`/`killall`/group
+      # kills (it exists because one broad `pkill -f` took down the operator's
+      # dev server, 2026-08-18) and shares its parser with git-guard through
+      # .claude/hooks/lib/shell-command.mjs, so a parser change is checked
+      # against both suites here.
+      - name: Process-guard hook fixtures
+        run: bash scripts/test-process-guard.sh
 
       # assert-tests-executed.sh decides whether the `test` workflow's green
       # means anything — it is what stops a 280ms turbo cache replay being
