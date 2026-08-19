@@ -42,9 +42,10 @@ const AGENT_SUBJECT_PREFIX = 'relay.agent.';
  *
  * `agent_busy` is now the END of a wait, not the start of one: the built-in
  * runtime holds a message rather than refusing it, so this is reached only when
- * the hold ran out of time or room (or when an adapter that does not hold at all
- * reports capacity). The line it produces says what happened and asks for
- * nothing — {@link ChatNoticeSender} carries `agent_held` for the wait itself.
+ * the hold ran out of time or room, when the message was never eligible to
+ * wait, or when an adapter that cannot hold reports capacity. Its line may name
+ * a resend, because by then the machine has genuinely tried — the wait itself
+ * is `agent_held`, and that one asks for nothing.
  *
  * @param reason - The failure text.
  * @param code - The adapter's machine code, when it gave one.
@@ -62,16 +63,16 @@ function classifyChatFailure(
 /**
  * Whether this delivery may be held for a busy runtime, rather than refused.
  *
- * **Only a message a person is waiting on in a bridged chat.** Being detached
- * is not enough, and assuming it was is a bug this shipped with for one review
- * cycle: `relay_send_and_wait` and the A2A executor also publish to
- * `relay.agent.*` — the pipeline detaches them all — but each then BLOCKS on a
- * reply inbox with its own, much shorter deadline (60 s and 120 s against a
- * hold that could last five minutes). Holding one of those does not delay a
- * reply, it destroys it: the caller times out saying "timed out" where the
- * truth was capacity, tears down its inbox, and the turn still runs minutes
- * later into a reply nobody is reading. A retry then runs the same turn twice.
- * A fast refusal is the kind answer for a caller that can act on it.
+ * **Only a message a person is waiting on in a bridged chat**, and the tempting
+ * wrong rule here is "anything detached". `relay_send_and_wait` and the A2A
+ * executor also publish to `relay.agent.*` — the pipeline detaches them all —
+ * but each then BLOCKS on a reply inbox with its own, much shorter deadline
+ * (60 s and 120 s, against a hold that can last five minutes). Holding one of
+ * those does not delay a reply, it destroys it: the caller times out saying
+ * "timed out" where the truth was capacity, tears down its inbox, and the turn
+ * still runs minutes later into a reply nobody is reading. A retry then runs
+ * the same turn twice. A fast refusal is the kind answer for a caller that can
+ * act on one.
  *
  * The predicate is {@link requiresInitiateConsent}, which is exactly "a bound
  * external human chat" — the same test {@link ChatNoticeSender} applies before
