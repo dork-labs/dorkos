@@ -29,6 +29,7 @@
 # So this reads Playwright's JSON report and asserts, against the FILESYSTEM
 # rather than against Playwright's own opinion of what it should have run:
 #
+#   0. The reports handed in are a COMPLETE run — see "SHARDING" below.
 #   1. No *.spec.ts lives outside apps/e2e/tests, which is the only testDir the
 #      config declares. A spec anywhere else is dead weight nothing runs.
 #   2. Every *.spec.ts under apps/e2e/tests appears in the report — except the
@@ -63,8 +64,33 @@
 # somebody adds a test, and a gate whose expectation is stale gets edited to
 # match reality rather than the other way round.
 #
+# SHARDING (DOR-1363). CI cuts the suite three ways with `playwright test
+# --shard=i/N`, so NO SINGLE RUN'S REPORT CONTAINS EVERY SPEC — assertion 2 read
+# against one shard would name two thirds of the suite as missing. The reports
+# are therefore unioned: this script takes one path per shard and treats their
+# combined contents as the run. Every assertion below is then exactly the
+# assertion it always was, over the whole suite.
+#
+# That union is only trustworthy if the set of reports is complete, which is
+# assertion 0. A shard whose artifact failed to upload, was downloaded twice, or
+# came from an older run with a different matrix size would otherwise quietly
+# shrink the union — and shrinking the union is the one way to make this gate
+# certify a partial run, i.e. the exact failure it exists to prevent. So:
+#
+#   * Playwright records its own `--shard=i/N` in the report as `.config.shard`
+#     (`{current, total}` when sharded, `null` when not; the key is always
+#     present — verified against 1.59.1 by running a scratch suite both ways).
+#     The reports must agree on N, there must be N of them, and their `current`
+#     values must be exactly 1..N with no gaps and no duplicates.
+#   * A report from an unsharded run must arrive alone. A whole run plus
+#     anything else describes two different runs, not one.
+#
+# Nothing about the CI workflow's artifact names or layout is encoded here: the
+# reports carry their own identity, so this stays true whatever the workflow
+# calls them and however many shards it grows to.
+#
 # Usage:
-#   scripts/assert-browser-tests-executed.sh [<results.json>]
+#   scripts/assert-browser-tests-executed.sh [<results.json>...]
 #
 # With no argument it reads apps/e2e/test-results/results.json, where the `json`
 # reporter in apps/e2e/playwright.config.ts writes.
@@ -207,17 +233,74 @@ fail() {
 
 command -v jq >/dev/null 2>&1 || fail 'jq is required but was not found on PATH.'
 
-report=${1:-"$e2e_root/test-results/results.json"}
+# One path per shard, or none for the single default report. See SHARDING above.
+reports=("$@")
+[ ${#reports[@]} -gt 0 ] || reports=("$e2e_root/test-results/results.json")
 
-if [ ! -f "$report" ]; then
-  fail "no Playwright JSON report at $report.
+for report in "${reports[@]}"; do
+  if [ ! -f "$report" ]; then
+    fail "no Playwright JSON report at $report.
 The run produced no machine-readable result, so it proved nothing. Either the
 suite never started, or it was invoked with a --reporter flag that replaced the
 config's json reporter."
+  fi
+
+  jq -e '.stats' "$report" >/dev/null 2>&1 ||
+    fail "$report is not a Playwright JSON report (no .stats)."
+done
+
+# 0. The reports handed in must together be ONE COMPLETE RUN — see SHARDING.
+shard_totals=''
+shard_currents=''
+whole_runs=0
+for report in "${reports[@]}"; do
+  jq -e '.config | has("shard")' "$report" >/dev/null 2>&1 ||
+    fail "$report has no .config.shard field.
+Playwright records which shard a run was (or that it was not one) there, and
+this gate refuses to union reports it cannot tell apart. The JSON reporter's
+shape has drifted (version bump?); update this script's shard handling in the
+same change."
+  if [ "$(jq -r '.config.shard == null' "$report")" = 'true' ]; then
+    whole_runs=$((whole_runs + 1))
+  else
+    shard_totals="$shard_totals$(jq -r '.config.shard.total' "$report")"$'\n'
+    shard_currents="$shard_currents$(jq -r '.config.shard.current' "$report")"$'\n'
+  fi
+done
+
+if [ "$whole_runs" -gt 0 ] && [ "$whole_runs" -ne "${#reports[@]}" ]; then
+  fail "these reports do not describe one run: $whole_runs of ${#reports[@]} came from an
+unsharded run and the rest from a sharded one. Pass either a single whole-run
+report or one report per shard, never a mixture."
 fi
 
-jq -e '.stats' "$report" >/dev/null 2>&1 ||
-  fail "$report is not a Playwright JSON report (no .stats)."
+if [ "$whole_runs" -gt 1 ]; then
+  fail "$whole_runs whole-run reports were passed. An unsharded report already covers the
+entire suite, so a second one describes a DIFFERENT run — unioning them would
+let one run's coverage vouch for another's."
+fi
+
+if [ "$whole_runs" -eq 0 ]; then
+  declared_total=$(printf '%s' "$shard_totals" | sort -u)
+  if [ "$(printf '%s\n' "$declared_total" | wc -l | tr -d ' ')" -ne 1 ]; then
+    fail "these shard reports disagree about how many shards the run had: $(printf '%s' "$declared_total" | tr '\n' ' ')
+They are from different runs, or the matrix changed size mid-run. Either way the
+union is not one suite."
+  fi
+  if [ "${#reports[@]}" -ne "$declared_total" ]; then
+    fail "the run was cut into $declared_total shards but only ${#reports[@]} report(s) were passed.
+The missing shard's tests would read as specs that exist on disk and never ran,
+so this refuses here instead, where the cause is nameable. Check that every
+shard uploaded its results.json."
+  fi
+  seen=$(printf '%s' "$shard_currents" | sort -n | tr '\n' ' ')
+  wanted=$(seq 1 "$declared_total" | tr '\n' ' ')
+  if [ "$seen" != "$wanted" ]; then
+    fail "the shard reports are not 1..$declared_total exactly: got [ $seen], wanted [ $wanted].
+A repeated shard would count one third of the suite twice and leave another
+third unchecked."
+  fi
+fi
 
 [ -d "$tests_dir" ] || fail "no test directory at $tests_dir.
 That is either the wrong root or a broken checkout — either way this run proved
@@ -258,17 +341,30 @@ fi
 disk_specs=$(cd "$tests_dir" && find . -name '*.spec.ts' | sed 's|^\./||' | sort)
 [ -n "$disk_specs" ] || fail "found no *.spec.ts under $tests_dir."
 
-# Every spec in the report, with how many of its tests were NOT skipped.
+# Every spec in the run, with how many of its tests were NOT skipped.
 # `.tests[].status` is Playwright's per-test outcome: expected | unexpected |
 # flaky | skipped. Anything that is not "skipped" means a browser really ran it.
-report_rows=$(jq -r '
-  [ .suites[] | recurse(.suites[]?) | .specs[]? ] as $specs
-  | ($specs | map(.file) | unique) as $files
-  | $files[]
-  | . as $f
-  | ($specs | map(select(.file == $f) | .tests[]? | select(.status != "skipped")) | length) as $ran
-  | "\($f)\t\($ran)"
-' "$report" 2>/dev/null) || fail "could not read $report — unexpected JSON shape."
+#
+# Summed across the shard reports rather than concatenated: a file can appear in
+# more than one shard (`--shard` splits by test group, and a file with several
+# groups can straddle a boundary), and a file counted twice at zero would read as
+# a suite that ran when it did not.
+raw_rows=''
+for report in "${reports[@]}"; do
+  rows=$(jq -r '
+    [ .suites[] | recurse(.suites[]?) | .specs[]? ] as $specs
+    | ($specs | map(.file) | unique) as $files
+    | $files[]
+    | . as $f
+    | ($specs | map(select(.file == $f) | .tests[]? | select(.status != "skipped")) | length) as $ran
+    | "\($f)\t\($ran)"
+  ' "$report" 2>/dev/null) || fail "could not read $report — unexpected JSON shape."
+  raw_rows="$raw_rows$rows"$'\n'
+done
+
+report_rows=$(printf '%s' "$raw_rows" |
+  awk -F'\t' 'NF == 2 { ran[$1] += $2 } END { for (f in ran) printf "%s\t%s\n", f, ran[f] }' |
+  sort)
 
 report_specs=$(printf '%s\n' "$report_rows" | cut -f1 | sort)
 
@@ -391,14 +487,21 @@ fi
 # prints "integer expression expected" to stderr and carries on, and the gate
 # certifies a run it never actually checked. A guard that can fail open on the
 # input drifting is the exact class this script exists to close.
-jq -e '.stats | (has("expected") and has("unexpected") and has("flaky") and has("skipped"))
-       and ([.expected, .unexpected, .flaky, .skipped] | all(type == "number"))' \
-  "$report" >/dev/null 2>&1 || fail "the report's .stats block is missing or no longer carries numeric
-expected/unexpected/flaky/skipped fields. Playwright's JSON reporter shape has
-drifted (version bump?); this gate refuses to certify a report it cannot read.
-Update this script's stats handling in the same change that bumps the reporter."
+for report in "${reports[@]}"; do
+  jq -e '.stats | (has("expected") and has("unexpected") and has("flaky") and has("skipped"))
+         and ([.expected, .unexpected, .flaky, .skipped] | all(type == "number"))' \
+    "$report" >/dev/null 2>&1 || fail "the report's .stats block is missing or no longer carries numeric
+expected/unexpected/flaky/skipped fields ($report). Playwright's JSON reporter
+shape has drifted (version bump?); this gate refuses to certify a report it
+cannot read. Update this script's stats handling in the same change that bumps
+the reporter."
+done
+# Summed over the shards, so every total below describes the whole run.
 read -r stat_expected stat_unexpected stat_flaky stat_skipped < <(
-  jq -r '[.stats.expected, .stats.unexpected, .stats.flaky, .stats.skipped] | @tsv' "$report"
+  jq -rs '[ (map(.stats.expected) | add),
+            (map(.stats.unexpected) | add),
+            (map(.stats.flaky) | add),
+            (map(.stats.skipped) | add) ] | @tsv' "${reports[@]}"
 )
 
 [ "$total_ran" -gt 0 ] || fail "the run executed zero tests."
@@ -408,8 +511,13 @@ if [ "$stat_unexpected" -ne 0 ]; then
 fi
 
 expected_count=$(printf '%s\n' "$expected_specs" | wc -l | tr -d ' ')
-printf 'assert-browser-tests-executed: %s test(s) executed across %s test file(s), %s of them registered module(s) (%s expected, %s flaky, %s skipped across %s opt-in spec(s); %s @integration spec(s) confirmed absent).\n' \
-  "$total_ran" "$expected_count" "${#REGISTERED_MODULES[@]}" \
+if [ "$whole_runs" -eq 0 ]; then
+  run_shape="$declared_total shard(s)"
+else
+  run_shape='1 unsharded run'
+fi
+printf 'assert-browser-tests-executed: %s test(s) executed across %s test file(s), %s of them registered module(s), over %s (%s expected, %s flaky, %s skipped across %s opt-in spec(s); %s @integration spec(s) confirmed absent).\n' \
+  "$total_ran" "$expected_count" "${#REGISTERED_MODULES[@]}" "$run_shape" \
   "$stat_expected" "$stat_flaky" "$stat_skipped" "${#OPT_IN_SPECS[@]}" "${#FILTERED_SPECS[@]}"
 
 # Flaky tests passed on a retry, so they do not fail this gate — but a retry
@@ -424,7 +532,7 @@ if [ "$stat_flaky" -ne 0 ]; then
     [ .suites[] | recurse(.suites[]?) | .specs[]? ][]
     | . as $s | .tests[]? | select(.status == "flaky")
     | "  \($s.file) › \($s.title)"
-  ' "$report"
+  ' "${reports[@]}"
   # On a runner, a printf in a green job's collapsed step log is honest but
   # effectively invisible. A workflow command turns each absorbed retry into a
   # PR annotation, so pass-on-retry is seen without anyone opening the log.
