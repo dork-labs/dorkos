@@ -5,6 +5,7 @@ covers:
   - 'feat(server): a room hears what its own turn is doing, throttled and cleared with the claim (DOR-1351)'
   - "feat(server): the glimpse's target stops at this cockpit, stripped at both outbound projections (DOR-1351)"
   - "feat(client): a room's lane says what one agent is doing, and its peek says it per agent (DOR-1351)"
+  - "fix(server,shared): a released claim's done frame carries no reading, and a burst that ends where it started costs no frame (DOR-1351)"
 ---
 
 ### Added
