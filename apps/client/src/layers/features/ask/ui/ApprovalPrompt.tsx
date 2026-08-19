@@ -89,6 +89,9 @@ export interface ApprovalPromptHandle {
  *
  * Supports imperative control via `ref` (approve/deny) for keyboard shortcut integration.
  * Shows a countdown timer when `timeoutMs` is provided, with warning phases at 2 min and 1 min.
+ * Once that countdown runs out the card PARKS: the words say the agent is waiting, the bar
+ * goes, and both answers stay live until the server withdraws the card (spec
+ * `ask-parks-on-timeout`).
  */
 export function ApprovalPrompt({
   sessionId,
