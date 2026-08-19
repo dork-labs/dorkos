@@ -996,25 +996,16 @@
       "specFile": "tests/conversation/ask-parks.ts",
       "feature": "conversation",
       "description": "says the agent is waiting, draws no countdown, and still takes an answer",
-      "lastRun": "2026-08-19T05:21:04.105Z",
+      "lastRun": "2026-08-19T06:02:15.460Z",
       "lastStatus": "passed",
-      "runCount": 2,
-      "passCount": 2,
+      "runCount": 3,
+      "passCount": 3,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-04T15-17-52",
-      "timestamp": "2026-08-04T15:17:52.288Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 46335
-    },
     {
       "id": "2026-08-04T15-20-34",
       "timestamp": "2026-08-04T15:20:34.075Z",
@@ -1905,6 +1896,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 359808
+    },
+    {
+      "id": "2026-08-19T06-02-15",
+      "timestamp": "2026-08-19T06:02:15.460Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 63692
     }
   ]
 }
