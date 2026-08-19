@@ -26,6 +26,7 @@ import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { resolveSettingsKey } from '../services/session/index.js';
 import { deliverSessionStream } from '../services/core/streams/session-stream-delivery.js';
+import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upgrade-router.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
@@ -57,7 +58,7 @@ export const sessionEventsRoute: UpgradeRoute = {
   // The router runs the credential gate before this is called.
   credential: 'required',
 
-  async authorize({ url, match }): Promise<UpgradeDecision> {
+  async authorize({ url, match, headers, locals }): Promise<UpgradeDecision> {
     // Refusals go out as a close frame rather than a failed handshake: a
     // browser cannot read the status of a failed one, and a signed-out cockpit
     // has to be able to tell "not yours to read" from "server briefly down".
@@ -115,6 +116,9 @@ export const sessionEventsRoute: UpgradeRoute = {
           runtime,
           ctx,
           sinceCursor,
+          // `StreamUpgradeLocals` is `res.locals`-shaped precisely so this
+          // reads the same principal an HTTP request would.
+          principal: readCallerPrincipal({ headers }, { locals }),
         });
       },
     };

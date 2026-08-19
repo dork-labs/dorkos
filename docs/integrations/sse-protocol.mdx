@@ -364,16 +364,43 @@ GET /api/events
 
 This single persistent connection multiplexes all background events, distinguished by the SSE `event:` field:
 
-| Event              | Payload                                                                  | Description                                                                                                                                        |
-| ------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_upserted` | `{ session: Session }`                                                   | A session was created or its metadata changed                                                                                                      |
-| `session_removed`  | `{ sessionId: string }`                                                  | A session was deleted                                                                                                                              |
-| `session_status`   | `{ sessionId: string, cwd?: string, retiredSessionId?: string, status }` | A session's status projection changed (lifecycle, tokens, cost). `retiredSessionId` announces a first-turn rekey: drop state held under the old id |
-| `relay_*`          | varies                                                                   | Relay adapter activity, message delivery                                                                                                           |
-| `tunnel_*`         | varies                                                                   | Tunnel start/stop, URL changes                                                                                                                     |
-| `ext:{id}:*`       | varies                                                                   | Extension-emitted events (namespaced per extension ID)                                                                                             |
+| Event                  | Payload                                                                                                       | Description                                                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_upserted`     | `{ session: Session }`                                                                                        | A session was created or its metadata changed                                                                                                      |
+| `session_removed`      | `{ sessionId: string }`                                                                                       | A session was deleted                                                                                                                              |
+| `session_status`       | `{ sessionId: string, cwd?: string, retiredSessionId?: string, status }`                                      | A session's status projection changed (lifecycle, tokens, cost). `retiredSessionId` announces a first-turn rekey: drop state held under the old id |
+| `interaction_pending`  | `{ sessionId: string, cwd: string, interaction: PendingInteraction, roomId?: string, roomAuthorId?: string }` | An agent anywhere on this machine has stopped and is waiting on a person. Addressed — see below                                                    |
+| `interaction_resolved` | `{ sessionId: string, interactionId: string, outcome, resolvedAt: string }`                                   | That prompt is over: answered, cancelled, or timed out. Drop the card                                                                              |
+| `relay_*`              | varies                                                                                                        | Relay adapter activity, message delivery                                                                                                           |
+| `tunnel_*`             | varies                                                                                                        | Tunnel start/stop, URL changes                                                                                                                     |
+| `ext:{id}:*`           | varies                                                                                                        | Extension-emitted events (namespaced per extension ID)                                                                                             |
 
 These session-list events keep sidebars and dashboards live without polling `GET /api/sessions`.
+
+### `interaction_pending` goes only to whoever may answer it
+
+Every other event on this stream is written to every connection. `interaction_pending` is not.
+It carries what an agent is waiting for — the tool it wants to run, the command or path it
+would run it against, and the session's working directory — so it is delivered only to a
+connection that could act on it.
+
+In practice that means one thing: **a connection presenting an `X-DorkOS-Agent` header never
+receives it.** The same connection also stops receiving `activity` on a `session_status` frame
+whose `lifecycle` is `blocked` — that field names the tool and the command a session is parked
+on, which is the same detail by another route. The `lifecycle` itself is still sent, so a
+reader still knows the session is waiting; it just does not learn what for. And on a session's
+own stream (`GET /api/sessions/:id/events`) the snapshot's `pendingInteractions` comes back
+empty and the `approval_required` / `question_prompt` / `elicitation_prompt` frames are not
+sent. An agent could never answer a prompt (`POST /api/sessions/:id/approve` refuses
+every one of them), so it no longer sees them either. A connection holding one of your per-user
+API keys still receives them, because it can already read the same detail on that session's own
+stream. `GET /api/sessions/pending-interactions`, which is what a page reads on load, filters
+the same way — and answers `200` with an empty list rather than an error, so a caller cannot
+tell "you may not see this" from "there is nothing waiting".
+
+`interaction_resolved` is deliberately NOT filtered. It carries a session id, an interaction id
+and an outcome, and nothing about what was asked; a client that never received the `pending` has
+nothing to close.
 
 ### What you get when you connect
 

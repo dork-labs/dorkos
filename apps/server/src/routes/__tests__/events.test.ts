@@ -52,10 +52,18 @@ afterEach(async () => {
   });
 });
 
-/** Open an SSE connection and collect raw data until the connected event arrives. */
-function collectConnectedEvent(): Promise<{ headers: http.IncomingHttpHeaders; body: string }> {
+/**
+ * Open an SSE connection and collect raw data until the connected event
+ * arrives.
+ *
+ * @param requestHeaders - What the caller presents, for the cases about who the
+ *   connection is registered as.
+ */
+function collectConnectedEvent(
+  requestHeaders: http.OutgoingHttpHeaders = {}
+): Promise<{ headers: http.IncomingHttpHeaders; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = http.get(`${baseUrl}/api/events`, (res) => {
+    const req = http.get(`${baseUrl}/api/events`, { headers: requestHeaders }, (res) => {
       let data = '';
       res.on('data', (chunk: Buffer) => {
         data += chunk.toString();
@@ -105,6 +113,22 @@ describe('GET /api/events (unified SSE stream)', () => {
     await collectConnectedEvent();
 
     expect(eventFanOut.addClient).toHaveBeenCalledTimes(1);
+  });
+
+  it('registers a credential-free cockpit as the operator', async () => {
+    await collectConnectedEvent();
+
+    expect(vi.mocked(eventFanOut.addClient).mock.calls[0]?.[1]).toEqual({ kind: 'operator' });
+  });
+
+  it('registers a caller presenting an agent header as an agent', async () => {
+    // The wiring, not the policy: a route that resolved the principal and then
+    // registered a different one would leak every Ask to this connection while
+    // the policy suite stayed green. An unresolvable token is used on purpose —
+    // a revoked agent is still a machine.
+    await collectConnectedEvent({ 'x-dorkos-agent': 'tok_revoked' });
+
+    expect(vi.mocked(eventFanOut.addClient).mock.calls[0]?.[1]).toEqual({ kind: 'agent' });
   });
 
   it('answers 503 BEFORE the SSE headers when the fan-out is full', async () => {

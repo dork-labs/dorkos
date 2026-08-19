@@ -280,6 +280,13 @@ export function createDirectSessionMethods(
      * The in-process twin of `GET /api/sessions/pending-interactions`, reading
      * the same projector registry the HTTP route reads. No `warnings`: there is
      * one runtime here, so there is no other source to degrade.
+     *
+     * **Unfiltered, and that is not an omission.** The HTTP route scopes its
+     * list to the caller (`askEntitlement`, spec `ask-entitlement` §3.1). There
+     * is no caller here: this runs inside the Obsidian process, driven by the
+     * person at the keyboard, so the principal is `operator` by construction
+     * and the predicate would return `answer` for every row. Nothing on a chat
+     * platform and nothing holding an API key can reach this method at all.
      */
     async listPendingInteractions(): Promise<PendingInteractionsResponse> {
       return { interactions: services.pendingInteractions.list() };

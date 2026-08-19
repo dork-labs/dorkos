@@ -2214,4 +2214,201 @@ describe('AdapterManager', () => {
       expect(m.listRegisteredRuntimeTypes()).toEqual(['opencode']);
     });
   });
+
+  describe('authorizeBridgedApproval — the server-side half of a bridged click (spec `ask-entitlement` §5.3)', () => {
+    // The adapters run `mayApprove` in process on the click; this runs before
+    // the runtime is touched, because the relay bus carries no authority of its
+    // own and a room-bound Ask reaches it by a path no adapter binding covers.
+    // Two independent gates, and neither is trusted to be the only one.
+    const ROOM_ID = 'room-approval-1';
+    const BOUND_SESSION = 'session-in-a-room';
+
+    /** A bridge store with one PRIVATE chat bridged to `ROOM_ID` on tg-main. */
+    function bridgesForRoom(): BridgeStore {
+      const db = createTestDb();
+      new RoomStore(db).createRoom(
+        {
+          id: ROOM_ID,
+          kind: 'dm',
+          slug: 'ana',
+          title: 'Ana',
+          topic: null,
+          workspaceId: null,
+          createdAt: '2026-08-19T00:00:00.000Z',
+        },
+        []
+      );
+      const bridges = new BridgeStore(db);
+      bridges.createBridge({
+        roomId: ROOM_ID,
+        adapterId: 'tg-main',
+        chatId: '145223',
+        channelType: null,
+        platformChatType: 'private',
+        bindingId: 'binding-ana',
+        deliverNotices: true,
+        createdAt: '2026-08-19T00:00:00.000Z',
+      });
+      return bridges;
+    }
+
+    /**
+     * A manager whose tg-main adapter names `approvers`, over a bridge store
+     * bound to `ROOM_ID`.
+     *
+     * @param approvers - The configured allowlist, in whatever shape.
+     * @param opts.bridged - Whether the room has a live bridge at all.
+     */
+    async function managerWithApprovers(
+      approvers: unknown,
+      opts: { bridged?: boolean } = {}
+    ): Promise<AdapterManager> {
+      vi.mocked(readFile).mockResolvedValue(
+        JSON.stringify({
+          adapters: [
+            {
+              id: 'tg-main',
+              type: 'telegram',
+              enabled: false,
+              config: { token: 'bot-token-123', mode: 'polling', approverAllowlist: approvers },
+            },
+          ],
+        })
+      );
+      const m = new AdapterManager(registry, configPath, {
+        ...mockDeps,
+        roomBridges: opts.bridged === false ? new BridgeStore(createTestDb()) : bridgesForRoom(),
+        roomSessionBindings: {
+          bindingForSession: (sessionId: string) =>
+            sessionId === BOUND_SESSION ? { roomId: ROOM_ID, authorId: 'author-ana' } : undefined,
+        },
+      });
+      await initAndStart(m);
+      return m;
+    }
+
+    it('lets an allowlisted person authorize a room-bound session’s tool call', async () => {
+      const m = await managerWithApprovers(['145223']);
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: BOUND_SESSION,
+          platform: 'telegram',
+          respondedBy: '145223',
+        })
+      ).toBe(true);
+    });
+
+    it('refuses somebody who is not on the list', async () => {
+      const m = await managerWithApprovers(['145223']);
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: BOUND_SESSION,
+          platform: 'telegram',
+          respondedBy: '999999',
+        })
+      ).toBe(false);
+    });
+
+    it('refuses everybody when the list is empty — absence is not consent', async () => {
+      const m = await managerWithApprovers([]);
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: BOUND_SESSION,
+          platform: 'telegram',
+          respondedBy: '145223',
+        })
+      ).toBe(false);
+    });
+
+    it('refuses a click the platform put no name to', async () => {
+      const m = await managerWithApprovers(['145223']);
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: BOUND_SESSION,
+          platform: 'telegram',
+          respondedBy: undefined,
+        })
+      ).toBe(false);
+    });
+
+    it('reads the allowlist the way the setup form stores it, one id per line', async () => {
+      const m = await managerWithApprovers(' 145223 \n 999999 ');
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: BOUND_SESSION,
+          platform: 'telegram',
+          respondedBy: '145223',
+        })
+      ).toBe(true);
+    });
+
+    it('refuses a room-bound approval when the room has no live bridge to check against', async () => {
+      // A room whose chat was unbridged still has its session binding. With no
+      // bridge there is no allowlist and no platform to compare, which
+      // authorizes nobody rather than everybody.
+      const m = await managerWithApprovers(['145223'], { bridged: false });
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: BOUND_SESSION,
+          platform: 'telegram',
+          respondedBy: '145223',
+        })
+      ).toBe(false);
+    });
+
+    it('refuses a click that arrived from a platform the room is not bridged to', async () => {
+      // A platform user id is unique only within its own platform, so an id
+      // spelled the same way on Slack must not clear a Telegram allowlist.
+      const m = await managerWithApprovers(['145223']);
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: BOUND_SESSION,
+          platform: 'slack',
+          respondedBy: '145223',
+        })
+      ).toBe(false);
+    });
+
+    it('refuses everything when the room-session binding port is not wired', async () => {
+      // Fail CLOSED on a wiring omission: without the port nothing here can
+      // tell a room-bound session from a direct-bound one, so the direct-bind
+      // branch would swallow every room-bound approval as well.
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      const m = new AdapterManager(registry, configPath, {
+        ...mockDeps,
+        roomBridges: bridgesForRoom(),
+      });
+      await initAndStart(m);
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: BOUND_SESSION,
+          platform: 'telegram',
+          respondedBy: '145223',
+        })
+      ).toBe(false);
+    });
+
+    it('leaves a session no room owns to the direct-bind gate it already has', async () => {
+      // A stated boundary, not a fail-open default: widening the direct-bind
+      // path would change shipped behaviour for every operator who has one
+      // configured, and that is its own item (spec Non-Goals).
+      const m = await managerWithApprovers(['145223']);
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: 'session-nobody-owns',
+          platform: 'telegram',
+          respondedBy: '999999',
+        })
+      ).toBe(true);
+    });
+  });
 });

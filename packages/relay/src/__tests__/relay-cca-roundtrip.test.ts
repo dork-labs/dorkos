@@ -104,7 +104,7 @@ describe('relay → CCA round-trip', () => {
     cca = new ClaudeCodeAdapter(
       'claude-code',
       { defaultCwd: '/tmp', maxConcurrent: 5 },
-      { agentManager, traceStore }
+      { agentManager, traceStore, approvalAuthorizer: () => true }
     );
 
     const registry = new SingleAdapterRegistry(cca);

@@ -20,7 +20,7 @@
  *
  * @module server/services/rooms/notices/notice-copy
  */
-import type { RoomEntryBody } from '@dorkos/shared/room-schemas';
+import type { RoomEntryBody, RoomWaitingKind } from '@dorkos/shared/room-schemas';
 import { MENTION_PATTERN } from '../mentions.js';
 import type { BudgetRefusalScope } from '../turn-budget.js';
 
@@ -154,8 +154,12 @@ const BUSY_LINES: Record<BusyContext, (agentName: string) => string> = {
  *
  * The names are the projector's own (`PendingInteractionDTO['type']`), so the
  * two cannot drift into meaning different things.
+ *
+ * An alias of the shared schema's enum since the kind became a stored field
+ * (`RoomEntryBody.waitingKind`): the name every writer here already used, over
+ * the one shape the entry is validated against.
  */
-export type WaitingKind = 'approval' | 'question' | 'elicitation';
+export type WaitingKind = RoomWaitingKind;
 
 /**
  * The durable `notice` for a turn that has stopped and is waiting for a person.
@@ -178,6 +182,11 @@ export type WaitingKind = 'approval' | 'question' | 'elicitation';
  * — nearly all of them — never leave a line behind at all. Only a real wait
  * gets one.
  *
+ * `waitingKind` rides along because all three kinds share the one notice code
+ * — the turn runner's damping key depends on that — so the entry could not
+ * otherwise say which of them it was. Its one reader is
+ * {@link bridgeWaitingText}.
+ *
  * @param agentName - Display name of the agent that stopped.
  * @param subjectAuthorId - Author id of that agent, for rendering.
  * @param kind - What sort of answer it stopped for.
@@ -191,8 +200,42 @@ export function buildWaitingNotice(
     text: WAITING_LINES[kind](agentName),
     notice: 'awaiting_approval',
     subjectAuthorId,
+    waitingKind: kind,
   };
 }
+
+/**
+ * The text a bridged chat hears for an `awaiting_approval` notice, in place of
+ * the room's own line (spec `ask-entitlement` §5.4).
+ *
+ * Deliberately vaguer than {@link WAITING_LINES}, and by one clause: it does
+ * not say "open its session", because the reader may not have one. It says
+ * where the answer lives and that the wait is bounded, and nothing about what
+ * is being asked — the same rule the room's line keeps (DOR-613), for a reader
+ * who is further away rather than closer. No tool name, no question, no path,
+ * no countdown.
+ *
+ * @param agentName - Display name of the agent that stopped.
+ * @param kind - What sort of answer it stopped for. Absent on entries written
+ *   before the field existed, which read as an approval — the commonest kind
+ *   and the one whose sentence says least.
+ */
+export function bridgeWaitingText(agentName: string, kind: WaitingKind = 'approval'): string {
+  return BRIDGE_WAITING_LINES[kind](agentName);
+}
+
+/**
+ * One far-end sentence per {@link WaitingKind}, total for the same reason
+ * {@link WAITING_LINES} is.
+ */
+const BRIDGE_WAITING_LINES: Record<WaitingKind, (agentName: string) => string> = {
+  approval: (agentName) =>
+    `${agentName} is waiting for someone to approve something before it can carry on. Answer it in DorkOS. It gives up if nobody does.`,
+  question: (agentName) =>
+    `${agentName} has a question that needs answering before it can carry on. Answer it in DorkOS. It gives up if nobody does.`,
+  elicitation: (agentName) =>
+    `${agentName} needs something before it can carry on. Answer it in DorkOS. It gives up if nobody does.`,
+};
 
 /**
  * One sentence per {@link WaitingKind}, total for the same reason

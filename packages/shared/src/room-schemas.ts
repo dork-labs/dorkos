@@ -599,6 +599,29 @@ export type RoomMoment = z.infer<typeof RoomMomentSchema>;
 // === Entries ===
 
 /**
+ * What an agent stopped to wait for, on an `awaiting_approval` notice.
+ *
+ * All three kinds write the SAME notice code — the room turn runner's damping
+ * key depends on that, so splitting them into three codes would change
+ * behaviour it relies on — and the entry therefore did not say which one it
+ * was. This field has exactly one reader: a bridged chat renders its own
+ * sentence per kind (spec `ask-entitlement` §5.4), because the room's own line
+ * says "open its session" to somebody who may not have one.
+ *
+ * Optional on the body, so every entry stored before it existed still parses;
+ * the bridge falls back to the approval sentence when it is absent.
+ *
+ * The names are the projector's own (`PendingInteractionDTO['type']`), so the
+ * two cannot drift into meaning different things.
+ */
+export const RoomWaitingKindSchema = z
+  .enum(['approval', 'question', 'elicitation'])
+  .openapi('RoomWaitingKind');
+
+/** What an agent stopped to wait for. */
+export type RoomWaitingKind = z.infer<typeof RoomWaitingKindSchema>;
+
+/**
  * The payload of a log entry.
  *
  * One shape rather than a union, because `kind` on the entry already says
@@ -612,10 +635,14 @@ export type RoomMoment = z.infer<typeof RoomMomentSchema>;
  * does for a notice — "tangerines joined your team" is written by the system
  * and is ABOUT tangerines, and that is the identity the feed draws.
  *
- * `answersEntryId` is the fourth and newest, and it is about ORDER rather than
- * identity: a room posts in arrival order, so an answer is not always next to
- * its question. It is set on every agent-authored post a turn produces, because
- * a reader cannot tell from the outside which answers waited.
+ * `answersEntryId` is about ORDER rather than identity: a room posts in arrival
+ * order, so an answer is not always next to its question. It is set on every
+ * agent-authored post a turn produces, because a reader cannot tell from the
+ * outside which answers waited.
+ *
+ * `waitingKind` is the newest and the narrowest — see
+ * {@link RoomWaitingKindSchema}. It is set only on an `awaiting_approval`
+ * notice, and has exactly one reader.
  */
 export const RoomEntryBodySchema = z
   .object({
@@ -623,6 +650,7 @@ export const RoomEntryBodySchema = z
     notice: RoomNoticeCodeSchema.optional(),
     subjectAuthorId: z.string().optional(),
     moment: RoomMomentSchema.optional(),
+    waitingKind: RoomWaitingKindSchema.optional(),
     answersEntryId: z
       .string()
       .optional()

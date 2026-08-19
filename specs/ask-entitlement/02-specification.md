@@ -197,14 +197,14 @@ export function askEntitlement(principal: CallerPrincipal, subject: AskSubject):
 
 The whole table, and it is the whole implementation:
 
-| Principal                         | Result     | Why                                                                                                                                                                      |
-| --------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `agent`                           | `'none'`   | An agent may never decide, and reading every other agent's pending command across the machine is the capability this closes. True even for the session it is running in. |
-| `operator`                        | `'answer'` | One account owns this install; the operator owns every session on it. Login-off, this is also the credential-free caller, unchanged.                                     |
-| `program`                         | `'see'`    | `requirePersonToAnswer` refuses it (DOR-474). It already reads the same detail one route over.                                                                           |
-| `bridged`, in `subject.approvers` | `'answer'` | `mayApprove(subject.approvers, platformUserId)`.                                                                                                                         |
-| `bridged`, not in `approvers`     | `'none'`   | Absence is not consent. An empty or absent list authorizes nobody.                                                                                                       |
-| `bridged`, `subject.roomId` unset | `'none'`   | A chat platform user has no standing over a session no room owns.                                                                                                        |
+| Principal                                        | Result     | Why                                                                                                                                                                      |
+| ------------------------------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent`                                          | `'none'`   | An agent may never decide, and reading every other agent's pending command across the machine is the capability this closes. True even for the session it is running in. |
+| `operator`                                       | `'answer'` | One account owns this install; the operator owns every session on it. Login-off, this is also the credential-free caller, unchanged.                                     |
+| `program`                                        | `'see'`    | `requirePersonToAnswer` refuses it (DOR-474). It already reads the same detail one route over.                                                                           |
+| `bridged`, in `subject.approvers`, same platform | `'answer'` | `mayApprove(subject.approvers, platformUserId)`, and only when `subject.approverPlatform` is the platform the caller clicked from.                                       |
+| `bridged`, not in `approvers`                    | `'none'`   | Absence is not consent. An empty or absent list authorizes nobody.                                                                                                       |
+| `bridged`, `subject.roomId` unset                | `'none'`   | A chat platform user has no standing over a session no room owns.                                                                                                        |
 
 `subject.sessionId` is on the type and unread by the body today. It is there because it is
 the seam a second person enters through — `askEntitlement` is where "which sessions are
@@ -327,8 +327,8 @@ second gate.** Under one account, an entitlement check behind it could never fai
 check that cannot discriminate is worse than none.
 
 What it gains is a binding, so the two can never come to mean different things by "may
-answer": `apps/server/src/services/session/__tests__/ask-answer-conformance.test.ts` drives
-the same four callers through `requirePersonToAnswer`'s two composed pieces and through
+answer": `apps/server/src/services/session/asks/__tests__/ask-answer-conformance.test.ts` drives
+the same five callers through `requirePersonToAnswer`'s two composed pieces and through
 `askEntitlement`, and fails if they disagree. It is modelled on
 `services/core/approvals/__tests__/person-proof-conformance.test.ts`, which states the
 pattern and its limits, and it is derived from a list of seams rather than routes for the
@@ -632,8 +632,8 @@ filtering table, driven through the real router:
 Seed: make `askEntitlement` return `'see'` for an agent and the two agent rows go red while
 nothing else moves.
 
-`apps/server/src/services/session/__tests__/ask-answer-conformance.test.ts` — **new.** The
-four callers of `person-proof-conformance.test.ts`, driven through both
+`apps/server/src/services/session/asks/__tests__/ask-answer-conformance.test.ts` — **new.**
+The five callers that can reach both seams, driven through both
 `requirePersonToAnswer`'s composed pieces and `askEntitlement`, failing if they disagree
 about who may answer. Seed: `askEntitlement` returning `'answer'` for an agent.
 
@@ -705,7 +705,13 @@ thing the room notice is: turns that actually stop for a person.
 
 - **The one behaviour this removes** is an agent's ability to read every pending tool prompt
   on the machine. It could never answer one; DOR-1357 already closed the adjacent read of
-  where a room's work runs, on the same predicate.
+  where a room's work runs, on the same predicate. Closing it takes THREE doors, not one, and
+  all three are the same predicate: the fleet-wide list, the global stream's
+  `interaction_pending` **and** the `session_status` frame that carries the blocked tool and
+  its target, and the per-session stream's snapshot and live prompt events.
+- **What an agent still sees, stated rather than implied:** which sessions exist, their
+  working directories, and the tool a session is RUNNING. A running tool is not a person
+  being asked for anything, and narrowing that is a separate item.
 - **Two independent gates on the bridged click, both failing closed.** The adapter's
   `mayApprove` runs in process on the click and is unchanged; the server's `askEntitlement`
   runs before the runtime is touched. Neither is trusted to be the only one, because the

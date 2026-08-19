@@ -26,8 +26,9 @@
  *   green, which is the pair that tells a relay from an invention.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { eventFanOut } from '../../core/event-fan-out.js';
-import { SessionListBroadcaster } from '../session-list-broadcaster.js';
+import { eventFanOut, type FanOutClient } from '../../core/event-fan-out.js';
+import type { CallerPrincipal } from '../../../lib/caller-principal.js';
+import { SessionListBroadcaster, sendSessionStatusSnapshot } from '../session-list-broadcaster.js';
 import { disposeProjector, getOrCreateProjector, type RawSessionEvent } from '../index.js';
 
 const TIMEOUT_MS = 10 * 60 * 1000;
@@ -60,6 +61,22 @@ afterEach(async () => {
   disposeProjector(ROOM_SESSION);
   disposeProjector(LONE_SESSION);
 });
+
+/**
+ * A tool the session has just started, which is what fills `status.activity`.
+ *
+ * @param toolName - As the runtime spells it.
+ * @param input - The tool input the target is derived from.
+ */
+function runningTool(toolName: string, input: Record<string, unknown>): RawSessionEvent {
+  return {
+    type: 'tool_call',
+    toolCallId: `tc-${toolName}`,
+    toolName,
+    status: 'running',
+    input: JSON.stringify(input),
+  } as RawSessionEvent;
+}
 
 /** Park a session on a permission prompt, as a runtime does. */
 function park(sessionId: string, cwd: string, id: string): void {
@@ -182,5 +199,180 @@ describe('the Ask on the global stream', () => {
     park(ROOM_SESSION, '/work/alpha', 'tc-1');
 
     expect(askEvents()).toEqual([]);
+  });
+});
+
+describe('who the Ask actually reaches on the wire', () => {
+  /** One recording connection, and what it was written. */
+  interface Reader {
+    client: FanOutClient;
+    events: string[];
+    frames: { event: string; data: Record<string, unknown> }[];
+  }
+
+  /** Everything registered here, so the singleton is left as it was found. */
+  let registered: Array<() => void>;
+
+  /**
+   * Register a recording connection on the real fan-out.
+   *
+   * These cases deliberately do NOT stub `broadcast` — the audience is applied
+   * inside it, so a stub would be asserting the stub. This is the only place
+   * the whole path is exercised: a projector parks a turn, the broadcaster
+   * addresses the frame, and the fan-out decides who it is written to.
+   *
+   * @param principal - Who this connection is.
+   */
+  function reader(principal: CallerPrincipal): Reader {
+    const events: string[] = [];
+    const frames: { event: string; data: Record<string, unknown> }[] = [];
+    const client: FanOutClient = {
+      send: (broadcast) => {
+        events.push(broadcast.event);
+        frames.push(JSON.parse(broadcast.json) as { event: string; data: Record<string, unknown> });
+      },
+      bufferedBytes: 0,
+      gone: false,
+      drop: () => {},
+    };
+    registered.push(eventFanOut.addClient(client, principal));
+    return { client, events, frames };
+  }
+
+  /**
+   * The `status` of the last `session_status` frame this reader was written.
+   *
+   * @param who - The recording connection.
+   */
+  function lastStatus(who: Reader): Record<string, unknown> | undefined {
+    const last = who.frames.filter((f) => f.event === 'session_status').at(-1);
+    return last?.data.status as Record<string, unknown> | undefined;
+  }
+
+  beforeEach(() => {
+    registered = [];
+    // The outer suite stubs `broadcast`; these cases need the real one.
+    vi.mocked(eventFanOut.broadcast).mockRestore();
+  });
+
+  afterEach(() => {
+    for (const unregister of registered) unregister();
+  });
+
+  it('writes an Ask to the cockpit’s connection and not to an agent’s', () => {
+    const cockpit = reader({ kind: 'operator' });
+    const agent = reader({ kind: 'agent' });
+
+    park(LONE_SESSION, '/work/beta', 'tc-1');
+
+    expect(cockpit.events).toContain('interaction_pending');
+    expect(agent.events, 'an agent reads no other agent’s pending command').not.toContain(
+      'interaction_pending'
+    );
+  });
+
+  it('withholds a room-bound Ask from an agent too', () => {
+    const cockpit = reader({ kind: 'operator' });
+    const agent = reader({ kind: 'agent' });
+
+    park(ROOM_SESSION, '/work/alpha', 'tc-1');
+
+    expect(cockpit.events).toContain('interaction_pending');
+    expect(agent.events).not.toContain('interaction_pending');
+  });
+
+  it('withholds what a BLOCKED session is waiting on, while still saying it is blocked', () => {
+    // `SessionStatus.activity` carries the tool and the command's first line,
+    // and the projector keeps it current into `blocked` — so this frame said
+    // everything `interaction_pending` was addressed to withhold. The lifecycle
+    // itself is not detail and is still sent, or an unentitled reader's view of
+    // the session would silently stick on its previous state.
+    const cockpit = reader({ kind: 'operator' });
+    const agent = reader({ kind: 'agent' });
+
+    getOrCreateProjector(LONE_SESSION, '/work/beta').ingest(
+      runningTool('Bash', { command: 'rm -rf /work/beta/build' })
+    );
+    park(LONE_SESSION, '/work/beta', 'tc-1');
+
+    expect(lastStatus(cockpit)).toMatchObject({
+      lifecycle: 'blocked',
+      activity: { toolName: 'Bash', target: 'rm -rf /work/beta/build' },
+    });
+    expect(lastStatus(agent)).toMatchObject({ lifecycle: 'blocked' });
+    expect(lastStatus(agent), 'no tool and no command reaches an agent').not.toHaveProperty(
+      'activity'
+    );
+  });
+
+  it('leaves a WORKING session’s activity alone for both, which is a different fact', () => {
+    // A tool that is RUNNING is not a person being asked for anything, and
+    // narrowing that is not this spec's to do — stated so the asymmetry is a
+    // decision rather than an oversight.
+    const cockpit = reader({ kind: 'operator' });
+    const agent = reader({ kind: 'agent' });
+
+    const projector = getOrCreateProjector(LONE_SESSION, '/work/beta');
+    projector.ingest({ type: 'turn_start' });
+    projector.ingest(runningTool('Bash', { command: 'pnpm verify' }));
+
+    expect(lastStatus(cockpit)).toMatchObject({ activity: { toolName: 'Bash' } });
+    expect(lastStatus(agent)).toMatchObject({ activity: { toolName: 'Bash' } });
+  });
+
+  describe('the connect preamble applies the same rule', () => {
+    // The live path addresses these frames; a snapshot that did not would be
+    // the hole, because a window that connects a second after a turn parks
+    // learns the state from HERE and not from a transition.
+    /**
+     * Run the preamble against a fresh recording client.
+     *
+     * @param principal - Who is connecting.
+     */
+    function preamble(principal: CallerPrincipal): Record<string, unknown> | undefined {
+      const who = reader(principal);
+      sendSessionStatusSnapshot(who.client, principal);
+      return lastStatus(who);
+    }
+
+    it('omits a blocked session’s activity for an agent, and keeps it for the operator', () => {
+      getOrCreateProjector(LONE_SESSION, '/work/beta').ingest(
+        runningTool('Bash', { command: 'rm -rf /work/beta/build' })
+      );
+      park(LONE_SESSION, '/work/beta', 'tc-1');
+
+      expect(preamble({ kind: 'operator' })).toMatchObject({
+        lifecycle: 'blocked',
+        activity: { toolName: 'Bash', target: 'rm -rf /work/beta/build' },
+      });
+      const forAgent = preamble({ kind: 'agent' });
+      expect(forAgent).toMatchObject({ lifecycle: 'blocked' });
+      expect(forAgent).not.toHaveProperty('activity');
+    });
+
+    it('keeps a STREAMING session’s activity for an agent, which is not an Ask', () => {
+      const projector = getOrCreateProjector(LONE_SESSION, '/work/beta');
+      projector.ingest({ type: 'turn_start' });
+      projector.ingest(runningTool('Bash', { command: 'pnpm verify' }));
+
+      expect(preamble({ kind: 'agent' })).toMatchObject({
+        lifecycle: 'streaming',
+        activity: { toolName: 'Bash', target: 'pnpm verify' },
+      });
+    });
+  });
+
+  it('sends the receipt to BOTH, because it names no tool, no path and no command', () => {
+    // Decision 9, pinned rather than left as prose: address
+    // `interaction_resolved` too and this goes red. A client that never got the
+    // `pending` simply has nothing to close.
+    const cockpit = reader({ kind: 'operator' });
+    const agent = reader({ kind: 'agent' });
+    park(LONE_SESSION, '/work/beta', 'tc-1');
+
+    getOrCreateProjector(LONE_SESSION, '/work/beta').resolveInteraction('tc-1', 'approved');
+
+    expect(cockpit.events).toContain('interaction_resolved');
+    expect(agent.events).toContain('interaction_resolved');
   });
 });

@@ -23,6 +23,7 @@ import { deliverSessionStream } from '../services/core/streams/session-stream-de
 import { SseStreamSink } from '../services/core/streams/durable-stream-sink.js';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { parseResumeCursor } from '../lib/stream-cursor.js';
+import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 
 /** Route params for `GET /:id/events` — pins `id` to `string` for the handler. */
@@ -89,5 +90,13 @@ export const sessionEventsHandler = async (
     req.query.after as string | undefined
   );
 
-  await deliverSessionStream(new SseStreamSink(res), { sessionId, runtime, ctx, sinceCursor });
+  await deliverSessionStream(new SseStreamSink(res), {
+    sessionId,
+    runtime,
+    ctx,
+    sinceCursor,
+    // The Express chain has already run `sessionGate` and `resolveAgentIdentity`,
+    // so this is the same read the fleet-wide surfaces make.
+    principal: readCallerPrincipal(req, res),
+  });
 };

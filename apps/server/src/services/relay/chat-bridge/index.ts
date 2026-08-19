@@ -59,6 +59,7 @@ export {
   type DeliverLifecycle,
 } from './deliver.js';
 export { BridgeCatchUp, type BridgeCatchUpDeps, type CatchUpDelivery } from './catch-up.js';
+export { BridgedAskDelivery, type AskRoomBindings, type AskRosterReader } from './ask-card.js';
 export {
   bridgedRoomFraming,
   topicNamesForEntries,
