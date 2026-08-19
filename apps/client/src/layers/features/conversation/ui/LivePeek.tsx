@@ -11,7 +11,7 @@
  *
  * @module features/conversation/ui/LivePeek
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { presenceElapsed, type PresenceCopyState } from '@/layers/entities/room';
 import type { MessageAuthor } from '@/layers/shared/model';
@@ -93,6 +93,10 @@ export interface LivePeekProps {
  * know which internal state a row is in to know what its button does — and the
  * footer earns its place only when there IS something else for it to stop.
  *
+ * **Pressing a row's Stop removes that row**, because the agent stops working
+ * and the peek draws working agents, so this also owns the focus that leaves
+ * with it — see the effect below.
+ *
  * @param props - The rows and the four things a peek can do.
  */
 export function LivePeek({
@@ -108,6 +112,29 @@ export function LivePeek({
   // The footer is the "and everything else" action, so it earns its place only
   // when there IS something else.
   const footerStop = rows.length > 1 && onStopAll !== undefined;
+  const stopButtons = useRef(new Map<string, HTMLButtonElement>());
+  const focusedRow = useRef<string | null>(null);
+  const drawnRows = useRef<readonly LivePeekRow[]>(rows);
+
+  // **Pressing Stop makes the row you pressed it on disappear**, and with it the
+  // button holding focus — the peek stays open, so a keyboard reader is left
+  // standing on `document.body` inside a popover they can no longer move
+  // through. Hand focus to the row that took its place instead.
+  //
+  // Guarded on focus having ACTUALLY been lost: somebody who pressed Stop and
+  // then tabbed to another row has moved on, and stealing it back would be worse
+  // than the thing this fixes.
+  useEffect(() => {
+    const before = drawnRows.current;
+    drawnRows.current = rows;
+    const gone = focusedRow.current;
+    if (gone === null || rows.some((row) => row.authorId === gone)) return;
+    focusedRow.current = null;
+    if (document.activeElement !== document.body) return;
+    const wasAt = before.findIndex((row) => row.authorId === gone);
+    const heir = rows[Math.min(Math.max(wasAt, 0), rows.length - 1)];
+    if (heir !== undefined) stopButtons.current.get(heir.authorId)?.focus();
+  }, [rows]);
 
   return (
     <div data-slot="live-peek" data-testid="live-peek" className="flex flex-col">
@@ -166,6 +193,11 @@ export function LivePeek({
                     data-testid="live-peek-stop"
                     disabled={stoppingAgents?.has(row.authorId) === true}
                     onClick={() => onStopAgent(row.authorId)}
+                    onFocus={() => (focusedRow.current = row.authorId)}
+                    ref={(node) => {
+                      if (node === null) stopButtons.current.delete(row.authorId);
+                      else stopButtons.current.set(row.authorId, node);
+                    }}
                     // Several of these can be on screen at once, so the visible
                     // word is not enough to say which agent a button stops.
                     aria-label={`Stop ${row.author.displayName}`}

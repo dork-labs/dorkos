@@ -94,6 +94,62 @@ describe('LivePeek', () => {
     expect(footer).toHaveTextContent('Stops all 3');
   });
 
+  it('hands focus to the next row when the one you stopped disappears', () => {
+    // The row you pressed Stop on leaves as soon as the room says that agent is
+    // done, and the popover stays open — so without this a keyboard reader is
+    // standing on `document.body` inside a peek they can no longer move through.
+    const { rerender } = render(<LivePeek rows={ROWS} onStopAgent={vi.fn()} />);
+    const ana = screen.getByRole('button', { name: 'Stop Ana' });
+    ana.focus();
+    expect(ana).toHaveFocus();
+
+    // Ana's claim releases; the room redraws with the two that are still going.
+    rerender(<LivePeek rows={[ROWS[0], ROWS[2]]} onStopAgent={vi.fn()} />);
+
+    // The row that took Ana's place, not the top of the list: focus follows the
+    // position a person was standing in.
+    expect(screen.getByRole('button', { name: 'Stop Sam' })).toHaveFocus();
+  });
+
+  it('does not steal focus back from wherever somebody has moved on to', () => {
+    // The other half, and the reason the handoff is guarded on focus having
+    // ACTUALLY been lost: pressing Stop and then moving to the composer is a
+    // person who has moved on, and yanking them back into the peek would be
+    // worse than the thing this fixes. Red without the `document.body` guard.
+    const { rerender } = render(
+      <>
+        <button type="button">Message #launch</button>
+        <LivePeek rows={ROWS} onStopAgent={vi.fn()} />
+      </>
+    );
+    screen.getByRole('button', { name: 'Stop Ana' }).focus();
+    const elsewhere = screen.getByRole('button', { name: 'Message #launch' });
+    elsewhere.focus();
+
+    rerender(
+      <>
+        <button type="button">Message #launch</button>
+        <LivePeek rows={[ROWS[0], ROWS[2]]} onStopAgent={vi.fn()} />
+      </>
+    );
+
+    expect(elsewhere).toHaveFocus();
+  });
+
+  it('follows the LAST row a person stood on, not the first they pressed', () => {
+    // `focusedRow` is overwritten by whichever Stop takes focus next, so a
+    // person who moved from Ana's row to Kai's and then saw Ana's row go is not
+    // moved at all — the row they are standing on is still there.
+    const { rerender } = render(<LivePeek rows={ROWS} onStopAgent={vi.fn()} />);
+    screen.getByRole('button', { name: 'Stop Ana' }).focus();
+    const kai = screen.getByRole('button', { name: 'Stop Kai' });
+    kai.focus();
+
+    rerender(<LivePeek rows={[ROWS[0], ROWS[2]]} onStopAgent={vi.fn()} />);
+
+    expect(kai).toHaveFocus();
+  });
+
   it('draws no row stop at all on a surface that has none behind it', () => {
     // Absent, never disabled: a control that cannot do anything is a promise the
     // product is not keeping. The session peek is that surface — its composer

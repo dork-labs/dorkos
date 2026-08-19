@@ -484,16 +484,17 @@ const THREE_ROWS: LivePeekRow[] = [
   },
 ];
 
-/** The peek, in the two shapes its Stop takes. */
+/** Who is being stopped in the third demo below, so its own button can say so. */
+const STOPPING_RELEASE_BOT: ReadonlySet<string> = new Set(['release-bot']);
+
+/** The peek, and the two scopes its Stop comes in. */
 export function LivePeekShowcase() {
   return (
     <PlaygroundSection
       title="Live peek"
-      description="What the lane opens into: one row per working agent, with its face, how long it has been going, what it is answering, and a way into its session. Stop is the room-wide halt and the label never claims otherwise. With exactly one agent working, stopping the room and stopping the agent are the same act, so the row offers Stop. With two or more there is no per-row Stop at all — one footer action that says how many it takes down. The drawn box is the popover's; on a phone the same content is a bottom sheet."
+      description="What the lane opens into: one row per working agent, with its face, how long it has been going, what it is answering, and a way into its session. Two stops, and the difference is the scope rather than the verb. A row's Stop ends THAT agent's turn and leaves everybody else working; the footer's ends everything in the room and says how many that is, so it only appears when there is more than one. A surface with no per-agent stop behind it draws no row button at all rather than a dead one. The drawn box is the popover's; on a phone the same content is a bottom sheet."
     >
-      <ShowcaseLabel>
-        One agent — Stop on its row, because it is the only thing running
-      </ShowcaseLabel>
+      <ShowcaseLabel>One agent — its own Stop, and no footer: there is nothing else</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="bg-popover w-88 rounded-lg border shadow-md">
           <Conversation.LivePeek
@@ -501,12 +502,14 @@ export function LivePeekShowcase() {
             onScrollToRow={() => {}}
             onOpenSession={() => {}}
             onStopAll={() => {}}
+            onStopAgent={() => {}}
           />
         </div>
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Three agents — no per-row Stop, and a footer that counts what it will take down
+        Three agents — a Stop per row, each named for its own agent, over a footer that counts what
+        it would take down
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="bg-popover w-88 rounded-lg border shadow-md">
@@ -515,6 +518,24 @@ export function LivePeekShowcase() {
             onScrollToRow={() => {}}
             onOpenSession={() => {}}
             onStopAll={() => {}}
+            onStopAgent={() => {}}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        One stop in flight — only the row it was pressed on says so. The other two are still
+        working, and a person can still stop them.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="bg-popover w-88 rounded-lg border shadow-md">
+          <Conversation.LivePeek
+            rows={THREE_ROWS}
+            onScrollToRow={() => {}}
+            onOpenSession={() => {}}
+            onStopAll={() => {}}
+            onStopAgent={() => {}}
+            stoppingAgents={STOPPING_RELEASE_BOT}
           />
         </div>
       </ShowcaseDemo>
