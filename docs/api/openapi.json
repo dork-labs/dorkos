@@ -18022,7 +18022,7 @@
           "Rooms"
         ],
         "summary": "Ask for this room to be answered first",
-        "description": "One agent is one working directory, so a message addressed to an agent that is mid-turn in another room waits rather than being refused. This asks for THIS room to be the next one that agent answers. It REORDERS and never preempts: the blocking turn is untouched, nothing is interrupted, and the promoted message still waits for the agent to be free — a room that is passed over is next after that. Takes no body. Only a person may call it, exactly as with `halt`. `{ \"promoted\": false }` means there was nothing waiting, which is a normal answer and not an error.",
+        "description": "One agent is one working directory, so a message addressed to an agent that is mid-turn in another room waits rather than being refused. This asks for THIS room to be the next one that agent answers. It REORDERS and never preempts: the blocking turn is untouched, nothing is interrupted, and the promoted message still waits for the agent to be free — a room that is passed over is next after that. Takes no body. Only a person may call it, exactly as with `halt` — a live agent is refused 403 and a caller whose agent token does not verify is refused 401. `{ \"promoted\": false }` means there was nothing waiting, which is a normal answer and not an error.",
         "parameters": [
           {
             "schema": {
@@ -18050,6 +18050,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PromoteHoldResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

@@ -3854,13 +3854,14 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Ask for this room to be answered first',
   description:
-    'One agent is one working directory, so a message addressed to an agent that is mid-turn in another room waits rather than being refused. This asks for THIS room to be the next one that agent answers. It REORDERS and never preempts: the blocking turn is untouched, nothing is interrupted, and the promoted message still waits for the agent to be free — a room that is passed over is next after that. Takes no body. Only a person may call it, exactly as with `halt`. `{ "promoted": false }` means there was nothing waiting, which is a normal answer and not an error.',
+    'One agent is one working directory, so a message addressed to an agent that is mid-turn in another room waits rather than being refused. This asks for THIS room to be the next one that agent answers. It REORDERS and never preempts: the blocking turn is untouched, nothing is interrupted, and the promoted message still waits for the agent to be free — a room that is passed over is next after that. Takes no body. Only a person may call it, exactly as with `halt` — a live agent is refused 403 and a caller whose agent token does not verify is refused 401. `{ "promoted": false }` means there was nothing waiting, which is a normal answer and not an error.',
   request: { params: RoomHoldParams },
   responses: {
     200: {
       description: 'Whether there was a waiting message to move to the front',
       content: { 'application/json': { schema: PromoteHoldResponseSchema } },
     },
+    401: roomAgentUnverified,
     403: {
       description: 'The caller is not a person; agents do not reorder each other',
       content: { 'application/json': { schema: ErrorResponseSchema } },

@@ -4,6 +4,7 @@ covers:
   - 'fix(server): the capability and MCP door refuses a revoked agent token too (DOR-1361)'
   - 'fix(server): a revoked agent cannot get itself recorded as you on a managed MCP server (DOR-1361)'
   - 'docs(server,specs,contributing): the API reference and the record say what a revoked agent token gets (DOR-1361)'
+  - "fix(server): the merged hold-promote route takes the caller seam's new shape (DOR-1361)"
 ---
 
 ### Security

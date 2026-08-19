@@ -271,6 +271,30 @@ describe('an unverifiable agent token on a room route', () => {
     });
   });
 
+  describe('POST /:id/holds/:authorId/promote', () => {
+    it('refuses it, and it never had a gate of its own', async () => {
+      // Landed on main (DOR-1345) AFTER the caller seam was fixed, and inherited
+      // the refusal without asking — which is the property that made
+      // `resolveCaller` the right place rather than one gate per route. It is
+      // pinned here so the inheritance is a fact rather than a claim.
+      const { id, anaAuthorId } = await room();
+
+      const refused = await request(app)
+        .post(`/api/rooms/${id}/holds/${anaAuthorId}/promote`)
+        .set('X-DorkOS-Agent', UNVERIFIABLE);
+
+      expect(refused.status).toBe(401);
+      expect(refused.body.code).toBe(REFUSAL_CODE);
+      expect(refused.body).not.toHaveProperty('promoted');
+
+      // Nothing is waiting, so the person's answer is `false` — a normal answer,
+      // and the negative control that keeps the 401 above about the token.
+      const allowed = await request(app).post(`/api/rooms/${id}/holds/${anaAuthorId}/promote`);
+      expect(allowed.status).toBe(200);
+      expect(allowed.body.promoted).toBe(false);
+    });
+  });
+
   describe('GET /:id/sessions', () => {
     it('refuses it before it looks the room up at all, keeping DOR-1357 true', async () => {
       // DOR-1357 already refused this shape, one route at a time, AFTER checking

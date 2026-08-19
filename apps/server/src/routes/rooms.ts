@@ -772,7 +772,7 @@ router.post('/:id/halt', (req, res) => {
  */
 router.post('/:id/holds/:authorId/promote', (req, res) => {
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     const promoted = getRoomService().promoteHold(req.params.id, req.params.authorId, caller.id);
     res.json({ promoted });
   } catch (err) {
