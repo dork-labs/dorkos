@@ -10,7 +10,7 @@
  * folds the in-progress turn's events into that part list and assembles the
  * trailing assistant `ChatMessage`, mirroring the OLD `StreamEvent` pipeline's
  * `deriveFromParts` / tool-handler logic so the output is byte-for-byte the shape
- * `SessionMessage`/`AssistantMessageContent` already render.
+ * `widgets/session`'s `SessionMessage` / `AssistantMessageContent` already render.
  *
  * It is PURE (no React, no store) so it is trivially unit-testable and can be
  * memoized in the chat hooks.
