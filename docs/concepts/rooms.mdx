@@ -208,6 +208,31 @@ up your message and takes it away the moment the work ends — it can't be faked
 turn it on by wanting to. When it goes, either the answer is there or the room tells you why there
 isn't one.
 
+### When your agent is busy in another conversation
+
+An agent works in one folder at a time, so it can only run one thing at once — even if you talk to
+it in several places. Send it a message while it's working somewhere else and DorkOS **keeps your
+message**. You never have to send it again.
+
+The line above the message box says what will happen while you wait:
+
+**Kai will pick this up when it finishes in #deploys · 40s**
+
+Click it and you get two things: a way to open the conversation that's in the way, and — if your
+agent has messages waiting in more than one place — **Answer here first**, which moves this
+conversation to the front of its queue. It doesn't interrupt anything. The work already running
+finishes first either way.
+
+When that work ends, your message becomes the agent's next turn and the answer lands here, in the
+room where you asked. Because rooms show messages in the order they arrive, a late answer says which
+message it's answering.
+
+**Two things worth knowing.** If your agent is stuck on something for a very long time — an hour by
+default — DorkOS stops promising an answer and says so. Your message isn't lost: the agent reads it
+the next time it does anything in this room. And if the DorkOS server restarts while a message is
+waiting, the same thing happens: nothing is lost, but the room stops owing you an answer of its own,
+so send a nudge if you want one.
+
 It can take a few seconds to catch up. If you open a room in the middle of a long reply, or your
 browser reconnects, the line appears within about ten seconds rather than instantly. And if it is
 missing while you were expecting it, that is worth reading as "DorkOS isn't sure right now" — your

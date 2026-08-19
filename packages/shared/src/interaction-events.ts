@@ -88,9 +88,15 @@ export const InteractionResolvedEventSchema = z
     /** ISO timestamp of the resolution, for the receipt line. */
     resolvedAt: z.string(),
     /**
-     * A label for whoever answered, when the server knows one — the operator's
-     * display name, or a bridged approver's handle. Absent for `expired` and for
-     * an install with no accounts, where "you" is the only possible answer.
+     * A label for whoever answered, when the server knows one — the name this
+     * install knows the person by, taken from their account or from the name
+     * they told DorkOS to call them.
+     *
+     * The one denormalized name on these events, and it has no join to be read
+     * from instead: a session id names the agent, and nothing on the wire names
+     * the person. Absent for `cancelled` and `expired`, where nobody answered
+     * at all, and absent on an install where the person never gave a name — the
+     * receipt then says "Already answered at 2:01", which is still true.
      */
     resolvedBy: z.string().optional(),
   })

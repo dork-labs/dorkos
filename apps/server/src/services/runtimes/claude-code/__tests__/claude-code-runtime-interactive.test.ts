@@ -1016,7 +1016,7 @@ describe('ClaudeCodeRuntime interactive tools', () => {
     async function answerRealApproval(
       toolCallId: string,
       approved: boolean,
-      options?: { alwaysAllow?: boolean; denyReason?: string }
+      options?: { alwaysAllow?: boolean; denyReason?: string; answeredBy?: string }
     ) {
       // A session (and projector) of its own per case: the projector registry
       // is module-global, so a shared id would let one case read the previous
@@ -1073,7 +1073,7 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       expect(manager.approveTool(sessionId, toolCallId, approved, options)).toBe(true);
 
       const resolved = projector.replayFrom(0).find((e) => e.type === 'interaction_resolved') as
-        | { resolution?: string; reasonGiven?: boolean }
+        | { resolution?: string; reasonGiven?: boolean; resolvedBy?: string }
         | undefined;
       disposeProjector(sessionId);
       return { resolved, permission: (await permission) as { behavior: string; message?: string } };
@@ -1119,6 +1119,22 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       const { resolved } = await answerRealApproval('tool-r5', true, { alwaysAllow: true });
       expect(resolved).toMatchObject({ resolution: 'approved' });
       expect(resolved?.reasonGiven).toBeUndefined();
+    });
+
+    // DOR-1355. The name of whoever answered rides the same argument for the
+    // same reason `reasonGiven` does: only the caller that took the answer knows
+    // it, and every other window's receipt says "Already answered by Ada at
+    // 2:01" on the strength of this and nothing else. Against the real runtime,
+    // so a pass-through that was dropped shows up here rather than in a stub.
+    it('records the name the caller gave for whoever answered', async () => {
+      const { resolved } = await answerRealApproval('tool-r6', true, { answeredBy: 'Ada' });
+      expect(resolved).toMatchObject({ resolution: 'approved', resolvedBy: 'Ada' });
+    });
+
+    it('names nobody when the caller named nobody', async () => {
+      const { resolved } = await answerRealApproval('tool-r7', true);
+      expect(resolved).toMatchObject({ resolution: 'approved' });
+      expect(resolved?.resolvedBy).toBeUndefined();
     });
 
     it('non-AskUserQuestion tools in bypassPermissions mode are allowed immediately', async () => {

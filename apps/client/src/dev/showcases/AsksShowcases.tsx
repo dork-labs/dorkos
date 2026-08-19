@@ -278,7 +278,7 @@ function AskEndings() {
       },
     ],
     [
-      'Somebody else answered, and the server named them',
+      'Answered in another window, and the server named who',
       {
         outcome: 'answered',
         resolvedAt: '2026-08-18T14:01:00.000Z',
@@ -287,7 +287,7 @@ function AskEndings() {
       },
     ],
     [
-      'Somebody else answered, and nobody can say who',
+      'Answered in another window, and nobody can say who',
       { outcome: 'answered', resolvedAt: '2026-08-18T14:01:00.000Z', byThisWindow: false },
     ],
     [

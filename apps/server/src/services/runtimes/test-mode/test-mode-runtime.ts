@@ -11,6 +11,7 @@ import type {
   SseResponse,
   ManagedMcpServerResolver,
   McpAppServerConnection,
+  InteractionAnswerOptions,
   ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
@@ -419,6 +420,7 @@ export class TestModeRuntime implements AgentRuntime {
       // Only claimable when the words were actually carried to the scenario,
       // which is precisely when a reason was given.
       ...(opts?.denyReason !== undefined ? { reasonGiven: true } : {}),
+      ...(opts?.answeredBy ? { answeredBy: opts.answeredBy } : {}),
     });
     return true;
   }
@@ -429,9 +431,16 @@ export class TestModeRuntime implements AgentRuntime {
    * Delivers an AskUserQuestion answer to the parked scenario and resolves the
    * projector's interaction. See {@link approveTool} for why both halves matter.
    */
-  submitAnswers(id: string, toolCallId: string, answers: Record<string, string>): boolean {
+  submitAnswers(
+    id: string,
+    toolCallId: string,
+    answers: Record<string, string>,
+    opts?: InteractionAnswerOptions
+  ): boolean {
     if (!interactionGate.resolveAnswers(id, toolCallId, answers)) return false;
-    peekProjector(id)?.resolveInteraction(toolCallId, 'answered');
+    peekProjector(id)?.resolveInteraction(toolCallId, 'answered', {
+      ...(opts?.answeredBy ? { answeredBy: opts.answeredBy } : {}),
+    });
     return true;
   }
 
@@ -446,7 +455,8 @@ export class TestModeRuntime implements AgentRuntime {
     id: string,
     interactionId: string,
     action: 'accept' | 'decline' | 'cancel',
-    content?: Record<string, unknown>
+    content?: Record<string, unknown>,
+    opts?: InteractionAnswerOptions
   ): boolean {
     const resolved = interactionGate.resolveElicitation(id, interactionId, {
       action,
@@ -455,7 +465,8 @@ export class TestModeRuntime implements AgentRuntime {
     if (!resolved) return false;
     peekProjector(id)?.resolveInteraction(
       interactionId,
-      action === 'accept' ? 'answered' : 'denied'
+      action === 'accept' ? 'answered' : 'denied',
+      { ...(opts?.answeredBy ? { answeredBy: opts.answeredBy } : {}) }
     );
     return true;
   }

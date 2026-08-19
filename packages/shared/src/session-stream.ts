@@ -545,6 +545,19 @@ export const SessionEventSchema = z
        * answered, and it explained nothing.
        */
       reasonGiven: z.boolean().optional(),
+      /**
+       * A label for the person who answered, when the caller that took the
+       * answer knew one. The fleet-wide receipt every OTHER window draws is
+       * built from this — "Already answered by Dorian at 2:01" rather than
+       * "Already answered at 2:01".
+       *
+       * Set only by the caller that actually took the answer, never inferred:
+       * nothing downstream can tell a person from the clock, so an answer with
+       * nobody to name carries nothing here and the receipt stays unnamed.
+       * Always absent on `expired` and `cancelled`, where the whole point is
+       * that no person acted.
+       */
+      resolvedBy: z.string().optional(),
     }),
     // An agent-initiated DESTRUCTIVE capability call held in-session, awaiting
     // the operator's decision (DOR-939 / spec approvals-resume-inline). The

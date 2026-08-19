@@ -1,5 +1,5 @@
 import { getEventListeners } from 'node:events';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
   SessionStateProjector,
   CAPABILITY_HOLD_PAUSE_GRACE_MS,
@@ -1895,6 +1895,16 @@ describe('onProjectorInteractionChange (the Ask, fleet-wide)', () => {
     unsubs.push(onProjectorInteractionChange(fn));
   };
 
+  // A frozen clock, like the blocks above: `remainingMs` on the announced DTO is
+  // the budget minus the time since `startedAt`, so on real timers any
+  // millisecond a busy runner spends between raising the prompt and reading
+  // the change turns `TIMEOUT_MS` into `TIMEOUT_MS - 1` and reddens the exact
+  // match below (seen on CI for #1116, green alone every time).
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(3_000_000);
+  });
+
   afterEach(() => {
     while (unsubs.length) unsubs.pop()?.();
     vi.useRealTimers();
@@ -1970,6 +1980,33 @@ describe('onProjectorInteractionChange (the Ask, fleet-wide)', () => {
       { type: 'resolved', sessionId: 'ask-2', interactionId: 'tc-2', outcome: 'answered' },
     ]);
     disposeProjector('ask-2');
+  });
+
+  it('carries the name of whoever answered, when the caller gave one', () => {
+    // DOR-1355. The projector never resolves a name of its own — only the
+    // caller that took the answer knows it — so this is a pass-through, and the
+    // case above proves the field stays absent when nobody was named.
+    const projector = getOrCreateProjector('ask-named', '/work/alpha');
+    projector.ingest(approvalRequired('tc-named'));
+    const changes: InteractionChange[] = [];
+    listen((change) => changes.push(change));
+
+    projector.resolveInteraction('tc-named', 'approved', { answeredBy: 'Ada' });
+
+    expect(changes).toEqual([
+      {
+        type: 'resolved',
+        sessionId: 'ask-named',
+        interactionId: 'tc-named',
+        outcome: 'answered',
+        resolvedBy: 'Ada',
+      },
+    ]);
+    // And it is on the durable stream too, so a replay says the same thing.
+    expect(
+      projector.replayFrom(0).find((event) => event.type === 'interaction_resolved')
+    ).toMatchObject({ id: 'tc-named', resolvedBy: 'Ada' });
+    disposeProjector('ask-named');
   });
 
   it('says EXPIRED when the clock answered, and CANCELLED when nobody was ever asked', () => {
