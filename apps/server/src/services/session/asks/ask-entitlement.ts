@@ -16,7 +16,12 @@
  *
  * @module services/session/asks/ask-entitlement
  */
-import { mayApprove } from '@dorkos/relay';
+// The narrow subpath, deliberately NOT the `@dorkos/relay` barrel. That barrel
+// pulls in `RelayCore` and its whole subscription registry, which would drag
+// the relay bus into the module graph of every surface that asks this question
+// — including three route suites that partially mock `ulidx` and broke on it.
+// `approver-allowlist.ts` imports nothing at all, so its own export is free.
+import { mayApprove } from '@dorkos/relay/approver-allowlist';
 
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
 

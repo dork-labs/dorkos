@@ -9,6 +9,10 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./approver-allowlist": {
+      "types": "./src/adapters/approver-allowlist.ts",
+      "default": "./dist/adapters/approver-allowlist.js"
+    },
     "./testing": {
       "types": "./src/testing/index.ts",
       "default": "./dist/testing/index.js"
