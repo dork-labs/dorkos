@@ -449,6 +449,7 @@ export const features: Feature[] = [
     benefits: [
       'See the exact file and action before you decide',
       'Approve one action, or approve everything for a session',
+      'Answer from anywhere in DorkOS: the header, the sidebar, or the home screen',
       'If you step away, the agent keeps going after a short wait',
       'Get the same prompt in Slack or Telegram',
     ],
@@ -778,7 +779,7 @@ export const features: Feature[] = [
       'See which platform connects to which agent, and watch messages pulse along the wire as they arrive',
       'Agents group by project, so a big team stays readable',
       'Click any agent to see its details and settings',
-      'Slows down or turns off animation if your device asks for it',
+      'One switch in Team → Access lets every agent on this machine reach every other',
     ],
     moment:
       "You open the map and see your whole team at once. Who's talking to whom, grouped by project, with the quiet ones easy to spot.",
