@@ -1,6 +1,6 @@
 /**
- * Where "Message" would go — and, most of the time, that it goes nowhere yet
- * (spec `profile-unification` §1.2, non-goal §8).
+ * Where the profile's "Open session" button would go — and, most of the time,
+ * that it goes nowhere yet (spec `profile-unification` §1.2, non-goal §8).
  *
  * @module features/profile/lib/profile-message
  */
@@ -15,7 +15,8 @@ export interface ProfileMessageTarget {
 }
 
 /**
- * Resolve where the Message button would send you, or `null` when nowhere.
+ * Resolve where the "Open session" button would send you, or `null` when
+ * nowhere.
  *
  * **`null` is the common answer and the honest one.** There is no route that
  * DMs a person on this machine, and none that sends a message back out over

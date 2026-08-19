@@ -220,15 +220,17 @@ test.describe('Rooms in the command palette @smoke', () => {
     const palette = await openPalette(page);
     await palette.input.fill(`@${agent.name}`);
 
-    // Two rows, two different acts: message the conversation, or open the agent.
-    const message = palette.options.filter({ hasText: `Message ${agent.name}` }).first();
-    await expect(message).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-    await expect(message).toHaveAccessibleName(`Message ${agent.name}`);
+    // Two rows, two different acts: open the conversation, or open the agent.
+    const conversation = palette.options
+      .filter({ hasText: `Open conversation with ${agent.name}` })
+      .first();
+    await expect(conversation).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    await expect(conversation).toHaveAccessibleName(`Open conversation with ${agent.name}`);
     // Exactly two: the conversation and the agent. Not "more than one" — the
     // number is knowable, and a third row would be a duplicate nobody wants.
     await expect(palette.options.filter({ hasText: agent.name })).toHaveCount(2);
 
-    await message.click();
+    await conversation.click();
     await expect(page).toHaveURL(new RegExp(`/channels\\?.*id=${dm.id}`), {
       timeout: SERVER_ROUND_TRIP_MS,
     });

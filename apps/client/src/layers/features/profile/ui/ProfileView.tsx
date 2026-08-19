@@ -101,13 +101,13 @@ export function ProfileView({
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw
-  // one. Nowhere to send a message (every person today — §8), your own profile,
-  // and the profile docked in the very session you would be messaging into.
+  // one. Nowhere to open a session (every person today — §8), your own profile,
+  // and the profile docked in the very session the button would open.
   const target = messageTarget(member);
-  const canMessage =
+  const canOpenSession =
     target !== null && relationship !== 'self' && !inOwnSession && navigate !== null;
 
-  function message() {
+  function openSession() {
     if (!target || !navigate) return;
     // The roster's door into a conversation (DOR-1156): it names a directory,
     // not a session, so the AGENT is the only honest thing to record — and it
@@ -185,7 +185,7 @@ export function ProfileView({
                 onOpenOwner={
                   owner ? () => onPush({ kind: 'profile', memberId: owner.id }) : undefined
                 }
-                onMessage={canMessage ? message : undefined}
+                onOpenSession={canOpenSession ? openSession : undefined}
                 // Only an agent you manage: DorkBot's face is part of DorkOS
                 // (its About row says so), and nobody else's identity is yours
                 // to restyle. Its VOICE is a different question and is yours —

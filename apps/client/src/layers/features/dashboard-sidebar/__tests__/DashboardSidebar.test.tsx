@@ -1295,6 +1295,25 @@ describe('Heads up — the zone that justifies the redesign', () => {
       await waitFor(() => expect(zoneRows(nowZone())).toEqual(['3 working']));
     });
 
+    // DOR-1105: the row looked pressable and did nothing. Home is where the
+    // presence of who is working already lives, so that is where it goes — the
+    // same destination "+ N more" has. Delete the `working` arm from
+    // `SidebarChrome`'s rollup case and this goes red.
+    it('goes to the home surface when pressed, rather than nowhere', async () => {
+      seedSessions([
+        { session: recentSession('w1'), lifecycle: 'streaming' },
+        { session: recentSession('w2'), lifecycle: 'streaming' },
+      ]);
+      await renderSidebarWithNow();
+      await waitFor(() => expect(zoneRows(nowZone())).toEqual(['2 working']));
+
+      mockNavigate.mockClear();
+      const rollup = nowZone()!.querySelector('[data-sidebar-row]')!;
+      fireEvent.click(rollup);
+
+      expect(mockNavigate).toHaveBeenCalledWith({ to: '/' });
+    });
+
     it('says nothing when the ONE working session is the one you are looking at', async () => {
       seedSessions([{ session: recentSession('w1'), lifecycle: 'streaming' }]);
       mockLocation = { pathname: '/session', search: { session: 'w1', dir: '/projects/alpha' } };

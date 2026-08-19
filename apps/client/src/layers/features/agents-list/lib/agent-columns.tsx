@@ -18,7 +18,7 @@
  * @module features/agents-list/lib/agent-columns
  */
 import type { ColumnDef } from '@tanstack/react-table';
-import { MessageSquare, Star, UserRound } from 'lucide-react';
+import { ArrowUpRight, Star, UserRound } from 'lucide-react';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
 import type { AttentionState } from '@/layers/entities/session';
 import { Badge, Button } from '@/layers/shared/ui';
@@ -240,9 +240,16 @@ export function createAgentColumns(
                 e.stopPropagation();
                 callbacks.onStartSession(agent.projectPath ?? '');
               }}
-              aria-label={`Chat with ${getAgentDisplayName(agent)}`}
+              // It opens a SESSION — the same door the agent's row in the
+              // sidebar is. "Chat with" read as "send this agent a message",
+              // which is a different act on a different surface, so the label
+              // now names what happens (spec `sidebar-simplification` §D2).
+              // `ArrowUpRight` is this app's "takes you there" mark
+              // (`SessionConnectorsGroup`); `MessageSquare` is its DM/session
+              // glyph and read as the message this button does not send.
+              aria-label={`Open session with ${getAgentDisplayName(agent)}`}
             >
-              <MessageSquare className="size-4" />
+              <ArrowUpRight className="size-4" />
             </Button>
             <Button
               variant="ghost"
