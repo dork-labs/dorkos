@@ -811,8 +811,8 @@ only waits in the file left on Playwright's bare 5s default. The row's membershi
 a round trip distinct from the roster one the composer assertion above it already waits for, so both now
 carry the file's own `SERVER_ROUND_TRIP_MS` ceiling like every other server wait in it.
 
-**Not reproduced.** Four runs — the reported sequence at one worker and at three, and the full serial
-`chromium` project (229 tests, the CI shape) — were all green on `room-row-menu`. The brief's literal
+**Not reproduced.** Four runs before the fix — the reported sequence at one worker and at three, and the full serial
+`chromium` project (229 tests, the CI shape) — were all green on `room-row-menu`; the manifest's +8 runs are those four plus the reported sequence three more times and `tests/rooms` alone, all after the fix. The brief's literal
 command was also malformed (`--project` takes a list, so the paths were parsed as project names), and
 `tests/streams/**` is `testIgnore`d from `chromium` entirely: it runs in `chromium-streams` against the
 test-mode leg, a different server and a different database, so it cannot have shared state with the rooms

@@ -183,7 +183,11 @@ function applyReadCursor(queryClient: QueryClient, event: ReadCursorMoved): void
   // where they are still not a member, and the sidebar row goes on saying "Left"
   // in a channel they are back in.
   //
-  // Only ever paid for by an interrupted fetch. With nothing in flight there is
+  // Only ever paid for by an interrupted fetch, and in the OPEN room that is
+  // routine rather than rare: `useMarkRoomRead` invalidates the list on success
+  // and the server echoes the `read_cursor` back to this client, so the
+  // mutation's own list GET is usually the fetch this cancels. About one extra
+  // list GET per cursor advance, self-limiting. With nothing in flight there is
   // nothing to make good, and turning every cursor into a refetch is exactly
   // what patching the badge in place exists to avoid. The patch is written
   // first, so the badge is already right while the replacement GET runs — and
