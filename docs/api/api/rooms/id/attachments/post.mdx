@@ -11,7 +11,8 @@ _openapi:
     headings: []
     contents:
       - content: "Multipart, field name `files`. Only a person who is a member of the
-          room may upload; an agent is refused BEFORE its bytes are read (403),
+          room may upload; an agent is refused BEFORE its bytes are read — 403
+          when its token resolves to a live agent, 401 when it does not —
           because an agent shares files by writing them into its own working
           directory. Limits come from the `uploads` section of user config — the
           same limits chat uses. Every field on the stored record is

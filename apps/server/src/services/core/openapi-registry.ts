@@ -3352,6 +3352,19 @@ const roomNotFound = {
   description: 'No such room, or the caller may not see it (an agent sees only its own rooms)',
   content: { 'application/json': { schema: ErrorResponseSchema } },
 };
+/**
+ * 401 shared by every path that resolves a room caller.
+ *
+ * Listed on the paths whose description makes a claim about agent callers, so
+ * that claim stays true — the refusal itself is cross-cutting and comes from
+ * `resolveCaller` before any route body runs (DOR-1361).
+ */
+const roomAgentUnverified = {
+  description:
+    'The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, ' +
+    'expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
 const roomValidationError = {
   description: 'Validation error',
   content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -3367,7 +3380,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'List rooms visible to the caller',
   description:
-    'A human sees every room; an agent presenting `X-DorkOS-Agent` sees only rooms it belongs to. `unreadCount` is null for a room the caller is not a member of, and `participants` is null for anything that is not a direct message.',
+    'A human sees every room; an agent presenting a valid `X-DorkOS-Agent` sees only rooms it belongs to, and one presenting a token this machine cannot verify is refused with 401 rather than shown the operator’s list. `unreadCount` is null for a room the caller is not a member of, and `participants` is null for anything that is not a direct message.',
   request: { query: ListRoomsQuerySchema },
   responses: {
     200: {
@@ -3375,6 +3388,7 @@ registry.registerPath({
       content: { 'application/json': { schema: RoomListResponseSchema } },
     },
     400: roomValidationError,
+    401: roomAgentUnverified,
   },
 });
 
@@ -3446,13 +3460,14 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Where each of a room's agents does its work",
   description:
-    'One `authorId → sessionId` pair per agent that has answered in this room, and nothing else — no session content, no working directory, no status. The narrowness is the point: this exists so a cockpit can turn "Meeting Notes is working on it" into a link you can follow, and a route that answered more would be a second way to read a session, reached through a room. A room the caller cannot see answers 404, exactly as reading the room does. **Only a person may ask** — any caller presenting `X-DorkOS-Agent` is refused with 403 `PEOPLE_ONLY`, whether or not that token resolves to a live agent, because an agent enumerating its room-mates\' sessions is arbitration this domain has declined and a revoked agent is still an agent.',
+    'One `authorId → sessionId` pair per agent that has answered in this room, and nothing else — no session content, no working directory, no status. The narrowness is the point: this exists so a cockpit can turn "Meeting Notes is working on it" into a link you can follow, and a route that answered more would be a second way to read a session, reached through a room. A room the caller cannot see answers 404, exactly as reading the room does. **Only a person may ask** — an agent enumerating its room-mates\' sessions is arbitration this domain has declined, so a caller whose `X-DorkOS-Agent` token resolves to a live agent is refused 403 `PEOPLE_ONLY`, and one whose token does not resolve is refused 401 before the room is looked up at all. A revoked agent is still an agent.',
   request: { params: RoomIdParams },
   responses: {
     200: {
       description: 'The bindings, one per agent that has answered here',
       content: { 'application/json': { schema: RoomSessionsResponseSchema } },
     },
+    401: roomAgentUnverified,
     403: {
       description: 'The caller presented an agent identity, which may not ask this (`PEOPLE_ONLY`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -3537,7 +3552,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Post to a room (trigger-only)',
   description:
-    'Returns 202 with the entry identity only. The entry itself reaches every reader — including the poster — over `GET /api/rooms/{id}/events`, mirroring `POST /api/sessions/{id}/messages` (ADR-0264). The author is resolved server-side from the caller identity and is never read from the body. Every agent member the post addresses is then triggered, bounded by the cascade guard; their replies arrive on the same stream.',
+    'Returns 202 with the entry identity only. The entry itself reaches every reader — including the poster — over `GET /api/rooms/{id}/events`, mirroring `POST /api/sessions/{id}/messages` (ADR-0264). The author is resolved server-side from the caller identity and is never read from the body — an agent presenting a valid `X-DorkOS-Agent` posts as itself, and one presenting a token this machine cannot verify is refused with 401 rather than posting as the operator. Every agent member the post addresses is then triggered, bounded by the cascade guard; their replies arrive on the same stream.',
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: PostToRoomRequestSchema } } },
@@ -3548,6 +3563,7 @@ registry.registerPath({
       content: { 'application/json': { schema: PostToRoomResponseSchema } },
     },
     400: roomValidationError,
+    401: roomAgentUnverified,
     404: roomNotFound,
     409: {
       description: 'The room is archived',
@@ -3562,7 +3578,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Upload files into a room, before the message that carries them',
   description:
-    "Multipart, field name `files`. Only a person who is a member of the room may upload; an agent is refused BEFORE its bytes are read (403), because an agent shares files by writing them into its own working directory. Limits come from the `uploads` section of user config — the same limits chat uses. Every field on the stored record is server-derived: the filename is sanitized, the size is what landed, and `preview` is set ONLY when the MAGIC BYTES are PNG, JPEG or WebP — the filename and the `Content-Type` the client claims are not evidence, since both are written by whoever is uploading. That single field decides whether `GET` will ever serve the file inline, which is what keeps an uploaded `.html` or SVG from rendering as a document on the cockpit's own origin. The response carries one `RoomAttachment` per file, in request order; a following `POST /api/rooms/{id}/entries` names them by id in `attachmentIds`, and the server binds them to the entry inside the entry's own transaction, so the message and its files land together or not at all.",
+    "Multipart, field name `files`. Only a person who is a member of the room may upload; an agent is refused BEFORE its bytes are read — 403 when its token resolves to a live agent, 401 when it does not — because an agent shares files by writing them into its own working directory. Limits come from the `uploads` section of user config — the same limits chat uses. Every field on the stored record is server-derived: the filename is sanitized, the size is what landed, and `preview` is set ONLY when the MAGIC BYTES are PNG, JPEG or WebP — the filename and the `Content-Type` the client claims are not evidence, since both are written by whoever is uploading. That single field decides whether `GET` will ever serve the file inline, which is what keeps an uploaded `.html` or SVG from rendering as a document on the cockpit's own origin. The response carries one `RoomAttachment` per file, in request order; a following `POST /api/rooms/{id}/entries` names them by id in `attachmentIds`, and the server binds them to the entry inside the entry's own transaction, so the message and its files land together or not at all.",
   request: {
     params: RoomIdParams,
     body: {
@@ -3581,6 +3597,7 @@ registry.registerPath({
       content: { 'application/json': { schema: RoomAttachmentUploadResponseSchema } },
     },
     400: roomValidationError,
+    401: roomAgentUnverified,
     403: {
       description: 'Only a person can attach a file; an agent caller is refused',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -3632,7 +3649,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'React to an entry, or take a reaction back',
   description:
-    'Keyed on `(you, this entry, this emoji)`, which holds at most one reaction however many times anyone asks. With no `on` in the body this is a TOGGLE — the same emoji again removes it — which is what a click means and is exactly not idempotent, hence POST rather than PUT. **Do not retry a bare toggle**: a timeout does not say whether the write landed, and re-sending the flip undoes it. Send `{"emoji": "👍", "on": true}` or `on: false` instead, which names the state you want and is safe to repeat; `on: true` on a reaction you already have does not restamp it, so the pill keeps its place in a row ordered by first appearance. Returns 202 with which way it went and your recomputed quick row — but **treat the event stream as authoritative, not this body**: the entry\'s new reaction set reaches every reader, this one included, over `GET /api/rooms/{id}/events` as a `reaction` frame carrying the WHOLE current set, while this body says only what YOUR call did and somebody else may have reacted in between. **A reaction is costless by design**: it takes no turn, writes no entry, sends no notice, starts no cascade and does not move the room in the activity order. When it lands on an agent-authored entry the agent is told on its next turn, in its room context, as an acknowledgment it never replies to. **Only people may react** — a caller the server resolves as an agent (one presenting `X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`.',
+    'Keyed on `(you, this entry, this emoji)`, which holds at most one reaction however many times anyone asks. With no `on` in the body this is a TOGGLE — the same emoji again removes it — which is what a click means and is exactly not idempotent, hence POST rather than PUT. **Do not retry a bare toggle**: a timeout does not say whether the write landed, and re-sending the flip undoes it. Send `{"emoji": "👍", "on": true}` or `on: false` instead, which names the state you want and is safe to repeat; `on: true` on a reaction you already have does not restamp it, so the pill keeps its place in a row ordered by first appearance. Returns 202 with which way it went and your recomputed quick row — but **treat the event stream as authoritative, not this body**: the entry\'s new reaction set reaches every reader, this one included, over `GET /api/rooms/{id}/events` as a `reaction` frame carrying the WHOLE current set, while this body says only what YOUR call did and somebody else may have reacted in between. **A reaction is costless by design**: it takes no turn, writes no entry, sends no notice, starts no cascade and does not move the room in the activity order. When it lands on an agent-authored entry the agent is told on its next turn, in its room context, as an acknowledgment it never replies to. **An agent may react too** — ADR 260814-195522 reverses etiquette E16b, so what bounds a machine here is an hourly ceiling per room (`REACTION_RATE_LIMITED`, 429) rather than what kind of author it is, and the pill it leaves carries the AGENT\'s id. A caller presenting an `X-DorkOS-Agent` token this machine cannot verify is refused with 401: a revoked agent has no allowance to spend.',
   request: {
     params: RoomEntryParams,
     body: { content: { 'application/json': { schema: ToggleReactionRequestSchema } } },
@@ -3646,16 +3663,19 @@ registry.registerPath({
       description: 'Validation error, including anything that is not a single emoji',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
-    403: {
-      description: 'The caller is not a person; agents do not send reactions',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    401: roomAgentUnverified,
     404: {
       description: 'No such room, not a member of it, or no such entry in it',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     409: {
       description: 'The room is archived',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    429: {
+      description:
+        'This agent has spent its hourly reaction allowance in this room ' +
+        '(`REACTION_RATE_LIMITED`). People are never counted',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -3734,7 +3754,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Set or clear an author's handle",
   description:
-    'A handle is what somebody types after an `@` to reach exactly one author: lowercase, 2–32 characters of `[a-z0-9._-]`, starting and ending alphanumeric, and unique across this install (case-folded). The server normalizes what it is given, so a client that skipped its own check cannot store something the grammar forbids, and an empty string clears the handle. **Human-initiated only** — an agent presenting `X-DorkOS-Agent` is refused. There is no MCP tool and no capability for this: an agent able to rename itself in a loop would grow the tombstone table a row at a time forever, and removing the mechanism beats throttling it. A released handle stays reserved to the author who gave it up; they may take it back, and nobody else may take it at all.',
+    'A handle is what somebody types after an `@` to reach exactly one author: lowercase, 2–32 characters of `[a-z0-9._-]`, starting and ending alphanumeric, and unique across this install (case-folded). The server normalizes what it is given, so a client that skipped its own check cannot store something the grammar forbids, and an empty string clears the handle. **Human-initiated only** — any caller presenting `X-DorkOS-Agent` is refused, 403 when the token resolves to a live agent and 401 when it does not. There is no MCP tool and no capability for this: an agent able to rename itself in a loop would grow the tombstone table a row at a time forever, and removing the mechanism beats throttling it. A released handle stays reserved to the author who gave it up; they may take it back, and nobody else may take it at all.',
   request: {
     params: z.object({ authorId: z.string().min(1) }),
     body: { content: { 'application/json': { schema: SetAuthorHandleRequestSchema } } },
@@ -3748,6 +3768,7 @@ registry.registerPath({
       description: 'The handle fails the grammar (`INVALID_HANDLE`), or the body is malformed',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    401: roomAgentUnverified,
     403: {
       description: 'An agent caller tried to change a handle (`OPERATOR_ONLY`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -3801,13 +3822,14 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Stop every turn running in a room',
   description:
-    'A control action, not a message. It interrupts every in-flight agent turn in the room, drops the working indicators, and writes one `halted` notice everyone in the room can see. Stopping is NEVER inferred from message text: a person who sends the word "stop" as a message has sent a message, and the agents answer it like any other. Takes no body. Only a person may call it — an agent stopping its room-mates would be arbitration this domain has declined. Allowed on an archived room, unlike every other write here: archiving stops a room gaining messages, and a turn that was already running is still running.',
+    'A control action, not a message. It interrupts every in-flight agent turn in the room, drops the working indicators, and writes one `halted` notice everyone in the room can see. Stopping is NEVER inferred from message text: a person who sends the word "stop" as a message has sent a message, and the agents answer it like any other. Takes no body. Only a person may call it — an agent stopping its room-mates would be arbitration this domain has declined — so a live agent is refused 403 and a caller whose agent token does not verify is refused 401. Allowed on an archived room, unlike every other write here: archiving stops a room gaining messages, and a turn that was already running is still running.',
   request: { params: RoomIdParams },
   responses: {
     200: {
       description: 'How many in-flight turns were interrupted; 0 when the room was idle',
       content: { 'application/json': { schema: HaltRoomResponseSchema } },
     },
+    401: roomAgentUnverified,
     403: {
       description: 'The caller is not a person; agents do not stop each other',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -3873,8 +3895,9 @@ registry.registerPath({
     'user, the kind, the thread and the new position; a write that changes nothing broadcasts ' +
     "nothing. The cursor written is always the caller's own — there is no way to name a user in " +
     "this request, and therefore no way to read or move anybody else's read state. **Only people " +
-    'have read state here** — a caller the server resolves as an agent (one presenting ' +
-    '`X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`, because what an agent has been shown is ' +
+    'have read state here** — a caller the server resolves as an agent (one presenting a valid ' +
+    '`X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`, and one whose token does not verify is ' +
+    'refused with 401, because what an agent has been shown is ' +
     'the room-MEMBERSHIP cursor and not this one — advanced by the ambient participation loop as ' +
     'entries are delivered to it, and reachable through no route at all. **A `room` cursor is ' +
     'written through the rooms domain**, so the caller must be able to see the room (404 ' +
@@ -3897,6 +3920,7 @@ registry.registerPath({
         'Unknown `kind`, empty `id`, missing body, or a `lastReadSeq` that is not a non-negative integer',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    401: roomAgentUnverified,
     403: {
       description: 'The caller resolved to an agent, which has no read state here (`PEOPLE_ONLY`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -3922,7 +3946,7 @@ registry.registerPath({
     'the state every thread starts in rather than a missing resource; `null` is also distinct ' +
     'from a stored `0`, which is a thread read up to its own beginning. As with the write, the ' +
     "cursor is always the caller's own — there is no way to name a user — and an agent caller is " +
-    'refused with 403 `PEOPLE_ONLY`.',
+    'refused with 403 `PEOPLE_ONLY`, or with 401 when its token does not verify.',
   request: { params: ReadCursorParamsSchema },
   responses: {
     200: {
@@ -3933,6 +3957,7 @@ registry.registerPath({
       description: 'Unknown `kind` or empty `id`',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    401: roomAgentUnverified,
     403: {
       description: 'The caller resolved to an agent, which has no read state here (`PEOPLE_ONLY`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -4032,7 +4057,8 @@ registry.registerPath({
     '`authors.display_name`: on an install with login off that column is refreshed back to the ' +
     'literal "You" on the next request, and on an install with an account writing it would ' +
     'relabel every message the person has ever posted rather than label them going forward. ' +
-    'Only a person may call this; an agent presenting an identity token is refused (403).',
+    'Only a person may call this; an agent presenting a valid identity token is refused (403), and ' +
+    'one whose token this machine cannot verify is refused (401).',
   request: {
     body: { content: { 'application/json': { schema: ProfileUpdateRequestSchema } } },
   },
@@ -4045,6 +4071,7 @@ registry.registerPath({
       description: 'The name is empty or longer than 80 characters',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    401: roomAgentUnverified,
     403: {
       description: 'The caller is an agent — a person’s name is theirs to set',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -4064,7 +4091,8 @@ registry.registerPath({
     '`Content-Type` the client claims are not evidence, since both are written by whoever is ' +
     'uploading. SVG is therefore refused too, on purpose: it is a script vector, and a profile ' +
     'photo has no reason to be one. Nothing is re-encoded or resized. Only a person may call ' +
-    'this; an agent presenting an identity token is refused (403). The URL that comes back is ' +
+    'this; an agent presenting a valid identity token is refused (403), and one whose token this ' +
+    'machine cannot verify is refused (401). The URL that comes back is ' +
     'written to BOTH the roster (`authors.image_url`) and the account record (`user.image`), so ' +
     'the two cannot disagree — and it is opaque: server-relative today, absolute the day a ' +
     'remote store backs it.',
@@ -4088,6 +4116,7 @@ registry.registerPath({
       description: 'No file was attached, or the upload could not be read',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    401: roomAgentUnverified,
     403: {
       description: 'The caller is an agent — a profile photo is the operator’s to set',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -4113,6 +4142,7 @@ registry.registerPath({
     'already gone succeeds, because the caller wanted it gone either way.',
   responses: {
     204: { description: 'Gone' },
+    401: roomAgentUnverified,
     403: {
       description: 'The caller is an agent',
       content: { 'application/json': { schema: ErrorResponseSchema } },
