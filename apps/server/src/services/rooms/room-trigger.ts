@@ -2518,7 +2518,10 @@ export class RoomTriggerDispatcher {
     logger.info('[rooms] an agent was stopped in a room', {
       roomId: room.id,
       authorId,
-      stopped: claim !== undefined,
+      // What THIS press did, which is what a person reading two lines for one
+      // turn needs to tell them apart.
+      stopped: claim !== undefined && !alreadyStopping,
+      alreadyStopping,
     });
 
     // Dropped before the notice only to KNOW what to say; nothing here can
