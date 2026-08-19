@@ -39,6 +39,9 @@ import {
   requireOperatorCookieUnderLogin,
   type OperatorCookieRefusal,
 } from '../lib/caller-authority.js';
+import { getUserById, readOwnerAccount, type RequestUser } from '../services/core/auth/index.js';
+import { resolveAnswererName } from '../services/identity/operator-profile.js';
+import { configManager } from '../services/core/config-manager.js';
 import type { RoomBindingsPort } from '../services/session/index.js';
 import {
   aggregateSessionList,
@@ -124,6 +127,51 @@ function requirePersonToAnswer(req: Request, res: Response): OperatorCookieRefus
   }
   const notAPerson = requireOperatorCookieUnderLogin(res, 'whether a tool runs');
   return notAPerson ? { ...notAPerson, error: ANSWERING_NEEDS_COCKPIT } : undefined;
+}
+
+/**
+ * What to call whoever is answering, so the receipt in every OTHER window can
+ * name them instead of saying only "Already answered at 2:01".
+ *
+ * Runs only after {@link requirePersonToAnswer} has already decided the caller
+ * is a person, which is what makes the answer honest: this resolves a NAME, not
+ * an identity, and would be a claim about who acted if anything else could get
+ * this far.
+ *
+ * The name is read here rather than sent by the client for the same reason a
+ * room's author is (`routes/room-caller.ts`): a caller that could name itself
+ * could sign somebody else's decision. Under login-on that is the signed-in
+ * account; with login off it is whoever owns this install, and on an install
+ * with no accounts at all it is the name the person told DorkOS to call them.
+ * When none of those exists there is nothing honest to print, and the receipt
+ * falls back to the unnamed sentence.
+ *
+ * **This install has exactly one person in it** (ADR 260727-184933 D6), so the
+ * name is that person's however they reached the cockpit. It becomes a real
+ * lookup the day DorkOS has more than one, which is the same day the Ask needs
+ * a per-caller entitlement filter.
+ *
+ * @param res - The response carrying `sessionGate`'s resolved user.
+ * @returns The name to put on the receipt, or `undefined` when none is known or
+ *   the lookup failed.
+ */
+function answeredBy(res: Response): string | undefined {
+  const user = res.locals.user as RequestUser | undefined;
+  try {
+    return resolveAnswererName({
+      account: () => (user ? getUserById(user.userId) : readOwnerAccount()),
+      configDisplayName: () => configManager.get('profile')?.displayName ?? null,
+    });
+  } catch (err) {
+    // Two disk reads for a cosmetic label sit inside the path that decides
+    // whether a tool runs. A locked database or an unreadable config must cost
+    // the receipt its name, never the person their answer, so the throw is
+    // swallowed here rather than 500ing an approve.
+    logger.warn('[POST /answer] could not resolve who is answering; the receipt goes unnamed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
 }
 
 // GET /api/sessions - List sessions aggregated across all registered runtimes
@@ -872,7 +920,11 @@ router.post('/:id/approve', async (req, res) => {
   }
   const { toolCallId, alwaysAllow } = parsed.data;
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const approved = runtime.approveTool(sessionId, toolCallId, true, { alwaysAllow });
+  const answeredByName = answeredBy(res);
+  const approved = runtime.approveTool(sessionId, toolCallId, true, {
+    alwaysAllow,
+    ...(answeredByName ? { answeredBy: answeredByName } : {}),
+  });
   if (!approved) {
     if (runtime.hasSession(sessionId)) {
       return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
@@ -902,7 +954,11 @@ router.post('/:id/deny', async (req, res) => {
   // A blank field is not a reason. Normalising here keeps every runtime and the
   // receipt copy from having to re-decide what an empty string means.
   const denyReason = reason?.trim() ? reason.trim() : undefined;
-  const denied = runtime.approveTool(sessionId, toolCallId, false, { denyReason });
+  const answeredByName = answeredBy(res);
+  const denied = runtime.approveTool(sessionId, toolCallId, false, {
+    denyReason,
+    ...(answeredByName ? { answeredBy: answeredByName } : {}),
+  });
   if (!denied) {
     if (runtime.hasSession(sessionId)) {
       return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
@@ -925,9 +981,12 @@ router.post('/:id/batch-approve', async (req, res) => {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  const answeredByName = answeredBy(res);
   const results = parsed.data.toolCallIds.map((id) => ({
     toolCallId: id,
-    ok: runtime.approveTool(sessionId, id, true),
+    ok: runtime.approveTool(sessionId, id, true, {
+      ...(answeredByName ? { answeredBy: answeredByName } : {}),
+    }),
   }));
   res.json({ results });
 });
@@ -950,9 +1009,12 @@ router.post('/:id/batch-deny', async (req, res) => {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  const answeredByName = answeredBy(res);
   const results = parsed.data.toolCallIds.map((id) => ({
     toolCallId: id,
-    ok: runtime.approveTool(sessionId, id, false),
+    ok: runtime.approveTool(sessionId, id, false, {
+      ...(answeredByName ? { answeredBy: answeredByName } : {}),
+    }),
   }));
   res.json({ results });
 });
@@ -973,7 +1035,10 @@ router.post('/:id/submit-answers', async (req, res) => {
   }
   const { toolCallId, answers } = parsed.data;
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const ok = runtime.submitAnswers(sessionId, toolCallId, answers);
+  const answeredByName = answeredBy(res);
+  const ok = runtime.submitAnswers(sessionId, toolCallId, answers, {
+    ...(answeredByName ? { answeredBy: answeredByName } : {}),
+  });
   if (!ok) {
     if (runtime.hasSession(sessionId)) {
       return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
@@ -1028,7 +1093,10 @@ router.post('/:id/submit-elicitation', async (req, res) => {
   }
   const { interactionId, action, content } = parsed.data;
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const ok = runtime.submitElicitation(sessionId, interactionId, action, content);
+  const answeredByName = answeredBy(res);
+  const ok = runtime.submitElicitation(sessionId, interactionId, action, content, {
+    ...(answeredByName ? { answeredBy: answeredByName } : {}),
+  });
   if (!ok) {
     if (runtime.hasSession(sessionId)) {
       return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');

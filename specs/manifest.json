@@ -38,7 +38,7 @@
       "slug": "room-hold-when-busy",
       "title": "A room holds a message for a busy agent instead of asking you to resend",
       "created": "2026-08-18",
-      "status": "specified",
+      "status": "implemented",
       "project": "Unified Conversation Surfaces"
     },
     {

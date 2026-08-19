@@ -464,11 +464,13 @@ export class OpenCodeRuntime implements AgentRuntime {
     sessionId: string,
     toolCallId: string,
     approved: boolean,
-    _options?: ToolDecisionOptions
+    options?: ToolDecisionOptions
   ): boolean {
     const pending = this.approvals.take(sessionId, toolCallId);
     if (!pending) return false;
-    peekProjector(sessionId)?.resolveInteraction(toolCallId, approved ? 'approved' : 'denied');
+    peekProjector(sessionId)?.resolveInteraction(toolCallId, approved ? 'approved' : 'denied', {
+      ...(options?.answeredBy ? { answeredBy: options.answeredBy } : {}),
+    });
     void respondPermission(this.provider, pending, toolCallId, approved ? 'once' : 'reject').catch(
       (err: unknown) => logger.warn('[OpenCodeRuntime] permission respond failed', logError(err))
     );

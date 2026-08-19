@@ -163,25 +163,35 @@ describe('a room says when a turn has stopped', () => {
       service.updateMembership(second.id, human, ana, 'mention-only');
     });
 
-    it('refuses a second turn in the same checkout, and says where it is', async () => {
+    it('starts no second turn, refuses nothing, and runs it when the first ends', async () => {
       // One agent is one working directory. The `(room, agent)` claim key bounds
       // one transcript and cannot see across rooms, so an agent in three rooms
       // ran three turns in one tree — three processes editing the same files.
+      // The ceiling still holds; what changed is what the second room is told.
+      // It used to be refused with a line asking the person to send the message
+      // again — work the machine could do, over a message the room had already
+      // committed to its log.
       service.post(room.id, { authorId: human, text: '@ana check the build' });
       await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn in the first room');
 
       service.post(second.id, { authorId: human, text: '@ana and the styles?' });
-      await settleUntil(() => notices(second.id).length > 0, 'the second room to say something');
+      // Long enough for a refusal to have been written if one were coming: the
+      // room's own dispatch runs on a macrotask, and this outlives several.
+      for (let tick = 0; tick < 5; tick += 1) await new Promise((r) => setTimeout(r, 0));
 
-      // No second turn started, whatever the second room asked.
+      // No second turn started, and nothing was said about it either.
       expect(runner.turns).toHaveLength(1);
-      expect(notices(second.id)).toHaveLength(1);
-      expect(notices(second.id)[0].body.notice).toBe('agent_busy');
-      expect(notices(second.id)[0].body.text).toBe(
-        "Ana is working in another conversation right now, so it didn't pick this up. Send it again in a few minutes."
-      );
-      // Never which conversation: the reader of this room may not be in that one.
-      expect(notices(second.id)[0].body.text).not.toContain('Backend');
+      expect(notices(second.id)).toEqual([]);
+
+      // The first turn ends, and the waiting message becomes a turn IN THE ROOM
+      // THAT ASKED — not in the room that happened to be busy.
+      runner.release(ana);
+      await settleUntil(() => runner.turns.length === 2, 'the waiting question to become a turn');
+      expect(runner.turns[1].roomId).toBe(second.id);
+      expect(runner.turns[1].prompt).toBe('@ana and the styles?');
+      runner.release(ana);
+      await service.triggersIdle();
+      expect(notices(second.id)).toEqual([]);
     });
 
     it('says nothing for a second message in the room it is working in, and answers it next', async () => {

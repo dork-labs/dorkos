@@ -416,6 +416,10 @@ export interface RoomHarness {
  *   still becomes exactly one turn. What zero removes is the WAIT, so a suite
  *   that is not about the window does not spend half a second per message
  *   proving a timer works. A test that IS about the window pins a real one.
+ * @param opts.holdCeilingMs - How long a message waits on an agent busy in
+ *   ANOTHER room before this room gives up on it and writes the one
+ *   `held-too-long` line. Defaults to the shipped hour, so a test that is not
+ *   about the bound never trips it; a test that IS about it pins a short one.
  * @param opts.maxAttachmentsPerEntry - How many files one message may carry.
  *   A literal for the same reason the ceilings above are: a test that read the
  *   same config the code reads could only prove the two agree.
@@ -433,6 +437,7 @@ export function createRoomHarness(opts: {
   maxAutomaticTurnsTotalPerHour?: number;
   engagedWindow?: EngagedWindow;
   collect?: CollectWindow;
+  holdCeilingMs?: number;
   maxAttachmentsPerEntry?: number;
   ownerUserId?: string;
   budgetNow?: () => number;
@@ -446,6 +451,7 @@ export function createRoomHarness(opts: {
   const global = opts.maxAutomaticTurnsTotalPerHour ?? 100_000;
   const engagedWindow = opts.engagedWindow ?? { minutes: 10, posts: 5 };
   const collect = opts.collect ?? { debounceMs: 0, maxEntries: 20 };
+  const holdCeilingMs = opts.holdCeilingMs ?? 60 * 60_000;
   const maxAttachmentsPerEntry = opts.maxAttachmentsPerEntry ?? 10;
   // Mutable so `setOwner` can drive the transition, and read per check the way
   // the live wiring reads it — an install becomes owned partway through its life.
@@ -493,6 +499,7 @@ export function createRoomHarness(opts: {
     maxAgentDepth: () => maxAgentDepth,
     engagedWindow: () => engagedWindow,
     collect: () => collect,
+    holdCeilingMs: () => holdCeilingMs,
     maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
     readCursors,

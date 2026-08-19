@@ -21,15 +21,34 @@ import { MessageAuthorAvatar } from './message/MessageAuthorAvatar';
 /** How often a peek row re-reads the clock. Its own leaf, as in the lane. */
 const PEEK_TICK_MS = 1_000;
 
-/** What one working agent looks like in the peek. */
+/**
+ * What each row's middle says, as a total map.
+ *
+ * `held` reads "waiting to start" and never "working": the number beside it is
+ * how long the person has been waiting, and a row that said "working" would put
+ * a turn behind a message that has not begun one.
+ */
+const ROW_STATE_WORDS: Record<PresenceCopyState | 'held', string> = {
+  working: 'working',
+  working_late: 'still working',
+  held: 'waiting to start',
+};
+
+/** What one agent looks like in the peek — working here, or waiting to start. */
 export interface LivePeekRow {
   /** The agent's author id in this conversation — the row's key. */
   authorId: string;
   /** Its face and name, resolved by the host from its own roster. */
   author: MessageAuthor;
-  /** Whether the conversation is still waiting for it, or has stopped. */
-  state: PresenceCopyState;
-  /** ISO 8601 — when its oldest live claim started. */
+  /**
+   * Where this row is: working, working late, or `'held'` — waiting to start,
+   * because the agent is mid-turn in a conversation that shares its checkout.
+   *
+   * A held row is not something this conversation can stop, and the Stop counts
+   * below leave it out for exactly that reason.
+   */
+  state: PresenceCopyState | 'held';
+  /** ISO 8601 — when its oldest live claim, or its wait, started. */
   since: string;
   /**
    * What it is answering — the words already on screen, and the DOM id of the
@@ -49,16 +68,36 @@ export interface LivePeekRow {
    * anything is a promise the product is not keeping.
    */
   sessionId: string | null;
+  /**
+   * Held rows only: the conversation in the way.
+   *
+   * `title` is `null` when this reader cannot see that room, and the row then
+   * offers no way in — a link to a room you are not in is a door that opens onto
+   * the same refusal as a room that does not exist.
+   */
+  behind?: { roomId: string; title: string | null } | null;
+  /**
+   * Held rows only: whether this agent is holding a message in at least one
+   * OTHER conversation, which is the only condition under which asking for this
+   * one first changes anything.
+   */
+  othersWaiting?: boolean;
 }
 
 /** What the peek needs to draw itself. */
 export interface LivePeekProps {
-  /** One row per working agent, oldest claim first. */
+  /** One row per agent, working rows first and then what is waiting. */
   rows: readonly LivePeekRow[];
   /** Take the reader to a row by its DOM id, and leave them standing on it. */
   onScrollToRow?: (rowId: string) => void;
   /** Open the session an agent's work runs in. */
   onOpenSession?: (sessionId: string) => void;
+  /** Take the reader to the conversation a held row is waiting behind. */
+  onOpenRoom?: (roomId: string) => void;
+  /** Ask for this conversation to be answered first. Reorders; never interrupts. */
+  onAnswerFirst?: (authorId: string) => void;
+  /** The authors this reader has already asked for first, so the button can settle. */
+  promoted?: ReadonlySet<string>;
   /**
    * Stop everything running here.
    *
@@ -91,7 +130,10 @@ export interface LivePeekProps {
  *
  * Every row gets a Stop, whatever state it is in — a person should not have to
  * know which internal state a row is in to know what its button does — and the
- * footer earns its place only when there IS something else for it to stop.
+ * footer earns its place only when there IS something else for it to stop. On a
+ * `held` row it means what it says: this conversation stops waiting for that
+ * agent. It does NOT touch the turn in the other room, which stays one click
+ * away behind `Open where it's working`.
  *
  * **Pressing a row's Stop removes that row**, because the agent stops working
  * and the peek draws working agents, so this also owns the focus that leaves
@@ -103,14 +145,25 @@ export function LivePeek({
   rows,
   onScrollToRow,
   onOpenSession,
+  onOpenRoom,
+  onAnswerFirst,
+  promoted,
   onStopAll,
   stopping = false,
   onStopAgent,
   stoppingAgents,
 }: LivePeekProps) {
+  // Every row can be stopped, held ones included. That amends
+  // `specs/room-hold-when-busy` §5.3, which counted WORKING rows only — written
+  // when a row's Stop was secretly the room-wide halt, so pressing it on a held
+  // row would have stopped other agents' live turns. With `haltAgent` that
+  // objection is gone: stopping a held agent drops the collection this room was
+  // waiting on and nothing else, and the room writes the `unstarted` line.
   const perRowStop = onStopAgent !== undefined;
   // The footer is the "and everything else" action, so it earns its place only
-  // when there IS something else.
+  // when there IS something else. It counts every row, held ones included, and
+  // that stays honest because the room-wide halt really does drop held
+  // collections along with the live claims.
   const footerStop = rows.length > 1 && onStopAll !== undefined;
   const stopButtons = useRef(new Map<string, HTMLButtonElement>());
   const focusedRow = useRef<string | null>(null);
@@ -150,9 +203,7 @@ export function LivePeek({
                 <span aria-hidden="true" className="text-muted-foreground/50">
                   ·
                 </span>
-                <span className="text-muted-foreground shrink-0">
-                  {row.state === 'working_late' ? 'still working' : 'working'}
-                </span>
+                <span className="text-muted-foreground shrink-0">{ROW_STATE_WORDS[row.state]}</span>
                 <span aria-hidden="true" className="text-muted-foreground/50">
                   ·
                 </span>
@@ -172,7 +223,7 @@ export function LivePeek({
 
               <div className="mt-0.5 flex items-center gap-2">
                 {/* Absent, never disabled, when nothing is bound. */}
-                {row.sessionId !== null && onOpenSession !== undefined && (
+                {row.state !== 'held' && row.sessionId !== null && onOpenSession !== undefined && (
                   <Button
                     type="button"
                     variant="outline"
@@ -185,6 +236,49 @@ export function LivePeek({
                     <ArrowRight aria-hidden="true" className="size-3" />
                   </Button>
                 )}
+                {/* Only when the room resolves. There is deliberately no "stop
+                    what it's doing over there": stopping is a control action
+                    with a room-wide notice behind it, and it belongs in the room
+                    where the person can see what they would be stopping — which
+                    this button is how you reach. */}
+                {row.state === 'held' &&
+                  row.behind != null &&
+                  row.behind.title !== null &&
+                  onOpenRoom !== undefined && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      data-testid="live-peek-open-room"
+                      onClick={() => onOpenRoom(row.behind!.roomId)}
+                      className="h-7 gap-1 px-2 text-xs"
+                    >
+                      Open where it&rsquo;s working
+                      <ArrowRight aria-hidden="true" className="size-3" />
+                    </Button>
+                  )}
+                {/* Only when it would change something. With nothing else
+                    waiting, this conversation is already next and the button
+                    would be a control that does nothing. */}
+                {row.state === 'held' &&
+                  row.othersWaiting === true &&
+                  onAnswerFirst !== undefined &&
+                  (promoted?.has(row.authorId) === true ? (
+                    <span data-testid="live-peek-next-up" className="text-muted-foreground text-xs">
+                      Next up here
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      data-testid="live-peek-answer-first"
+                      onClick={() => onAnswerFirst(row.authorId)}
+                      className="h-7 px-2 text-xs"
+                    >
+                      Answer here first
+                    </Button>
+                  ))}
                 {perRowStop && (
                   <Button
                     type="button"

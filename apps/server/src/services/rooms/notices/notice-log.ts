@@ -46,6 +46,7 @@ import {
   buildHaltedNotice,
   buildTurnFailedNotice,
   buildWaitingNotice,
+  BUSY_CONTEXTS,
   type AgentHaltOutcome,
   type BusyContext,
   type WaitingKind,
@@ -319,7 +320,7 @@ export class RoomNoticeLog {
     context: SilenceContext = {}
   ): void {
     const busyWith = context.busyWith ?? 'unknown';
-    const key = silenceKey(room.id, agent.authorId, reason);
+    const key = silenceKey(room.id, agent.authorId, dampReason(reason, busyWith));
     const asked = this.directlyAsked(room, entry, agent.authorId, context.namedDirectly === true);
     const damped = reason !== 'failed' && !asked && this.noticedSilence.has(key);
     // Every refusal, damped ones included. A room that went forty-one minutes
@@ -674,7 +675,16 @@ export class RoomNoticeLog {
    */
   recovered(roomId: string, authorId: string): void {
     for (const reason of SILENCE_REASONS) {
-      this.noticedSilence.delete(silenceKey(roomId, authorId, reason));
+      if (reason !== 'busy') {
+        this.noticedSilence.delete(silenceKey(roomId, authorId, reason));
+        continue;
+      }
+      // `busy` damps per CONTEXT, so recovery has to clear per context too —
+      // see {@link dampReason}. Enumerated rather than pattern-matched, so a new
+      // context cannot be left armed past its own recovery.
+      for (const busyWith of BUSY_CONTEXTS) {
+        this.noticedSilence.delete(silenceKey(roomId, authorId, dampReason(reason, busyWith)));
+      }
     }
   }
 
@@ -774,8 +784,31 @@ function agentNoticeKey(roomId: string, authorId: string): string {
  * why that agent did not answer. One memory per reason, so a busy line and a
  * failure line each get their own "once".
  */
-function silenceKey(roomId: string, authorId: string, reason: RoomTurnUnanswered): string {
+function silenceKey(roomId: string, authorId: string, reason: string): string {
   return [roomId, authorId, reason].join(NOTICE_KEY_SEPARATOR);
+}
+
+/**
+ * What a silence damps AGAINST — the reason, and for `busy` the context too.
+ *
+ * **`busy` alone is not one state, and treating it as one hid a line.** Two very
+ * different things reach it: a stranger holding the agent's own session
+ * (`unknown`), and this room giving up on a message that had been waiting on the
+ * agent for the best part of an hour (`held-too-long`). Under one key an
+ * un-recovered `unknown` swallowed the expiry line — and for an UNDIRECTED
+ * message (an engaged seat, no `@mention`, not a DM) nothing re-armed it, so the
+ * lane promised an answer, cleared, and the room said nothing at all. That is
+ * the invisible refusal `.claude/rules/room-conduct.md` forbids.
+ *
+ * Splitting the key keeps the anti-spray property inside each context — a second
+ * expiry before the agent answers again is still one line — while stopping one
+ * state from speaking for the other.
+ *
+ * @param reason - Why the turn produced nothing.
+ * @param busyWith - What the room knows it was doing. Read only for `busy`.
+ */
+function dampReason(reason: RoomTurnUnanswered, busyWith: BusyContext): string {
+  return reason === 'busy' ? `${reason}:${busyWith}` : reason;
 }
 
 /**

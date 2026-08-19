@@ -137,8 +137,13 @@ describe('a room says why an agent did not answer', () => {
       // Ana's session, most often the person typing into her directly — so it
       // says what it knows and does not invent what she is doing instead.
       expect(notices()[0].body.text).toBe(
-        "Ana was busy and didn't pick this up. Send it again in a moment."
+        "Ana was busy in its own session, so it didn't answer here. It will read your message the next time it picks up work in this room."
       );
+      // **Past tense, and no resend.** The message is a committed room entry
+      // sitting behind Ana's read cursor, so the next turn she takes here reads
+      // it whatever triggers that turn — asking the person to type it a second
+      // time was asking them to do work the machine already did.
+      expect(notices()[0].body.text).not.toContain('again');
       expect(postsBy(ana)).toHaveLength(0);
     });
 
@@ -276,22 +281,26 @@ describe('a room says why an agent did not answer', () => {
 
     it('says it once when a cascade keeps re-triggering the same busy agent, and logs both', async () => {
       // The other half, and the reason the damping key exists at all. Bo and Cy
-      // both answer the person by handing the question to Ana, who is mid-turn
-      // — so two agent-authored entries refuse against the same busy agent,
-      // inside one exchange nobody typed. That is exactly the traffic E17 is
+      // each answer the person by handing the question to Ana, whose own session
+      // is held by another writer — so two agent-authored entries refuse against
+      // the same busy agent, in traffic nobody typed. That is exactly what E17 is
       // about, and it gets one line.
       //
-      // **Ana is busy in ANOTHER room, and since RP8 that is the only busy that
-      // still refuses.** An agent mid-turn in THIS room is not refused any more;
-      // the message is held and becomes its next turn (room-participation spec
-      // §10.4), so there is no line to damp. One agent is one working directory,
-      // though, and a turn running in a room this reader cannot see is a turn
-      // nothing here will finish — that refusal stands, and it is the one this
-      // damping key is now about.
+      // **Ana's OWN SESSION is what is busy here, and that is now the only busy
+      // that refuses.** Neither room ceiling refuses any more: a message for an
+      // agent mid-turn in this room is held (RP8), and since
+      // `room-hold-when-busy` a message for one mid-turn in ANOTHER room is held
+      // too. What cannot be held is a session a stranger is holding — usually
+      // the person typing into that agent directly — because nothing publishes an
+      // event when a foreign session lock releases, so there is no seam to hang a
+      // resume on (DOR-1242). That refusal stands, and it is the one this damping
+      // key is now about.
       //
       // Everyone is `mention-only` so that who runs is a property of the
       // message rather than of an engagement window, and so that Bo's and Cy's
-      // replies cannot trigger each other into a different notice entirely.
+      // replies cannot trigger each other into a different notice entirely. The
+      // two rounds are separated by a settle rather than sent in one breath,
+      // because a burst is one turn since RP8 and this test needs two refusals.
       //
       // The log half is the incident's other lesson. Forty-one minutes of a room
       // going quiet left three lines in the whole server log, and the decisions
@@ -305,43 +314,26 @@ describe('a room says why an agent did not answer', () => {
       // it beside the ones they saw makes it invisible a second time.
       const reported = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
       const warned = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-      let landAna: (reply: { text: string; waitedMs: number }) => void = () => undefined;
-      const late = new Promise<{ text: string; waitedMs: number }>((resolve) => {
-        landAna = resolve;
-      });
       open(
         outcomeRunner((request) =>
-          request.authorId === ana ? { text: null, late } : { text: 'over to @ana' }
+          request.authorId === ana ? { text: null, unanswered: 'busy' } : { text: 'over to @ana' }
         ),
         ['/agents/ana', '/agents/bo', '/agents/cy']
       );
       for (const agent of [ana, bo, cy]) {
         service.updateMembership(room.id, human, agent, 'mention-only');
       }
-      // The other room, which only Ana is in. Nothing here reads its log; it
-      // exists to give Ana a turn that this room cannot finish.
-      const elsewhere = service.createRoom(
-        { kind: 'channel', title: 'Frontend', members: [], agentPaths: ['/agents/ana'] },
-        human
-      );
-      service.updateMembership(elsewhere.id, human, ana, 'mention-only');
 
-      // Ana is asked THERE, and outruns the wait — so she holds a claim in a
-      // room the readers of this one cannot see.
-      service.post(elsewhere.id, { authorId: human, text: '@ana can you check the deploy?' });
-      await settleUntil(
-        () => runner.turns.some((turn) => turn.roomId === elsewhere.id),
-        'Ana mid-turn in the other room'
-      );
-      // One message, two agents, and each of their answers names Ana.
-      service.post(room.id, { authorId: human, text: '@bo @cy can either of you chase it?' });
-      await settleUntil(
-        () => postsBy(bo).length === 1 && postsBy(cy).length === 1,
-        'Bo and Cy both answered, each naming Ana'
-      );
+      service.post(room.id, { authorId: human, text: '@bo can you chase it?' });
+      await settleUntil(() => postsBy(bo).length === 1, 'Bo answered, naming Ana');
+      await service.triggersIdle();
+      service.post(room.id, { authorId: human, text: '@cy can you chase it?' });
+      await settleUntil(() => postsBy(cy).length === 1, 'Cy answered, naming Ana');
+      await service.triggersIdle();
 
-      // Two agent-authored triggers, one line. Ana ran once and only once.
-      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
+      // Two agent-authored triggers, one line. Ana ran both times and refused
+      // both times — the refusal is real either way; only the telling is damped.
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(2);
       expect(noticesAbout(ana)).toHaveLength(1);
       expect(noticesAbout(ana)[0].body.notice).toBe('agent_busy');
 
@@ -360,9 +352,6 @@ describe('a room says why an agent did not answer', () => {
       expect(damped[0]).toMatchObject({ reason: 'agent_busy', visibility: 'damped' });
       reported.mockRestore();
       warned.mockRestore();
-
-      landAna({ text: 'green', waitedMs: 12 * 60_000 });
-      await service.triggersIdle();
     });
 
     it('says it again once the agent has answered and gone quiet a second time', async () => {

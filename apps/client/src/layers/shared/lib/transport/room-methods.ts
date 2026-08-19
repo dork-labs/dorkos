@@ -17,6 +17,7 @@ import {
   type AuthorRef,
   type CreateRoomRequest,
   type HaltRoomResponse,
+  type PromoteHoldResponse,
   type ListRoomEntriesQuery,
   type ListRoomsQuery,
   type ListThreadsQuery,
@@ -198,9 +199,23 @@ export function createRoomMethods(baseUrl: string) {
      * a stop that can quietly take the whole room with it.
      */
     haltRoomAgent(id: string, authorId: string): Promise<HaltRoomResponse> {
-      return fetchJSON<HaltRoomResponse>(baseUrl, `/rooms/${id}/halt/${authorId}`, {
-        method: 'POST',
-      });
+      return fetchJSON<HaltRoomResponse>(
+        baseUrl,
+        `/rooms/${id}/halt/${encodeURIComponent(authorId)}`,
+        { method: 'POST' }
+      );
+    },
+
+    /**
+     * Ask for this room to be the next one that agent answers. Reorders; the
+     * turn in the way is untouched.
+     */
+    promoteHold(id: string, authorId: string): Promise<PromoteHoldResponse> {
+      return fetchJSON<PromoteHoldResponse>(
+        baseUrl,
+        `/rooms/${id}/holds/${encodeURIComponent(authorId)}/promote`,
+        { method: 'POST' }
+      );
     },
 
     /**

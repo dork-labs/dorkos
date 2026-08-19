@@ -606,10 +606,15 @@ export type RoomMoment = z.infer<typeof RoomMomentSchema>;
  * is about when that is not the entry's own author (a refused trigger is
  * written by the system but is about the agent that did not reply).
  *
- * `moment` is the third field and the newest: set on a post that marks a
- * milestone (spec D5.1), never on a notice. `subjectAuthorId` does the same job
- * for it as it does for a notice — "tangerines joined your team" is written by
- * the system and is ABOUT tangerines, and that is the identity the feed draws.
+ * `moment` is the third field: set on a post that marks a milestone (spec
+ * D5.1), never on a notice. `subjectAuthorId` does the same job for it as it
+ * does for a notice — "tangerines joined your team" is written by the system
+ * and is ABOUT tangerines, and that is the identity the feed draws.
+ *
+ * `answersEntryId` is the fourth and newest, and it is about ORDER rather than
+ * identity: a room posts in arrival order, so an answer is not always next to
+ * its question. It is set on every agent-authored post a turn produces, because
+ * a reader cannot tell from the outside which answers waited.
  */
 export const RoomEntryBodySchema = z
   .object({
@@ -617,6 +622,12 @@ export const RoomEntryBodySchema = z
     notice: RoomNoticeCodeSchema.optional(),
     subjectAuthorId: z.string().optional(),
     moment: RoomMomentSchema.optional(),
+    answersEntryId: z
+      .string()
+      .optional()
+      .describe(
+        'The entry this post answers, set on every agent-authored post the room writes for a turn. Chat posts in arrival order whatever a message is responding to, and an agent whose message waited behind work in another conversation answers out of order often rather than rarely — so the pointer is what a reader follows back to the question.'
+      ),
   })
   .openapi('RoomEntryBody');
 
@@ -1307,6 +1318,21 @@ export const HaltRoomResponseSchema = z
 
 export type HaltRoomResponse = z.infer<typeof HaltRoomResponseSchema>;
 
+/**
+ * What asking to be answered first did.
+ *
+ * `promoted: false` is a real answer rather than a failure: it says there was
+ * nothing waiting, which is what a button left over from a wait that has already
+ * ended looks like. Nothing was reordered and nothing went wrong.
+ */
+export const PromoteHoldResponseSchema = z
+  .object({
+    promoted: z.boolean(),
+  })
+  .openapi('PromoteHoldResponse');
+
+export type PromoteHoldResponse = z.infer<typeof PromoteHoldResponseSchema>;
+
 /** Which session one agent's work in a room runs in. */
 export const RoomSessionBindingSchema = z
   .object({
@@ -1353,7 +1379,13 @@ export type RoomSnapshot = z.infer<typeof RoomSnapshotSchema>;
 
 /**
  * Where a working indicator is in its life: an agent has taken a turn, has
- * outrun the room's wait, or has finished.
+ * outrun the room's wait, is waiting to start one, or has finished.
+ *
+ * **`held` is the one member that describes work which has NOT started.** This
+ * room's message is waiting behind a turn the same agent is running somewhere
+ * else — one agent is one working directory, so the second turn cannot start
+ * beside the first. It resolves into `working` when the other turn ends, or into
+ * `done` when the wait is given up on.
  *
  * Declared once and reused by `community-adapter.ts`'s presence payload, so the
  * lifecycle a room publishes locally and the one a community carries outward can
@@ -1361,13 +1393,47 @@ export type RoomSnapshot = z.infer<typeof RoomSnapshotSchema>;
  * `entryId` and `since` are required here and optional on the port — and that is
  * capability-honest rather than drift: this room is the producer and always knows
  * both, while a remote backend may be able to say only that somebody is working.
+ *
+ * **Adding a member is additive for a remote producer**, which is what keeps
+ * that reuse honest: a backend that has no notion of holding simply never sends
+ * `held`, and `communityConformance` requires nothing of it.
  */
 export const RoomPresenceStateSchema = z
-  .enum(['working', 'working_late', 'done'])
+  .enum(['working', 'working_late', 'held', 'done'])
   .openapi('RoomPresenceState');
 
 /** Where a working indicator is in its life. See {@link RoomPresenceStateSchema}. */
 export type RoomPresenceState = z.infer<typeof RoomPresenceStateSchema>;
+
+/**
+ * What a `held` indicator is waiting behind.
+ *
+ * **Ids only, and that is the whole disclosure design.** A reader in this room
+ * may not be a member of the room whose turn is in the way, so the wire carries
+ * no title, no topic, no author and no message text — and a room id grants
+ * nothing on its own, because "not a member" answers exactly as "no such room".
+ * The client resolves the id against the rooms it can already see: a reader who
+ * can see that room reads its name, and a reader who cannot reads "another
+ * conversation".
+ */
+export const RoomHeldBehindSchema = z
+  .object({
+    roomId: z
+      .string()
+      .min(1)
+      .describe(
+        'The room whose turn is in the way. An id and nothing else: the reader resolves it against the rooms they can already see, and a reader who cannot see it reads "another conversation".'
+      ),
+    othersWaiting: z
+      .boolean()
+      .describe(
+        'This agent is holding a message in at least one OTHER conversation too. A boolean, never a count or a list — it exists only to decide whether "Answer here first" would do anything.'
+      ),
+  })
+  .openapi('RoomHeldBehind');
+
+/** What a `held` indicator is waiting behind. See {@link RoomHeldBehindSchema}. */
+export type RoomHeldBehind = z.infer<typeof RoomHeldBehindSchema>;
 
 /** A committed log entry arriving live. Carries `seq`, so it replays. */
 export const RoomEntryEventSchema = z
@@ -1405,6 +1471,11 @@ export const RoomSignalEventSchema = z
      * a client that connected after the work began.
      */
     since: z.string().optional(),
+    /**
+     * What a `state: 'held'` indicator is waiting behind. Present on that state
+     * and on no other, because nothing else is waiting on another room.
+     */
+    heldBehind: RoomHeldBehindSchema.optional(),
   })
   .openapi('RoomSignalEvent');
 
@@ -1483,7 +1554,8 @@ export type RoomSignalEvent = z.infer<typeof RoomSignalEventSchema>;
 export type RoomReactionEvent = z.infer<typeof RoomReactionEventSchema>;
 
 /**
- * The three fields a `'progress'` signal carries on the rooms path.
+ * The three required fields a `'progress'` signal carries on the rooms path,
+ * plus the one that rides only a `held` state.
  *
  * Derived from the event rather than declared beside it, so the producer cannot
  * drift from the wire. They are optional on the event — a `'typing'` signal has
@@ -1502,7 +1574,8 @@ export type RoomReactionEvent = z.infer<typeof RoomReactionEventSchema>;
  * the three, so an unkeyable indicator is never rendered and never has to be
  * cleared.
  */
-export type RoomPresencePayload = Required<Pick<RoomSignalEvent, 'state' | 'entryId' | 'since'>>;
+export type RoomPresencePayload = Required<Pick<RoomSignalEvent, 'state' | 'entryId' | 'since'>> &
+  Pick<RoomSignalEvent, 'heldBehind'>;
 
 // === Canonical serialization (reserved for signing) ===
 

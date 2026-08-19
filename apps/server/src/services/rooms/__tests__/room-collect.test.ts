@@ -23,12 +23,13 @@
  * config, for the reason every other ceiling in this suite is: a test that read
  * the value the code reads could only prove the two agree.
  */
-import { describe, it, expect } from 'vitest';
-import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { describe, it, expect, vi } from 'vitest';
+import type { Room, RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest, RoomTurnResult } from '../room-trigger.js';
 import { formatRoomContext } from '../../runtimes/shared/room-context-block.js';
+import { RoomCollector } from '../room-collect.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -856,6 +857,109 @@ describe('a room gathers a burst into one turn', () => {
 
       expect(runner.turns.map((turn) => turn.authorId)).toEqual([bo]);
       expect(postsBy(ana)).toHaveLength(0);
+    });
+  });
+});
+
+/**
+ * The collector on its own, with a clock the test controls.
+ *
+ * Everything above drives the real service, which is right for behaviour and
+ * useless for this one property: whether a re-arm reads the clock once or once
+ * per room is invisible unless the clock can be made to move between two reads.
+ * So this block builds a `RoomCollector` directly and hands it a `Date.now` that
+ * ticks on every call — the machine that reproduces the millisecond straddle
+ * every time instead of one run in many.
+ */
+describe('one agent, several waiting rooms, one clock reading', () => {
+  /** A room with only what the collector reads off one. */
+  function room(id: string): Room {
+    return { id, kind: 'channel', title: id } as unknown as Room;
+  }
+
+  /** An entry with only what the collector carries. */
+  function entry(id: string): RoomEntry {
+    return { id, body: { text: id } } as unknown as RoomEntry;
+  }
+
+  /**
+   * Open a parked collection for one room, as an `elsewhere` hold does.
+   *
+   * @param collector - The collector under test.
+   * @param roomId - The room whose message is waiting.
+   * @param at - The arrival reading, which a parked collection never uses for a
+   *   deadline but does carry.
+   */
+  function park(collector: RoomCollector, roomId: string, at: number): void {
+    collector.collect({
+      room: room(roomId),
+      authorId: 'ana',
+      agentPath: '/agents/ana',
+      displayName: 'Ana',
+      entry: entry(`${roomId}-1`),
+      depth: 0,
+      engaged: null,
+      duringTurnHere: false,
+      park: true,
+      arrivedAt: at,
+    });
+  }
+
+  it('sweeps every waiting room in ONE batch, promoted first, across a clock straddle', async () => {
+    // **Seeded defect: read `Date.now()` per iteration inside `resumeAgent`.**
+    // The two rooms then get deadlines a millisecond apart, land in two
+    // different sweeps, and the promoted-first sort — which only ever runs over
+    // one batch — never sees the promoted room at all. It parks straight back
+    // behind the room it was supposed to overtake, so "Answer here first"
+    // silently does nothing. Red with the per-iteration read; green with the one
+    // shared reading.
+    //
+    // The clock ticks on EVERY read, which is the straddle made certain rather
+    // than waited for. `resumeAgent`'s real caller re-states a held indicator
+    // between iterations, so the loop is not tight enough to rely on luck.
+    const real = Date.now;
+    let tick = real.call(Date);
+    vi.spyOn(Date, 'now').mockImplementation(() => (tick += 1));
+    try {
+      const batches: string[][] = [];
+      const collector = new RoomCollector({
+        window: () => ({ debounceMs: 0, maxEntries: 20 }),
+        run: (batch) => batches.push(batch.map((collection) => collection.room.id)),
+      });
+
+      park(collector, 'first', tick);
+      park(collector, 'second', tick);
+      // The person asks for the LATER room to be answered first.
+      expect(collector.promote('second', 'ana')).toBe(true);
+
+      collector.resumeAgent('/agents/ana');
+      // The sweep is a macrotask, and the timer runs on the REAL clock rather
+      // than the mocked reading, so this waits for it rather than advancing one.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      expect(batches, 'both waiting rooms came back in one sweep, not two').toEqual([
+        ['second', 'first'],
+      ]);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('still hands back a lone waiting room', () => {
+    // The counter-assertion: the shared reading must not change the ordinary
+    // one-room case, which is nearly every case.
+    const batches: string[][] = [];
+    const collector = new RoomCollector({
+      window: () => ({ debounceMs: 0, maxEntries: 20 }),
+      run: (batch) => batches.push(batch.map((collection) => collection.room.id)),
+    });
+    park(collector, 'only', Date.now());
+    collector.resumeAgent('/agents/ana');
+    return new Promise<void>((resolve) => {
+      setTimeout(() => {
+        expect(batches).toEqual([['only']]);
+        resolve();
+      }, 5);
     });
   });
 });

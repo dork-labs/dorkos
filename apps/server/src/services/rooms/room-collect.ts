@@ -20,12 +20,15 @@
  *    lasted, which is the opposite of "collect, do not drop".
  *
  * 2. **A held collection is not a queue, and the difference is the claim.** An
- *    agent already mid-turn HERE keeps its collection parked until that turn's
- *    claim releases; nothing schedules it, nothing orders it against another
- *    agent, and no second turn is ever started beside the first. This domain has
- *    declined a scheduler twice (ADR 260726-170125) and still does: what is
- *    stored is what the agent has not read yet, which is a fact about the room
- *    rather than a plan about the future.
+ *    agent already mid-turn — in this room, or in another one that shares its
+ *    checkout — keeps its collection parked until that turn's claim releases;
+ *    nothing schedules it, nothing orders it against another agent, and no
+ *    second turn is ever started beside the first. This domain has declined a
+ *    scheduler twice (ADR 260726-170125) and still does: what is stored is what
+ *    the agent has not read yet, which is a fact about the room rather than a
+ *    plan about the future. One agent's own waiting rooms ARE ordered against
+ *    each other — oldest first, promotable by the person — and that is ordering
+ *    somebody's own unanswered messages, not arbitration between agents.
  *
  * 3. **A collection is keyed `(room, agent)` and NOT by thread**, so a burst can
  *    mix a thread reply with a channel post. The turn takes the scope of the
@@ -112,6 +115,25 @@ export interface RoomCollection {
   dueAt: number | null;
   /** True while this is waiting for an in-flight turn's claim to release. */
   parked: boolean;
+  /**
+   * A person asked for this room's message to be answered first
+   * ({@link RoomCollector.promote}).
+   *
+   * It ORDERS and never preempts: a promoted collection goes to the front of the
+   * next sweep, and still waits for the agent to be free. Kept on the collection
+   * rather than in a second map so it cannot outlive the batch it is about.
+   */
+  promoted: boolean;
+  /**
+   * When this collection was opened, as a monotonic counter.
+   *
+   * **The sweep's order is this number, not the map's insertion order**, and the
+   * difference is exactly a parked collection: parking re-inserts it, which puts
+   * a batch that has been waiting for ten minutes behind one opened a second
+   * ago. A person means "in the order I asked", so the order has to be recorded
+   * when the asking happened.
+   */
+  openedSeq: number;
 }
 
 /** The live `rooms.collect*` ceilings, read per burst so a change takes effect. */
@@ -131,8 +153,25 @@ export interface CollectInput {
   entry: RoomEntry;
   depth: number;
   engaged: EngagementWindow | null;
-  /** True when this agent already holds a claim in this room. */
-  duringTurn: boolean;
+  /**
+   * True when this agent already holds a claim IN THIS ROOM — what
+   * `RoomContextEntry.arrivedDuringPrevTurn` renders.
+   *
+   * **Not the same question as {@link CollectInput.park}, and they came apart
+   * when the second ceiling started holding too.** An agent working in ANOTHER
+   * room parks this collection and was not working here, so marking its
+   * messages "this arrived while you were working" would be the room telling the
+   * model something that did not happen.
+   */
+  duringTurnHere: boolean;
+  /**
+   * True when this collection must be given no deadline: some claim is in the
+   * way, in this room or in another one.
+   *
+   * A deadline would fire a turn into an agent that is demonstrably busy. The
+   * claim's release is what arms it instead.
+   */
+  park: boolean;
   /**
    * When this message arrived, as ONE clock reading shared by every agent it
    * reached (`Date.now()` scale).
@@ -193,6 +232,9 @@ export class RoomCollector {
    */
   private closing: RoomCollection[] = [];
 
+  /** The next {@link RoomCollection.openedSeq}. Monotonic, per collector. */
+  private opened = 0;
+
   /**
    * @param opts.window - The live collect ceilings, read per burst.
    * @param opts.run - Turn completed collections into turns, one turn apiece.
@@ -221,7 +263,7 @@ export class RoomCollector {
       entry: input.entry,
       depth: input.depth,
       engaged: input.engaged,
-      arrivedDuringTurn: input.duringTurn,
+      arrivedDuringTurn: input.duringTurnHere,
     };
     const open = this.collections.get(key);
     if (open) {
@@ -240,12 +282,15 @@ export class RoomCollector {
       displayName: input.displayName,
       entries: [trigger],
       dueAt: null,
-      parked: input.duringTurn,
+      parked: input.park,
+      promoted: false,
+      openedSeq: (this.opened += 1),
     };
     this.collections.set(key, collection);
     // A collection opened behind a live claim gets no deadline at all: it is
-    // released by {@link RoomCollector.resume}, and a deadline would fire a turn
-    // into an agent that is demonstrably busy.
+    // released by {@link RoomCollector.resume} or {@link
+    // RoomCollector.resumeAgent}, and a deadline would fire a turn into an agent
+    // that is demonstrably busy.
     if (!collection.parked) this.arm(collection, undefined, input.arrivedAt);
     // The cap is checked on CREATION too, not only when a collection grows. At
     // `collectMaxEntries: 1` — the documented "answer every message on its own"
@@ -270,9 +315,16 @@ export class RoomCollector {
    * would never be answered, and the turn it was owed would never settle.
    *
    * Appending is order-safe because a sweep hands back collections in the order
-   * they were opened, so anything parking onto an existing one is newer.
+   * they were opened ({@link RoomCollection.openedSeq}), so anything parking
+   * onto an existing one is newer.
    *
-   * @param collection - The collection whose flush found the agent busy here.
+   * **A merge does NOT carry the incoming collection's promotion over.** The
+   * survivor is the older batch and keeps its own mark: promotion is a person
+   * saying "answer THIS room first", and the batch they said it about is the one
+   * that was already waiting. Copying it across would let a newer batch inherit
+   * a request nobody made about it.
+   *
+   * @param collection - The collection whose flush found the agent busy.
    * @returns `true` when it merged into a collection already waiting — the
    *   caller's cue that one pending turn fewer is now owed.
    */
@@ -313,6 +365,65 @@ export class RoomCollector {
     // `finally`, and taking the next claim from there would do it while the
     // previous turn's frame is still unwinding.
     this.arm(collection, 0);
+  }
+
+  /**
+   * Run whatever this agent was asked in ANY room while it was working.
+   *
+   * {@link RoomCollector.resume}'s cross-room sibling, and the other half of
+   * "a room never asks you to resend": one agent is one working directory, so a
+   * message that arrived for it while it was mid-turn somewhere else was parked
+   * here rather than refused, and this is the moment those messages can run.
+   *
+   * **It arms them all, and the sweep is what serialises them.** Every re-armed
+   * collection shares one deadline, so they come back in one batch ordered by
+   * {@link RoomCollection.openedSeq} — the first to reach the dispatcher takes
+   * the claim and the rest park straight back against it. Picking one here
+   * instead would mean this module deciding which turn runs, which is the
+   * dispatcher's job and the reason this class knows nothing about claims.
+   *
+   * **ONE clock reading for the whole loop, and that is a correctness property**
+   * — the same one {@link CollectInput.arrivedAt} exists for, arrived at from
+   * the other direction. Two `Date.now()` calls a microsecond apart can straddle
+   * a millisecond boundary, and this loop is not tight: its caller re-states a
+   * held indicator between iterations, which scans the claim map. A straddle
+   * would give two of an agent's waiting rooms deadlines 1 ms apart, put them in
+   * two different sweeps, and hand the earlier one back ALONE — so the sweep's
+   * promoted-first sort, which only ever runs over one batch, would never see
+   * the promoted room and "Answer here first" would silently do nothing.
+   *
+   * @param agentPath - The working directory whose claim just released.
+   */
+  resumeAgent(agentPath: string): void {
+    const from = Date.now();
+    for (const collection of this.collections.values()) {
+      if (collection.agentPath !== agentPath || !collection.parked) continue;
+      collection.parked = false;
+      // No gathering wait, for the reason `resume` gives: these messages have
+      // already waited out a whole turn. The shared `from` is what puts every
+      // one of them in the SAME sweep — see above.
+      this.arm(collection, 0, from);
+    }
+  }
+
+  /**
+   * Put one room's collection at the front of the next sweep.
+   *
+   * **It orders and never preempts.** The blocking turn is untouched and no
+   * second turn is started beside it; all this changes is which of one agent's
+   * own waiting rooms is answered first when it next comes free. A room that was
+   * passed over is still next after that, because the rest of the order is FIFO.
+   *
+   * @param roomId - The room asking to be answered first.
+   * @param authorId - The agent it is waiting on.
+   * @returns `false` when there is nothing waiting — a stale button, not an
+   *   error.
+   */
+  promote(roomId: string, authorId: string): boolean {
+    const collection = this.collections.get(agentKey(roomId, authorId));
+    if (collection === undefined) return false;
+    collection.promoted = true;
+    return true;
   }
 
   /**
@@ -357,6 +468,11 @@ export class RoomCollector {
    * turn a macrotask later. Nothing another agent is waiting on is touched,
    * which is what makes "the others keep working" a property of this code rather
    * than of a test.
+   *
+   * Two callers, one shape: the per-agent stop, and the expiry the dispatcher
+   * decides when a hold has waited past the ceiling. This class holds no clock
+   * beyond its gathering window, so "this has waited too long" is a judgement
+   * made where the indicator is published and only carried out here.
    *
    * **It returns a LIST, exactly as `drop` does, because one key can hold two
    * collections.** The cap takes a full collection out of the map and leaves it
@@ -487,7 +603,17 @@ export class RoomCollector {
   }
 
   /**
-   * Hand back every collection whose window closed at or before `at`.
+   * Hand back every collection whose window closed at or before `at`, in the
+   * order the dispatcher should take them.
+   *
+   * **The order is the whole of "in the order I asked".** One claim release can
+   * make several of an agent's rooms due at once, and the dispatcher takes the
+   * first one that reaches it — so this sort is what decides which room gets
+   * answered and which parks straight back. Promotions first (a person asked for
+   * this room by name), then oldest collection first. Sorted rather than left to
+   * the map's insertion order because parking re-inserts a collection, which
+   * would otherwise put a batch that has waited ten minutes behind one opened a
+   * second ago.
    *
    * @param at - The instant this sweep was armed for.
    */
@@ -500,6 +626,7 @@ export class RoomCollector {
       collection.dueAt = null;
       due.push(collection);
     }
+    due.sort((a, b) => Number(b.promoted) - Number(a.promoted) || a.openedSeq - b.openedSeq);
     // Re-armed BEFORE the callback, not after: `run` can park a collection
     // straight back, and re-arming afterwards would find a deadline that parking
     // deliberately cleared.

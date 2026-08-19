@@ -25,16 +25,19 @@ describe('LivePeekShowcase', () => {
   it('draws a Stop on every working row it promises one on', () => {
     render(<LivePeekShowcase />);
 
-    // Three demos offer a per-agent stop — one row, three rows, and three rows
-    // with one stop in flight — so seven row buttons in total. A demo that lost
-    // its `onStopAgent` shows up here as a smaller number, which is the defect
-    // this file exists for.
-    expect(screen.getAllByTestId('live-peek-stop')).toHaveLength(7);
+    // Five demos offer a per-agent stop — one row, three rows, three rows with
+    // one stop in flight, and the two mixed working/waiting pairs — so eleven
+    // row buttons in total. A demo that lost its `onStopAgent` shows up here as
+    // a smaller number, which is the defect this file exists for.
+    expect(screen.getAllByTestId('live-peek-stop')).toHaveLength(11);
     // And each one names its own agent, which is the whole reason a row button
     // is honest with several on screen.
-    expect(screen.getAllByRole('button', { name: 'Stop DorkBot' })).toHaveLength(3);
+    expect(screen.getAllByRole('button', { name: 'Stop DorkBot' })).toHaveLength(5);
     expect(screen.getAllByRole('button', { name: 'Stop Release Bot' })).toHaveLength(2);
     expect(screen.getAllByRole('button', { name: 'Stop Kai' })).toHaveLength(2);
+    // Including the HELD row, which is the amendment `specs/room-per-agent-stop`
+    // §5.2 makes to DOR-1345: a waiting agent can be stopped waiting for.
+    expect(screen.getAllByRole('button', { name: 'Stop Mio Clicker PM' })).toHaveLength(2);
   });
 
   it('shows the in-flight state on one row only, so the demo says what the product does', () => {
@@ -52,22 +55,23 @@ describe('LivePeekShowcase', () => {
   it('offers the room-wide footer only where there is more than one agent', () => {
     render(<LivePeekShowcase />);
 
-    // Two of the four demos draw three rows; the single-agent one and the
-    // session one draw none, because a footer that stops "all 1" is a second
-    // button for the verb the row already has.
-    expect(screen.getAllByTestId('live-peek-stop-all')).toHaveLength(2);
-    for (const footer of screen.getAllByTestId('live-peek-stop-all')) {
-      expect(footer).toHaveTextContent('Stops all 3');
-    }
+    // Four of the six demos draw more than one row; the single-agent one and the
+    // session one draw no footer, because a footer that stops "all 1" is a
+    // second button for the verb the row already has. The count is every row,
+    // held ones included, which the room-wide halt really does stop.
+    const footers = screen.getAllByTestId('live-peek-stop-all');
+    expect(footers).toHaveLength(4);
+    expect(footers.filter((f) => f.textContent?.includes('Stops all 3'))).toHaveLength(2);
+    expect(footers.filter((f) => f.textContent?.includes('Stops all 2'))).toHaveLength(2);
   });
 
   it('draws no row Stop at all on the session demo', () => {
     // Absent, never disabled. The session composer already has a stop.
     render(<LivePeekShowcase />);
 
-    // Four demos, and only three of them offer a row stop — the fourth is the
-    // session's, whose single row contributes no button to the seven above.
-    expect(screen.getAllByTestId('live-peek-row')).toHaveLength(8);
-    expect(screen.getAllByTestId('live-peek-stop')).toHaveLength(7);
+    // Six demos, and only five of them offer a row stop — the sixth is the
+    // session's, whose single row contributes no button to the eleven above.
+    expect(screen.getAllByTestId('live-peek-row')).toHaveLength(12);
+    expect(screen.getAllByTestId('live-peek-stop')).toHaveLength(11);
   });
 });

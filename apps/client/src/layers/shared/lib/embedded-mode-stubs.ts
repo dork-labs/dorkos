@@ -47,6 +47,7 @@ import type {
   AddRoomMemberRequest,
   CreateRoomRequest,
   HaltRoomResponse,
+  PromoteHoldResponse,
   ListRoomEntriesQuery,
   ListRoomsQuery,
   ListThreadsQuery,
@@ -863,6 +864,10 @@ export const roomStubs = {
   },
 
   async haltRoomAgent(_id: string, _authorId: string): Promise<HaltRoomResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async promoteHold(_id: string, _authorId: string): Promise<PromoteHoldResponse> {
     throw new Error('Rooms are not supported in embedded mode');
   },
 

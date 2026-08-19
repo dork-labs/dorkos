@@ -350,6 +350,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // wiring both peek stops to one mutation is the likeliest mistake here, and
     // one shared spy could not see it.
     haltRoomAgent: vi.fn().mockResolvedValue({ stopped: 0 }),
+    promoteHold: vi.fn().mockResolvedValue({ promoted: true }),
     // No bindings by default: a room whose agents have never answered is the
     // shape a test gets unless it is specifically about where the work runs.
     listRoomSessions: vi.fn().mockResolvedValue({ bindings: [] }),
