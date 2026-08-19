@@ -17,6 +17,7 @@
 import { encodeStreamFrame } from '@dorkos/shared/stream-socket';
 import { SSE } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
+import type { CallerPrincipal } from '../../lib/caller-principal.js';
 
 /**
  * One broadcast, pre-rendered for both wire formats.
@@ -76,6 +77,21 @@ export function encodeBroadcast(eventName: string, data: unknown): EncodedBroadc
 }
 
 /**
+ * Decide, per connected client, whether one broadcast is that client's to
+ * receive.
+ *
+ * Omitted at the call site means everyone, which is what every event on this bus
+ * has always meant and what all but one still mean. The one exception is
+ * `interaction_pending`, which carries a prompt's detail — the tool, the command
+ * and the working directory — and so goes only to a connection entitled to it
+ * (ADR 260819-022912).
+ *
+ * @param principal - What the connection registered itself as.
+ * @returns Whether to write the frame to that connection.
+ */
+export type BroadcastAudience = (principal: CallerPrincipal) => boolean;
+
+/**
  * A listener on the in-process half of the global event stream.
  *
  * Deliberately not exported: the one subscriber passes an inline arrow, and an
@@ -94,7 +110,7 @@ type EventFanOutListener = (eventName: string, data: unknown) => void;
  * Manages a set of connected clients and distributes events to all of them.
  */
 class EventFanOut {
-  private clients = new Set<FanOutClient>();
+  private clients = new Set<{ client: FanOutClient; principal: CallerPrincipal }>();
   private listeners = new Set<EventFanOutListener>();
 
   /**
@@ -115,16 +131,23 @@ class EventFanOut {
    * separated by a handshake, and a full fan-out must stay full.
    *
    * @param client - The connected reader.
+   * @param principal - Who is on the other end, for the events that are
+   *   addressed rather than broadcast. **Required, never defaulted**: a default
+   *   would be a silent allow for the next stream somebody adds, which is the
+   *   argument `UpgradeRoute.credential` already makes — the gate gets tested,
+   *   the WIRING of it does not. Both transports read it from the same
+   *   `res.locals`-shaped facts through `readCallerPrincipal`.
    */
-  addClient(client: FanOutClient): () => void {
+  addClient(client: FanOutClient, principal: CallerPrincipal): () => void {
     if (this.clients.size >= SSE.MAX_TOTAL_CLIENTS) {
       logger.warn(`[EventFanOut] Max clients reached (${SSE.MAX_TOTAL_CLIENTS}), rejecting`);
       client.drop();
       return () => {};
     }
-    this.clients.add(client);
+    const entry = { client, principal };
+    this.clients.add(entry);
     return () => {
-      this.clients.delete(client);
+      this.clients.delete(entry);
     };
   }
 
@@ -141,6 +164,11 @@ class EventFanOut {
    * A listener that throws is logged and skipped rather than allowed to break
    * the broadcast: a room write must never fail because something downstream of
    * it did.
+   *
+   * **A listener receives every broadcast, including an addressed one.** The
+   * audience a caller may pass to {@link broadcast} governs the CLIENT loop
+   * only: these consumers are the server itself, not callers, so there is no
+   * principal to ask about and nothing an audience could mean here.
    *
    * **Two contracts a listener owes, both easy to violate by accident:**
    *
@@ -191,9 +219,21 @@ class EventFanOut {
    * cannot await any single client.
    *
    * The frame is encoded ONCE per wire format and the same strings sent to
-   * every client — see {@link EncodedBroadcast}.
+   * every client — see {@link EncodedBroadcast}. That stays true of an
+   * addressed broadcast: the audience decides who a frame is written to, never
+   * how many times it is rendered.
+   *
+   * A client the audience skips is left exactly as it was — not measured for
+   * backpressure, not dropped, not removed from the set. It is simply not this
+   * frame's reader.
+   *
+   * @param eventName - The event name, e.g. `session_status`.
+   * @param data - The payload, serialized once per wire format.
+   * @param audience - Which connections this frame is for. Omitted means every
+   *   one of them, which is what all but one event on this bus mean — see
+   *   {@link BroadcastAudience}.
    */
-  broadcast(eventName: string, data: unknown): void {
+  broadcast(eventName: string, data: unknown, audience?: BroadcastAudience): void {
     for (const listener of this.listeners) {
       try {
         listener(eventName, data);
@@ -205,11 +245,13 @@ class EventFanOut {
       }
     }
     const broadcast = encodeBroadcast(eventName, data);
-    for (const client of this.clients) {
+    for (const entry of this.clients) {
+      const { client } = entry;
       if (client.gone) {
-        this.clients.delete(client);
+        this.clients.delete(entry);
         continue;
       }
+      if (audience && !audience(entry.principal)) continue;
       try {
         client.send(broadcast);
         if (client.bufferedBytes > SSE.MAX_BUFFERED_BYTES) {
@@ -217,10 +259,10 @@ class EventFanOut {
             bufferedBytes: client.bufferedBytes,
           });
           client.drop();
-          this.clients.delete(client);
+          this.clients.delete(entry);
         }
       } catch {
-        this.clients.delete(client);
+        this.clients.delete(entry);
       }
     }
   }

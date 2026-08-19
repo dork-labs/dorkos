@@ -15,9 +15,14 @@
  */
 import type { WebSocket } from 'ws';
 import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
+import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { sendSessionStatusSnapshot } from '../services/session/session-list-broadcaster.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
-import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upgrade-router.js';
+import type {
+  UpgradeAttempt,
+  UpgradeDecision,
+  UpgradeRoute,
+} from '../services/core/streams/upgrade-router.js';
 
 /** Matches `/api/events` — the whole path, no captures. */
 const EVENTS_PATH = /^\/api\/events$/;
@@ -52,7 +57,7 @@ export const globalEventsRoute: UpgradeRoute = {
   // The router runs the credential gate before this is called.
   credential: 'required',
 
-  authorize(): UpgradeDecision {
+  authorize({ headers, locals }: UpgradeAttempt): UpgradeDecision {
     // Refusals go out as a close frame rather than a failed handshake: a
     // browser cannot read the status of a failed one, and "you are signed out"
     // has to be distinguishable from "the server is briefly down".
@@ -72,7 +77,13 @@ export const globalEventsRoute: UpgradeRoute = {
         // fan-out only ever pushes, so nothing here drives a send loop.
         const socket = new DurableStreamSocket(ws);
         const client = fanOutClient(ws);
-        const unsubscribe = eventFanOut.addClient(client);
+        // `StreamUpgradeLocals` is `res.locals`-shaped precisely so this reads
+        // the same principal an HTTP request would, with no second notion of
+        // who a caller is (`stream-upgrade-auth.ts`).
+        const unsubscribe = eventFanOut.addClient(
+          client,
+          readCallerPrincipal({ headers }, { locals })
+        );
         socket.signal.addEventListener('abort', unsubscribe, { once: true });
         // The connect preamble: `connected`, then the fleet's current
         // lifecycles, so a window that opened after a session errored or
