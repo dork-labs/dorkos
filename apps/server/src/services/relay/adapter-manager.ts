@@ -746,11 +746,15 @@ export class AdapterManager {
         {
           kind: 'bridged',
           platform: decision.platform,
+          // An unidentified clicker becomes the empty id, which `mayApprove`
+          // refuses outright — the same answer the adapters give. It is
+          // deliberately not smuggled past the policy as an absent field.
           platformUserId: decision.respondedBy ?? '',
         },
         {
           sessionId: decision.sessionId,
           roomId: binding.roomId,
+          // No bridge means no allowlist to consult, which authorizes nobody.
           approvers: bridge ? toIdList(this.approverAllowlistFor(bridge.adapterId)) : [],
         }
       ) === 'answer'
