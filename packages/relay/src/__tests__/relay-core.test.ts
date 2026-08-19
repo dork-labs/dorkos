@@ -1364,6 +1364,8 @@ describe('reliability pipeline integration', () => {
       expect(mockAdapter.deliver).toHaveBeenCalledWith(
         'relay.agent.test-session',
         expect.objectContaining({ subject: 'relay.agent.test-session' }),
+        // No `onHeld`: this publish names no reply subject, so there is no
+        // person in a chat to hold the message for.
         undefined
       );
 
