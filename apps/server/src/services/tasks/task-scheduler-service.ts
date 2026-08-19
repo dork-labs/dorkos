@@ -57,7 +57,17 @@ const OPERATOR_CANCEL = Symbol('operator-cancel');
 export interface SchedulerAgentManager {
   ensureSession(
     sessionId: string,
-    opts: { permissionMode: PermissionMode; cwd?: string; hasStarted?: boolean }
+    opts: {
+      permissionMode: PermissionMode;
+      cwd?: string;
+      hasStarted?: boolean;
+      /**
+       * True for every scheduled run: nobody is watching, so a prompt this run
+       * raises is refused at the countdown rather than waiting for an answer
+       * that is not coming (spec `ask-parks-on-timeout` §7).
+       */
+      unattended?: boolean;
+    }
   ): void;
   sendMessage(
     sessionId: string,
@@ -634,6 +644,10 @@ export class TaskSchedulerService {
         permissionMode,
         cwd: effectiveCwd,
         hasStarted: false,
+        // Nobody is coming back to a scheduled run, so an unanswered prompt is
+        // refused at ten minutes instead of parking for four hours and stalling
+        // the run (spec `ask-parks-on-timeout` §7).
+        unattended: true,
       });
 
       const taskAppend = buildTaskAppend(task, run);

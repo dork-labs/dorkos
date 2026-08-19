@@ -6,6 +6,7 @@ import { DENY_REASON_MAX_LENGTH } from '@dorkos/shared/schemas';
 import { ToolArgumentsDisplay, cn, getToolLabel, getMcpServerBadge } from '@/layers/shared/lib';
 import { Kbd, Button, Input, CompactResultRow } from '@/layers/shared/ui';
 import { AskCard, WARN_AT_S, URGENT_AT_S } from './AskCard';
+import { ASK_PARKED_LABEL } from '../lib/format-time-left';
 
 // --- Animation constants (module-scope to avoid per-render allocation) ---
 
@@ -63,6 +64,14 @@ interface ApprovalPromptProps {
    * resumes at the true offset instead of resetting from `approvalStartedAt + timeoutMs`.
    */
   approvalRemainingMs?: number;
+  /**
+   * True when the server already reports this prompt as PARKED: nobody answered
+   * inside the budget, so `approvalRemainingMs` counts down to the four-hour
+   * ceiling rather than to the ten-minute budget beside it. Read as a fact
+   * rather than inferred, because inferring it is what drew "228:59 remaining"
+   * on a card recovered mid-park.
+   */
+  approvalParked?: boolean;
   /** SDK-provided full permission prompt sentence */
   approvalTitle?: string;
   /** SDK-provided short noun phrase for the tool action */
@@ -88,6 +97,9 @@ export interface ApprovalPromptHandle {
  *
  * Supports imperative control via `ref` (approve/deny) for keyboard shortcut integration.
  * Shows a countdown timer when `timeoutMs` is provided, with warning phases at 2 min and 1 min.
+ * Once that countdown runs out the card PARKS: the words say the agent is waiting, the bar
+ * goes, and both answers stay live until the server withdraws the card (spec
+ * `ask-parks-on-timeout`).
  */
 export function ApprovalPrompt({
   sessionId,
@@ -100,6 +112,7 @@ export function ApprovalPrompt({
   timeoutMs,
   approvalStartedAt,
   approvalRemainingMs,
+  approvalParked,
   approvalTitle,
   approvalDisplayName,
   approvalDescription,
@@ -132,7 +145,6 @@ export function ApprovalPrompt({
 
   // Countdown state
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
-  const timedOut = useRef(false);
   const [announcement, setAnnouncement] = useState('');
 
   // ONE deadline for the whole card — the ticking text and the draining bar
@@ -145,7 +157,9 @@ export function ApprovalPrompt({
   // Recomputed only when its inputs change, never per tick: the bar's anchor is
   // derived from it, and re-writing an animation's delay mid-flight restarts it.
   const deadline = useMemo(() => {
-    if (!timeoutMs) return null;
+    // A parked prompt has no deadline left to draw: its remainder belongs to the
+    // ceiling, not to the countdown, and the card says the agent is waiting.
+    if (!timeoutMs || approvalParked === true) return null;
     const expiresAt =
       approvalRemainingMs !== undefined
         ? Date.now() + approvalRemainingMs
@@ -158,7 +172,7 @@ export function ApprovalPrompt({
     // this much or it draws a nearly-full bar over an ask with a minute left.
     const elapsedMs = Math.min(timeoutMs, Math.max(0, timeoutMs - (expiresAt - Date.now())));
     return { expiresAt, elapsedMs };
-  }, [timeoutMs, approvalStartedAt, approvalRemainingMs]);
+  }, [timeoutMs, approvalStartedAt, approvalRemainingMs, approvalParked]);
 
   useEffect(() => {
     if (decided || !timeoutMs || !deadline) return;
@@ -177,14 +191,16 @@ export function ApprovalPrompt({
     return () => clearInterval(interval);
   }, [timeoutMs, deadline, decided]);
 
-  // Timeout detection — transition to denied state and clear active interaction
-  useEffect(() => {
-    if (secondsRemaining === 0 && !decided) {
-      timedOut.current = true;
-      setDecided('denied');
-      onDecided?.();
-    }
-  }, [secondsRemaining, decided, onDecided]);
+  // Parked: the agent is holding the tool call and waiting, either because the
+  // server already said so or because this card's own countdown ran out.
+  const parked = approvalParked === true || secondsRemaining === 0;
+
+  // A countdown that reaches zero is a WAIT, not a death. The agent holds the
+  // tool call until somebody answers or its four-hour ceiling fires, and only
+  // then does the server withdraw the card and write the receipt (spec
+  // `ask-parks-on-timeout`). So this card keeps its Approve and Deny, and says
+  // it is waiting where the clock was. Deciding for the agent here is what made
+  // the transcript claim a refusal nobody gave.
 
   // Screen reader announcements at threshold crossings. An answered card has
   // nothing left to warn about, so the region empties the moment it settles —
@@ -200,7 +216,7 @@ export function ApprovalPrompt({
     } else if (secondsRemaining === URGENT_AT_S) {
       setAnnouncement('Urgent: 1 minute to approve or deny.');
     } else if (secondsRemaining === 0) {
-      setAnnouncement('Tool approval timed out. Execution denied.');
+      setAnnouncement('Nobody answered. The agent is waiting for you.');
     }
   }, [secondsRemaining, decided]);
 
@@ -341,14 +357,7 @@ export function ApprovalPrompt({
                 {isApproved ? 'Approved' : 'Denied'}
               </span>
             }
-          >
-            {decided === 'denied' && timedOut.current && (
-              <p className="text-2xs text-muted-foreground mt-1">
-                Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)}{' '}
-                minutes. The agent continued without this tool.
-              </p>
-            )}
-          </CompactResultRow>
+          />
         </motion.div>
         {liveRegion}
       </>
@@ -398,14 +407,22 @@ export function ApprovalPrompt({
             says so; the accessible countdown is the text, which is why the text
             is present from the start rather than fading in at two minutes — a
             reader who cannot see the bar had nothing until then. */}
-        {timeoutMs && !decided && (
+        {(timeoutMs || parked) && !decided && (
           <div className="mb-2">
             <AskCard.Countdown
-              secondsLeft={secondsRemaining}
-              timeoutMs={timeoutMs}
+              // Parked either way it can be known — the server said so on a card
+              // recovered mid-park, or this card's own clock ran out while
+              // somebody watched. Both read identically: no bar, and the words
+              // say the agent is waiting rather than counting anything down.
+              secondsLeft={parked ? null : secondsRemaining}
+              {...(parked ? {} : { timeoutMs })}
               elapsedMs={deadline?.elapsedMs ?? 0}
               label={
-                secondsRemaining === null ? '' : `${formatCountdown(secondsRemaining)} remaining`
+                parked
+                  ? ASK_PARKED_LABEL
+                  : secondsRemaining === null
+                    ? ''
+                    : `${formatCountdown(secondsRemaining)} remaining`
               }
             />
           </div>

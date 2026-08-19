@@ -11,6 +11,7 @@ import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-im
 import { registerHeldProcessTests } from './chat/held-process.js';
 import { registerInteractivePromptTests } from './chat/interactive-prompts.js';
 import { registerAskAnywhereTests } from './conversation/ask-anywhere.js';
+import { registerAskParksTests } from './conversation/ask-parks.js';
 import { registerLiveTurnVisibilityTests } from './chat/live-turn-visibility.js';
 import { registerRuntimeCapabilityParityTests } from './chat/runtime-capability-parity.js';
 import { registerSessionReadStateTests } from './chat/session-read-state.js';
@@ -964,6 +965,11 @@ registerInteractivePromptTests({ apiUrl: API_URL, agentDir: () => agentDir });
 // then LEAVES the session, so the turn has to survive a navigation on this
 // file's own worker rather than a concurrent reset.
 registerAskAnywhereTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
+// A prompt nobody answered in time, which WAITS rather than dying (DOR-1350).
+// Same lock again: it parks a turn, leaves the session, and answers it from
+// another route, so it has to run on this file's worker.
+registerAskParksTests({ apiUrl: API_URL, agentDir: () => agentDir });
 
 // What a live turn shows while it runs, and how Stop settles it (capability rows
 // C-10, R-05, R-06, R-07, DOR-1214). Same lock, same reason: these hold a turn

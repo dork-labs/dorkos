@@ -493,12 +493,26 @@ with, beside it:
 /**
  * Is this session holding a prompt somebody could still come back and answer?
  *
+ * The one bounded answer for the whole runtime: record eviction here, and the
+ * dispatch refusal and warm reap in `persistent-dispatch.ts`, which used the
+ * pending map's raw size and so would have refused messages into a session with
+ * a STRANDED entry forever.
+ *
+ * The bound is the wait THIS session actually allows — the park ceiling for a
+ * session a person may come back to, the plain countdown for an unattended run,
+ * whose prompts never park (§7). So a stranded entry ages out on exactly the
+ * clock its own runtime would have refused it on.
+ *
  * @param session - The session to weigh.
  * @param now - Server epoch ms.
  */
-function isWaitingOnPerson(session: AgentSession, now: number): boolean {
+export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
+  const ceilingMs =
+    session.unattended === true
+      ? SESSIONS.INTERACTION_TIMEOUT_MS
+      : SESSIONS.INTERACTION_PARK_CEILING_MS;
   for (const pending of session.pendingInteractions.values()) {
-    if (now - pending.startedAt < SESSIONS.INTERACTION_PARK_CEILING_MS) return true;
+    if (now - pending.startedAt < ceilingMs) return true;
   }
   return false;
 }
@@ -876,6 +890,42 @@ Named so a cold reader does not improve a deliberate gap back into a bug.
    true.
 9. **The park ceiling is a constant, not a setting.** Every `SESSIONS.*` sibling
    is, and there is no evidence yet of somebody who hits four hours and minds.
+10. **A relay-bound turn parks, and its Ask reaches the cockpit only.**
+    `core/unattended-autonomy` counts a binding as an unattended driver, and this
+    item deliberately does not: a bridged agent's prompt is listed fleet-wide and
+    the person the room is talking to can answer it in the cockpit, which is not
+    true of a scheduled run. So a Slack- or Telegram-bound agent parks for four
+    hours and says nothing on the surface that asked — the notification gap named
+    in #1 — while holding a warm slot. Refusing it fast instead would answer for
+    somebody who can, in fact, still answer.
+11. **A room turn is still given up after `rooms.lateReplyCeilingMinutes`**
+    (60 by default). Before the park every prompt settled inside ten minutes, so
+    that bound was unreachable; now a room-raised Ask answered after an hour runs
+    its tool and lands in the session's transcript, but no reply is posted back
+    to the room. The two are deliberately not tied: one is how long an agent
+    waits for a person, the other how long a room waits for an agent, and the
+    second is a setting somebody may have tuned. **Follow-on to file: "a room
+    turn that outlived its ceiling still says something when the answer lands."**
+12. **The PROJECTOR's `hasPendingInteractions` does not know about `unattended`.**
+    `isWaitingOnPerson` bounds the runtime's own three answers by the wait a
+    session can actually use; the projector's selector bounds everything by the
+    park ceiling, so an unattended session with a STRANDED entry pauses the stall
+    watchdog for four hours rather than ten minutes. Unreachable in practice: an
+    unattended prompt is refused and its entry removed at the countdown, so only
+    a stranded one could reach this, and a stranded entry is already the case the
+    ceiling exists to bound.
+13. **A NEW server with an OLD client still shows the long countdown on a
+    recovered park.** `parked` is read by client code shipped with this change; a
+    stale tab, an older desktop build or an older Obsidian bundle sees a DTO with
+    no `timeoutMs` and a four-hour `remainingMs` and draws the countdown it knows
+    how to draw. The card stays answerable and answering still works — the lie is
+    cosmetic and ends on reload.
+14. **Whether the OpenCode sidecar expires an unanswered `Permission` is still
+    unverified**, and the module says so rather than claiming a parity it has not
+    earned (`services/runtimes/opencode/approvals.ts`). It needs one live
+    OpenCode turn held past ten minutes; nothing in the SDK surface settles it.
+    If the sidecar does expire one, DorkOS's park outlives it and a late answer
+    meets a permission that is already gone.
 
 ## Open Questions
 

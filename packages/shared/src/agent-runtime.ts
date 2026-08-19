@@ -668,6 +668,18 @@ export interface SessionOpts extends SessionSettings {
   permissionMode: PermissionMode;
   cwd?: string;
   hasStarted?: boolean;
+  /**
+   * True when nobody is watching this session — a scheduled task run.
+   *
+   * A prompt raised in an unattended session is refused at the ten-minute
+   * countdown instead of waiting for somebody to answer it, because a wait is a
+   * promise that somebody will come back and there is nobody here to keep it
+   * (spec `ask-parks-on-timeout` §7). Absent, the default, means a person may
+   * well be watching.
+   *
+   * Advisory: a runtime with no approval channel of its own simply ignores it.
+   */
+  unattended?: boolean;
 }
 
 /** Options for sending a message to a session. */

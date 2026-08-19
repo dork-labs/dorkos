@@ -65,6 +65,12 @@ function approvalRequired(opts: {
   description: string;
   blockedPath?: string;
   hasSuggestions?: boolean;
+  /**
+   * Override the countdown. `0` raises a prompt that is ALREADY out of time, so
+   * the projector's own selector derives `parked: true` on the very first read
+   * — see {@link approvalParks}.
+   */
+  timeoutMs?: number;
 }): StreamEvent {
   return {
     type: 'approval_required',
@@ -73,7 +79,7 @@ function approvalRequired(opts: {
       toolName: opts.toolName,
       input: opts.input,
       startedAt: Date.now(),
-      timeoutMs: APPROVAL_TIMEOUT_MS,
+      timeoutMs: opts.timeoutMs ?? APPROVAL_TIMEOUT_MS,
       hasSuggestions: opts.hasSuggestions ?? false,
       title: opts.title,
       displayName: opts.displayName,
@@ -552,6 +558,70 @@ const questionExpires: ScenarioFn = async function* (_content, ctx) {
 };
 
 /**
+ * I-08 — a prompt nobody answers, which PARKS rather than expiring.
+ *
+ * The state a browser test cannot reach by pressing buttons or by waiting: in
+ * production the park is ten minutes away and the refusal four hours after that.
+ * This reaches the visible half of it through the same shape `questionExpires`
+ * uses, released by the test's own step barrier rather than by a clock nothing
+ * can wait out.
+ *
+ * The prompt is raised with `timeoutMs: 0`, so the projector's own selector
+ * derives `parked: true` on the very first read. That is deliberate: the test
+ * exercises the REAL derivation in `listPendingInteractions` rather than a
+ * scenario-authored flag, so a regression in the rule goes red here.
+ *
+ * The park is ANSWERABLE — that is the whole point of it — so this scenario
+ * waits on a real answer and then says which one it got. The refusal four hours
+ * on is NOT modelled here: `questionExpires` already covers that half through
+ * the same `interaction_cancelled` / `timeout` path, and a scenario cannot
+ * usefully wait out a clock nothing can advance.
+ */
+const approvalParks: ScenarioFn = async function* (_content, ctx) {
+  const toolCallId = 'parked-edit-1';
+  yield sessionStatus();
+  yield text('This changes a tracked file, so I need your go-ahead first.\n\n');
+  yield {
+    type: 'tool_call_start',
+    data: { toolCallId, toolName: 'Edit', status: 'running' },
+  } as StreamEvent;
+  yield approvalRequired({
+    toolCallId,
+    toolName: 'Edit',
+    input: '{"file_path":"notes/release.md","operation":"write"}',
+    title: 'Approve file write?',
+    displayName: 'Edit notes/release.md',
+    description: 'Add the release checklist to the notes file.',
+    blockedPath: 'notes/release.md',
+    // Already out of countdown, so the selector parks it on the first read.
+    timeoutMs: 0,
+  });
+  yield {
+    type: 'tool_call_end',
+    data: { toolCallId, toolName: 'Edit', status: 'complete' },
+  } as StreamEvent;
+
+  // Waiting, and still answerable — for as long as the test takes.
+  const decision = await ctx.awaitApproval(toolCallId);
+
+  if (decision.approved) {
+    yield {
+      type: 'tool_call_end',
+      data: {
+        toolCallId,
+        toolName: 'Edit',
+        status: 'complete',
+        result: 'Applied 1 edit to notes/release.md',
+      },
+    } as StreamEvent;
+    yield text('ANSWERED-LATE: thanks, applied it.');
+  } else {
+    yield text('DECLINED-LATE: understood, I left the file alone.');
+  }
+  yield done();
+};
+
+/**
  * Interactive scenarios keyed by the name accepted at `POST /api/test/scenario`.
  * Merged into the test-mode scenario registry at import time.
  */
@@ -560,6 +630,7 @@ export const INTERACTIVE_SCENARIOS: Record<string, ScenarioFn> = {
   'approval-batch': approvalBatch,
   'question-prompt': questionPrompt,
   'question-expires': questionExpires,
+  'approval-parks': approvalParks,
   'elicitation-prompt': elicitationPrompt,
   'todo-progress': todoProgress,
   'subagent-fanout': subagentFanout,

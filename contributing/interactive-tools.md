@@ -20,6 +20,10 @@ Two more systems are separate but related, each with its own section below:
 
 The interactive tools pattern connects three layers: the SDK callback, the streaming generator, and the client UI. The key challenge is that `canUseTool` is a synchronous callback that must return a `Promise<PermissionResult>`, while the user response arrives later over HTTP or in-process transport.
 
+**A prompt waits in two stages** (spec `ask-parks-on-timeout`). It counts down for `SESSIONS.INTERACTION_TIMEOUT_MS`, and past that it PARKS: the promise stays unresolved, the tool call stays held, and the person is told the agent is waiting. Only at `SESSIONS.INTERACTION_PARK_CEILING_MS` is the model handed a refusal. The whole wait — the entry shapes, both timers, the sentences and the log lines — lives in `messaging/interaction-wait.ts`; the handlers below just arm it. An unattended session (a scheduled task run) is the one exception and refuses at the countdown, because nobody is coming back to it.
+
+Two rules follow, and both have teeth. Never arm a bare `setTimeout` for a prompt: use `armInteractionWait`. And never `clearTimeout` a captured local: use `clearInteractionTimer`, which reads the timer off the pending ENTRY, because parking replaces it.
+
 ### Data Flow
 
 ```
@@ -120,16 +124,29 @@ function handleAskUserQuestion(session, toolUseId, input) {
 
   // Return a promise that blocks the SDK until the user responds
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      session.pendingInteractions.delete(toolUseId);
-      resolve({ behavior: 'deny', message: 'User did not respond within 10 minutes' });
-    }, SESSIONS.INTERACTION_TIMEOUT_MS);
+    // Two stages, not one: `armInteractionWait` parks the prompt at
+    // SESSIONS.INTERACTION_TIMEOUT_MS (a notice, a log line, and a second timer)
+    // and refuses only at SESSIONS.INTERACTION_PARK_CEILING_MS. See
+    // `messaging/interaction-wait.ts`.
+    const waitedMs = refusalDeadlineMs(session);
+    const timeout = armInteractionWait(
+      session,
+      toolUseId,
+      {
+        parked: questionParkedNotice(questions),
+        expired: questionTimeoutNotice(describeWaited(waitedMs)),
+      },
+      { kind: 'question' },
+      () => resolve({ behavior: 'deny', message: questionTimeoutDenial(waitedMs) })
+    );
 
     session.pendingInteractions.set(toolUseId, {
       type: 'question',
       toolCallId: toolUseId,
       resolve: (answers) => {
-        clearTimeout(timeout);
+        // Reads the timer off the ENTRY: parking replaces it, so a closure over
+        // the first timer would leave the ceiling armed on an answered prompt.
+        clearInteractionTimer(session, toolUseId);
         session.pendingInteractions.delete(toolUseId);
         // `answers` arrive in DorkOS's canonical (index-keyed) format. The SDK's
         // AskUserQuestion executor matches answers to questions BY QUESTION TEXT,
@@ -141,7 +158,7 @@ function handleAskUserQuestion(session, toolUseId, input) {
         });
       },
       reject: () => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         session.pendingInteractions.delete(toolUseId);
         resolve({ behavior: 'deny', message: 'Interaction cancelled' });
       },
@@ -304,26 +321,35 @@ function handleToolApproval(session, toolUseId, toolName, input, context: ToolAp
 
     // Auto-deny if the SDK query is aborted (e.g. user interrupts the stream)
     const onAbort = () => {
-      clearTimeout(timeout);
+      clearInteractionTimer(session, toolUseId);
       session.pendingInteractions.delete(toolUseId);
       deny('Tool approval aborted');
     };
     context.signal.addEventListener('abort', onAbort, { once: true });
 
-    const timeout = setTimeout(() => {
-      context.signal.removeEventListener('abort', onAbort);
-      session.pendingInteractions.delete(toolUseId);
-      deny(
-        `Tool approval timed out after ${Math.ceil(SESSIONS.INTERACTION_TIMEOUT_MS / 60_000)} minutes`
-      );
-    }, SESSIONS.INTERACTION_TIMEOUT_MS);
+    // Parks at SESSIONS.INTERACTION_TIMEOUT_MS, refuses at
+    // SESSIONS.INTERACTION_PARK_CEILING_MS (`messaging/interaction-wait.ts`).
+    const waitedMs = refusalDeadlineMs(session);
+    const timeout = armInteractionWait(
+      session,
+      toolUseId,
+      {
+        parked: approvalParkedNotice(toolLabel),
+        expired: approvalTimeoutNotice(toolLabel, describeWaited(waitedMs)),
+      },
+      { kind: 'approval', toolName },
+      () => {
+        context.signal.removeEventListener('abort', onAbort);
+        deny(approvalTimeoutDenial(waitedMs));
+      }
+    );
 
     session.pendingInteractions.set(toolUseId, {
       type: 'approval',
       toolCallId: toolUseId,
       suggestions: context.suggestions,
       resolve: (result) => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         context.signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
 
@@ -337,7 +363,7 @@ function handleToolApproval(session, toolUseId, toolName, input, context: ToolAp
         }
       },
       reject: () => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         context.signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
         deny('Interaction cancelled');
@@ -466,23 +492,30 @@ function handleElicitation(session, elicitationId, message, requestedSchema) {
   session.eventQueueNotify?.();
 
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      session.pendingInteractions.delete(elicitationId);
-      resolve({ action: 'cancel' });
-    }, SESSIONS.INTERACTION_TIMEOUT_MS);
+    const waitedMs = refusalDeadlineMs(session);
+    const timeout = armInteractionWait(
+      session,
+      elicitationId,
+      {
+        parked: elicitationParkedNotice(serverName),
+        expired: elicitationTimeoutNotice(serverName, describeWaited(waitedMs)),
+      },
+      { kind: 'elicitation' },
+      () => resolve({ action: 'decline' })
+    );
 
     session.pendingInteractions.set(elicitationId, {
       type: 'elicitation',
       toolCallId: elicitationId,
       resolve: (result) => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, elicitationId);
         session.pendingInteractions.delete(elicitationId);
         resolve(result);
       },
       reject: () => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, elicitationId);
         session.pendingInteractions.delete(elicitationId);
-        resolve({ action: 'cancel' });
+        resolve({ action: 'decline' });
       },
       timeout,
     });
@@ -517,12 +550,13 @@ await transport.submitElicitation(sessionId, elicitationId, { action: 'cancel' }
 
 ### Implementation Files
 
-| File                                                              | Purpose                                                    |
-| ----------------------------------------------------------------- | ---------------------------------------------------------- |
-| `services/runtimes/claude-code/messaging/interactive-handlers.ts` | `handleElicitation()` — deferred promise, event queue push |
-| `apps/server/src/routes/sessions.ts`                              | `POST /:id/submit-elicitation` route                       |
-| `apps/client/src/layers/features/chat/ui/ElicitationPrompt.tsx`   | Dynamic form renderer from JSON Schema                     |
-| `packages/shared/src/schemas.ts`                                  | `ElicitationPromptEventSchema`, `ElicitationResultSchema`  |
+| File                                                              | Purpose                                                                     |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `services/runtimes/claude-code/messaging/interactive-handlers.ts` | `handleElicitation()` — deferred promise, event queue push                  |
+| `services/runtimes/claude-code/messaging/interaction-wait.ts`     | The pending-entry shapes, the park/refusal timers, the notices and the logs |
+| `apps/server/src/routes/sessions.ts`                              | `POST /:id/submit-elicitation` route                                        |
+| `apps/client/src/layers/features/chat/ui/ElicitationPrompt.tsx`   | Dynamic form renderer from JSON Schema                                      |
+| `packages/shared/src/schemas.ts`                                  | `ElicitationPromptEventSchema`, `ElicitationResultSchema`                   |
 
 ## Adding a New Interactive Tool
 
@@ -581,21 +615,29 @@ function handleMyNewInteractive(
   session.eventQueueNotify?.();
 
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      session.pendingInteractions.delete(toolUseId);
-      resolve({ behavior: 'deny', message: 'Timed out' });
-    }, SESSIONS.INTERACTION_TIMEOUT_MS);
+    // Every new kind gets the two-stage wait for free: park at the countdown,
+    // refuse at the ceiling. Never arm a bare `setTimeout` here.
+    const timeout = armInteractionWait(
+      session,
+      toolUseId,
+      {
+        parked: 'I asked for something and nobody has answered yet, so I am waiting here.',
+        expired: 'Nobody answered, so I moved on.',
+      },
+      { kind: 'my_new_type' }, // Add to the log's kind union too
+      () => resolve({ behavior: 'deny', message: 'Timed out' })
+    );
 
     session.pendingInteractions.set(toolUseId, {
       type: 'my_new_type', // Add to PendingInteraction type union
       toolCallId: toolUseId,
       resolve: (result) => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         session.pendingInteractions.delete(toolUseId);
         resolve({ behavior: 'allow', updatedInput: { ...input, result } });
       },
       reject: () => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         session.pendingInteractions.delete(toolUseId);
         resolve({ behavior: 'deny', message: 'Cancelled' });
       },

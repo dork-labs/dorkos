@@ -108,6 +108,13 @@ export interface ToolCallState {
    * reconnect resumes where the clock actually is instead of restarting.
    */
   approvalRemainingMs?: number;
+  /**
+   * True once the server reports this prompt as PARKED: nobody answered inside
+   * the budget, so `approvalRemainingMs` runs to the four-hour ceiling rather
+   * than to the `timeoutMs` beside it (spec `ask-parks-on-timeout`). Carried
+   * from the part, which carries it from the pending-interaction DTO.
+   */
+  approvalParked?: boolean;
   /** SDK-provided full permission prompt sentence */
   approvalTitle?: string;
   /** SDK-provided short noun phrase for the tool action */

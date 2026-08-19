@@ -721,6 +721,11 @@ function applyRecoveredHold(
     // did not say", not "no deadline", so clearing one the turn supplied would
     // take the countdown away rather than correct it.
     if (dto.type === 'approval' && dto.timeoutMs !== undefined) toolCall.timeoutMs = dto.timeoutMs;
+    // A PARKED prompt is the one case where the remainder is not a countdown:
+    // it runs to the four-hour ceiling, while the budget the turn supplied is
+    // ten minutes. Carried as its own fact, because inferring it from the two
+    // numbers is what produced "228:59 remaining" on a reload mid-park.
+    toolCall.approvalParked = dto.parked === true ? true : undefined;
     return;
   }
   const elicitation = findElicitationPart(parts, dto.id);
@@ -756,7 +761,25 @@ function foldPendingInteractions(
       continue;
     }
     foldPendingInteraction(parts, pendingInteractionToEvent(dto));
+    markParked(parts, dto);
   }
+}
+
+/**
+ * Carry a recovered prompt's PARKED state onto the part the fold just built.
+ *
+ * Separate from {@link pendingInteractionToEvent} because `parked` is a
+ * pending-interaction fact, not an `approval_required` one: no runtime ever
+ * emits it, the selector stamps it at read time, and widening the wire event to
+ * carry it would give the same fact two homes free to disagree.
+ *
+ * @param parts - The parts the fold wrote into (mutated in place).
+ * @param dto - The recovered interaction.
+ */
+function markParked(parts: MessagePart[], dto: PendingInteractionDTO): void {
+  if (dto.parked !== true) return;
+  const toolCall = findToolCallPart(parts, dto.id);
+  if (toolCall) toolCall.approvalParked = true;
 }
 
 /** The interaction ids an `interaction_resolved` in this turn already answered. */

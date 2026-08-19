@@ -195,6 +195,7 @@ REGISTERED_MODULES=(
   'chat/runtime-capability-parity.ts'
   'chat/session-read-state.ts'
   'conversation/ask-anywhere.ts'
+  'conversation/ask-parks.ts'
   'dashboard-sidebar/now-survives-reload.ts'
   'dashboard-sidebar/send-lands-in-today.ts'
 )

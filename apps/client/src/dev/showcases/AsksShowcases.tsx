@@ -178,8 +178,8 @@ function AskCountdown() {
   return (
     <>
       <Subhead>
-        Ask countdown — neutral above two minutes, amber at two, red at one. The bar is decoration;
-        the words are the accessible reading.
+        Ask countdown — neutral above two minutes, amber at two, red at one, and calm again once it
+        parks. The bar is decoration; the words are the accessible reading.
       </Subhead>
       <ShowcaseLabel>Seven minutes left — neutral</ShowcaseLabel>
       <ShowcaseDemo>
@@ -194,6 +194,25 @@ function AskCountdown() {
       <ShowcaseLabel>Under a minute — urgent, and counting by the second</ShowcaseLabel>
       <ShowcaseDemo>
         <InteractionAsk ask={ask('demo-urgent', approval(45))} agentName="Meeting Notes" />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Nobody answered — the countdown is over, the bar is gone, and the agent is waiting. Both
+        answers still work.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <InteractionAsk
+          ask={ask(
+            'demo-parked',
+            approval(0, {
+              startedAt: NOW - 11 * 60_000,
+              remainingMs: 4 * 60 * 60_000 - 11 * 60_000,
+              timeoutMs: undefined,
+              parked: true,
+            })
+          )}
+          agentName="Meeting Notes"
+        />
       </ShowcaseDemo>
     </>
   );

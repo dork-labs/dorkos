@@ -245,8 +245,10 @@ Content-Type: application/json
 ```
 
 <Callout type="warn">
-  Failing to respond to an `approval_required` event blocks the agent until the server-side timeout
-  (`remainingMs`) elapses and the tool call is auto-denied.
+  Failing to respond to an `approval_required` event blocks the agent. The countdown (`timeoutMs`)
+  is how long the card counts down for; past it the prompt parks, the pending interaction is
+  reported with `parked: true` and no `timeoutMs`, and `remainingMs` runs on to the park ceiling.
+  The tool call is auto-denied only when that runs out.
 </Callout>
 
 Both `/approve`, `/deny`, and `/submit-answers` may return `409` with `{ code: "INTERACTION_ALREADY_RESOLVED" }` if the SDK resolved the interaction before the request arrived. Treat this as success.

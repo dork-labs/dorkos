@@ -52,6 +52,7 @@ make_workspace() {
   : >"$root/apps/e2e/tests/chat/runtime-capability-parity.ts"
   : >"$root/apps/e2e/tests/chat/session-read-state.ts"
   : >"$root/apps/e2e/tests/conversation/ask-anywhere.ts"
+  : >"$root/apps/e2e/tests/conversation/ask-parks.ts"
   : >"$root/apps/e2e/tests/dashboard-sidebar/now-survives-reload.ts"
   : >"$root/apps/e2e/tests/dashboard-sidebar/send-lands-in-today.ts"
   cat >"$root/apps/e2e/test-results/results.json" <<'JSON'
@@ -93,12 +94,15 @@ make_workspace() {
     { "title": "conversation/ask-anywhere.ts", "file": "conversation/ask-anywhere.ts",
       "specs": [ { "title": "the ask-anywhere module's suite runs", "file": "conversation/ask-anywhere.ts",
                    "tests": [ { "status": "expected" } ] } ] },
+    { "title": "conversation/ask-parks.ts", "file": "conversation/ask-parks.ts",
+      "specs": [ { "title": "the ask-parks module's suite runs", "file": "conversation/ask-parks.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
     { "title": "settings", "file": "settings/auth-login.spec.ts", "specs": [],
       "suites": [ { "title": "Auth", "file": "settings/auth-login.spec.ts",
                     "specs": [ { "title": "auth runs", "file": "settings/auth-login.spec.ts",
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
-  "stats": { "expected": 12, "unexpected": 0, "flaky": 0, "skipped": 1 }
+  "stats": { "expected": 13, "unexpected": 0, "flaky": 0, "skipped": 1 }
 }
 JSON
 }
@@ -140,7 +144,7 @@ make_workspace "$tmp/healthy"
 # The count is the FIXTURE's, not the real suite's — two ordinary specs plus one
 # test per registered module — so it moves when make_workspace does and never
 # because somebody added a browser test.
-check 'a healthy run passes' "$tmp/healthy" 0 '12 test(s) executed'
+check 'a healthy run passes' "$tmp/healthy" 0 '13 test(s) executed'
 
 # A spec on disk that the run never collected — the testIgnore/testMatch hole.
 make_workspace "$tmp/uncollected"

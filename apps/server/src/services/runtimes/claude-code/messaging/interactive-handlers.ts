@@ -4,16 +4,30 @@ import type {
   ElicitationRequest,
   ElicitationResult,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
+import type { QuestionItem } from '@dorkos/shared/types';
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
-import { logRefusal } from '../../../observability/refusals.js';
 import { SESSIONS } from '../../../../config/constants.js';
+import {
+  armInteractionWait,
+  approvalParkedNotice,
+  approvalTimeoutNotice,
+  clearInteractionTimer,
+  elicitationParkedNotice,
+  elicitationTimeoutNotice,
+  notifyInteractionCancelled,
+  questionParkedNotice,
+  questionTimeoutNotice,
+  refusalDeadlineMs,
+  toolLabelFor,
+  type InteractiveSession,
+} from './interaction-wait.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
 import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
 import {
   approvalTimeoutDenial,
+  describeWaited,
   questionTimeoutDenial,
   toolDenial,
   WITHDRAWN_DENIALS,
@@ -382,265 +396,6 @@ export function resolveModeDecision(mode: PermissionMode): ModeDecision {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Pending interaction snapshots (serializable re-emit payloads)
-// ---------------------------------------------------------------------------
-
-/**
- * Serializable snapshot of an `approval_required` event's `data`, minus the
- * routing `toolCallId`. A recovery path rebuilds the native client event from
- * this snapshot without holding the live SDK approval closure.
- */
-export interface ApprovalSnapshot {
-  toolName: string;
-  /** JSON-stringified tool input, matching the in-band `approval_required` payload. */
-  input: string;
-  title?: string;
-  displayName?: string;
-  description?: string;
-  blockedPath?: string;
-  decisionReason?: string;
-  hasSuggestions: boolean;
-}
-
-/**
- * Serializable snapshot of a `question_prompt` event's `data`, minus the
- * routing `toolCallId`. Re-emitted verbatim on recovery.
- */
-export interface QuestionSnapshot {
-  questions: QuestionItem[];
-}
-
-/**
- * Serializable snapshot of an `elicitation_prompt` event's `data`, minus the
- * routing `interactionId`. Re-emitted verbatim on recovery.
- */
-export interface ElicitationSnapshot {
-  serverName: string;
-  message: string;
-  mode?: ElicitationRequest['mode'];
-  url?: string;
-  elicitationId?: string;
-  requestedSchema?: Record<string, unknown>;
-}
-
-// ---------------------------------------------------------------------------
-// Pending interaction types (discriminated union for type safety)
-// ---------------------------------------------------------------------------
-
-interface PendingApproval {
-  type: 'approval';
-  toolCallId: string;
-  /**
-   * Answer the ask. `denyReason` is the person's own words, forwarded to the
-   * model as the refusal message when they refused and said why; it is ignored
-   * for an approval, which has nothing to explain.
-   */
-  resolve: (result: boolean | PermissionUpdate[], denyReason?: string) => void;
-  reject: (reason: unknown) => void;
-  timeout: ReturnType<typeof setTimeout>;
-  /** SDK permission suggestions for "Always Allow" — stored so session-store can forward them. */
-  suggestions?: PermissionUpdate[];
-  /** Server epoch ms when this interaction began (for recovery countdown math). */
-  startedAt: number;
-  /** Serializable re-emit payload for the recovery path. */
-  snapshot: ApprovalSnapshot;
-}
-
-interface PendingQuestion {
-  type: 'question';
-  toolCallId: string;
-  resolve: (answers: Record<string, string>) => void;
-  reject: (reason: unknown) => void;
-  timeout: ReturnType<typeof setTimeout>;
-  /** Server epoch ms when this interaction began (for recovery countdown math). */
-  startedAt: number;
-  /** Serializable re-emit payload for the recovery path. */
-  snapshot: QuestionSnapshot;
-}
-
-interface PendingElicitation {
-  type: 'elicitation';
-  toolCallId: string;
-  resolve: (result: ElicitationResult) => void;
-  reject: (reason: unknown) => void;
-  timeout: ReturnType<typeof setTimeout>;
-  /** Server epoch ms when this interaction began (for recovery countdown math). */
-  startedAt: number;
-  /** Serializable re-emit payload for the recovery path. */
-  snapshot: ElicitationSnapshot;
-}
-
-export type PendingInteraction = PendingApproval | PendingQuestion | PendingElicitation;
-
-/** Minimal session interface needed by interactive handlers. */
-export interface InteractiveSession {
-  pendingInteractions: Map<string, PendingInteraction>;
-  eventQueue: StreamEvent[];
-  eventQueueNotify?: () => void;
-  /**
-   * What this session is called, for the log and nothing else.
-   *
-   * Optional because the handlers below work perfectly well without it and a
-   * test fake should not have to invent one — but a real `AgentSession` always
-   * carries it, so the one line that matters
-   * ({@link logInteractionTimeout}) can name the session a person has to open.
-   */
-  sdkSessionId?: string;
-  /**
-   * The session's working directory — the ONLY thing the in-session surface
-   * resolves an agent identity from, and therefore what decides who the
-   * owner-facing verbs act as ({@link IDENTITY_SCOPED_TOOLS}).
-   *
-   * Optional for the same reason `sdkSessionId` is: a real `AgentSession`
-   * always carries it, a test fake need not. Absent means no identity, which is
-   * the conservative answer — those verbs ask rather than skip the card.
-   */
-  cwd?: string;
-}
-
-/**
- * Say that nobody answered, so this was denied.
- *
- * **The only DURABLE trace an expired prompt leaves.** All three handlers
- * below hand the model a denial after {@link SESSIONS.INTERACTION_TIMEOUT_MS}
- * and, until DOR-1158, wrote nothing anywhere: the card vanished from any
- * client that happened to be watching, the turn carried on as though a person
- * had refused, and there was no record that the refusal was a clock rather
- * than a decision. On 2026-07-31 two agents hit this twice each, invisibly,
- * inside one forty-one minute silence (DOR-784) — and reconstructing that
- * afterwards took the SDK transcripts, because the server log had nothing.
- *
- * DOR-1158 added a companion live notice ({@link notifyInteractionTimeoutNotice})
- * naming what expired, but it rides the transient status strip: the next turn
- * event clears it, so it only reaches an operator watching THIS session at THIS
- * moment. This log line is still what survives for anyone who checks back
- * later — the durability gap DOR-1158 did not close.
- *
- * `warn`, not `info`: work was thrown away that a person would probably have
- * approved. Nothing from the prompt's INPUT is logged — a tool's arguments are
- * file paths, commands and occasionally secrets — only what it was and how long
- * it waited.
- *
- * @param session - The session whose turn was blocked.
- * @param interaction.id - The interaction's id (the tool-use id, for a tool).
- * @param interaction.kind - Which of the three kinds of prompt expired.
- * @param interaction.toolName - The tool an approval was about, when there is one.
- */
-function logInteractionTimeout(
-  session: InteractiveSession,
-  interaction: { id: string; kind: 'approval' | 'question' | 'elicitation'; toolName?: string }
-): void {
-  logRefusal('[claude-code] nobody answered in time, so this was denied', {
-    reason: 'interaction_expired',
-    // `silent` because nothing DURABLE is written for an expired prompt: the
-    // companion live notice (DOR-1158) is best-effort and clears with the next
-    // turn event, so this log line is still the only record an operator who
-    // checks back later can find. See this function's TSDoc.
-    visibility: 'silent',
-    ...(session.sdkSessionId !== undefined ? { sessionId: session.sdkSessionId } : {}),
-    detail: {
-      interactionId: interaction.id,
-      kind: interaction.kind,
-      toolName: interaction.toolName,
-      waitedMs: SESSIONS.INTERACTION_TIMEOUT_MS,
-    },
-  });
-}
-
-/**
- * Push an `interaction_cancelled` StreamEvent so the projection drops a pending
- * card that was resolved WITHOUT an operator action (SDK abort or timeout).
- * Flows through the same eventQueue → normalizer → projector path as the
- * prompt events themselves, so every `/events` consumer (and the next
- * snapshot) sees the card disappear instead of an answerable ghost lingering
- * until expiry (acceptance run 20260610-173202, F5).
- */
-function notifyInteractionCancelled(
-  session: InteractiveSession,
-  interactionId: string,
-  reason: 'aborted' | 'timeout'
-): void {
-  session.eventQueue.push({
-    type: 'interaction_cancelled',
-    data: { interactionId, reason },
-  });
-  session.eventQueueNotify?.();
-}
-
-/**
- * How long an operator has to answer, in whole minutes — for prose that names
- * the wait (e.g. "waited 10 minutes"), derived from the same constant the
- * timeout itself uses so the two can never drift apart.
- */
-const INTERACTION_TIMEOUT_MINUTES = Math.ceil(SESSIONS.INTERACTION_TIMEOUT_MS / 60_000);
-
-/** Shorten a snippet of user-facing prose to roughly `maxLength` characters. */
-function truncateForNotice(text: string, maxLength: number): string {
-  const trimmed = text.trim();
-  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength).trimEnd()}…` : trimmed;
-}
-
-/**
- * Push a `system_status` StreamEvent telling the operator what expired
- * unanswered.
- *
- * **Best-effort, not durable.** This rides the same transient channel as the
- * phantom-cancellation notice in `message-sender.ts`: the client's status
- * strip shows it only until the next turn event, which — because `resolve`
- * unblocks the SDK right after this call — typically arrives within one more
- * server-sent event. It reaches an operator watching THIS session at THIS
- * moment; it does not persist for one who reconnects later. {@link
- * logInteractionTimeout} is still the only record that survives that case
- * (see its TSDoc) — closing that gap would mean a durable receipt, which is
- * out of scope here.
- *
- * **Timeout only.** A person resolving the prompt, or the SDK aborting it
- * (steer/interrupt), isn't a silence and gets no notice — call this only from
- * the `setTimeout` branch, never from `resolve`/`reject`/`onAbort`.
- *
- * **Ordering.** Always call this AFTER {@link notifyInteractionCancelled} for
- * the same interaction: both land in the same `eventQueue` frame, and if the
- * card's removal were pushed second it could be re-derived over this notice
- * before a client ever sees it — the same hazard the phantom-cancellation
- * notice in `message-sender.ts` documents for its own ordering.
- *
- * **No tool input.** `message` must be built from names and question text
- * only — never a tool's raw arguments or an elicitation's request body, both
- * of which can carry secrets.
- */
-function notifyInteractionTimeoutNotice(session: InteractiveSession, message: string): void {
-  session.eventQueue.push({ type: 'system_status', data: { message } });
-  session.eventQueueNotify?.();
-}
-
-/** The operator-facing notice for an AskUserQuestion that timed out unanswered. */
-function questionTimeoutNotice(questions: QuestionItem[]): string {
-  const base = `I asked you something and waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I moved on.`;
-  const first = questions[0]?.question;
-  return first ? `${base} The question was: "${truncateForNotice(first, 120)}"` : base;
-}
-
-/**
- * The label to name a tool by in operator-facing prose: the SDK's own
- * `displayName` when it gave a non-blank one, else the raw tool name. Guards
- * against an empty-string `displayName` producing "I asked to run  and
- * waited…" — `??` alone only catches `undefined`, not `""`.
- */
-function toolLabelFor(displayName: string | undefined, toolName: string): string {
-  return displayName?.trim() ? displayName : toolName;
-}
-
-/** The operator-facing notice for a tool approval that timed out unanswered. */
-function approvalTimeoutNotice(toolLabel: string): string {
-  return `I asked to run ${toolLabel} and waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I treated it as declined.`;
-}
-
-/** The operator-facing notice for an MCP elicitation that timed out unanswered. */
-function elicitationTimeoutNotice(serverName: string): string {
-  return `${serverName} asked you something and I waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I declined on your behalf.`;
-}
-
 /**
  * Handle an AskUserQuestion tool call — pause, collect answers, inject into input.
  *
@@ -669,21 +424,27 @@ export function handleAskUserQuestion(
 
   return new Promise((resolve) => {
     const onAbort = (): void => {
-      clearTimeout(timeout);
+      clearInteractionTimer(session, toolUseId);
       session.pendingInteractions.delete(toolUseId);
       notifyInteractionCancelled(session, toolUseId, 'aborted');
       resolve({ behavior: 'deny', message: WITHDRAWN_DENIALS.question });
     };
     signal?.addEventListener('abort', onAbort, { once: true });
 
-    const timeout = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      session.pendingInteractions.delete(toolUseId);
-      logInteractionTimeout(session, { id: toolUseId, kind: 'question' });
-      notifyInteractionCancelled(session, toolUseId, 'timeout');
-      notifyInteractionTimeoutNotice(session, questionTimeoutNotice(questions));
-      resolve({ behavior: 'deny', message: questionTimeoutDenial(INTERACTION_TIMEOUT_MINUTES) });
-    }, SESSIONS.INTERACTION_TIMEOUT_MS);
+    const waitedMs = refusalDeadlineMs(session);
+    const timeout = armInteractionWait(
+      session,
+      toolUseId,
+      {
+        parked: questionParkedNotice(questions),
+        expired: questionTimeoutNotice(describeWaited(waitedMs)),
+      },
+      { kind: 'question' },
+      () => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve({ behavior: 'deny', message: questionTimeoutDenial(waitedMs) });
+      }
+    );
 
     session.pendingInteractions.set(toolUseId, {
       type: 'question',
@@ -691,7 +452,7 @@ export function handleAskUserQuestion(
       startedAt,
       snapshot: { questions },
       resolve: (answers) => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         signal?.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
         // Translate DorkOS's canonical (index-keyed) answers into the SDK's
@@ -704,7 +465,7 @@ export function handleAskUserQuestion(
         });
       },
       reject: () => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         signal?.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
         resolve({ behavior: 'deny', message: WITHDRAWN_DENIALS.interaction });
@@ -749,21 +510,29 @@ export function handleElicitation(
 
     // Auto-decline if the SDK query is aborted
     const onAbort = () => {
-      clearTimeout(timeout);
+      clearInteractionTimer(session, interactionId);
       session.pendingInteractions.delete(interactionId);
       notifyInteractionCancelled(session, interactionId, 'aborted');
       decline();
     };
     signal.addEventListener('abort', onAbort, { once: true });
 
-    const timeout = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      session.pendingInteractions.delete(interactionId);
-      logInteractionTimeout(session, { id: interactionId, kind: 'elicitation' });
-      notifyInteractionCancelled(session, interactionId, 'timeout');
-      notifyInteractionTimeoutNotice(session, elicitationTimeoutNotice(request.serverName));
-      decline();
-    }, SESSIONS.INTERACTION_TIMEOUT_MS);
+    const timeout = armInteractionWait(
+      session,
+      interactionId,
+      {
+        parked: elicitationParkedNotice(request.serverName),
+        expired: elicitationTimeoutNotice(
+          request.serverName,
+          describeWaited(refusalDeadlineMs(session))
+        ),
+      },
+      { kind: 'elicitation' },
+      () => {
+        signal.removeEventListener('abort', onAbort);
+        decline();
+      }
+    );
 
     session.pendingInteractions.set(interactionId, {
       type: 'elicitation',
@@ -778,13 +547,13 @@ export function handleElicitation(
         requestedSchema: request.requestedSchema,
       },
       resolve: (result) => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, interactionId);
         signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(interactionId);
         resolve(result as ElicitationResult);
       },
       reject: () => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, interactionId);
         signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(interactionId);
         decline();
@@ -976,7 +745,6 @@ export function handleToolApproval(
   context: ToolApprovalContext
 ): Promise<PermissionResult> {
   const startedAt = Date.now();
-  const timeoutMinutes = Math.ceil(SESSIONS.INTERACTION_TIMEOUT_MS / 60_000);
 
   session.eventQueue.push({
     type: 'approval_required',
@@ -1002,24 +770,28 @@ export function handleToolApproval(
 
     // Auto-deny if the SDK query is aborted (e.g. user interrupts the stream)
     const onAbort = () => {
-      clearTimeout(timeout);
+      clearInteractionTimer(session, toolUseId);
       session.pendingInteractions.delete(toolUseId);
       notifyInteractionCancelled(session, toolUseId, 'aborted');
       deny(WITHDRAWN_DENIALS.approval);
     };
     context.signal.addEventListener('abort', onAbort, { once: true });
 
-    const timeout = setTimeout(() => {
-      context.signal.removeEventListener('abort', onAbort);
-      session.pendingInteractions.delete(toolUseId);
-      logInteractionTimeout(session, { id: toolUseId, kind: 'approval', toolName });
-      notifyInteractionCancelled(session, toolUseId, 'timeout');
-      notifyInteractionTimeoutNotice(
-        session,
-        approvalTimeoutNotice(toolLabelFor(context.displayName, toolName))
-      );
-      deny(approvalTimeoutDenial(timeoutMinutes));
-    }, SESSIONS.INTERACTION_TIMEOUT_MS);
+    const toolLabel = toolLabelFor(context.displayName, toolName);
+    const waitedMs = refusalDeadlineMs(session);
+    const timeout = armInteractionWait(
+      session,
+      toolUseId,
+      {
+        parked: approvalParkedNotice(toolLabel),
+        expired: approvalTimeoutNotice(toolLabel, describeWaited(waitedMs)),
+      },
+      { kind: 'approval', toolName },
+      () => {
+        context.signal.removeEventListener('abort', onAbort);
+        deny(approvalTimeoutDenial(waitedMs));
+      }
+    );
 
     session.pendingInteractions.set(toolUseId, {
       type: 'approval',
@@ -1037,7 +809,7 @@ export function handleToolApproval(
         hasSuggestions: (context.suggestions?.length ?? 0) > 0,
       },
       resolve: (result, denyReason) => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         context.signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
 
@@ -1057,7 +829,7 @@ export function handleToolApproval(
         }
       },
       reject: () => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         context.signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
         deny(WITHDRAWN_DENIALS.interaction);

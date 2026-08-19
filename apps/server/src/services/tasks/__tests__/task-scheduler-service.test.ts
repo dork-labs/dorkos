@@ -1188,6 +1188,13 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       expect.any(String),
       expect.objectContaining({ cwd: '/projects/agent-dir' })
     );
+    // A scheduled run is UNATTENDED, and the runtime reads that: an unanswered
+    // prompt is refused at the ten-minute countdown instead of waiting four
+    // hours for somebody who is not coming (spec `ask-parks-on-timeout` §7).
+    expect(mockAgent.ensureSession).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ unattended: true })
+    );
     expect(mockAgent.sendMessage).toHaveBeenCalledWith(
       expect.any(String),
       'test',

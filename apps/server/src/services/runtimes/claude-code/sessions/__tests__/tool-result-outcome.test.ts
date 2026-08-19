@@ -43,17 +43,47 @@ function call(toolCallId: string) {
   throw new Error(`no toolCall for ${toolCallId}`);
 }
 
+const FOUR_HOURS = 4 * 60 * 60 * 1000;
+const TEN_MINUTES = 10 * 60 * 1000;
+
 describe('classifyToolResult', () => {
+  it('classifies an hours-shaped timeout denial as expired', () => {
+    // The unit changed when prompts started parking (spec
+    // `ask-parks-on-timeout`): a prompt now waits four hours before it is
+    // refused, and the receipt the transcript builds is read out of this
+    // sentence. Widening the copy without widening TIMEOUT_PATTERNS files every
+    // expired call as `errored` instead.
+    expect(questionTimeoutDenial(FOUR_HOURS)).toBe('User did not respond within 4 hours');
+    expect(approvalTimeoutDenial(FOUR_HOURS)).toBe('Tool approval timed out after 4 hours');
+    expect(classifyToolResult(questionTimeoutDenial(FOUR_HOURS), true)).toBe('expired');
+    expect(classifyToolResult(approvalTimeoutDenial(FOUR_HOURS), true)).toBe('expired');
+  });
+
+  it('still classifies a minutes-shaped timeout denial as expired', () => {
+    // Two callers write minutes: an unattended run, which never parks, and
+    // every transcript recorded before the park existed. Both keep their
+    // receipts.
+    expect(questionTimeoutDenial(TEN_MINUTES)).toBe('User did not respond within 10 minutes');
+    // And exactly one of anything is singular — "1 hours" is the shape a
+    // template with a hard-coded plural produces.
+    expect(questionTimeoutDenial(60 * 60_000)).toBe('User did not respond within 1 hour');
+    expect(approvalTimeoutDenial(60_000)).toBe('Tool approval timed out after 1 minute');
+    expect(classifyToolResult(questionTimeoutDenial(60 * 60_000), true)).toBe('expired');
+    expect(approvalTimeoutDenial(TEN_MINUTES)).toBe('Tool approval timed out after 10 minutes');
+    expect(classifyToolResult('User did not respond within 10 minutes', true)).toBe('expired');
+    expect(classifyToolResult('Tool approval timed out after 10 minutes', true)).toBe('expired');
+  });
+
   it('reads back every denial DorkOS itself writes', () => {
     // The round trip is the anti-drift mechanism: these are the exact strings
     // `messaging/interactive-handlers.ts` hands the SDK, so a reworded denial
     // that this classifier no longer recognises fails here rather than silently
     // degrading a transcript to "errored" months later.
-    expect(classifyToolResult(questionTimeoutDenial(10), true)).toBe('expired');
-    expect(classifyToolResult(approvalTimeoutDenial(10), true)).toBe('expired');
+    expect(classifyToolResult(questionTimeoutDenial(FOUR_HOURS), true)).toBe('expired');
+    expect(classifyToolResult(approvalTimeoutDenial(FOUR_HOURS), true)).toBe('expired');
     // A changed budget must still read as a timeout, not as a bare error.
-    expect(classifyToolResult(questionTimeoutDenial(3), true)).toBe('expired');
-    expect(classifyToolResult(approvalTimeoutDenial(1), true)).toBe('expired');
+    expect(classifyToolResult(questionTimeoutDenial(3 * 60_000), true)).toBe('expired');
+    expect(classifyToolResult(approvalTimeoutDenial(60_000), true)).toBe('expired');
     expect(classifyToolResult(toolDenial(), true)).toBe('denied');
     expect(classifyToolResult(toolDenial('not on main'), true)).toBe('denied');
     expect(classifyToolResult(WITHDRAWN_DENIALS.question, true)).toBe('cancelled');
@@ -111,7 +141,7 @@ describe('classifyToolResult', () => {
     // quotes these sentences, and a Bash timeout that shares the words "timed
     // out after". Both arrive with the flag absent or false, and both are the
     // ordinary success case.
-    expect(classifyToolResult(questionTimeoutDenial(10), undefined)).toBe('complete');
+    expect(classifyToolResult(questionTimeoutDenial(FOUR_HOURS), undefined)).toBe('complete');
     expect(classifyToolResult(toolDenial('not on main'), false)).toBe('complete');
     expect(classifyToolResult('Exit code 143\nCommand timed out after 2m 0s', undefined)).toBe(
       'complete'

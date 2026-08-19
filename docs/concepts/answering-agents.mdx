@@ -47,13 +47,22 @@ waiting on you. Once the card has your focus, `A` allows it and `D` denies it.
 If an agent asks several similar things at once, like reading five files, they arrive as one
 card instead of five. Answer once and you're done with all of them.
 
-## The ten-minute window
+## When nobody answers
 
-An Ask waits ten minutes for you. If nobody answers in that time, DorkOS answers it for the
-agent: the request is refused, and the agent carries on without it, the same as if you'd
-clicked Deny yourself.
+An Ask counts down for ten minutes. That part has not changed: the card shows the time left, and
+turns amber and then red as it runs out.
 
-Nothing is lost when this happens. It just means the agent didn't get to do that one thing.
+What happens after those ten minutes is that your agent waits. The countdown is replaced by the
+words "waiting for you", and the card stays exactly as answerable as it was in the first minute.
+Go to lunch, sit through a meeting, do the school run: the agent is still holding the question
+when you get back, and answering it picks up where you left off.
+
+Four hours later, the agent gives up. The request is refused, the agent carries on without it,
+and it tells you how long it waited. Nothing is lost when that happens. It just means the agent
+didn't get to do that one thing.
+
+A scheduled task is the one exception. Nobody is sitting there watching it, so there is nobody to
+wait for: its questions are refused after ten minutes and the run carries on.
 
 Once an Ask is answered, one way or another, it leaves behind a short record: what you chose,
 or that it was already answered and when, or that time ran out. You can always find that record
@@ -97,7 +106,8 @@ Answering is for a person signed in to DorkOS.
 
 <Callout title="What DorkOS doesn't do yet">
   An Ask only reaches you while your DorkOS cockpit is open, unless a named approver is on a chat
-  connection. Nothing is pushed to your phone when the cockpit is closed. If nobody's there to see
-  it, the ten-minute clock still runs out and the request is refused for you. The approver list is
-  per chat connection, not per agent, and DorkOS does not record which of them answered.
+  connection. Nothing is pushed to your phone when the cockpit is closed. A request raised while you
+  are away waits for you, for up to four hours, and still takes your answer when you come back; only
+  after that does the agent give up and say so. The approver list is per chat connection, not per
+  agent, and DorkOS does not record which of them answered.
 </Callout>

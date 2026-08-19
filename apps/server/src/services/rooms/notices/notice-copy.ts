@@ -249,14 +249,21 @@ const BRIDGE_WAITING_LINES: Record<WaitingKind, (agentName: string) => string> =
  * promises ten minutes to a reader who has eight is worse than one that
  * promises nothing. What a person needs is that there IS a deadline and that
  * only they can beat it, which is what these say.
+ *
+ * **What changed with the park.** The lines used to end "it gives up if nobody
+ * does", which stopped being true: an agent now holds an unanswered prompt for
+ * four hours (spec `ask-parks-on-timeout` §10). A room log read an hour later
+ * must not claim a prompt is gone while the agent is still holding it, so the
+ * clause became "it will wait, but not forever" — still a deadline, still only
+ * yours to beat, and now true whenever it is read.
  */
 const WAITING_LINES: Record<WaitingKind, (agentName: string) => string> = {
   approval: (agentName) =>
-    `${agentName} is waiting for you to approve something before it can carry on. Open ${agentName}'s session to answer — it gives up if nobody does.`,
+    `${agentName} is waiting for you to approve something before it can carry on. Open ${agentName}'s session to answer. It will wait, but not forever.`,
   question: (agentName) =>
-    `${agentName} has a question for you before it can carry on. Open ${agentName}'s session to answer — it gives up if nobody does.`,
+    `${agentName} has a question for you before it can carry on. Open ${agentName}'s session to answer. It will wait, but not forever.`,
   elicitation: (agentName) =>
-    `${agentName} needs something from you before it can carry on. Open ${agentName}'s session to answer — it gives up if nobody does.`,
+    `${agentName} needs something from you before it can carry on. Open ${agentName}'s session to answer. It will wait, but not forever.`,
 };
 
 /**

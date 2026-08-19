@@ -4,6 +4,7 @@ import { SESSIONS } from '../../../config/constants.js';
 import { listPendingInteractions, type PendingInteractionEntry } from '../pending-interactions.js';
 
 const TIMEOUT = SESSIONS.INTERACTION_TIMEOUT_MS;
+const CEILING = SESSIONS.INTERACTION_PARK_CEILING_MS;
 
 /** Build the interactions map the selector reads from raw pending entries. */
 function makeInteractions(
@@ -37,6 +38,10 @@ describe('listPendingInteractions', () => {
     expect(dto.type).toBe('approval');
     expect(dto.startedAt).toBe(1000);
     expect(dto.remainingMs).toBe(TIMEOUT - 60000);
+    // Inside its budget nothing about the first ten minutes moved: it counts
+    // down against the budget it ships and is not parked.
+    expect(dto.timeoutMs).toBe(TIMEOUT);
+    expect(dto.parked).toBeUndefined();
     // Flattened snapshot fields are present on the DTO.
     expect(dto).toMatchObject({
       toolName: 'Bash',
@@ -69,11 +74,14 @@ describe('listPendingInteractions', () => {
 
     expect(dto.remainingMs).toBe(60_000);
     expect(dto).toMatchObject({ timeoutMs: ownBudget });
+    expect(dto.parked).toBeUndefined();
   });
 
-  it('expires an interaction on its OWN budget, not the global one', () => {
-    // The same disagreement at the boundary: a short-budget ask that has run
-    // out must not be re-presented just because the global clock has time left.
+  it('parks an interaction on its OWN budget, not the global one', () => {
+    // The same disagreement at the boundary, now on the park: a short-budget
+    // ask that has run its countdown out is waiting, not counting down, even
+    // though the global clock still has nine minutes on it. Guards the DOR-810
+    // regression from the other side (spec `ask-parks-on-timeout`).
     const startedAt = 1_000;
     const interactions = makeInteractions([
       [
@@ -86,7 +94,11 @@ describe('listPendingInteractions', () => {
       ],
     ]);
 
-    expect(listPendingInteractions(interactions, startedAt + 120_000)).toEqual([]);
+    const dto = listPendingInteractions(interactions, startedAt + 180_000)[0];
+
+    expect(dto.parked).toBe(true);
+    expect(dto.timeoutMs).toBeUndefined();
+    expect(dto.remainingMs).toBe(CEILING - 180_000);
   });
 
   it('falls back to the global budget for an interaction that declares none', () => {
@@ -99,24 +111,42 @@ describe('listPendingInteractions', () => {
     expect(listPendingInteractions(interactions, 61_000)[0].remainingMs).toBe(TIMEOUT - 60_000);
   });
 
-  it('excludes an interaction whose elapsed time equals the timeout exactly', () => {
-    // Purpose: expiry boundary exclusive — remainingMs === 0 is dropped.
+  it('parks an interaction whose elapsed time equals the countdown exactly', () => {
+    // Purpose: countdown boundary — at the budget the prompt stops counting
+    // down and starts waiting, rather than being dropped as it once was.
     const startedAt = 5000;
     const interactions = makeInteractions([['call-1', approvalEntry(startedAt)]]);
 
-    const dtos = listPendingInteractions(interactions, startedAt + TIMEOUT);
+    const dto = listPendingInteractions(interactions, startedAt + TIMEOUT)[0];
 
-    expect(dtos).toEqual([]);
+    expect(dto.parked).toBe(true);
+    expect(dto.remainingMs).toBe(CEILING - TIMEOUT);
   });
 
-  it('excludes an interaction that elapsed past the timeout', () => {
-    // Purpose: expired never re-presented — overshooting the timeout stays excluded.
+  it('parks an interaction past its budget, drops its timeoutMs, and counts down to the ceiling', () => {
+    // Purpose: the park. Eleven minutes in, the agent is waiting: the DTO says
+    // so, ships no budget for a card to draw a bar against, and its remainder
+    // runs to the park ceiling measured from `startedAt`.
+    const startedAt = 5_000;
+    const elapsed = 11 * 60_000;
+    const interactions = makeInteractions([['call-1', approvalEntry(startedAt)]]);
+
+    const dto = listPendingInteractions(interactions, startedAt + elapsed)[0];
+
+    expect(dto.parked).toBe(true);
+    expect(dto.timeoutMs).toBeUndefined();
+    expect(dto.remainingMs).toBe(CEILING - elapsed);
+  });
+
+  it('excludes an interaction that elapsed past the park ceiling', () => {
+    // Purpose: the bound that stops a STRANDED entry pausing the stall watchdog
+    // and holding the session write-lock forever. The park widens that window;
+    // it does not open it.
     const startedAt = 5000;
     const interactions = makeInteractions([['call-1', approvalEntry(startedAt)]]);
 
-    const dtos = listPendingInteractions(interactions, startedAt + TIMEOUT + 60000);
-
-    expect(dtos).toEqual([]);
+    expect(listPendingInteractions(interactions, startedAt + CEILING + 60_000)).toEqual([]);
+    expect(listPendingInteractions(interactions, startedAt + CEILING)).toEqual([]);
   });
 
   it('returns an empty array when there are no pending interactions', () => {

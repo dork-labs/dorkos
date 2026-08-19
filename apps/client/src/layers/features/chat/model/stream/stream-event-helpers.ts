@@ -36,6 +36,7 @@ export function deriveFromParts(parts: MessagePart[]): {
         // actually answers — the SDK's context and the countdown alike (DOR-810).
         approvalStartedAt: part.approvalStartedAt,
         approvalRemainingMs: part.approvalRemainingMs,
+        approvalParked: part.approvalParked,
         approvalTitle: part.approvalTitle,
         approvalDisplayName: part.approvalDisplayName,
         approvalDescription: part.approvalDescription,

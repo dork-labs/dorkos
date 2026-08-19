@@ -6,10 +6,9 @@ import {
   handleElicitation,
   handleToolApproval,
   resolveModeDecision,
-  type InteractiveSession,
-  type PendingInteraction,
   type ToolApprovalContext,
 } from '../interactive-handlers.js';
+import type { InteractiveSession, PendingInteraction } from '../interaction-wait.js';
 import { resolveApprovalDecision } from '../../../opencode/approvals.js';
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { PermissionModeSchema, type PermissionMode } from '@dorkos/shared/schemas';
@@ -476,13 +475,29 @@ describe('claude-code and opencode agree where they must (DOR-604)', () => {
   });
 });
 
+/** The countdown a prompt parks at, and the ceiling it is finally refused at. */
+const COUNTDOWN_MS = 10 * 60 * 1000;
+const CEILING_MS = 4 * 60 * 60 * 1000;
+
 /** A bare session literal — no SDK mock, just the map + queue the handlers touch. */
-function makeBareSession(): InteractiveSession {
+function makeBareSession(overrides: Partial<InteractiveSession> = {}): InteractiveSession {
   return {
     pendingInteractions: new Map<string, PendingInteraction>(),
     eventQueue: [] as StreamEvent[],
     sdkSessionId: 'session-under-test',
+    ...overrides,
   };
+}
+
+/**
+ * Has this promise settled yet? Resolves on the microtask queue, so it reports
+ * the state as of now rather than waiting for one.
+ */
+function settlementOf(promise: Promise<unknown>): Promise<'settled' | 'pending'> {
+  return Promise.race([
+    promise.then(() => 'settled' as const),
+    Promise.resolve('pending' as const),
+  ]);
 }
 
 describe('pending interaction snapshots', () => {
@@ -597,25 +612,28 @@ describe('pending interaction snapshots', () => {
         { command: 'rm -rf /secret-project' },
         context
       );
-      vi.advanceTimersByTime(10 * 60 * 1000);
+      vi.advanceTimersByTime(CEILING_MS);
 
       await expect(result).resolves.toMatchObject({ behavior: 'deny' });
       expect(session.pendingInteractions.has('tool-timeout-1')).toBe(false);
       // DOR-1158: a timeout also pushes an operator-facing notice, AFTER
       // interaction_cancelled so the card's removal can't wipe it in the same
-      // frame (mirrors the phantom-notice ordering in message-sender.ts).
+      // frame (mirrors the phantom-notice ordering in message-sender.ts). The
+      // first `system_status` is the park at ten minutes; the refusal is four
+      // hours later (spec `ask-parks-on-timeout`).
       expect(session.eventQueue.map((e) => e.type)).toEqual([
         'approval_required',
+        'system_status',
         'interaction_cancelled',
         'system_status',
       ]);
-      expect(session.eventQueue[1].data).toEqual({
+      expect(session.eventQueue[2].data).toEqual({
         interactionId: 'tool-timeout-1',
         reason: 'timeout',
       });
-      const notice = session.eventQueue[2].data as { message: string };
+      const notice = session.eventQueue[3].data as { message: string };
       expect(notice.message).toContain('Bash');
-      expect(notice.message).toContain('10 minutes');
+      expect(notice.message).toContain('4 hours');
       // Never the tool's arguments — they can carry secrets.
       expect(notice.message).not.toContain('rm -rf');
       expect(notice.message).not.toContain('secret-project');
@@ -626,7 +644,7 @@ describe('pending interaction snapshots', () => {
 
   it('says in the log that nobody answered, for every kind of prompt', async () => {
     // **The only trace an expired prompt leaves.** All three handlers hand the
-    // model a denial ten minutes on and used to write nothing anywhere: the
+    // model a denial once the wait runs out and used to write nothing anywhere: the
     // card vanished from any client that happened to be watching, the turn
     // carried on as though a person had refused, and nothing recorded that the
     // refusal was a clock rather than a decision. Reconstructing the
@@ -652,11 +670,11 @@ describe('pending interaction snapshots', () => {
         { serverName: 'test-mcp', message: 'sign in', mode: 'url' } as ElicitationRequest,
         new AbortController().signal
       );
-      vi.advanceTimersByTime(10 * 60 * 1000);
+      vi.advanceTimersByTime(CEILING_MS);
       await Promise.all([approval, question, elicitation]);
 
       const said = warn.mock.calls.filter(
-        ([message]) => message === '[claude-code] nobody answered in time, so this was denied'
+        ([message]) => message === '[claude-code] nobody answered in 4 hours, so this was denied'
       );
       // `warn` is not incidental — it is the refusal rule. `visibility: 'silent'`
       // says no notice was written anywhere, which is what makes this line the
@@ -667,7 +685,7 @@ describe('pending interaction snapshots', () => {
           interactionId: 'tool-1',
           kind: 'approval',
           toolName: 'Bash',
-          waitedMs: 10 * 60 * 1000,
+          waitedMs: CEILING_MS,
           reason: 'interaction_expired',
           visibility: 'silent',
         },
@@ -675,7 +693,7 @@ describe('pending interaction snapshots', () => {
           sessionId: 'session-under-test',
           interactionId: 'tool-2',
           kind: 'question',
-          waitedMs: 10 * 60 * 1000,
+          waitedMs: CEILING_MS,
           reason: 'interaction_expired',
           visibility: 'silent',
         },
@@ -683,7 +701,7 @@ describe('pending interaction snapshots', () => {
           sessionId: 'session-under-test',
           interactionId: expect.any(String),
           kind: 'elicitation',
-          waitedMs: 10 * 60 * 1000,
+          waitedMs: CEILING_MS,
           reason: 'interaction_expired',
           visibility: 'silent',
         },
@@ -791,17 +809,24 @@ describe('operator-facing timeout notice (DOR-1158)', () => {
       ];
 
       const result = handleAskUserQuestion(session, 'question-timeout-1', { questions });
-      vi.advanceTimersByTime(10 * 60 * 1000);
+      vi.advanceTimersByTime(COUNTDOWN_MS);
+      // The park names the question, because that is the notice a person who is
+      // still coming back will read.
+      const parked = session.eventQueue[1].data as { message: string };
+      expect(parked.message).toContain('Which model should win the bake-off — GPT-5 or Opus?');
+      expect(parked.message).toContain('10 minutes');
+
+      vi.advanceTimersByTime(CEILING_MS - COUNTDOWN_MS);
       await result;
 
       expect(session.eventQueue.map((e) => e.type)).toEqual([
         'question_prompt',
+        'system_status',
         'interaction_cancelled',
         'system_status',
       ]);
-      const notice = session.eventQueue[2].data as { message: string };
-      expect(notice.message).toContain('Which model should win the bake-off — GPT-5 or Opus?');
-      expect(notice.message).toContain('10 minutes');
+      const notice = session.eventQueue[3].data as { message: string };
+      expect(notice.message).toContain('4 hours');
     } finally {
       vi.useRealTimers();
     }
@@ -819,16 +844,19 @@ describe('operator-facing timeout notice (DOR-1158)', () => {
       ];
 
       const result = handleAskUserQuestion(session, 'question-timeout-long-1', { questions });
-      vi.advanceTimersByTime(10 * 60 * 1000);
-      await result;
+      vi.advanceTimersByTime(COUNTDOWN_MS);
 
-      const notice = session.eventQueue[2].data as { message: string };
+      const notice = session.eventQueue[1].data as { message: string };
       expect(notice.message).not.toContain(longQuestion);
       expect(notice.message).toContain('Which model wins the bake-off?');
       const quoted = notice.message.split('The question was: ')[1];
       // Exactly 120 characters of the question, then one ellipsis, wrapped in
       // the message's own quote marks — not "somewhere under a generous bound".
       expect(quoted).toBe(`"${longQuestion.slice(0, 120)}…"`);
+
+      // Settle the prompt so the pending promise does not outlive the test.
+      session.pendingInteractions.get('question-timeout-long-1')?.reject('done');
+      await result;
     } finally {
       vi.useRealTimers();
     }
@@ -865,11 +893,12 @@ describe('operator-facing timeout notice (DOR-1158)', () => {
         { command: 'rm -rf /secret-project' },
         context
       );
-      vi.advanceTimersByTime(10 * 60 * 1000);
+      vi.advanceTimersByTime(CEILING_MS);
       await result;
 
-      const notice = session.eventQueue[2].data as { message: string };
+      const notice = session.eventQueue[3].data as { message: string };
       expect(notice.message).toContain('Bash');
+      expect(notice.message).toContain('4 hours');
       // Never the tool's arguments — they can carry secrets.
       expect(notice.message).not.toContain('secret-project');
     } finally {
@@ -894,10 +923,10 @@ describe('operator-facing timeout notice (DOR-1158)', () => {
         { command: 'rm -rf /secret-project' },
         context
       );
-      vi.advanceTimersByTime(10 * 60 * 1000);
+      vi.advanceTimersByTime(CEILING_MS);
       await result;
 
-      const notice = session.eventQueue[2].data as { message: string };
+      const notice = session.eventQueue[3].data as { message: string };
       expect(notice.message).toContain('Delete secret project');
       expect(notice.message).not.toContain('Bash');
     } finally {
@@ -922,11 +951,13 @@ describe('operator-facing timeout notice (DOR-1158)', () => {
         { command: 'ls' },
         context
       );
-      vi.advanceTimersByTime(10 * 60 * 1000);
-      await result;
+      vi.advanceTimersByTime(COUNTDOWN_MS);
 
-      const notice = session.eventQueue[2].data as { message: string };
-      expect(notice.message).toContain('I asked to run Bash and waited');
+      const notice = session.eventQueue[1].data as { message: string };
+      expect(notice.message).toContain('I asked to run Bash and nobody has answered yet');
+
+      session.pendingInteractions.get('tool-timeout-blank-display-1')?.reject('done');
+      await result;
     } finally {
       vi.useRealTimers();
     }
@@ -959,17 +990,18 @@ describe('operator-facing timeout notice (DOR-1158)', () => {
       } as ElicitationRequest;
 
       const result = handleElicitation(session, request, new AbortController().signal);
-      vi.advanceTimersByTime(10 * 60 * 1000);
+      vi.advanceTimersByTime(CEILING_MS);
       await result;
 
       expect(session.eventQueue.map((e) => e.type)).toEqual([
         'elicitation_prompt',
+        'system_status',
         'interaction_cancelled',
         'system_status',
       ]);
-      const notice = session.eventQueue[2].data as { message: string };
+      const notice = session.eventQueue[3].data as { message: string };
       expect(notice.message).toContain('stripe-mcp');
-      expect(notice.message).toContain('10 minutes');
+      expect(notice.message).toContain('4 hours');
       // Never the elicitation's message body — it can carry sensitive detail.
       expect(notice.message).not.toContain('$15-40');
     } finally {
@@ -1012,5 +1044,258 @@ describe('operator-facing timeout notice (DOR-1158)', () => {
       'elicitation_prompt',
       'interaction_cancelled',
     ]);
+  });
+});
+
+/**
+ * The two-stage wait (spec `ask-parks-on-timeout`): a prompt nobody answers
+ * PARKS at ten minutes and is refused four hours later.
+ *
+ * The failure this suite exists for is the one the old code shipped: the model
+ * was handed a denial nobody gave, ten minutes into a lunch, and the only trace
+ * was a silent log line. So the sharpest assertion here is a negative one — at
+ * ten minutes the promise has NOT settled and the tool call is still held.
+ */
+describe('a prompt nobody answers parks, then is refused', () => {
+  it('leaves the promise unsettled and the entry pending at ten minutes', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const result = handleToolApproval(session, 'park-1', 'Bash', { command: 'ls' }, {
+        signal: new AbortController().signal,
+        toolUseID: 'park-1',
+      } as ToolApprovalContext);
+
+      vi.advanceTimersByTime(COUNTDOWN_MS);
+
+      expect(await settlementOf(result)).toBe('pending');
+      expect(session.pendingInteractions.has('park-1')).toBe(true);
+
+      // Settle it so the test leaves nothing armed.
+      session.pendingInteractions.get('park-1')?.reject('done');
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('writes one info line naming the prompt it is now waiting on', async () => {
+    // The park's only durable trace, and the half DOR-1158 could not reach: a
+    // long silence has to be explainable to somebody reading the log later, and
+    // "which prompt" is the first thing they need. `info`, not `warn`, because
+    // nothing was thrown away.
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const result = handleToolApproval(session, 'park-log', 'Bash', { command: 'ls' }, {
+        signal: new AbortController().signal,
+        toolUseID: 'park-log',
+      } as ToolApprovalContext);
+
+      vi.advanceTimersByTime(COUNTDOWN_MS);
+
+      const said = info.mock.calls.filter(
+        ([message]) => message === '[claude-code] nobody answered in time, so the agent is waiting'
+      );
+      expect(said.map(([, fields]) => fields)).toEqual([
+        {
+          interactionId: 'park-log',
+          kind: 'approval',
+          toolName: 'Bash',
+          sessionId: 'session-under-test',
+          waitsForMs: CEILING_MS,
+        },
+      ]);
+      // Nothing from the prompt's input, for the reason its sibling gives.
+      expect(JSON.stringify(said)).not.toContain('ls');
+
+      session.pendingInteractions.get('park-log')?.reject('done');
+      await result;
+    } finally {
+      vi.useRealTimers();
+      info.mockRestore();
+    }
+  });
+
+  it('says the agent is waiting at ten minutes, and cancels nothing', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const result = handleToolApproval(session, 'park-2', 'Bash', { command: 'ls' }, {
+        signal: new AbortController().signal,
+        toolUseID: 'park-2',
+      } as ToolApprovalContext);
+
+      vi.advanceTimersByTime(COUNTDOWN_MS);
+
+      expect(session.eventQueue.map((e) => e.type)).toEqual(['approval_required', 'system_status']);
+      const notice = session.eventQueue[1].data as { message: string };
+      expect(notice.message).toBe(
+        'I asked to run Bash and nobody has answered yet, so I am waiting here until somebody does.'
+      );
+
+      session.pendingInteractions.get('park-2')?.reject('done');
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refuses at four hours, naming the wait in hours', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const result = handleToolApproval(session, 'park-3', 'Bash', { command: 'ls' }, {
+        signal: new AbortController().signal,
+        toolUseID: 'park-3',
+      } as ToolApprovalContext);
+
+      vi.advanceTimersByTime(CEILING_MS - 1);
+      expect(await settlementOf(result)).toBe('pending');
+
+      vi.advanceTimersByTime(1);
+
+      await expect(result).resolves.toEqual({
+        behavior: 'deny',
+        message: 'Tool approval timed out after 4 hours',
+      });
+      expect(session.eventQueue[2]).toEqual({
+        type: 'interaction_cancelled',
+        data: { interactionId: 'park-3', reason: 'timeout' },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the ceiling timer when a parked prompt is finally answered', async () => {
+    // The one correctness trap in the change: the entry's timer is REPLACED
+    // when the prompt parks, so a `clearTimeout` over the first timer clears
+    // one that has already fired and leaves the ceiling armed on an interaction
+    // somebody answered. It would then refuse a tool call that already ran.
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const result = handleToolApproval(session, 'park-4', 'Bash', { command: 'ls' }, {
+        signal: new AbortController().signal,
+        toolUseID: 'park-4',
+      } as ToolApprovalContext);
+
+      vi.advanceTimersByTime(COUNTDOWN_MS + 60_000);
+      const pending = session.pendingInteractions.get('park-4');
+      if (pending?.type !== 'approval') throw new Error('expected a pending approval');
+      pending.resolve(true);
+      await expect(result).resolves.toEqual({
+        behavior: 'allow',
+        updatedInput: { command: 'ls' },
+      });
+      const afterAnswer = session.eventQueue.length;
+
+      vi.advanceTimersByTime(CEILING_MS);
+
+      expect(session.eventQueue).toHaveLength(afterAnswer);
+      expect(session.eventQueue.map((e) => e.type)).toEqual(['approval_required', 'system_status']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the ceiling timer when the SDK aborts a parked prompt', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const abort = new AbortController();
+      const result = handleToolApproval(session, 'park-5', 'Bash', { command: 'ls' }, {
+        signal: abort.signal,
+        toolUseID: 'park-5',
+      } as ToolApprovalContext);
+
+      vi.advanceTimersByTime(COUNTDOWN_MS + 60_000);
+      abort.abort();
+      await expect(result).resolves.toEqual({
+        behavior: 'deny',
+        message: 'Tool approval aborted',
+      });
+      const afterAbort = session.eventQueue.length;
+
+      vi.advanceTimersByTime(CEILING_MS);
+
+      expect(session.eventQueue).toHaveLength(afterAbort);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refuses an unattended run at ten minutes and never parks it', async () => {
+    // A scheduled task has nobody coming back to it, so a park is a promise
+    // nothing can keep: it would stall the run for four hours per ask instead
+    // of ten minutes (spec §7).
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession({ unattended: true });
+      const result = handleToolApproval(session, 'park-6', 'Bash', { command: 'ls' }, {
+        signal: new AbortController().signal,
+        toolUseID: 'park-6',
+      } as ToolApprovalContext);
+
+      vi.advanceTimersByTime(COUNTDOWN_MS);
+
+      await expect(result).resolves.toEqual({
+        behavior: 'deny',
+        message: 'Tool approval timed out after 10 minutes',
+      });
+      // No park notice: the queue goes straight from the ask to the refusal.
+      expect(session.eventQueue.map((e) => e.type)).toEqual([
+        'approval_required',
+        'interaction_cancelled',
+        'system_status',
+      ]);
+      const notice = session.eventQueue[2].data as { message: string };
+      expect(notice.message).toBe(
+        'I waited 10 minutes for an answer about Bash and nobody came, so I treated it as declined.'
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('parks a question and an elicitation on the same two stages', async () => {
+    // Both share `armInteractionWait`, so this pins that they reach it: the
+    // park notice at ten minutes, the refusal four hours later.
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const question = handleAskUserQuestion(session, 'park-q', {
+        questions: [{ question: 'which branch?', header: 'Branch', options: [] }],
+      });
+      const elicitation = handleElicitation(
+        session,
+        { serverName: 'stripe-mcp', message: 'sign in', mode: 'url' } as ElicitationRequest,
+        new AbortController().signal
+      );
+
+      vi.advanceTimersByTime(COUNTDOWN_MS);
+
+      expect(await settlementOf(question)).toBe('pending');
+      expect(await settlementOf(elicitation)).toBe('pending');
+      const parkedLines = session.eventQueue
+        .filter((e) => e.type === 'system_status')
+        .map((e) => (e.data as { message: string }).message);
+      expect(parkedLines).toEqual([
+        'I asked you something 10 minutes ago and nobody has answered, so I am waiting here. The question was: "which branch?"',
+        'stripe-mcp asked you something and nobody has answered yet, so I am waiting here until somebody does.',
+      ]);
+
+      vi.advanceTimersByTime(CEILING_MS - COUNTDOWN_MS);
+
+      await expect(question).resolves.toEqual({
+        behavior: 'deny',
+        message: 'User did not respond within 4 hours',
+      });
+      await expect(elicitation).resolves.toEqual({ action: 'decline' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -81,6 +81,10 @@ export const TaskFrontmatterSchema = SkillFrontmatterSchema.extend({
    * minutes per ask and skipped the work behind each one. The stricter modes
    * trade throughput for safety, deliberately; budget `max-runtime` for the
    * asks you expect.
+   *
+   * A scheduled run is the ONE exception to parking: an interactive session
+   * holds an unanswered prompt for four hours so a person can come back to it,
+   * and a run nobody is watching has nobody to come back.
    */
   permissions: z.enum(TASK_PERMISSION_MODES).default('acceptEdits'),
 

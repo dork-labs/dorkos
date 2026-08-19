@@ -217,6 +217,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           timeoutMs={toolPart.timeoutMs}
           approvalStartedAt={toolPart.approvalStartedAt}
           approvalRemainingMs={toolPart.approvalRemainingMs}
+          approvalParked={toolPart.approvalParked}
           approvalTitle={toolPart.approvalTitle}
           approvalDisplayName={toolPart.approvalDisplayName}
           approvalDescription={toolPart.approvalDescription}

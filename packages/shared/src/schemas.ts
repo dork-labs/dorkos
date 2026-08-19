@@ -1181,6 +1181,18 @@ export const PendingInteractionDTOSchema = z
        * recovered interaction recorded before this field existed still replays.
        */
       timeoutMs: z.number().optional(),
+      /**
+       * True once nobody answered inside the budget and the agent is simply
+       * waiting (spec `ask-parks-on-timeout`). Stamped by
+       * `listPendingInteractions`, never stored and never broadcast as its own
+       * event: it is a function of `startedAt` and the budget, and a second copy
+       * would be a second answer free to disagree.
+       *
+       * A parked interaction ships NO `timeoutMs`, so a card draws no bar for
+       * it. `remainingMs` still counts down to the park ceiling, which is what
+       * the server reads; it is not what the person is shown.
+       */
+      parked: z.boolean().optional(),
       toolName: z.string(),
       input: z.string(),
       title: z.string().optional(),
@@ -1207,6 +1219,8 @@ export const PendingInteractionDTOSchema = z
        * existed must still parse.
        */
       timeoutMs: z.number().optional(),
+      /** True once nobody answered in time and the agent is waiting; see the approval member above. */
+      parked: z.boolean().optional(),
       questions: z.array(QuestionItemSchema),
     }),
     z.object({
@@ -1216,6 +1230,8 @@ export const PendingInteractionDTOSchema = z
       remainingMs: z.number(),
       /** The full budget this ask was given; see the question member above. */
       timeoutMs: z.number().optional(),
+      /** True once nobody answered in time and the agent is waiting; see the approval member above. */
+      parked: z.boolean().optional(),
       serverName: z.string(),
       message: z.string(),
       mode: ElicitationModeSchema.optional(),
@@ -2114,6 +2130,17 @@ export const ToolCallPartSchema = z
      * (both ride on this tool_call part). Client-only — never serialized to the transcript.
      */
     approvalRemainingMs: z.number().optional(),
+    /**
+     * True once nobody answered inside the budget and the agent is simply
+     * waiting (spec `ask-parks-on-timeout`). Carried from the pending-interaction
+     * DTO, never derived here: a parked DTO ships NO `timeoutMs` while its
+     * `approvalRemainingMs` counts down to the four-hour ceiling, so a card that
+     * read that remainder against the ten-minute budget the turn supplied
+     * announced "228:59 remaining" with a draining bar on every reload
+     * mid-park. Client-only, like `approvalRemainingMs` — never serialized to
+     * the transcript.
+     */
+    approvalParked: z.boolean().optional(),
     // SDK-provided rich context for approval UI
     approvalTitle: z.string().optional().describe('Full permission prompt sentence from SDK'),
     approvalDisplayName: z.string().optional().describe('Short noun phrase for the tool action'),

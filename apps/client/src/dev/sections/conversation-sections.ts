@@ -253,6 +253,8 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
       'card',
       'countdown',
       'timeout',
+      'parked',
+      'waiting for you',
       'urgent',
       'warning',
       'burst',

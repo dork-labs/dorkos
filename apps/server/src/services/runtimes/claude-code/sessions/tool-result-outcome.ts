@@ -62,23 +62,43 @@ import { mapSdkAnswersToIndices, parseQuestionAnswers } from './question-answers
 export type ToolResultOutcome = 'complete' | 'expired' | 'denied' | 'cancelled' | 'errored';
 
 /**
- * What DorkOS tells the model when an `AskUserQuestion` goes unanswered past
- * its budget. Read back by {@link classifyToolResult} as `expired`.
+ * How long a refusal says it waited, in the unit that reads best: whole hours
+ * from an hour up, whole minutes below it.
  *
- * @param minutes - The interaction budget, in whole minutes.
+ * One rule, one place, because three sentences quote it — the two denials below
+ * and the log line the claude-code handlers write. A prompt normally waits four
+ * hours (`SESSIONS.INTERACTION_PARK_CEILING_MS`), but an unattended run still
+ * refuses at ten minutes because nobody is coming back to it (spec
+ * `ask-parks-on-timeout` §7), so the unit cannot be fixed at either.
+ *
+ * @param waitedMs - How long the prompt actually went unanswered.
  */
-export function questionTimeoutDenial(minutes: number): string {
-  return `User did not respond within ${minutes} minutes`;
+export function describeWaited(waitedMs: number): string {
+  const [count, unit] =
+    waitedMs >= 3_600_000
+      ? ([Math.round(waitedMs / 3_600_000), 'hour'] as const)
+      : ([Math.ceil(waitedMs / 60_000), 'minute'] as const);
+  return `${count} ${unit}${count === 1 ? '' : 's'}`;
 }
 
 /**
- * What DorkOS tells the model when a permission prompt goes unanswered past its
- * budget. Read back by {@link classifyToolResult} as `expired`.
+ * What DorkOS tells the model when an `AskUserQuestion` goes unanswered until
+ * the agent gives up. Read back by {@link classifyToolResult} as `expired`.
  *
- * @param minutes - The interaction budget, in whole minutes.
+ * @param waitedMs - How long the prompt went unanswered.
  */
-export function approvalTimeoutDenial(minutes: number): string {
-  return `Tool approval timed out after ${minutes} minutes`;
+export function questionTimeoutDenial(waitedMs: number): string {
+  return `User did not respond within ${describeWaited(waitedMs)}`;
+}
+
+/**
+ * What DorkOS tells the model when a permission prompt goes unanswered until
+ * the agent gives up. Read back by {@link classifyToolResult} as `expired`.
+ *
+ * @param waitedMs - How long the prompt went unanswered.
+ */
+export function approvalTimeoutDenial(waitedMs: number): string {
+  return `Tool approval timed out after ${describeWaited(waitedMs)}`;
 }
 
 /**
@@ -106,10 +126,15 @@ export const WITHDRAWN_DENIALS = {
   interaction: 'Interaction cancelled',
 } as const;
 
-/** DorkOS's timeout denials, minute-agnostic so a changed budget still reads. */
+/**
+ * DorkOS's timeout denials, unit-agnostic so a changed budget still reads. The
+ * minute forms stay for the transcripts written before a prompt waited hours
+ * (spec `ask-parks-on-timeout` §5.5): widening the copy without widening this
+ * would file every expired call as `errored` instead.
+ */
 const TIMEOUT_PATTERNS = [
-  /^User did not respond within \d+ minutes?$/,
-  /^Tool approval timed out after \d+ minutes?$/,
+  /^User did not respond within \d+ (?:minutes?|hours?)$/,
+  /^Tool approval timed out after \d+ (?:minutes?|hours?)$/,
 ];
 
 /**

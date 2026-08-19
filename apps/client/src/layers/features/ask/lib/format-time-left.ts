@@ -31,6 +31,9 @@ export function formatTimeLeft(expiresAt: string, now: number): string {
   return minutes === 0 ? `${hours} hr left` : `${hours} hr ${minutes} min left`;
 }
 
+/** What a parked Ask says where its countdown used to be. */
+export const ASK_PARKED_LABEL = 'waiting for you';
+
 /**
  * The same phrase, for a countdown already reduced to seconds.
  *
@@ -38,11 +41,21 @@ export function formatTimeLeft(expiresAt: string, now: number): string {
  * deadline string. Under a minute it counts down by the second, because the last
  * minute is the one where a number matters.
  *
- * @param secondsLeft - Seconds until the prompt auto-denies.
- * @returns e.g. `4 min left`, `35s left`, `expired`.
+ * **A countdown that reaches zero is a WAIT, not a death.** The server never
+ * lists an interaction whose remainder has run out, so an Ask this client is
+ * still holding whose local countdown has expired is one the agent parked on and
+ * is still waiting for (spec `ask-parks-on-timeout`). A card that said "expired"
+ * over an agent that is still holding the tool call is the exact lie that item
+ * removes.
+ *
+ * @param secondsLeft - Seconds until the prompt parks, or `null` when it has
+ *   already parked and there is no countdown left to say.
+ * @returns e.g. `4 min left`, `35s left`, or {@link ASK_PARKED_LABEL} once the
+ *   countdown is out — however the caller learned it was out.
  */
-export function formatAskTimeLeft(secondsLeft: number): string {
-  if (!Number.isFinite(secondsLeft) || secondsLeft <= 0) return 'expired';
+export function formatAskTimeLeft(secondsLeft: number | null): string {
+  if (secondsLeft === null || !Number.isFinite(secondsLeft) || secondsLeft <= 0)
+    return ASK_PARKED_LABEL;
   if (secondsLeft < 60) return `${Math.ceil(secondsLeft)}s left`;
   return `${Math.floor(secondsLeft / 60)} min left`;
 }

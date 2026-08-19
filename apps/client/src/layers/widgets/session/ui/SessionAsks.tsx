@@ -134,6 +134,7 @@ export function SessionAsks({
               timeoutMs={activeInteraction.timeoutMs}
               approvalStartedAt={activeInteraction.approvalStartedAt}
               approvalRemainingMs={activeInteraction.approvalRemainingMs}
+              approvalParked={activeInteraction.approvalParked}
               approvalTitle={activeInteraction.approvalTitle}
               approvalDisplayName={activeInteraction.approvalDisplayName}
               approvalDescription={activeInteraction.approvalDescription}

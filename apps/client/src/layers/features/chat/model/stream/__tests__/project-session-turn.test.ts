@@ -864,6 +864,78 @@ describe('projectSessionMessages', () => {
     });
   });
 
+  it('carries PARKED off the snapshot DTO onto the turn’s own card', () => {
+    // THE RELOAD-MID-PARK CASE. A parked DTO ships no `timeoutMs` and a
+    // remainder that runs to the four-hour ceiling, while the turn's replayed
+    // ask still carries the ten-minute budget. Without the flag the card read
+    // that remainder as a countdown against that budget and announced
+    // "228:59 remaining" with a draining bar over a prompt the agent was
+    // quietly holding.
+    const askedAt = 1_700_000_000_000;
+    const staleAsk: SessionEvent = {
+      seq: 2,
+      type: 'approval_required',
+      id: 'rec-1',
+      toolName: 'Bash',
+      input: 'ls',
+      startedAt: askedAt,
+      remainingMs: 600_000,
+      timeoutMs: 600_000,
+      hasSuggestions: false,
+    };
+    const parkedDto: PendingInteractionDTO = {
+      type: 'approval',
+      id: 'rec-1',
+      startedAt: askedAt,
+      remainingMs: 4 * 60 * 60_000 - 11 * 60_000,
+      parked: true,
+      toolName: 'Bash',
+      input: 'ls',
+      hasSuggestions: false,
+    };
+
+    const messages = projectSessionMessages(
+      history,
+      [{ seq: 1, type: 'turn_start' }, staleAsk],
+      [parkedDto]
+    );
+    const parts = (messages[2].parts ?? []).filter((p) => p.type === 'tool_call');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toMatchObject({
+      toolCallId: 'rec-1',
+      status: 'pending',
+      approvalParked: true,
+    });
+  });
+
+  it('carries PARKED onto a card the turn does not represent at all', () => {
+    // The other recovery shape: the turn was cleared, so the card is built from
+    // the DTO alone. It must arrive parked too, or the same prompt reads one way
+    // after a reload and another after a reload that lost the turn.
+    const parkedDto: PendingInteractionDTO = {
+      type: 'approval',
+      id: 'rec-alone',
+      startedAt: 1000,
+      remainingMs: 4 * 60 * 60_000 - 11 * 60_000,
+      parked: true,
+      toolName: 'Bash',
+      input: 'ls',
+      hasSuggestions: false,
+    };
+
+    const messages = projectSessionMessages(history, [], [parkedDto]);
+    const parts = (messages[2].parts ?? []).filter((p) => p.type === 'tool_call');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toMatchObject({ toolCallId: 'rec-alone', approvalParked: true });
+    expect((parts[0] as { timeoutMs?: number }).timeoutMs).toBeUndefined();
+  });
+
+  it('leaves a prompt still inside its budget unparked', () => {
+    const messages = projectSessionMessages(history, [], [recoveredApproval]);
+    const parts = (messages[2].parts ?? []).filter((p) => p.type === 'tool_call');
+    expect((parts[0] as { approvalParked?: boolean }).approvalParked).toBeUndefined();
+  });
+
   it('interaction_resolved settles a pending part folded from snapshot-carried events', () => {
     // Purpose: a snapshot's inProgressTurn carries the interaction EVENT (which
     // sets interactiveType directly), so removing the pending DTO alone cannot

@@ -91,7 +91,21 @@ task run, which has nobody coming back to it.
   child process of this server. There is no way to make it durable without the
   runtime holding the loop across process boundaries.
 - OpenCode parks without the "I am waiting here" transcript line claude-code
-  gets, so one runtime is slightly more legible than the other.
+  gets, so one runtime is slightly more legible than the other. Whether the
+  OpenCode sidecar expires an unanswered permission of its own accord is also
+  still unverified — the adapter states the uncertainty rather than claiming a
+  parity it has not earned, and one live turn settles it.
+- **A relay-bound turn parks too, and its Ask reaches only the cockpit.**
+  `core/unattended-autonomy` counts a binding as unattended; this decision
+  deliberately does not, because a bridged agent's prompt IS listed fleet-wide
+  and the person the room is talking to can answer it — which a scheduled run's
+  prompt never can. The cost is that a Slack- or Telegram-bound agent can wait
+  four hours while saying nothing on the surface that asked.
+- **A room turn is still given up after `rooms.lateReplyCeilingMinutes`** (60 by
+  default), a bound that was unreachable while every prompt settled in ten
+  minutes. An Ask answered after that still runs its tool and still lands in the
+  transcript; the room just gets no reply. Tying the two numbers together would
+  redefine a setting somebody may already have tuned.
 
 ### Rejected alternatives
 

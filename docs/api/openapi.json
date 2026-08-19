@@ -343,6 +343,9 @@
               "timeoutMs": {
                 "type": "number"
               },
+              "parked": {
+                "type": "boolean"
+              },
               "toolName": {
                 "type": "string"
               },
@@ -399,6 +402,9 @@
               "timeoutMs": {
                 "type": "number"
               },
+              "parked": {
+                "type": "boolean"
+              },
               "questions": {
                 "type": "array",
                 "items": {
@@ -434,6 +440,9 @@
               },
               "timeoutMs": {
                 "type": "number"
+              },
+              "parked": {
+                "type": "boolean"
               },
               "serverName": {
                 "type": "string"
@@ -828,6 +837,9 @@
           },
           "approvalRemainingMs": {
             "type": "number"
+          },
+          "approvalParked": {
+            "type": "boolean"
           },
           "approvalTitle": {
             "type": "string",

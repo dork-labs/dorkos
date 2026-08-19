@@ -614,14 +614,14 @@ describe('OpenCodeRuntime', () => {
       await bashTurn.finished;
     });
 
-    it('auto-denies a pending approval when the interaction timeout elapses', async () => {
+    it('auto-denies a pending approval when the park ceiling elapses', async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       const harness = makeRuntime();
       const { client } = harness;
       const { connection, events, finished } = await turnWithPermission(harness, 'default');
       await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
 
-      await vi.advanceTimersByTimeAsync(SESSIONS.INTERACTION_TIMEOUT_MS + 1);
+      await vi.advanceTimersByTimeAsync(SESSIONS.INTERACTION_PARK_CEILING_MS + 1);
 
       await vi.waitFor(() =>
         expect(client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith({
@@ -647,7 +647,7 @@ describe('OpenCodeRuntime', () => {
       const { connection, events, finished } = await turnWithPermission(harness, 'default');
       await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
 
-      await vi.advanceTimersByTimeAsync(SESSIONS.INTERACTION_TIMEOUT_MS + 1);
+      await vi.advanceTimersByTimeAsync(SESSIONS.INTERACTION_PARK_CEILING_MS + 1);
       await vi.waitFor(() =>
         expect(client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith({
           path: { id: OC_SESSION_A, permissionID: 'per_0001' },
@@ -737,7 +737,7 @@ describe('OpenCodeRuntime', () => {
       );
 
       // The auto-deny timer was disarmed with the record.
-      await vi.advanceTimersByTimeAsync(SESSIONS.INTERACTION_TIMEOUT_MS + 1);
+      await vi.advanceTimersByTimeAsync(SESSIONS.INTERACTION_PARK_CEILING_MS + 1);
       expect(client.postSessionIdPermissionsPermissionId).not.toHaveBeenCalled();
       expect(runtime.approveTool(sessionId, 'per_0001', true)).toBe(false);
 
@@ -937,7 +937,7 @@ describe('OpenCodeRuntime', () => {
       const { connection, events, finished } = await turnWithSubagentPermission(harness);
       await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
 
-      await vi.advanceTimersByTimeAsync(SESSIONS.INTERACTION_TIMEOUT_MS + 1);
+      await vi.advanceTimersByTimeAsync(SESSIONS.INTERACTION_PARK_CEILING_MS + 1);
 
       await vi.waitFor(() =>
         expect(client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith({

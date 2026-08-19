@@ -347,7 +347,10 @@ export class SessionPumpRegistry {
    * A reap can decline — a session parked on a person is never idle-reaped, and
    * `INTERACTION_TIMEOUT_MS` (10 min) is deliberately longer than the idle window
    * (5 min), so somebody who walks away from an approval card WILL be sitting
-   * here when this fires. The decline is answered by arming another full window
+   * here when this fires. An unanswered prompt now parks rather than being
+   * refused at that countdown, so the decline can repeat for up to
+   * `INTERACTION_PARK_CEILING_MS` (4 h) — which is the cost the ceiling exists
+   * to bound, because twelve parked sessions fill `MAX_WARM_SESSIONS`. The decline is answered by arming another full window
    * rather than by retrying immediately: the process is not wasted while a person
    * is expected back at it, and one more window is a bounded wait, not a spin.
    *
