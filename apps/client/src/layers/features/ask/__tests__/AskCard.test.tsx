@@ -139,7 +139,7 @@ describe('the Ask card', () => {
     );
 
     await waitFor(() => expect(screen.queryByText('Allow')).toBeNull());
-    expect(screen.getByText(/Already allowed by Dorian/)).toBeDefined();
+    expect(screen.getByText(/Already answered by Dorian/)).toBeDefined();
     expect(screen.queryByText('Deny')).toBeNull();
   });
 

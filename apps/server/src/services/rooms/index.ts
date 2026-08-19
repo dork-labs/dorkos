@@ -312,6 +312,9 @@ export function createRoomSubsystem(opts: {
     // Read per burst, for the same reason: lengthening the gathering window in
     // Settings has to bind the very next message.
     collect: readCollectWindow,
+    // Read per tick, for the same reason: shortening how long a room waits on a
+    // busy agent has to bind the wait that is already running.
+    holdCeilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
     // Read per post, for the same reason: lowering the limit in Settings has to
     // bind the very next message.
     maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,

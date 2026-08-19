@@ -28,9 +28,9 @@ import type { EngagementWindow } from './engagement.js';
  * the only live record that an agent is working, so three readers depend on it
  * today, and holding it for the whole turn changed what each of them sees:
  *
- * 1. {@link RoomTriggerDispatcher.busyIn} — whether this agent is already
- *    working here. A late turn is still running, so a fresh trigger for it is
- *    refused rather than started beside it on the same session.
+ * 1. {@link claimBusyWith} — whether this agent is already working, and where. A
+ *    late turn is still running, so a fresh trigger for it is held until this
+ *    claim releases rather than started beside it on the same session.
  * 2. {@link RoomTriggerDispatcher.workingIn} — `room_context.working`. A late
  *    turn is still reported there, because it is still work.
  * 3. {@link RoomTriggerDispatcher.activeTurnFor} — the provenance an agent's own
@@ -142,12 +142,92 @@ export interface ActiveClaim {
 export type ClaimOutcome = 'answered' | 'quiet' | 'halted' | RoomTurnUnanswered;
 
 /**
- * Which of the two claim ceilings an agent is up against.
+ * How a hold ended, for the log and nowhere else — {@link ClaimOutcome}'s
+ * sibling.
  *
- * `'working-here'` is held, `'working-elsewhere'` is refused — see
- * {@link claimBusyWith} for why those are different answers.
+ * `started` is the good one and the common one: the turn this message was
+ * waiting for began. `halted` is somebody stopping the room it was waiting in,
+ * `refused` is the guard or the budget declining the batch when it finally ran,
+ * `expired` is the room giving up on the wait, and `left` is the agent no longer
+ * being in the room to answer — it was removed, or the room was archived.
+ *
+ * Each has a durable sibling. Four of them are room entries; `left`'s is the act
+ * itself, which is deliberate, operator-only and already visible — the agent is
+ * off the roster, or the room is put away. A busy line there would be the room
+ * explaining a decision back to the person who just made it, and it would be
+ * false anyway: the agent was not busy, it is gone.
  */
-export type ClaimBusy = 'working-here' | 'working-elsewhere';
+export type HoldEnd = 'started' | 'halted' | 'expired' | 'refused' | 'left';
+
+/**
+ * Which of the two claim ceilings an agent is up against, and the claim that is
+ * in the way.
+ *
+ * Both ceilings hold the message rather than refusing it — see
+ * {@link claimBusyWith} for why they are still two answers.
+ */
+export interface ClaimBusy {
+  /** `'here'` when the blocking claim is in the room being triggered. */
+  where: 'here' | 'elsewhere';
+  /**
+   * The claim in the way.
+   *
+   * Carried because an `'elsewhere'` hold has to say WHICH room it is waiting
+   * behind: the held indicator points at `blocking.roomId`, and the reader
+   * resolves that id against the rooms it can already see.
+   */
+  blocking: ActiveClaim;
+}
+
+/**
+ * One room's unanswered message, waiting on a turn the same agent is running in
+ * a different room.
+ *
+ * A hold is a claim's SHADOW: it exists only because a claim exists somewhere
+ * else, it is process memory like the claim it waits behind, and it releases
+ * into the turn it was waiting for. Nothing here is a scheduled turn — what is
+ * stored is what the agent has not read yet, which is a fact about this room
+ * rather than a plan about the future.
+ *
+ * Held per `(room, agent)`, the grain of the collection it stands for.
+ */
+export interface HeldRecord {
+  roomId: string;
+  authorId: string;
+  /** The agent's directory — the ceiling this hold is waiting on. */
+  agentPath: string;
+  /**
+   * The FIRST message this hold covers, fixed for the hold's life.
+   *
+   * The presence indicator is keyed `(room, author, entryId)`, so an id that
+   * moved with each new message would open a second indicator every time the
+   * person typed again — and the first would then have to be cleared by
+   * something that no longer knows it exists.
+   */
+  entryId: string;
+  /** ISO 8601 — when the hold opened, which is what the lane counts up from. */
+  since: string;
+  /** The room whose claim is in the way. Re-pointed each time the hold re-parks. */
+  behindRoomId: string;
+}
+
+/**
+ * One live hold as the diagnostic surface reports it.
+ *
+ * The same projection {@link ActiveClaimView} is: ids, an ISO timestamp and a
+ * duration. `agentPath` is a filesystem path and does not cross the boundary.
+ */
+export interface HeldView {
+  roomId: string;
+  authorId: string;
+  entryId: string;
+  /** The room whose turn is in the way. */
+  behindRoomId: string;
+  /** ISO 8601. */
+  since: string;
+  /** How long the message has been waiting, at the moment of the read. */
+  heldMs: number;
+}
 
 /** One agent that survived the guard, with the depth its reply will carry. */
 export interface TriggerTarget {
@@ -335,23 +415,32 @@ export function claimsWorkingIn(
 /**
  * Which ceiling an agent is already up against, or `null` when it is free.
  *
- * **Two ceilings, two different outcomes, and that is why they are two values
- * rather than one boolean.** The `(room, agent)` key bounds one TRANSCRIPT: a
- * claim under it means the agent is mid-turn HERE, and since RP8 that is not a
- * refusal at all — the message is held and becomes its next turn
- * (`room-collect.ts`). The agent PATH bounds one CHECKOUT, which is shared by
- * every room the agent is in — the contention DOR-500 measured — and that one IS
- * a refusal, because nothing this room does will finish a turn in another one.
+ * **Two ceilings, one outcome, and two answers anyway.** The `(room, agent)` key
+ * bounds one TRANSCRIPT: a claim under it means the agent is mid-turn HERE, and
+ * since RP8 the message is held and becomes its next turn (`room-collect.ts`).
+ * The agent PATH bounds one CHECKOUT, which is shared by every room the agent is
+ * in — the contention DOR-500 measured. That one used to be a refusal; it is now
+ * held too (spec `room-hold-when-busy`), because a message the room already
+ * committed to its log is not made truer by asking the person to type it again.
+ *
+ * The two are still distinguished for two reasons, and both are visible to a
+ * reader. A `'here'` hold marks its messages `arrivedDuringPrevTurn`, which an
+ * `'elsewhere'` one must not: the agent was not working here, so telling the
+ * model "this arrived while you were working" would be false. And an
+ * `'elsewhere'` hold publishes a `held` indicator pointing at
+ * `blocking.roomId`, while a `'here'` hold needs none — the room is already
+ * showing that agent as working.
  *
  * Deliberately no longer {@link BusyContext}: that type is the vocabulary of the
- * busy NOTICE, and only one of these two values can reach it.
+ * busy NOTICE, and neither of these values reaches it any more.
  *
  * @param claims - The live claim map.
  * @param roomId - The room being triggered.
  * @param authorId - The agent a trigger would run.
  * @param agentPath - That agent's directory, which is what the second ceiling
  *   is really about.
- * @returns Which ceiling it is up against, or `null` when it is doing nothing.
+ * @returns Which ceiling it is up against and the claim in the way, or `null`
+ *   when it is doing nothing.
  */
 export function claimBusyWith(
   claims: ReadonlyMap<string, ActiveClaim>,
@@ -359,9 +448,10 @@ export function claimBusyWith(
   authorId: string,
   agentPath: string
 ): ClaimBusy | null {
-  if (claims.has(agentKey(roomId, authorId))) return 'working-here';
+  const here = claims.get(agentKey(roomId, authorId));
+  if (here !== undefined) return { where: 'here', blocking: here };
   for (const claim of claims.values()) {
-    if (claim.agentPath === agentPath) return 'working-elsewhere';
+    if (claim.agentPath === agentPath) return { where: 'elsewhere', blocking: claim };
   }
   return null;
 }
@@ -386,5 +476,28 @@ export function describeClaims(
     claimedAt: claim.claimedAt,
     heldMs: Math.max(0, now - Date.parse(claim.claimedAt)),
     pastDeadline: claim.pastDeadline,
+  }));
+}
+
+/**
+ * Every hold in force right now, projected onto the shape the diagnostic
+ * surface may carry.
+ *
+ * The sibling of {@link describeClaims}, and it answers the question that one
+ * cannot: "who is waiting, and behind what?" A room that shows no claim and no
+ * answer is otherwise indistinguishable from a room whose message was lost.
+ *
+ * @param held - The live hold map.
+ * @param now - Epoch ms to measure `heldMs` against.
+ * @returns One row per live hold.
+ */
+export function describeHolds(held: ReadonlyMap<string, HeldRecord>, now = Date.now()): HeldView[] {
+  return [...held.values()].map((record) => ({
+    roomId: record.roomId,
+    authorId: record.authorId,
+    entryId: record.entryId,
+    behindRoomId: record.behindRoomId,
+    since: record.since,
+    heldMs: Math.max(0, now - Date.parse(record.since)),
   }));
 }

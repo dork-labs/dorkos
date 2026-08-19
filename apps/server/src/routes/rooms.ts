@@ -754,6 +754,30 @@ router.post('/:id/halt', (req, res) => {
 });
 
 /**
+ * POST /:id/holds/:authorId/promote — ask for this room to be answered first.
+ *
+ * The one control a person has over a message that is waiting on an agent busy
+ * in another conversation. It REORDERS: the blocking turn is untouched, nothing
+ * is interrupted, and the promoted message still waits for the agent to be free.
+ * Gated exactly as `POST /:id/halt` is, because it is the same kind of act — a
+ * person steering their own room — and for the same reason only a person may
+ * call it.
+ *
+ * `{ promoted: false }` is a normal answer, not an error: it means there was
+ * nothing waiting, which is what a button left over from a wait that already
+ * ended looks like. Takes no body.
+ */
+router.post('/:id/holds/:authorId/promote', (req, res) => {
+  try {
+    const caller = resolveCaller(res);
+    const promoted = getRoomService().promoteHold(req.params.id, req.params.authorId, caller.id);
+    res.json({ promoted });
+  } catch (err) {
+    sendRoomError(res, err, 'POST /:id/holds/:authorId/promote');
+  }
+});
+
+/**
  * GET /:id/events — the durable room stream (snapshot → replay → live).
  *
  * The same path is also served over a WebSocket (`room-events-socket.ts`),

@@ -81,7 +81,18 @@ export interface SeededEntry {
   seq: number;
   authorId: string;
   kind: string;
-  body: { text: string; notice?: string; subjectAuthorId?: string };
+  body: {
+    text: string;
+    notice?: string;
+    subjectAuthorId?: string;
+    /**
+     * The entry this post answers, set by the room on every agent-authored
+     * reply. A room posts in arrival order, so an answer that waited behind a
+     * turn in another conversation lands wherever the room had got to — this is
+     * what says which question it belongs to.
+     */
+    answersEntryId?: string;
+  };
   mentions: string[];
 }
 

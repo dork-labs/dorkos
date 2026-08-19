@@ -346,6 +346,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // An idle room by default: a halt that stopped nothing is the shape a test
     // gets unless it is specifically about a room with turns in flight.
     haltRoom: vi.fn().mockResolvedValue({ stopped: 0 }),
+    promoteHold: vi.fn().mockResolvedValue({ promoted: true }),
     // No bindings by default: a room whose agents have never answered is the
     // shape a test gets unless it is specifically about where the work runs.
     listRoomSessions: vi.fn().mockResolvedValue({ bindings: [] }),

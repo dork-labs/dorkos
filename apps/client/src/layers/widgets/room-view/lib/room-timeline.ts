@@ -287,3 +287,53 @@ export function threadPanelRowId(entryId: string): string {
 export function entryRowId(entryId: string): string {
   return `room-entry-${entryId}`;
 }
+
+/**
+ * How much of the answered message the reference chip quotes back.
+ *
+ * Short on purpose: the chip is a pointer, not a quote. Longer than this and it
+ * competes with the answer it sits above.
+ */
+const ANSWERS_EXCERPT_MAX = 48;
+
+/**
+ * What the reference chip above an agent's post should say, or `null` when it
+ * should not be drawn at all.
+ *
+ * **A room posts in arrival order, whatever a message is responding to**, so an
+ * answer is not always next to its question — and a message that waited behind
+ * a turn in another conversation is answered out of order routinely rather than
+ * rarely. The server records which entry every agent-authored post answers
+ * (`answersEntryId`); this decides whether a reader needs telling.
+ *
+ * **It is suppressed when the answered entry is the one directly above.** In
+ * that case the link is obvious, and a chip on every reply in the product would
+ * be furniture rather than information — which is exactly what would happen,
+ * because the pointer is set unconditionally.
+ *
+ * @param entry - The post that may be answering something.
+ * @param previous - The entry rendered directly above it, or `undefined` at the
+ *   top of the rendered feed.
+ * @param find - How to look an entry up by id in the loaded history.
+ * @returns The excerpt to quote, or `null` when there is nothing to say —
+ *   the post answers nothing, answers the row above, or answers a message this
+ *   client has not loaded and therefore cannot quote.
+ */
+export function answeredReference(
+  entry: RoomEntry,
+  previous: RoomEntry | undefined,
+  find: (entryId: string) => RoomEntry | undefined
+): { entryId: string; excerpt: string } | null {
+  const answers = entry.body.answersEntryId;
+  if (answers === undefined || answers === entry.id) return null;
+  if (previous !== undefined && previous.id === answers) return null;
+  const answered = find(answers);
+  if (answered === undefined) return null;
+  const text = answered.body.text.replace(/\s+/gu, ' ').trim();
+  if (text.length === 0) return null;
+  return {
+    entryId: answers,
+    excerpt:
+      text.length > ANSWERS_EXCERPT_MAX ? `${text.slice(0, ANSWERS_EXCERPT_MAX).trimEnd()}…` : text,
+  };
+}
