@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
 import type { AgentIdentity } from '../services/core/agent-identity/agent-identity-service.js';
 import type { RequestUser } from '../services/core/auth/index.js';
 import { logger } from '../lib/logger.js';
@@ -16,6 +16,17 @@ import { logger } from '../lib/logger.js';
 export interface McpCaller {
   /** The agent behind the call, from `X-DorkOS-Agent`. */
   identity?: AgentIdentity;
+  /**
+   * Whether an `X-DorkOS-Agent` header was there at all, resolved or not.
+   *
+   * A THIRD fact, and the one the pair above cannot express: a revoked or
+   * expired token leaves {@link identity} empty while still saying a machine is
+   * calling. Without it a capability that resolves the caller to a domain
+   * principal reads "no agent token" and, on a login-off install, answers with
+   * the operator — which is how `post_to_room` came to write under the person's
+   * name (DOR-1361). Never an authorization: the tier gate is unchanged by it.
+   */
+  agentIdentityPresented?: boolean;
   /** The signed-in person behind the call, when login is on and one was verified. */
   userId?: string;
 }
@@ -51,11 +62,15 @@ export function createMcpRouter(serverFactory: (caller: McpCaller) => McpServer)
   router.post('/', async (req, res) => {
     try {
       const identity = getRequestAgentIdentity(res);
+      // The wider question, asked from the raw header so a token that did not
+      // resolve is still reported as a machine calling.
+      const agentIdentityPresented = presentsAgentIdentity(req, res);
       // Filled by `createMcpAuth` on the login-on identity branch; absent on
       // every tokenless path, which is exactly the fact downstream must keep.
       const user = res.locals.user as RequestUser | undefined;
       const server = serverFactory({
         ...(identity ? { identity } : {}),
+        ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
         ...(user ? { userId: user.userId } : {}),
       });
       const transport = new StreamableHTTPServerTransport({

@@ -1887,7 +1887,8 @@ async function start() {
         marketplaceMcpDeps,
         capabilityRegistry,
         caller.identity,
-        caller.userId
+        caller.userId,
+        caller.agentIdentityPresented
       );
     })
   );
