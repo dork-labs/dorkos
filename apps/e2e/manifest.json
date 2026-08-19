@@ -236,10 +236,10 @@
       "specFile": "tests/rooms/room-entry-actions.spec.ts",
       "feature": "rooms",
       "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread\u2019s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and following it lands the reader and the keyboard on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
-      "lastRun": "2026-08-12T00:46:51.156Z",
+      "lastRun": "2026-08-19T22:32:33.700Z",
       "lastStatus": "passed",
-      "runCount": 57,
-      "passCount": 26,
+      "runCount": 66,
+      "passCount": 35,
       "failCount": 31,
       "relatedCode": [
         "apps/client/src/layers/widgets/room-view/ui/RoomThreadPanel.tsx",
@@ -255,7 +255,8 @@
         "Thread state lives in a zustand store (use-room-open-thread), not the URL; use-thread-url-sync mirrors it to ?thread= with replace:true, so Back leaves the room rather than walking every thread glanced at.",
         "A deep link opens the thread to READ: the panel section (tabIndex -1) takes focus and the composer does not. That is load-bearing, not manners - Escape only reaches the panel's handler from inside it, so a linked-to panel that took no focus could be opened from the address bar and never closed by keyboard.",
         "Replies are kept out of the main timeline by one choke point, groupByThread in room-timeline.ts; assert the timeline's room-entry count is unchanged plus a single room-thread-replies row, which is what the panel costs the room.",
-        "Under 768px the panel is a full-screen PUSH, not a sheet - the room column unmounts, so assert the room is gone rather than covered."
+        "Under 768px the panel is a full-screen PUSH, not a sheet - the room column unmounts, so assert the room is gone rather than covered.",
+        "A tap scrolls its target into view first and Chromium CENTRES a row that is not fully visible, so clicking a reply row above the window MOVES the room by about four messages - record a scroll position only after the row you are about to tap is on screen, and read it with settledTopVisibleEntryText() (DOR-1364)."
       ]
     },
     "rooms-in-palette": {
@@ -1005,87 +1006,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-04T15-24-16",
-      "timestamp": "2026-08-04T15:24:16.293Z",
-      "total": 8,
-      "passed": 7,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 23668
-    },
-    {
-      "id": "2026-08-04T15-26-05",
-      "timestamp": "2026-08-04T15:26:05.342Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 19551
-    },
-    {
-      "id": "2026-08-04T15-27-09",
-      "timestamp": "2026-08-04T15:27:09.765Z",
-      "total": 8,
-      "passed": 8,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 25178
-    },
-    {
-      "id": "2026-08-04T15-27-47",
-      "timestamp": "2026-08-04T15:27:47.068Z",
-      "total": 3,
-      "passed": 2,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 26274
-    },
-    {
-      "id": "2026-08-04T15-28-50",
-      "timestamp": "2026-08-04T15:28:50.603Z",
-      "total": 3,
-      "passed": 3,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 25811
-    },
-    {
-      "id": "2026-08-04T15-36-14",
-      "timestamp": "2026-08-04T15:36:14.821Z",
-      "total": 149,
-      "passed": 139,
-      "failed": 6,
-      "skipped": 3,
-      "duration": 241699
-    },
-    {
-      "id": "2026-08-04T15-37-48",
-      "timestamp": "2026-08-04T15:37:48.175Z",
-      "total": 31,
-      "passed": 31,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 66941
-    },
-    {
-      "id": "2026-08-04T15-38-43",
-      "timestamp": "2026-08-04T15:38:43.584Z",
-      "total": 15,
-      "passed": 15,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 50515
-    },
-    {
-      "id": "2026-08-04T15-42-22",
-      "timestamp": "2026-08-04T15:42:22.153Z",
-      "total": 8,
-      "passed": 8,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 22815
-    },
     {
       "id": "2026-08-04T17-53-21",
       "timestamp": "2026-08-04T17:53:21.222Z",
@@ -1904,6 +1824,87 @@
       "failed": 0,
       "skipped": 0,
       "duration": 63692
+    },
+    {
+      "id": "2026-08-19T22-26-31",
+      "timestamp": "2026-08-19T22:26:31.474Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 37199
+    },
+    {
+      "id": "2026-08-19T22-27-12",
+      "timestamp": "2026-08-19T22:27:12.770Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 40371
+    },
+    {
+      "id": "2026-08-19T22-27-55",
+      "timestamp": "2026-08-19T22:27:55.708Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 41916
+    },
+    {
+      "id": "2026-08-19T22-28-40",
+      "timestamp": "2026-08-19T22:28:40.224Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 43292
+    },
+    {
+      "id": "2026-08-19T22-29-10",
+      "timestamp": "2026-08-19T22:29:10.855Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 30027
+    },
+    {
+      "id": "2026-08-19T22-29-57",
+      "timestamp": "2026-08-19T22:29:57.960Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 45899
+    },
+    {
+      "id": "2026-08-19T22-30-54",
+      "timestamp": "2026-08-19T22:30:54.744Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 46771
+    },
+    {
+      "id": "2026-08-19T22-31-45",
+      "timestamp": "2026-08-19T22:31:45.171Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 48735
+    },
+    {
+      "id": "2026-08-19T22-32-33",
+      "timestamp": "2026-08-19T22:32:33.700Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 47109
     }
   ]
 }
