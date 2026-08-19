@@ -116,9 +116,12 @@ async function shootMarketplaceDetail(page: Page, theme: Theme, rec: RunRecorder
     .waitFor({ timeout: WAIT_MS });
   // The scheduled-job row shows the bare job name (`schedule.name`), not a
   // "Schedule task: " prefix — DOR-635 (#552) dropped the prefix in favor of a
-  // "Jobs it will schedule" section heading.
+  // "Jobs it will schedule" section heading. Filtered to the visible match: the
+  // install preview’s collapsed file list (DOR-1339) also renders that job’s
+  // path, and the hidden `<span>` holding it sorts ahead of the row.
   await page
     .getByText('nightly-code-review', { exact: false })
+    .filter({ visible: true })
     .first()
     .waitFor({ timeout: WAIT_MS });
   await shoot(page, 'marketplace-detail', theme, rec);
@@ -578,7 +581,14 @@ async function drivePersonality(page: Page, mark?: LoopMark): Promise<void> {
   await page.goto(url('/team?view=table'));
   // The docked profile binds to the agent whose row action opened it — a bare
   // ?agent= URL param resolves against the default cwd instead.
-  await page.getByRole('button', { name: 'Open atlas\u2019s profile' }).click({ timeout: WAIT_MS });
+  // Scoped to the table row: the sidebar carries its own "Open atlas’s
+  // profile" control, and the sidebar entry’s composed accessible name now
+  // contains that string too (the Asks work, DOR-1330, appends "Awaiting your
+  // approval"), so an unscoped match went from one element to three.
+  await page
+    .getByRole('row')
+    .getByRole('button', { name: 'Open atlas\u2019s profile', exact: true })
+    .click({ timeout: WAIT_MS });
   // Personality is a row on the profile's root that opens a popover, and its
   // accessible name carries the current archetype after the label — hence the
   // prefix match rather than an exact one.

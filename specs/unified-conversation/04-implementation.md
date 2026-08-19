@@ -656,7 +656,9 @@ owns 12–14 above.
     machine is calling, and "may this caller decide something irreversible" is
     not a question to answer leniently. Aligning the room route means changing
     every room route's caller model, which is a rooms-domain decision with its
-    own review — filed as the follow-up, not done here.
+    own review — filed as the follow-up, not done here. **Closed post-programme
+    by DOR-1357 for this one route** (the siblings keep the lenient reading, and
+    the reasons are stated) — see Post-programme follow-ups.
 20. **The browser suite covers the fleet half of the Ask, not the room half.**
     `ask-anywhere.ts` parks a session, leaves for `/tasks`, answers there and
     watches the agent carry on. A room-bound prompt on a room's lane needs a
@@ -772,7 +774,7 @@ In Linear-ready form — one bullet each, owner named where the record above alr
 - **Three files still exceed the 500-line guideline** — `ChatPanel.tsx` (571), `ChannelComposer.tsx` (527), `SessionComposer.tsx` (503) — each for a stated reason (Known Issue 27). Revisit when one of them next grows, not before.
 - **`resolvedBy` is never populated on a receipt.** Unreachable on a single-identity install; every cross-window receipt reads "Already answered at 2:01" rather than naming who. Wiring it belongs with the bridged-approver work (P3 Known Issue 22).
 - **No multi-person Ask entitlement filter.** The list route and the global fan-out both answer this cockpit's one operator; if DorkOS ever has more than one person, both need a per-caller filter, which is a change to `eventFanOut`'s addressing model (P3 Known Issue 23).
-- **`GET /api/rooms/:id/sessions` and `requirePersonToAnswer` disagree about an unresolved agent header.** The rooms route treats an unverifiable token as "no agent presented" (200); the Ask's answer routes refuse it. P3's rule is the one that should win long-term, but aligning the room route is a rooms-domain decision with its own review (P2/P3 Known Issues 9/19).
+- ~~**`GET /api/rooms/:id/sessions` and `requirePersonToAnswer` disagree about an unresolved agent header.**~~ **CLOSED (DOR-1357, 2026-08-18): the room route now refuses it too**, on the same predicate the answer routes read. The siblings keep the lenient reading, deliberately — see Post-programme follow-ups below.
 - **The `room-row-menu` e2e spec has an order-dependent flake** (`apps/e2e/manifest.json`'s own run history: 2 passed / 1 failed of 3 runs). Unrelated to this programme's own suites, which are all green; worth its own investigation rather than being carried silently.
 - **Codex/OpenCode timeout parity is DOR-803**, unchanged by this programme.
 - **Presence tier 3 (the verb glimpse) and the remaining approvals tiers** are the two open "What is not done" items with the clearest next shape, per the spec's own §Not Done.
@@ -780,3 +782,47 @@ In Linear-ready form — one bullet each, owner named where the record above alr
 - **The timeline's prop is `renderRow`, not the spec's `renderBody`** (P4 Known Issue 20). The spec's shape would need `SessionMessage` and `RoomMessage`'s surface knowledge lifted into props, undoing P1's own seam. Owner: whoever revisits `ConversationBodyRenderer`, if anybody does — otherwise the spec is what is wrong, not the code.
 - **`ConversationTarget` has no mention port** (P4 Known Issue 21), so `capabilities.mentions` is the only fact about the `@` picker in the neutral tree and the picker itself rides the host's slot. The consequence to watch is a third surface wanting mentions and finding nothing shared to reuse. Owner: whoever adds that surface.
 - **No unit test can see a virtualization bug** (P4 Known Issue 23): `@tanstack/react-virtual` is mocked globally in `test-setup.ts`, without which the room and chat suites could assert nothing. The nets that do see them are named in the issue, both in `apps/e2e`. Owner: a testing-infrastructure pass, not a feature phase — and not worth opening until a virtualization regression actually escapes.
+
+## Post-programme follow-ups
+
+Work done after the programme closed, against the follow-ups filed above. Newest
+last.
+
+### 2026-08-18 — Known Issues 9/19 resolved for the sessions route (DOR-1357)
+
+**`GET /api/rooms/:id/sessions` now refuses an unresolved `X-DorkOS-Agent`
+header**, which is the stricter reading P3 argued for and P2 raised. The gate was
+`caller.kind !== 'human'` — who the caller resolved TO — and `resolveCaller`
+treats an unverifiable token as "no agent presented", so
+`curl -H 'X-DorkOS-Agent: garbage'` read the route as the operator. It is now
+`presentsAgentIdentity(req, res)`: the same fact `readCallerAuthority` feeds
+`resolveDecisionAuthority` as `agentIdentityPresented`, lifted into
+`middleware/agent-identity.ts` so the rooms route and the Ask's answer routes
+read one predicate rather than two copies of one sentence. The new gate is
+strictly wider than the old one — `resolveCaller` returns an agent only when
+`getRequestAgentIdentity` resolved, which is the predicate's first disjunct — so
+nothing that was refused before is allowed now.
+
+Three things this deliberately did NOT do:
+
+- **The sibling room routes are unchanged.** Attachments, handles, halt and every
+  route that only takes `resolveCaller` still read an unverifiable token as "no
+  agent presented". Changing them is a change to every room route's caller model,
+  which is what issue 19 said needs its own review; this route is the one the
+  record singled out.
+- **It did not adopt the rest of `requirePersonToAnswer`.** That guard also runs
+  `requireOperatorCookieUnderLogin`, which under login-on refuses a person
+  holding a per-user API key. Right for deciding whether a tool runs; wrong for a
+  read whose whole body is two ids, where it would cost a person the "Open its
+  session" link for no gain a machine could not already get by omitting a header.
+  So `person-proof-conformance.test.ts` gains no seam here.
+- **Visibility still comes first.** A room the caller cannot see answers 404
+  before the person gate runs, for both the resolved and the unresolved header —
+  the ordering P2's review settled (issue 14), now pinned for the widened gate
+  too.
+
+Not user-facing: the cockpit has never sent `X-DorkOS-Agent`, so no person's
+request changes shape. Tests: `routes/__tests__/rooms-sessions.test.ts` (the
+unresolved-header 403, the resolved-agent 403, the person 200, and 404-before-403
+for an unknown room) and `middleware/__tests__/agent-identity.test.ts` (the
+predicate's three cases).
