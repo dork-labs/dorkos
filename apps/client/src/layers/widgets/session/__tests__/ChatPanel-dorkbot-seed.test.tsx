@@ -91,26 +91,29 @@ vi.mock('@/layers/features/chat/ui/status', () => ({
 }));
 
 // The composer, reduced to the two things this test needs: a way to put text in
-// and a way to send it. `handleSubmit` is the panel's own — the same callback
-// Enter reaches — so the send path under test is untouched.
-vi.mock('../ui/SessionComposer', () => ({
-  SessionComposer: ({
-    input,
-    setInput,
-    handleSubmit,
-  }: {
-    input: string;
-    setInput: (v: string) => void;
-    handleSubmit: () => void;
-  }) => (
-    <div>
-      <textarea data-testid="composer" value={input} onChange={(e) => setInput(e.target.value)} />
-      <button data-testid="send" onClick={() => handleSubmit()}>
-        send
-      </button>
-    </div>
-  ),
-}));
+// and a way to send it. The send reads the conversation's own target and calls
+// `send` on it — the same port Enter reaches in the real composer — so the send
+// path under test is untouched (DOR-1354).
+vi.mock('../ui/SessionComposer', async () => {
+  const { useConversation } = await import('@/layers/features/conversation');
+  return {
+    SessionComposer: ({ input, setInput }: { input: string; setInput: (v: string) => void }) => {
+      const { target } = useConversation();
+      return (
+        <div>
+          <textarea
+            data-testid="composer"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+          />
+          <button data-testid="send" onClick={() => void target?.send({ text: input })}>
+            send
+          </button>
+        </div>
+      );
+    },
+  };
+});
 
 import { ChatPanel } from '../ui/ChatPanel';
 import { TransportProvider } from '@/layers/shared/model';

@@ -110,14 +110,14 @@ beforeAll(() => {
 let mockTransport: ReturnType<typeof createMockTransport>;
 let queryClient: QueryClient;
 
-/** The `handleSubmit` the composer reached, counted. */
+/** The target's `send` the composer reached, counted. */
 const onSend = vi.fn();
 
 /**
  * The composer wired the way `ChatPanel` wires it: the real upload hook feeding
- * the real container. `handleSubmit` mirrors the send path — it starts the
- * attachment upload and returns, exactly as `use-session-submit` does through
- * `transformContent`.
+ * the real container. The target's `submit` mirrors the send path — it starts
+ * the attachment upload and returns, exactly as `use-session-submit` does
+ * through `transformContent`.
  */
 function Composer({ attachment }: { attachment: File }) {
   const fileUpload = useFileUpload();
@@ -150,11 +150,11 @@ function Composer({ attachment }: { attachment: File }) {
             paletteListboxId: undefined,
           } as never
         }
-        handleSubmit={() => {
+        submit={() => {
           onSend();
           void fileUpload.uploadAndGetPaths().catch(() => {});
         }}
-        enqueueContent={vi.fn().mockResolvedValue(true)}
+        enqueue={vi.fn().mockResolvedValue(true)}
         steerContent={vi.fn().mockResolvedValue(true)}
         addContextContent={vi.fn().mockResolvedValue(true)}
         tryNativeCommand={vi.fn(() => ({ handled: false }) as never)}

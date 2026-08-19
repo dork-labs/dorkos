@@ -210,8 +210,6 @@ const baseProps = {
     isPaletteOpen: false,
     activeDescendantId: undefined,
   } as never,
-  handleSubmit: vi.fn(),
-  enqueueContent: vi.fn().mockResolvedValue(true),
   steerContent: vi.fn().mockResolvedValue(true),
   addContextContent: vi.fn().mockResolvedValue(true),
   tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
@@ -466,14 +464,17 @@ describe('SessionComposer — sending takes the palette down with it (DOR-479)',
   // sends when there is nothing to pick, nothing else would take the "No
   // commands found." card down — `detectTrigger` only runs on typing or a caret
   // move — so it floated over the agent's reply until the next keystroke.
-  it('dismisses the palettes when the composer submits', () => {
+  it('dismisses the palettes when the composer submits, and sends the draft through the target', () => {
+    // **Seeded defect:** point `submitAndDismiss` back at a `handleSubmit` prop
+    // and `submit` is never called with the draft — the port would be bypassed
+    // again, which is exactly what Known Issue 28 was. Run and red.
     const dismissPalettes = vi.fn();
-    const handleSubmit = vi.fn();
+    const submit = vi.fn();
     render(
       <SessionComposerBench
         {...baseProps}
         autocomplete={{ ...(baseProps.autocomplete as object), dismissPalettes } as never}
-        handleSubmit={handleSubmit}
+        submit={submit}
         input="/zzz"
       />
     );
@@ -481,23 +482,32 @@ describe('SessionComposer — sending takes the palette down with it (DOR-479)',
     lastChatInputProps().onSubmit!();
 
     expect(dismissPalettes).toHaveBeenCalledOnce();
-    expect(handleSubmit).toHaveBeenCalledOnce();
+    expect(submit).toHaveBeenCalledExactlyOnceWith('/zzz');
   });
 
-  it('dismisses the palettes when the composer queues mid-stream', () => {
+  it('dismisses the palettes when the composer queues mid-stream, and holds the draft through the target', async () => {
+    // **Seeded defect:** give `useChatQueue` any `onEnqueue` other than the one
+    // that calls `target.queue` and this goes red — the bench hands `enqueue`
+    // to the TARGET and to nothing else, so the only way it can be reached is
+    // through the port. That is the whole of Known Issue 28.
     const dismissPalettes = vi.fn();
+    const enqueue = vi.fn().mockResolvedValue(true);
     render(
       <SessionComposerBench
         {...baseProps}
         autocomplete={{ ...(baseProps.autocomplete as object), dismissPalettes } as never}
+        enqueue={enqueue}
         status="streaming"
         input="/zzz"
       />
     );
 
-    lastChatInputProps().onQueue!();
+    await act(async () => {
+      lastChatInputProps().onQueue!();
+    });
 
     expect(dismissPalettes).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith('/zzz');
   });
 });
 

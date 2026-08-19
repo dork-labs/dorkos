@@ -169,7 +169,15 @@ function ComposerDemo({
           <Conversation.Composer
             value={value}
             onChange={setValue}
-            onSubmit={() => {}}
+            // Through the port, exactly as both shipped surfaces do since
+            // DOR-1354. A demo whose Enter went nowhere could not show the one
+            // thing a person sees when they press it — the box emptying — and
+            // it would leave the bench claiming a card is wired when only its
+            // chrome is.
+            onSubmit={() => {
+              void target.send({ text: value });
+              setValue('');
+            }}
             {...(target.queue !== undefined &&
               showQueueItems && {
                 queue: (
@@ -333,16 +341,19 @@ function AttachmentsDemo({
 
 /**
  * `Conversation.Composer`, benched against the session and room/DM adapters —
- * idle, typing, attachments, mentions, queue depth, an Ask takeover, and the
- * archived / `canSend: false` refusal.
+ * idle, typing, attachments, mentions, queue depth, an Ask takeover, and each
+ * surface's own `canSend: false` refusal.
  */
 export function ComposerShowcases() {
   const sessionIdle = buildSessionTarget();
   const sessionTyping = buildSessionTarget();
   const sessionQueued = buildSessionTarget();
-  const sessionArchived = buildSessionTarget({
+  // The session's REAL refusal, not an invented one: `useSessionTarget` closes
+  // the box only while the conversation has not resolved yet — the embed before
+  // one is opened, the `/session` loader still deciding — and says exactly this.
+  const sessionUnresolved = buildSessionTarget({
     canSend: false,
-    canSendReason: 'This session has ended. Start a new one to keep going.',
+    canSendReason: 'Still opening this conversation…',
   });
   const roomIdle = buildRoomTarget();
   const roomTyping = buildRoomTarget();
@@ -422,10 +433,10 @@ export function ComposerShowcases() {
       </TransportProvider>
 
       <ComposerDemo
-        label="Archived / canSend: false — session, with its own reason"
+        label="canSend: false — a session still opening, with its own reason"
         surface="session"
         capabilities={SESSION_CAPABILITIES}
-        target={sessionArchived}
+        target={sessionUnresolved}
       />
       <ComposerDemo
         label="Archived / canSend: false — room, with its own reason"
