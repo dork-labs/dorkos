@@ -78,6 +78,7 @@ _Rationale:_ the bot is the only identity Telegram gives us, so without a prefix
 
 **Q5 — `deliverNotices` default.** → **Keyed on room kind: `true` for a bridged `dm`, `false` for a bridged `channel`. One per-bridge override. Scope stays exactly `turn_failed` + `halted`.**
 _Rationale:_ who is standing on the other end. A bridged DM is usually the operator's own account, and silence after a crashed turn is the failure room conduct exists to prevent. A bridged group is other people, who do not need this machine's internals. Spec §6.2.
+_Amended 2026-08-18 (DOR-1359):_ the scope is four codes — `awaiting_approval` and `agent_busy` joined it. The default, the seeding rule and the override are untouched; only the eligible set widened, to every notice that says an agent has stopped. Spec §6.2's amendment note.
 
 ## D-7 — Amendments the adversarial review forced (2026-08-03)
 
