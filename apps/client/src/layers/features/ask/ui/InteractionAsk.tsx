@@ -15,7 +15,7 @@ import { useAskReceipt } from '@/layers/entities/attention';
 import { useNow } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { askHeadline } from '../lib/ask-headline';
-import { formatAskTimeLeft } from '../lib/format-time-left';
+import { ASK_PARKED_LABEL, formatAskTimeLeft } from '../lib/format-time-left';
 import { useAnswerAsk } from '../model/use-answer-ask';
 import { AskCard } from './AskCard';
 import { AskReceiptLine } from './AskReceiptLine';
@@ -76,10 +76,16 @@ export function InteractionAsk({
   // (DOR-1330 review). The server now stamps `timeoutMs` on every kind for
   // exactly this; a DTO recorded before it existed falls back to counting from
   // NOW, which is the only honest reading of a bare remainder.
-  const budgetMs = interaction.timeoutMs;
+  //
+  // A prompt the server already reports as PARKED carries no budget at all, and
+  // gets `null` here rather than a number: the countdown is over, the agent is
+  // waiting, and a card that arrives parked must read exactly like one that
+  // parked while somebody was looking at it (spec `ask-parks-on-timeout` §9).
+  const budgetMs = interaction.parked === true ? undefined : interaction.timeoutMs;
   const deadline =
     budgetMs === undefined ? mountedAt + interaction.remainingMs : interaction.startedAt + budgetMs;
-  const secondsLeft = Math.max(0, Math.ceil((deadline - now) / 1000));
+  const secondsLeft =
+    interaction.parked === true ? null : Math.max(0, Math.ceil((deadline - now) / 1000));
 
   // What the prompt itself said, when it said anything. The inline card in the
   // transcript has always shown this; a fleet-wide card that showed only the
@@ -125,7 +131,7 @@ export function InteractionAsk({
             secondsLeft={secondsLeft}
             {...(budgetMs !== undefined ? { timeoutMs: budgetMs } : {})}
             elapsedMs={Math.max(0, now - interaction.startedAt)}
-            label={formatAskTimeLeft(secondsLeft)}
+            label={secondsLeft === null ? ASK_PARKED_LABEL : formatAskTimeLeft(secondsLeft)}
           />
         </div>
       )}

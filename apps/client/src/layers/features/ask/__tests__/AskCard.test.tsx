@@ -233,6 +233,67 @@ describe('what the card says', () => {
 
     expect(screen.getByText('4 min left')).toBeDefined();
   });
+
+  it('reads as waiting, with no draining bar, once the prompt has parked', () => {
+    // A parked prompt ships no `timeoutMs` at all: the agent has stopped
+    // counting down and is holding the tool call until somebody answers (spec
+    // `ask-parks-on-timeout`). Seeded defect: keep the old `'expired'` band and
+    // this card says a prompt died that the agent is still waiting on.
+    wrap(
+      <InteractionAsk
+        ask={ask('tc-parked', {
+          interaction: {
+            startedAt: NOW - 11 * 60_000,
+            remainingMs: 4 * 60 * 60_000 - 11 * 60_000,
+            timeoutMs: undefined,
+            parked: true,
+          },
+        })}
+        agentName="Meeting Notes"
+      />
+    );
+
+    expect(screen.getByText('waiting for you')).toBeDefined();
+    expect(screen.queryByText(/expired/)).toBeNull();
+    expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
+  });
+
+  it('keeps both answers live on a parked prompt, because it is not finished', () => {
+    // The failure mode is a card that LOOKS finished. Answering a parked prompt
+    // is what settles the decision the agent has been holding.
+    wrap(
+      <InteractionAsk
+        ask={ask('tc-parked-live', {
+          interaction: {
+            startedAt: NOW - 11 * 60_000,
+            remainingMs: 4 * 60 * 60_000 - 11 * 60_000,
+            timeoutMs: undefined,
+            parked: true,
+          },
+        })}
+      />
+    );
+
+    expect(document.querySelector('[data-slot="ask-allow"]')).not.toBeNull();
+    expect(document.querySelector('[data-slot="ask-deny"]')).not.toBeNull();
+  });
+
+  it('is unchanged with two minutes left, because the first ten minutes did not move', () => {
+    wrap(
+      <InteractionAsk
+        ask={ask('tc-two-min', {
+          interaction: {
+            startedAt: NOW - 8 * 60_000,
+            remainingMs: 2 * 60_000,
+            timeoutMs: 10 * 60_000,
+          },
+        })}
+      />
+    );
+
+    expect(screen.getByText('2 min left')).toBeDefined();
+    expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).not.toBeNull();
+  });
 });
 
 describe('a burst', () => {

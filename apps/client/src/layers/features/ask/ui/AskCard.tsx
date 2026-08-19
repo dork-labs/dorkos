@@ -47,7 +47,7 @@ const ENTRANCE_REDUCED = {
 } as const;
 
 /** How urgent the countdown is. Drives colour, and nothing else. */
-type AskUrgency = 'neutral' | 'warning' | 'urgent' | 'expired';
+type AskUrgency = 'neutral' | 'warning' | 'urgent' | 'parked';
 
 /** Seconds left at which the countdown turns amber. */
 export const WARN_AT_S = 120;
@@ -61,12 +61,15 @@ export const URGENT_AT_S = 60;
  * Thresholds from `research/20260316_tool_approval_timeout_visibility_ux.md`:
  * neutral above two minutes, warn at two minutes, urgent at one.
  *
- * @param secondsLeft - Seconds until the prompt auto-denies, or `null` when it
- *   has no deadline at all.
+ * Out of time is `parked`, which is drawn as calmly as `neutral`: the agent has
+ * stopped counting down and is waiting for an answer, and a wait is not an alarm
+ * (spec `ask-parks-on-timeout`).
+ *
+ * @param secondsLeft - Seconds until the prompt parks, or `null` when it has no
+ *   countdown left to run.
  */
 function askUrgency(secondsLeft: number | null): AskUrgency {
-  if (secondsLeft === null) return 'neutral';
-  if (secondsLeft <= 0) return 'expired';
+  if (secondsLeft === null || secondsLeft <= 0) return 'parked';
   if (secondsLeft <= URGENT_AT_S) return 'urgent';
   if (secondsLeft <= WARN_AT_S) return 'warning';
   return 'neutral';
@@ -247,9 +250,12 @@ function AskCardDetail({ children, className }: { children: ReactNode; className
 
 /** What {@link AskCardCountdown} takes. */
 interface AskCardCountdownProps {
-  /** Seconds until this prompt auto-denies, or `null` when it has no deadline. */
+  /**
+   * Seconds until this prompt parks, or `null` when it has already parked and
+   * there is no countdown left to draw.
+   */
   secondsLeft: number | null;
-  /** The full budget in ms, for the bar's own duration. */
+  /** The full budget in ms, for the bar's own duration. Absent once parked. */
   timeoutMs?: number;
   /** How much of the budget was already spent when this card mounted. */
   elapsedMs?: number;
@@ -274,9 +280,9 @@ function AskCardCountdown({ secondsLeft, timeoutMs, elapsedMs = 0, label }: AskC
           <div
             className={cn(
               'h-full rounded-full transition-colors duration-500',
-              urgency === 'neutral' && 'bg-muted-foreground/30',
+              (urgency === 'neutral' || urgency === 'parked') && 'bg-muted-foreground/30',
               urgency === 'warning' && 'bg-status-warning',
-              (urgency === 'urgent' || urgency === 'expired') && 'bg-status-error',
+              urgency === 'urgent' && 'bg-status-error',
               'motion-safe:animate-drain'
             )}
             style={{
@@ -295,9 +301,9 @@ function AskCardCountdown({ secondsLeft, timeoutMs, elapsedMs = 0, label }: AskC
       <span
         className={cn(
           'text-2xs shrink-0 tabular-nums',
-          urgency === 'neutral' && 'text-muted-foreground',
+          (urgency === 'neutral' || urgency === 'parked') && 'text-muted-foreground',
           urgency === 'warning' && 'text-status-warning',
-          (urgency === 'urgent' || urgency === 'expired') && 'text-status-error'
+          urgency === 'urgent' && 'text-status-error'
         )}
       >
         {label}

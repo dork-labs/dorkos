@@ -6,6 +6,7 @@ import { DENY_REASON_MAX_LENGTH } from '@dorkos/shared/schemas';
 import { ToolArgumentsDisplay, cn, getToolLabel, getMcpServerBadge } from '@/layers/shared/lib';
 import { Kbd, Button, Input, CompactResultRow } from '@/layers/shared/ui';
 import { AskCard, WARN_AT_S, URGENT_AT_S } from './AskCard';
+import { ASK_PARKED_LABEL } from '../lib/format-time-left';
 
 // --- Animation constants (module-scope to avoid per-render allocation) ---
 
@@ -132,7 +133,6 @@ export function ApprovalPrompt({
 
   // Countdown state
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
-  const timedOut = useRef(false);
   const [announcement, setAnnouncement] = useState('');
 
   // ONE deadline for the whole card — the ticking text and the draining bar
@@ -177,14 +177,12 @@ export function ApprovalPrompt({
     return () => clearInterval(interval);
   }, [timeoutMs, deadline, decided]);
 
-  // Timeout detection — transition to denied state and clear active interaction
-  useEffect(() => {
-    if (secondsRemaining === 0 && !decided) {
-      timedOut.current = true;
-      setDecided('denied');
-      onDecided?.();
-    }
-  }, [secondsRemaining, decided, onDecided]);
+  // A countdown that reaches zero is a WAIT, not a death. The agent holds the
+  // tool call until somebody answers or its four-hour ceiling fires, and only
+  // then does the server withdraw the card and write the receipt (spec
+  // `ask-parks-on-timeout`). So this card keeps its Approve and Deny, and says
+  // it is waiting where the clock was. Deciding for the agent here is what made
+  // the transcript claim a refusal nobody gave.
 
   // Screen reader announcements at threshold crossings. An answered card has
   // nothing left to warn about, so the region empties the moment it settles —
@@ -200,7 +198,7 @@ export function ApprovalPrompt({
     } else if (secondsRemaining === URGENT_AT_S) {
       setAnnouncement('Urgent: 1 minute to approve or deny.');
     } else if (secondsRemaining === 0) {
-      setAnnouncement('Tool approval timed out. Execution denied.');
+      setAnnouncement('Nobody answered. The agent is waiting for you.');
     }
   }, [secondsRemaining, decided]);
 
@@ -341,14 +339,7 @@ export function ApprovalPrompt({
                 {isApproved ? 'Approved' : 'Denied'}
               </span>
             }
-          >
-            {decided === 'denied' && timedOut.current && (
-              <p className="text-2xs text-muted-foreground mt-1">
-                Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)}{' '}
-                minutes. The agent continued without this tool.
-              </p>
-            )}
-          </CompactResultRow>
+          ></CompactResultRow>
         </motion.div>
         {liveRegion}
       </>
@@ -401,11 +392,17 @@ export function ApprovalPrompt({
         {timeoutMs && !decided && (
           <div className="mb-2">
             <AskCard.Countdown
-              secondsLeft={secondsRemaining}
-              timeoutMs={timeoutMs}
+              // Past zero the prompt has parked: no bar, and the words say the
+              // agent is waiting rather than counting anything down.
+              secondsLeft={secondsRemaining === 0 ? null : secondsRemaining}
+              {...(secondsRemaining === 0 ? {} : { timeoutMs })}
               elapsedMs={deadline?.elapsedMs ?? 0}
               label={
-                secondsRemaining === null ? '' : `${formatCountdown(secondsRemaining)} remaining`
+                secondsRemaining === null
+                  ? ''
+                  : secondsRemaining === 0
+                    ? ASK_PARKED_LABEL
+                    : `${formatCountdown(secondsRemaining)} remaining`
               }
             />
           </div>

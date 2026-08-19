@@ -3,7 +3,7 @@
  * well as minutes — and has to stay honest at both ends of the window.
  */
 import { describe, it, expect } from 'vitest';
-import { formatTimeLeft } from '../lib/format-time-left';
+import { ASK_PARKED_LABEL, formatAskTimeLeft, formatTimeLeft } from '../lib/format-time-left';
 
 /** An ISO timestamp `ms` milliseconds after `now`. */
 function inMs(now: number, ms: number): string {
@@ -37,5 +37,24 @@ describe('formatTimeLeft', () => {
     expect(formatTimeLeft(inMs(now, 0), now)).toBe('expired');
     expect(formatTimeLeft(inMs(now, -60_000), now)).toBe('expired');
     expect(formatTimeLeft('not a date', now)).toBe('expired');
+  });
+});
+
+describe('formatAskTimeLeft', () => {
+  it('counts an Ask down in seconds and minutes', () => {
+    expect(formatAskTimeLeft(35)).toBe('35s left');
+    expect(formatAskTimeLeft(59)).toBe('59s left');
+    expect(formatAskTimeLeft(120)).toBe('2 min left');
+  });
+
+  it('reads a countdown at or below zero as waiting, never as expired', () => {
+    // The server never lists a prompt whose remainder has run out, so an Ask
+    // this client still holds whose countdown is out is one the agent PARKED on
+    // and is still waiting for (spec `ask-parks-on-timeout`). "expired" over a
+    // live wait is the exact lie that item removes.
+    expect(formatAskTimeLeft(0)).toBe(ASK_PARKED_LABEL);
+    expect(formatAskTimeLeft(-30)).toBe(ASK_PARKED_LABEL);
+    expect(formatAskTimeLeft(Number.NaN)).toBe(ASK_PARKED_LABEL);
+    expect(ASK_PARKED_LABEL).toBe('waiting for you');
   });
 });

@@ -147,6 +147,26 @@ describe('deriveLaneState — the priority stack', () => {
     expect(state).toEqual({ kind: 'ask', ask: ASK, count: 1, headline: ASK_HEADLINE });
   });
 
+  it('keeps the Ask rung above a stalled stream even once the Ask has PARKED', () => {
+    // A parked Ask has no deadline left to outrun, which makes this ordering
+    // stronger rather than weaker: the agent is holding the tool call until
+    // somebody answers, and a stalled line over it would hide the one thing on
+    // screen a person can actually do (spec `ask-parks-on-timeout` §9).
+    const parked: LaneAsk = {
+      ...ASK,
+      interaction: {
+        ...ASK.interaction,
+        remainingMs: 4 * 60 * 60_000 - 11 * 60_000,
+        timeoutMs: undefined,
+        parked: true,
+      },
+    };
+
+    const state = deriveLaneState(input({ asks: [parked], stalled: true }));
+
+    expect(state).toEqual({ kind: 'ask', ask: parked, count: 1, headline: ASK_HEADLINE });
+  });
+
   it('counts the Asks it is not showing', () => {
     const second: LaneAsk = { ...ASK, interaction: { ...ASK.interaction, id: 'interaction-2' } };
     const state = deriveLaneState(input({ asks: [ASK, second] }));

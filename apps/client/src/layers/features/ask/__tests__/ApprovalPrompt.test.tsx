@@ -435,25 +435,29 @@ describe('ApprovalPrompt', () => {
       expect(countdownEl!.className).toContain('text-status-error');
     });
 
-    it('transitions to denied state when timeout expires', async () => {
+    it('parks when the countdown runs out, keeping both answers live', async () => {
+      // Spec `ask-parks-on-timeout`: the agent holds the tool call past ten
+      // minutes, so this card must not decide for it. Before this it collapsed
+      // to "Auto-denied" while the agent was still waiting, and the person who
+      // came back found no buttons and a refusal they never gave.
       await renderAsync({ ...baseProps, timeoutMs: 600_000 });
       // Advance full 10 minutes
       await act(async () => vi.advanceTimersByTime(600_000));
-      expect(screen.getByText(/Auto-denied/)).toBeDefined();
-      expect(screen.getByText(/timed out after 10 minutes/)).toBeDefined();
-      expect(screen.getByTestId('tool-approval-decided')).toBeDefined();
-      expect(screen.getByTestId('tool-approval-decided').getAttribute('data-decision')).toBe(
-        'denied'
-      );
+
+      expect(screen.queryByTestId('tool-approval-decided')).toBeNull();
+      expect(screen.getByText('waiting for you')).toBeDefined();
+      expect(screen.getByRole('button', { name: /approve/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /deny/i })).toBeDefined();
+      // No draining bar over a wait that is not counting down.
+      expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
     });
 
-    it('a recovered card seeded with near-zero remainingMs self-times-out with no buttons', async () => {
-      // Purpose: proactive timeout, no lingering stale prompt. A card recovered on
-      // reconnect (Path A pull / Path B re-emit) carries a server-authoritative
-      // approvalRemainingMs. When that countdown reaches zero with no resolving
-      // event (clock skew vs. the server auto-deny), the card must self-clear to a
-      // timed-out state — disabling/removing Approve & Deny — so a stale prompt
-      // never lingers. The deadline derives from Date.now() + approvalRemainingMs.
+    it('a recovered card whose remainder has run out reads as waiting, not as gone', async () => {
+      // A card recovered on reconnect (Path A pull / Path B re-emit) carries a
+      // server-authoritative `approvalRemainingMs`. The server never lists a
+      // prompt whose remainder is out, so a countdown that reaches zero here
+      // means the agent parked on it — it is still answerable, and answering it
+      // still resolves the held tool call.
       await renderAsync({ ...baseProps, timeoutMs: 600_000, approvalRemainingMs: 500 });
 
       // Approve/Deny are live before the (tiny) remaining window elapses.
@@ -462,14 +466,11 @@ describe('ApprovalPrompt', () => {
       // Drain the near-zero remaining window plus an interval tick.
       await act(async () => vi.advanceTimersByTime(1_000));
 
-      // Card collapsed to its timed-out (auto-denied) row — the live prompt is gone.
-      const decided = screen.getByTestId('tool-approval-decided');
-      expect(decided.getAttribute('data-decision')).toBe('denied');
-      expect(screen.getByText(/Auto-denied/)).toBeDefined();
-      // No interactive Approve/Deny buttons remain to click on the stale card.
-      expect(screen.queryByRole('button', { name: /approve/i })).toBeNull();
-      expect(screen.queryByRole('button', { name: /deny/i })).toBeNull();
-      // No resolving network call was made — this is a local, client-only timeout.
+      expect(screen.queryByTestId('tool-approval-decided')).toBeNull();
+      expect(screen.getByText('waiting for you')).toBeDefined();
+      expect(screen.getByRole('button', { name: /approve/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /deny/i })).toBeDefined();
+      // Nothing was answered on anybody's behalf.
       expect(mockApproveTool).not.toHaveBeenCalled();
       expect(mockDenyTool).not.toHaveBeenCalled();
     });
