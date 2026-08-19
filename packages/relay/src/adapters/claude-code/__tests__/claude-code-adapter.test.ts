@@ -513,8 +513,8 @@ describe('ClaudeCodeAdapter', () => {
           createTestEnvelope(),
           detached()
         );
-        // The ceiling is the adapter's own turn timeout — the same number that
-        // aborts the turn in the way, so no slot can be held longer than this.
+        // The adapter's hold ceiling, which is NOT the blocking turn's: that
+        // turn runs to its own envelope's TTL, so it is still going here.
         await vi.advanceTimersByTimeAsync(60_000);
 
         // Seeded defect: let the hold wait forever. The envelope is never

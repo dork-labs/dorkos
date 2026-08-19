@@ -124,11 +124,14 @@ const TASKS_SUBJECT_PREFIX = 'relay.system.tasks.';
  * @param outcome - How the slot request ended. `'acquired'` never reaches here.
  * @param config - The resolved adapter config, for the numbers in the message.
  * @param durationMs - How long the caller spent, including any wait.
+ * @param ceilingMs - The hold ceiling that actually applied to this delivery:
+ *   the shorter of the adapter's own and what was left of the envelope's TTL.
  */
 function slotRefusal(
   outcome: Exclude<SlotOutcome, 'acquired'>,
   config: ResolvedConfig,
-  durationMs: number
+  durationMs: number,
+  ceilingMs: number
 ): DeliveryResult {
   switch (outcome) {
     case 'line_full':
@@ -147,7 +150,10 @@ function slotRefusal(
       return {
         success: false,
         code: 'at_capacity',
-        error: `Waited up to ${config.defaultTimeoutMs}ms for a free session slot and none came free`,
+        // The ceiling that actually applied, which is the message's own
+        // remaining TTL whenever that was shorter than the adapter's — quoting
+        // `defaultTimeoutMs` here reported a wait that never happened.
+        error: `Waited up to ${ceilingMs}ms for a free session slot and none came free`,
         durationMs,
       };
     case 'stopped':
@@ -283,7 +289,9 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     this.runningTasks.clear();
     // A hold is a promise that a turn will run, and this adapter is about to
     // stop being able to keep it. Every waiter settles now, as a failed
-    // delivery, so the chat is told rather than left waiting on nothing.
+    // delivery, so an ADAPTER restart tells the chats that were waiting. On a
+    // whole-server stop the bus and the chat adapters are already down by the
+    // time this runs, and the message is simply dropped.
     this.capacity.drain();
     this.relay = null;
     this.runtimeAdapter.reset();
@@ -343,7 +351,12 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       ...(context?.onHeld ? { onHeld: context.onHeld } : {}),
     });
     if (slot !== 'acquired') {
-      return slotRefusal(slot, this.config, Date.now() - startTime);
+      return slotRefusal(
+        slot,
+        this.config,
+        Date.now() - startTime,
+        Math.min(this.config.defaultTimeoutMs, Math.max(ttlRemainingMs, 0))
+      );
     }
 
     try {
