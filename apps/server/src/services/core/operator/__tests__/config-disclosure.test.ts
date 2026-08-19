@@ -134,6 +134,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         gettingStarted: { retired: ['suggestion:ask-dorkbot'] },
         digest: { lastShownDate: '2026-08-09' },
       },
+      promos: { dismissedIds: ['remote-access'] },
       shapes: {
         active: 'focus',
         agentDefaults: { '/Users/me/code': 'focus' },

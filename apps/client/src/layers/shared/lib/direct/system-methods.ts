@@ -673,6 +673,11 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
         latestVersion: null,
         isDevMode: true,
         dismissedUpgradeVersions: [],
+        // Always empty here, and it is not an oversight: `updateConfig` is a
+        // no-op on this transport (embedded-mode-stubs.ts), so the embed has
+        // nowhere to persist a dismissal and nothing to read one back from. The
+        // bottom slot still hides a card for the session it is dismissed in.
+        dismissedPromoIds: [],
         port: 0,
         uptime: 0,
         workingDirectory: services.vaultRoot,

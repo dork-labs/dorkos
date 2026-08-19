@@ -895,6 +895,27 @@ export const UserConfigSchema = z.object({
         gettingStarted: { retired: [] },
         digest: {},
       })),
+      /**
+       * Which feature promos this person has waved away, by promo id.
+       *
+       * Lives beside {@link UserConfigSchema} `ui.dismissedUpgradeVersions` and
+       * for the same reason: "I have seen this and I do not want it again" is a
+       * fact about the person, not about the browser they happened to be in.
+       * The list used to live in `localStorage`, so dismissing a card on a
+       * laptop left it waiting on a phone (spec `sidebar-simplification` D4).
+       *
+       * Unknown ids are kept rather than pruned: a promo removed from the
+       * registry today can return under the same id, and the person's answer
+       * should still stand.
+       */
+      promos: z
+        .object({
+          dismissedIds: z
+            .array(z.string())
+            .default(() => [])
+            .describe('Promo ids the user has dismissed'),
+        })
+        .default(() => ({ dismissedIds: [] })),
       /** Person-scoped Shape state (active Shape, reverse affinity hints, follow toggle). */
       shapes: ShapeUserPrefsSchema.default(() => ({
         active: null,
@@ -948,6 +969,7 @@ export const UserConfigSchema = z.object({
         gettingStarted: { retired: [] },
         digest: {},
       },
+      promos: { dismissedIds: [] },
       shapes: {
         active: null,
         agentDefaults: {},
