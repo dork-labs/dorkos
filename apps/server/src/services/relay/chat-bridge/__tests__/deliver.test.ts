@@ -771,7 +771,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         expect(await delivery.deliverEntry(notice)).toBe('delivered');
         expect(deliveredText()).toBe(body.text);
         expect(deliveredText()).toBe(
-          "Ana has a question for you before it can carry on. Open Ana's session to answer — it gives up if nobody does."
+          "Ana has a question for you before it can carry on. Open Ana's session to answer. It will wait, but not forever."
         );
       });
 
