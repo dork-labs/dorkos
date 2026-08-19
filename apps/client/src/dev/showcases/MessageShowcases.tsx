@@ -1,4 +1,3 @@
-import { SessionMessage } from '@/layers/features/chat/ui/message/SessionMessage';
 import { Conversation, MessageAuthorAvatar } from '@/layers/features/conversation';
 import { UserMessageContent } from '@/layers/features/chat/ui/message/UserMessageContent';
 import { AssistantMessageContent } from '@/layers/features/chat/ui/message/AssistantMessageContent';
@@ -24,7 +23,7 @@ import {
 } from '../mock-chat-data';
 import type { MessageGrouping } from '@/layers/features/chat/model/chat-types';
 import type { MessageAuthor } from '@/layers/shared/model';
-import { SESSION_CAPABILITIES } from '@/layers/widgets/session';
+import { SESSION_CAPABILITIES, SessionMessage } from '@/layers/widgets/session';
 
 /** Stand-in participants for the identity gutter. */
 const HUMAN_AUTHOR: MessageAuthor = { kind: 'human', id: 'human', displayName: 'You' };

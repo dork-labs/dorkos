@@ -3,31 +3,10 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render as renderBare, screen, cleanup, act } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { Conversation } from '@/layers/features/conversation';
-import type { ConversationCapabilities } from '@/layers/features/conversation';
-
-/**
- * The session's capability table, declared here rather than imported.
- *
- * `SESSION_CAPABILITIES` moved to `widgets/session/model` with its host in P4,
- * and a feature may not import a widget's model — ESLint refuses it. The
- * shipped table is exercised where it is mounted (`widgets/session`); what this
- * suite needs is a conversation for the row to read, and that is data.
- */
-const SESSION_CAPABILITIES: ConversationCapabilities = {
-  reactions: false,
-  threads: false,
-  runWith: true,
-  attachments: true,
-  mentions: false,
-  streamHealth: false,
-  presence: false,
-  turnStatus: true,
-  asks: true,
-};
-import { SessionMessage } from '../ui/message';
 import { useAppStore } from '@/layers/shared/model';
-import type { MessageGrouping } from '../model/use-chat-session';
-import type { MessageAuthor } from '@/layers/shared/model';
+import type { MessageAuthor, MessageGrouping } from '@/layers/shared/model';
+import { SESSION_CAPABILITIES } from '../model/session-capabilities';
+import { SessionMessage } from '../ui/SessionMessage';
 
 /**
  * The conversation a session page mounts around its transcript.
@@ -147,38 +126,6 @@ describe('SessionMessage', () => {
     );
     expect(screen.getByTestId('streamdown')).toBeDefined();
     expect(screen.getByText('# Heading')).toBeDefined();
-  });
-
-  it('presentation mode suppresses the timestamp and hover background', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'Hey, I live here',
-      parts: [{ type: 'text' as const, text: 'Hey, I live here' }],
-      timestamp: '2026-07-22T08:00:00.000Z',
-    };
-    const { container: normal } = render(
-      <SessionMessage message={msg} sessionId="" grouping={onlyGrouping} {...authorProps(msg)} />
-    );
-    // The timestamp text is in the DOM on a normal render (shown on hover).
-    expect(normal.textContent).toMatch(/\d{1,2}:\d{2}/);
-
-    cleanup();
-
-    const { container: scripted } = render(
-      <SessionMessage
-        message={msg}
-        sessionId=""
-        grouping={onlyGrouping}
-        {...authorProps(msg)}
-        presentation
-      />
-    );
-    // No timestamp, and the hover background is neutralized.
-    expect(scripted.textContent).not.toMatch(/\d{1,2}:\d{2}/);
-    expect(scripted.querySelector('[data-testid="message-item"]')?.className).toContain(
-      'hover:bg-transparent'
-    );
   });
 
   it('renders the author name and avatar on a group start', () => {

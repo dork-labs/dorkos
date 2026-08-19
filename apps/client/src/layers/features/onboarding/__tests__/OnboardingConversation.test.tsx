@@ -166,12 +166,13 @@ vi.mock('@/layers/entities/runtime', () => ({
 }));
 
 /**
- * The chat surfaces, stubbed down to the identity they were handed — the real
- * disc is `IdentityAvatar`'s job and is covered where it lives. What this screen
- * owns is WHICH identity reaches it, so the stubs publish exactly that.
+ * The narrated row, stubbed down to the identity it was handed — the real disc
+ * is `IdentityAvatar`'s job and is covered where it lives, and the row's own
+ * composition is covered in `NarrationMessage.test.tsx`. What this screen owns
+ * is WHICH identity reaches the row, so the stub publishes exactly that.
  */
-vi.mock('@/layers/features/chat', () => ({
-  SessionMessage: ({
+vi.mock('../ui/NarrationMessage', () => ({
+  NarrationMessage: ({
     message,
     author,
   }: {
@@ -187,6 +188,13 @@ vi.mock('@/layers/features/chat', () => ({
       {message.content}
     </div>
   ),
+}));
+
+/**
+ * The chat surfaces this screen still borrows, stubbed to what it reads off
+ * them.
+ */
+vi.mock('@/layers/features/chat', () => ({
   // Mirrors the real resolver's branch order for the two roles this screen
   // produces: a `user` message is the HUMAN, never the agent. Collapsing that
   // branch would let an assertion about DorkBot's face pass on the user's own

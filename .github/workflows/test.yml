@@ -86,10 +86,15 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # A cold full run is ~5 minutes on a warm developer machine under load;
-    # generous headroom for a colder runner, and low enough that a hung watch
-    # -mode suite fails rather than burning an hour.
-    timeout-minutes: 30
+    # MEASURED, not guessed: on 2026-08-19 the last eight green runs on main
+    # took 19-29 minutes wall clock on ubuntu-latest (the suite has grown, and
+    # a busy runner adds a few more), and one run finished its 30/30 turbo
+    # tasks and was then CANCELLED by the previous 30-minute ceiling before
+    # the assert step could run (DOR-1363). 45 keeps a hung watch-mode suite
+    # from burning an hour while leaving real headroom above the measured
+    # ceiling. If a healthy run ever crosses ~35 minutes, split the job
+    # rather than raising this again.
+    timeout-minutes: 45
     steps:
       # fetch-depth: 0 for the tags, not the history. actions/checkout@v4
       # defaults to depth 1 and does NOT fetch tags at that depth, so

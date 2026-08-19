@@ -25,8 +25,7 @@ import {
   type ConversationSurface,
 } from '@/layers/features/conversation';
 import type { ConversationCapabilities } from '@/layers/features/conversation';
-import { SessionMessage } from '@/layers/features/chat/ui/message/SessionMessage';
-import { SESSION_CAPABILITIES } from '@/layers/widgets/session';
+import { SESSION_CAPABILITIES, SessionMessage } from '@/layers/widgets/session';
 import { ROOM_CAPABILITIES, RoomMessage } from '@/layers/widgets/room-view';
 import type { MessageAuthor } from '@/layers/shared/model';
 import type { AuthorRef, RoomEntry } from '@/layers/entities/room';
