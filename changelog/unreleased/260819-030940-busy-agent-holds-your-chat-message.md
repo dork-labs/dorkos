@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(relay): a busy agent holds a bridged message instead of asking you to send it again (DOR-1362)'
+  - "fix(relay): only a person waiting in a chat is held for, and never past their message's own lifetime (DOR-1362)"
+  - 'docs(relay): say what a hold does and does not promise (DOR-1362)'
 ---
 
 ### Changed
@@ -9,4 +11,4 @@ covers:
 
 ### Fixed
 
-- If a message ends up waiting so long that it never runs, the chat now says so plainly instead of telling you to try again. A message still waiting when the server stops is reported too, rather than disappearing in silence. (DOR-1362)
+- If a message waits so long that it never runs, the chat now says so plainly and tells you that you can send it again. Before, a busy agent asked you to resend before it had even tried. (DOR-1362)

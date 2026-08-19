@@ -204,7 +204,14 @@ The Claude Code adapter is on by default whenever Relay starts. It listens on `r
 
 `maxConcurrent` limits how many agent sessions run at once. `defaultTimeoutMs` sets the longest a session can run before it's stopped.
 
-A message that arrives while every session is busy is not turned away. It waits, and it runs as soon as one of those sessions finishes. If the wait lasts more than ten seconds, the chat gets one line saying the message is waiting. If it waits longer than `defaultTimeoutMs` and no session ever frees up, the chat gets one more line saying it was not picked up. Holds live in memory only, so restarting the server drops any message still waiting.
+A message from a connected Telegram or Slack chat that arrives while every session is busy is not turned away. It waits, and it runs as soon as one of those sessions finishes. If the wait lasts more than ten seconds, the chat gets one line saying the message is waiting.
+
+Four limits keep that honest:
+
+- **How many can wait.** Ten per session slot, so 30 with the default `maxConcurrent` of 3. Past that, a message is answered right away instead of waiting.
+- **How long one can wait.** `defaultTimeoutMs`, or whatever is left of the message's own one-hour lifetime, whichever is shorter. This is not the same as how long the busy session may run, so a message can stop waiting while your agent is still working. When that happens the chat gets one more line saying the message was not picked up, and you can send it again.
+- **Who gets to wait.** Only a message from a chat you connected. Anything else waiting on an answer, such as one agent asking another, gets the old immediate "too busy" reply, because those callers give up long before a wait would end.
+- **How long the wait survives.** Holds live in memory only, so restarting the server drops any message still waiting.
 
 ### Telegram adapter
 
