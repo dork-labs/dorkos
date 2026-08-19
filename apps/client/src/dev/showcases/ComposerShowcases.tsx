@@ -139,7 +139,7 @@ function ComposerDemo({
   showQueueItems = false,
 }: {
   label: string;
-  surface: 'session' | 'room' | 'dm';
+  surface: 'session' | 'room';
   capabilities: typeof SESSION_CAPABILITIES;
   target: ConversationTarget;
   asks?: ReactNode;

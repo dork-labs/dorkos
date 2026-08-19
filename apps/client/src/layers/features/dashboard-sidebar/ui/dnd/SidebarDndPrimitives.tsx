@@ -11,7 +11,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
 import { sidebarItemKey } from '../../model/sidebar-item';
-import type { SidebarDndData } from '../../model/use-sidebar-dnd';
+import type { SidebarDndData, UngroupedSectionId } from '../../model/use-sidebar-dnd';
 
 /**
  * Whether the sidebar drag layer is active. `SidebarDnd` sets this `true`; it
@@ -195,15 +195,15 @@ export function sidebarRowDndId(keyPrefix: string, ref: SidebarItemRef): string 
  * prefix (`pinned` / `ungrouped` / a group id) names the home container that the
  * drop reducer reads back as the drag source or hovered target.
  *
- * `section` names the ungrouped section this row actually sits in, for the ARIA
- * announcements only — "ungrouped" is three sections now (Agents, Channels,
- * Direct messages), and a hover that says "Over Agents." while the cursor is
- * over Channels is worse than no announcement at all.
+ * `section` is the id of the ungrouped section this row actually sits in, for
+ * the ARIA announcements only — "ungrouped" is three sections now (Agents,
+ * Channels, Direct messages), and a hover that says "Over Agents." while the
+ * cursor is over Channels is worse than no announcement at all.
  */
 export function sidebarDndData(
   keyPrefix: string,
   ref: SidebarItemRef,
-  section?: string
+  section?: UngroupedSectionId
 ): SidebarDndData {
   if (keyPrefix === 'pinned') return { type: 'item', ref, container: { kind: 'pinned' } };
   if (keyPrefix === 'ungrouped') {

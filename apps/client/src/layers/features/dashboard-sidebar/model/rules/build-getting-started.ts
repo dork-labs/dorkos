@@ -34,7 +34,7 @@ interface Suggestion {
 const SUGGESTIONS: readonly Suggestion[] = [
   {
     id: 'suggestion:agents-found',
-    icon: 'discovery',
+    icon: 'digest',
     applies: (f) => f.discoveredUnregisteredPaths.length > 0,
     label: (f) =>
       f.discoveredUnregisteredPaths.length === 1
@@ -91,12 +91,10 @@ export function buildGettingStarted(state: SidebarState): SidebarRowModel[] {
       target,
       glyph: { kind: 'icon', icon: suggestion.icon },
       primary: suggestion.label(state.journey),
-      status: 'idle',
       reservesVerbLine: false,
       unread: { tier: 'none' },
       muted: false,
       draggable: false,
-      actions: ['open'],
       reason: suggestion.id,
     });
   }

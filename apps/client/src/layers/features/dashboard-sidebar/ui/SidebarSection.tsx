@@ -14,17 +14,25 @@ import { cn } from '@/layers/shared/lib';
 import { useRovingFocus } from '@/layers/shared/model';
 import { SectionHeader, SidebarGroup, SidebarMenu, statusDotClass } from '@/layers/shared/ui';
 import type { SidebarSectionModel } from '../model/build-sidebar-model';
-import type { SidebarContainer } from '../model/use-sidebar-dnd';
+import type { SidebarContainer, UngroupedSectionId } from '../model/use-sidebar-dnd';
 import { Droppable, Sortable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
 import { dragRefOf, SidebarModelRow } from './SidebarModelRow';
 import { useSectionChrome } from './useSectionChrome';
 
-/** What the drag layer calls each ungrouped section out loud. */
-const SECTION_LABEL: Record<string, string> = {
-  channels: 'Channels',
-  dms: 'Direct messages',
-  agents: 'Agents',
-};
+/**
+ * The ungrouped section a section id names, or `undefined` for one that is not
+ * an ungrouped section at all.
+ *
+ * Three ids and no fallback. Pins is its own container, a group is its own, and
+ * Heads up / Today / Getting started are computed — none of them is "ungrouped",
+ * so none of them may borrow Agents' name for a drag announcement that would
+ * then say "Over Agents." about a row that is nowhere near it.
+ *
+ * @param id - The section's id.
+ */
+function ungroupedSectionId(id: SidebarSectionModel['id']): UngroupedSectionId | undefined {
+  return id === 'channels' || id === 'dms' || id === 'agents' ? id : undefined;
+}
 
 /**
  * The drag container a section's rows belong to.
@@ -42,7 +50,12 @@ export function sectionContainer(id: SidebarSectionModel['id']): SidebarContaine
   if (id === 'now' || id === 'today' || id === 'getting-started') {
     return { kind: 'computed', zone: id };
   }
-  return { kind: 'ungrouped', section: SECTION_LABEL[id] ?? 'Agents' };
+  const section = ungroupedSectionId(id);
+  // Reached only after pins, groups and the computed zones have been answered
+  // above, so the fallback is unreachable in practice — spelled out rather than
+  // defaulted so a new Library section shows up as a wrong announcement here
+  // instead of silently becoming Agents everywhere.
+  return { kind: 'ungrouped', section: section ?? 'agents' };
 }
 
 /** The row-key prefix a section's rows drag under. */
@@ -84,7 +97,7 @@ export function SidebarSection({
   });
   const bodyId = `sidebar-section-${section.id.replace(/[^a-zA-Z0-9-]/g, '-')}`;
   const prefix = containerPrefix(section.id);
-  const sectionLabel = SECTION_LABEL[section.id];
+  const sectionId = ungroupedSectionId(section.id);
   const groupId = section.id.startsWith('group:') ? section.id.slice('group:'.length) : null;
 
   const rows = (
@@ -94,7 +107,7 @@ export function SidebarSection({
           key={`${prefix}-${row.key}`}
           row={row}
           keyPrefix={prefix}
-          {...(sectionLabel === undefined ? {} : { sectionLabel })}
+          {...(sectionId === undefined ? {} : { sectionId })}
         />
       ))}
     </SidebarMenu>

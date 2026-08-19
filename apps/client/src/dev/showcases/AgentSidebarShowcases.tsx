@@ -13,7 +13,11 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { MOCK_AGENTS, minutesAgo } from './agent-sidebar-fixtures';
-import { SessionSwitcherShowcase, useSwitcherFixture } from './SessionSwitcherShowcases';
+import {
+  LIVE_BY_PATH,
+  SessionSwitcherShowcase,
+  useSwitcherFixture,
+} from './SessionSwitcherShowcases';
 import {
   AgentActivityBadge,
   AgentListItem,
@@ -224,6 +228,13 @@ function AgentListItemShowcase() {
               visual={resolveAgentVisual({ id: path })}
               displayName={displayName}
               isActive={activePath === path}
+              // The model decides the chip (`SidebarRowModel.liveCount`, omitted
+              // below two), so the bench states the count the same way the real
+              // panel does rather than seeding a store the row does not read.
+              // Keyed by path, never by position: the long-named agent is the
+              // row whose title actually reaches the chip, and an index literal
+              // is how it silently lost one.
+              {...(LIVE_BY_PATH[path] === undefined ? {} : { liveCount: LIVE_BY_PATH[path] })}
               onSelect={() => setActivePath(path)}
               onRequestNewGroup={() => {}}
               onSessionClick={() => {}}
@@ -260,6 +271,7 @@ function AgentListItemShowcase() {
             displayName={MOCK_AGENTS[0].displayName}
             isActive={false}
             isMuted
+            liveCount={LIVE_BY_PATH[MOCK_AGENTS[0].path]}
             onSelect={() => {}}
             onRequestNewGroup={() => {}}
             onSessionClick={() => {}}

@@ -191,34 +191,42 @@ export interface SidebarRowModel {
   /** Fixed 18px leading slot. The glyph carries the type; row chrome never does. */
   glyph:
     | { kind: 'agent-avatar'; agentPath: string }
-    | { kind: 'person-avatar'; memberId: string }
-    | { kind: 'face-stack'; memberIds: string[] }
     | { kind: 'hash' }
     | { kind: 'icon'; icon: SidebarIconId };
+  // ~~| { kind: 'person-avatar'; memberId: string }~~
+  // ~~| { kind: 'face-stack'; memberIds: string[] }~~
+  // Retired by sidebar-simplification task 0.1 (DOR-1366): emitted for every direct message and rendered by nothing —
+  // `RoomRow` owns a room's leading slot and builds it from the roster.
   /** The "who": agent name, room name, person name. Never a title. */
   primary: string;
   /** The "what", rendered after `›`. Present iff this row is a session. */
   secondary?: string;
-  /** Avatar corner dot. Derived from lifecycle, never from a verb. */
-  status: IdentityStatus;
+  // ~~/** Avatar corner dot. Derived from lifecycle, never from a verb. */~~
+  // ~~status: IdentityStatus;~~
+  // Retired by sidebar-simplification task 0.1 (DOR-1366): the field was written and never rendered; the row's dot comes
+  // from the live status fan-out at the leaf. Tests removed with it.
   /** True when the row reserves a second line for a live verb (see BC-24). */
   reservesVerbLine: boolean;
   /** One-line preview when there is one worth showing and no verb line. */
   preview?: string;
-  /** Trailing origin mark; absent = human↔agent chat. */
-  origin?: SessionOriginMark;
+  // ~~/** Trailing origin mark; absent = human↔agent chat. */~~
+  // ~~origin?: SessionOriginMark;~~
+  // Retired by sidebar-simplification task 0.1 (DOR-1366) — see BC-26 below.
   unread: { tier: 'none' | 'activity' | 'directed'; count?: number };
   /** "N live" chip on an agent row with concurrent sessions. */
   liveCount?: number;
-  /** Repo/project chip. Present only under BC-38. */
-  projectLabel?: string;
+  // ~~/** Repo/project chip. Present only under BC-38. */~~
+  // ~~projectLabel?: string;~~
+  // Retired by sidebar-simplification task 0.1 (DOR-1366) — see BC-38 below.
   /** Heads up only. Drives priority and the dismiss affordance. */
   attention?: { kind: NowKind; since: string; dismissible: boolean };
   muted: boolean;
   /** False for every row outside Library (BC-35). */
   draggable: boolean;
-  /** Menu node ids, dual-rendered into context menu and kebab. */
-  actions: SidebarActionId[];
+  // ~~/** Menu node ids, dual-rendered into context menu and kebab. */~~
+  // ~~actions: SidebarActionId[];~~
+  // Retired by sidebar-simplification task 0.1 (DOR-1366): the field was written and never rendered — the row menus build
+  // their own nodes. Tests removed with it.
   /** Provenance. Answers "why is this row here?" in devtools, always. */
   reason: string;
 }
@@ -485,11 +493,15 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   meta slot is `flex: 0 0 auto` and is never pushed off. No JavaScript measurement — the budget
   is deterministic, cheap and browser-testable via computed style. The full `Agent › Title` is
   the row's `title` attribute and tooltip.
-- **BC-26 — Origin marks** are a small muted trailing glyph, never on the avatar: none =
+- **BC-26 — Origin marks — RETIRED.** Retired by sidebar-simplification task 0.1 (DOR-1366): `SidebarRowModel.origin` was
+  written and never rendered; `sessionOriginMark` and its table are deleted and the tests
+  went with them. Origin marks still ship on the surfaces that always drew them (the session
+  switcher, ⌘K, Activity) through `ORIGIN_GLYPH`; only the sidebar model's copy is gone.
+  ~~Origin marks are a small muted trailing glyph, never on the avatar: none =
   human↔agent chat, timer = task/scheduled, paper plane = bridged/external, `#` = room-triggered,
   arrows = agent-to-agent. One registry (`shared/ui/identity-glyphs.ts`, extended with
   `ORIGIN_GLYPH`) serves Today, the session switcher, "+N automated", ⌘K and Activity, so they
-  cannot drift. (§3, §6)
+  cannot drift. (§3, §6)~~
 - **BC-27 — Overflow menu is a vertical kebab (⋮)**, hover/focus-revealed, in a narrow gutter.
   Horizontal meatballs are gone from the sidebar. (design-meta rule 3)
 
@@ -545,10 +557,12 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   idle. **Degrade down the ladder, never guess.** The same function feeds the sidebar, the
   session switcher, ⌘K's Continue row and the chat status strip (whose randomized joke verbs are
   deleted — §14.4). (§5)
-- **BC-38 — Project context (see R4).** A session row carries `projectLabel` **only** when
+- **BC-38 — Project context — RETIRED.** Retired by sidebar-simplification task 0.1 (DOR-1366): `projectLabel` was written and
+  never rendered; `deriveProjectLabel` and `SidebarState.projects` are deleted and the tests
+  went with them. ~~(see R4) A session row carries `projectLabel` **only** when
   `projects.activeCount > 1`; the label is the basename of the session's `cwd`, rendered as a
   muted trailing chip in the meta slot, never inside the 42% name budget. Rooms and agents never
-  carry it. It changes no grouping and no ordering. The word "workspace" appears nowhere. (§16)
+  carry it. It changes no grouping and no ordering. The word "workspace" appears nowhere. (§16)~~
 
 #### Notifications (§18, made testable)
 
@@ -718,7 +732,8 @@ showcase page, which fails on contrast violations rather than being eyeballed.
 **Resolved: secondary-line chip on session rows, only for multi-project operators, sourced from
 `cwd`, with no grouping change.**
 
-- A session row carries `projectLabel` **only when `projects.activeCount > 1`** — an operator
+- Retired by sidebar-simplification task 0.1 (DOR-1366): none of this shipped to a screen. ~~A session row carries `projectLabel`
+  **only when `projects.activeCount > 1`**~~ — an operator
   running everything in one repo never sees the chip (progressive disclosure by data volume,
   design-meta rule 8).
 - The value is the basename of the session's `cwd` (the `projectKey` dimension §16 says already
@@ -879,7 +894,8 @@ AgentListItem's inline session panel (MAX_PREVIEW_SESSIONS et al.)
   events (BC-16 — the highest-value test in the programme), overnight boundary math with an
   injected `now` (BC-18), archival exemptions, collapsed rollup arithmetic (BC-31), mute
   semantics including the @mention piercing case (BC-40), `draggable === false` for every
-  non-Library row (R3), `projectLabel` presence/absence across `activeCount` 1 and 2 (BC-38), and
+  non-Library row (R3), ~~`projectLabel` presence/absence across `activeCount` 1 and 2 (BC-38)~~
+  (Retired by sidebar-simplification task 0.1 (DOR-1366)), and
   a structural test that every emitted node carries a well-formed `reason`.
 - **Primitives (RTL).** `SidebarRow`: dual-rendered menus produce identical action sets in
   context menu and kebab; kebab hidden at rest and revealed on `focus-visible`; two-line layout

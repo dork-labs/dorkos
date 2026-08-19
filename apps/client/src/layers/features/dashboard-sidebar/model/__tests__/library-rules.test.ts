@@ -192,7 +192,9 @@ describe('BC-31 — a folded section keeps its signal', () => {
       });
       const agents = library(state).find((section) => section.id === 'agents');
       expect(agents?.rollup).toBeUndefined();
-      expect(agents?.rows.find((row) => row.key === `agent:${SAFFRON}`)?.status).toBe('working');
+      expect(agents?.rows.find((row) => row.key === `agent:${SAFFRON}`)?.reservesVerbLine).toBe(
+        true
+      );
     });
 
     it('agrees with Heads up, which counted the same session all along', () => {
@@ -204,10 +206,11 @@ describe('BC-31 — a folded section keeps its signal', () => {
 
     it('keeps counting a member that is blocked AND working (BC-31)', () => {
       // The reviewer's pair, and the sharper half of the defect: a row draws one
-      // dot and `deriveRowStatus` ranks needs-you above streaming, so counting
-      // dots did not undercount here — with nothing else set in the section the
-      // rollup went to `undefined` and the folded header lost its signal
-      // ALTOGETHER, which is the one thing BC-31 says folding never does.
+      // dot, and needs-you outranks streaming there, so counting dots did not
+      // merely undercount — with nothing else set in the section the rollup went
+      // to `undefined` and the folded header lost its signal ALTOGETHER, which
+      // is the one thing BC-31 says folding never does. The rollup is asked
+      // directly for exactly that reason.
       const state = folded({ liveSessionCwds: { 'ses-brand-new': SAFFRON } });
       const control = library(state).find((section) => section.id === 'agents');
       // The control: saffron is streaming and not blocked, and is counted.
@@ -221,9 +224,8 @@ describe('BC-31 — a folded section keeps its signal', () => {
         ),
       }).find((section) => section.id === 'agents');
 
-      // The row honestly draws the hotter dot — that part was never wrong…
-      expect(probe?.rows.find((row) => row.key === `agent:${SAFFRON}`)?.status).toBe('needs-you');
-      // …and the folded header still says somebody is working, because they are.
+      // The folded header still says somebody is working, because they are —
+      // even though the row's own dot has gone to needs-you.
       expect(probe?.rollup).toBeDefined();
       expect(probe?.rollup?.workingCount).toBe(1);
     });
@@ -253,6 +255,49 @@ describe('BC-31 — a folded section keeps its signal', () => {
     expect(
       library(busyFixture).find((section) => section.id === 'channels')?.rollup
     ).toBeUndefined();
+  });
+});
+
+describe('the "N live" chip is decided once, in the model', () => {
+  const SAFFRON = '/Users/dev/code/saffron';
+
+  /** `busy` with `count` live human sessions on saffron. */
+  function withLiveSessions(count: number): SidebarState {
+    const ids = Array.from({ length: count }, (_, i) => `ses-live-${i}`);
+    return {
+      ...busyFixture,
+      workingSessionIds: ids,
+      liveSessionCwds: Object.fromEntries(ids.map((id) => [id, SAFFRON])),
+    };
+  }
+
+  /** Saffron's Agents row. */
+  function saffronRow(state: SidebarState) {
+    return library(state)
+      .find((section) => section.id === 'agents')
+      ?.rows.find((row) => row.key === `agent:${SAFFRON}`);
+  }
+
+  it('says nothing at one live session', () => {
+    // **Absence is the contract, not a zero or a one.** `AgentListItem` draws the
+    // chip whenever `liveCount` is present, so an agent with a single live
+    // session must reach it with the field missing — the row has no threshold of
+    // its own left to filter with. Emitting `liveCount: 1` here puts a "1 live"
+    // chip beside a dot that already said the same thing (BC-35).
+    const row = saffronRow(withLiveSessions(1));
+    expect(row?.reservesVerbLine).toBe(true);
+    expect(row?.liveCount).toBeUndefined();
+  });
+
+  it('carries the count from two upwards', () => {
+    expect(saffronRow(withLiveSessions(2))?.liveCount).toBe(2);
+    expect(saffronRow(withLiveSessions(3))?.liveCount).toBe(3);
+  });
+
+  it('says nothing at all when nothing is running', () => {
+    const row = saffronRow(withLiveSessions(0));
+    expect(row?.reservesVerbLine).toBe(false);
+    expect(row?.liveCount).toBeUndefined();
   });
 });
 
@@ -407,12 +452,11 @@ describe('Library rows', () => {
     for (const row of manual?.rows ?? []) expect(row.draggable).toBe(true);
   });
 
-  it('offer unmute rather than mute once something is muted', () => {
+  it('mark a muted member muted, which is what turns its menu item into Unmute', () => {
     const noise = library(busyFixture)
       .find((section) => section.id === 'channels')
       ?.rows.find((row) => row.key === 'room:room-noise');
-    expect(noise?.actions).toContain('unmute');
-    expect(noise?.actions).not.toContain('mute');
+    expect(noise?.muted).toBe(true);
   });
 
   it('name what the filter hid, singular and plural', () => {

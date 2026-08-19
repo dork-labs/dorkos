@@ -178,7 +178,6 @@ export function emptyState(overrides: Partial<SidebarState> = {}): SidebarState 
       hasDorkBotSession: true,
     },
     digest: { finishedWhileAwayCount: 0 },
-    projects: { activeCount: 0, byCwd: {} },
     ...overrides,
   };
 }

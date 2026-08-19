@@ -26,14 +26,6 @@ const NOW_ICON: Record<NowKind, SidebarIconId> = {
   'idle-timeout': 'idle',
 };
 
-/** What the dot says for each blockage — amber for waiting, red for broken. */
-const NOW_STATUS = {
-  'permission-prompt': 'needs-you',
-  question: 'needs-you',
-  error: 'error',
-  'idle-timeout': 'needs-you',
-} as const;
-
 /**
  * The rows Heads up would show if it had no cap — one per thing that needs the
  * operator, in the order the signals arrived.
@@ -63,13 +55,11 @@ export function selectNowItems(state: SidebarState): SidebarRowModel[] {
         : { kind: 'icon', icon: NOW_ICON[signal.kind] },
       primary: signal.primary,
       ...(signal.secondary === undefined ? {} : { secondary: signal.secondary }),
-      status: NOW_STATUS[signal.kind],
       reservesVerbLine: false,
       unread: { tier: 'none' },
       attention: { kind: signal.kind, since: signal.since, dismissible: signal.dismissible },
       muted: false,
       draggable: false,
-      actions: signal.dismissible ? ['open', 'dismiss'] : ['open'],
       reason: `now:${signal.kind}`,
     });
   }

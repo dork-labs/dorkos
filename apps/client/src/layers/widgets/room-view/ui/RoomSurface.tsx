@@ -370,11 +370,12 @@ export function RoomSurface({
   );
 
   // What this conversation IS and what it can do, published once for every part
-  // below — the row, the thread panel's rows, and (from P2) the live lane. A DM
-  // is a room whose kind changes naming only, so `surface` tells them apart for
-  // the one place that has to choose a word, and the capability table is shared.
+  // below — the row, the thread panel's rows, and (from P2) the live lane. A
+  // direct message is a room, and says so: the naming difference it used to
+  // carry a `surface` of its own for is read off `room.kind` where the words are
+  // chosen, and the capability table is shared either way.
   const conversation = {
-    surface: room.kind === 'dm' ? ('dm' as const) : ('room' as const),
+    surface: 'room' as const,
     capabilities: ROOM_CAPABILITIES,
     target: roomTarget.target,
     // A room's messages run long, so its action capsule rides a sticky rail

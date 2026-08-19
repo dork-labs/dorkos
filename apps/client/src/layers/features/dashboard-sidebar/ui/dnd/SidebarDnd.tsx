@@ -75,7 +75,9 @@ function DragOverlayContent({
  * overlay, and per-operation ARIA announcements. Drop semantics are delegated to
  * the pure `resolveSidebarDrop` reducer.
  *
- * On mobile the sidebar is a scrollable `Sheet`, so touch drag is disabled: the
+ * Below 768px there is no sidebar panel at all — `AppShell` does not render
+ * `<Sidebar>`, so there is no sheet and no drawer, and the panel's rows reach a
+ * phone through the mobile tabs instead. Touch drag is disabled there: the
  * children render without a `DndContext` and every drag operation stays reachable
  * through the row/header context menus.
  */

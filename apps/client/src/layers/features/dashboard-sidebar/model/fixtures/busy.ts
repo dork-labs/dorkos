@@ -153,13 +153,4 @@ export const busyFixture: SidebarState = emptyState({
     hasDorkBotSession: true,
   },
   digest: { finishedWhileAwayCount: 0 },
-  projects: {
-    activeCount: 4,
-    byCwd: {
-      [TANGERINE]: 'tangerine',
-      [CARDAMOM]: 'cardamom',
-      [SAFFRON]: 'saffron',
-      [JUNIPER]: 'juniper',
-    },
-  },
 });

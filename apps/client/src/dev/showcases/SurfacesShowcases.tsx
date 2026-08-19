@@ -214,9 +214,9 @@ export function SurfacesShowcase() {
   return (
     <PlaygroundSection
       title="Surfaces"
-      description="The same four turns, drawn through the three capability objects a real cockpit chooses between. Each column is a genuine Conversation.Root — Timeline, LiveLane and Composer included — never a recreation. A DM is a room whose surface differs in name only, so it draws from the same ROOM_CAPABILITIES and the same rows as the room column."
+      description="The same four turns, drawn through the two capability objects a real cockpit chooses between. Each column is a genuine Conversation.Root — Timeline, LiveLane and Composer included — never a recreation. A direct message is a room: it draws from the same ROOM_CAPABILITIES and the same rows as the room column, which is why it needs no column of its own."
     >
-      <ShowcaseLabel>Session · Room · DM</ShowcaseLabel>
+      <ShowcaseLabel>Session · Room</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <div className="flex flex-col gap-4 lg:flex-row">
           <SurfaceColumn
@@ -230,12 +230,6 @@ export function SurfacesShowcase() {
             label="Room"
             capabilities={ROOM_CAPABILITIES}
             placeholder="Message #release-train…"
-          />
-          <SurfaceColumn
-            surface="dm"
-            label="DM"
-            capabilities={ROOM_CAPABILITIES}
-            placeholder="Message Ana…"
           />
         </div>
       </ShowcaseDemo>

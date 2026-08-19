@@ -369,7 +369,7 @@ export function RoomThreadPanel({
           in, and a target that writes into THIS thread. Nested inside the
           room's own Root, which is what a reply is. */}
       <Conversation.Root
-        surface={room.kind === 'dm' ? 'dm' : 'room'}
+        surface="room"
         capabilities={ROOM_CAPABILITIES}
         target={threadTarget.target}
         anchor="rail"

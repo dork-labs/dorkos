@@ -48,5 +48,4 @@ export const quietFixture: SidebarState = emptyState({
     hasDorkBotSession: true,
   },
   digest: { finishedWhileAwayCount: 3 },
-  projects: { activeCount: 1, byCwd: { [TANGERINE]: 'tangerine' } },
 });

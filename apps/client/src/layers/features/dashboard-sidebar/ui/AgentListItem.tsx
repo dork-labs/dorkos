@@ -6,20 +6,10 @@ import { getAgentDisplayName } from '@/layers/shared/lib';
 import { SidebarRow } from '@/layers/shared/ui';
 import { AgentIdentity, type AgentVisual } from '@/layers/entities/agent';
 import { useAgentHottestStatus } from '@/layers/entities/session';
-import { useLiveSessionCount } from '../model/use-live-sessions';
 import { useAgentRowMenuNodes } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
 import { LiveSessionsChip, SessionSwitcher } from './SessionSwitcher';
 import type { SortableBindings } from './dnd/SidebarDndPrimitives';
-
-/**
- * How many concurrent sessions it takes before the row offers the switcher.
- *
- * Two, because one is not a choice. A single live session is already what
- * pressing the row gives you, and the activity dot already says it is live —
- * a chip there would be a door to a room the operator is standing in.
- */
-const LIVE_CHIP_THRESHOLD = 2;
 
 /**
  * The empty id list the roster's status hook is called with, hoisted so it is
@@ -55,6 +45,17 @@ interface AgentListItemProps {
    * clickable (DOR-339).
    */
   isMuted?: boolean;
+  /**
+   * How many of this agent's sessions are live right now, when that is enough
+   * to be worth saying — `SidebarRowModel.liveCount`, straight off the model.
+   *
+   * Absent means no chip. The model omits it below `LIVE_CHIP_MIN`
+   * (`model/rules/library-rows.ts`), so the threshold is decided in one place
+   * and this row cannot disagree with the number it draws. It used to count for
+   * itself, which meant sixty rows each holding their own store subscription to
+   * answer a question the model had already answered.
+   */
+  liveCount?: number;
   onSelect: () => void;
   /**
    * View this agent's profile — what its face opens, and the menu item beside it.
@@ -100,6 +101,7 @@ export function AgentListItem({
   visual,
   isActive,
   isMuted = false,
+  liveCount,
   onSelect,
   onViewProfile,
   onRequestNewGroup,
@@ -115,7 +117,6 @@ export function AgentListItem({
   // fleet-wide cwd matching: the row is handed no session list, but
   // `session_status` fan-outs carry each live session's cwd.
   const rawAgentStatus = useAgentHottestStatus(EMPTY_SESSION_IDS, path);
-  const liveCount = useLiveSessionCount(path);
   // Mute suppresses every attention-driven emphasis at once: force the status
   // this row renders from to idle-shaped, regardless of the agent's real live
   // work, so the activity badge (which returns null for 'idle') drops with it
@@ -133,7 +134,10 @@ export function AgentListItem({
   // A muted agent asks for nothing, and a chip counting its live work would be
   // asking. The switcher stays reachable from ⌘K, which is a place the operator
   // went on purpose.
-  const showChip = !isMuted && liveCount >= LIVE_CHIP_THRESHOLD;
+  //
+  // The presence of `liveCount` IS the threshold: the model omits it below
+  // `LIVE_CHIP_MIN`, so there is no second number here to fall out of step.
+  const chipCount = isMuted ? undefined : liveCount;
 
   // The handler and its accessible name as ONE value, because they are one
   // decision: an agent the roster cannot name gets neither, and the face is
@@ -209,7 +213,7 @@ export function AgentListItem({
               exclusive — the chip carries a dot of its own, so showing both
               would say "working" twice in two vocabularies.
             */}
-            {!showChip && (
+            {chipCount === undefined && (
               <AgentActivityBadge status={agentStatus.kind} label={agentStatus.label} />
             )}
           </>
@@ -226,15 +230,15 @@ export function AgentListItem({
         // plain span — the invisible copy lives inside the row's `<button>`, and
         // a focusable in there is a button nested in a button. The primitive
         // `console.error`s in development if that rule is broken.
-        {...(showChip
-          ? {
+        {...(chipCount === undefined
+          ? {}
+          : {
               trailingAction: {
-                content: <LiveSessionsChip count={liveCount} />,
+                content: <LiveSessionsChip count={chipCount} />,
                 onClick: openSwitcher,
-                label: `${liveCount} live sessions — open the session switcher for ${displayName}`,
+                label: `${chipCount} live sessions — open the session switcher for ${displayName}`,
               },
-            }
-          : {})}
+            })}
       />
       {/*
         Mounted while the chip is on offer, and kept mounted while the surface is
@@ -242,7 +246,7 @@ export function AgentListItem({
         exit animation. It costs nothing at rest: closed, it renders no portal
         and asks for no sessions, so the row still fetches nothing of its own.
       */}
-      {(showChip || switcherOpen) && (
+      {(chipCount !== undefined || switcherOpen) && (
         <SessionSwitcher
           agentPath={path}
           agentName={displayName}
