@@ -92,6 +92,21 @@ export function presenceCountSentence(count: number, state: PresenceCopyState): 
 }
 
 /**
+ * What the line says when the room knows what one agent is doing.
+ *
+ * The plainest true sentence: a name, "is", and the clause the tool table
+ * produced. No ellipsis and no "on it" — "Kai is reading standup.md" is already
+ * a complete thought, and the elapsed time follows it the way it follows every
+ * other form here.
+ *
+ * @param name - The agent's display name.
+ * @param clause - What it is doing, as a clause that follows "is".
+ */
+export function presenceActivitySentence(name: string, clause: string): string {
+  return `${name} is ${clause}`;
+}
+
+/**
  * What the line says about a message that has not started yet.
  *
  * **It is not a presence sentence and must not read like one.** Nobody is

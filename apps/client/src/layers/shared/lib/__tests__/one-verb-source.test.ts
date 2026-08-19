@@ -96,6 +96,28 @@ const MODULE_STATEMENT = /(^|\n)\s*(?:import|export)\b([^;]*?)\bfrom\s+['"]([^'"
  */
 const DYNAMIC_IMPORT = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 
+/**
+ * The two names that ARE the rung, either of which is a second verb source once
+ * it is reachable outside {@link MAY_NAME_THE_RUNG}.
+ *
+ * `activityClause` joined `formatActivityLabel` when a room's lane started
+ * saying "Kai is reading standup.md": the clause is the shared rung and the
+ * label is one framing of it, so a file that reaches either has the table.
+ */
+const RUNG_NAMES = ['formatActivityLabel', 'activityClause'] as const;
+
+/**
+ * The rung name that may not travel by ANY route, not even the barrel.
+ *
+ * `formatActivityLabel` is the session's finished sentence and has exactly one
+ * caller, so naming it in any module statement anywhere is an escape.
+ * `activityClause` is deliberately different: the room lane imports it from the
+ * barrel by design, and what it may never do is come from `tool-labels`
+ * directly — which the rule above and {@link MAY_REACH_TOOL_LABELS} together
+ * enforce, including for the barrel itself.
+ */
+const PRIVATE_RUNG = 'formatActivityLabel';
+
 /** Whether a specifier points at the `tool-labels` module, by any route. */
 function isToolLabels(specifier: string): boolean {
   return /(^|[./])tool-labels(\.[jt]sx?)?$/.test(specifier);
@@ -131,10 +153,18 @@ function moduleStatements(source: string): { clause: string; specifier: string; 
 /** Why this file is an offender, or `null` when it is not one. */
 function ladderEscape(path: string, source: string): string | null {
   for (const { clause, specifier, ns } of moduleStatements(source)) {
-    if (clause.includes('formatActivityLabel') && !MAY_NAME_THE_RUNG.has(path)) {
+    if (clause.includes(PRIVATE_RUNG) && !MAY_NAME_THE_RUNG.has(path)) {
       return `names the rung in a module statement for '${specifier}'`;
     }
     if (!isToolLabels(specifier)) continue;
+    // A rung name taken STRAIGHT off `tool-labels`. Caught separately from the
+    // reachability rule below because the barrel is allowed to reach that
+    // module — it passes `getToolLabel` and friends through — and this is what
+    // stops it passing a rung through with them.
+    const named = RUNG_NAMES.filter((name) => clause.includes(name));
+    if (named.length > 0 && !MAY_NAME_THE_RUNG.has(path)) {
+      return `takes ${named.join(' and ')} straight from '${specifier}'`;
+    }
     if (ns && !MAY_NAME_THE_RUNG.has(path)) {
       return `takes '${specifier}' wholesale as a namespace, which hands it the rung`;
     }
@@ -206,6 +236,49 @@ describe('the honesty ladder is the only verb source (BC-37)', () => {
     // …while the neighbours it legitimately passes through stay allowed.
     expect(
       ladderEscape('shared/lib/index.ts', "export { getToolLabel } from './tool-labels';")
+    ).toBeNull();
+  });
+
+  it('catches the second rung name in every shape that reaches tool-labels', () => {
+    // `activityClause` is the shared rung as of DOR-1351, so the same escapes
+    // that would give a file its own verb table now exist under a second name.
+    // Each of these is caught for the module it names, whoever writes it.
+    const escapes = [
+      "import { activityClause } from '../tool-labels';",
+      'import {\n  activityClause,\n} from "@/layers/shared/lib/tool-labels";',
+      "export { activityClause } from './tool-labels';",
+      "import * as toolLabels from '@/layers/shared/lib/tool-labels';",
+      "export * from './tool-labels';",
+      "const { activityClause } = await import('@/layers/shared/lib/tool-labels');",
+      "const mod = await import('../tool-labels');",
+    ];
+    for (const escape of escapes) {
+      expect(
+        ladderEscape('features/conversation/model/lane-state.ts', escape),
+        escape
+      ).not.toBeNull();
+    }
+    // And the barrel, which may reach that module for its other neighbours, may
+    // not pass the clause through from it — the one route the reachability rule
+    // alone would let past.
+    expect(
+      ladderEscape('shared/lib/index.ts', "export { activityClause } from './tool-labels';")
+    ).not.toBeNull();
+  });
+
+  it('leaves the room lane its intended route to the clause', () => {
+    // The whole point of the refactor: `activityClause` travels OUT through
+    // `activity-verb` and the barrel, and a guard that forbade that would forbid
+    // the reuse it exists to protect. If this ever goes red the guard has been
+    // tightened into the thing it was written to prevent.
+    expect(
+      ladderEscape('shared/lib/index.ts', "export { activityClause } from './activity-verb';")
+    ).toBeNull();
+    expect(
+      ladderEscape(
+        'features/conversation/model/lane-state.ts',
+        "import { activityClause } from '@/layers/shared/lib';"
+      )
     ).toBeNull();
   });
 

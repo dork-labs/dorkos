@@ -66,13 +66,15 @@ const SESSION_LIKE: ConversationCapabilities = {
 function claim(
   name: string,
   secondsIn: number,
-  state: LanePresenceAuthor['state'] = 'working'
+  state: LanePresenceAuthor['state'] = 'working',
+  activity: LanePresenceAuthor['activity'] = null
 ): LanePresenceAuthor {
   return {
     authorId: name.toLowerCase().replace(/\s+/gu, '-'),
     name,
     state,
     since: new Date(Date.now() - secondsIn * 1_000).toISOString(),
+    activity,
   };
 }
 
@@ -227,6 +229,17 @@ export function LiveLaneShowcase() {
       <ShowcaseDemo>
         <LaneBox>
           <Conversation.LiveLane state={presence([claim('Meeting Notes', 64)])} />
+        </LaneBox>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Presence — one agent, and what it is doing right now</ShowcaseLabel>
+      <ShowcaseDemo>
+        <LaneBox>
+          <Conversation.LiveLane
+            state={presence([
+              claim('Meeting Notes', 64, 'working', { toolName: 'Read', target: 'standup.md' }),
+            ])}
+          />
         </LaneBox>
       </ShowcaseDemo>
 
@@ -511,6 +524,7 @@ const ONE_ROW: LivePeekRow[] = [
     author: AGENT_AUTHOR,
     state: 'working',
     since: new Date(Date.now() - 64_000).toISOString(),
+    doing: 'Reading standup.md',
     replyingTo: {
       entryId: 'entry-1',
       excerpt: 'can you log today’s decisions?',
@@ -528,6 +542,8 @@ const THREE_ROWS: LivePeekRow[] = [
     author: { ...AGENT_AUTHOR, id: 'release-bot', displayName: 'Release Bot', emoji: '🚢' },
     state: 'working_late',
     since: new Date(Date.now() - 740_000).toISOString(),
+    // A long turn still says what it is doing here, unlike the lane.
+    doing: 'Running pnpm test',
     replyingTo: {
       entryId: 'entry-2',
       excerpt: 'can somebody check the deploy',
@@ -541,6 +557,8 @@ const THREE_ROWS: LivePeekRow[] = [
     author: { ...HUMAN_AUTHOR, kind: 'agent', id: 'kai', displayName: 'Kai' },
     state: 'working',
     since: new Date(Date.now() - 45_000).toISOString(),
+    // No tool call heard yet, so the peek says nothing rather than guessing.
+    doing: null,
     // Out of the loaded page, so there is nothing honest to quote.
     replyingTo: null,
     sessionId: 'session-kai',
@@ -565,6 +583,8 @@ const MIXED_ROWS: LivePeekRow[] = [
     author: { ...AGENT_AUTHOR, id: 'mio-clicker-pm', displayName: 'Mio Clicker PM', emoji: '🎯' },
     state: 'held',
     since: new Date(Date.now() - 40_000).toISOString(),
+    // Nothing has started, so there is nothing it is doing.
+    doing: null,
     // Nothing to quote: no answer is in progress to be replying to anything.
     replyingTo: null,
     // Nothing of THIS room's to open — the way in is the room it is working in.

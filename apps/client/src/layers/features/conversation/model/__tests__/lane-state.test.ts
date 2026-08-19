@@ -94,13 +94,15 @@ const ASK_HEADLINE = 'meeting-notes wants to run "pnpm verify"';
 function claim(
   name: string,
   minutesIn: number,
-  state: LanePresenceAuthor['state'] = 'working'
+  state: LanePresenceAuthor['state'] = 'working',
+  activity: LanePresenceAuthor['activity'] = null
 ): LanePresenceAuthor {
   return {
     authorId: name.toLowerCase(),
     name,
     state,
     since: new Date(NOW - minutesIn * 60_000).toISOString(),
+    activity,
   };
 }
 
@@ -209,9 +211,73 @@ describe('deriveLaneState — the priority stack', () => {
     expect(state).toEqual({
       kind: 'presence',
       sentence: 'Kai is working on it',
+      // With nothing heard, the drawn line IS the sentence.
+      line: 'Kai is working on it',
       authorIds: ['kai'],
       since: new Date(NOW - 2 * 60_000).toISOString(),
       late: false,
+    });
+  });
+
+  it('draws the verb and announces the sentence, in one object', () => {
+    // The accessibility contract in its purest form (ADR 260819-022127): the
+    // eye moves and the ear does not. If these two ever collapse into one field
+    // the announcer becomes chatty — a turn starting a tool every two seconds
+    // would re-read the live region 300 times in ten minutes.
+    const state = deriveLaneState(
+      input({
+        presence: [claim('Kai', 2, 'working', { toolName: 'Read', target: 'standup.md' })],
+      })
+    );
+
+    expect(state).toMatchObject({
+      kind: 'presence',
+      line: 'Kai is reading standup.md',
+      sentence: 'Kai is working on it',
+    });
+  });
+
+  it('keeps the plain sentence when two agents are working, whatever the oldest is doing', () => {
+    // The lane is one line that never wraps, and "Kai and Ana are working on it"
+    // cannot carry two verbs — picking one to speak for both is a lie about the
+    // other. The peek is where a per-agent answer belongs.
+    const state = deriveLaneState(
+      input({
+        presence: [
+          claim('Kai', 3, 'working', { toolName: 'Read', target: 'standup.md' }),
+          claim('Ana', 1),
+        ],
+      })
+    );
+
+    expect(state).toMatchObject({
+      line: 'Kai and Ana are working on it',
+      sentence: 'Kai and Ana are working on it',
+    });
+  });
+
+  it('keeps the plain sentence once the wait has gone long', () => {
+    // `working_late`'s sentence already truncates on a 375 px screen, and its
+    // long-wait clause is the one actionable thing in it. The peek still shows
+    // a late agent's verb, where there is a second line for it.
+    const state = deriveLaneState(
+      input({
+        presence: [claim('Kai', 12, 'working_late', { toolName: 'Bash', target: 'pnpm test' })],
+      })
+    );
+
+    expect(state).toMatchObject({
+      line: 'Kai is still working — this is taking longer than usual',
+      sentence: 'Kai is still working — this is taking longer than usual',
+    });
+  });
+
+  it('falls back to the room’s own sentence when nothing has been heard', () => {
+    // `activityClause` answers `null` rather than "working" precisely so the
+    // room can say its own less specific truth here instead of borrowing the
+    // session's word.
+    expect(deriveLaneState(input({ presence: [claim('Kai', 2)] }))).toMatchObject({
+      line: 'Kai is working on it',
     });
   });
 
@@ -242,6 +308,7 @@ describe('deriveLaneState — the priority stack', () => {
     expect(state).toEqual({
       kind: 'presence',
       sentence: 'Kai and Ana are still working — this is taking longer than usual',
+      line: 'Kai and Ana are still working — this is taking longer than usual',
       authorIds: ['kai', 'ana'],
       since: new Date(NOW - 12 * 60_000).toISOString(),
       late: true,

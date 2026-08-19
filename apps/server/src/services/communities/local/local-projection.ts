@@ -147,6 +147,13 @@ export function toCommunityMember(
  * signal has no lifecycle, and an empty `payload: {}` would claim a presence
  * that is not there.
  *
+ * **`activity` is not carried, and that is a decision rather than an omission**
+ * (ADR 260819-022127). A room's presence signal can say what the turn is doing,
+ * and the target it names — a file's basename, a command's first line, a search
+ * pattern — is this operator's own work. `CommunityPresencePayloadSchema` has no
+ * field for one either, so a future adapter cannot start carrying it by
+ * accident; a test pins the absence.
+ *
  * @param event - The room's own signal frame.
  */
 export function toCommunitySignal(
@@ -175,7 +182,9 @@ export function toCommunitySignal(
  *
  * `memberId` is deliberately not among them: on the rooms side who-is-working is
  * the event's `authorId`, and carrying it twice on the wire would let the two
- * copies disagree.
+ * copies disagree. Neither is `activity`, inbound: a remote backend cannot claim
+ * a verb this machine's claim map did not produce, which is the same
+ * claim-gating gap `LocalCommunityAdapter.publishSignal` documents about itself.
  *
  * @param payload - The port's presence payload.
  */

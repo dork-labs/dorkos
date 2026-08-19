@@ -156,11 +156,16 @@ export function getToolLabel(toolName: string, input: string): string {
 }
 
 /**
- * How one tool is phrased, with and without its target.
+ * How one tool is phrased, with and without its target — as a CLAUSE.
  *
- * Both forms are written out rather than derived, because the honest generic is
- * rarely the specific sentence with the noun removed: "Editing a file" is not
- * "Editing" and "Searching the web" is not "Searching the web for".
+ * Lowercase and un-punctuated, because two surfaces need two grammars out of one
+ * entry: a session's status line says "Reading standup.md…" and a room's lane
+ * says "Kai is reading standup.md". Storing the session's framing and stripping
+ * it back would be a second, lossier table.
+ *
+ * Both forms are still written out rather than derived, because the honest
+ * generic is rarely the specific clause with the noun removed: "editing a file"
+ * is not "editing" and "searching the web" is not "searching the web for".
  */
 interface ActivityPhrase {
   /** Phrasing when the reading carries a target. */
@@ -175,51 +180,73 @@ interface ActivityPhrase {
  * `bash`. Anything absent here falls through to the fallback rungs below.
  */
 const ACTIVITY_PHRASES: Record<string, ActivityPhrase> = {
-  bash: { withTarget: (t) => `Running ${t}…`, bare: 'Running a command…' },
-  shell: { withTarget: (t) => `Running ${t}…`, bare: 'Running a command…' },
-  read: { withTarget: (t) => `Reading ${t}…`, bare: 'Reading a file…' },
-  write: { withTarget: (t) => `Writing ${t}…`, bare: 'Writing a file…' },
-  edit: { withTarget: (t) => `Editing ${t}…`, bare: 'Editing a file…' },
-  applypatch: { withTarget: (t) => `Editing ${t}…`, bare: 'Editing a file…' },
-  notebookedit: { withTarget: (t) => `Editing ${t}…`, bare: 'Editing a notebook…' },
-  glob: { withTarget: (t) => `Looking for ${t}…`, bare: 'Looking through files…' },
-  grep: { withTarget: (t) => `Searching for ${t}…`, bare: 'Searching the code…' },
-  websearch: { withTarget: (t) => `Searching the web for ${t}…`, bare: 'Searching the web…' },
-  webfetch: { withTarget: (t) => `Reading ${t}…`, bare: 'Reading a web page…' },
-  task: { withTarget: (t) => `Running an agent — ${t}…`, bare: 'Running an agent…' },
-  skill: { withTarget: (t) => `Using the ${t} skill…`, bare: 'Using a skill…' },
-  todowrite: { withTarget: () => 'Updating its task list…', bare: 'Updating its task list…' },
+  bash: { withTarget: (t) => `running ${t}`, bare: 'running a command' },
+  shell: { withTarget: (t) => `running ${t}`, bare: 'running a command' },
+  read: { withTarget: (t) => `reading ${t}`, bare: 'reading a file' },
+  write: { withTarget: (t) => `writing ${t}`, bare: 'writing a file' },
+  edit: { withTarget: (t) => `editing ${t}`, bare: 'editing a file' },
+  applypatch: { withTarget: (t) => `editing ${t}`, bare: 'editing a file' },
+  notebookedit: { withTarget: (t) => `editing ${t}`, bare: 'editing a notebook' },
+  glob: { withTarget: (t) => `looking for ${t}`, bare: 'looking through files' },
+  grep: { withTarget: (t) => `searching for ${t}`, bare: 'searching the code' },
+  websearch: { withTarget: (t) => `searching the web for ${t}`, bare: 'searching the web' },
+  webfetch: { withTarget: (t) => `reading ${t}`, bare: 'reading a web page' },
+  task: { withTarget: (t) => `running an agent: ${t}`, bare: 'running an agent' },
+  skill: { withTarget: (t) => `using the ${t} skill`, bare: 'using a skill' },
+  todowrite: { withTarget: () => 'updating its task list', bare: 'updating its task list' },
 };
 
 /**
- * Say what a session is doing right now, in as much detail as is actually
- * known — and no more.
+ * What a session is doing, as a clause that follows "is" — or `null` when
+ * nothing is known.
  *
- * The ladder, in order, each rung reached only when the one above it cannot be
- * answered honestly:
+ * The five-rung ladder {@link formatActivityLabel} documented, moved down one
+ * level so two framings can share it:
  *
- * 1. A tool this client recognizes, with its target — "Editing lane-state.ts…"
- * 2. The same tool without one — "Editing a file…"
- * 3. An MCP tool — the server it is talking to, "Using Slack…", because the
+ * 1. A tool this client recognizes, with its target — "editing lane-state.ts"
+ * 2. The same tool without one — "editing a file"
+ * 3. An MCP tool — the server it is talking to, "using Slack", because the
  *    method name is an implementation detail nobody outside that server reads.
  * 4. A name nothing here has seen (a new runtime, a custom tool) — the name
- *    itself, "Using some_future_tool…". Verbatim, never guessed at.
- * 5. No reading at all — "Working…", which is all a `streaming` lifecycle on its
- *    own can honestly support.
+ *    itself, "using some_future_tool". Verbatim, never guessed at.
+ * 5. Nothing known at all — `null`.
+ *
+ * **The bottom rung is `null` rather than "working"**, and that is the whole
+ * reason this is its own function: "working" is the SESSION's honest floor, and
+ * a room's floor is its own sentence ("Kai is working on it"). The fallback
+ * belongs to each caller, so neither one can put the other's words on screen.
  *
  * @param activity - The session's current activity, or `null`/`undefined` when
  *   the server has not said (an idle session, a turn before its first tool, or a
  *   server that predates the field).
  */
-export function formatActivityLabel(activity: SessionActivity | null | undefined): string {
-  if (!activity || activity.toolName.trim() === '') return 'Working…';
+export function activityClause(activity: SessionActivity | null | undefined): string | null {
+  if (!activity || activity.toolName.trim() === '') return null;
   const { toolName, target } = activity;
 
   const phrase = ACTIVITY_PHRASES[toolName.toLowerCase()];
   if (phrase) return target ? phrase.withTarget(target) : phrase.bare;
 
   const mcp = parseMcpToolName(toolName);
-  if (mcp) return `Using ${mcp.serverLabel}…`;
+  if (mcp) return `using ${mcp.serverLabel}`;
 
-  return `Using ${toolName}…`;
+  return `using ${toolName}`;
+}
+
+/**
+ * Say what a session is doing right now, in as much detail as is actually
+ * known — and no more.
+ *
+ * {@link activityClause}, framed as the session's status line has always framed
+ * it: capitalised, and ended with the ellipsis that says "this line keeps
+ * moving". Its bottom rung is "Working…", which is all a `streaming` lifecycle
+ * on its own can honestly support.
+ *
+ * @param activity - The session's current activity, or `null`/`undefined` when
+ *   the server has not said (an idle session, a turn before its first tool, or a
+ *   server that predates the field).
+ */
+export function formatActivityLabel(activity: SessionActivity | null | undefined): string {
+  const clause = activityClause(activity);
+  return clause === null ? 'Working…' : `${clause[0]!.toUpperCase()}${clause.slice(1)}…`;
 }

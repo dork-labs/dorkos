@@ -119,4 +119,62 @@ test.describe('Rooms — the room says who is working on it', () => {
     await expect(roomsPage.presenceLine).toHaveCount(0);
     await expect(roomsPage.presenceAnnouncer).toHaveText('');
   });
+
+  test('the line says what the agent is doing, while the announcer stays still', async ({
+    page,
+    roomsApi,
+    roomsPage,
+    request,
+  }) => {
+    // The composition only a browser can settle: a server frame, through the
+    // store, to the words on screen — with the live region NOT moving. jsdom
+    // cannot make the second half of that assertion, because the thing being
+    // checked is that two nodes disagree on a laid-out page.
+    const ana = await roomsApi.registerAgent(`E2E Doing ${roomsApi.runId}`, '🦊', '#e07b39');
+    const slug = `e2e-doing-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug, [ana]);
+    await roomsApi.postEntries(room.id, ['can someone check the deploy']);
+
+    const roster = await roomsApi.getRoom(room.id);
+    const anaAuthorId = roster.members.find((member) => member.author.kind === 'agent')!.author.id;
+    const entries = await request.get(`/api/rooms/${room.id}/entries`);
+    const { entries: stored } = (await entries.json()) as { entries: { id: string }[] };
+    const triggerId = stored[0]!.id;
+
+    await tapRoomStream(page);
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
+
+    await publishPresence(page, {
+      authorId: anaAuthorId,
+      state: 'working',
+      entryId: triggerId,
+      since: new Date().toISOString(),
+      activity: { toolName: 'Read', target: 'standup.md' },
+    });
+
+    await expect(roomsPage.presenceLine).toHaveText(`${ana.name} is reading standup.md`, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(roomsPage.presenceAnnouncer).toHaveText(`${ana.name} is working on it`);
+
+    await publishPresence(page, {
+      authorId: anaAuthorId,
+      state: 'working',
+      entryId: triggerId,
+      since: new Date().toISOString(),
+      activity: { toolName: 'Bash', target: 'pnpm test' },
+    });
+
+    // The eye moves…
+    await expect(roomsPage.presenceLine).toHaveText(`${ana.name} is running pnpm test`);
+    // …and the ear does not. The whole reason this leg exists: a turn starting a
+    // tool every two seconds must change the drawn text and nothing else.
+    await expect(roomsPage.presenceAnnouncer).toHaveText(`${ana.name} is working on it`);
+
+    // And the peek carries a reading per agent, on its own line under the name.
+    await roomsPage.presenceLine.click();
+    await expect(page.getByTestId('live-peek')).toBeVisible();
+    await expect(page.getByTestId('live-peek-doing')).toHaveText('Running pnpm test');
+  });
 });

@@ -246,7 +246,12 @@ export type {
   ExecutionDeviation,
 } from './execution-config';
 
-export { activityVerb, WAITING_ON_YOU_VERB } from './activity-verb';
+export {
+  activityClause,
+  activitySentence,
+  activityVerb,
+  WAITING_ON_YOU_VERB,
+} from './activity-verb';
 
 export { isWelcomeBackMoment } from './welcome-back-glow';
 export type { WelcomeBackMomentInput } from './welcome-back-glow';

@@ -86,9 +86,31 @@ that starts a tool every two seconds changes the drawn text and nothing else.
   that could have been done with a duplicated table.
 - The one-verb source guard had to grow a second guarded name. A guard that
   guards two things is one more thing to keep true than a guard that guards one.
-- A bridged chat or a community sees a verb with no object — "running a command"
-  rather than "running pnpm test". That is less useful than the cockpit's line,
-  and it is the price of the boundary rather than a gap to close later.
+- A bridged chat or a community would see a verb with no object — "running a
+  command" rather than "running pnpm test" — if either carried a verb at all.
+  Today neither does: the chat-bridge forwarder rebuilds the payload from
+  `{state, entryId, since}` (`relay/binding-subsystem.ts`), and
+  `toCommunitySignal` never carries `activity`. So the producer-side strip is
+  **defence, not the thing doing the work** — it is what makes the boundary hold
+  the day a forwarder starts passing the payload through, which is a one-line
+  change somebody will make without reading this file. It is enforced where it
+  can be guaranteed rather than where it currently matters, and the two tests
+  pin both halves.
+- **The room's own event stream carries the raw basename or command excerpt with
+  no reader check**, unlike `GET /api/rooms/:id/sessions`, which refuses a caller
+  presenting an agent identity (`presentsAgentIdentity`). The spec's §12.1 gave
+  the weak reason — no agent subscribes to that stream today — and the stronger
+  one belongs here: an agent that could subscribe is an agent running in a
+  checkout with Bash, which already holds the filesystem the basename names. The
+  glimpse would tell it nothing it cannot read directly. That argument fails the
+  moment a room's stream is offered to an agent WITHOUT tools, or to an agent in
+  a different checkout, and that is the change that owes this a reader check.
+- **`activityClause` is barrel-reachable, and `formatActivityLabel` is not.** The
+  source scan refuses either name taken straight from `tool-labels`, so there is
+  still one table — but a feature may now legitimately hold the clause and put
+  its own words around it, and a third framing minted that way is invisible to a
+  scan that looks at imports. Two framings are what this decision bought; a
+  fourth surface wanting a fifth wording is the thing to notice.
 - The rule is asymmetric and therefore needs stating in three places
   (`room-conduct.md`, the community-adapter guide, this ADR). An asymmetry
   nobody writes down is an asymmetry somebody tidies away.

@@ -223,11 +223,11 @@
     "room-presence": {
       "specFile": "tests/rooms/room-presence.spec.ts",
       "feature": "rooms",
-      "description": "the line names the agent, counts up, goes late, and clears when the work is released",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "description": "the line names the agent, counts up, goes late, and clears when the work is released, and the line says what the agent is doing, while the announcer stays still",
+      "lastRun": "2026-08-19T05:34:26.246Z",
       "lastStatus": "passed",
-      "runCount": 18,
-      "passCount": 15,
+      "runCount": 20,
+      "passCount": 17,
       "failCount": 3,
       "relatedCode": [],
       "lastModified": ""
@@ -704,10 +704,10 @@
       "specFile": "tests/rooms/room-autonomy.spec.ts",
       "feature": "rooms",
       "description": "three quick messages become ONE answer, and it answers the newest, a message sent while the agent is working is answered, not turned away, a message for an agent busy in ANOTHER room waits and is never turned away, the Stop button stops every agent working here, and the room says so once, a message whose text is \"stop\" is answered like any other message",
-      "lastRun": "",
-      "lastStatus": "",
-      "runCount": 0,
-      "passCount": 0,
+      "lastRun": "2026-08-19T05:36:18.368Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
       "failCount": 0,
       "relatedCode": [
         "apps/server/src/services/rooms/room-collect.ts",
@@ -993,33 +993,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-04T15-13-07",
-      "timestamp": "2026-08-04T15:13:07.550Z",
-      "total": 8,
-      "passed": 4,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 45417
-    },
-    {
-      "id": "2026-08-04T15-14-05",
-      "timestamp": "2026-08-04T15:14:05.394Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 16419
-    },
-    {
-      "id": "2026-08-04T15-17-52",
-      "timestamp": "2026-08-04T15:17:52.288Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 46335
-    },
     {
       "id": "2026-08-04T15-20-34",
       "timestamp": "2026-08-04T15:20:34.075Z",
@@ -1892,6 +1865,33 @@
       "failed": 0,
       "skipped": 0,
       "duration": 210147
+    },
+    {
+      "id": "2026-08-19T04-54-05",
+      "timestamp": "2026-08-19T04:54:05.466Z",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 119728
+    },
+    {
+      "id": "2026-08-19T05-34-26",
+      "timestamp": "2026-08-19T05:34:26.246Z",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 223480
+    },
+    {
+      "id": "2026-08-19T05-36-18",
+      "timestamp": "2026-08-19T05:36:18.368Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 86476
     }
   ]
 }

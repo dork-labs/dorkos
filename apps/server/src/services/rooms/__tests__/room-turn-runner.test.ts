@@ -14,6 +14,7 @@ import path from 'path';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { RoomTurnRequest, RoomTurnWaiting } from '../room-trigger.js';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 
@@ -240,6 +241,8 @@ function request(
     // A no-op by default: most of this file is about what a turn PRODUCES, and
     // only the two tests that are about a turn stopping supply their own.
     onWaiting: () => undefined,
+    // Also a no-op by default — only the activity tests below listen.
+    onActivity: () => undefined,
     ...rest,
   };
 }
@@ -881,6 +884,52 @@ describe('createSessionRoomTurnRunner', () => {
         vi.useRealTimers();
       }
     });
+  });
+
+  it('reports what its OWN turn is doing, and nothing another turn does', async () => {
+    // The `started` guard, on the activity path (DOR-1351). A tool call before
+    // this turn's own `turn_start` belongs to whoever else is on this session,
+    // and reporting it would put a different agent's file name under this
+    // agent's name in the room's live lane.
+    const reported: Array<SessionActivity | null> = [];
+    let stream: TestProjector | undefined;
+    let ownCall: TriggerCall | undefined;
+    turnBehaviour = (opts) => {
+      stream = opts.projector;
+      ownCall = opts;
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+
+    const answered = createSessionRoomTurnRunner({ waitMs: () => 50 }).run(
+      request({ onActivity: (activity) => reported.push(activity) })
+    );
+    await settle();
+
+    // Somebody else's turn, opened and closed on this same session.
+    stream?.ingest({ type: 'turn_start' });
+    stream?.ingest({
+      type: 'tool_call',
+      toolCallId: 'call-elsewhere',
+      toolName: 'Read',
+      input: '{"file_path":"/repo/secrets.md"}',
+    });
+    stream?.ingest({ type: 'turn_end' });
+
+    openTurn(ownCall as TriggerCall);
+    stream?.ingest({
+      type: 'tool_call',
+      toolCallId: 'call-mine',
+      toolName: 'Read',
+      input: '{"file_path":"/repo/standup.md"}',
+    });
+    stream?.ingest({ type: 'text_delta', text: 'green' });
+    stream?.ingest({ type: 'turn_end' });
+
+    expect((await answered).text).toBe('green');
+    await settle();
+    // One reading, this turn's own, and one clear at its end. The neighbour's
+    // file never appears.
+    expect(reported).toEqual([{ toolName: 'Read', target: 'standup.md' }, null]);
   });
 
   it('says nothing about a prompt raised inside somebody else s turn', async () => {

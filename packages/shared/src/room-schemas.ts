@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { ResponseModeSchema } from './mesh-schemas.js';
 import { SignalTypeSchema } from './relay-envelope-schemas.js';
+import { SessionActivitySchema, type SessionActivity } from './session-stream.js';
 
 extendZodWithOpenApi(z);
 
@@ -1472,6 +1473,23 @@ export const RoomSignalEventSchema = z
      */
     since: z.string().optional(),
     /**
+     * What this agent's turn is doing right now, when the room has heard a tool
+     * call for it — the same structured reading `SessionStatus.activity`
+     * carries, reused rather than restated.
+     *
+     * **Structure, never prose.** {@link SessionActivitySchema}'s own contract
+     * is that the client owns the wording, so a reading minted by an older
+     * server can never put stale copy on a newer screen, and one turn cannot be
+     * described two ways by the session lane and the room lane.
+     *
+     * Optional on every publish, and absent far more often than the other three:
+     * a turn before its first tool has none, a turn that has ended has had it
+     * cleared, and a claim held for a turn that never started never had one. An
+     * absent reading is not a gap to fill — the room's own sentence ("Kai is
+     * working on it") is the honest thing to say instead.
+     */
+    activity: SessionActivitySchema.optional(),
+    /**
      * What a `state: 'held'` indicator is waiting behind. Present on that state
      * and on no other, because nothing else is waiting on another room.
      */
@@ -1573,9 +1591,45 @@ export type RoomReactionEvent = z.infer<typeof RoomReactionEventSchema>;
  * lossy: `useRoomPresenceStore.observe` DROPS any progress frame missing one of
  * the three, so an unkeyable indicator is never rendered and never has to be
  * cleared.
+ *
+ * `activity` and `heldBehind` are the two fields that stay OPTIONAL for the
+ * producer, and that is capability-honest rather than a hole: the dispatcher
+ * always knows which entry a claim answers and when it was taken, genuinely does
+ * not know what a turn is doing before its first tool call, and has nothing to
+ * point at unless the indicator is `held`.
  */
 export type RoomPresencePayload = Required<Pick<RoomSignalEvent, 'state' | 'entryId' | 'since'>> &
-  Pick<RoomSignalEvent, 'heldBehind'>;
+  Pick<RoomSignalEvent, 'activity' | 'heldBehind'>;
+
+/**
+ * The same presence, with the one field that names a person's work removed.
+ *
+ * The verb survives ("running a command", "reading a file"); the file name, the
+ * command excerpt, the search pattern and the host do not. What is left is the
+ * shape of the work rather than its content, which is the most any audience
+ * beyond this operator's own cockpit is owed — the same rule the room's durable
+ * waiting notice already follows.
+ *
+ * A function rather than a comment on each call site because there are two call
+ * sites today, and the third one somebody adds is the one that would forget.
+ *
+ * Constrained on `object` with the field intersected in rather than on the field
+ * itself: a constraint that is nothing BUT optional properties is a weak type,
+ * so passing the ordinary payload — one that carries no reading — failed to
+ * compile with an error about having "no properties in common", which is the
+ * opposite of what this function is for.
+ *
+ * @param payload - The presence a producer is about to hand outward.
+ * @returns The same payload with `activity.target` gone. A payload carrying no
+ *   activity at all comes back untouched — never with an empty one invented for
+ *   it.
+ */
+export function withoutActivityTarget<T extends object>(
+  payload: T & { activity?: SessionActivity }
+): T & { activity?: SessionActivity } {
+  if (payload.activity === undefined) return payload;
+  return { ...payload, activity: { toolName: payload.activity.toolName } };
+}
 
 // === Canonical serialization (reserved for signing) ===
 

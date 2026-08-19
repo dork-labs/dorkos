@@ -7990,6 +7990,9 @@
           "since": {
             "type": "string"
           },
+          "activity": {
+            "$ref": "#/components/schemas/SessionActivity"
+          },
           "heldBehind": {
             "$ref": "#/components/schemas/RoomHeldBehind"
           }

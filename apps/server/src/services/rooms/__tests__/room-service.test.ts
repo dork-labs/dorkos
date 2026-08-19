@@ -1910,3 +1910,75 @@ describe('RoomService — a committed post never fails because dispatching from 
     expect(harness.service.listRooms(harness.human)[0].working).toBe(0);
   });
 });
+
+describe('RoomService — a presence glimpse stops at this cockpit', () => {
+  it('gives the bridge the verb and never the target, while the room keeps both', () => {
+    // The boundary in one publish (ADR 260819-022127). The room's own stream is
+    // this operator's cockpit and their session pane already shows them the
+    // identical string; a bridged chat is other people's surface, where the
+    // room's durable waiting notice already refuses to name files and commands.
+    const { service, human } = createRoomHarness({ agents: agentLookup });
+    const room = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+
+    const broadcast: unknown[] = [];
+    const deliver = service.stream.publish.bind(service.stream);
+    vi.spyOn(service.stream, 'publish').mockImplementation((roomId, event) => {
+      broadcast.push(event);
+      deliver(roomId, event);
+    });
+    const forwarded: Array<Record<string, unknown> | undefined> = [];
+    service.setSignalListener((_roomId, _signal, _authorId, presence) => {
+      forwarded.push(presence as Record<string, unknown> | undefined);
+    });
+
+    service.publishSignal(room.id, 'progress', 'author-ana', {
+      state: 'working',
+      entryId: 'entry-1',
+      since: '2026-07-30T04:00:00.000Z',
+      activity: { toolName: 'Read', target: 'standup.md' },
+    });
+
+    // The bridge hears the shape of the work and not its content.
+    expect(forwarded).toEqual([
+      {
+        state: 'working',
+        entryId: 'entry-1',
+        since: '2026-07-30T04:00:00.000Z',
+        activity: { toolName: 'Read' },
+      },
+    ]);
+    // And the SAME publish still carried the whole reading to this room's own
+    // readers. Stripping both would be the other way to break this.
+    expect(broadcast.at(-1)).toMatchObject({
+      type: 'signal',
+      activity: { toolName: 'Read', target: 'standup.md' },
+    });
+  });
+
+  it('hands the bridge a payload with no reading exactly as it was', () => {
+    // Most presence frames carry none — a turn before its first tool, and every
+    // `done`. The strip must not mint an empty `activity` for them.
+    const { service, human } = createRoomHarness({ agents: agentLookup });
+    const room = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    const forwarded: Array<Record<string, unknown> | undefined> = [];
+    service.setSignalListener((_roomId, _signal, _authorId, presence) => {
+      forwarded.push(presence as Record<string, unknown> | undefined);
+    });
+
+    service.publishSignal(room.id, 'progress', 'author-ana', {
+      state: 'done',
+      entryId: 'entry-1',
+      since: '2026-07-30T04:00:00.000Z',
+    });
+
+    expect(forwarded).toEqual([
+      { state: 'done', entryId: 'entry-1', since: '2026-07-30T04:00:00.000Z' },
+    ]);
+  });
+});

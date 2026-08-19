@@ -38,6 +38,7 @@ import {
   type LanePresenceAuthor,
   type LivePeekRow,
 } from '@/layers/features/conversation';
+import { activitySentence } from '@/layers/shared/lib';
 import { usePendingInteractions } from '@/layers/entities/attention';
 import { InteractionAsk } from '@/layers/features/ask';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
@@ -209,6 +210,7 @@ export function RoomLiveLane({
         name: nameOf(claim.authorId),
         state: claim.state,
         since: claim.since,
+        activity: claim.activity ?? null,
       })),
     [claims, nameOf]
   );
@@ -321,6 +323,9 @@ export function RoomLiveLane({
         author: toMessageAuthor(claim.authorId, authors, agents.faces),
         state: claim.state,
         since: claim.since,
+        // Phrased by the one table the whole cockpit shares, so this row and
+        // the session pane cannot describe one tool call two ways (BC-37).
+        doing: activitySentence(claim.activity),
         // Both halves or neither: a link with nothing to say and a link with
         // nowhere to go are the same broken promise.
         replyingTo:
@@ -336,6 +341,9 @@ export function RoomLiveLane({
       author: toMessageAuthor(hold.authorId, authors, agents.faces),
       state: 'held' as const,
       since: hold.since,
+      // Nothing has started, so there is nothing it is doing. `null` draws no
+      // line at all rather than an empty one.
+      doing: null,
       // No "replying to" quote: nothing is being replied to yet, and quoting
       // the message that is waiting would read as an answer in progress.
       replyingTo: null,
@@ -347,7 +355,6 @@ export function RoomLiveLane({
     }));
     return [...working, ...waiting];
   }, [claims, held, authors, agents.faces, excerptOf, rowIdFor, sessionByAuthor]);
-
   const faces = useMemo(() => {
     if (claims.length === 0) return null;
     const shown = claims.slice(0, FACE_LIMIT);

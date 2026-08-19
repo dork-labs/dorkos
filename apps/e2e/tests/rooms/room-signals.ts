@@ -54,6 +54,11 @@ export interface PresenceSignal {
   /** ISO 8601 — when the work, or the wait, started. */
   since: string;
   /**
+   * What the turn is doing right now, when the dispatcher has heard a tool call
+   * for it. Structure only — the client owns the words (DOR-1351).
+   */
+  activity?: { toolName: string; target?: string };
+  /**
    * What a `'held'` indicator is waiting behind, on that state and no other.
    *
    * An id and a boolean, exactly as the wire carries it: the reader resolves the
@@ -153,6 +158,7 @@ export async function publishPresence(page: Page, signal: PresenceSignal): Promi
     state: signal.state,
     entryId: signal.entryId,
     since: signal.since,
+    ...(signal.activity ? { activity: signal.activity } : {}),
     ...(signal.heldBehind === undefined ? {} : { heldBehind: signal.heldBehind }),
   };
   await pushFrame(page, '__roomStream', 'signal', event);
