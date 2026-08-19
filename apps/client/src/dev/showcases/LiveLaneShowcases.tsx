@@ -20,6 +20,7 @@ import {
   type LanePresenceAuthor,
   type LaneState,
   type LaneTurn,
+  type LaneHeldAuthor,
   type LivePeekRow,
 } from '@/layers/features/conversation';
 import type { ConversationCapabilities } from '@/layers/features/conversation';
@@ -84,6 +85,36 @@ function presence(claims: readonly LanePresenceAuthor[]): LaneState {
     asks: NO_ASKS,
     stalled: false,
     presence: claims,
+    turn: null,
+  });
+}
+
+/**
+ * One agent whose answer to this room has not started, `secondsIn` seconds ago.
+ *
+ * @param name - What to call it.
+ * @param secondsIn - How long the message has been waiting.
+ * @param behindTitle - What to call the conversation in the way, or `null` when
+ *   this reader cannot see it.
+ */
+function held(name: string, secondsIn: number, behindTitle: string | null): LaneHeldAuthor {
+  return {
+    authorId: name.toLowerCase().replace(/\s+/gu, '-'),
+    name,
+    since: new Date(Date.now() - secondsIn * 1_000).toISOString(),
+    behind: { roomId: 'room-elsewhere', title: behindTitle },
+    othersWaiting: false,
+  };
+}
+
+/** The waiting rung for a set of holds. */
+function waiting(holds: readonly LaneHeldAuthor[]): LaneState {
+  return deriveLaneState({
+    capabilities: ROOM_LIKE,
+    asks: NO_ASKS,
+    stalled: false,
+    presence: [],
+    held: holds,
     turn: null,
   });
 }
@@ -275,6 +306,38 @@ export function LiveLaneShowcase() {
       <ShowcaseDemo>
         <LaneBox>
           <Conversation.LiveLane scope="thread" state={presence([claim('Kai', 45)])} />
+        </LaneBox>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Waiting — the agent is mid-turn in a conversation this reader can see, so the line names it.
+        The dot does not pulse: nothing is running here yet.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <LaneBox>
+          <Conversation.LiveLane state={waiting([held('Mio Clicker PM', 40, '#mio-engagement')])} />
+        </LaneBox>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Waiting — the conversation in the way is one this reader is not in, so the line says that
+        much and no more. The wire only ever carried a room id.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <LaneBox>
+          <Conversation.LiveLane state={waiting([held('Mio Clicker PM', 40, null)])} />
+        </LaneBox>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Waiting — two agents, so there is more than one conversation in the way and naming one would
+        be picking a favourite
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <LaneBox>
+          <Conversation.LiveLane
+            state={waiting([held('Mio Clicker PM', 400, '#mio-engagement'), held('Ana', 60, null)])}
+          />
         </LaneBox>
       </ShowcaseDemo>
 
@@ -502,6 +565,31 @@ const THREE_ROWS: LivePeekRow[] = [
   },
 ];
 
+/**
+ * One agent working and one waiting to start — the peek's two halves.
+ *
+ * The waiting row sits BELOW the working one, which is the order the peek reads
+ * in: who is working here, then what is waiting. Stop counts the working row
+ * only, so this reads as one agent rather than two.
+ */
+const MIXED_ROWS: LivePeekRow[] = [
+  ONE_ROW[0]!,
+  {
+    authorId: 'mio-clicker-pm',
+    author: { ...AGENT_AUTHOR, id: 'mio-clicker-pm', displayName: 'Mio Clicker PM', emoji: '🎯' },
+    state: 'held',
+    since: new Date(Date.now() - 40_000).toISOString(),
+    // Nothing has started, so there is nothing it is doing.
+    doing: null,
+    // Nothing to quote: no answer is in progress to be replying to anything.
+    replyingTo: null,
+    // Nothing of THIS room's to open — the way in is the room it is working in.
+    sessionId: null,
+    behind: { roomId: 'room-elsewhere', title: '#mio-engagement' },
+    othersWaiting: true,
+  },
+];
+
 /** The peek, in the two shapes its Stop takes. */
 export function LivePeekShowcase() {
   return (
@@ -532,6 +620,42 @@ export function LivePeekShowcase() {
             rows={THREE_ROWS}
             onScrollToRow={() => {}}
             onOpenSession={() => {}}
+            onStopAll={() => {}}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        One working, one waiting — the wait sits below the work, offers a way into the conversation
+        in the way, and can ask to be answered first. Stop still counts one, because a waiting agent
+        is not something this room can stop.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="bg-popover w-88 rounded-lg border shadow-md">
+          <Conversation.LivePeek
+            rows={MIXED_ROWS}
+            onScrollToRow={() => {}}
+            onOpenSession={() => {}}
+            onOpenRoom={() => {}}
+            onAnswerFirst={() => {}}
+            onStopAll={() => {}}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        The same wait, already asked for first — the button settles into a statement rather than
+        staying something you can press again
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="bg-popover w-88 rounded-lg border shadow-md">
+          <Conversation.LivePeek
+            rows={MIXED_ROWS}
+            onScrollToRow={() => {}}
+            onOpenSession={() => {}}
+            onOpenRoom={() => {}}
+            onAnswerFirst={() => {}}
+            promoted={new Set(['mio-clicker-pm'])}
             onStopAll={() => {}}
           />
         </div>

@@ -84,9 +84,16 @@ describe('POST /api/sessions/:id/submit-answers', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
-    expect(fakeRuntime.submitAnswers).toHaveBeenCalledWith(SESSION_ID, 'tc-1', {
-      '0': 'Option A',
-    });
+    // The trailing bag is where the answerer's name rides when this install
+    // knows one (DOR-1355); it is empty here because the mocked config knows
+    // none. `sessions-pending-interactions.test.ts` is where its contents are
+    // under test.
+    expect(fakeRuntime.submitAnswers).toHaveBeenCalledWith(
+      SESSION_ID,
+      'tc-1',
+      { '0': 'Option A' },
+      {}
+    );
   });
 
   it('returns 404 when session does not exist (submit-answers)', async () => {

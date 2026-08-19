@@ -43,17 +43,30 @@ const STREAM_OPEN_MS = 30_000;
 export interface PresenceSignal {
   /** The agent the indicator is about. */
   authorId: string;
-  /** Where it is in its work. */
-  state: 'working' | 'working_late' | 'done';
+  /**
+   * Where it is in its work. `'held'` is the one that describes work that has
+   * NOT started: this room's message is waiting on a turn the agent is running
+   * in a different room that shares its checkout.
+   */
+  state: 'working' | 'working_late' | 'held' | 'done';
   /** The entry whose trigger it answers — with the author, the whole key. */
   entryId: string;
-  /** ISO 8601 — when the work started. The elapsed time is derived from it. */
+  /** ISO 8601 — when the work, or the wait, started. */
   since: string;
   /**
    * What the turn is doing right now, when the dispatcher has heard a tool call
    * for it. Structure only — the client owns the words (DOR-1351).
    */
   activity?: { toolName: string; target?: string };
+  /**
+   * What a `'held'` indicator is waiting behind, on that state and no other.
+   *
+   * An id and a boolean, exactly as the wire carries it: the reader resolves the
+   * room's NAME against the rooms it can already see, so a synthetic frame
+   * naming a room this page cannot see is how the "another conversation"
+   * fallback is reached.
+   */
+  heldBehind?: { roomId: string; othersWaiting: boolean };
 }
 
 /**
@@ -146,6 +159,7 @@ export async function publishPresence(page: Page, signal: PresenceSignal): Promi
     entryId: signal.entryId,
     since: signal.since,
     ...(signal.activity ? { activity: signal.activity } : {}),
+    ...(signal.heldBehind === undefined ? {} : { heldBehind: signal.heldBehind }),
   };
   await pushFrame(page, '__roomStream', 'signal', event);
 }

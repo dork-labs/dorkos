@@ -32,12 +32,24 @@
  * nothing at all: it reads the global stream's bare per-room count out of its
  * own store, which this field never reaches.
  *
+ * **One state here is not work at all.** `held` says this room's message has NOT
+ * started, because the agent is mid-turn in a different room that shares its
+ * checkout. It lives in the same store because it has the same shape and the same
+ * life — one ephemeral publish per dispatcher record, restated on the same tick,
+ * cleared by the same `done` — but it is read through {@link useRoomHolds} and
+ * excluded from every "who is working" reader, because an agent that has not
+ * started is not somebody this room is waiting on in the same sense.
+ *
  * @module entities/room/model/use-room-presence
  */
 import { useEffect, useMemo, useReducer } from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import type { RoomPresenceState, RoomSignalEvent } from '@dorkos/shared/room-schemas';
+import type {
+  RoomHeldBehind,
+  RoomPresenceState,
+  RoomSignalEvent,
+} from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 
 /**
@@ -62,15 +74,24 @@ export const PRESENCE_TTL_MS = 30_000;
  */
 export const PRESENCE_TICK_MS = 1_000;
 
-/** A claim that is still running, as far as this client can tell. */
+/**
+ * Where a live indicator is, as this client holds it — every state except the
+ * one that deletes the record.
+ */
+type LiveState = Exclude<RoomPresenceState, 'done'>;
+
+/** Where a WORKING indicator is. `held` is not one of these: nothing is running. */
+type WorkingState = Exclude<LiveState, 'held'>;
+
+/** An indicator that is still live, as far as this client can tell. */
 interface PresenceRecord {
-  /** The agent doing the work. */
+  /** The agent the indicator is about. */
   authorId: string;
-  /** The entry whose trigger this claim answers. */
+  /** The entry whose trigger this indicator answers. */
   entryId: string;
-  /** Whether the room is still waiting for it, or has stopped. */
-  state: Exclude<RoomPresenceState, 'done'>;
-  /** ISO 8601 — when the work started. Never when the event was sent. */
+  /** Where it is: working, working late, or waiting to start. */
+  state: LiveState;
+  /** ISO 8601 — when the work, or the wait, started. Never when the event was sent. */
   since: string;
   /**
    * What the turn is doing right now, when the room has heard a tool call for
@@ -81,6 +102,15 @@ interface PresenceRecord {
    * to fill — the room's own sentence is the honest thing to say instead.
    */
   activity?: SessionActivity;
+  /**
+   * What a `held` indicator is waiting behind, or `undefined` on every other
+   * state.
+   *
+   * Stored as it arrived. The room id is resolved to a NAME by the surface that
+   * draws it, against the rooms that reader can already see — this store holds
+   * no roster and must not start guessing at one.
+   */
+  heldBehind?: RoomHeldBehind;
   /** This client's clock at the publish that last restated it. */
   lastSeenAt: number;
 }
@@ -99,7 +129,7 @@ export interface RoomPresenceAuthor {
    */
   entryId: string;
   /** Whether the room is still waiting for it, or has stopped. */
-  state: Exclude<RoomPresenceState, 'done'>;
+  state: WorkingState;
   /** ISO 8601 — when its oldest live claim started. */
   since: string;
   /**
@@ -114,6 +144,28 @@ export interface RoomPresenceAuthor {
   activity?: SessionActivity;
   /** How long that claim has been running, by this client's clock. */
   elapsedMs: number;
+}
+
+/**
+ * One agent whose message in this room has not started, because it is working
+ * somewhere else.
+ *
+ * Deliberately NOT a {@link RoomPresenceAuthor}: nothing is running, so it has
+ * no `state` to be late in and no elapsed WORK to report — the number beside it
+ * is how long the person has been waiting, which is a different fact with the
+ * same units.
+ */
+export interface RoomHoldRow {
+  /** The agent the message is waiting for. */
+  authorId: string;
+  /** The first message this hold covers — the indicator's key. */
+  entryId: string;
+  /** ISO 8601 — when the wait started. */
+  since: string;
+  /** The room whose turn is in the way, as an id. The reader resolves the name. */
+  behindRoomId: string;
+  /** Whether this agent is holding a message in at least one other conversation. */
+  othersWaiting: boolean;
 }
 
 /** Every room's live indicators, keyed room → indicator. */
@@ -225,6 +277,12 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
               // publish is self-contained (signals never replay), so the last
               // frame is the whole truth about this claim.
               ...(activity ? { activity } : {}),
+              // Only a `held` frame carries one, and it is stored exactly as it
+              // arrived: an id and a boolean. Spread conditionally so a frame
+              // that changed state stops claiming to be waiting on anything.
+              ...(state === 'held' && event.heldBehind !== undefined
+                ? { heldBehind: event.heldBehind }
+                : {}),
               lastSeenAt: now,
             };
             return { rooms: { ...held.rooms, [roomId]: { ...indicators, [key]: record } } };
@@ -341,22 +399,9 @@ function summarize(
   indicators: Record<string, PresenceRecord> | undefined,
   scope: PresenceScope | undefined
 ): RoomPresenceAuthor[] {
-  if (indicators === undefined) return NOBODY;
+  const oldest = oldestPerAuthor(indicators, scope, (record) => record.state !== 'held');
+  if (oldest === null) return NOBODY;
   const now = Date.now();
-  const oldest = new Map<string, PresenceRecord>();
-  for (const record of Object.values(indicators)) {
-    if (now - record.lastSeenAt >= PRESENCE_TTL_MS) continue;
-    // Filtered BEFORE the collapse to one row per agent, which matters: an
-    // agent holding a claim in the room and another in the open thread is two
-    // lines, in two places. Collapsing first would pick one claim for both and
-    // draw the agent wherever that one happened to land.
-    if (scope !== undefined && scope.replyIds.has(record.entryId) !== scope.inside) continue;
-    const held = oldest.get(record.authorId);
-    if (held === undefined || Date.parse(record.since) < Date.parse(held.since)) {
-      oldest.set(record.authorId, record);
-    }
-  }
-  if (oldest.size === 0) return NOBODY;
   return [...oldest.values()]
     .sort(
       (a, b) => Date.parse(a.since) - Date.parse(b.since) || a.authorId.localeCompare(b.authorId)
@@ -364,10 +409,86 @@ function summarize(
     .map((record) => ({
       authorId: record.authorId,
       entryId: record.entryId,
-      state: record.state,
+      // Narrowed by the filter above, which is the only place `held` can be
+      // excluded once — a second `as` at each reader is how one of them ends up
+      // drawing a working dot over a message that has not started.
+      state: record.state as WorkingState,
       since: record.since,
       ...(record.activity ? { activity: record.activity } : {}),
       elapsedMs: Math.max(0, now - Date.parse(record.since)),
+    }));
+}
+
+/**
+ * Collapse a room's indicators to one row per agent, oldest first, for whichever
+ * half of the store the caller wants.
+ *
+ * The shared body of {@link summarize} and {@link summarizeHolds}. The two halves
+ * are complements — `held` in one, everything else in the other — so an agent
+ * that is working here AND waiting here appears once in each, which is right:
+ * they are two different messages.
+ *
+ * @param indicators - The room's raw indicators, or `undefined` for a quiet room.
+ * @param scope - Which half of the room's presence to answer with, or `undefined`.
+ * @param wanted - Which records this caller is asking about.
+ * @returns One record per author, or `null` when there is nothing to report.
+ */
+function oldestPerAuthor(
+  indicators: Record<string, PresenceRecord> | undefined,
+  scope: PresenceScope | undefined,
+  wanted: (record: PresenceRecord) => boolean
+): Map<string, PresenceRecord> | null {
+  if (indicators === undefined) return null;
+  const now = Date.now();
+  const oldest = new Map<string, PresenceRecord>();
+  for (const record of Object.values(indicators)) {
+    if (!wanted(record)) continue;
+    if (now - record.lastSeenAt >= PRESENCE_TTL_MS) continue;
+    // Filtered BEFORE the collapse to one row per agent, which matters: an
+    // agent holding a claim in the room and another in the open thread is two
+    // lines, in two places. Collapsing first would pick one claim for both and
+    // draw the agent wherever that one happened to land.
+    if (scope !== undefined && scope.replyIds.has(record.entryId) !== scope.inside) continue;
+    const kept = oldest.get(record.authorId);
+    if (kept === undefined || Date.parse(record.since) < Date.parse(kept.since)) {
+      oldest.set(record.authorId, record);
+    }
+  }
+  return oldest.size === 0 ? null : oldest;
+}
+
+/** One shared empty answer, so a room with nothing waiting never re-renders its reader. */
+const NOTHING_WAITING: RoomHoldRow[] = [];
+
+/**
+ * Collapse a room's HELD indicators to one row per agent, oldest wait first.
+ *
+ * The complement of {@link summarize}, through the same scope filter — which
+ * works for free, because a hold is keyed on the first held entry and a thread
+ * reply scopes exactly like any other entry.
+ *
+ * @param indicators - The room's raw indicators, or `undefined` for a quiet room.
+ * @param scope - Which half of the room's presence to answer with, or `undefined`.
+ */
+function summarizeHolds(
+  indicators: Record<string, PresenceRecord> | undefined,
+  scope: PresenceScope | undefined
+): RoomHoldRow[] {
+  const oldest = oldestPerAuthor(indicators, scope, (record) => record.state === 'held');
+  if (oldest === null) return NOTHING_WAITING;
+  return [...oldest.values()]
+    .sort(
+      (a, b) => Date.parse(a.since) - Date.parse(b.since) || a.authorId.localeCompare(b.authorId)
+    )
+    .map((record) => ({
+      authorId: record.authorId,
+      entryId: record.entryId,
+      since: record.since,
+      // A `held` record without its payload is one the producer could not
+      // describe. It is still a real wait, so it is still reported — with no
+      // room to point at, which the copy already has a sentence for.
+      behindRoomId: record.heldBehind?.roomId ?? '',
+      othersWaiting: record.heldBehind?.othersWaiting ?? false,
     }));
 }
 
@@ -439,6 +560,11 @@ const NO_CLAIMS: RoomPresenceClaimRow[] = [];
  * and the store already re-renders its readers, so nothing here needs a
  * re-render of its own. A quiet room runs no timer at all.
  *
+ * **It excludes `held`**, which is the store's other half: a message waiting on
+ * an agent that is working somewhere else has not started, so drawing it here
+ * would put a working dot and a peek row under an agent doing nothing in this
+ * room. {@link useRoomHolds} is where those live.
+ *
  * @param roomId - The room on screen, or `null` when none is.
  * @param scope - Which half of the room's presence to answer with while a thread
  *   panel is open. Omit for all of it — see {@link PresenceScope}.
@@ -477,6 +603,38 @@ export function useRoomPresenceClaims(
 
 /** One shared empty answer, so a quiet room never re-renders its reader. */
 const NO_IDS: string[] = [];
+
+/**
+ * What is WAITING in this room: one row per agent whose message here has not
+ * started because it is working somewhere else.
+ *
+ * {@link useRoomPresenceClaims}'s complement, and the two never overlap — that
+ * hook excludes `held` and this one is nothing but. Kept apart rather than
+ * merged behind a flag because a waiting agent must never draw a working dot:
+ * the whole value of the line is that it says work has NOT started.
+ *
+ * No clock, for the reason {@link useRoomPresenceClaims} has none: each row
+ * carries its immutable `since` and the lane's own leaf reads the time.
+ *
+ * @param roomId - The room on screen, or `null` when none is.
+ * @param scope - Which half of the room's presence to answer with while a thread
+ *   panel is open. Omit for all of it — see {@link PresenceScope}.
+ * @returns One row per agent, oldest wait first. Empty when nothing is waiting.
+ */
+export function useRoomHolds(roomId: string | null, scope?: PresenceScope): readonly RoomHoldRow[] {
+  const indicators = useRoomPresenceStore((held) =>
+    roomId === null ? undefined : held.rooms[roomId]
+  );
+  const live = indicators !== undefined;
+
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => useRoomPresenceStore.getState().prune(), PRESENCE_TICK_MS);
+    return () => clearInterval(timer);
+  }, [live]);
+
+  return useMemo(() => summarizeHolds(indicators, scope), [indicators, scope]);
+}
 
 /**
  * WHO is working, without the clock.

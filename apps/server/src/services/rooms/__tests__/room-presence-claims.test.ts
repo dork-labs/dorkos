@@ -630,25 +630,24 @@ describe('a claim lives until its turn is done', () => {
       expect(postsBy(ana)).toHaveLength(0);
     });
 
-    it('answers a person who asks again, and stays quiet for a cascade that does', async () => {
-      // The two halves of the damping rule, in one room, so neither can be
-      // widened into the other by accident.
-      //
-      // **Ana is held past the deadline in ANOTHER room**, because since RP8
-      // that is the only busy a room still refuses (room-participation spec
-      // §10.4). An agent mid-turn here is held and answered next turn; an agent
-      // mid-turn in a room this reader cannot see is a turn nothing here will
-      // finish, and the message really does go nowhere. The person asks twice
-      // and is told twice; Bo asks once, inside an exchange nobody typed, and is
-      // told nothing, because the room has already said this and Bo is not the
-      // one who needs to hear it.
+    it('refuses nobody whose agent is working elsewhere, and answers them here', async () => {
+      // **The refusal this pair of tests used to pin is gone** (spec
+      // `room-hold-when-busy`). A message for an agent mid-turn in a room this
+      // reader cannot see used to be dropped with a line asking the person to
+      // send it again; it is now held, and the claim's release runs a turn for
+      // it IN THE ROOM THAT ASKED. Seed for the red: put the old early return
+      // back in `collectOne` and this room fills with notices and never answers.
+      // Only Ana's FIRST turn outruns the wait; the one she takes here answers
+      // straight away, so the assertion below is about the room and not about
+      // the runner's queue.
+      let anaTurns = 0;
       open(
         drivenRunner({
           plan: (request) => {
-            if (request.authorId === ana) return 'hold';
-            return request.authorId === bo ? 'gated' : 'answer';
+            if (request.authorId !== ana) return 'answer';
+            anaTurns += 1;
+            return anaTurns === 1 ? 'hold' : 'answer';
           },
-          say: (request) => (request.authorId === bo ? 'ask @ana, she ran it' : 'on it'),
         })
       );
       const elsewhere = service.createRoom(
@@ -660,51 +659,44 @@ describe('a claim lives until its turn is done', () => {
       service.post(elsewhere.id, { authorId: human, text: '@ana can you check the deploy?' });
       await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline elsewhere');
 
-      // A person, asking again. Never damped: their message went nowhere and
-      // they are entitled to know, every time it does.
+      // A person, asking twice, in a room whose agent is busy somewhere else.
       service.post(room.id, { authorId: human, text: '@ana are you there?' });
-      await settleUntil(() => noticesAbout(ana).length === 1, 'the first re-ask answered');
       service.post(room.id, { authorId: human, text: '@ana hello?' });
-      await settleUntil(() => noticesAbout(ana).length === 2, 'the second re-ask answered');
+      for (let tick = 0; tick < 5; tick += 1) await new Promise((r) => setTimeout(r, 0));
 
-      // An agent, asking inside a cascade. Damped: this is the traffic that
-      // multiplies, and the line it would write is already standing.
-      service.post(room.id, { authorId: human, text: '@bo who ran the deploy?' });
-      await settleUntil(() => turnsBy(bo).length === 1, 'Bo handed a turn');
-      runner.release(bo);
-      await settleUntil(() => postsBy(bo).length === 1, 'Bo answered, naming Ana');
+      // Nothing was said, because nothing went wrong: both messages are waiting.
+      expect(notices()).toEqual([]);
+      expect(turnsBy(ana)).toHaveLength(1);
 
-      expect(noticesAbout(ana)).toHaveLength(2);
-      // Every one of them is about being busy, and none is a cascade refusal
-      // wearing the same shape.
-      expect(noticesAbout(ana).map((entry) => entry.body.notice)).toEqual([
-        'agent_busy',
-        'agent_busy',
-      ]);
-
+      // The blocking turn ends, and both waiting messages become ONE turn here —
+      // gathered, the way a burst always is.
       runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
+      await settleUntil(() => postsBy(ana).length === 1, 'Ana to answer in the room that asked');
       await service.triggersIdle();
+      expect(turnsBy(ana)).toHaveLength(2);
+      expect(turnsBy(ana)[1].roomId).toBe(room.id);
+      expect(notices()).toEqual([]);
     });
 
-    it('says an agent is busy only when it is busy somewhere this room cannot reach', async () => {
-      // The two ceilings, the two outcomes, and the reason there is now only one
-      // busy line left (`notices/notice-copy.ts`, room-participation spec §10.4).
+    it('says a message is waiting, names the room in the way, and resolves it into working', async () => {
+      // The `held` indicator, end to end, on the room's own stream.
       //
-      // The old copy said "was busy with something else and did not pick this
-      // up. Send it again when Ana is free" — false in the commonest case,
-      // because "something else" was usually the previous message in this very
-      // room, and un-followable in every case, because a room shows no "free"
-      // state to watch for. It was replaced by two variants, and RP8 then
-      // removed the situation the first variant described rather than the words:
-      // a message for an agent working HERE is held and becomes its next turn,
-      // so there is nothing to apologise for.
-      //
-      // Both halves are asserted here, in one room and one scenario, because
-      // either one alone can be satisfied by a dispatcher that has confused
-      // them.
+      // Three properties, and each one is a defect somebody would otherwise
+      // ship. It carries the room in the way as an ID and nothing else, because
+      // the reader may not be in that room and the client resolves the name
+      // against the rooms it can already see. Its `entryId` does not move while
+      // the person keeps typing, because the indicator is keyed on it and a
+      // moving id opens a second indicator nothing can clear. And the `done`
+      // comes BEFORE the `working`, so the waiting line resolves INTO the
+      // working one rather than sitting beside it.
+      let anaTurns = 0;
       open(
         drivenRunner({
-          plan: (request) => (request.authorId === ana ? 'hold' : 'answer'),
+          plan: (request) => {
+            if (request.authorId !== ana) return 'answer';
+            anaTurns += 1;
+            return anaTurns === 1 ? 'hold' : 'answer';
+          },
         })
       );
       const elsewhere = service.createRoom(
@@ -713,41 +705,43 @@ describe('a claim lives until its turn is done', () => {
       );
       service.updateMembership(elsewhere.id, human, ana, 'mention-only');
 
-      // Ana is mid-turn HERE. The next question for her is held, silently.
-      service.post(room.id, { authorId: human, text: '@ana what is going on with the build?' });
-      await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline here');
-      service.post(room.id, { authorId: human, text: '@ana and the migration?' });
-      service.post(room.id, { authorId: human, text: '@bo anything from you?' });
-      await settleUntil(() => turnsBy(bo).length === 1, 'Bo handed a turn of his own');
-      expect(notices()).toHaveLength(0);
+      service.post(elsewhere.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline elsewhere');
 
-      // The same agent, the same claim, asked from a room that cannot see it.
-      // THAT is refused, and the line says the one thing a reader can act on.
-      service.post(elsewhere.id, { authorId: human, text: '@ana are you there?' });
+      const first = service.post(room.id, { authorId: human, text: '@ana are you there?' });
       await settleUntil(
-        () =>
-          service
-            .listEntries(elsewhere.id, human, { limit: 50 })
-            .some((entry) => entry.kind === 'notice'),
-        'the other room to say Ana is busy'
+        () => presenceFor(ana).some((event) => event.state === 'held'),
+        'this room to say the message is waiting'
       );
-      const overThere = service
-        .listEntries(elsewhere.id, human, { limit: 50 })
-        .filter((entry) => entry.kind === 'notice');
-      expect(overThere).toHaveLength(1);
-      expect(overThere[0].body.notice).toBe('agent_busy');
-      expect(overThere[0].body.text).toBe(
-        "Ana is working in another conversation right now, so it didn't pick this up. Send it again in a few minutes."
-      );
-      // Never the advice nobody can follow, never the claim it cannot check, and
-      // never which conversation — a reader here may not be in that one.
-      expect(overThere[0].body.text).not.toContain('is free');
-      expect(overThere[0].body.text).not.toContain('something else');
-      expect(overThere[0].body.text).not.toContain('Backend');
+      const waiting = presenceFor(ana).filter((event) => event.state === 'held');
+      expect(waiting[0].heldBehind).toEqual({ roomId: elsewhere.id, othersWaiting: false });
+      expect(waiting[0].entryId).toBe(first.id);
+      // No title, no topic, no text — an id and a boolean, and nothing else that
+      // could describe a conversation this reader may not be in.
+      expect(Object.keys(waiting[0].heldBehind!).sort()).toEqual(['othersWaiting', 'roomId']);
+
+      // Typing again does not open a second indicator.
+      service.post(room.id, { authorId: human, text: '@ana hello?' });
+      for (let tick = 0; tick < 5; tick += 1) await new Promise((r) => setTimeout(r, 0));
+      expect(
+        new Set(
+          presenceFor(ana)
+            .filter((e) => e.state === 'held')
+            .map((e) => e.entryId)
+        )
+      ).toEqual(new Set([first.id]));
 
       runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
-      await settleUntil(() => turnsBy(ana).length === 2, 'the held question to become a turn');
-      runner.land(ana, { text: 'migrated', waitedMs: 0 });
+      await settleUntil(() => turnsBy(ana).length === 2, 'the waiting question to become a turn');
+
+      // `done` closes the waiting indicator before `working` opens the real one.
+      const lifecycle = statesFor(ana);
+      const cleared = lifecycle.indexOf('done');
+      const started = lifecycle.indexOf('working');
+      expect(lifecycle[0]).toBe('held');
+      expect(cleared).toBeGreaterThan(-1);
+      expect(started).toBeGreaterThan(cleared);
+
       await service.triggersIdle();
     });
 

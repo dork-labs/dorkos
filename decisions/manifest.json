@@ -4585,7 +4585,7 @@
       "id": "260818-234541",
       "slug": "a-busy-agents-message-is-held-not-refused",
       "title": "A busy agent's message is held, not refused, and the promise lives only where it can be kept",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-18",
       "extractedFrom": "room-hold-when-busy",
       "specSlug": "room-hold-when-busy",

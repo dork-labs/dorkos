@@ -79,11 +79,14 @@ export function laneAnnouncement(state: LaneState, unavailable: boolean): string
     case 'stalled':
       return stalledSentence(unavailable);
     case 'presence':
+    case 'held':
       // The verb-free sentence, never `line`. A room lane that has heard a tool
       // call draws "Kai is reading standup.md" and announces "Kai is working on
       // it", and that asymmetry is the decision: a turn that starts four tools
       // in eight seconds would otherwise re-read this region four times, for a
-      // fact nobody asked to be interrupted about (ADR 260819-022127).
+      // fact nobody asked to be interrupted about (ADR 260819-022127). A `held`
+      // lane draws no verb at all — nothing has started — so for it the two are
+      // the same string.
       return state.sentence;
     case 'turn-waiting':
       return state.waitingType === 'approval'
@@ -121,6 +124,8 @@ export function laneMotionKey(state: LaneState): string {
       // crossfade plays when WHO is working changes or the wait goes long, and
       // stays still while the drawn verb moves underneath it.
       return `presence:${state.sentence}`;
+    case 'held':
+      return `held:${state.sentence}`;
     case 'turn-waiting':
       return `turn-waiting:${state.waitingType}`;
     case 'turn-progress':
@@ -144,6 +149,20 @@ const PRESENCE_TESTID: Record<'room' | 'thread' | 'session', string> = {
   room: 'room-presence',
   thread: 'thread-presence',
   session: 'session-presence',
+};
+
+/**
+ * What the waiting line is called on each surface.
+ *
+ * Its own map rather than a suffix on {@link PRESENCE_TESTID}, so a suite can
+ * ask "did the room say somebody is working" and "did the room say a message is
+ * waiting" as two different questions. The session entry exists to keep the map
+ * total by type; a session has no presence rung at all.
+ */
+const HELD_TESTID: Record<'room' | 'thread' | 'session', string> = {
+  room: 'room-held',
+  thread: 'thread-held',
+  session: 'session-held',
 };
 
 /** What one lane rendering needs beyond its own state. */
@@ -193,6 +212,8 @@ export function LaneContent({
       return (
         <PresenceLine state={state} faces={faces} reducedMotion={reducedMotion} scope={scope} />
       );
+    case 'held':
+      return <HeldLine state={state} faces={faces} scope={scope} />;
     case 'turn-waiting':
       return <WaitingLine state={state} />;
     case 'turn-progress':
@@ -329,6 +350,49 @@ function PresenceLine({
         className="text-muted-foreground flex min-w-0 items-center"
       >
         <span className="truncate">{state.line}</span>
+        <LaneElapsed since={state.since} />
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A message this conversation has not had an answer to yet, because the agent is
+ * working somewhere else.
+ *
+ * **The dot does not pulse, and that is the whole design of this line.** Motion
+ * is what the word "now" is made of, so a breathing dot here would claim a turn
+ * was running when the point of the sentence is that none has started. It keeps
+ * the working COLOUR because the outcome is the ordinary one — an answer is
+ * coming — and the words carry the rest.
+ *
+ * No faces stack in front of it by default: the host passes them only where the
+ * presence line would have drawn them, so the two lines cannot be told apart by
+ * the avatars alone.
+ *
+ * @internal
+ */
+function HeldLine({
+  state,
+  faces,
+  scope,
+}: {
+  state: Extract<LaneState, { kind: 'held' }>;
+  faces: ReactNode;
+  scope: 'room' | 'thread' | 'session';
+}) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <LaneDot signal="working" reducedMotion />
+      {faces}
+      {/* The testid covers the WORDS and nothing else, for the reason the
+          presence line's does: an avatar contributes its letter to
+          `textContent`, and a suite reads this node as one exact sentence. */}
+      <span
+        data-testid={HELD_TESTID[scope]}
+        className="text-muted-foreground flex min-w-0 items-center"
+      >
+        <span className="truncate">{state.sentence}</span>
         <LaneElapsed since={state.since} />
       </span>
     </span>

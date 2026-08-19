@@ -21,6 +21,8 @@ import type { SessionActivity } from '@dorkos/shared/session-stream';
 import { activityClause, activityVerb } from '@/layers/shared/lib';
 import {
   PRESENCE_NAME_LIMIT,
+  heldCountSentence,
+  heldSentence,
   presenceActivitySentence,
   presenceCountSentence,
   presenceElapsed,
@@ -58,6 +60,40 @@ export const NO_ASKS: readonly LaneAsk[] = [];
  * miss on.
  */
 export const NO_PRESENCE: readonly LanePresenceAuthor[] = [];
+
+/**
+ * The empty hold list a surface with nothing waiting passes.
+ *
+ * Shared for the reason {@link NO_ASKS} is.
+ */
+export const NO_HELD: readonly LaneHeldAuthor[] = [];
+
+/**
+ * One agent whose turn for this conversation has not started, because it is
+ * working somewhere else.
+ *
+ * Not a {@link LanePresenceAuthor}: nothing is running, so there is no `state`
+ * to be late in. The `since` is when the WAIT started.
+ */
+export interface LaneHeldAuthor {
+  /** The agent the message is waiting for. */
+  authorId: string;
+  /** What to call it. Resolved by the host, which is the only layer holding a roster. */
+  name: string;
+  /** ISO 8601 — when the wait started. */
+  since: string;
+  /**
+   * The conversation in the way.
+   *
+   * `title` is `null` when this reader cannot see that room, which is not a gap
+   * to fill with a guess: the wire carries an id precisely so the disclosure is
+   * per reader, and the copy has a sentence for the case where it resolves to
+   * nothing.
+   */
+  behind: { roomId: string; title: string | null };
+  /** True when this agent is holding a message in at least one other conversation. */
+  othersWaiting: boolean;
+}
 
 /** One agent working in this conversation, as the lane reads it. */
 export interface LanePresenceAuthor {
@@ -148,6 +184,14 @@ export interface LaneStateInput {
   stalled: boolean;
   /** Who is working here, oldest claim first. */
   presence: readonly LanePresenceAuthor[];
+  /**
+   * Whose turn for this conversation has NOT started, oldest wait first.
+   *
+   * Gated by the same capability as `presence`, because it comes off the same
+   * store and the same stream. Defaults to {@link NO_HELD} for every surface
+   * that has no such thing.
+   */
+  held?: readonly LaneHeldAuthor[];
   /** This conversation's own turn, or `null` on a surface that has none. */
   turn: LaneTurn | null;
 }
@@ -189,6 +233,18 @@ export type LaneState =
       since: string;
       /** True once the oldest claim has outrun what the room considers normal. */
       late: boolean;
+    }
+  | {
+      kind: 'held';
+      /**
+       * The one sentence, said the same way on screen and out loud. It carries
+       * NO elapsed time, for the reason the presence rung's does not.
+       */
+      sentence: string;
+      /** The agents it speaks for, oldest wait first — the peek's rows. */
+      authorIds: readonly string[];
+      /** ISO 8601 — the OLDEST wait's start, which is what the elapsed time measures. */
+      since: string;
     }
   | { kind: 'turn-waiting'; waitingType: 'approval' | 'question'; elapsed: string }
   | { kind: 'turn-progress'; message: string; determinate: boolean; percent: number | null }
@@ -248,19 +304,30 @@ export function laneElapsed(since: string, now: number): string | null {
  * 1. `ask` — `capabilities.asks`. A prompt somebody can answer.
  * 2. `stalled` — `capabilities.streamHealth`. This client cannot read the stream.
  * 3. `presence` — `capabilities.presence`. Somebody else is working here.
- * 4. `turn-waiting` — `capabilities.turnStatus`. This turn is parked.
- * 5. `turn-progress` — `capabilities.turnStatus`. A long operation is running.
- * 6. `turn-system` — `capabilities.turnStatus`. An informational runtime event.
- * 7. `turn-streaming` — `capabilities.turnStatus`. A turn in flight.
- * 8. `turn-complete` — `capabilities.turnStatus`. The summary, auto-dismissing.
- * 9. `empty` — nothing to say, and the lane looks like it.
+ * 4. `held` — `capabilities.presence`. An answer this conversation is owed has
+ *    not started, because the agent is working somewhere else.
+ * 5. `turn-waiting` — `capabilities.turnStatus`. This turn is parked.
+ * 6. `turn-progress` — `capabilities.turnStatus`. A long operation is running.
+ * 7. `turn-system` — `capabilities.turnStatus`. An informational runtime event.
+ * 8. `turn-streaming` — `capabilities.turnStatus`. A turn in flight.
+ * 9. `turn-complete` — `capabilities.turnStatus`. The summary, auto-dismissing.
+ * 10. `empty` — nothing to say, and the lane looks like it.
  *
  * **There is no `queued` rung, and that is a decision.** One sat below every
  * `turn-*` rung, and a queue only ever exists BECAUSE a turn is in flight — so
- * rung 7 always won and a person with two messages held saw no mention of them
+ * rung 8 always won and a person with two messages held saw no mention of them
  * at all. Reordering it above the turn would be worse: it would hide what the
  * agent is doing in order to report a number. The composer's own queue panel is
  * where held drafts live, and it is where they stay.
+ *
+ * **`held` is not that rung coming back**, and three things separate them. It
+ * reports a different fact — `queued` counted the person's own undelivered
+ * drafts, and this is about a message already on the room's log that the room
+ * owes an answer to. It is reachable: a room's `turnStatus` is off, so rungs
+ * 5-9 do not exist there, and in the case this describes the agent is busy
+ * ELSEWHERE, so nobody is working here and rung 3 is empty. And it hides
+ * nothing: when somebody genuinely is working here, `presence` still wins the
+ * headline and the wait shows as a row in the peek that rung already opens.
  *
  * Three of those orderings are decisions rather than arbitrary, and none of them
  * may be collapsed:
@@ -305,13 +372,17 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
     return presenceRung(input.presence);
   }
 
+  // 4. Somebody's answer to THIS conversation has not started yet.
+  const held = input.held ?? NO_HELD;
+  if (capabilities.presence && held.length > 0) return heldRung(held);
+
   if (capabilities.turnStatus && turn !== null) {
-    // 4. Parked on the person.
+    // 5. Parked on the person.
     if (turn.status === 'streaming' && turn.isWaitingForUser) {
       return { kind: 'turn-waiting', waitingType: turn.waitingType, elapsed: turn.elapsed };
     }
 
-    // 5. A long operation — the structured, runtime-agnostic progress treatment
+    // 6. A long operation — the structured, runtime-agnostic progress treatment
     // (DOR-110), shown whatever the turn's status. The producer supplies the
     // label, so there is no status string to match.
     if (turn.operationProgress) {
@@ -324,15 +395,15 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
       };
     }
 
-    // 6. An informational runtime event, also whatever the turn's status.
+    // 7. An informational runtime event, also whatever the turn's status.
     if (turn.systemStatus) return { kind: 'turn-system', message: turn.systemStatus.message };
 
-    // 7. A turn in flight.
+    // 8. A turn in flight.
     if (turn.status === 'streaming') {
       // Through the honesty ladder, not around it (BC-37): one entry point, one
       // phrasing, everywhere. `'streaming'` is a fact this branch has already
       // established rather than a guess — the ladder's `blocked` rung belongs to
-      // rung 4 above — which also buys the non-null overload, so there is no
+      // rung 5 above — which also buys the non-null overload, so there is no
       // fallback here to drift into a second way of saying "Working…".
       const verb = activityVerb('streaming', turn.activity);
       return {
@@ -347,14 +418,43 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
       };
     }
 
-    // 8. The finished turn's summary, on its way out.
+    // 9. The finished turn's summary, on its way out.
     if (turn.showComplete) {
       return { kind: 'turn-complete', elapsed: turn.lastElapsed, tokens: turn.lastTokens };
     }
   }
 
-  // 9. Nothing to say.
+  // 10. Nothing to say.
   return EMPTY;
+}
+
+/**
+ * The held rung: what is waiting to start, and behind what.
+ *
+ * Named up to {@link PRESENCE_NAME_LIMIT} and counted above it, exactly as the
+ * presence rung is. The room in the way is taken from the OLDEST wait and read
+ * only in the single-agent case — see {@link heldSentence} for why naming one of
+ * several would be picking a favourite.
+ *
+ * @param held - Who has not started, oldest wait first.
+ */
+function heldRung(held: readonly LaneHeldAuthor[]): LaneState {
+  const oldest = held[0]!;
+  const counted = held.length > PRESENCE_NAME_LIMIT;
+  const sentence = counted
+    ? heldCountSentence(held.length)
+    : heldSentence(
+        held.map((agent) => agent.name),
+        oldest.behind.title
+      );
+  return {
+    kind: 'held',
+    sentence,
+    authorIds: held.map((agent) => agent.authorId),
+    // The OLDEST wait's start, so the number beside the sentence is the longest
+    // anybody here has been waiting rather than the shortest.
+    since: oldest.since,
+  };
 }
 
 /**
