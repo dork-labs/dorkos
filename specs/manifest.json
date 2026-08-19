@@ -2,6 +2,38 @@
   "version": 1,
   "specs": [
     {
+      "id": "260819-023728",
+      "slug": "ask-entitlement",
+      "title": "Per-person Ask entitlement: the fleet-wide list and the fan-out filter by who may answer",
+      "created": "2026-08-19",
+      "status": "specified",
+      "project": "Unified Conversation Surfaces"
+    },
+    {
+      "id": "260819-023727",
+      "slug": "room-per-agent-stop",
+      "title": "Stop one agent without stopping the room",
+      "created": "2026-08-19",
+      "status": "specified",
+      "project": "Unified Conversation Surfaces"
+    },
+    {
+      "id": "260819-023726",
+      "slug": "presence-verb-glimpse",
+      "title": "Presence tier 3: the live lane says what the agent is doing",
+      "created": "2026-08-19",
+      "status": "specified",
+      "project": "Unified Conversation Surfaces"
+    },
+    {
+      "id": "260819-023725",
+      "slug": "ask-parks-on-timeout",
+      "title": "An Ask that times out parks the agent instead of refusing for it",
+      "created": "2026-08-19",
+      "status": "specified",
+      "project": "Unified Conversation Surfaces"
+    },
+    {
       "id": "260818-234135",
       "slug": "room-hold-when-busy",
       "title": "A room holds a message for a busy agent instead of asking you to resend",
