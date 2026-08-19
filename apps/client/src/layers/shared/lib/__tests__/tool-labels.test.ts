@@ -315,3 +315,69 @@ describe('formatActivityLabel — the honesty ladder', () => {
     expect(formatActivityLabel(undefined)).toBe('Working…');
   });
 });
+
+/**
+ * Every label the session's status line has ever drawn, written down.
+ *
+ * `[toolName, target, label]` — one row per phrasing the table can produce, plus
+ * the three fallback rungs underneath it. `target` is `undefined` for the bare
+ * form.
+ *
+ * **This table was written and run GREEN against the pre-clause implementation**,
+ * which is the only moment that evidence could be gathered: once
+ * `ACTIVITY_PHRASES` holds clauses, a table copied out of the new code would only
+ * restate whatever the new code does. Exactly one row moved in the refactor and
+ * it is marked below.
+ */
+const SHIPPED_LABELS: ReadonlyArray<[string, string | undefined, string]> = [
+  ['Bash', 'pnpm verify', 'Running pnpm verify…'],
+  ['Bash', undefined, 'Running a command…'],
+  ['Shell', 'git status', 'Running git status…'],
+  ['Shell', undefined, 'Running a command…'],
+  ['Read', 'README.md', 'Reading README.md…'],
+  ['Read', undefined, 'Reading a file…'],
+  ['Write', 'notes.md', 'Writing notes.md…'],
+  ['Write', undefined, 'Writing a file…'],
+  ['Edit', 'lane-state.ts', 'Editing lane-state.ts…'],
+  ['Edit', undefined, 'Editing a file…'],
+  ['ApplyPatch', 'index.ts', 'Editing index.ts…'],
+  ['ApplyPatch', undefined, 'Editing a file…'],
+  ['NotebookEdit', 'analysis.ipynb', 'Editing analysis.ipynb…'],
+  ['NotebookEdit', undefined, 'Editing a notebook…'],
+  ['Glob', '**/*.tsx', 'Looking for **/*.tsx…'],
+  ['Glob', undefined, 'Looking through files…'],
+  ['Grep', 'deriveLaneState', 'Searching for deriveLaneState…'],
+  ['Grep', undefined, 'Searching the code…'],
+  ['WebSearch', 'zod openapi', 'Searching the web for zod openapi…'],
+  ['WebSearch', undefined, 'Searching the web…'],
+  ['WebFetch', 'dorkos.ai', 'Reading dorkos.ai…'],
+  ['WebFetch', undefined, 'Reading a web page…'],
+  ['Task', 'review the diff', 'Running an agent — review the diff…'],
+  ['Task', undefined, 'Running an agent…'],
+  ['Skill', 'writing-for-humans', 'Using the writing-for-humans skill…'],
+  ['Skill', undefined, 'Using a skill…'],
+  ['TodoWrite', 'ignored', 'Updating its task list…'],
+  ['TodoWrite', undefined, 'Updating its task list…'],
+  // The rungs under the table, pinned in the same place so a refactor that
+  // reaches them cannot pass by touching only the fourteen entries above.
+  ['mcp__slack__send_message', undefined, 'Using Slack…'],
+  ['mcp__my_custom__do_thing', undefined, 'Using My Custom…'],
+  ['some_future_tool', undefined, 'Using some_future_tool…'],
+];
+
+describe('formatActivityLabel — the shipped labels, pinned', () => {
+  it.each(SHIPPED_LABELS)('says %s/%s exactly as it always has', (toolName, target, label) => {
+    expect(formatActivityLabel(target === undefined ? { toolName } : { toolName, target })).toBe(
+      label
+    );
+  });
+
+  it('covers every entry in the phrasing table twice — with a target and without', () => {
+    // Without this the table above could silently stop covering a tool: a row
+    // deleted from `SHIPPED_LABELS` takes its own assertion with it, and nothing
+    // else would notice. Fourteen tools, both forms, plus three fallback rungs.
+    expect(SHIPPED_LABELS.length).toBe(31);
+    const bare = SHIPPED_LABELS.filter(([, target]) => target === undefined);
+    expect(bare.length).toBe(17);
+  });
+});
