@@ -46,7 +46,7 @@ const { captured } = vi.hoisted(() => ({ captured: [] as unknown[] }));
 // Stand in for SessionMessage to read the props it receives. The dividers stay
 // real — they are what shifts the row indices this suite is about, and they
 // come from `features/conversation`, which is not mocked here.
-vi.mock('@/layers/features/chat/ui/message', () => ({
+vi.mock('../ui/SessionMessage', () => ({
   SessionMessage: (props: unknown) => {
     captured.push(props);
     return <div data-testid="message-item" />;
