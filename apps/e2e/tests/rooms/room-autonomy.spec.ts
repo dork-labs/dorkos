@@ -11,10 +11,12 @@ import { SERVER_ROUND_TRIP_MS, type SeededRoom } from '../../fixtures/rooms-api'
  *
  * 1. a burst gathers into ONE answer, and the answer is to the newest message;
  * 2. a message sent while the agent is working is answered, not refused;
- * 3. the Stop button in the masthead stops everything and says so ONCE;
- * 4. a message whose text is "stop" is a message, not a control.
+ * 3. a message for an agent busy in ANOTHER room waits, says so, and is
+ *    answered here when that turn ends;
+ * 4. the Stop button in the masthead stops everything and says so ONCE;
+ * 5. a message whose text is "stop" is a message, not a control.
  *
- * All four are pinned below the browser already — `room-collect.test.ts` and
+ * All of them are pinned below the browser already — `room-collect.test.ts` and
  * `room-stopped-turns.test.ts` between them cover thirty-odd cases with a
  * scripted runner. What only a browser can add is that the mechanics are wired
  * to something a person can see and press: the masthead really draws a Stop
@@ -388,6 +390,112 @@ test.describe('A room gathers what is said at once @smoke', () => {
     } finally {
       // Sticky, and that is what is wanted: from here on every `long-turn`
       // finishes at once, so nothing this file started can outlive it.
+      await request.post('/api/test/finish-turn').catch(() => {});
+      await useScenario(request, 'simple-text').catch(() => {});
+    }
+  });
+
+  test('a message for an agent busy in ANOTHER room waits, and is never turned away', async ({
+    page,
+    basePage,
+    request,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The bug this shipped for. One agent is one working directory, so it can
+    // only run one turn at a time — and a message that arrived for it while it
+    // was busy in a different room used to be dropped with a line asking the
+    // person to send it again. Now it waits, the room says so while it is still
+    // true, and the answer lands here.
+    //
+    // What only a browser can add: the LINE. The ordering across three rooms and
+    // the promote path are pinned in units, because both need a deterministic
+    // clock and a third room.
+    const tag = roomsApi.runId;
+    const name = `Waiter${tag}`;
+    const agent = await roomsApi.registerAgent(name, '⏳', '#f59e0b');
+    const busy = await roomsApi.createChannel(`busy-${tag}`, `Busy ${tag}`, [agent]);
+    const asking = await roomsApi.createChannel(`asking-${tag}`, `Asking ${tag}`, [agent]);
+    await seatThatAnswers(roomsApi, busy, name);
+    const seat = await seatThatAnswers(roomsApi, asking, name);
+
+    await useScenario(request, 'long-turn');
+    try {
+      // The agent takes a turn in the OTHER room and stays in it.
+      await openRoom(page, basePage, roomsPage, busy.id);
+      await roomsApi.postEntries(busy.id, [`over here ${tag}`]);
+      await expect(page.getByTestId('room-header-halt')).toBeVisible({
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+
+      // Now ask it something in a room it is not working in.
+      await openRoom(page, basePage, roomsPage, asking.id);
+      await roomsApi.postEntries(asking.id, [`and over here ${tag}`]);
+
+      // **The line, in this room's own voice, naming the conversation in the way
+      // — and the NAME is the assertion.** The wire carries a room id and
+      // nothing else; the client resolves it against the rooms this reader can
+      // already see, and falls back to "another conversation" when it cannot.
+      // Matching the shared prefix would pass on the fallback too, so the one
+      // thing only a browser can prove — that the per-reader resolution works —
+      // would go unchecked.
+      const waitingLine = page.getByTestId('room-held');
+      await expect(waitingLine).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+      await expect(waitingLine).toHaveText(
+        `${name} will pick this up when it finishes in #busy-${tag}`
+      );
+
+      // And nothing durable. This is the whole regression: the room used to put
+      // a line here asking the person to send the message again.
+      expect(
+        (await roomsApi.listEntries(asking.id))
+          .filter((entry) => entry.body.notice !== undefined)
+          .map((entry) => entry.body.notice),
+        'the room wrote a notice about a message it was going to answer'
+      ).toHaveLength(0);
+
+      // The id of the message that waited, so the answer can be checked against
+      // THIS question rather than against "some reply".
+      const askedId = (await roomsApi.listEntries(asking.id)).find(
+        (entry) => entry.body.text === `and over here ${tag}`
+      )!.id;
+
+      // The blocking turn ends, and the waiting message becomes a turn HERE.
+      await request.post('/api/test/finish-turn');
+      await expect
+        .poll(
+          async () =>
+            (await roomsApi.listEntries(asking.id)).filter((entry) => entry.authorId === seat)
+              .length,
+          {
+            timeout: SERVER_ROUND_TRIP_MS,
+            message: 'the message that waited on a busy agent never got an answer',
+          }
+        )
+        .toBe(1);
+
+      // **One answer, and it says which message it answers.** A count alone is
+      // satisfied by any reply at all; the pointer is what says the room
+      // answered the question that waited rather than something else it happened
+      // to pick up.
+      const answers = (await roomsApi.listEntries(asking.id)).filter(
+        (entry) => entry.authorId === seat
+      );
+      expect(answers, 'one waiting message did not produce exactly one answer').toHaveLength(1);
+      expect(
+        answers[0].body.answersEntryId,
+        'the answer does not point at the message that waited'
+      ).toBe(askedId);
+
+      // The line resolves rather than sitting beside the answer.
+      await expect(waitingLine).toBeHidden({ timeout: SERVER_ROUND_TRIP_MS });
+      expect(
+        (await roomsApi.listEntries(asking.id))
+          .filter((entry) => entry.body.notice !== undefined)
+          .map((entry) => entry.body.notice),
+        'the room refused a message it went on to answer'
+      ).toHaveLength(0);
+    } finally {
       await request.post('/api/test/finish-turn').catch(() => {});
       await useScenario(request, 'simple-text').catch(() => {});
     }
