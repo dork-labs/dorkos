@@ -998,6 +998,12 @@ test.describe('Rooms — a thread on a phone', () => {
     await roomsPage.settledTopVisibleEntryText();
     const replyRow = roomsPage.replyRow(roomsPage.entry('resume line 21'));
     await replyRow.scrollIntoViewIfNeeded();
+    // Asked AGAIN after the reposition, because centring the row is itself a
+    // scroll: a room that landed back at its newest message has a reader with no
+    // position to remember, the landing decides `end` instead of `remembered`,
+    // and this test would die at the `data-landed-on` poll with a message about
+    // an attribute rather than about its own precondition.
+    await expect.poll(() => roomsPage.isAtBottom()).toBe(false);
     const topBefore = await roomsPage.settledTopVisibleEntryText();
     // A null on both sides of the final comparison would be a test that passed
     // by measuring nothing.

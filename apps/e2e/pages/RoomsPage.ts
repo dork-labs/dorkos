@@ -728,20 +728,30 @@ export class RoomsPage {
   }
 
   /**
-   * The text of the message at the top of the viewport.
+   * The text of the message at the top of the viewport, read once.
    *
    * Not `entries.first()`: the list is virtualized and keeps a few rows of
    * overscan ABOVE the viewport, so the first drawn row is not the first
    * visible one — a claim about where a reader is standing has to be measured,
    * not counted.
+   *
+   * The predicate is `bottom > top` with no slack, because the ROOM decides
+   * which row it is standing on with `item.end > scrollTop` and the two
+   * coordinate spaces line up exactly. A pixel of tolerance here would make the
+   * test stricter than the product and disagree with it on any row whose edge
+   * lands within it.
+   *
+   * Private: a single read of a list that is still measuring rows is a value the
+   * room is about to leave, so every caller goes through
+   * {@link RoomsPage.settledTopVisibleEntryText}.
    */
-  async topVisibleEntryText(): Promise<string | null> {
+  private async topVisibleEntryText(): Promise<string | null> {
     return this.page.evaluate(() => {
       const scroller = document.querySelector('.chat-scroll-area');
       if (scroller === null) return null;
       const top = scroller.getBoundingClientRect().top;
       for (const row of document.querySelectorAll('[data-testid="room-entry"]')) {
-        if (row.getBoundingClientRect().bottom > top + 1) return row.textContent;
+        if (row.getBoundingClientRect().bottom > top) return row.textContent;
       }
       return null;
     });
@@ -753,10 +763,9 @@ export class RoomsPage {
    * The list measures each row as it draws it, so for a few frames after any
    * jump its total height — and with it every row's position — is still
    * changing, and a single read catches a row the room is about to leave. Two
-   * identical reads in a row is the settle. Use this, not
-   * {@link RoomsPage.topVisibleEntryText}, whenever the answer is being RECORDED
-   * to compare against later: a stale record is a test that fails for its own
-   * reasons (DOR-1364).
+   * identical reads in a row is the settle, and it is the only honest way to
+   * RECORD where a reader is standing for a later comparison: a stale record is
+   * a test that fails for its own reasons (DOR-1364).
    *
    * @returns The text of the top visible message, once it holds still.
    */
@@ -764,13 +773,19 @@ export class RoomsPage {
     let previous: string | null = null;
     let read = false;
     await expect
-      .poll(async () => {
-        const current = await this.topVisibleEntryText();
-        const settled = read && current === previous;
-        previous = current;
-        read = true;
-        return settled;
-      })
+      .poll(
+        async () => {
+          const current = await this.topVisibleEntryText();
+          const settled = read && current === previous;
+          previous = current;
+          read = true;
+          return settled;
+        },
+        {
+          message:
+            'the room never stopped moving: two consecutive reads of the top visible message never agreed',
+        }
+      )
       .toBe(true);
     return previous;
   }
