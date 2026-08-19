@@ -4590,6 +4590,13 @@
       "extractedFrom": "room-hold-when-busy",
       "specSlug": "room-hold-when-busy",
       "amends": "260726-170125"
+    },
+    {
+      "id": "260819-034718",
+      "slug": "the-relay-holds-a-bridged-message-for-a-busy-agent",
+      "title": "The relay holds a bridged chat message for a busy agent, and holds for nobody else",
+      "status": "proposed",
+      "created": "2026-08-19"
     }
   ]
 }
