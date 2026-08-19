@@ -776,6 +776,7 @@ In Linear-ready form — one bullet each, owner named where the record above alr
 - **No multi-person Ask entitlement filter.** The list route and the global fan-out both answer this cockpit's one operator; if DorkOS ever has more than one person, both need a per-caller filter, which is a change to `eventFanOut`'s addressing model (P3 Known Issue 23).
 - ~~**`GET /api/rooms/:id/sessions` and `requirePersonToAnswer` disagree about an unresolved agent header.**~~ **CLOSED (DOR-1357, 2026-08-18): the room route now refuses it too**, on the same predicate the answer routes read. The siblings keep the lenient reading, deliberately — see Post-programme follow-ups below.
 - **The `room-row-menu` e2e spec has an order-dependent flake** (`apps/e2e/manifest.json`'s own run history: 2 passed / 1 failed of 3 runs). Unrelated to this programme's own suites, which are all green; worth its own investigation rather than being carried silently.
+
 - **Codex/OpenCode timeout parity is DOR-803**, unchanged by this programme.
 - **Presence tier 3 (the verb glimpse) and the remaining approvals tiers** are the two open "What is not done" items with the clearest next shape, per the spec's own §Not Done.
 - **`data-testid="room-stalled"` and `room-presence` name a room inside a surface-neutral slice** (P2 Known Issue 10, which named this phase's docs pass as where it could be reconsidered). **Closed here, deliberately: they stay.** They are the hooks two shipped browser suites resolve by (`RoomsPage.stalledNotice`, `.presenceLine`), so renaming them is a rename with no reader plus a suite edit, and the docs pass turned up nothing that reads them. Revisit only if a session-side browser test ever needs to resolve the same rung, at which point one hook serving two surfaces under a room's name is a real problem rather than a cosmetic one.
@@ -826,6 +827,42 @@ request changes shape. Tests: `routes/__tests__/rooms-sessions.test.ts` (the
 unresolved-header 403, the resolved-agent 403, the person 200, and 404-before-403
 for an unknown room) and `middleware/__tests__/agent-identity.test.ts` (the
 predicate's three cases).
+
+### 2026-08-18 — DOR-1358: the `room-row-menu` flake was a real client bug
+
+**Root cause (a): the product.** `applyReadCursor` (`entities/room/model/use-room-list-stream.ts`) cancels
+every in-flight room-list fetch before it patches an unread badge in place. The cancel is right — a list
+GET computed before the cursor moved would land on top of the patch — but a cancelled TanStack fetch is
+**reverted, and nothing schedules a replacement**. So the cancel does not postpone that response, it drops
+it, along with every other fact it was carrying. The room list then keeps whatever it had until the next
+room event.
+
+The path a person can see: rejoin a channel, and the rejoin's own list invalidation is in flight when a
+`read_cursor` event lands — from a second device, or from any other room at all, since a cursor in a room
+this client has never opened reaches the same handler (`movedByReader` answers yes when the room detail is
+absent). The list reverts to the copy where the reader is still not a member, and the sidebar row goes on
+saying "Left" in a channel they are back in. Proven in jsdom before the fix: the invalidation's refetch ran,
+its answer (`unreadCount: 0`) was discarded, and the cache still read `unreadCount: null` with the query
+idle.
+
+**Fix:** re-ask for the list when — and only when — the cancel actually interrupted a fetch
+(`queryClient.isFetching` read before the cancel, `invalidateQueries` after the patch). The badge still goes
+out on the event with no round trip in the ordinary case; the replacement GET is computed after the cursor
+moved, so it agrees with the patch. Pinned by two tests in `use-room-list-stream.test.tsx` — one that the
+re-ask happens, one that it is never paid for by an event alone.
+
+**Also done, and honestly a second cause rather than a proof:** the spec's two sidebar assertions were the
+only waits in the file left on Playwright's bare 5s default. The row's membership comes from the room LIST,
+a round trip distinct from the roster one the composer assertion above it already waits for, so both now
+carry the file's own `SERVER_ROUND_TRIP_MS` ceiling like every other server wait in it.
+
+**Not reproduced.** Four runs before the fix — the reported sequence at one worker and at three, and the full serial
+`chromium` project (229 tests, the CI shape) — were all green on `room-row-menu`; the manifest's +8 runs are those four plus the reported sequence three more times and `tests/rooms` alone, all after the fix. The brief's literal
+command was also malformed (`--project` takes a list, so the paths were parsed as project names), and
+`tests/streams/**` is `testIgnore`d from `chromium` entirely: it runs in `chromium-streams` against the
+test-mode leg, a different server and a different database, so it cannot have shared state with the rooms
+specs. The failure named in the P4 review is therefore diagnosed from the code rather than from a
+reproduction.
 
 ### 2026-08-18 — Known Issue 29 resolved (DOR-1353)
 

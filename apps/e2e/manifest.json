@@ -905,10 +905,10 @@
       "specFile": "tests/rooms/room-row-menu.spec.ts",
       "feature": "rooms",
       "description": "leaves a one-agent room, and takes the reader back to the empty state, refuses to leave a two-agent room, and says why in its own words",
-      "lastRun": "2026-08-16T06:24:02.981Z",
+      "lastRun": "2026-08-19T01:08:21.025Z",
       "lastStatus": "passed",
-      "runCount": 3,
-      "passCount": 2,
+      "runCount": 11,
+      "passCount": 10,
       "failCount": 1,
       "relatedCode": [],
       "lastModified": ""
