@@ -52,6 +52,10 @@
           {
             "type": "command",
             "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/git-guard.mjs"
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/process-guard.mjs"
           }
         ]
       }
