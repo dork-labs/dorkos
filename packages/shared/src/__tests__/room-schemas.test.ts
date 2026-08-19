@@ -15,6 +15,8 @@ import {
   RoomMomentSchema,
   RoomNoticeCodeSchema,
   ToggleReactionRequestSchema,
+  withoutActivityTarget,
+  type RoomPresencePayload,
   type SignableRoomEntry,
 } from '../room-schemas.js';
 import { AgentBehaviorSchema, ResponseModeSchema } from '../mesh-schemas.js';
@@ -263,6 +265,45 @@ describe('RoomEventSchema', () => {
       at: '2026-07-26T12:00:00.000Z',
     });
     expect(parsed.type).toBe('signal');
+  });
+
+  it('round-trips a presence frame carrying what the turn is doing', () => {
+    // The verb glimpse rides the presence signal as STRUCTURE (DOR-1351): the
+    // same `SessionActivity` the session pane already carries, so the client
+    // owns the wording on both surfaces.
+    const parsed = RoomEventSchema.parse({
+      type: 'signal',
+      signal: 'progress',
+      authorId: '01JZAUTHOR',
+      at: '2026-07-26T12:00:00.000Z',
+      state: 'working',
+      entryId: '01JZENTRY',
+      since: '2026-07-26T11:59:00.000Z',
+      activity: { toolName: 'Read', target: 'standup.md' },
+    });
+    expect(parsed).toMatchObject({
+      type: 'signal',
+      activity: { toolName: 'Read', target: 'standup.md' },
+    });
+  });
+
+  it('takes a presence frame with no reading at all — the common case', () => {
+    // A turn before its first tool has nothing to say, and that must parse
+    // rather than fail: the field is optional on EVERY publish.
+    const parsed = RoomEventSchema.parse({
+      type: 'signal',
+      signal: 'progress',
+      authorId: '01JZAUTHOR',
+      at: '2026-07-26T12:00:00.000Z',
+      state: 'working',
+      entryId: '01JZENTRY',
+      since: '2026-07-26T11:59:00.000Z',
+    });
+    expect(parsed).toMatchObject({ type: 'signal', state: 'working' });
+    // Absent, not an empty object: an optional field Zod never saw stays off
+    // the parsed frame entirely, which is what the client's "say your own
+    // sentence instead" fallback keys on.
+    expect('activity' in parsed).toBe(false);
   });
 
   it('refuses a signal name the relay does not define', () => {
@@ -515,5 +556,41 @@ describe('RoomNoticeCodeSchema — the three bridge codes (chats-as-channels spe
 
   it('still rejects an unrecognised code', () => {
     expect(RoomNoticeCodeSchema.safeParse('bridge_unplugged').success).toBe(false);
+  });
+});
+
+describe('withoutActivityTarget', () => {
+  it('keeps the verb and drops the one field that names a person\u2019s work', () => {
+    // The boundary the whole feature turns on: a bridged chat and a community
+    // may hear "running a command"; neither may hear which command.
+    expect(
+      withoutActivityTarget({
+        state: 'working' as const,
+        entryId: '01JZENTRY',
+        since: '2026-07-26T11:59:00.000Z',
+        activity: { toolName: 'Bash', target: 'pnpm test --filter server' },
+      })
+    ).toEqual({
+      state: 'working',
+      entryId: '01JZENTRY',
+      since: '2026-07-26T11:59:00.000Z',
+      activity: { toolName: 'Bash' },
+    });
+  });
+
+  it('leaves a payload with no reading exactly as it was', () => {
+    // Never an empty `activity: {}` invented for a frame that had none: that
+    // would put a reading on the wire for a turn nobody has heard from.
+    // Typed as a producer holds it, which is also what the helper's weak-type
+    // constraint asks for: a bare literal with no `activity` key shares no
+    // property with it and TypeScript says so.
+    const payload: Partial<RoomPresencePayload> = {
+      state: 'working',
+      entryId: '01JZENTRY',
+      since: 'now',
+    };
+    const stripped = withoutActivityTarget(payload);
+    expect(stripped).toEqual(payload);
+    expect('activity' in stripped).toBe(false);
   });
 });
