@@ -18,7 +18,7 @@
  * Driven through the real service and the real dispatcher, like the other room
  * suites: only the runner stands in, because the alternative is a model call.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { AuthorRegistry } from '../author-registry.js';
@@ -530,6 +530,52 @@ describe('a room says when a turn has stopped', () => {
       await room.wired.service.triggersIdle();
       expect(room.wired.service.listRooms(room.wired.human, {})[0].working).toBe(0);
       expect(room.answers()).toHaveLength(2);
+    });
+
+    it('drops every claim even when the database refuses to say where the work runs', async () => {
+      // **A recovery path that can itself fail.** The session lookup is a
+      // database read inside the release loop; a `SQLITE_BUSY` escaping there
+      // would abandon the loop with every remaining claim marked and none of
+      // them released — a room showing agents working for the life of the
+      // process, each refused every message after by the `(room, agent)`
+      // ceiling. Two agents, so "abandons the loop" is distinguishable from
+      // "fails on the one".
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const wired = createRoomHarness({ agents, runner: stubborn });
+      const stuck = wired.service.createRoom(
+        {
+          kind: 'channel',
+          title: 'Locked',
+          members: [],
+          agentPaths: ['/agents/ana', '/agents/bo'],
+        },
+        wired.human
+      );
+      const anaId = anaIn(wired);
+      const boId = wired.authors.resolveAgent('/agents/bo', 'Bo').id;
+      for (const authorId of [anaId, boId]) {
+        wired.service.updateMembership(stuck.id, wired.human, authorId, 'mention-only');
+      }
+      wired.service.post(stuck.id, { authorId: wired.human, text: '@ana @bo go' });
+      await settleUntil(() => stubborn.turns.length === 2, 'both agents to be mid-turn');
+      vi.spyOn(wired.store, 'getRoomSession').mockImplementation(() => {
+        throw new Error('SQLITE_BUSY: database is locked');
+      });
+
+      try {
+        // It answers rather than throwing at the person who pressed Stop, and
+        // the count is the claims it dropped.
+        expect(await wired.service.haltRoom(stuck.id, wired.human)).toBe(2);
+        expect(wired.service.listRooms(wired.human, {})[0].working).toBe(0);
+        // Nothing was interrupted, because nothing could say where to send it —
+        // and both claims went anyway, which is the whole point.
+        expect(stubborn.interrupted).toHaveLength(0);
+      } finally {
+        vi.restoreAllMocks();
+        stubborn.release(anaId);
+        stubborn.release(boId);
+        await wired.service.triggersIdle();
+      }
     });
 
     it('leaves the room able to answer the very next message', async () => {

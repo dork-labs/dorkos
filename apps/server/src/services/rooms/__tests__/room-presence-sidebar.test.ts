@@ -27,69 +27,18 @@ import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest, RoomTurnResult } from '../room-trigger.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
-import { agentLookupFor, createRoomHarness, type ScriptedTurnRunner } from './room-test-harness.js';
+import {
+  agentLookupFor,
+  createRoomHarness,
+  gatedRunner,
+  type GatedRunner,
+} from './room-test-harness.js';
 
 /** The agents these rooms are built from. */
 const agents = agentLookupFor({
   '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always' },
   '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'always' },
 });
-
-/** A runner whose turns only finish when the test says so. */
-interface GatedRunner extends ScriptedTurnRunner {
-  /** Let one agent's oldest held turn answer now. */
-  release(authorId: string): void;
-  /** Let every held turn answer now. */
-  releaseAll(): void;
-}
-
-/**
- * Build a runner that holds every turn open until released.
- *
- * Holding is what makes a claim observable at all: a turn that answered would
- * have taken and released its claim inside one `await`, and every count in
- * between would be a thing the test never got to look at.
- */
-function gatedRunner(): GatedRunner {
-  const turns: ScriptedTurnRunner['turns'] = [];
-  // Queued per agent, not keyed by it: a map that overwrote would silently drop
-  // a second turn, and one of the scenarios below is about proving a second turn
-  // never starts. A runner that cannot hold two agrees with a dispatcher that
-  // runs two.
-  const gates = new Map<string, Array<() => void>>();
-  return {
-    turns,
-    interrupted: [],
-    interrupt: () => Promise.resolve(),
-    run(request: RoomTurnRequest): Promise<RoomTurnResult> {
-      turns.push({
-        roomId: request.room.id,
-        authorId: request.authorId,
-        agentPath: request.agentPath,
-        sessionId: request.sessionId,
-        prompt: request.entry.body.text,
-        roomContext: request.roomContext,
-        attachmentProjection: request.attachmentProjection,
-      });
-      return new Promise<RoomTurnResult>((resolve) => {
-        const queued = gates.get(request.authorId) ?? [];
-        queued.push(() => resolve({ sessionId: request.sessionId ?? 'session-1', text: 'on it' }));
-        gates.set(request.authorId, queued);
-      });
-    },
-    release(authorId) {
-      const queued = gates.get(authorId);
-      const gate = queued?.shift();
-      if (!gate) throw new Error(`no held turn for ${authorId}`);
-      gate();
-    },
-    releaseAll() {
-      for (const queued of [...gates.values()]) {
-        for (const gate of queued.splice(0)) gate();
-      }
-    },
-  };
-}
 
 describe('the sidebar is told which rooms have an agent working', () => {
   let service: RoomService;

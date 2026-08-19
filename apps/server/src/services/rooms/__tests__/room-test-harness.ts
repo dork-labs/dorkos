@@ -179,6 +179,8 @@ export interface GatedRunner extends ScriptedTurnRunner {
   holdsFor(authorId: string): number;
   /** Let one agent's oldest held turn answer now. */
   release(authorId: string): void;
+  /** Let every held turn, for every agent, answer now. */
+  releaseAll(): void;
   /**
    * Make one agent's oldest held turn report that it has stopped for a person.
    *
@@ -300,6 +302,14 @@ export function gatedRunner({
     },
     release(authorId) {
       held.get(authorId)?.shift()?.finish();
+    },
+    releaseAll() {
+      // Snapshot the values first: finishing a turn can put the next one in
+      // behind it, and iterating the live map would then answer a turn this call
+      // never saw.
+      for (const queued of [...held.values()]) {
+        for (const turn of queued.splice(0)) turn.finish();
+      }
     },
     waitOnPerson(authorId, waiting) {
       oldest(authorId, 'wait on a person').request.onWaiting(waiting);

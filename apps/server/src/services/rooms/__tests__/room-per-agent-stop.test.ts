@@ -3,16 +3,20 @@
  *
  * The room-wide halt (`room-stopped-turns.test.ts`) is the verb; this is the
  * same verb with a scope, and everything that makes the room-wide one correct
- * has to hold here for the same reasons and in the same order. Three of those
- * orderings are what most of this file is about:
+ * has to hold here for the same reasons. Three constraints, all of them about
+ * what is true before the claim is released, are what most of this file is
+ * about — the statement order differs from `halt`'s on purpose, because this one
+ * has to know what it dropped before it can say what it found:
  *
  * 1. The stopped dispatch is marked BEFORE the first `await`, so a turn that
  *    streams its last words after the interrupt has them thrown away — the
  *    two-second race measured on 2026-08-15 (DOR-1232).
  * 2. The durable line is written BEFORE the claim is released, so no indicator
  *    ever drops ahead of the entry explaining it.
- * 3. The gather buffer is dropped BEFORE the claim is released, because
- *    releasing a claim is what resumes a held collection.
+ * 3. The gather buffer is dropped while the claim is STILL HELD, because
+ *    releasing a claim is what resumes a held collection. Nothing in this method
+ *    awaits below the release today, so that one is defence in depth and is
+ *    pinned as the property rather than as an observable effect.
  *
  * **The runtime that IGNORES the interrupt is not incidental here.** A runtime
  * that stops promptly releases the claim through `runOne` anyway, so a
@@ -22,7 +26,7 @@
  * Driven through the real service and the real dispatcher, like every other room
  * suite: only the runner stands in, because the alternative is a model call.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import type {
   RoomEntry,
   RoomEvent,
@@ -31,7 +35,8 @@ import type {
 } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
-import type { CollectWindow } from '../room-collect.js';
+import type { RoomStore } from '../room-store.js';
+import { RoomCollector, type CollectWindow } from '../room-collect.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -62,6 +67,8 @@ describe('stopping one agent in a room', () => {
   let human: string;
   let ana: string;
   let bo: string;
+  /** The room's real store — spied on by the scenario about a database that says no. */
+  let store: RoomStore;
   let published: Array<{ roomId: string; event: RoomEvent }> = [];
   /**
    * Sampled at the instant of every publish, for the one scenario that is about
@@ -83,7 +90,7 @@ describe('stopping one agent in a room', () => {
    */
   function open(opts: { runner?: GatedRunner; collect?: CollectWindow } = {}): void {
     runner = opts.runner ?? gatedRunner({ interruptedTurnStillAnswers: true });
-    ({ service, authors, human } = createRoomHarness({
+    ({ service, authors, human, store } = createRoomHarness({
       agents,
       runner,
       ...(opts.collect && { collect: opts.collect }),
@@ -142,6 +149,12 @@ describe('stopping one agent in a room', () => {
 
   beforeEach(() => {
     open();
+  });
+
+  // `RoomCollector.prototype` is a shared object: a spy left on it would follow
+  // this file's mocks into every other suite in the process.
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('stops the named agent and leaves the other one working', async () => {
@@ -329,6 +342,81 @@ describe('stopping one agent in a room', () => {
     // Bo never claimed anything, so nothing was published about Bo at all.
     expect(presenceFor(bo)).toHaveLength(0);
     expect(service.listRooms(human, {})[0].working).toBe(0);
+  });
+
+  it('drops the buffer while the claim is still held, so no future await can reorder it', async () => {
+    // **Defence in depth, pinned rather than argued.** Nothing in `haltAgent`
+    // awaits after the release today, so a drop moved below it would still
+    // delete the collection before any sweep — every other test here stays green
+    // either way, which is exactly why this one exists. It asserts the property
+    // the invariant is really about: at the instant the buffer goes, the claim
+    // has not been released yet. Insert an `await` under the release tomorrow
+    // and a reordered drop is caught here instead of in somebody's room.
+    open({ runner: gatedRunner({ interruptEndsTurn: false }) });
+    service.post(room.id, { authorId: human, text: '@ana start on the report' });
+    await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn');
+    let claimHeldWhenDropped: boolean | null = null;
+    const dropOne = RoomCollector.prototype.dropOne;
+    vi.spyOn(RoomCollector.prototype, 'dropOne').mockImplementation(function (
+      this: RoomCollector,
+      roomId: string,
+      authorId: string
+    ) {
+      // The working count is the claim map made visible, which is the only
+      // handle a test has on "is the claim still there".
+      claimHeldWhenDropped ??= service.listRooms(human, {})[0].working === 1;
+      return dropOne.call(this, roomId, authorId);
+    });
+
+    await service.haltAgent(room.id, ana, human);
+
+    expect(claimHeldWhenDropped).toBe(true);
+    expect(service.listRooms(human, {})[0].working).toBe(0);
+  });
+
+  it('releases the claim even when the database refuses to say where the work runs', async () => {
+    // **A recovery path that can itself fail.** The session lookup is a database
+    // read sitting between the halt mark and the release; a `SQLITE_BUSY`
+    // escaping there would leave the claim marked and never released — the room
+    // showing that agent working for the life of the process, and the
+    // `(room, agent)` ceiling refusing it every message after. Red if the read
+    // moves back outside the try.
+    open({ runner: gatedRunner({ interruptEndsTurn: false }) });
+    service.post(room.id, { authorId: human, text: '@ana have a look' });
+    await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn');
+    vi.spyOn(store, 'getRoomSession').mockImplementation(() => {
+      throw new Error('SQLITE_BUSY: database is locked');
+    });
+
+    // It answers, rather than throwing at the person who pressed Stop.
+    expect(await service.haltAgent(room.id, ana, human)).toBe(1);
+
+    expect(service.listRooms(human, {})[0].working).toBe(0);
+    expect(haltedLines()[0].body.text).toBe(STOPPED_ANA.interrupted);
+    // Nothing was interrupted, because nothing could say where to send it — and
+    // the claim went anyway, which is the whole point.
+    expect(runner.interrupted).toHaveLength(0);
+  });
+
+  it('counts one turn once when two presses land on it together', async () => {
+    // Two people press Stop on the same agent while the first press is still
+    // delivering its interrupt. One turn was stopped, so one press reports it
+    // and the other reports nothing — a total of 2 would be the room claiming to
+    // have stopped a turn that never existed. The stubborn runtime keeps the
+    // claim in place across the await, which is what makes the race reachable.
+    open({ runner: gatedRunner({ interruptEndsTurn: false }) });
+    service.post(room.id, { authorId: human, text: '@ana have a look' });
+    await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn');
+
+    const [first, second] = await Promise.all([
+      service.haltAgent(room.id, ana, human),
+      service.haltAgent(room.id, ana, human),
+    ]);
+
+    expect([first, second].sort()).toEqual([0, 1]);
+    // And the turn was asked to stop once, not twice.
+    expect(runner.interrupted).toHaveLength(1);
+    expect(haltedLines()).toHaveLength(1);
   });
 
   it('writes the durable line before the indicator drops', async () => {

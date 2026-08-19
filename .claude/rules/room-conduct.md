@@ -184,11 +184,14 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   field** (`specs/room-per-agent-stop`, ADR `260819-023317`).
   `POST /api/rooms/:id/halt/:authorId` and the peek's per-row Stop are the same
   verb narrowed to one `(room, agent)` key: `RoomTriggerDispatcher.haltAgent`
-  performs the same steps in the same order as `halt` and reads no other key,
-  which is what makes "the others keep working" a property of the code. Two
-  rules are specific to it. **A per-agent stop drops that agent's collection and
-  nothing else, and it still drops it before releasing the claim** — the room
-  scope would throw away what agents nobody stopped are waiting to answer. And
+  performs the same steps under the same constraints as `halt` — all three of
+  them about what is true BEFORE the claim is released, rather than one fixed
+  statement order, because a per-agent stop has to know what it dropped before it
+  can say what it found — and reads no other key, which is what makes "the
+  others keep working" a property of the code. Two rules are specific to it.
+  **A per-agent stop drops that agent's collection and nothing else, and it
+  still drops it before releasing the claim** — the room scope would throw away
+  what agents nobody stopped are waiting to answer. And
   the target is a segment rather than an optional field because an optional
   target fails OPEN: a client that forgot it would stop the whole room. Only a
   person may call either one; an agent stopping ONE room-mate is the same

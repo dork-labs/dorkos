@@ -187,6 +187,15 @@ promote(roomId: string, authorId: string): boolean;
 dropOne(roomId: string, authorId: string): RoomCollection | null;
 ```
 
+> **Amended (2026-08-19) by `specs/room-per-agent-stop` (DOR-1352), which shipped `dropOne` first.**
+> The shipped signature is `dropOne(roomId: string, authorId: string): RoomCollection[]` — a list,
+> exactly like `drop(roomId)`. One `(room, agent)` key can hold TWO collections at once: the cap
+> takes a full one out of the map and leaves it in `closing` for a macrotask, and a message
+> arriving in that window opens a fresh one behind it. Each holds one of the dispatcher's in-flight
+> credits, so handing back one while removing both leaks the other's and `idle()` never resolves
+> again. Build the expiry path against the list (`dropped.length > 0`, settle per element);
+> `room-collect.test.ts` pins the double case.
+
 `RoomCollection` gains one field, `promoted: boolean` (default `false`), and `sweep` sorts the due
 batch **promoted first, then by the order the collections were opened**. `park()` clears
 `promoted` only when it merges into another collection (the merged batch is the older one and keeps
