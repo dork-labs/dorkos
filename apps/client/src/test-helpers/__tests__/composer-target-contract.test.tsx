@@ -237,15 +237,18 @@ function type(text: string) {
   fireEvent.change(screen.getByRole('combobox'), { target: { value: text } });
 }
 
+/** The two surfaces that have a composer, each drawn over whatever target it is handed. */
+const SURFACES: [string, (target: ConversationTarget) => ReactNode][] = [
+  ['a session', (target) => <SessionHost target={target} status="idle" />],
+  ['a channel', (target) => <RoomHost target={target} />],
+];
+
 describe('every surface sends through its ConversationTarget', () => {
   // **Seeded defect for both rows:** give either composer a send path that does
   // not end in `target.send` — a `handleSubmit` prop, a direct mutation — and
   // that row goes red while the other stays green, which is exactly the state
   // the port was in before DOR-1354.
-  it.each([
-    ['a session', (t: ConversationTarget) => <SessionHost target={t} status="idle" />],
-    ['a channel', (t: ConversationTarget) => <RoomHost target={t} />],
-  ])('Enter in %s carries the draft to target.send', async (_label, host) => {
+  it.each(SURFACES)('Enter in %s carries the draft to target.send', async (_label, host) => {
     const { target, send } = spyTarget();
     mount(host(target));
 
@@ -255,25 +258,17 @@ describe('every surface sends through its ConversationTarget', () => {
     await waitFor(() => expect(send).toHaveBeenCalledExactlyOnceWith({ text: 'ship it' }));
   });
 
-  it('Shift+Enter reaches neither surface’s target', async () => {
+  it.each(SURFACES)('Shift+Enter in %s never reaches the target', (_label, host) => {
     // The newline case, asked of both for the same reason: a send path that
     // fires on any Enter at all would pass the case above and destroy a
     // multi-line message.
-    for (const host of [
-      (t: ConversationTarget) => <SessionHost target={t} status="idle" />,
-      (t: ConversationTarget) => <RoomHost target={t} />,
-    ]) {
-      const { target, send } = spyTarget();
-      mount(host(target));
+    const { target, send } = spyTarget();
+    mount(host(target));
 
-      type('first line');
-      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter', shiftKey: true });
+    type('first line');
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter', shiftKey: true });
 
-      expect(send).not.toHaveBeenCalled();
-      cleanup();
-      useRoomDraftStore.setState({ drafts: {} });
-      useSessionChatStore.setState({ sessions: {} });
-    }
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('Enter mid-turn carries a session’s draft to target.queue, never to send', async () => {

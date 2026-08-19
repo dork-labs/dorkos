@@ -825,3 +825,9 @@ The net is one new cross-surface test rather than one more per surface:
 `test-helpers/__tests__/composer-target-contract.test.tsx` mounts each host composer over a spy
 target and presses Enter. It lives beside the two benches because no widget may import another
 and the case is about the pair.
+
+One thing this did NOT fix, said out loud because it touched it: `ChatPanel.tsx` and
+`SessionComposer.tsx` both grew (571 → 583 and 503 → 534 raw lines), which is the trigger
+Known Issue 27 named for revisiting the 500-line guideline. Neither trips `max-lines`, which
+counts code rather than the comments most of the growth is, so no gate moved — but the item is
+now genuinely due rather than merely open.
