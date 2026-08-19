@@ -446,6 +446,50 @@ describe('stopping one agent in a room', () => {
     expect(lineWasAlreadyThere).toBe(true);
   });
 
+  it('stopping a held agent drops its hold and writes the unstarted line', async () => {
+    // **The case `specs/room-per-agent-stop` §5.2 amends DOR-1345 for.** A held
+    // row now gets the same Stop, and it means what it says: this conversation
+    // stops waiting for that agent. Red if `haltAgent` settles the dropped
+    // collection without releasing its hold — the held indicator would stand
+    // until the ten-second republish tick with nothing durable under it, which
+    // is the "an indicator releases into something durable" invariant.
+    const blocking = service.createRoom(
+      { kind: 'channel', title: 'Frontend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    service.updateMembership(blocking.id, human, ana, 'mention-only');
+    service.post(blocking.id, { authorId: human, text: '@ana look at the styles' });
+    await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn in the other room');
+    service.post(room.id, { authorId: human, text: '@ana and the build?' });
+    await settleUntil(
+      () => presenceFor(ana).at(-1)?.state === 'held',
+      'this room to say it is waiting on Ana'
+    );
+
+    // Nothing is running HERE, so nothing is interrupted — and that is a
+    // success, not a no-op.
+    expect(await service.haltAgent(room.id, ana, human)).toBe(0);
+
+    // The indicator is released rather than left to expire, and the line under
+    // it says what the stop found.
+    expect(presenceFor(ana).at(-1)?.state).toBe('done');
+    expect(haltedLines()).toHaveLength(1);
+    expect(haltedLines()[0].body.text).toBe(STOPPED_ANA.unstarted);
+    expect(haltedLines()[0].body.subjectAuthorId).toBe(ana);
+    // **And the turn in the other room is untouched.** That is the refusal
+    // DOR-1345 was right to make: this reaches past nothing.
+    expect(runner.interrupted).toHaveLength(0);
+    expect(runner.holdsFor(ana)).toBe(1);
+    expect(haltedLines(blocking.id)).toHaveLength(0);
+
+    // Letting the blocking turn finish is what proves the drop was permanent
+    // rather than deferred: its release is what would otherwise run the wait.
+    runner.release(ana);
+    await service.triggersIdle();
+    expect(runner.turns).toHaveLength(1);
+    expect(postsBy(ana)).toHaveLength(0);
+  });
+
   it('stopping an idle agent still says so', async () => {
     // Pressing Stop is a question, and silence is not an answer to it. Red if
     // the method returns early before the notice.

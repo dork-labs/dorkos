@@ -2915,7 +2915,15 @@ export class RoomTriggerDispatcher {
    * Nothing here reads any other key. The other agents' claims and collections
    * are never enumerated, which is what makes "the others keep working" a
    * property of this code rather than of a test.
-
+   *
+   * **A HELD agent can be stopped too**, and it is the same act at a smaller
+   * scope: nothing is running here to interrupt, so what the person stops is
+   * this conversation waiting. The dropped collection goes through
+   * {@link RoomTriggerDispatcher.settleCollection}, so its held indicator is
+   * released rather than standing until the next republish tick, and the room
+   * writes the `unstarted` line. The turn in the room that was in the way is
+   * NOT touched — that is the refusal `specs/room-hold-when-busy` was right to
+   * make, and `Open where it's working` is still the one-click path to it.
    *
    * What it deliberately does NOT do is mute. Messages that arrive after this
    * collect and are answered normally: Stop ends a turn, it does not change a
@@ -2963,7 +2971,14 @@ export class RoomTriggerDispatcher {
         authorId,
         waiting: dropped.entries.length,
       });
-      this.settleOne();
+      // Through the seam, so the held indicator goes with the collection rather
+      // than standing until the next republish tick with nothing durable under
+      // it. Stopping a HELD agent is the case this covers: nothing is running
+      // here to interrupt, and what the person stopped is this conversation
+      // waiting. The `halted` line written just below is its durable sibling —
+      // and the turn in the OTHER room is untouched, which is the whole
+      // difference between this and stopping the room that is in the way.
+      this.settleCollection(dropped, 'halted');
     }
 
     this.notices.reportAgentHalted(room, {
