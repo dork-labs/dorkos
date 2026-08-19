@@ -26,6 +26,7 @@ import {
 import type { HistoryMessage } from '@dorkos/shared/types';
 
 const TIMEOUT_MS = 10 * 60 * 1000;
+const PARK_CEILING_MS = 4 * 60 * 60 * 1000;
 
 /** Drain up to `count` events from an async iterable, then return them. */
 async function take(iter: AsyncIterable<unknown>, count: number): Promise<unknown[]> {
@@ -478,7 +479,7 @@ describe('SessionStateProjector', () => {
   // stream that throws with an approval outstanding never re-drains its event
   // queue, so the interaction_cancelled never arrives. Reading `interactions.size`
   // directly was exactly that bug, and it also regressed markInterrupted (below).
-  it('stops counting a pending interaction once it passes the interaction timeout', () => {
+  it('stops counting a pending interaction once it passes the park ceiling', () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
     const p = new SessionStateProjector('s1');
@@ -493,18 +494,22 @@ describe('SessionStateProjector', () => {
     } as RawSessionEvent);
     expect(p.hasPendingInteractions()).toBe(true);
 
-    // One tick short of the exclusive boundary: still a live wait.
-    vi.setSystemTime(1_000_000 + TIMEOUT_MS - 1);
+    // Eleven minutes in, the prompt has PARKED (spec `ask-parks-on-timeout`):
+    // the turn's silence is still legitimate, so the write-lock is not dropped
+    // and the watchdog does not fire.
+    vi.setSystemTime(1_000_000 + TIMEOUT_MS + 60_000);
     expect(p.hasPendingInteractions()).toBe(true);
+    expect(p.getPendingInteractions()).toHaveLength(1);
 
-    // At and past the boundary the entry is stale — nobody is waiting on a
-    // person any more, whatever the map still holds. It agrees with the DTO
-    // selector, so the two answers to "what is pending" cannot diverge.
-    vi.setSystemTime(1_000_000 + TIMEOUT_MS);
+    // At and past the PARK CEILING the entry is stale — nobody is waiting on a
+    // person any more, whatever the map still holds. The window widened; it did
+    // not open. It agrees with the DTO selector, so the two answers to "what is
+    // pending" cannot diverge.
+    vi.setSystemTime(1_000_000 + PARK_CEILING_MS);
     expect(p.hasPendingInteractions()).toBe(false);
     expect(p.getPendingInteractions()).toHaveLength(0);
 
-    vi.setSystemTime(1_000_000 + TIMEOUT_MS * 100);
+    vi.setSystemTime(1_000_000 + PARK_CEILING_MS + 60_000);
     expect(p.hasPendingInteractions()).toBe(false);
   });
 
@@ -673,10 +678,13 @@ describe('SessionStateProjector', () => {
     p.markInterrupted();
     expect(p.getStatus().lifecycle).toBe('interrupted');
 
-    // Still inside the window, the wait is real and the guard stays paused.
+    // Still inside the window, the wait is real and the guard stays paused —
+    // through the countdown and on into the park.
     expect(p.hasPendingInteractions()).toBe(true);
-    // Past it, the guard is armed again and the lock is reclaimable.
     vi.setSystemTime(1_000_000 + TIMEOUT_MS);
+    expect(p.hasPendingInteractions()).toBe(true);
+    // Past the park ceiling, the guard is armed again and the lock is reclaimable.
+    vi.setSystemTime(1_000_000 + PARK_CEILING_MS);
     expect(p.hasPendingInteractions()).toBe(false);
   });
 
@@ -705,7 +713,7 @@ describe('SessionStateProjector', () => {
 
   // Failure mode: a stale prompt must never be re-presented; an interaction past
   // the timeout boundary (remainingMs <= 0) is excluded from the snapshot.
-  it('excludes expired interactions at the exclusive timeout boundary', () => {
+  it('parks at the countdown boundary and excludes only past the park ceiling', () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const p = new SessionStateProjector('s1');
@@ -718,8 +726,15 @@ describe('SessionStateProjector', () => {
       input: '{}',
       hasSuggestions: false,
     } as RawSessionEvent);
-    // Advance to exactly the timeout: remainingMs === 0 -> excluded.
+    // Advance to exactly the countdown: the prompt parks rather than dying, and
+    // ships no budget for a card to draw a bar against.
     vi.setSystemTime(TIMEOUT_MS);
+    const parked = p.getPendingInteractions();
+    expect(parked).toHaveLength(1);
+    expect(parked[0]?.parked).toBe(true);
+    expect(parked[0]?.timeoutMs).toBeUndefined();
+    // Advance to exactly the park ceiling: remainingMs === 0 -> excluded.
+    vi.setSystemTime(PARK_CEILING_MS);
     expect(p.getPendingInteractions()).toEqual([]);
   });
 
@@ -2040,9 +2055,10 @@ describe('onProjectorInteractionChange (the Ask, fleet-wide)', () => {
 });
 
 describe('listPendingInteractionsAcrossSessions', () => {
-  it('spans every live projector and drops what has already expired', () => {
+  it('spans every live projector, carries a parked one, and drops what is past the ceiling', () => {
     const now = Date.now();
     const live = getOrCreateProjector('fleet-live', '/work/alpha');
+    const parked = getOrCreateProjector('fleet-parked', '/work/gamma');
     const stale = getOrCreateProjector('fleet-stale', '/work/beta');
     const nameless = getOrCreateProjector('fleet-nameless');
     const raise = (projector: SessionStateProjector, id: string, startedAt: number) =>
@@ -2058,8 +2074,10 @@ describe('listPendingInteractionsAcrossSessions', () => {
       } as unknown as RawSessionEvent);
 
     raise(live, 'tc-live', now - 60_000);
-    // Older than its own budget: the selector drops it, and so must this.
-    raise(stale, 'tc-stale', now - TIMEOUT_MS - 1_000);
+    // Older than its own budget: the selector PARKS it, and so must this.
+    raise(parked, 'tc-parked', now - TIMEOUT_MS - 60_000);
+    // Older than the park ceiling: the selector drops it, and so must this.
+    raise(stale, 'tc-stale', now - PARK_CEILING_MS - 1_000);
     raise(nameless, 'tc-nameless', now);
 
     // Scoped to the three sessions this case created. The registry is a module
@@ -2069,12 +2087,17 @@ describe('listPendingInteractionsAcrossSessions', () => {
       row.sessionId.startsWith('fleet-')
     );
 
-    expect(listed.map((row) => row.interaction.id)).toEqual(['tc-live']);
-    expect(listed[0]).toMatchObject({ sessionId: 'fleet-live', cwd: '/work/alpha' });
+    expect(listed.map((row) => row.interaction.id).sort()).toEqual(['tc-live', 'tc-parked']);
+    const liveRow = listed.find((row) => row.interaction.id === 'tc-live');
+    expect(liveRow).toMatchObject({ sessionId: 'fleet-live', cwd: '/work/alpha' });
     // And the remaining time is recomputed at read, not frozen at emit.
-    expect(listed[0]!.interaction.remainingMs).toBe(TIMEOUT_MS - 60_000);
+    expect(liveRow!.interaction.remainingMs).toBe(TIMEOUT_MS - 60_000);
+    const parkedRow = listed.find((row) => row.interaction.id === 'tc-parked');
+    expect(parkedRow!.interaction.parked).toBe(true);
+    expect(parkedRow!.interaction.remainingMs).toBe(PARK_CEILING_MS - TIMEOUT_MS - 60_000);
 
     disposeProjector('fleet-live');
+    disposeProjector('fleet-parked');
     disposeProjector('fleet-stale');
     disposeProjector('fleet-nameless');
   });

@@ -167,8 +167,48 @@ export const SESSIONS = {
   TIMEOUT_MS: 30 * 60 * 1000,
   /** Session write-lock TTL (ms). */
   LOCK_TTL_MS: 5 * 60 * 1000,
-  /** Interactive tool approval/question timeout (ms). */
+  /**
+   * How long an interactive tool approval/question counts down before it parks
+   * (ms).
+   *
+   * This is no longer when the agent gives up. It is when it stops counting
+   * down and starts waiting; {@link SESSIONS.INTERACTION_PARK_CEILING_MS} is
+   * when it gives up (spec `ask-parks-on-timeout`).
+   */
   INTERACTION_TIMEOUT_MS: 10 * 60 * 1000,
+  /**
+   * How long a prompt nobody answered waits before it is finally refused
+   * (spec `ask-parks-on-timeout`).
+   *
+   * `INTERACTION_TIMEOUT_MS` above is no longer when the agent gives up; it is
+   * when the agent stops counting down and starts waiting. This is when it
+   * gives up. The first ten minutes look exactly as they did — a live
+   * countdown, the urgency bands, "answer this now" — and past them the card
+   * says the agent is waiting and the turn stays open.
+   *
+   * **Why there is a ceiling at all, when the SDK has none.** A held permission
+   * decision is indefinite as far as the Claude Agent SDK is concerned
+   * (`sdk.d.ts:196-205`). Three DorkOS bounds are not:
+   *
+   * 1. `SessionStateProjector.hasPendingInteractions` bounds a pending entry on
+   *    purpose, because an entry CAN strand and a stranded entry read as "still
+   *    waiting" would make the stall watchdog and the session write-lock
+   *    immortal (DOR-782).
+   * 2. A session RECORD is evicted at `TIMEOUT_MS`, which a park has to be
+   *    exempt from, and an unbounded exemption is an unbounded map.
+   * 3. A session parked on a person declines every warm reap
+   *    (`session-pump.ts`) and only WARM pumps are reclaim candidates, so N
+   *    parked sessions shrink the twelve-slot ceiling by N. At twelve, every new
+   *    agent launch on the machine is refused — and the person who hits that
+   *    refusal is not the person who walked away.
+   *
+   * **Why four hours.** Twenty-four times the countdown. It covers every failure
+   * on record with a wide margin — DOR-784's forty-one minutes, a lunch, a
+   * meeting, a school run — and it keeps a machine abandoned at six in the
+   * evening from still holding twelve subprocesses at midnight. A number in days
+   * would trade a real resource ceiling for a case nobody has reported.
+   */
+  INTERACTION_PARK_CEILING_MS: 4 * 60 * 60 * 1000,
   /** Maximum number of concurrent in-memory sessions. */
   MAX_SESSIONS: 50,
   /**

@@ -92,6 +92,7 @@ import type { RequestUser } from '../../services/core/auth/session-gate.js';
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const OTHER_SESSION_ID = '00000000-0000-4000-8000-000000000002';
 const TIMEOUT_MS = 10 * 60 * 1000;
+const PARK_CEILING_MS = 4 * 60 * 60 * 1000;
 
 /**
  * Mount the REAL router behind the middleware the app puts in front of it.
@@ -200,8 +201,24 @@ describe('GET /api/sessions/pending-interactions', () => {
     expect(row.interaction.remainingMs).toBeGreaterThan(6 * 60_000 - 5_000);
   });
 
-  it('leaves out a prompt whose own clock has already run out', async () => {
-    park(SESSION_ID, '/work/alpha', 'tc-stale', Date.now() - TIMEOUT_MS - 1_000);
+  it('reports a prompt whose countdown ran out as parked, with no budget to draw', async () => {
+    // Spec `ask-parks-on-timeout`: past the countdown the agent is waiting, not
+    // gone. The fleet-wide list is where every surface outside the transcript
+    // learns that, and a card draws no draining bar without a `timeoutMs`.
+    park(SESSION_ID, '/work/alpha', 'tc-parked', Date.now() - TIMEOUT_MS - 60_000);
+
+    const res = await request(buildApp()).get('/api/sessions/pending-interactions');
+
+    expect(res.body.interactions).toHaveLength(1);
+    const { interaction } = res.body.interactions[0];
+    expect(interaction).toMatchObject({ id: 'tc-parked', parked: true });
+    expect(interaction).not.toHaveProperty('timeoutMs');
+    expect(interaction.remainingMs).toBeLessThanOrEqual(PARK_CEILING_MS - TIMEOUT_MS - 60_000);
+    expect(interaction.remainingMs).toBeGreaterThan(PARK_CEILING_MS - TIMEOUT_MS - 65_000);
+  });
+
+  it('leaves out a prompt that waited past the park ceiling', async () => {
+    park(SESSION_ID, '/work/alpha', 'tc-stale', Date.now() - PARK_CEILING_MS - 1_000);
 
     const res = await request(buildApp()).get('/api/sessions/pending-interactions');
 
