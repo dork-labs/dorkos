@@ -4,12 +4,14 @@ id: 260818-234135
 tracker: DOR-1345
 project: Unified Conversation Surfaces
 created: 2026-08-18
-status: specified
+status: implemented
 ---
 
 # A room never asks you to resend
 
-**Status:** Draft
+**Status:** Implemented — shipped 2026-08-19 on `main` (DOR-1345). See
+[04-implementation.md](04-implementation.md) for what landed, the four deviations, and the seeded
+defects each test was run against.
 **Author:** Claude (SPECIFY)
 **Date:** 2026-08-18
 
