@@ -11,7 +11,7 @@
  *
  * @module features/conversation/ui/LivePeek
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { presenceElapsed, type PresenceCopyState } from '@/layers/entities/room';
 import type { MessageAuthor } from '@/layers/shared/model';
@@ -105,27 +105,41 @@ export interface LivePeekProps {
    * has one, and two buttons for one verb is one too many.
    */
   onStopAll?: () => void;
-  /** True while a stop is in flight, so the button can say so. */
+  /** True while the room-wide stop is in flight, so its button can say so. */
   stopping?: boolean;
+  /**
+   * Stop one agent, leaving the rest of the room working.
+   *
+   * Absent on a surface with no per-agent stop behind it, which draws no row
+   * button at all rather than a disabled one.
+   */
+  onStopAgent?: (authorId: string) => void;
+  /** Author ids with a stop in flight, so their row buttons can say so. */
+  stoppingAgents?: ReadonlySet<string>;
 }
 
 /**
  * The peek.
  *
- * **Stop is the room-wide halt, and the label says so.** A per-agent stop cannot
- * be built honestly yet: `RoomTriggerDispatcher.halt` marks its halted turns
- * before its first `await` precisely to close a two-second race, and it also
- * writes one `halted` notice for the whole room and drops the room's gather
- * buffer — so a per-author version is a room-conduct decision with its own copy
- * and its own review, not a filter on that function. So the button never claims
- * a precision the server does not have:
+ * **Two stops, and the difference is the scope, not the verb.** A row's Stop
+ * ends that agent's turn here and leaves everybody else working. The footer's
+ * ends everything in the room and says how many that is. Both reach the runtimes
+ * through the room's own halt path, which marks the stopped dispatch before it
+ * does anything that can yield, so a turn that streams its last words after the
+ * interrupt has them thrown away.
  *
- * - **One agent working** — a `Stop` on its row. It halts the room, and the room
- *   is that agent.
- * - **Two or more** — no per-row stop at all. One footer action that says
- *   exactly what it will do, with the count.
+ * Every row gets a Stop, whatever state it is in — a person should not have to
+ * know which internal state a row is in to know what its button does — and the
+ * footer earns its place only when there IS something else for it to stop. On a
+ * `held` row it means what it says: this conversation stops waiting for that
+ * agent. It does NOT touch the turn in the other room, which stays one click
+ * away behind `Open where it's working`.
  *
- * @param props - The rows and the three things a row can do.
+ * **Pressing a row's Stop removes that row**, because the agent stops working
+ * and the peek draws working agents, so this also owns the focus that leaves
+ * with it — see the effect below.
+ *
+ * @param props - The rows and the four things a peek can do.
  */
 export function LivePeek({
   rows,
@@ -136,16 +150,44 @@ export function LivePeek({
   promoted,
   onStopAll,
   stopping = false,
+  onStopAgent,
+  stoppingAgents,
 }: LivePeekProps) {
-  // **Stop counts WORKING rows only.** A held agent is not working here, so it
-  // is not something this conversation can stop — and a footer that said "stops
-  // all 3" while one of the three had not started would be counting a turn that
-  // does not exist.
-  const working = rows.filter((row) => row.state !== 'held');
-  // The single-agent case is the only one where stopping the room and stopping
-  // the agent are the same act.
-  const perRowStop = working.length === 1 && onStopAll !== undefined;
-  const footerStop = working.length > 1 && onStopAll !== undefined;
+  // Every row can be stopped, held ones included. That amends
+  // `specs/room-hold-when-busy` §5.3, which counted WORKING rows only — written
+  // when a row's Stop was secretly the room-wide halt, so pressing it on a held
+  // row would have stopped other agents' live turns. With `haltAgent` that
+  // objection is gone: stopping a held agent drops the collection this room was
+  // waiting on and nothing else, and the room writes the `unstarted` line.
+  const perRowStop = onStopAgent !== undefined;
+  // The footer is the "and everything else" action, so it earns its place only
+  // when there IS something else. It counts every row, held ones included, and
+  // that stays honest because the room-wide halt really does drop held
+  // collections along with the live claims.
+  const footerStop = rows.length > 1 && onStopAll !== undefined;
+  const stopButtons = useRef(new Map<string, HTMLButtonElement>());
+  const focusedRow = useRef<string | null>(null);
+  const drawnRows = useRef<readonly LivePeekRow[]>(rows);
+
+  // **Pressing Stop makes the row you pressed it on disappear**, and with it the
+  // button holding focus — the peek stays open, so a keyboard reader is left
+  // standing on `document.body` inside a popover they can no longer move
+  // through. Hand focus to the row that took its place instead.
+  //
+  // Guarded on focus having ACTUALLY been lost: somebody who pressed Stop and
+  // then tabbed to another row has moved on, and stealing it back would be worse
+  // than the thing this fixes.
+  useEffect(() => {
+    const before = drawnRows.current;
+    drawnRows.current = rows;
+    const gone = focusedRow.current;
+    if (gone === null || rows.some((row) => row.authorId === gone)) return;
+    focusedRow.current = null;
+    if (document.activeElement !== document.body) return;
+    const wasAt = before.findIndex((row) => row.authorId === gone);
+    const heir = rows[Math.min(Math.max(wasAt, 0), rows.length - 1)];
+    if (heir !== undefined) stopButtons.current.get(heir.authorId)?.focus();
+  }, [rows]);
 
   return (
     <div data-slot="live-peek" data-testid="live-peek" className="flex flex-col">
@@ -237,14 +279,22 @@ export function LivePeek({
                       Answer here first
                     </Button>
                   ))}
-                {perRowStop && row.state !== 'held' && (
+                {perRowStop && (
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     data-testid="live-peek-stop"
-                    disabled={stopping}
-                    onClick={onStopAll}
+                    disabled={stoppingAgents?.has(row.authorId) === true}
+                    onClick={() => onStopAgent(row.authorId)}
+                    onFocus={() => (focusedRow.current = row.authorId)}
+                    ref={(node) => {
+                      if (node === null) stopButtons.current.delete(row.authorId);
+                      else stopButtons.current.set(row.authorId, node);
+                    }}
+                    // Several of these can be on screen at once, so the visible
+                    // word is not enough to say which agent a button stops.
+                    aria-label={`Stop ${row.author.displayName}`}
                     className="h-7 px-2 text-xs"
                   >
                     Stop
@@ -270,7 +320,7 @@ export function LivePeek({
             <span>Stop everything in this room</span>
             {/* The count is the honesty: this button does not stop one agent,
                 and a person about to press it should know how many it does. */}
-            <span className="text-muted-foreground font-normal">{`Stops all ${working.length}`}</span>
+            <span className="text-muted-foreground font-normal">{`Stops all ${rows.length}`}</span>
           </Button>
         </div>
       )}

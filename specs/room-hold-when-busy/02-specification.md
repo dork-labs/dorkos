@@ -189,6 +189,15 @@ promote(roomId: string, authorId: string): boolean;
 dropOne(roomId: string, authorId: string): RoomCollection | null;
 ```
 
+> **Amended (2026-08-19) by `specs/room-per-agent-stop` (DOR-1352), which shipped `dropOne` first.**
+> The shipped signature is `dropOne(roomId: string, authorId: string): RoomCollection[]` — a list,
+> exactly like `drop(roomId)`. One `(room, agent)` key can hold TWO collections at once: the cap
+> takes a full one out of the map and leaves it in `closing` for a macrotask, and a message
+> arriving in that window opens a fresh one behind it. Each holds one of the dispatcher's in-flight
+> credits, so handing back one while removing both leaks the other's and `idle()` never resolves
+> again. Build the expiry path against the list (`dropped.length > 0`, settle per element);
+> `room-collect.test.ts` pins the double case.
+
 `RoomCollection` gains one field, `promoted: boolean` (default `false`), and `sweep` sorts the due
 batch **promoted first, then by the order the collections were opened**. `park()` clears
 `promoted` only when it merges into another collection (the merged batch is the older one and keeps
@@ -478,6 +487,15 @@ reachable one click away through the first action, in the room where the person 
 would be stopping. The row-level `Stop` and the footer `Stop everything in this room` stay exactly
 as they are and count **working** rows only — a held agent is not working here, so it is not
 something this room can stop.
+
+> **Amended (2026-08-19) by `specs/room-per-agent-stop` (DOR-1352), which shipped first.** The
+> last sentence above no longer holds: the row `Stop` is now `haltAgent`, scoped to one
+> `(room, agent)` key, so pressing it on a held row stops nothing anybody else is doing. A held
+> row therefore gets the same Stop as a working one, and it means what it says — this room stops
+> waiting for that agent, its collection is dropped, and the room writes the `unstarted` line. The
+> refusal in the paragraph above is unchanged and still right: it does **not** touch the turn in
+> the other room, which stays one click away behind `Open where it's working`. What this spec adds
+> is `state: 'held'` rows and the hold record; the button on them already exists.
 
 #### 5.4 Where holds come from on the client
 

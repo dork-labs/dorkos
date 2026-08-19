@@ -368,6 +368,14 @@ for e in h:
 
 Also worth one line in the report: halting is human-only. An agent calling the halt route gets `PEOPLE_ONLY`; that is server-side and not browser-reachable, so cite it as a known mechanism, not as something this run verified.
 
+**3c. Stopping ONE agent leaves the other working.** Get **both** agents working again (`@ana and @bo each write a slow eight-line poem about rivers`), wait for `room-header-working` to read **"2 agents working"**, then open the peek from the live lane (the button reads "Show who is working") and press the `Stop` on `AGENT_A`'s row — its accessible name is `Stop {AGENT_A}`, which is what tells the two row buttons apart. It calls `POST /api/rooms/:id/halt/:authorId`.
+
+- **Exactly one** new `[data-testid="room-notice"][data-notice="halted"]` row, reading `{you} stopped {AGENT_A}. {AGENT_A} was working here and has been interrupted. Send a message to start it again.`
+- `room-header-working` now reads **"1 agent working"** and `room-header-halt` is still visible. That pair is the whole claim: one stopped, one still going.
+- Cross-check the stored row: the new notice's `body.subjectAuthorId` is `AGENT_A`'s author id. A rendered string can be fooled; the stored row cannot. A per-agent stop with **no** `subjectAuthorId` means the room-wide halt ran instead, which is a FAIL.
+- The same sandbox caveat as 3a applies: what you are observing is the claim being dropped and the notice being written, not a killed generation.
+- Finish with `finish-turn` so `AGENT_B`'s turn does not outlive the check.
+
 ### Check 4 — A-06: the agent reacts instead of posting filler
 
 Post something that wants acknowledgment and nothing else: `@ana heads up, I'm deploying in five minutes — no reply needed, just ack.`
@@ -471,6 +479,7 @@ Append a `## Summary`, then the matrix, then a `## Findings` section — one blo
 | 2   | A-03 | Mid-turn arrival folds into the next answer      |         |          |
 | 3a  | A-16 | Halt stops every turn, exactly one notice        |         |          |
 | 3b  | A-16 | A literal "stop" message is answered normally    |         |          |
+| 3c  | A-16 | Stopping one agent leaves the other working      |         |          |
 | 4   | A-06 | Agent reacts instead of filler; pills render     |         |          |
 | 5   | M-05 | Thread reply stays out of the main timeline      |         |          |
 | 6a  | A-04 | Agent-seeded DM includes the operator            |         |          |
@@ -513,12 +522,12 @@ This report is the durable record. On a re-run after a fix:
 
 ## Technical Notes
 
-- **Rooms API:** `GET /api/rooms` (list, with per-community `warnings[]`), `POST /api/rooms` (201 new / **200 an existing DM reopened** — DM creation is idempotent on the member set), `GET /api/rooms/:id` (room **+ roster**, 404 `ROOM_NOT_FOUND` if you are not a member — no entries), `GET /api/rooms/:id/entries` (history; `before` cursor, `limit` default 50 / max 200), `POST /api/rooms/:id/entries` (**trigger-only, 202** — the entry itself arrives on the stream, exactly like session messages), `POST /api/rooms/:id/threads` (reply, also 202), `POST /api/rooms/:id/entries/:entryId/reactions` (202, toggle), `POST /api/rooms/:id/halt`, `POST /api/rooms/:id/members`. Routes: `apps/server/src/routes/rooms.ts`.
+- **Rooms API:** `GET /api/rooms` (list, with per-community `warnings[]`), `POST /api/rooms` (201 new / **200 an existing DM reopened** — DM creation is idempotent on the member set), `GET /api/rooms/:id` (room **+ roster**, 404 `ROOM_NOT_FOUND` if you are not a member — no entries), `GET /api/rooms/:id/entries` (history; `before` cursor, `limit` default 50 / max 200), `POST /api/rooms/:id/entries` (**trigger-only, 202** — the entry itself arrives on the stream, exactly like session messages), `POST /api/rooms/:id/threads` (reply, also 202), `POST /api/rooms/:id/entries/:entryId/reactions` (202, toggle), `POST /api/rooms/:id/halt`, `POST /api/rooms/:id/halt/:authorId` (**stop one agent** — same verb scoped to one `(room, agent)` key; writes a `halted` notice carrying `subjectAuthorId`), `POST /api/rooms/:id/members`. Routes: `apps/server/src/routes/rooms.ts`.
 - **Live updates:** `GET /api/rooms/:id/events` — durable per-room stream (snapshot → gap-free replay via `Last-Event-ID` → live), the same contract as `GET /api/sessions/:id/events`. The cockpit itself uses the WebSocket served on the same path (`apps/server/src/routes/room-events-socket.ts`); the SSE route is the public integration contract. **A 202 from a post and nothing on screen means a stream problem, not a write problem** — check the stream before blaming the write.
 - **Disk:** one consolidated `dork.db` under the data dir (`apps/server/.temp/.dork/` in dev, `~/.dork/` in production, `DORK_HOME` overrides both). Room tables: `rooms`, `room_members`, `room_entries`, `room_entry_reactions`, `room_attachments`, `room_sessions`, `authors`.
 - **Threads** are a relation between entries in one room, not a separate entity: `parentEntryId` (what this answers) and `threadRootEntryId` (the head). One level deep, enforced as service policy (`NESTED_THREAD`). The main timeline is `parentEntryId IS NULL`.
 - **The collect window** opens on the first message for a `(room, agent)` pair and does **not** slide — a sliding window would starve a busy room. It closes early at `rooms.collectMaxEntries`. Everything gathered becomes **one** turn, answering the newest, with the rest as ambient context.
 - **Same-room busy parks; different-room busy refuses.** A busy notice inside the room you are testing is a finding.
-- **The halt ordering is deliberate:** notice first, then drop parked batches, then interrupt live claims — dropping after releasing would let held messages run one macrotask past the halt.
+- **The halt ordering is deliberate:** notice first, then drop parked batches, then interrupt live claims — dropping after releasing would let held messages run one macrotask past the halt, because the room-wide halt awaits an interrupt per claim in between. The per-agent stop is held to the same three constraints (everything before the claim release) but drops before it speaks, since it has to know what it dropped to say whether the agent was working, waiting, or idle. It touches no other key, so the agents nobody stopped keep their claims and their gathered messages.
 - **Reaction budget:** 20 additions per agent per room per rolling hour, rebuilt from `room_entry_reactions.created_at` so it survives a restart. The refusal reads: "You have used up your reactions in this room for now — say something instead, or wait."
 - **Conduct rules for this surface** live in `.claude/rules/room-conduct.md` and `meta/agent-etiquette.md`; the capability contract this matrix cites is `meta/chat-capabilities.md` §5 and §6.

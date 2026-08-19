@@ -346,6 +346,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // An idle room by default: a halt that stopped nothing is the shape a test
     // gets unless it is specifically about a room with turns in flight.
     haltRoom: vi.fn().mockResolvedValue({ stopped: 0 }),
+    // The same default for the per-agent stop, and a SEPARATE mock on purpose:
+    // wiring both peek stops to one mutation is the likeliest mistake here, and
+    // one shared spy could not see it.
+    haltRoomAgent: vi.fn().mockResolvedValue({ stopped: 0 }),
     promoteHold: vi.fn().mockResolvedValue({ promoted: true }),
     // No bindings by default: a room whose agents have never answered is the
     // shape a test gets unless it is specifically about where the work runs.
