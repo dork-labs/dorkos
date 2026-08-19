@@ -32,6 +32,15 @@ export interface LivePeekRow {
   /** ISO 8601 — when its oldest live claim started. */
   since: string;
   /**
+   * What this agent is doing, already in words — "Reading standup.md" — or
+   * `null` when the conversation has not heard a tool call for it.
+   *
+   * Its own line rather than a fourth segment on the name row: that row is
+   * already name · state · elapsed, and a fourth part truncates on a phone. The
+   * peek is opened on purpose to ask this, so it can afford the line.
+   */
+  doing: string | null;
+  /**
    * What it is answering — the words already on screen, and the DOM id of the
    * row they are on — or `null` when the host cannot honestly offer either.
    *
@@ -122,6 +131,16 @@ export function LivePeek({
                 </span>
                 <PeekElapsed since={row.since} />
               </p>
+
+              {/* Shown for `working_late` as well as `working` — unlike the
+                  lane, and for the reason the lane declines it: there is room
+                  here, and a person who opened the peek on a twelve-minute turn
+                  is asking exactly this. Not a button: there is nowhere to go. */}
+              {row.doing !== null && (
+                <p data-testid="live-peek-doing" className="text-muted-foreground truncate text-xs">
+                  {row.doing}
+                </p>
+              )}
 
               {row.replyingTo !== null && onScrollToRow !== undefined && (
                 <button

@@ -18,9 +18,10 @@
  * @module features/conversation/model/lane-state
  */
 import type { SessionActivity } from '@dorkos/shared/session-stream';
-import { activityVerb } from '@/layers/shared/lib';
+import { activityClause, activityVerb } from '@/layers/shared/lib';
 import {
   PRESENCE_NAME_LIMIT,
+  presenceActivitySentence,
   presenceCountSentence,
   presenceElapsed,
   presenceSentence,
@@ -68,6 +69,12 @@ export interface LanePresenceAuthor {
   state: PresenceCopyState;
   /** ISO 8601 — when its oldest live claim started. */
   since: string;
+  /**
+   * What its oldest live claim is doing, or `null` when the conversation has
+   * not heard a tool call for it. `null` is not a gap to fill: the lane says its
+   * own less specific truth instead.
+   */
+  activity: SessionActivity | null;
 }
 
 /** A long-running operation the runtime is reporting on, such as compaction. */
@@ -160,12 +167,22 @@ export type LaneState =
   | {
       kind: 'presence';
       /**
-       * The one sentence, said the same way on screen and out loud. It carries
-       * NO elapsed time: a live region that reworded itself every second would
-       * make the room unusable, so the number lives beside the sentence and
-       * outside the announcer.
+       * The verb-free sentence. What the live region says and what the crossfade
+       * is keyed on — deliberately NOT what is drawn when a glimpse is known. A
+       * sentence that changed every two seconds would re-read itself at a screen
+       * reader and re-play a fade at everybody else, for a fact nobody asked to
+       * be interrupted about.
+       *
+       * It carries NO elapsed time either: the number lives beside the sentence
+       * and outside the announcer.
        */
       sentence: string;
+      /**
+       * What is DRAWN. Equal to {@link sentence} unless exactly one agent is
+       * working, the conversation is still waiting for it, and it has heard what
+       * that agent is doing — in which case it is "Kai is reading standup.md".
+       */
+      line: string;
       /** The agents it speaks for, oldest claim first — the peek's rows and the faces. */
       authorIds: readonly string[];
       /** ISO 8601 — the OLDEST claim's start, which is what the elapsed time measures. */
@@ -359,9 +376,17 @@ function presenceRung(presence: readonly LanePresenceAuthor[]): LaneState {
         presence.map((agent) => agent.name),
         oldest.state
       );
+  // ONE agent only, because the lane is one line that never wraps: "Kai and Ana
+  // are working on it" cannot carry two verbs, and picking one to speak for both
+  // is a lie about the other. `working` only, because `working_late`'s sentence
+  // already truncates on a 375 px screen and its long-wait clause is the one
+  // actionable thing in it. The peek answers both cases, where there is room.
+  const glimpse =
+    presence.length === 1 && oldest.state === 'working' ? activityClause(oldest.activity) : null;
   return {
     kind: 'presence',
     sentence,
+    line: glimpse === null ? sentence : presenceActivitySentence(oldest.name, glimpse),
     authorIds: presence.map((agent) => agent.authorId),
     since: oldest.since,
     late: oldest.state === 'working_late',

@@ -105,6 +105,7 @@ export { replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';
 export type { ThreadReplySummary } from './lib/thread';
 export {
   PRESENCE_NAME_LIMIT,
+  presenceActivitySentence,
   presenceCountSentence,
   presenceDetail,
   presenceElapsed,

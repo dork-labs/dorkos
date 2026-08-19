@@ -32,6 +32,7 @@ import {
   type LanePresenceAuthor,
   type LivePeekRow,
 } from '@/layers/features/conversation';
+import { activitySentence } from '@/layers/shared/lib';
 import { usePendingInteractions } from '@/layers/entities/attention';
 import { InteractionAsk } from '@/layers/features/ask';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
@@ -154,6 +155,7 @@ export function RoomLiveLane({
         name: nameOf(claim.authorId),
         state: claim.state,
         since: claim.since,
+        activity: claim.activity ?? null,
       })),
     [claims, nameOf]
   );
@@ -237,6 +239,9 @@ export function RoomLiveLane({
           author: toMessageAuthor(claim.authorId, authors, agents.faces),
           state: claim.state,
           since: claim.since,
+          // Phrased by the one table the whole cockpit shares, so this row and
+          // the session pane cannot describe one tool call two ways (BC-37).
+          doing: activitySentence(claim.activity),
           // Both halves or neither: a link with nothing to say and a link with
           // nowhere to go are the same broken promise.
           replyingTo:

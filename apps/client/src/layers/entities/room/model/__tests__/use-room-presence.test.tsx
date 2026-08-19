@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomEvent, RoomSignalEvent } from '@dorkos/shared/room-schemas';
+import type { SessionActivity } from '@dorkos/shared/session-stream';
 import { SSE_RESILIENCE } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { useRoomStream } from '../use-room-stream';
@@ -23,9 +24,19 @@ function signal(
   authorId: string,
   state: 'working' | 'working_late' | 'done',
   entryId: string,
-  since = '2026-07-30T10:00:00.000Z'
+  since = '2026-07-30T10:00:00.000Z',
+  activity?: SessionActivity
 ): RoomSignalEvent {
-  return { type: 'signal', signal: 'progress', authorId, at: since, state, entryId, since };
+  return {
+    type: 'signal',
+    signal: 'progress',
+    authorId,
+    at: since,
+    state,
+    entryId,
+    since,
+    ...(activity ? { activity } : {}),
+  };
 }
 
 /** A committed entry, as the room's stream delivers it. */
@@ -179,6 +190,52 @@ describe('useRoomPresence', () => {
       ['kai', 'working_late', '2026-07-30T10:00:00.000Z'],
       ['ana', 'working', '2026-07-30T10:00:10.000Z'],
     ]);
+  });
+
+  it('carries the OLDEST claim’s reading onto the row that speaks for the agent', () => {
+    // The collapse to one row has already chosen which claim speaks for Kai, so
+    // reading the newer claim's tool onto that row would describe one turn with
+    // another turn's work — exactly the inconsistency `entryId` is carried for.
+    const store = useRoomPresenceStore.getState();
+    store.observe(
+      ROOM,
+      signal('kai', 'working', 'entry-2', '2026-07-30T10:00:30.000Z', {
+        toolName: 'Bash',
+        target: 'pnpm test',
+      })
+    );
+    store.observe(
+      ROOM,
+      signal('kai', 'working', 'entry-1', '2026-07-30T10:00:00.000Z', {
+        toolName: 'Read',
+        target: 'standup.md',
+      })
+    );
+
+    const { result } = renderHook(() => useRoomPresence(ROOM));
+
+    expect(result.current).toHaveLength(1);
+    expect(result.current[0]!.entryId).toBe('entry-1');
+    expect(result.current[0]!.activity).toEqual({ toolName: 'Read', target: 'standup.md' });
+  });
+
+  it('lets a frame with no reading clear one that had it', () => {
+    // Every publish is self-contained, so the last frame is the whole truth
+    // about a claim. Merging instead would leave a verb standing after the turn
+    // that was doing it stopped — the stale-verb bug in its client half.
+    const store = useRoomPresenceStore.getState();
+    store.observe(
+      ROOM,
+      signal('kai', 'working', 'entry-1', '2026-07-30T10:00:00.000Z', {
+        toolName: 'Read',
+        target: 'standup.md',
+      })
+    );
+    store.observe(ROOM, signal('kai', 'working', 'entry-1', '2026-07-30T10:00:00.000Z'));
+
+    const { result } = renderHook(() => useRoomPresence(ROOM));
+
+    expect(result.current[0]!.activity).toBeUndefined();
   });
 
   it('counts up on its own clock, with nothing arriving', async () => {

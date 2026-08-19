@@ -79,6 +79,11 @@ export function laneAnnouncement(state: LaneState, unavailable: boolean): string
     case 'stalled':
       return stalledSentence(unavailable);
     case 'presence':
+      // The verb-free sentence, never `line`. A room lane that has heard a tool
+      // call draws "Kai is reading standup.md" and announces "Kai is working on
+      // it", and that asymmetry is the decision: a turn that starts four tools
+      // in eight seconds would otherwise re-read this region four times, for a
+      // fact nobody asked to be interrupted about (ADR 260819-022127).
       return state.sentence;
     case 'turn-waiting':
       return state.waitingType === 'approval'
@@ -112,6 +117,9 @@ export function laneMotionKey(state: LaneState): string {
     case 'ask':
       return `ask:${state.ask.interaction.id}`;
     case 'presence':
+      // The sentence again, for the same reason the announcer reads it: the
+      // crossfade plays when WHO is working changes or the wait goes long, and
+      // stays still while the drawn verb moves underneath it.
       return `presence:${state.sentence}`;
     case 'turn-waiting':
       return `turn-waiting:${state.waitingType}`;
@@ -283,11 +291,14 @@ function StalledLine({ onRetry, unavailable }: { onRetry?: () => void; unavailab
 }
 
 /**
- * Who is working here, and for how long.
+ * Who is working here, what it is doing, and for how long.
  *
- * The sentence is `presence-copy.ts`'s, word for word. The elapsed reading is
- * beside it rather than in it, because the sentence is what the live region
- * carries and the number is what ticks.
+ * The words are `presence-copy.ts`'s, word for word. It draws `line`, which is
+ * the sentence UNLESS one agent is working and the room has heard what it is
+ * doing — see {@link laneAnnouncement} for why the ear and the eye are given
+ * different strings. The elapsed reading is beside the words rather than in
+ * them, because they are what the live region carries and the number is what
+ * ticks.
  *
  * @internal
  */
@@ -317,7 +328,7 @@ function PresenceLine({
         data-late={state.late ? 'true' : undefined}
         className="text-muted-foreground flex min-w-0 items-center"
       >
-        <span className="truncate">{state.sentence}</span>
+        <span className="truncate">{state.line}</span>
         <LaneElapsed since={state.since} />
       </span>
     </span>

@@ -23,12 +23,20 @@
  *   honest signal either way. A second claim that is genuinely still live is
  *   restored by the next republish, within 10s.
  *
+ * **What a frame carries beyond the lifecycle is bounded on the server side.**
+ * A publish also says what the turn is doing, and the dispatcher throttles a new
+ * reading to one every two seconds per claim — so the three hooks below that do
+ * NOT draw a verb (`useRoomPresenceAuthorIds`, `useRoomPresenceEverywhere`,
+ * `useRoomWorking`) re-run their memos at most that often while an agent works,
+ * and none of them re-renders on a clock.
+ *
  * @module entities/room/model/use-room-presence
  */
 import { useEffect, useMemo, useReducer } from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { RoomPresenceState, RoomSignalEvent } from '@dorkos/shared/room-schemas';
+import type { SessionActivity } from '@dorkos/shared/session-stream';
 
 /**
  * How long an indicator survives without being restated.
@@ -62,6 +70,15 @@ interface PresenceRecord {
   state: Exclude<RoomPresenceState, 'done'>;
   /** ISO 8601 — when the work started. Never when the event was sent. */
   since: string;
+  /**
+   * What the turn is doing right now, when the room has heard a tool call for
+   * it — structure, never words (the client phrases it).
+   *
+   * Absent far more often than the other fields: a turn before its first tool
+   * has none, and a turn that has ended has had it cleared. Absent is not a gap
+   * to fill — the room's own sentence is the honest thing to say instead.
+   */
+  activity?: SessionActivity;
   /** This client's clock at the publish that last restated it. */
   lastSeenAt: number;
 }
@@ -83,6 +100,16 @@ export interface RoomPresenceAuthor {
   state: Exclude<RoomPresenceState, 'done'>;
   /** ISO 8601 — when its oldest live claim started. */
   since: string;
+  /**
+   * What its OLDEST live claim is doing, when the room has heard a tool call
+   * for it.
+   *
+   * From the same claim `entryId` comes from, for the same reason: the collapse
+   * to one row per agent has already chosen which claim speaks for it, and
+   * reading a second claim's reading onto this row would describe one turn with
+   * another's work.
+   */
+  activity?: SessionActivity;
   /** How long that claim has been running, by this client's clock. */
   elapsedMs: number;
 }
@@ -174,7 +201,7 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
       rooms: {},
 
       observe: (roomId, event, now = Date.now()) => {
-        const { state, entryId, since } = event;
+        const { state, entryId, since, activity } = event;
         if (state === undefined || entryId === undefined || since === undefined) return;
         const key = indicatorKey(event.authorId, entryId);
         set(
@@ -191,6 +218,11 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
               entryId,
               state,
               since,
+              // Spread rather than assigned, so a frame that carries no reading
+              // REPLACES one that did instead of leaving it standing. Every
+              // publish is self-contained (signals never replay), so the last
+              // frame is the whole truth about this claim.
+              ...(activity ? { activity } : {}),
               lastSeenAt: now,
             };
             return { rooms: { ...held.rooms, [roomId]: { ...indicators, [key]: record } } };
@@ -332,6 +364,7 @@ function summarize(
       entryId: record.entryId,
       state: record.state,
       since: record.since,
+      ...(record.activity ? { activity: record.activity } : {}),
       elapsedMs: Math.max(0, now - Date.parse(record.since)),
     }));
 }
@@ -430,11 +463,12 @@ export function useRoomPresenceClaims(
     // `summarize` reads the clock to age records out, which is a filter here
     // rather than a value: the elapsed time it computed is dropped on this line,
     // so nothing this hook returns is a function of when it was called.
-    return working.map(({ authorId, entryId, state, since }) => ({
+    return working.map(({ authorId, entryId, state, since, activity }) => ({
       authorId,
       entryId,
       state,
       since,
+      ...(activity ? { activity } : {}),
     }));
   }, [indicators, scope]);
 }
@@ -554,6 +588,7 @@ export function useRoomPresenceEverywhere(): readonly RoomPresenceClaim[] {
           entryId: agent.entryId,
           state: agent.state,
           since: agent.since,
+          ...(agent.activity ? { activity: agent.activity } : {}),
         });
       }
     }
