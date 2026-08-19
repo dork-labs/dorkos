@@ -11,6 +11,11 @@ name: browser-test
 # to green in #605 (89 passed, 0 failed, 3 skipped); this workflow is the gate
 # that keeps it that way.
 #
+# TWO JOBS, AND THE SECOND ONE IS THE CHECK (DOR-1363). `browser-shard` is a
+# three-way matrix that runs a third of the suite each; `browser-test` is a
+# fan-in gate that needs all three and fails if any of them did not pass. The
+# reasoning for both the split and the shape is on those jobs.
+#
 # FULL MONOREPO TRIGGER, NO `paths:` FILTER. Two independent reasons, and either
 # alone would be enough.
 #
@@ -53,9 +58,15 @@ name: browser-test
 # `check_response_timeout_minutes` (60) expires, on every merge, for everybody.
 # So the trigger lands first, it runs green on a few real PRs and a real merge
 # group, and the branch-protection change is a separate deliberate act after
-# that. It is enforced-in-practice sooner: merge-tail.yml's arming gate
-# (scripts/should-arm-automerge.sh) refuses to arm auto-merge while ANY check on
-# the PR is failing, required or not — the same path scripts-test took.
+# that. (Confirmed still true on 2026-08-19: ruleset "main: merge queue" requires
+# typecheck, fragment-present, no-fragment-under-skip-label and
+# version-outranks-base, and nothing else.) It is enforced-in-practice sooner:
+# merge-tail.yml's arming gate (scripts/should-arm-automerge.sh) refuses to arm
+# auto-merge while ANY check on the PR is failing, required or not — the same
+# path scripts-test took. The `browser-test` NAME is load-bearing for that future
+# toggle, which is why sharding put the matrix under a different job id and kept
+# a fan-in job called `browser-test`: the context that would be required is the
+# same string it has always been, on the same three triggers.
 #
 # ONE LIVE EXTERNAL DEPENDENCY, STATED SO NOBODY DISCOVERS IT MID-INCIDENT. The
 # site leg's /marketplace pages fetch the dork-labs/marketplace registry from
@@ -89,6 +100,9 @@ env:
 # this after #543 (DOR-517) found real merges whose runs were cancelled before
 # they started. CI workflows with different concurrency semantics is the kind of
 # divergence nobody notices until a run goes missing — keep them in step.
+#
+# Workflow-level, so a superseded PR run takes all three shards AND the gate with
+# it rather than leaving orphans behind.
 concurrency:
   group: browser-test-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -97,38 +111,90 @@ permissions:
   contents: read
 
 jobs:
-  browser-test:
+  browser-shard:
+    name: browser-shard (${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
-    # The suite boots five webServer legs (Express API, Vite client, a second
-    # Express+Vite pair for the TestModeRuntime project, and the Next.js
-    # marketing site) and then runs ~90 tests serially (`workers: 1` under CI).
+    # THREE SHARDS, AND HERE IS THE ARITHMETIC THAT PICKED THREE (DOR-1363).
     #
-    # THIS IS THE OUTERMOST RUNG OF A LADDER, AND IT MUST NEVER BE THE ONE THAT
-    # FIRES (DOR-1110). A job that hits `timeout-minutes` is CANCELLED, not
-    # failed: the suite step is killed mid-write and every later step is
-    # skipped, so no report, trace, screenshot or video survives. A run that
-    # ends that way proves nothing and reads as an infra hang — which is exactly
-    # what happened when one product change broke 21 specs at once and the
-    # attempt was cancelled with ZERO Playwright output, costing a whole extra
-    # debug cycle.
+    # Measured on four consecutive main runs on 2026-08-19 (32251346554,
+    # 32259784745, 32272418644, 32281755292):
+    #
+    #   * the `playwright test` step took 40m33s / 41m45s / 42m43s / 43m11s
+    #   * the steps before it — checkout, pnpm, the browser cache, the turbo
+    #     build — cost 1m35s to 1m46s
+    #   * the whole job took 41 to 45 minutes
+    #
+    # Of that ~41-minute suite step, about 2m24s is fixed cost that every shard
+    # re-pays: the five webServer legs boot SEQUENTIALLY (Playwright runs one
+    # plugin-setup task per leg, in order), then `global-setup.ts` runs. Measured
+    # on run 32239903731, whose suite step started at 10:39:15 and whose
+    # globalSetup blew a 180s `waitForSelector` at 10:44:39 — so the legs were up
+    # by 10:41:39. That leaves ~38m of actual test execution, and only that part
+    # divides.
+    #
+    #   shards   wall per shard (≈ 1m45s setup + 2m30s boot + 38m/N)
+    #     1      42m   ← today
+    #     2      23m   (-45%)
+    #     3      17m   (-60%)
+    #     4      14m   (-67%)
+    #     6      11m   (-75%)
+    #
+    # Three is where the curve knees. Going 2→3 buys another six minutes; 3→4
+    # buys three, 4→5 buys two, and every added runner re-pays the whole 4m15s of
+    # fixed cost, boots five more webServer legs, and takes one more turn at the
+    # two external dependencies that have actually broken this job — the apt
+    # mirror that hung for an hour on 2026-08-19 (see the install step) and the
+    # live marketplace registry the site leg fetches. At three, overhead is ~25%
+    # of a shard's wall time; at six it is ~40% and the runner bill has doubled
+    # for a six-minute gain.
+    #
+    # `--shard` divides by TEST COUNT, not by duration, and the split is even:
+    # `playwright test --list --shard=i/3` reports 110 / 109 / 109 of 328
+    # collected. What that does not prove is that the three take equally LONG —
+    # shards 1 and 2 are pure `chromium` (the cockpit leg) while shard 3 carries
+    # all six test-mode projects, and only a real CI run can weigh them. The
+    # timeouts below are sized with that unknown in mind.
+    strategy:
+      # NEVER cancel the siblings. `fail-fast: true` (the default) cancels every
+      # other shard the moment one fails, and a cancelled job uploads nothing —
+      # which is precisely the output-less failure DOR-1110 exists to prevent,
+      # just moved from the timeout to the matrix. One shard going red must still
+      # leave the other two free to report their own results.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    # THE OUTERMOST RUNG OF A LADDER, AND IT MUST NEVER BE THE ONE THAT FIRES
+    # (DOR-1110). A job that hits `timeout-minutes` is CANCELLED, not failed: the
+    # suite step is killed mid-write and every later step is skipped, so no
+    # report, trace, screenshot or video survives. A run that ends that way
+    # proves nothing and reads as an infra hang — which is exactly what happened
+    # when one product change broke 21 specs at once and the attempt was
+    # cancelled with ZERO Playwright output, costing a whole extra debug cycle.
     #
     # So the deadlines are staggered, innermost first, and each rung below this
-    # one leaves output behind when it fires:
+    # one leaves output behind when it fires. The numbers are per SHARD, derived
+    # from the measurements above:
     #
-    #   ~30m  a healthy suite (MEASURED: run 31577200766 took 30m24s in the
-    #         `playwright test` step; setup steps cost ~1m40s on top)
-    #    45m  playwright.config.ts `globalTimeout` — Playwright stops itself and
-    #         flushes every reporter, so the job fails WITH a named report
-    #    50m  the suite step's own `timeout-minutes` — a hung Playwright that
+    #   ~16m  a healthy shard (DERIVED: ~2m30s of webServer boot + a third of the
+    #         ~38m of test execution). Not yet measured on CI at three shards —
+    #         the first green run on main is what turns this into a measurement,
+    #         and if it lands far off, this comment is what gets corrected.
+    #    30m  playwright.config.ts `globalTimeout` — Playwright stops itself and
+    #         flushes every reporter, so the job fails WITH a named report. It is
+    #         derived from the shard count rather than typed in; see that file.
+    #    35m  the suite step's own `timeout-minutes` — a hung Playwright that
     #         never reached its own deadline still fails the STEP, which leaves
-    #         the upload step below free to run
-    #    60m  this — the backstop, reachable only if both rungs above failed
+    #         the upload steps below free to run
+    #    45m  this — the backstop, reachable only if both rungs above failed
     #
-    # It used to be 45, which put the ceiling ~13 minutes above a healthy run:
-    # close enough that any broad failure spent the difference on retries and
-    # tripped it. `maxFailures` now caps that spend, but the ordering above is
-    # what guarantees output either way.
-    timeout-minutes: 60
+    # The old unsharded ladder had drifted dangerously: it claimed "~30m healthy"
+    # from a measurement taken on 2026-08-12 and set `globalTimeout` to 45m, but
+    # by 2026-08-19 a healthy suite took 40m33s to 43m11s. That is under two
+    # minutes of headroom on a bad day — the innermost rung was one slow runner
+    # away from firing on a perfectly healthy suite. Sharding restores the
+    # margin, and deriving `globalTimeout` from the shard count is what stops it
+    # silently going stale again the next time this matrix changes size.
+    timeout-minutes: 45
     env:
       # Belt and braces on where the server keeps data. Both Express legs now
       # name their OWN throwaway DORK_HOME in playwright.config.ts — port-keyed,
@@ -151,6 +217,12 @@ jobs:
       # model credentials this runner does not have and spends real money, so
       # it stays out of CI; E2E_INTEGRATION is never set here).
       E2E_SITE: '1'
+      # How many ways the suite is being cut, so playwright.config.ts can size
+      # its own `globalTimeout` to one shard instead of to the whole suite.
+      # `strategy.job-total` is the matrix length, so the list above is the ONE
+      # place the shard count is written: change `shard:` and the `--shard=i/N`
+      # flag, this variable and the derived deadline all move with it.
+      E2E_SHARD_TOTAL: ${{ strategy.job-total }}
       # RETRIES: the suite runs with ONE retry in CI (playwright.config.ts,
       # `retries: CI ? 1 : 0`) — a decision, not a default, so here is the
       # reasoning. Zero would be the principled choice (test.yml deliberately
@@ -164,7 +236,7 @@ jobs:
       # review that cleared this suite for CI named as the dangerous one (that
       # race, DOR-697, is since fixed). The budget is visible, not silent:
       # every test that passes only on a retry is NAMED in the job log by the
-      # assert step's flaky warning. A test that keeps appearing there gets
+      # gate job's flaky warning. A test that keeps appearing there gets
       # fixed, or the budget goes to zero.
     steps:
       - uses: actions/checkout@v4
@@ -193,6 +265,11 @@ jobs:
       # slow CDN fails THIS step, visibly, in minutes rather than an hour.
       # `--with-deps` still runs on a cache hit because the OS packages are
       # not part of the cache; it is apt, and fast when the mirrors are up.
+      # VERIFIED WARM on 2026-08-19 (run 32281755292): the restore step logged
+      # `Cache hit for: playwright-chromium-Linux-1.59.1`, restored ~253 MB, and
+      # the post step logged `Cache hit occurred on the primary key ... not
+      # saving cache.` The install step below took 12-14s on all four main runs
+      # that day, which is `install-deps` alone — nothing was downloaded.
       - name: Resolve the Playwright version the cache is keyed on
         id: pw
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
@@ -248,61 +325,63 @@ jobs:
 
       # No `--reporter` flag, deliberately: passing one REPLACES the config's
       # reporter list rather than adding to it, and the json reporter is what the
-      # next step reads. A run invoked with `--reporter=list` writes no
+      # gate job reads. A run invoked with `--reporter=list` writes no
       # results.json and the proof step has nothing to check.
+      #
+      # `--shard` IS passed, and `pnpm run` forwards it without a `--` separator
+      # — with one, pnpm 10.28.2 refuses the command outright ("You may need to
+      # escape symbols like ...", exit 1). Verified locally on the pinned pnpm.
       #
       # KNOWN, HARMLESS HERE: apps/e2e/reporters/manifest-reporter.ts rewrites
       # the TRACKED file apps/e2e/manifest.json after every run that executes at
       # least one test (`--list` and empty runs no longer touch it). So this
-      # step leaves the checkout dirty. On an ephemeral runner that costs
-      # nothing and no later step reads it, but do not add a "the tree is clean"
-      # assertion to this job without dealing with that first: it would fail
-      # every time, for a reason unrelated to the code under test.
+      # step leaves the checkout dirty, and under sharding it leaves it dirty
+      # with a THIRD of the suite — the reporter merges per file it saw, so each
+      # shard writes a different partial update. On three ephemeral runners that
+      # costs nothing, nothing later in this workflow reads the file, and it is
+      # never uploaded. But do not add a "the tree is clean" assertion to this
+      # job without dealing with that first: it would fail every time, for a
+      # reason unrelated to the code under test.
       #
       # `timeout-minutes` here is the middle rung of the ladder described on the
       # job's own timeout (DOR-1110). It sits ABOVE playwright.config.ts's
-      # `globalTimeout` (45m) so Playwright normally stops itself first and
-      # flushes its reporters, and BELOW the job's ceiling (60m) so that a
+      # `globalTimeout` (30m per shard) so Playwright normally stops itself first
+      # and flushes its reporters, and BELOW the job's ceiling (45m) so that a
       # Playwright which somehow hangs without honouring its own deadline fails
       # this STEP rather than cancelling the JOB — the difference being that a
-      # failed step still lets the report upload below run, and a cancelled job
-      # does not.
+      # failed step still lets the uploads below run, and a cancelled job does
+      # not.
       - name: Run the browser suite
-        timeout-minutes: 50
-        run: pnpm --filter @dorkos/e2e run e2e
+        timeout-minutes: 35
+        run: pnpm --filter @dorkos/e2e run e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
-      # THE POINT OF THIS STEP. Playwright exits 0 in more ways than it fails.
-      # A `testIgnore` glob widened by accident drops a whole spec file from the
-      # run while it still prints "N passed" and exits 0 (verified against
-      # 1.59.1 on a two-spec tree). A spec whose tests all skip is green. A spec
-      # moved out of testDir is simply never collected. None of that is visible
-      # in the exit code, so this reads the JSON report and asserts against the
-      # FILESYSTEM that every spec file in apps/e2e actually executed something.
-      # See scripts/assert-browser-tests-executed.sh for the full argument and
-      # scripts/test-assert-browser-tests-executed.sh for its fixtures.
+      # The machine-readable half of this shard's result, handed to the gate job
+      # below — which is the only place the "did the suite really run" assertion
+      # can be made, because no single shard sees the whole suite.
       #
-      # The `[ -f ]` guard is not decoration. A workflow definition is evaluated
-      # from a different ref than the tree it checks out, so on a branch that
-      # predates the script this step would otherwise die with a bare `exit 127`
-      # that names neither the file nor the fix — a required check has already
-      # failed exactly that way on an unrelated PR (2026-07-29). The guard turns
-      # that into a message naming the cause.
+      # Only on success, matching what the unsharded job did: the assert step ran
+      # with the default `if: success()`, because a red suite is already a red
+      # job and "did anything actually run" only matters when the answer looks
+      # like yes. A shard that failed therefore uploads no report, the gate
+      # refuses on the shard result before it ever looks for one, and the HTML
+      # report below is what carries the failure detail.
       #
-      # It runs only when the previous step succeeded (default `if: success()`),
-      # which is right — a red suite is already a red job, and "did anything
-      # actually run" only matters when the answer looks like yes.
-      - name: Prove the browser suite actually executed
-        run: |
-          if [ ! -f scripts/assert-browser-tests-executed.sh ]; then
-            echo "::error::scripts/assert-browser-tests-executed.sh is not in this checkout — this tree predates the script the workflow calls. Update the branch from main (or merge main in) to pick it up."
-            exit 1
-          fi
-          bash scripts/assert-browser-tests-executed.sh
+      # `if-no-files-found: error` because a silent absence here would reach the
+      # gate as a smaller union of specs — i.e. as a mysterious "these files
+      # exist on disk but no test from them appears in the run".
+      - name: Upload this shard's JSON report
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-results-shard-${{ matrix.shard }}
+          path: apps/e2e/test-results/results.json
+          if-no-files-found: error
+          retention-days: 7
 
       # The report is the only way to read a browser failure after the fact: it
       # carries the trace, the screenshot and the video the config captures on
       # failure. Uploaded on anything-but-green, because a green run's report is
-      # 100MB of things nobody opens.
+      # 100MB of things nobody opens. Named per shard because artifact names must
+      # be unique within a run.
       #
       # `cancelled()` is in the condition on purpose (DOR-1110). A step whose
       # `if:` names no status function is implicitly `success() && ...`, and
@@ -316,6 +395,86 @@ jobs:
         if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: apps/e2e/playwright-report/
           retention-days: 7
+
+  # THE CHECK. Everything above is an implementation detail of this job's answer.
+  #
+  # Two things it does, and it must do both:
+  #
+  #   1. Fail unless every shard passed. `if: always()` is not optional here. A
+  #      job with `needs:` and no condition is SKIPPED when a dependency fails,
+  #      and a skipped job reports a `skipped` conclusion that branch protection
+  #      and the merge queue treat as satisfied — so the naive fan-in turns a red
+  #      suite into a green required check. Running always, and refusing on
+  #      `needs.browser-shard.result`, is what makes the name mean what it says.
+  #      (`result` on a matrix dependency is the aggregate: `success` only when
+  #      every leg succeeded.)
+  #   2. Prove the suite actually executed — see the step's own comment. That
+  #      question can only be answered here, because assertion 2 of the script is
+  #      "every spec file on disk appears in the report" and no single shard
+  #      contains them all. The script takes the three shard reports and asserts
+  #      against their union.
+  #
+  # It needs neither Node nor the browser: a checkout for the script, `jq` (on
+  # every ubuntu-latest image) and the three uploaded reports. That is why it
+  # costs seconds rather than re-paying the setup a fourth time.
+  browser-test:
+    needs: browser-shard
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    # Nothing here waits on anything slow. Ten minutes is a backstop against a
+    # hung artifact download, not a budget anything is expected to approach.
+    timeout-minutes: 10
+    steps:
+      - name: Refuse a run whose shards did not all pass
+        if: ${{ needs.browser-shard.result != 'success' }}
+        run: |
+          echo "::error::the browser suite did not pass — the browser-shard matrix reported '${{ needs.browser-shard.result }}'. Open the shard jobs above for the failing specs, and the playwright-report-shard-* artifacts for their traces, screenshots and videos."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: Collect every shard's JSON report
+        uses: actions/download-artifact@v4
+        with:
+          pattern: browser-results-shard-*
+          path: shard-reports
+
+      # THE POINT OF THIS STEP. Playwright exits 0 in more ways than it fails.
+      # A `testIgnore` glob widened by accident drops a whole spec file from the
+      # run while it still prints "N passed" and exits 0 (verified against
+      # 1.59.1 on a two-spec tree). A spec whose tests all skip is green. A spec
+      # moved out of testDir is simply never collected. None of that is visible
+      # in the exit code, so this reads the JSON reports and asserts against the
+      # FILESYSTEM that every spec file in apps/e2e actually executed something.
+      # See scripts/assert-browser-tests-executed.sh for the full argument and
+      # scripts/test-assert-browser-tests-executed.sh for its fixtures.
+      #
+      # Handing it every shard's report rather than one is what keeps the
+      # assertion at full strength under sharding: the script unions them, and
+      # its first check is that the reports it was given are a COMPLETE set of
+      # shards (each report carries its own `--shard=i/N` in `.config.shard`, so
+      # a missing, duplicated or stale artifact is refused by name rather than
+      # surfacing as a spec that mysteriously did not run).
+      #
+      # The `[ -f ]` guard is not decoration. A workflow definition is evaluated
+      # from a different ref than the tree it checks out, so on a branch that
+      # predates the script this step would otherwise die with a bare `exit 127`
+      # that names neither the file nor the fix — a required check has already
+      # failed exactly that way on an unrelated PR (2026-07-29). The guard turns
+      # that into a message naming the cause.
+      - name: Prove the browser suite actually executed
+        run: |
+          if [ ! -f scripts/assert-browser-tests-executed.sh ]; then
+            echo "::error::scripts/assert-browser-tests-executed.sh is not in this checkout — this tree predates the script the workflow calls. Update the branch from main (or merge main in) to pick it up."
+            exit 1
+          fi
+          shopt -s nullglob
+          reports=(shard-reports/*/results.json)
+          if [ ${#reports[@]} -eq 0 ]; then
+            echo "::error::every shard reported success but not one of them uploaded a results.json. Nothing proves the suite ran, so this fails rather than certifying it."
+            exit 1
+          fi
+          bash scripts/assert-browser-tests-executed.sh "${reports[@]}"
