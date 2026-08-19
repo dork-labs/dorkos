@@ -57,18 +57,9 @@ export {
   type DeliverAuthorReader,
   type DeliverPublisher,
   type DeliverLifecycle,
-  type StandingAskCards,
 } from './deliver.js';
 export { BridgeCatchUp, type BridgeCatchUpDeps, type CatchUpDelivery } from './catch-up.js';
-export { bridgedAskIsActionable, type ExternalChatAuthor } from './ask-audience.js';
-export {
-  BridgedAskDelivery,
-  type BridgedAskDeliveryDeps,
-  type AskRoomBindings,
-  type AskRosterReader,
-  type AskAuthorReader,
-  type AskCardPublisher,
-} from './ask-card.js';
+export { BridgedAskDelivery, type AskRoomBindings, type AskRosterReader } from './ask-card.js';
 export {
   bridgedRoomFraming,
   topicNamesForEntries,
