@@ -432,11 +432,18 @@ test.describe('A room gathers what is said at once @smoke', () => {
       await openRoom(page, basePage, roomsPage, asking.id);
       await roomsApi.postEntries(asking.id, [`and over here ${tag}`]);
 
-      // **The line, in this room's own voice**, naming the conversation in the
-      // way because this reader can see it.
+      // **The line, in this room's own voice, naming the conversation in the way
+      // — and the NAME is the assertion.** The wire carries a room id and
+      // nothing else; the client resolves it against the rooms this reader can
+      // already see, and falls back to "another conversation" when it cannot.
+      // Matching the shared prefix would pass on the fallback too, so the one
+      // thing only a browser can prove — that the per-reader resolution works —
+      // would go unchecked.
       const waitingLine = page.getByTestId('room-held');
       await expect(waitingLine).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-      await expect(waitingLine).toContainText('will pick this up when it finishes');
+      await expect(waitingLine).toHaveText(
+        `${name} will pick this up when it finishes in #busy-${tag}`
+      );
 
       // And nothing durable. This is the whole regression: the room used to put
       // a line here asking the person to send the message again.
@@ -446,6 +453,12 @@ test.describe('A room gathers what is said at once @smoke', () => {
           .map((entry) => entry.body.notice),
         'the room wrote a notice about a message it was going to answer'
       ).toHaveLength(0);
+
+      // The id of the message that waited, so the answer can be checked against
+      // THIS question rather than against "some reply".
+      const askedId = (await roomsApi.listEntries(asking.id)).find(
+        (entry) => entry.body.text === `and over here ${tag}`
+      )!.id;
 
       // The blocking turn ends, and the waiting message becomes a turn HERE.
       await request.post('/api/test/finish-turn');
@@ -459,7 +472,20 @@ test.describe('A room gathers what is said at once @smoke', () => {
             message: 'the message that waited on a busy agent never got an answer',
           }
         )
-        .toBeGreaterThanOrEqual(1);
+        .toBe(1);
+
+      // **One answer, and it says which message it answers.** A count alone is
+      // satisfied by any reply at all; the pointer is what says the room
+      // answered the question that waited rather than something else it happened
+      // to pick up.
+      const answers = (await roomsApi.listEntries(asking.id)).filter(
+        (entry) => entry.authorId === seat
+      );
+      expect(answers, 'one waiting message did not produce exactly one answer').toHaveLength(1);
+      expect(
+        answers[0].body.answersEntryId,
+        'the answer does not point at the message that waited'
+      ).toBe(askedId);
 
       // The line resolves rather than sitting beside the answer.
       await expect(waitingLine).toBeHidden({ timeout: SERVER_ROUND_TRIP_MS });

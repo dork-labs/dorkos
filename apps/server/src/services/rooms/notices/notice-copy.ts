@@ -95,6 +95,19 @@ export function buildBudgetNotice(scope: BudgetRefusalScope = 'room'): RoomEntry
 export type BusyContext = 'held-too-long' | 'unknown';
 
 /**
+ * Every busy context there is, so the damping key can enumerate them.
+ *
+ * A keyed object rather than an array literal, for the reason `SILENCE_REASONS`
+ * is one: `Record<BusyContext, true>` is the assertion that runs the completeness
+ * way round, so adding a context without listing it here is a type error at this
+ * line rather than a notice that survives its own recovery.
+ */
+export const BUSY_CONTEXTS = Object.keys({
+  'held-too-long': true,
+  unknown: true,
+} satisfies Record<BusyContext, true>) as BusyContext[];
+
+/**
  * The durable `notice` for a message that never became a turn because the agent
  * was working.
  *

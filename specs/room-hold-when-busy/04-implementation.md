@@ -83,12 +83,18 @@
 
 ## Seeded defects run
 
-| Defect                                       | What went red                                      |
-| -------------------------------------------- | -------------------------------------------------- |
-| Delete `resumeElsewhere` from `releaseClaim` | 11 of 13 hold cases                                |
-| Drop `promoted` from the sweep's sort        | "lets a person ask to be answered first"           |
-| Stop publishing `heldBehind`                 | both wire cases                                    |
-| Restore the `collectOne` refusal             | (documented in the rewritten presence-claims case) |
+| Defect                                                           | What went red                                      |
+| ---------------------------------------------------------------- | -------------------------------------------------- |
+| Delete `resumeElsewhere` from `releaseClaim`                     | 11 of 13 hold cases                                |
+| Drop `promoted` from the sweep's sort                            | "lets a person ask to be answered first"           |
+| Stop publishing `heldBehind`                                     | both wire cases                                    |
+| Restore the `collectOne` refusal                                 | (documented in the rewritten presence-claims case) |
+| Read the clock per iteration in `resumeAgent`                    | the clock-straddle case in `room-collect.test.ts`  |
+| Leave `popoverLabel` on `peekLabel` for every non-Ask rung       | the peek-trigger name case                         |
+| Key `promoted` on the author id alone                            | "lets the ask lapse with the wait it was about"    |
+| Key the busy damper on `reason` alone                            | the undirected-expiry case                         |
+| Drop `abandonHolds` from `removeMember` / the archive transition | both leaving-the-room cases                        |
+| Drop the sibling restate from `noteHold`                         | the `othersWaiting` case                           |
 
 ## Deviations from the spec
 
@@ -104,6 +110,38 @@
   `ActiveClaim` / `ActiveClaimView` uses.
 - **A held peek row draws no "replying to" quote.** Nothing is being replied to yet, and quoting
   the waiting message would read as an answer in progress.
+- **`Next up here` is set optimistically, where §5.3 said "on success".** The server's answer is a
+  boolean about a wait that may already have ended, and the row is about to be replaced by a working
+  one either way — so waiting for it would leave a person pressing a button that appears to do
+  nothing. A refusal still surfaces, through the mutation's own `errorLabel` toast. The mark is keyed
+  on `(authorId, hold entryId)` so it lapses with the wait it was about, exactly as the server's
+  `RoomCollection.promoted` dies with its collection.
+- **The busy notice's damping key gained its context** (`notice-log.ts`, `dampReason`). `busy` was
+  one key covering two unrelated states, so an un-recovered session-lock line could swallow the one
+  `held-too-long` line for an UNDIRECTED message — a promise made on the lane and then withdrawn in
+  silence, which room-conduct forbids. Splitting the key keeps the anti-spray property inside each
+  context and stops one state speaking for the other.
+- **A wait is dropped when the agent leaves the room, or the room is archived**
+  (`RoomTriggerDispatcher.abandonHolds`, plus a membership re-check in `claimCollected`). Not in the
+  spec, and the spec was written before the window mattered: a parked collection lasted half a
+  second, a cross-room hold lasts up to fifty minutes. **No notice is written** — the act is
+  operator-only, deliberate and already visible on the roster or in the archive, so this is not a
+  room going quiet for no reason, and a busy line would be false because the agent is not busy.
+
+## Known, and deliberately left
+
+- **A cold room list reads "another conversation" for a room the reader can see.** `RoomLiveLane`
+  resolves `heldBehind.roomId` against `useRooms()`, so a client that has not yet loaded the room
+  list shows the vague sentence until the query lands. Gating the sentence on the query would mean a
+  lane that says nothing at all while a message waits, which is strictly worse; in a real cockpit the
+  query is warm, because the sidebar mounts it. One round trip, and it corrects itself.
+
+## Follow-ups worth filing
+
+- **`packages/relay/src/chat-notice.ts:105-106` still says "Send it again in a moment."** A different
+  seam — the relay's own at-capacity refusal for a bridged Telegram/Slack message, not a room ceiling
+  — so it is genuinely outside this spec, and nothing here changed it. Recorded so that nobody greps
+  `Send it again`, finds this one, and concludes the retirement was left half-done.
 
 ## What is not done
 

@@ -1640,6 +1640,11 @@ export class RoomService {
     }
     const updated = this.store.updateRoom(roomId, { ...roomPatch, ...slugPatch });
     if (!updated) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    // Putting a room away ends what it was waiting for. An archived room takes
+    // no new posts, so an answer that arrived later could not be written into it
+    // anyway — and the lane must stop saying one is coming. Only on the
+    // TRANSITION: re-patching an already-archived room is not a second archiving.
+    if (updated.archived && !room.archived) this.triggers.abandonHolds(roomId);
     // Written AFTER the room-table update settles, so a slug conflict throws
     // before this bridge-row write ever runs — the two tables never disagree
     // about whether this call actually went through.
@@ -1788,6 +1793,13 @@ export class RoomService {
       );
     }
     this.roster.remove(roomId, authorId);
+    // Whatever this room was still waiting for from this agent is over: it is
+    // not here to answer it. Dropped rather than left to age out, because the
+    // wait can now last up to `rooms.lateReplyCeilingMinutes` and the live lane
+    // would go on promising an answer for all of it. No notice — see
+    // `RoomTriggerDispatcher.abandonHolds` for why the removal is its own
+    // durable, visible sibling.
+    this.triggers.abandonHolds(roomId, authorId);
     eventFanOut.broadcast('room_member_removed', { roomId, authorId });
   }
 

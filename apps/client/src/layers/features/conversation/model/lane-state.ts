@@ -360,12 +360,12 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
   if (capabilities.presence && held.length > 0) return heldRung(held);
 
   if (capabilities.turnStatus && turn !== null) {
-    // 4. Parked on the person.
+    // 5. Parked on the person.
     if (turn.status === 'streaming' && turn.isWaitingForUser) {
       return { kind: 'turn-waiting', waitingType: turn.waitingType, elapsed: turn.elapsed };
     }
 
-    // 5. A long operation — the structured, runtime-agnostic progress treatment
+    // 6. A long operation — the structured, runtime-agnostic progress treatment
     // (DOR-110), shown whatever the turn's status. The producer supplies the
     // label, so there is no status string to match.
     if (turn.operationProgress) {
@@ -378,15 +378,15 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
       };
     }
 
-    // 6. An informational runtime event, also whatever the turn's status.
+    // 7. An informational runtime event, also whatever the turn's status.
     if (turn.systemStatus) return { kind: 'turn-system', message: turn.systemStatus.message };
 
-    // 7. A turn in flight.
+    // 8. A turn in flight.
     if (turn.status === 'streaming') {
       // Through the honesty ladder, not around it (BC-37): one entry point, one
       // phrasing, everywhere. `'streaming'` is a fact this branch has already
       // established rather than a guess — the ladder's `blocked` rung belongs to
-      // rung 4 above — which also buys the non-null overload, so there is no
+      // rung 5 above — which also buys the non-null overload, so there is no
       // fallback here to drift into a second way of saying "Working…".
       const verb = activityVerb('streaming', turn.activity);
       return {
@@ -401,13 +401,13 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
       };
     }
 
-    // 8. The finished turn's summary, on its way out.
+    // 9. The finished turn's summary, on its way out.
     if (turn.showComplete) {
       return { kind: 'turn-complete', elapsed: turn.lastElapsed, tokens: turn.lastTokens };
     }
   }
 
-  // 9. Nothing to say.
+  // 10. Nothing to say.
   return EMPTY;
 }
 

@@ -148,10 +148,16 @@ export type ClaimOutcome = 'answered' | 'quiet' | 'halted' | RoomTurnUnanswered;
  * `started` is the good one and the common one: the turn this message was
  * waiting for began. `halted` is somebody stopping the room it was waiting in,
  * `refused` is the guard or the budget declining the batch when it finally ran,
- * and `expired` is the room giving up on the wait. Each has a durable sibling on
- * the log, written by the path that caused it.
+ * `expired` is the room giving up on the wait, and `left` is the agent no longer
+ * being in the room to answer — it was removed, or the room was archived.
+ *
+ * Each has a durable sibling. Four of them are room entries; `left`'s is the act
+ * itself, which is deliberate, operator-only and already visible — the agent is
+ * off the roster, or the room is put away. A busy line there would be the room
+ * explaining a decision back to the person who just made it, and it would be
+ * false anyway: the agent was not busy, it is gone.
  */
-export type HoldEnd = 'started' | 'halted' | 'expired' | 'refused';
+export type HoldEnd = 'started' | 'halted' | 'expired' | 'refused' | 'left';
 
 /**
  * Which of the two claim ceilings an agent is up against, and the claim that is

@@ -997,6 +997,22 @@ export class RoomTriggerDispatcher {
       return null;
     }
 
+    // **Asked again at the last moment, like the ceilings above it.** A batch can
+    // wait here for the best part of an hour, and a room's roster is not frozen
+    // while it does: an agent removed from the room, or a room archived, must not
+    // buy a turn that then POSTS into a room it is no longer in. `abandonHolds`
+    // drops the wait at the moment either happens; this is the second gate, for
+    // anything that changes the roster without going through the service.
+    if (room.archived || this.deps.store.getMember(room.id, authorId) === null) {
+      logger.info('[rooms] a waiting message never ran: the agent is no longer in the room', {
+        roomId: room.id,
+        authorId,
+        archived: room.archived,
+      });
+      this.settleCollection(collection, 'left');
+      return null;
+    }
+
     const chosen = this.chooseTrigger(collection);
     if (!chosen) {
       // EVERY message in the batch was refused, so the batch is refused — and
@@ -2308,6 +2324,31 @@ export class RoomTriggerDispatcher {
         : { ...open, behindRoomId: busy.blocking.roomId };
     this.held.set(key, record);
     this.publishHold(record, 'held');
+    // A NEW wait changes what every other waiting room can say: `othersWaiting`
+    // is the only thing that decides whether "Answer here first" is offered, and
+    // it has just become true for all of them. Restated now rather than left to
+    // the ten-second republish, because a control that appears seconds after the
+    // fact reads as the room having thought about it.
+    if (open === undefined) this.restateSiblingHolds(record);
+  }
+
+  /**
+   * Re-state every OTHER room waiting on the same agent.
+   *
+   * `heldBehind.othersWaiting` is a fact about the set of waits rather than about
+   * any one of them, so it goes stale in every other room the moment this one
+   * starts or stops waiting. The republish tick would fix it within ten seconds;
+   * a person watching would see "Answer here first" appear, or linger after it
+   * had stopped meaning anything, for that whole window.
+   *
+   * @param record - The hold that just opened or closed. Its own room is skipped
+   *   — it has either just been published or just been cleared.
+   */
+  private restateSiblingHolds(record: HeldRecord): void {
+    for (const other of this.held.values()) {
+      if (other.agentPath !== record.agentPath || other.roomId === record.roomId) continue;
+      this.publishHold(other, 'held');
+    }
   }
 
   /**
@@ -2341,6 +2382,10 @@ export class RoomTriggerDispatcher {
       reason,
     });
     this.publishHold(record, 'done');
+    // And the other side of it: one wait fewer can take "Answer here first" away
+    // from every room that is still waiting, which it should, because there may
+    // now be nothing to be answered ahead of.
+    this.restateSiblingHolds(record);
   }
 
   /**
@@ -2422,6 +2467,50 @@ export class RoomTriggerDispatcher {
   promoteHold(roomId: string, authorId: string): boolean {
     if (!this.held.has(agentKey(roomId, authorId))) return false;
     return this.collector.promote(roomId, authorId);
+  }
+
+  /**
+   * Give up on what a room owes an agent that is no longer there to answer it.
+   *
+   * **The wait used to outlive the roster, and this change is what made that
+   * matter.** A parked collection was bounded by one collect debounce — half a
+   * second — so an agent removed mid-park was a race nobody could lose. A
+   * cross-room hold lasts up to `rooms.lateReplyCeilingMinutes`, which is
+   * fifty minutes on the shipped defaults: plenty of time to take the agent out
+   * of the room, or to put the room away, while the lane goes on promising an
+   * answer that can no longer come.
+   *
+   * **No notice, and that is the deliberate half.** The act that reached here is
+   * operator-only and already visible — the agent is off the roster, or the room
+   * is archived — so this is not a room going quiet for no reason, which is the
+   * shape `.claude/rules/room-conduct.md` forbids. A busy line would also be
+   * false: the agent was not busy, it is gone. The held indicator's `done` is
+   * what withdraws the promise, published by `releaseHold` on the way through.
+   *
+   * @param roomId - The room whose waits are over.
+   * @param authorId - One agent, or omitted for every agent in the room —
+   *   which is what archiving means.
+   */
+  abandonHolds(roomId: string, authorId?: string): void {
+    const dropped =
+      authorId === undefined
+        ? this.collector.drop(roomId)
+        : [this.collector.dropOne(roomId, authorId)].filter((one) => one !== null);
+    for (const collection of dropped) {
+      logger.info('[rooms] a waiting message was given up on: the agent is no longer in the room', {
+        roomId,
+        authorId: collection.authorId,
+        waiting: collection.entries.length,
+      });
+      this.settleCollection(collection, 'left');
+    }
+    // A hold with no collection behind it should not exist — but if one ever
+    // did, the indicator is the promise, so it goes either way.
+    for (const [key, record] of [...this.held]) {
+      if (record.roomId !== roomId) continue;
+      if (authorId !== undefined && record.authorId !== authorId) continue;
+      this.releaseHold(key, 'left');
+    }
   }
 
   /**

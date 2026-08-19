@@ -124,7 +124,21 @@ export function RoomLiveLane({
   const sessions = useRoomSessions(room.id, { enabled: peekOpen });
   const halt = useHaltRoom();
   const promote = usePromoteHold();
-  const [promoted, setPromoted] = useState<ReadonlySet<string>>(() => new Set());
+  /**
+   * Which wait this reader has asked to be answered first — author id → the
+   * `entryId` of the hold they asked about.
+   *
+   * **Keyed on the hold as well as the agent, and that is what makes it
+   * expire.** Server-side the mark lives on the collection and dies with it
+   * (`RoomCollection.promoted`), so the NEXT time this agent holds a message
+   * here it is a fresh collection at `promoted: false`. A set of author ids
+   * alone would go on rendering the static "Next up here" over that new wait —
+   * telling the reader they are next when they are not, and taking away the
+   * control that would make it true. A hold's `entryId` is fixed for its life
+   * and changes with the next wait, so matching on it lets the mark lapse
+   * exactly when the thing it was about does.
+   */
+  const [promoted, setPromoted] = useState<ReadonlyMap<string, string>>(() => new Map());
   // **The reader's OWN room list, and that is the disclosure design.** The wire
   // carries an id and nothing else, so a room this reader cannot see resolves to
   // nothing and the copy says "another conversation" — the vagueness is enforced
@@ -188,6 +202,17 @@ export function RoomLiveLane({
       }),
     [holds, nameOf, rooms.data]
   );
+
+  // The asks that are still about a wait that still exists. Derived rather than
+  // pruned in an effect: it is a function of what is live right now, and a
+  // `setState` chasing the store would be a render behind it.
+  const promotedNow = useMemo(() => {
+    const asked = new Set<string>();
+    for (const hold of holds) {
+      if (promoted.get(hold.authorId) === hold.entryId) asked.add(hold.authorId);
+    }
+    return asked;
+  }, [holds, promoted]);
 
   const state = useMemo(
     () =>
@@ -352,11 +377,17 @@ export function RoomLiveLane({
             // Marked optimistically: the server's answer is a boolean about a
             // wait that may already have ended, and the row is about to be
             // replaced by a working one either way. What the person needs back
-            // is that the room heard them.
-            setPromoted((asked) => new Set(asked).add(authorId));
+            // is that the room heard them. A refusal still surfaces, through the
+            // mutation's own `errorLabel` toast.
+            //
+            // Stamped with the HOLD the ask was about, so it lapses with it.
+            const waiting = holds.find((hold) => hold.authorId === authorId);
+            if (waiting !== undefined) {
+              setPromoted((asked) => new Map(asked).set(authorId, waiting.entryId));
+            }
             promote.mutate({ roomId: room.id, authorId });
           }}
-          promoted={promoted}
+          promoted={promotedNow}
           onStopAll={() => halt.mutate({ roomId: room.id })}
           stopping={halt.isPending}
         />

@@ -775,5 +775,51 @@ describe('RoomLiveLane', () => {
       expect(screen.getByTestId('live-peek-next-up')).toHaveTextContent('Next up here');
       expect(screen.queryByTestId('live-peek-answer-first')).toBeNull();
     });
+
+    it('lets the ask lapse with the wait it was about', async () => {
+      // **Seeded defect: key `promoted` on the author id alone.** The mark then
+      // outlives the wait it was about, and the NEXT time this agent holds a
+      // message here the peek renders the static "Next up here" over a fresh
+      // server collection at `promoted: false` — telling the reader they are
+      // next when they are not, and taking away the one control that would make
+      // it true. Server-side the mark dies with the collection, so the client's
+      // has to die with the hold.
+      vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+      waiting('kai', 'room-elsewhere', STARTED, true);
+      const transport = seeingTransport();
+      renderLane({}, transport);
+      await settleRoomList();
+      fireEvent.click(screen.getByRole('button', { name: 'Show what is waiting' }));
+      fireEvent.click(screen.getByTestId('live-peek-answer-first'));
+      await settleRoomList();
+      expect(screen.getByTestId('live-peek-next-up')).toBeVisible();
+
+      // That wait ends and a NEW one opens — a different message, so a different
+      // `entryId`, which is the whole key.
+      act(() => {
+        useRoomPresenceStore.getState().observe(ROOM, {
+          type: 'signal',
+          signal: 'progress',
+          authorId: 'kai',
+          at: STARTED,
+          state: 'done',
+          entryId: 'trigger-kai',
+          since: STARTED,
+        });
+        useRoomPresenceStore.getState().observe(ROOM, {
+          type: 'signal',
+          signal: 'progress',
+          authorId: 'kai',
+          at: STARTED,
+          state: 'held',
+          entryId: 'trigger-kai-again',
+          since: STARTED,
+          heldBehind: { roomId: 'room-elsewhere', othersWaiting: true },
+        });
+      });
+
+      expect(screen.queryByTestId('live-peek-next-up')).toBeNull();
+      expect(screen.getByTestId('live-peek-answer-first')).toBeVisible();
+    });
   });
 });

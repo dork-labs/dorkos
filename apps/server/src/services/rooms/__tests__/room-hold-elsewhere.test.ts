@@ -58,6 +58,11 @@ interface GatedRunner extends ScriptedTurnRunner {
   release(authorId: string, text?: string | null): void;
   /** End one agent's oldest held turn in an error instead. */
   failOldest(authorId: string): void;
+  /**
+   * End one agent's oldest held turn as `busy` — the session-lock path, where a
+   * stranger held the agent's session and no model ever ran.
+   */
+  failOldestAsBusy(authorId: string): void;
 }
 
 /**
@@ -122,6 +127,16 @@ function gatedRunner(): GatedRunner {
     },
     failOldest(authorId): void {
       oldest(authorId, 'fail')(new Error('the session stream went away'));
+    },
+    failOldestAsBusy(authorId): void {
+      oldest(
+        authorId,
+        'report a busy session'
+      )({
+        sessionId: '',
+        text: null,
+        unanswered: 'busy',
+      });
     },
   };
 }
@@ -358,6 +373,50 @@ describe('a message for an agent working elsewhere', () => {
     await service.triggersIdle();
   });
 
+  it('says it gave up even when the room already said the session was busy', async () => {
+    // **The undirected path, which is the one that can go silent.** A refusal is
+    // damped per `(room, agent, reason)` unless the message ASKED the agent by
+    // name — and `busy` used to be one key covering two unrelated states: a
+    // stranger holding the agent's own session, and this room giving up on a
+    // wait. So for an `engaged` seat with no `@mention`, an earlier session-lock
+    // line swallowed the expiry line, and the lane promised an answer and then
+    // just cleared. That is an invisible refusal, which room-conduct forbids.
+    //
+    // **Seeded defect: key the damper on `reason` alone.** The second assertion
+    // below goes red — one notice, the wrong one, and nothing saying the room
+    // stopped waiting.
+    const [a, b] = open(2, { holdCeilingMs: 0 });
+    // Engaged, so a message that names nobody still reaches Ana — which is what
+    // makes `asked` false and the damper live.
+    service.updateMembership(b.id, human, ana, 'engaged');
+    service.post(b.id, { authorId: human, text: '@ana are you about?' });
+    await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana mid-turn in room B');
+    // That turn fails with the session held by somebody else, which writes the
+    // `unknown` busy line and arms its key.
+    runner.failOldestAsBusy(ana);
+    await settleUntil(() => notices(b.id).length === 1, 'the session-busy line');
+    expect(notices(b.id)[0]!.body.text).toContain('was busy in its own session');
+
+    // Now Ana takes a turn somewhere else, and an UNDIRECTED message here waits
+    // behind it until the room gives up.
+    service.post(a.id, { authorId: human, text: '@ana check the build' });
+    await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana mid-turn in room A');
+    service.post(b.id, { authorId: human, text: 'anything on the styles?' });
+    await quiet();
+    (service as unknown as { triggers: { republishPresence(): void } }).triggers[
+      'republishPresence'
+    ]();
+    await quiet();
+
+    const said = notices(b.id);
+    expect(said, 'the room gave up on a wait and said nothing about it').toHaveLength(2);
+    expect(said[1]!.body.text).toContain(
+      'has been working in another conversation for a long time'
+    );
+    runner.release(ana);
+    await service.triggersIdle();
+  });
+
   it('drops the wait when this room is halted, and runs it when the blocking room is', async () => {
     // Case 7. Both fall out of the existing ordering, and the second is the one
     // worth stating: the person stopped one conversation, not the other, and the
@@ -392,6 +451,57 @@ describe('a message for an agent working elsewhere', () => {
     expect(runner.turns[1]!.roomId).toBe(d.id);
     runner.release(ana);
     await service.triggersIdle();
+  });
+
+  it('gives up on the wait when the agent is taken out of the room', async () => {
+    // **The window this change opened.** A parked collection used to be bounded
+    // by one collect debounce — half a second — so an agent removed mid-park was
+    // a race nobody could lose. A cross-room hold lasts up to the late ceiling,
+    // fifty minutes on the shipped defaults, which is plenty of time to take the
+    // agent out of the room while the lane promises an answer.
+    //
+    // **Seeded defect: drop the `abandonHolds` call in `removeMember`.** The
+    // indicator stays up, and when the blocking turn ends the agent runs a turn
+    // in — and posts into — a room it is not in.
+    const [a, b] = open();
+    service.post(a.id, { authorId: human, text: '@ana check the build' });
+    await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana mid-turn in room A');
+    service.post(b.id, { authorId: human, text: '@ana and the styles?' });
+    await quiet();
+    expect(signalsIn(b.id, ana).at(-1)?.state).toBe('held');
+
+    service.removeMember(b.id, human, ana);
+    // The promise is withdrawn the moment it stops being keepable.
+    expect(signalsIn(b.id, ana).at(-1)?.state).toBe('done');
+    // And no line: the removal is operator-only, deliberate and already visible
+    // on the roster, so a busy notice would explain a decision back to the
+    // person who just made it — and would be false, because Ana is not busy.
+    expect(notices(b.id)).toEqual([]);
+
+    runner.release(ana);
+    await service.triggersIdle();
+    // No turn ran in the room it had left, and nothing was posted there.
+    expect(runner.turns.filter((turn) => turn.roomId === b.id)).toEqual([]);
+    expect(postsBy(b.id, ana)).toEqual([]);
+  });
+
+  it('gives up on the wait when the room is archived', async () => {
+    // An archived room takes no new posts, so an answer could not be written
+    // into it anyway — and a lane going on promising one is the room saying
+    // something that has stopped being true. Only the TRANSITION drops it.
+    const [a, b] = open();
+    service.post(a.id, { authorId: human, text: '@ana check the build' });
+    await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana mid-turn in room A');
+    service.post(b.id, { authorId: human, text: '@ana and the styles?' });
+    await quiet();
+    expect(signalsIn(b.id, ana).at(-1)?.state).toBe('held');
+
+    service.updateRoom(b.id, human, { archived: true });
+    expect(signalsIn(b.id, ana).at(-1)?.state).toBe('done');
+
+    runner.release(ana);
+    await service.triggersIdle();
+    expect(runner.turns.filter((turn) => turn.roomId === b.id)).toEqual([]);
   });
 
   it('does not tell the turn that a waiting message arrived while it was working', async () => {
@@ -506,6 +616,20 @@ describe('a message for an agent working elsewhere', () => {
       .filter((event) => event.state === 'held')
       .at(-1)!;
     expect(shared.heldBehind).toEqual({ roomId: a.id, othersWaiting: true });
+
+    // **And the FIRST room is told, without waiting for the republish tick.**
+    // `othersWaiting` is a fact about the set of waits, not about any one of
+    // them, so it went stale in room B the instant room C started waiting — and
+    // it is the only thing that decides whether "Answer here first" is offered.
+    // Seeded defect: drop the sibling restate, and B keeps saying
+    // `othersWaiting: false` for up to ten seconds while the control it gates is
+    // exactly what a person now wants.
+    expect(
+      signalsIn(b.id, ana)
+        .filter((event) => event.state === 'held')
+        .at(-1)!.heldBehind,
+      'the first waiting room was not told that somewhere else is waiting too'
+    ).toEqual({ roomId: a.id, othersWaiting: true });
 
     runner.release(ana);
     await settleUntil(() => runner.turns.length === 2, 'a waiting room to run');
