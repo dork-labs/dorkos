@@ -186,12 +186,16 @@ function apiKeyHeaders(): Record<string, string> {
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
+/** The code `sessionGate` stamps on its own 401, and the only one this rewrites. */
+const AUTH_REQUIRED_CODE = 'AUTH_REQUIRED';
+
 /**
  * Turn the login gate's bare `Unauthorized` into something a person can act on.
  *
- * A 401 from `/api/*` only ever means one thing: this instance has login turned
- * on and the call carried no key the server accepts. Say that, and say where the
- * key comes from.
+ * That gate's 401 means one thing: this instance has login turned on and the
+ * call carried no key the server accepts. Say that, and say where the key comes
+ * from. It is NOT the only 401 the API can answer — see the caller, which checks
+ * the code before reaching for this.
  *
  * @param presentedKey - Whether the CLI actually sent a key (a rejected key and a
  *   missing key need different advice).
@@ -221,11 +225,13 @@ function buildUnauthorizedMessage(presentedKey: boolean): string {
  *
  * Throws an {@link ApiError} on non-2xx responses. The error carries the
  * full parsed body so callers can read structured fields like
- * `conflicts` (HTTP 409) or `errors` (HTTP 400). A `401` gets its `error`
- * rewritten to the actionable message from {@link buildUnauthorizedMessage} while
- * keeping the server's `code`, because the gate's own body is just
- * `Unauthorized`. Throws a generic `Error` with `code === 'ECONNREFUSED'`
- * semantics if the server is unreachable.
+ * `conflicts` (HTTP 409) or `errors` (HTTP 400). A `401` from the LOGIN GATE
+ * gets its `error` rewritten to the actionable message from
+ * {@link buildUnauthorizedMessage} while keeping the server's `code`, because
+ * that gate's own body is just `Unauthorized`. A 401 carrying any other code
+ * came from a route that explained itself and is passed through untouched.
+ * Throws a generic `Error` with `code === 'ECONNREFUSED'` semantics if the
+ * server is unreachable.
  *
  * @param method - HTTP method (e.g. `'GET'`, `'POST'`).
  * @param apiPath - Path on the server (must start with `/`).
@@ -308,7 +314,12 @@ export async function apiRequest(
     } catch {
       parsed = { error: res.statusText };
     }
-    if (res.status === 401) {
+    // Only the LOGIN gate's 401 is rewritten. A route that answers 401 for its
+    // own reason — an `X-DorkOS-Agent` token the server could not verify, which
+    // every room address refuses since DOR-1361 — already said something true
+    // and specific, and replacing it with "the CLI needs your API key" would
+    // send an agent whose identity expired to mint the wrong credential.
+    if (res.status === 401 && (parsed.code === undefined || parsed.code === AUTH_REQUIRED_CODE)) {
       parsed = { ...parsed, error: buildUnauthorizedMessage(presentedKey) };
     }
     throw new ApiError(res.status, parsed);

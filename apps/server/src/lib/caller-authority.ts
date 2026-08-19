@@ -71,7 +71,7 @@ import { configManager } from '../services/core/config-manager.js';
  * revoked or expired agent) still means a machine is calling, and a person in the
  * cockpit never sends it. That is {@link presentsAgentIdentity}, which lives in
  * the module that owns the header because a second surface reads it now
- * (`GET /api/rooms/:id/sessions`) and the two must not diverge.
+ * (`routes/room-caller.ts`, for every room route) and the two must not diverge.
  *
  * @param req - The incoming request.
  * @param res - The response carrying `sessionGate`'s resolved user.

@@ -59,9 +59,19 @@ export function getRequestAgentIdentity(res: Pick<Response, 'locals'>): AgentIde
  * rejects nothing (see the module doc). What the surfaces that read it DO with
  * the answer is theirs: `lib/caller-authority.ts` feeds it to
  * `resolveDecisionAuthority` as `agentIdentityPresented`, and
- * `GET /api/rooms/:id/sessions` refuses on it outright. It lives here, in the
- * module that owns the header, so those two cannot come to mean different
- * things by "an agent presented itself" (DOR-1357).
+ * `routes/room-caller.ts` refuses on it outright, which is what makes every room
+ * route refuse a token it cannot verify (DOR-1357, widened by DOR-1361). It
+ * lives here, in the module that owns the header, so those two cannot come to
+ * mean different things by "an agent presented itself".
+ *
+ * **An EMPTY `X-DorkOS-Agent:` counts as presented**, and on the room seams that
+ * is a hard 401 rather than a fall-through to the operator. Deliberate: the
+ * header is there, so something meant to identify itself as a machine and
+ * failed, which is exactly the case this predicate is for. No first-party client
+ * can produce it — the CLI attaches the header only when `DORKOS_AGENT_TOKEN`
+ * holds a truthy value (`packages/cli/src/lib/api-client.ts`) and the cockpit
+ * never sends it at all — so the only caller that reaches it is one hand-rolling
+ * requests, for which the strict answer is the useful one.
  *
  * @param req - The incoming request, for the raw header.
  * @param res - The response carrying whatever the middleware resolved.

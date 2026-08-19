@@ -220,6 +220,52 @@ describe('apiCall 401 guidance', () => {
     expect(err.message).not.toContain('login turned on');
   });
 
+  it('keeps a 401 the server explained for itself, rather than blaming the API key', async () => {
+    // A room route refuses an `X-DorkOS-Agent` token it cannot verify with its
+    // own 401 and its own sentence (DOR-1361). Rewriting that into "the CLI
+    // needs your API key" would send an agent whose token expired to mint a
+    // credential that is not the one it is missing.
+    vi.stubEnv('DORKOS_AGENT_TOKEN', 'revoked-agent-token');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: 'That agent identity could not be verified.',
+              code: 'AGENT_IDENTITY_UNVERIFIED',
+            }),
+            { status: 401 }
+          )
+      )
+    );
+
+    const err = (await apiCall('GET', '/api/rooms').catch((e: unknown) => e)) as ApiError;
+
+    expect(err.status).toBe(401);
+    expect(err.message).toBe('That agent identity could not be verified.');
+    expect(err.message).not.toContain('API key');
+    expect(err.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+  });
+
+  it('still guides a 401 that carries no code at all', async () => {
+    // The other side of the branch above, and the reason it is `code === undefined
+    // || code === AUTH_REQUIRED` rather than a check for the room code: a proxy
+    // or an unparseable body produces a 401 with nothing machine-readable on it,
+    // and that caller is the one the guidance was written for. Narrowing this to
+    // "only rewrite AUTH_REQUIRED" would have left them a bare `Unauthorized`.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('<html>401 Unauthorized</html>', { status: 401 }))
+    );
+
+    const err = (await apiCall('GET', '/api/tasks').catch((e: unknown) => e)) as ApiError;
+
+    expect(err.status).toBe(401);
+    expect(err.message).toContain('login turned on');
+    expect(err.message).toContain('DORKOS_API_KEY');
+  });
+
   it('never echoes the key value in the guidance', async () => {
     vi.stubEnv('DORKOS_API_KEY', 'super-secret-key');
     stubUnauthorized();

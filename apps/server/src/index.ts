@@ -2340,7 +2340,7 @@ async function start() {
     '/api/profile',
     createProfileRouter({
       avatars: new LocalAvatarStore(dorkHome),
-      caller: (res) => resolveCaller(res),
+      caller: (req, res) => resolveCaller(req, res),
       authors: roomAuthors,
       ownerAccount: () => readOwnerAccount(),
       setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
