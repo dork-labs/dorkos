@@ -56,7 +56,7 @@ Carried from `01-ideation.md` §1 and §6 #13, plus what this spec adds:
 - **Human typing indicators in rooms** (`specs/room-presence` §5.2 keeps that a separate row, if ever).
 - **Codex / OpenCode approval-timeout parity** beyond what the runtime interface already carries — DOR-803 stays its own item.
 - **A per-agent room halt.** §5.3.4 explains why the peek's Stop is the room-wide halt and what a per-author halt would actually cost.
-- **Delivering the waiting notice to bridged DMs** (`services/relay/chat-bridge/deliver.ts:78`).
+- **Delivering the waiting notice to bridged DMs** (`services/relay/chat-bridge/deliver.ts`'s `DELIVERABLE_NOTICES`). Out of scope here; delivered afterwards by DOR-1359 — see "What is not done" #6.
 - **Rewriting the Obsidian embed** beyond keeping `DirectTransport` at parity for the one new transport method.
 - **The fleet-wide `PresenceStrip`** (`features/presence-strip/`, mounted by `app/HomeRoomPage.tsx:119`). It answers "who on this team is working, anywhere", which is a different question from "what is happening in this conversation". It is untouched.
 - **`ChatStatusSection` is not folded into the lane.** See §1.1 — it is the composer's model/mode/git status line, not a busy indicator.
@@ -984,6 +984,14 @@ This is the one server addition in P2, and it is named as such in §8.
 
 #### 5.3.4 Stop — honest, and why it is the room-wide halt
 
+> **Superseded (2026-08-19, DOR-1352).** The follow-up this section filed is
+> `specs/room-per-agent-stop`, and it is built: `POST /api/rooms/:id/halt/:authorId` and
+> `RoomTriggerDispatcher.haltAgent` are the room-wide halt scoped to one `(room, agent)` key, so
+> **every** row of the peek now has a Stop and the table below no longer describes the product.
+> The reasoning is left standing rather than rewritten, because it is the record of why this
+> phase shipped what it did — and of the three costs the follow-up had to pay (ADR
+> `260819-023317`).
+
 The mockup draws a per-row **Stop**. A per-agent stop cannot be built honestly in this phase, for a measured reason:
 
 - Calling `POST /api/sessions/:id/interrupt` (`routes/sessions.ts:943`) directly would bypass the room's halt bookkeeping. `RoomTriggerDispatcher.halt` (`room-trigger.ts:2386`) marks `haltedTurns` **before its first `await`** precisely because _"a turn whose stream closes while this method is still delivering interrupts must find the mark already there, or it posts the answer Stop was pressed to prevent — the two-second race measured on 2026-08-15."_ An interrupt that skipped the mark would re-open that race.
@@ -1247,7 +1255,7 @@ Named here so a cold reader does not improve a deliberate gap back into a bug.
 3. **No scope options.** "Allow & don't ask again" keeps its slot in the action row and does nothing yet; the third Ask for the same file still happens. Tier C.
 4. **No verb glimpse in a room.** The lane says "is working on it", never "is reading `standup.md`". That needs a new field on `RoomSignalEventSchema` republished with the claim — presence tier 3, deferred with tier C.
 5. **No per-agent Stop in a room.** §5.3.4 explains it: a per-author halt needs its own notice copy and a scoped gather-buffer drop, and interrupting the session directly re-opens the 2026-08-15 race. The peek is honest about what it stops.
-6. **Bridged DMs still drop the waiting notice.** `services/relay/chat-bridge/deliver.ts:78` delivers only `turn_failed` and `halted`. A person on Telegram learns nothing while an agent waits. Untouched here.
+6. **Bridged DMs dropped the waiting notice — since delivered as of DOR-1359.** As this programme shipped, `services/relay/chat-bridge/deliver.ts`'s `DELIVERABLE_NOTICES` carried only `turn_failed` and `halted`, so a person on Telegram learned nothing while an agent waited. Untouched here. **DOR-1359 added `awaiting_approval` and `agent_busy` to that set (now at `deliver.ts:~116`), in the room's own unchanged words, with a bridge-side damper so a busy agent is reported once per room rather than once per message. An actionable bridged Ask — Approve/Deny in the chat — remains open as DOR-1356.**
 7. **Codex and OpenCode timeout parity is DOR-803.** They inherit the Ask for free (§3.2 broadcasts from the runtime-agnostic projector), but whether their prompts carry a timeout at all is that item's question.
 8. **Human typing indicators do not exist** and are not a lane state. `specs/room-presence` §5.2 keeps that a separate row, if ever.
 9. **The room's durable waiting notice is unchanged, on purpose.** It stays vague, late and damped. It is the log, not the affordance, and making it actionable would put a tool name into a shared room.

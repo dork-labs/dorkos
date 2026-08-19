@@ -39,6 +39,8 @@ export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
 export { useHaltRoom } from './model/use-halt-room';
 export type { HaltRoomInput } from './model/use-halt-room';
+export { useHaltAgent } from './model/use-halt-agent';
+export type { HaltAgentInput } from './model/use-halt-agent';
 export { usePromoteHold } from './model/use-promote-hold';
 export type { PromoteHoldInput } from './model/use-promote-hold';
 export {

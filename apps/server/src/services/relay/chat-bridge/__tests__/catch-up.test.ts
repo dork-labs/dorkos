@@ -21,6 +21,7 @@ import {
 import type { CreateBridgedRoomRequest } from '../../../rooms/room-service.js';
 import { RoomBroadcaster } from '../../../rooms/room-stream.js';
 import { externalSenderIdentity } from '../../platform-identity.js';
+import { buildBusyNotice } from '../../../rooms/notices/notice-copy.js';
 import { BridgeCatchUp, ChatBridgeDelivery, type Bridge } from '../index.js';
 
 const AGENT_PATH = '/agents/ana';
@@ -249,5 +250,37 @@ describe('BridgeCatchUp (chats-as-channels §6.1)', () => {
     platformUp = true;
     await catchUp.scanRoom(room.id);
     expect(harness.bridges.findRefByEntry(answer.id)?.direction).toBe('outbound');
+  });
+
+  it('DOR-1359: a damped repeat busy notice settles the cursor — the scan moves past it and delivers what follows', async () => {
+    // `damped` must NOT stop the walk: a repeat will never become deliverable
+    // on a later pass, so a scan that stopped on it would stall the room
+    // forever and every entry behind it would go undelivered.
+    const room = harness.service.createBridgedRoom(bridgeRequest('555'));
+    const inbound = seedInbound(room.id, '555', 'are you there?', 'pm-1');
+    const ana = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+    const cascade = { root: inbound.id, depth: 1 };
+    const first = harness.service.postNotice(
+      room.id,
+      buildBusyNotice('Ana', ana.id, 'held-too-long'),
+      cascade
+    );
+    const repeat = harness.service.postNotice(
+      room.id,
+      buildBusyNotice('Ana', ana.id, 'held-too-long'),
+      cascade
+    );
+    const behind = agentPost(room.id, 'queued behind the repeat', inbound.id);
+
+    await catchUp.scanRoom(room.id);
+
+    // The first busy line and the post behind the damped repeat both landed;
+    // the repeat itself never did.
+    expect(harness.bridges.findRefByEntry(first.id)?.direction).toBe('outbound');
+    expect(harness.bridges.findRefByEntry(repeat.id)).toBeNull();
+    expect(harness.bridges.findRefByEntry(behind.id)?.direction).toBe('outbound');
+    // The cursor cleared the whole room rather than parking on the repeat.
+    expect(harness.bridges.findBridgeByRoom(room.id)!.lastDeliveredSeq).toBe(behind.seq);
+    expect(publish).toHaveBeenCalledTimes(2);
   });
 });

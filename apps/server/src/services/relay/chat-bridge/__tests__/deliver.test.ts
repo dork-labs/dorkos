@@ -17,6 +17,12 @@ import type { PublishOptions, PublishResult } from '@dorkos/relay';
 import type { DeliveryResult } from '@dorkos/relay';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import { createInitiateConsentGate } from '../../initiate-consent.js';
+import {
+  buildBusyNotice,
+  buildTurnFailedNotice,
+  buildWaitingNotice,
+  type WaitingKind,
+} from '../../../rooms/notices/notice-copy.js';
 import { externalSenderIdentity } from '../../platform-identity.js';
 import {
   agentLookupFor,
@@ -24,7 +30,6 @@ import {
   type RoomHarness,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import type { CreateBridgedRoomRequest } from '../../../rooms/room-service.js';
-import { buildWaitingNotice, type WaitingKind } from '../../../rooms/notices/notice-copy.js';
 import {
   ChatBridgeDelivery,
   BridgeLifecycle,
@@ -679,13 +684,15 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
       expect(await dmDelivery.deliverEntry(halted)).toBe('skipped');
     });
 
-    describe('scope is exactly turn_failed, halted and awaiting_approval — every other code is refused', () => {
+    describe('scope is the four stopped-agent codes — every other code is refused', () => {
       // A bridged DM delivers notices by default (§6.2), so every case below
       // isolates the NOTICE-CODE eligibility test from the deliverNotices gate
       // itself: each must be 'skipped' even though THIS bridge delivers notices.
       // One `it` per excluded code — `cascade_stopped`, `budget_reached`,
-      // `agent_busy`, `agent_gone`, `agent_unavailable` — so a future code
-      // added to the wrong set fails a named test, not a shared one.
+      // `agent_gone`, `agent_unavailable`, `bridge_rate_limited` — so a future
+      // code added to the wrong set fails a named test, not a shared one.
+      // `agent_busy` and `awaiting_approval` used to sit here and are now
+      // delivered (DOR-1359); their cases moved to the block below.
       function dmDelivery(chatId: string) {
         const dm = harness.service.createBridgedRoom(bridgeRequest(chatId));
         binding = makeBinding({ canReply: true, canInitiate: true });
@@ -706,15 +713,6 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         const notice = harness.service.postNotice(dm.id, {
           text: 'This room has used up its automatic replies for the hour.',
           notice: 'budget_reached',
-        });
-        expect(await delivery.deliverEntry(notice)).toBe('skipped');
-      });
-
-      it('agent_busy is never delivered (it deliberately says nothing about where — spec §6.2)', async () => {
-        const { dm, delivery } = dmDelivery('603');
-        const notice = harness.service.postNotice(dm.id, {
-          text: 'Ana was busy and did not pick this up. Send it again in a moment.',
-          notice: 'agent_busy',
         });
         expect(await delivery.deliverEntry(notice)).toBe('skipped');
       });
@@ -744,6 +742,272 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
           notice: 'bridge_rate_limited',
         });
         expect(await delivery.deliverEntry(notice)).toBe('skipped');
+      });
+    });
+
+    describe('DOR-1359: a stopped agent is reported to the chat — awaiting_approval and agent_busy', () => {
+      /**
+       * A bridged DM with an inbound message to root the notice at, so it
+       * classifies as a REPLY the way a real waiting/busy notice does: both are
+       * written by `RoomNoticeLog` stamped with the triggering entry's cascade,
+       * and in a bridged room that entry is the message that arrived from the
+       * chat.
+       */
+      function bridgedDm(chatId: string) {
+        const dm = harness.service.createBridgedRoom(bridgeRequest(chatId));
+        const delivery = makeDelivery(bindingRow(dm.id, chatId));
+        const inbound = seedInbound(dm.id, chatId, 'can you do the thing?', `pm-${chatId}`);
+        binding = makeBinding({ canReply: true, canInitiate: true });
+        const ana = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+        return { dm, delivery, inbound, ana };
+      }
+
+      /** The text of the single publish this delivery made. */
+      function deliveredText(): string {
+        expect(publish).toHaveBeenCalledTimes(1);
+        return (publish.mock.calls[0][1] as Record<string, unknown>).content as string;
+      }
+
+      it('an awaiting_approval notice reaches the chat, re-rendered for a reader with no session', async () => {
+        // DOR-1359 forwarded the room's own words. DOR-1356 re-renders them:
+        // the stored line ends "Open Ana's session to answer", which points a
+        // bridged reader at a door they may not have. The per-kind sentences
+        // and the fallback are pinned in the `ask-entitlement` block below;
+        // what this case holds is that the notice still ARRIVES and still names
+        // the agent, which is the whole point of the line.
+        const { dm, delivery, inbound, ana } = bridgedDm('610');
+        const body = buildWaitingNotice('Ana', ana.id, 'approval');
+        const notice = harness.service.postNotice(dm.id, body, { root: inbound.id, depth: 1 });
+
+        expect(await delivery.deliverEntry(notice)).toBe('delivered');
+        expect(deliveredText()).toContain('Ana');
+        expect(deliveredText()).not.toBe(body.text);
+        expect(deliveredText(), 'the far end is not sent to a session tab').not.toContain(
+          "Ana's session"
+        );
+      });
+
+      it('a delivered waiting line carries no tool name, path or command (DOR-613)', async () => {
+        const { dm, delivery, inbound, ana } = bridgedDm('612');
+        const body = buildWaitingNotice('Ana', ana.id, 'approval');
+        const notice = harness.service.postNotice(dm.id, body, { root: inbound.id, depth: 1 });
+
+        await delivery.deliverEntry(notice);
+
+        // The room's line is deliberately vague; what crosses to the chat is
+        // exactly that line, so the vagueness crosses with it.
+        const text = deliveredText();
+        expect(text).not.toMatch(/Bash|Write|Edit|Read|npm |rm -|\.\/|\/Users\//);
+      });
+
+      it('an agent_busy notice reaches the chat, word for word as the room wrote it — both busy variants', async () => {
+        const { dm, delivery, inbound, ana } = bridgedDm('613');
+        const body = buildBusyNotice('Ana', ana.id, 'held-too-long');
+        const notice = harness.service.postNotice(dm.id, body, { root: inbound.id, depth: 1 });
+
+        expect(await delivery.deliverEntry(notice)).toBe('delivered');
+        expect(deliveredText()).toBe(body.text);
+        // It still never names the other conversation (`notice-copy.ts`'s own
+        // rule), so nothing about somebody else's room crosses to this chat.
+        expect(deliveredText()).toBe(
+          "Ana has been working in another conversation for a long time, so it hasn't got to your message yet. It will read it the next time it picks up work here."
+        );
+      });
+
+      it('the unknown busy variant delivers its own words too', async () => {
+        const { dm, delivery, inbound, ana } = bridgedDm('614');
+        const body = buildBusyNotice('Ana', ana.id, 'unknown');
+        const notice = harness.service.postNotice(dm.id, body, { root: inbound.id, depth: 1 });
+
+        expect(await delivery.deliverEntry(notice)).toBe('delivered');
+        expect(deliveredText()).toBe(body.text);
+      });
+
+      it('damped on repeat: re-delivering the same waiting notice sends nothing more', async () => {
+        // One wait produces one room entry (`RoomNoticeLog.reportWaiting` damps
+        // per room+agent for the life of the turn), and the bridge turns one
+        // room entry into exactly one platform message however many times it is
+        // asked — the inline commit path and the catch-up scan both land here.
+        const { dm, delivery, inbound, ana } = bridgedDm('615');
+        const notice = harness.service.postNotice(
+          dm.id,
+          buildWaitingNotice('Ana', ana.id, 'approval'),
+          { root: inbound.id, depth: 1 }
+        );
+
+        expect(await delivery.deliverEntry(notice)).toBe('delivered');
+        expect(await delivery.deliverEntry(notice)).toBe('noop');
+        expect(await delivery.deliverEntry(notice)).toBe('noop');
+        expect(publish).toHaveBeenCalledTimes(1);
+      });
+
+      it('damped on repeat: re-delivering the same busy notice sends nothing more', async () => {
+        const { dm, delivery, inbound, ana } = bridgedDm('616');
+        const notice = harness.service.postNotice(
+          dm.id,
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
+          { root: inbound.id, depth: 1 }
+        );
+
+        expect(await delivery.deliverEntry(notice)).toBe('delivered');
+        expect(await delivery.deliverEntry(notice)).toBe('noop');
+        expect(publish).toHaveBeenCalledTimes(1);
+      });
+
+      it('three busy refusals in one DM buzz the chat ONCE — the room writes three, the bridge sends one', async () => {
+        // The defect this closes: `RoomNoticeLog.reportSilence` deliberately
+        // does NOT damp a message that directly asked the agent, and in a `dm`
+        // every human message counts as asking — which is what a bridged
+        // private chat is. So the room log legitimately holds one busy line per
+        // message, and without a damper of its own the bridge would push one
+        // notification per message typed.
+        const { dm, delivery, inbound, ana } = bridgedDm('619');
+        const outcomes: string[] = [];
+        for (let i = 0; i < 3; i += 1) {
+          const notice = harness.service.postNotice(
+            dm.id,
+            buildBusyNotice('Ana', ana.id, 'held-too-long'),
+            { root: inbound.id, depth: 1 }
+          );
+          outcomes.push(await delivery.deliverEntry(notice));
+        }
+
+        // Three DISTINCT entries in the room log — this is not idempotence on
+        // one entry, which the case above already covers.
+        expect(noticesOf(dm.id, 'agent_busy')).toHaveLength(3);
+        expect(outcomes).toEqual(['delivered', 'damped', 'damped']);
+        expect(publish).toHaveBeenCalledTimes(1);
+      });
+
+      it("the damp lifts on the agent's next turn in that room: it answers, goes busy again, and the chat is told again", async () => {
+        const { dm, delivery, inbound, ana } = bridgedDm('620');
+        const first = harness.service.postNotice(
+          dm.id,
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
+          { root: inbound.id, depth: 1 }
+        );
+        expect(await delivery.deliverEntry(first)).toBe('delivered');
+
+        const damped = harness.service.postNotice(
+          dm.id,
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
+          { root: inbound.id, depth: 1 }
+        );
+        expect(await delivery.deliverEntry(damped)).toBe('damped');
+
+        // Ana answers here — her turn in this room reached an outcome, which is
+        // the same re-arm `RoomNoticeLog.recovered` uses.
+        expect(await delivery.deliverEntry(agentPost(dm.id, 'back now', inbound.id))).toBe(
+          'delivered'
+        );
+
+        const afterRecovery = harness.service.postNotice(
+          dm.id,
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
+          { root: inbound.id, depth: 1 }
+        );
+        expect(await delivery.deliverEntry(afterRecovery)).toBe('delivered');
+        // Two busy lines and one answer reached the chat, in that order.
+        expect(publish).toHaveBeenCalledTimes(3);
+      });
+
+      it('a turn_failed about that agent also re-arms the busy line — a broken turn is an outcome too', async () => {
+        const { dm, delivery, inbound, ana } = bridgedDm('621');
+        const first = harness.service.postNotice(dm.id, buildBusyNotice('Ana', ana.id, 'unknown'), {
+          root: inbound.id,
+          depth: 1,
+        });
+        expect(await delivery.deliverEntry(first)).toBe('delivered');
+
+        const failed = harness.service.postNotice(dm.id, buildTurnFailedNotice('Ana', ana.id), {
+          root: inbound.id,
+          depth: 1,
+        });
+        expect(await delivery.deliverEntry(failed)).toBe('delivered');
+
+        const afterFailure = harness.service.postNotice(
+          dm.id,
+          buildBusyNotice('Ana', ana.id, 'unknown'),
+          { root: inbound.id, depth: 1 }
+        );
+        expect(await delivery.deliverEntry(afterFailure)).toBe('delivered');
+      });
+
+      it('a waiting line is NOT damped by the busy damper — two different agents, two different states', async () => {
+        // The busy damper keys on `(room, agent)`; a waiting notice about the
+        // same agent must still get through, because it reports a different
+        // state with a different remedy.
+        const { dm, delivery, inbound, ana } = bridgedDm('622');
+        const busy = harness.service.postNotice(dm.id, buildBusyNotice('Ana', ana.id, 'unknown'), {
+          root: inbound.id,
+          depth: 1,
+        });
+        expect(await delivery.deliverEntry(busy)).toBe('delivered');
+
+        const waiting = harness.service.postNotice(
+          dm.id,
+          buildWaitingNotice('Ana', ana.id, 'approval'),
+          { root: inbound.id, depth: 1 }
+        );
+        expect(await delivery.deliverEntry(waiting)).toBe('delivered');
+        expect(publish).toHaveBeenCalledTimes(2);
+      });
+
+      it('the damp is per ROOM: a second bridged DM hears about the same agent on its own account', async () => {
+        const a = bridgedDm('623');
+        const b = bridgedDm('624');
+        const ana = a.ana;
+        const first = harness.service.postNotice(
+          a.dm.id,
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
+          { root: a.inbound.id, depth: 1 }
+        );
+        expect(await a.delivery.deliverEntry(first)).toBe('delivered');
+
+        const second = harness.service.postNotice(
+          b.dm.id,
+          buildBusyNotice('Ana', ana.id, 'held-too-long'),
+          { root: b.inbound.id, depth: 1 }
+        );
+        expect(await b.delivery.deliverEntry(second)).toBe('delivered');
+      });
+
+      it('both still obey deliverNotices: a bridged CHANNEL hears neither by default', async () => {
+        const ch = harness.service.createBridgedRoom({
+          ...bridgeRequest('617', true),
+          bindingId: 'binding-ch-1359',
+        });
+        const chDelivery = makeDelivery(bindingRow(ch.id, '617'));
+        binding = makeBinding({ canReply: true, canInitiate: true });
+        const ana = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+
+        const waiting = harness.service.postNotice(
+          ch.id,
+          buildWaitingNotice('Ana', ana.id, 'approval')
+        );
+        expect(await chDelivery.deliverEntry(waiting)).toBe('skipped');
+
+        const busy = harness.service.postNotice(ch.id, buildBusyNotice('Ana', ana.id, 'unknown'));
+        expect(await chDelivery.deliverEntry(busy)).toBe('skipped');
+        expect(publish).not.toHaveBeenCalled();
+      });
+
+      it('both still obey the per-bridge override: a DM with deliverNotices off hears neither', async () => {
+        const dm = harness.service.createBridgedRoom(bridgeRequest('618'));
+        harness.bridges.setDeliverNotices(dm.id, false);
+        const delivery = makeDelivery(bindingRow(dm.id, '618'));
+        binding = makeBinding({ canReply: true, canInitiate: true });
+        const ana = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+
+        const waiting = harness.service.postNotice(
+          dm.id,
+          buildWaitingNotice('Ana', ana.id, 'approval')
+        );
+        expect(await delivery.deliverEntry(waiting)).toBe('skipped');
+
+        const busy = harness.service.postNotice(dm.id, buildBusyNotice('Ana', ana.id, 'unknown'));
+        expect(await delivery.deliverEntry(busy)).toBe('skipped');
+        expect(publish).not.toHaveBeenCalled();
       });
     });
 

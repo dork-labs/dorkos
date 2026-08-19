@@ -286,6 +286,56 @@ export function buildHaltedNotice(stopped: number): RoomEntryBody {
   };
 }
 
+/** What a per-agent stop found when it arrived. */
+export type AgentHaltOutcome = 'interrupted' | 'unstarted' | 'idle';
+
+/**
+ * The durable `notice` a per-agent stop writes: somebody stopped ONE agent here.
+ *
+ * Named on both sides, unlike {@link buildHaltedNotice}, and the asymmetry is
+ * deliberate. The room-wide line is passive because it applies to everybody
+ * including the person who pressed it. This one singles out one member of a
+ * shared room, and "who did that" is the first thing a room-mate asks.
+ *
+ * It carries the same `halted` code as the room-wide line and is told apart by
+ * `subjectAuthorId`: absent means the whole room, present names one agent. A new
+ * code would not have been additive — a client pinned to the old enum fails to
+ * parse any room containing a new value (`RoomNoticeCodeSchema`).
+ *
+ * @param personName - Display name of the person who pressed Stop.
+ * @param agentName - Display name of the agent that was stopped.
+ * @param subjectAuthorId - That agent's author id, so the feed can draw it.
+ * @param outcome - What the stop actually found, which is what the reader needs:
+ *   a turn cut short, a turn that had not started, or nothing at all.
+ */
+export function buildAgentHaltedNotice(
+  personName: string,
+  agentName: string,
+  subjectAuthorId: string,
+  outcome: AgentHaltOutcome
+): RoomEntryBody {
+  return {
+    text: `${personName} stopped ${agentName}. ${AGENT_HALT_LINES[outcome](agentName)}`,
+    notice: 'halted',
+    subjectAuthorId,
+  };
+}
+
+/**
+ * The second sentence of a per-agent stop, one per outcome.
+ *
+ * The `idle` line speaks rather than staying silent, for the reason the
+ * room-wide halt already gives: pressing Stop is a question, and silence is not
+ * an answer to it.
+ */
+const AGENT_HALT_LINES: Record<AgentHaltOutcome, (agentName: string) => string> = {
+  interrupted: (agentName) =>
+    `${agentName} was working here and has been interrupted. Send a message to start it again.`,
+  unstarted: (agentName) =>
+    `${agentName} had not started yet, so it will not answer what was waiting. Send a message to ask again.`,
+  idle: (agentName) => `${agentName} was not working here at the time.`,
+};
+
 /**
  * The durable `notice` for a turn that started and then failed, or never
  * finished at all.

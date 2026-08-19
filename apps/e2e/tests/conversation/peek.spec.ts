@@ -99,9 +99,12 @@ test.describe('Conversation — the peek behind the live lane', () => {
     // on the separator before it instead.
     await expect(rows.nth(1)).toContainText(/·\s*[2-5]\ds/);
 
-    // No per-row Stop with two agents working, and one footer action that says
-    // exactly what it will do. A button never stops work you did not mean to.
-    await expect(page.getByTestId('live-peek-stop')).toHaveCount(0);
+    // A Stop per row, each named for the agent it stops, plus one footer action
+    // that says exactly what it will do. A button never stops work you did not
+    // mean to: the row's ends that agent's turn, the footer's ends the room's.
+    await expect(page.getByTestId('live-peek-stop')).toHaveCount(2);
+    await expect(page.getByRole('button', { name: `Stop ${ana.name}` })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Stop ${bo.name}` })).toBeVisible();
     const stopAll = page.getByTestId('live-peek-stop-all');
     await expect(stopAll).toContainText('Stop everything in this room');
     await expect(stopAll).toContainText('Stops all 2');

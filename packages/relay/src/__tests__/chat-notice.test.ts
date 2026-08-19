@@ -149,6 +149,7 @@ describe('chat notices', () => {
       'agent_missing',
       'session_failed',
       'agent_busy',
+      'agent_held',
       'rate_limited',
       'budget_exceeded',
       'channel_archived',
@@ -159,6 +160,49 @@ describe('chat notices', () => {
       // No stack traces, no subject grammar, no codes.
       expect(text).not.toMatch(/relay\.|_[a-z]+_|Error:/);
     }
+  });
+
+  it('never asks for a resend instead of waiting, and promises nothing while it waits', () => {
+    const held = chatNoticeText('agent_held');
+    // Seeded defect: restore the old `agent_busy` line, "The agent is handling
+    // as much as it can right now… Send it again in a moment", as the answer to
+    // a busy runtime. A person is then asked to do work the machine now does
+    // for them, which is the whole point of the hold.
+    expect(held).not.toMatch(/again/i);
+    // And it must not promise an arrival it cannot guarantee: the hold's
+    // ceiling is NOT the ceiling on the turn in its way, so the wait can run
+    // out while the agent is still busy.
+    expect(held).not.toMatch(/will be|as soon as|shortly|soon/i);
+    expect(held).toMatch(/waiting its turn/);
+  });
+
+  it('asks for a resend only after the machine has tried and failed', () => {
+    // `agent_busy` is now reached only when a hold ran out of time or room. By
+    // then the machine has genuinely tried, and sending again is the one thing
+    // that works — so naming it is help, not the refusal this work removed.
+    const busy = chatNoticeText('agent_busy');
+    expect(busy).toMatch(/was too busy/);
+    expect(busy).toMatch(/was not picked up/);
+    expect(busy).toMatch(/send it again now/i);
+  });
+
+  it('tells a chat its message is waiting, not that it was dropped', async () => {
+    const { publish, notify } = harness();
+    expect(await notify(CHAT, 'agent_held')).toBe(true);
+
+    const text = chatNoticeText('agent_held');
+    // The one notice here that is about work still to come, and it states only
+    // the fact — the message is waiting — with no arrival attached to it.
+    expect(text).toMatch(/waiting its turn/);
+    expect(text).toMatch(/nothing you need to do/i);
+    expect(publish).toHaveBeenCalledWith(CHAT, { content: text }, { from: CHAT_NOTICE_SENDER });
+
+    // Damped on its own key: a chat that has been told it is waiting is not
+    // told again, and being told this does not silence the `agent_busy` line
+    // that a hold running out of time still owes it.
+    expect(await notify(CHAT, 'agent_held')).toBe(false);
+    expect(await notify(CHAT, 'agent_busy')).toBe(true);
+    expect(publish).toHaveBeenCalledTimes(2);
   });
 
   it('tells a chat, once, that its channel was archived out from under the bridge (spec §10.9)', async () => {

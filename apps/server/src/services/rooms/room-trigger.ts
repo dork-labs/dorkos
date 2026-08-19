@@ -2141,8 +2141,9 @@ export class RoomTriggerDispatcher {
       dispatchId: claim.dispatchId,
       cascadeRoot: claim.cascadeRoot,
     });
-    // Something is happening here again, so a halt is news again.
-    this.notices.workStarted(claim.roomId);
+    // Something is happening here again, so a halt is news again — for the room
+    // and for this agent, which are two different statements damped separately.
+    this.notices.workStarted(claim.roomId, claim.authorId);
     const before = this.workingCount(claim.roomId);
     const key = agentKey(claim.roomId, claim.authorId);
     // **Before the `working` publish, so the held line RESOLVES into the working
@@ -2432,18 +2433,22 @@ export class RoomTriggerDispatcher {
     const now = Date.now();
     for (const [key, record] of [...this.held]) {
       if (now - Date.parse(record.since) < ceiling) continue;
+      // A list, because one key can hold both a cap-closed batch and the fresh
+      // collection behind it — see {@link RoomCollector.dropOne}. The NEWEST of
+      // them is what the notice is about, and every one of them owes a credit.
       const dropped = this.collector.dropOne(record.roomId, record.authorId);
       this.releaseHold(key, 'expired');
-      if (dropped === null) continue;
+      const last = dropped.at(-1);
       // One credit back per collection, exactly as a halt returns them.
-      this.settleOne();
-      const newest = dropped.entries.at(-1);
+      for (const _each of dropped) this.settleOne();
+      if (last === undefined) continue;
+      const newest = last.entries.at(-1);
       const room = this.deps.store.getRoom(record.roomId);
       if (newest === undefined || room === null) continue;
       this.notices.reportSilence(
         room,
         newest.entry,
-        { authorId: dropped.authorId, displayName: dropped.displayName },
+        { authorId: last.authorId, displayName: last.displayName },
         'busy',
         // No dispatch of its own: no turn was ever started for this batch.
         null,
@@ -2495,7 +2500,7 @@ export class RoomTriggerDispatcher {
     const dropped =
       authorId === undefined
         ? this.collector.drop(roomId)
-        : [this.collector.dropOne(roomId, authorId)].filter((one) => one !== null);
+        : this.collector.dropOne(roomId, authorId);
     for (const collection of dropped) {
       logger.info('[rooms] a waiting message was given up on: the agent is no longer in the room', {
         roomId,
@@ -2847,23 +2852,171 @@ export class RoomTriggerDispatcher {
       this.settleCollection(dropped, 'halted');
     }
     for (const claim of claims) {
-      const sessionId = this.deps.store.getRoomSession(room.id, claim.authorId);
-      if (sessionId !== null && sessionId !== undefined) {
-        try {
+      try {
+        // The session lookup is INSIDE the try, and it is a database read: a
+        // `SQLITE_BUSY` escaping here would abandon the loop with every
+        // remaining claim marked and none of them released, so a room would show
+        // agents working for the life of the process and refuse each of them
+        // every message after.
+        const sessionId = this.deps.store.getRoomSession(room.id, claim.authorId);
+        if (sessionId !== null && sessionId !== undefined) {
           await this.deps.runner.interrupt({ sessionId, agentPath: claim.agentPath });
-        } catch (err) {
-          // One agent that will not stop must not leave the others running, and
-          // its claim is dropped either way: a claim held for a turn nobody can
-          // interrupt is an indicator with nothing behind it.
-          logger.warn('[rooms] could not interrupt a turn while halting a room', {
-            roomId: room.id,
-            authorId: claim.authorId,
-            error: err instanceof Error ? err.message : String(err),
-          });
         }
+      } catch (err) {
+        // One agent that will not stop must not leave the others running, and
+        // its claim is dropped either way: a claim held for a turn nobody can
+        // interrupt is an indicator with nothing behind it.
+        logger.warn('[rooms] could not interrupt a turn while halting a room', {
+          roomId: room.id,
+          authorId: claim.authorId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
       this.releaseClaim(agentKey(room.id, claim.authorId), 'halted');
     }
     return claims.length;
+  }
+
+  /**
+   * Stop one agent in one room: interrupt its turn, drop what it has not read
+   * yet here, and say so once. Everybody else in the room keeps working.
+   *
+   * **It is {@link RoomTriggerDispatcher.halt} scoped to one key, and it is held
+   * to the same three constraints — not to the same statement order.** All three
+   * are about what must be true BEFORE the claim is released; the two bodies
+   * order the middle pair differently, and deliberately, because this one has to
+   * know what it dropped before it can say what it found (`interrupted`,
+   * `unstarted`, `idle`) while `halt` speaks for the whole room and can say it
+   * first.
+   *
+   * 1. **The dispatch is marked before the first `await`** — the one ordering
+   *    that is load-bearing here and is pinned by a test. An interrupt is a
+   *    request and not a guarantee, so the turn's own stream still closes the
+   *    ordinary way and a model that had all but finished streams its last words
+   *    either side of the signal — the two-second race measured on 2026-08-15
+   *    (DOR-1232).
+   * 2. **The notice is written before the claim is released.** Releasing
+   *    publishes `done`, and an indicator that vanishes ahead of the entry
+   *    explaining it is a room going quiet for no visible reason.
+   * 3. **The collection is dropped before the claim is released.** Be exact
+   *    about this one, because the tempting version of the comment overstates
+   *    it: releasing a claim resumes a held collection by arming a
+   *    `setTimeout(0)`, and nothing in THIS method awaits after the release — so
+   *    a drop moved below it would still delete the collection before any sweep
+   *    could run, and every test here stays green. It was measured. The order is
+   *    defence in depth for what changes underneath it: `halt` already awaits an
+   *    interrupt per claim between its own release calls, which is where the
+   *    same mistake really does answer the messages the person pressed Stop
+   *    over, and the day anything is awaited below the release here this method
+   *    inherits that. `room-per-agent-stop.test.ts` pins the drop as happening
+   *    while the claim is still held, so a future `await` cannot silently
+   *    reorder it.
+   *
+   * Nothing here reads any other key. The other agents' claims and collections
+   * are never enumerated, which is what makes "the others keep working" a
+   * property of this code rather than of a test.
+   *
+   * **A HELD agent can be stopped too**, and it is the same act at a smaller
+   * scope: nothing is running here to interrupt, so what the person stops is
+   * this conversation waiting. The dropped collection goes through
+   * {@link RoomTriggerDispatcher.settleCollection}, so its held indicator is
+   * released rather than standing until the next republish tick, and the room
+   * writes the `unstarted` line. The turn in the room that was in the way is
+   * NOT touched — that is the refusal `specs/room-hold-when-busy` was right to
+   * make, and `Open where it's working` is still the one-click path to it.
+   *
+   * What it deliberately does NOT do is mute. Messages that arrive after this
+   * collect and are answered normally: Stop ends a turn, it does not change a
+   * setting. And it does not forget the halt mark — that is cleared at the
+   * stopped turn's own terminal, exactly as `halt`'s is.
+   *
+   * @param room - The room the agent is working in.
+   * @param authorId - The agent to stop.
+   * @param byAuthorId - The person stopping it, for the room's own line.
+   * @returns How many in-flight turns THIS call stopped: `1`, or `0` when the
+   *   agent was not running one here — or when a press that has not finished
+   *   delivering its interrupt yet had already stopped this same turn, which is
+   *   one turn and is counted once.
+   */
+  async haltAgent(room: Room, authorId: string, byAuthorId: string): Promise<number> {
+    const key = agentKey(room.id, authorId);
+    const claim = this.claimed.get(key);
+    // Read BEFORE the mark, or it would always be true. A press that is still
+    // awaiting its interrupt leaves the claim in place, so a second press lands
+    // on the same dispatch — one turn, stopped once, and counted once. The mark
+    // cannot be stale: it is dropped at the turn's own terminal, and the next
+    // turn for this pair is a different dispatch.
+    const alreadyStopping = claim !== undefined && this.wasHalted(claim.dispatchId);
+    // **Marked first, before anything that can yield.** See point 1 above: a
+    // turn whose stream closes while this method is still delivering the
+    // interrupt must find the mark already there, or it posts the answer Stop
+    // was pressed to prevent.
+    if (claim !== undefined) this.haltedTurns.add(claim.dispatchId);
+    logger.info('[rooms] an agent was stopped in a room', {
+      roomId: room.id,
+      authorId,
+      // What THIS press did, which is what a person reading two lines for one
+      // turn needs to tell them apart.
+      stopped: claim !== undefined && !alreadyStopping,
+      alreadyStopping,
+    });
+
+    // Dropped before the notice only to KNOW what to say; nothing here can
+    // yield, so the durable-write-before-release ordering is untouched. Scoped
+    // to this agent, so what anybody else is waiting to answer is left alone.
+    const waiting = this.collector.dropOne(room.id, authorId);
+    for (const dropped of waiting) {
+      logger.info('[rooms] a stop dropped messages that were waiting for a turn', {
+        roomId: room.id,
+        authorId,
+        waiting: dropped.entries.length,
+      });
+      // Through the seam, so the held indicator goes with the collection rather
+      // than standing until the next republish tick with nothing durable under
+      // it. Stopping a HELD agent is the case this covers: nothing is running
+      // here to interrupt, and what the person stopped is this conversation
+      // waiting. The `halted` line written just below is its durable sibling —
+      // and the turn in the OTHER room is untouched, which is the whole
+      // difference between this and stopping the room that is in the way.
+      this.settleCollection(dropped, 'halted');
+    }
+
+    this.notices.reportAgentHalted(room, {
+      byAuthorId,
+      subjectAuthorId: authorId,
+      outcome: claim !== undefined ? 'interrupted' : waiting.length > 0 ? 'unstarted' : 'idle',
+    });
+
+    if (claim === undefined) return 0;
+    // The earlier press owns the interrupt and the release; a second one here
+    // would interrupt a turn that is already being stopped and then release a
+    // key the first press is about to release itself.
+    if (alreadyStopping) return 0;
+
+    try {
+      // **The session lookup is inside the try, and that is the whole reason
+      // there is one line of nesting here.** It is a database read, and a
+      // `SQLITE_BUSY` escaping at this point would leave a marked, un-released
+      // claim: the room would show that agent working for the life of the
+      // process, and the `(room, agent)` ceiling would refuse it every message
+      // after. Whatever went wrong, the claim goes.
+      const sessionId = this.deps.store.getRoomSession(room.id, authorId);
+      if (sessionId !== null && sessionId !== undefined) {
+        await this.deps.runner.interrupt({ sessionId, agentPath: claim.agentPath });
+      }
+    } catch (err) {
+      // An agent that will not stop still loses its claim: a claim held for a
+      // turn nobody can interrupt is an indicator with nothing behind it.
+      logger.warn('[rooms] could not interrupt a turn while stopping an agent', {
+        roomId: room.id,
+        authorId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // By KEY, not by dispatch: this is stopping whoever holds the claim rather
+    // than finishing a turn of its own, which is the one case room-conduct
+    // reserves `releaseClaim` for.
+    this.releaseClaim(key, 'halted');
+    return 1;
   }
 }
