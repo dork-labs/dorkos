@@ -17,6 +17,7 @@
  */
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
+import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { ProjectableAttachment } from './room-context.js';
 import type { RoomTurnUnanswered } from './notices/notice-log.js';
 import type { WaitingKind } from './notices/notice-copy.js';
@@ -81,6 +82,21 @@ export interface RoomTurnRequest {
    * @param waiting - What the turn stopped for.
    */
   onWaiting(waiting: RoomTurnWaiting): void;
+  /**
+   * Say what this turn is doing right now — the tool it just started, or `null`
+   * when it is no longer doing anything nameable.
+   *
+   * The sibling of {@link RoomTurnRequest.onWaiting}, and reported for the same
+   * reason: it is a STATE while it is still true, not an outcome. Everything
+   * else the runner reports is settled by the time the room hears it.
+   *
+   * Called on every tool call inside this turn, and once with `null` at the
+   * turn's end, however it ends. The dispatcher decides how often any of that
+   * reaches the wire — a runner never has to remember what it last said.
+   *
+   * @param activity - The tool the turn just started, or `null` to clear.
+   */
+  onActivity(activity: SessionActivity | null): void;
 }
 
 /** One reason a turn has stopped and can make no progress without a person. */

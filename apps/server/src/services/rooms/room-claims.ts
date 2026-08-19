@@ -14,6 +14,7 @@
  *
  * @module server/services/rooms/room-claims
  */
+import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { DispatchOutcome } from '../observability/dispatch-buffers.js';
 import type { BusyContext } from './notices/notice-copy.js';
 import type { CascadeStamp, RoomTurnUnanswered } from './notices/notice-log.js';
@@ -128,6 +129,21 @@ export interface ActiveClaim {
    * {@link RoomTriggerDispatcher.runOne} — see the `finally` there.
    */
   pastDeadline: boolean;
+  /**
+   * What this turn is doing right now, as its runner last reported it, or
+   * `undefined` before its first tool call and after its last.
+   *
+   * On the claim rather than beside it because the claim outlives the frame that
+   * ran the turn: a late answer and a halt both reach the claim from paths that
+   * never saw the runner. It is also what makes every presence publish
+   * self-contained — the ten-second republish reads it from here, so a client
+   * that connects mid-turn sees the verb on its first frame.
+   */
+  activity?: SessionActivity;
+  /** This client's clock at the last activity publish — the throttle's floor. */
+  activityPublishedAt: number;
+  /** An armed trailing publish, or `undefined` when none is. */
+  activityFlush?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -234,6 +250,11 @@ export function agentKey(roomId: string, authorId: string): string {
  * A read surface that is safe to leave mounted carries what a span may carry —
  * ids, counts, durations, coarse enums — so the path does not cross the
  * boundary, and cannot start to just because someone adds a field to the claim.
+ *
+ * {@link ActiveClaim.activity} is the field that most recently tested that rule
+ * and is deliberately absent here: its target is a file name, a command excerpt
+ * or a search pattern, which is the same thing `agentPath` is and is kept out
+ * for the same reason.
  */
 export interface ActiveClaimView {
   roomId: string;

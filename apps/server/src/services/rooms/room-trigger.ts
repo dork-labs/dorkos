@@ -127,10 +127,12 @@ import type {
   RoomPresencePayload,
   RoomPresenceState,
 } from '@dorkos/shared/room-schemas';
+import type { SessionActivity } from '@dorkos/shared/session-stream';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
+import { ACTIVITY_FANOUT_THROTTLE_MS } from '../session/index.js';
 import {
   selectTriggerTargets,
   standDownFallbackSeat,
@@ -1081,6 +1083,10 @@ export class RoomTriggerDispatcher {
       spokeViaTool: false,
       claimedAt: new Date().toISOString(),
       pastDeadline: false,
+      // Zero rather than `Date.now()`: the turn's FIRST tool call should reach
+      // the room immediately, and a floor set at claim time would hold it back
+      // for up to one throttle window.
+      activityPublishedAt: 0,
     });
     return { room, entry, target };
   }
@@ -1319,6 +1325,10 @@ export class RoomTriggerDispatcher {
             { authorId: target.authorId, displayName: target.displayName },
             waiting
           ),
+        // What the turn is doing, for the room's live lane (DOR-1351). Keyed on
+        // the claim rather than the frame, so a reading that arrives after this
+        // scope is gone reaches nothing rather than a stale object.
+        onActivity: (activity) => this.noteActivity(agentKey(room.id, target.authorId), activity),
       });
 
       // A REFUSAL IS NOT A READING. The claim moved this agent's cursor to the
@@ -1781,6 +1791,10 @@ export class RoomTriggerDispatcher {
       spokeViaTool: false,
       claimedAt: new Date().toISOString(),
       pastDeadline: false,
+      // Zero rather than `Date.now()`: the turn's FIRST tool call should reach
+      // the room immediately, and a floor set at claim time would hold it back
+      // for up to one throttle window.
+      activityPublishedAt: 0,
     });
     return runInDispatch({ dispatchId, origin: 'room', entryId: entry.id }, () =>
       this.runAsideInDispatch({
@@ -1853,6 +1867,9 @@ export class RoomTriggerDispatcher {
         attachmentProjection: turnContext.projection,
         onWaiting: (waiting) =>
           this.notices.reportWaiting(room, entry, { authorId, displayName }, waiting),
+        // An aside turn holds a real claim in a real checkout, so it reports
+        // what it is doing like any other turn.
+        onActivity: (activity) => this.noteActivity(key, activity),
       });
       if (result.sessionId !== input.sessionId) {
         this.deps.store.rebindRoomSession(room.id, authorId, result.sessionId);
@@ -2164,6 +2181,11 @@ export class RoomTriggerDispatcher {
     this.notices.turnEnded(claim.roomId, claim.authorId);
     const before = this.workingCount(claim.roomId);
     this.claimed.delete(key);
+    // Before the `done`, in the same block that stops the republish timer: an
+    // armed trailing publish for a claim nobody holds is a `working` frame
+    // landing AFTER the `done` that retired it, which is a lane that never
+    // clears. `halt` releases through this seam and inherits it.
+    this.disarmActivityFlush(claim);
     this.publishPresence(claim, 'done');
     this.publishWorkingCount(claim.roomId, before);
     if (this.republishing !== null && this.claimed.size === 0) {
@@ -2179,6 +2201,89 @@ export class RoomTriggerDispatcher {
     // which is why stopping a room does not answer the messages it was stopped
     // over.
     this.collector.resume(claim.roomId, claim.authorId);
+  }
+
+  /**
+   * Take in what a turn says it is doing, and decide whether the room hears it
+   * now.
+   *
+   * **A new reading is throttled; a CLEAR never is.** Exactly the shape the
+   * session projector uses for the same fact and for the same reason (its own
+   * doc at {@link ACTIVITY_FANOUT_THROTTLE_MS}): a busy turn starts tools
+   * several times a second, and every publish here is a frame on every open
+   * reader of this room plus a change to a store four client hooks are
+   * watching. Clearing is never delayed, because a verb that outlives its turn
+   * is the one thing this feature must not do.
+   *
+   * The trailing flush is what keeps the throttle honest: without it the LAST
+   * tool of a burst would wait for the ten-second republish, and the lane would
+   * name a tool the agent finished nine seconds ago.
+   *
+   * A repeat of the reading already published is dropped outright — the same
+   * tool on the same target is not a change, and republishing it would restart
+   * nothing and cost a frame.
+   *
+   * @param key - The `(room, agent)` claim key this turn is running under.
+   * @param activity - What the turn just started, or `null` to clear.
+   */
+  private noteActivity(key: string, activity: SessionActivity | null): void {
+    const claim = this.claimed.get(key);
+    // Released, halted, or never taken. A turn that outlives its claim says
+    // nothing: there is no indicator left for this to be about.
+    if (claim === undefined) return;
+
+    if (activity === null) {
+      if (claim.activity === undefined) return;
+      claim.activity = undefined;
+      this.disarmActivityFlush(claim);
+      this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
+      claim.activityPublishedAt = Date.now();
+      return;
+    }
+
+    if (
+      claim.activity !== undefined &&
+      claim.activity.toolName === activity.toolName &&
+      claim.activity.target === activity.target
+    ) {
+      return;
+    }
+
+    claim.activity = activity;
+    const waited = Date.now() - claim.activityPublishedAt;
+    if (waited >= ACTIVITY_FANOUT_THROTTLE_MS) {
+      this.disarmActivityFlush(claim);
+      this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
+      claim.activityPublishedAt = Date.now();
+      return;
+    }
+    if (claim.activityFlush !== undefined) return;
+    const flush = setTimeout(() => {
+      claim.activityFlush = undefined;
+      // Whatever the claim holds WHEN THIS FIRES, not what it held when the
+      // timer was armed: a burst of six tools inside one window should leave
+      // the sixth on screen, not the second.
+      this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
+      claim.activityPublishedAt = Date.now();
+    }, ACTIVITY_FANOUT_THROTTLE_MS - waited);
+    // A trailing repaint is not a reason for the process to stay alive, for the
+    // reason the republish interval is unref'd.
+    flush.unref?.();
+    claim.activityFlush = flush;
+  }
+
+  /**
+   * Forget a claim's armed trailing publish, if it has one.
+   *
+   * Called wherever a publish has just happened or the claim is going away — a
+   * timer holding a released claim is a publish for work that is over.
+   *
+   * @param claim - The claim whose flush is no longer wanted.
+   */
+  private disarmActivityFlush(claim: ActiveClaim): void {
+    if (claim.activityFlush === undefined) return;
+    clearTimeout(claim.activityFlush);
+    claim.activityFlush = undefined;
   }
 
   /**
@@ -2241,6 +2346,12 @@ export class RoomTriggerDispatcher {
       state,
       entryId: claim.entryId,
       since: claim.claimedAt,
+      // Every publish is self-contained, exactly as `since` already is: the
+      // claim frame, the `working_late` frame, each ten-second republish and
+      // the `done` all carry whatever is current. A client that connects
+      // mid-turn therefore sees the verb on its first frame, with no separate
+      // activity event to miss.
+      ...(claim.activity ? { activity: claim.activity } : {}),
     });
   }
 

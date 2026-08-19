@@ -27,6 +27,7 @@ export type {
 // --- Runtime-neutral session-state projection (ADR-0264) ---
 export {
   SessionStateProjector,
+  ACTIVITY_FANOUT_THROTTLE_MS,
   CAPABILITY_HOLD_PAUSE_GRACE_MS,
   getOrCreateProjector,
   peekProjector,
@@ -44,6 +45,10 @@ export type {
   ProjectorStatusUpdate,
   InteractionChange,
 } from './session-state-projector.js';
+// The projector's own reading of one tool call, reused rather than re-derived:
+// a room's live lane names the same tool, with the same basename rule and the
+// same truncation, as the session pane two panes away (DOR-1351).
+export { deriveSessionActivity } from './activity/derive-activity.js';
 export { persistenceModeFor } from './projector-persistence.js';
 export type { ProjectorPersistenceMode } from './projector-persistence.js';
 export { EventLog, EVENT_LOG_MAX_EVENTS } from './event-log.js';
