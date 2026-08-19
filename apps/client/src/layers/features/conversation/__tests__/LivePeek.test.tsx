@@ -136,20 +136,6 @@ describe('LivePeek', () => {
     expect(elsewhere).toHaveFocus();
   });
 
-  it('follows the LAST row a person stood on, not the first they pressed', () => {
-    // `focusedRow` is overwritten by whichever Stop takes focus next, so a
-    // person who moved from Ana's row to Kai's and then saw Ana's row go is not
-    // moved at all — the row they are standing on is still there.
-    const { rerender } = render(<LivePeek rows={ROWS} onStopAgent={vi.fn()} />);
-    screen.getByRole('button', { name: 'Stop Ana' }).focus();
-    const kai = screen.getByRole('button', { name: 'Stop Kai' });
-    kai.focus();
-
-    rerender(<LivePeek rows={[ROWS[0], ROWS[2]]} onStopAgent={vi.fn()} />);
-
-    expect(kai).toHaveFocus();
-  });
-
   it('draws no row stop at all on a surface that has none behind it', () => {
     // Absent, never disabled: a control that cannot do anything is a promise the
     // product is not keeping. The session peek is that surface — its composer

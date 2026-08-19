@@ -25,7 +25,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
-import type { RoomTurnRequest, RoomTurnResult } from '../room-trigger.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import {
   agentLookupFor,
