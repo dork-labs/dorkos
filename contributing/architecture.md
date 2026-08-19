@@ -218,7 +218,7 @@ Server-side, the single `sessionGate` middleware enforces this for `/api/*` and 
 Server-side, every caller that can start a turn (HTTP route, MCP tool, relay, CLI) now goes through one ingress, `MessageDispatcher` (`services/session/message-dispatcher.ts`, spec `persistent-session-runtime`): it decides whether a message runs now or waits, and if it waits, in the durable `MessageQueueStore` rather than an in-memory list — so a queued message survives a server restart. A dequeue fires only on `turn_end`, never on a bare `result`, and never while the session has a pending interaction open. Every subscribed client sees the same queue, hydrated on the snapshot's `queuedMessages` and kept live by `queue_update` stream events (see `contributing/data-fetching.md`).
 
 ```
-User input -> ChatPanel -> useChatSession.handleSubmit()
+User input -> SessionComposer -> ConversationTarget.send() -> useChatSession.submitContent()
   -> transport.postMessage(sessionId, content, cwd) -> POST /api/sessions/:id/messages -> 202
   -> MessageDispatcher: runs now (detached) or joins the queue if a turn is already open
   -> a running turn's StreamEvents feed the per-session projector (monotonic seq)
@@ -237,7 +237,7 @@ See [Agent UI Control](#agent-ui-control) for the bidirectional UI-command patte
 ### Obsidian Plugin (DirectTransport)
 
 ```
-User input -> ChatPanel -> useChatSession.handleSubmit()
+User input -> SessionComposer -> ConversationTarget.send() -> useChatSession.submitContent()
   -> transport.postMessage(sessionId, content, cwd)
     -> runtime.sendMessage() -> SDK query() (turn runs detached)
   -> StreamManager pump iterates transport.subscribeSession()

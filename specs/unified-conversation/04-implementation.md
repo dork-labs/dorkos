@@ -775,7 +775,7 @@ In Linear-ready form — one bullet each, owner named where the record above alr
 - **Approvals tier C: park-instead-of-deny for the ten-minute timeout.** The single most valuable follow-on named in the spec's "What is not done" #1. Owner: whoever picks up `design-decisions.md` §2.
 - **The per-author room halt (spec §5.3.4).** The peek's Stop is single-agent-or-everyone today because a per-author halt needs its own notice copy and a scoped gather-buffer drop without re-opening the 2026-08-15 interrupt race. Owner: a future room-lane phase.
 - **`render-session-body.tsx` stays a feature export because `features/onboarding` renders `SessionMessage` for its scripted narration.** Frees only if onboarding is changed to compose `Message.*` directly (Known Issue 29). Owner: whoever next touches onboarding's narration renderer.
-- **A session's `ConversationTarget.send`/`.queue` are not the session's live send path** (Known Issue 28) — `SessionComposer`'s own `handleSubmit` and `useChatQueue` are what a session actually routes through; the target's two methods are real but unused by the shipped surface. Owner: whoever moves that funnel down into the target.
+- ~~**A session's `ConversationTarget.send`/`.queue` are not the session's live send path** (Known Issue 28) — `SessionComposer`'s own `handleSubmit` and `useChatQueue` are what a session actually routes through; the target's two methods are real but unused by the shipped surface. Owner: whoever moves that funnel down into the target.~~ **Resolved 2026-08-18 (DOR-1354)** — see the note below.
 - **Three files still exceed the 500-line guideline** — `ChatPanel.tsx` (571), `ChannelComposer.tsx` (527), `SessionComposer.tsx` (503) — each for a stated reason (Known Issue 27). Revisit when one of them next grows, not before.
 - ~~**`resolvedBy` is never populated on a receipt.**~~ **Done (DOR-1355).** The six answer routes now resolve the person's name and carry it to the wire, so a cross-window receipt reads "Already answered by Dorian at 2:01". What remains: the relay's bridged approver (`packages/relay/src/adapters/claude-code/approval-handler.ts`) can name its own responder through the same `answeredBy` seam and does not yet.
 - **No multi-person Ask entitlement filter.** The list route and the global fan-out both answer this cockpit's one operator; if DorkOS ever has more than one person, both need a per-caller filter, which is a change to `eventFanOut`'s addressing model (P3 Known Issue 23).
@@ -897,3 +897,75 @@ Not user-facing: the narration renders the same rows, from the same components, 
 - **Known cosmetic consequence:** a bridged chat can now carry two notices about one agent in different voices — `turn_failed` is re-rendered for the chat ("Try sending your message again") while the waiting line forwards the room's cockpit-pointing sentence ("Open Ana's session to answer"). Writing one vaguer bridged sentence per `WaitingKind` was considered and declined here for the reason above, and rides with DOR-1356.
 
 **Also amended:** `specs/chats-as-channels/02-specification.md` §6.2 and its `design-decisions.md` Q5 — that spec owns `deliverNotices` and its scope, so the widening is recorded there too, append-only.
+
+### Known Issue 28 — resolved (2026-08-18, DOR-1354)
+
+**A session's Enter now ends in `ConversationTarget.send`, and Enter mid-turn in `.queue`.** The
+port declared two send methods and only the room half used them; the session composed through a
+`handleSubmit` prop and an `enqueueContent` prop passed down from `ChatPanel`, so both methods
+were real, covered and unreachable — the exact shape where "the composer sends through the
+target" was true of one surface and false of the other.
+
+What moved, and what deliberately did not:
+
+- **`SessionComposer.submitAndDismiss` calls `target.send({ text })`.** The `handleSubmit` prop
+  is gone. `ChatPanel` hands the target a `sendMessage` seam instead
+  (`submitContent(content, { clearInput: true })`).
+- **`useChatQueue`'s `onEnqueue` is `target.queue`**, wired in `SessionComposer` as `holdForTurn`
+  — which turns the port's rejection back into the boolean the funnel is built on, because the
+  composer holds the words until the server confirms it has them (DOR-480).
+- **`useChatQueue` itself stayed in `features/chat`, and that is the point rather than a
+  shortcut.** It is the session's own funnel — native-command intercept, duplicate-press latch,
+  keystroke record, clear-on-confirmed, and every queue-editing verb the panel needs — and it
+  plays exactly the role `ChannelComposer.handleSubmit` plays for a room, which also does work
+  before reaching `target.send`. The port is where a surface's funnel ENDS, not the whole of it.
+  Pulling the funnel into `session-target.ts` would have moved queue editing into a model file
+  that has no business with it and left a second copy of `deliver` for steer and stage.
+- **Steer and Add context stay props.** The port has two verbs because those are the two every
+  surface could have; steering is one runtime's capability on one surface.
+- **`canSend` became a real answer, and it fixes a real bug.** There is no "gone session" notion
+  anywhere in the client — the spec's own example was aspirational — so the case it covers is the
+  one that genuinely exists and is genuinely reachable: `sessionId === ''`, which is the Obsidian
+  embed's first load. `app-store` seeds `sessionId: null`, nothing auto-mints one (`EmbedSidebar`
+  mints on a row click or New), switching agents resets it to null again
+  (`use-directory-state.ts`), and `App.tsx` keeps a composer on screen throughout.
+
+  What happened there before was checked rather than assumed: Enter reached
+  `postMessage(null, …)`, and `POST /api/sessions/:id/messages` validates its id with
+  `parseSessionId`, which is a **uuid** check — so `/api/sessions/null/messages` is a
+  `400 INVALID_SESSION_ID`. The composer had already been emptied by then (`clearInput` runs
+  before the POST), so the words were gone and all that came back was "Could not send message".
+  Refusing up front is strictly better than that.
+
+  The sentence is its **own** — "Pick a conversation, or start a new one." — deliberately not the
+  room target's "Still opening this conversation…". Nothing is opening in that state; telling
+  somebody to wait for something that will never arrive is the dishonest half of refusing, and
+  the honest version names the way out.
+
+- **`useSessionSubmit.handleSubmit` folded into `submitContent`**, which now takes
+  `{ clearInput }`. `handleSubmit` survives as the zero-argument form `useLaunchPrompt` sends
+  through, so the `?prompt=&send=1` link still takes the composer's own path and no other.
+
+The net is one new cross-surface test rather than one more per surface:
+`test-helpers/__tests__/composer-target-contract.test.tsx` mounts each host composer over a spy
+target and presses Enter. It lives beside the two benches because no widget may import another
+and the case is about the pair.
+
+Two more tests came out of review, both pinning things the refactor made possible to get wrong
+silently:
+
+- `widgets/session/__tests__/ChatPanel-send-clears.test.tsx`. Emptying the composer used to be
+  structural — `handleSubmit` hard-coded the `clearInput` argument — and is now one line of
+  wiring in `ChatPanel`. Dropping `{ clearInput: true }` left all 954 client test files green
+  while the box stopped emptying on every send. This mounts the real panel over the real submit
+  path and asserts both halves: the draft is `''` after an accepted trigger, and it is untouched
+  when the attachment transform throws (DOR-480).
+- Two cases in `SessionComposer.test.tsx` for the no-conversation state — that the box is closed
+  with its own sentence, and that Enter reaches neither `send` nor `queue`. A reason drawn over a
+  live box would be a label, not a refusal.
+
+One thing this did NOT fix, said out loud because it touched it: `ChatPanel.tsx` and
+`SessionComposer.tsx` both grew (571 → 583 and 503 → 534 raw lines), which is the trigger
+Known Issue 27 named for revisiting the 500-line guideline. Neither trips `max-lines`, which
+counts code rather than the comments most of the growth is, so no gate moved — but the item is
+now genuinely due rather than merely open.

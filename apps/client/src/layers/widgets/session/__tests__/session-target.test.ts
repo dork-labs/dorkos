@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * The session's `ConversationTarget`, and the one thing about it that is not
- * about sending: it has to hold still.
+ * The session's `ConversationTarget`: where a session's words go, and the one
+ * thing about it that is not about sending — it has to hold still.
  *
  * The target is what `Conversation.Root` publishes as its context value, so a
  * target that is a new object every render re-renders the whole transcript —
@@ -9,6 +9,9 @@
  * the list was paid to remove. Its inputs churn by construction (a fresh files
  * literal, fresh send closures), so holding still is a property this file has
  * to assert rather than assume.
+ *
+ * Since DOR-1354 the two send methods are the session's LIVE path rather than a
+ * declared one, so what they do with a draft is asserted here too.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
@@ -77,6 +80,62 @@ describe('useSessionTarget', () => {
 
     expect(stale).not.toHaveBeenCalled();
     expect(fresh).toHaveBeenCalledWith('ship it');
+  });
+
+  it('holds a draft for the running turn through whichever enqueue the latest render handed it', async () => {
+    const stale = vi.fn(async () => true);
+    const fresh = vi.fn(async () => true);
+    const { result, rerender } = renderHook(
+      (props: SessionTargetInput) => useSessionTarget(props),
+      { initialProps: input({ enqueue: stale }) }
+    );
+
+    rerender(input({ enqueue: fresh }));
+    await result.current.queue!({ text: 'and then the docs' });
+
+    expect(stale).not.toHaveBeenCalled();
+    expect(fresh).toHaveBeenCalledExactlyOnceWith('and then the docs');
+  });
+
+  it('rejects when the server refuses to hold the message', async () => {
+    // `false` is the enqueue routes' "I did not take it", and the composer
+    // keeps the words on a rejection — so a quiet no-op here would clear the
+    // box over a message that was never held (DOR-480).
+    const { result } = renderHook(() =>
+      useSessionTarget(input({ enqueue: vi.fn(async () => false) }))
+    );
+
+    await expect(result.current.queue!({ text: 'and then the docs' })).rejects.toThrow(
+      'The queue did not accept that message.'
+    );
+  });
+
+  it('refuses to send, and names the way out, when no conversation is selected', () => {
+    // **Seeded defect:** put `canSend: true` back and this goes red twice over.
+    // An empty id is the Obsidian embed's first load — `app-store` seeds
+    // `sessionId: null` and nothing auto-mints one — where Enter used to reach
+    // `postMessage(null, …)` and take a `400 INVALID_SESSION_ID` from the route
+    // (`parseSessionId` is a uuid check), with the composer already emptied.
+    const { result } = renderHook(() => useSessionTarget(input({ sessionId: '' })));
+
+    expect(result.current.canSend).toBe(false);
+    // Its OWN sentence. Borrowing the room target's "Still opening this
+    // conversation…" would promise something that never arrives: nothing is
+    // loading, there is simply nothing selected.
+    expect(result.current.canSendReason).toBe('Pick a conversation, or start a new one.');
+  });
+
+  it('is sendable the moment the session has an id', () => {
+    // The other half, so the case above cannot be passed by refusing always:
+    // a session id minted client-side for a conversation that does not exist on
+    // the server yet is still perfectly writable — that first message is what
+    // creates it.
+    const { result } = renderHook(() =>
+      useSessionTarget(input({ sessionId: 'not-yet-on-server' }))
+    );
+
+    expect(result.current.canSend).toBe(true);
+    expect(result.current.canSendReason).toBeUndefined();
   });
 
   it('changes identity when something the composer draws from changes', () => {

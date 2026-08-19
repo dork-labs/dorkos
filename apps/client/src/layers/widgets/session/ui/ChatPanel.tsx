@@ -271,6 +271,20 @@ export function ChatPanel({
       void queryClient.invalidateQueries({ queryKey: ['commands'] });
     }, [enableNotificationSound, queryClient]),
   });
+  /**
+   * Start a turn with the composer's words, and empty the box once they are
+   * genuinely on their way.
+   *
+   * The session's half of `ConversationTarget.send`. Written here rather than in
+   * the composer because the target is built here, and it is the only send the
+   * composer has — pressing Enter in a session reaches the runtime through this
+   * and through nothing else (DOR-1354).
+   */
+  const sendMessage = useCallback(
+    (content: string) => submitContent(content, { clearInput: true }),
+    [submitContent]
+  );
+
   const { permissionMode } = useSessionStatus(sessionId, sessionStatus, status === 'streaming');
 
   const { handleToolRef, focusedOptionIndex } = useToolShortcuts(activeInteraction);
@@ -442,7 +456,7 @@ export function ChatPanel({
   const sessionTarget = useSessionTarget({
     sessionId: sessionId ?? '',
     placeholder: defaultPlaceholder,
-    submit: submitContent,
+    submit: sendMessage,
     enqueue: enqueueContent,
     files: fileUpload,
   });
@@ -542,8 +556,6 @@ export function ChatPanel({
           chatInputRef={chatInputRef}
           input={input}
           autocomplete={autocomplete}
-          handleSubmit={handleSubmit}
-          enqueueContent={enqueueContent}
           steerContent={steerContent}
           addContextContent={addContextContent}
           tryNativeCommand={tryNativeCommand}

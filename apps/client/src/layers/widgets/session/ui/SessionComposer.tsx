@@ -61,18 +61,17 @@ interface SessionComposerProps {
   chatInputRef: RefObject<ComposerInputHandle | null>;
   input: string;
   autocomplete: ReturnType<typeof useInputAutocomplete>;
-  handleSubmit: () => void;
-  /**
-   * Put the composer's text on the session's server-owned queue. Resolves
-   * `true` once the server has it, which is what lets the composer hold the
-   * words until then.
-   */
-  enqueueContent: (content: string) => Promise<boolean>;
   /**
    * Send the composer's text into the running turn now (steer). Wired to the
    * Steer affordance only when the session's runtime declares it can take a
    * message mid-task; the affordance is hidden otherwise. Resolves `true` once
-   * the server has it, exactly like {@link enqueueContent}.
+   * the server has it.
+   *
+   * Still a prop rather than a port method, and deliberately: `ConversationTarget`
+   * has two verbs, send and queue, because those are the two every surface could
+   * have. Steering is a runtime capability of ONE surface, so it stays the
+   * session's own wiring — the same reason a room's rejoin button is not on the
+   * port either.
    */
   steerContent: (content: string) => Promise<boolean>;
   /**
@@ -148,8 +147,6 @@ export function SessionComposer({
   chatInputRef,
   input,
   autocomplete,
-  handleSubmit,
-  enqueueContent,
   steerContent,
   addContextContent,
   tryNativeCommand,
@@ -202,13 +199,43 @@ export function SessionComposer({
   const canSteer = (capabilities?.supportsSteer ?? false) && (sessionSteerable ?? true);
   const canAddContext = capabilities?.supportsContextStaging ?? false;
 
+  /**
+   * Hold these words for the running turn — the session's queue, reached
+   * through the conversation's own port.
+   *
+   * The port rejects where the queue routes answer `false`, and this turns that
+   * back into the boolean the funnel is built on: the composer keeps the words
+   * until the server confirms it has them (DOR-480), so "did it land" has to be
+   * an answer rather than an unhandled rejection.
+   *
+   * The missing-`queue` branch is unreachable as this ships and is a `false`
+   * rather than a throw for that reason. Every session target defines `queue`
+   * (its presence is what draws the queue chrome at all), and `target` itself
+   * is non-null by the time anything can press a key — `Conversation.Composer`
+   * refuses to render without one. It exists because the port permits a
+   * queueless surface, and "the words were not taken" is the honest answer for
+   * one: the composer keeps them, which is what it would do anyway.
+   */
+  const holdForTurn = useCallback(
+    async (content: string): Promise<boolean> => {
+      if (target?.queue === undefined) return false;
+      try {
+        await target.queue({ text: content });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [target]
+  );
+
   const chatQueue = useChatQueue({
     input,
     setInput,
     sessionId,
     selectedCwd,
     waiting,
-    onEnqueue: enqueueContent,
+    onEnqueue: holdForTurn,
     onSteer: steerContent,
     onStage: addContextContent,
     tryNativeCommand,
@@ -311,8 +338,20 @@ export function SessionComposer({
   // over the agent's reply until the next keystroke.
   const submitAndDismiss = useCallback(() => {
     autocomplete.dismissPalettes();
-    handleSubmit();
-  }, [autocomplete, handleSubmit]);
+    // Where the session's words actually go: `ConversationTarget.send`, the
+    // same port a channel's Enter ends in. Nothing is taken out of the box
+    // here — the send owns the clear, and empties it only once the attachment
+    // transform has succeeded (DOR-480), which is the one thing a session's
+    // send does that a room's does not.
+    //
+    // No `.catch` here, and that is deliberate rather than an omission: the
+    // session's submit turns a refused trigger into the composer's own error
+    // banner (with its Retry) instead of throwing, so nothing that reaches this
+    // line would be a refusal a person needs told about — it would be a bug
+    // worth seeing.
+    if (target === null || !target.canSend) return;
+    void target.send({ text: input });
+  }, [autocomplete, target, input]);
 
   const queueAndDismiss = useCallback(() => {
     autocomplete.dismissPalettes();

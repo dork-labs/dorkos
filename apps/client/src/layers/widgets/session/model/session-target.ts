@@ -18,7 +18,15 @@ import type { PendingFile } from '@/layers/features/composer';
 
 /** The parts of the session's own machinery this adapter writes through. */
 export interface SessionTargetInput {
-  /** The session being written to. */
+  /**
+   * The session being written to, or `''` before one has been resolved.
+   *
+   * Empty is a real state rather than a defensive default: the Obsidian embed
+   * seeds no session id until one is opened, and `/session` can be rendered
+   * while its loader is still deciding which conversation that is. Neither
+   * delivery path below can do anything with it, so {@link ConversationTarget.canSend}
+   * says so instead of letting a message go nowhere.
+   */
   sessionId: string;
   /** What the empty box says — "Message DorkBot…". */
   placeholder: string;
@@ -29,8 +37,13 @@ export interface SessionTargetInput {
    * the durable per-session SSE stream (ADR-0264), so this must NOT wait for
    * content: it resolves when the server has accepted the trigger, and the words
    * appear because the stream says so.
+   *
+   * It also owns the composer's clear, which is why the host does not take the
+   * draft out of the box first the way a room's does: the words are emptied only
+   * once the attachment transform has succeeded, so a failed upload leaves them
+   * exactly where they were typed (DOR-480).
    */
-  submit: (content: string) => void;
+  submit: (content: string) => Promise<void> | void;
   /** Hold these words for the current turn instead. Resolves once the server has them. */
   enqueue: (content: string) => Promise<boolean>;
   /** The staged files, and what can be done to them. */
@@ -53,17 +66,12 @@ export interface SessionTargetInput {
  * draw queue chrome on one surface and none at all on the other — rather than a
  * disabled button explaining a feature the surface does not have.
  *
- * **`send` and `queue` are not yet the session's live path, and that is
- * recorded rather than hidden.** A channel presses Enter and lands in
- * `target.send`; a session still funnels through `SessionComposer`'s own
- * `handleSubmit` (which rewrites the message with saved attachment paths and
- * dismisses its palettes on the way) and through `useChatQueue`. So today the
- * composer reads only the PRESENCE of `queue` off this object. Both functions
- * are real, correct and covered — they are what the session routes through when
- * that funnel moves down here — but until it does, one port has two send paths
- * behind it. Filed as a P5 follow-up in `specs/unified-conversation`; do not
- * "simplify" them away in the meantime, because the room half of the port is
- * defined by them.
+ * **`send` and `queue` ARE the session's live path** (DOR-1354, closing P4's
+ * Known Issue 28). Pressing Enter in a session lands in `send` and pressing it
+ * mid-turn lands in `queue`, exactly as a channel's Enter lands in the room
+ * target's `send`. What stays in `SessionComposer` is the same thing that stays
+ * in `ChannelComposer` — the surface's own funnel, which dismisses its palettes,
+ * intercepts a native command and holds a duplicate press — and it ENDS here.
  *
  * @param input - The session's own send path, queue and staged files.
  * @returns The target the conversation publishes to its composer.
@@ -110,17 +118,12 @@ export function useSessionTarget(input: SessionTargetInput): ConversationTarget 
     [pendingFiles, hasFailedUpload, isUploading, add, remove, retry, cancel]
   );
 
-  const send = useCallback((draft: ConversationDraft): Promise<void> => {
-    // Synchronous by design: `submit` starts a turn and the words come back
-    // on the stream. Wrapping the throw is what makes a refusal surface
-    // rather than disappear — the interface promises a rejection, never a
-    // silent drop.
-    try {
-      latest.current.submit(draft.text);
-      return Promise.resolve();
-    } catch (error) {
-      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
-    }
+  const send = useCallback(async (draft: ConversationDraft): Promise<void> => {
+    // Resolves on the TRIGGER, not on the answer: `submit` returns once the
+    // server has accepted the turn, and the words come back on the stream. A
+    // throw propagates rather than being swallowed — the interface promises a
+    // rejection, never a silent drop.
+    await latest.current.submit(draft.text);
   }, []);
 
   const queue = useCallback(async (draft: ConversationDraft): Promise<void> => {
@@ -135,11 +138,26 @@ export function useSessionTarget(input: SessionTargetInput): ConversationTarget 
       kind: 'session',
       id: sessionId,
       placeholder,
-      // A session with no id yet is one this browser is about to create with its
-      // first message, which is exactly when somebody types into it — so the
-      // only thing that closes this box is a failed attachment, and the composer
-      // reads that off the port.
-      canSend: true,
+      // A session this browser is about to create already HAS an id — it is
+      // minted client-side and the first message is what makes it real on the
+      // server — so an empty one is not "new" and it is not "loading" either:
+      // there is no conversation selected. The Obsidian embed opens in exactly
+      // that state (`app-store` seeds `sessionId: null`, nothing auto-mints
+      // one, and switching agents resets it), and it keeps a composer on screen
+      // the whole time.
+      //
+      // **This is a fix, not a new restriction.** Enter there used to reach
+      // `postMessage(null, …)`, which the route rejects outright —
+      // `parseSessionId` is a uuid check, so `/api/sessions/null/messages` is a
+      // 400 — and the composer had already been emptied by then. The words were
+      // gone and all that came back was "Could not send message".
+      //
+      // The sentence is its OWN, deliberately not the room target's "Still
+      // opening this conversation…": nothing is opening here, and telling
+      // somebody to wait for something that will never arrive is the dishonest
+      // half of refusing. It names the way out instead.
+      canSend: sessionId !== '',
+      ...(sessionId === '' ? { canSendReason: 'Pick a conversation, or start a new one.' } : {}),
       send,
       queue,
       attachments,
