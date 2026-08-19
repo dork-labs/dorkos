@@ -32,6 +32,11 @@
  * - Register the list route after `/:id` → the request 404s as a session id.
  * - Freeze `remainingMs` at emit (return the tracked value instead of asking
  *   the selector) → "recomputed at read time" goes red.
+ * - Drop the `answeredBy` argument from any one of the six calls → that route's
+ *   two naming rows go red.
+ * - Return a constant from `answeredBy` instead of reading what this install
+ *   knows → all six "names nobody" rows go red and all six named rows stay
+ *   green, which is the pair that tells a resolved name from an invented one.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
@@ -61,11 +66,19 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
+/** What this install has been told to call the person, per case. */
+let profileDisplayName: string | null = null;
+
 // `requireOperatorCookieUnderLogin` reads `auth.enabled` from here, which is the
-// only thing that decides whether a per-user API key is refused.
+// only thing that decides whether a per-user API key is refused; `answeredBy`
+// reads `profile.displayName`, which is what the receipt prints.
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
-    get: vi.fn((key: string) => (key === 'auth' ? { enabled: loginEnabled } : null)),
+    get: vi.fn((key: string) => {
+      if (key === 'auth') return { enabled: loginEnabled };
+      if (key === 'profile') return { displayName: profileDisplayName };
+      return null;
+    }),
     set: vi.fn(),
   },
 }));
@@ -146,6 +159,7 @@ function park(sessionId: string, cwd: string, id: string, startedAt = Date.now()
 beforeEach(() => {
   fakeRuntime = new FakeAgentRuntime();
   loginEnabled = false;
+  profileDisplayName = null;
   vi.clearAllMocks();
   disposeProjector(SESSION_ID);
   disposeProjector(OTHER_SESSION_ID);
@@ -220,21 +234,36 @@ describe('GET /api/sessions/pending-interactions', () => {
 });
 
 describe('who may answer a prompt', () => {
-  /** The six ways to answer, each with a body its route accepts. */
+  /**
+   * The six ways to answer, each with a body its route accepts and how many
+   * prompts that body answers — two for the batch routes, one for the rest.
+   */
   const ANSWER_ROUTES = [
-    { name: 'approve', path: 'approve', body: { toolCallId: 'tc-1' } },
-    { name: 'deny', path: 'deny', body: { toolCallId: 'tc-1' } },
-    { name: 'batch-approve', path: 'batch-approve', body: { toolCallIds: ['tc-1', 'tc-2'] } },
-    { name: 'batch-deny', path: 'batch-deny', body: { toolCallIds: ['tc-1', 'tc-2'] } },
+    { name: 'approve', path: 'approve', body: { toolCallId: 'tc-1' }, answers: 1 },
+    { name: 'deny', path: 'deny', body: { toolCallId: 'tc-1' }, answers: 1 },
+    {
+      name: 'batch-approve',
+      path: 'batch-approve',
+      body: { toolCallIds: ['tc-1', 'tc-2'] },
+      answers: 2,
+    },
+    {
+      name: 'batch-deny',
+      path: 'batch-deny',
+      body: { toolCallIds: ['tc-1', 'tc-2'] },
+      answers: 2,
+    },
     {
       name: 'submit-answers',
       path: 'submit-answers',
       body: { toolCallId: 'tc-1', answers: { '0': 'Blue' } },
+      answers: 1,
     },
     {
       name: 'submit-elicitation',
       path: 'submit-elicitation',
       body: { interactionId: 'tc-1', action: 'accept' },
+      answers: 1,
     },
   ] as const;
 
@@ -243,6 +272,26 @@ describe('who may answer a prompt', () => {
     fakeRuntime.submitAnswers.mockReturnValue(true);
     fakeRuntime.submitElicitation.mockReturnValue(true);
   });
+
+  /**
+   * The options object each call to the runtime carried, one per answered
+   * prompt — two of them for the batch routes, which answer a stack at once.
+   *
+   * Reads the spy the route actually reached rather than assuming which one, so
+   * a route wired to the wrong runtime method fails here instead of quietly
+   * asserting nothing.
+   *
+   * @param name - Which of the six routes the case drove.
+   */
+  function answerArgs(name: (typeof ANSWER_ROUTES)[number]['name']): unknown[] {
+    if (name === 'submit-answers') {
+      return fakeRuntime.submitAnswers.mock.calls.map((call) => call.at(3));
+    }
+    if (name === 'submit-elicitation') {
+      return fakeRuntime.submitElicitation.mock.calls.map((call) => call.at(4));
+    }
+    return fakeRuntime.approveTool.mock.calls.map((call) => call.at(3));
+  }
 
   for (const route of ANSWER_ROUTES) {
     describe(`POST /api/sessions/:id/${route.path}`, () => {
@@ -321,6 +370,37 @@ describe('who may answer a prompt', () => {
           .send(route.body);
 
         expect(res.status).toBe(200);
+      });
+
+      it('hands the runtime the name to put on the receipt', async () => {
+        // DOR-1355. The name is resolved HERE, from what this install knows
+        // about the person, and never taken off the request — a caller that
+        // could name itself could sign somebody else's decision. Everything
+        // downstream only relays it, so this call is where it becomes true.
+        profileDisplayName = 'Ada';
+
+        const res = await request(buildApp())
+          .post(`/api/sessions/${SESSION_ID}/${route.path}`)
+          .send(route.body);
+
+        expect(res.status).toBe(200);
+        const args = answerArgs(route.name);
+        expect(args).toHaveLength(route.answers);
+        for (const arg of args) expect(arg).toMatchObject({ answeredBy: 'Ada' });
+      });
+
+      it('names nobody when this install has never been told a name', async () => {
+        // The receipt then reads "Already answered at 2:01", which stays true.
+        // A placeholder here would print "Already answered by You" in a window
+        // that was not the one that answered.
+        const res = await request(buildApp())
+          .post(`/api/sessions/${SESSION_ID}/${route.path}`)
+          .send(route.body);
+
+        expect(res.status).toBe(200);
+        const args = answerArgs(route.name);
+        expect(args).toHaveLength(route.answers);
+        for (const arg of args) expect(arg).not.toHaveProperty('answeredBy');
       });
     });
   }
