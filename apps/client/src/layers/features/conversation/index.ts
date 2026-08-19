@@ -36,10 +36,12 @@ export {
   LANE_TIMER_FLOOR_MS,
   NO_ASKS,
   NO_PRESENCE,
+  NO_HELD,
 } from './model/lane-state';
 export type {
   LaneAsk,
   LaneOperationProgress,
+  LaneHeldAuthor,
   LanePresenceAuthor,
   LaneState,
   LaneStateInput,
