@@ -69,9 +69,27 @@ shorter notice, something like:
 No file name. No command. No countdown. The full question, with the file it wants to touch and
 the buttons to answer it, goes to your DorkOS cockpit and nowhere else.
 
+## Who can answer, and from where
+
+You can, in DorkOS. That is the main answer and it covers nearly everything.
+
+There is one other way in. If you have connected a chat app like Telegram or Slack, and you have
+named people on that connection's approver list, then one of those people can answer from a
+private chat with the bot. They get the same Approve and Deny buttons you would, showing the same
+tool the agent wants to run. Press one and the agent carries on.
+
+That only happens in a **one-to-one chat with somebody on the list**. In a group chat, nobody gets
+the buttons and nobody sees what the agent wants to run, because DorkOS has no way to know who
+else is reading. Everyone there gets the same short sentence the room gets: an agent is waiting,
+and the answer happens in DorkOS.
+
+Programs you have given an agent identity to — a script holding one of your API keys, another
+agent on this machine — never see what an agent is waiting for. They could never answer it, and
+now they cannot read it either.
+
 <Callout title="What DorkOS doesn't do yet">
-  An Ask only reaches you while your DorkOS cockpit is open. Nothing is pushed to your phone or sent
-  as a notification when the cockpit is closed. If nobody's there to see it, the ten-minute clock
-  still runs out and the request is refused for you. And DorkOS today answers to one person, so
-  there's no way yet to say who else may approve things, or for which agents.
+  An Ask only reaches you while your DorkOS cockpit is open, unless a named approver is on a chat
+  connection. Nothing is pushed to your phone when the cockpit is closed. If nobody's there to see
+  it, the ten-minute clock still runs out and the request is refused for you. The approver list is
+  per chat connection, not per agent, and DorkOS does not record which of them answered.
 </Callout>
