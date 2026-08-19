@@ -216,9 +216,10 @@ router.get('/:id/sessions', (req, res) => {
     // are — see the note above on why that comes first.
     const bindings = getRoomService().listRoomSessions(req.params.id, caller.id);
     if (presentsAgentIdentity(req, res)) {
-      // A 403 rather than a 404: whoever this resolved to IS in the room, so
-      // there is nothing left to hide, and telling an agent "this is not yours
-      // to read" is more useful than pretending the route does not exist.
+      // A 403 rather than a 404: the visibility check above already passed for
+      // whoever this resolved to, so there is nothing left to hide, and telling
+      // an agent "this is not yours to read" is more useful than pretending the
+      // route does not exist.
       throw new RoomError('PEOPLE_ONLY', "Only a person can see where a room's work runs.");
     }
     res.json({ bindings });
