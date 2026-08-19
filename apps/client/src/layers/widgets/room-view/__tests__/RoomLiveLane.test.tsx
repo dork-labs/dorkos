@@ -658,6 +658,29 @@ describe('RoomLiveLane', () => {
       return transport;
     }
 
+    it('calls the peek trigger "what is waiting", never "who is working"', async () => {
+      // **Seeded defect: leave `popoverLabel` on `peekLabel` for every non-Ask
+      // rung.** A screen-reader user then gets back the exact sentence this
+      // change retires — "Show who is working" — over a line whose whole content
+      // is that nobody is. It is the one surface where the visible text and the
+      // accessible name can disagree, because a reader has only one of them.
+      waiting('kai');
+      renderLane({}, seeingTransport());
+      await settleRoomList();
+
+      expect(screen.getByRole('button', { name: 'Show what is waiting' })).toBeVisible();
+      expect(screen.queryByRole('button', { name: 'Show who is working' })).toBeNull();
+
+      // And the working line keeps its own words, so this is a branch rather
+      // than a rename.
+      cleanup();
+      useRoomPresenceStore.setState({ rooms: {} });
+      working('kai');
+      renderLane({}, seeingTransport());
+      await settleRoomList();
+      expect(screen.getByRole('button', { name: 'Show who is working' })).toBeVisible();
+    });
+
     it('says who will pick it up and where, when this reader can see that room', async () => {
       waiting('kai');
       renderLane({}, seeingTransport());
@@ -705,7 +728,7 @@ describe('RoomLiveLane', () => {
       waiting('kai');
       renderLane({}, seeingTransport());
       await settleRoomList();
-      fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Show what is waiting' }));
 
       fireEvent.click(screen.getByTestId('live-peek-open-room'));
       expect(navigateSpy).toHaveBeenCalledWith({
@@ -720,7 +743,7 @@ describe('RoomLiveLane', () => {
       waiting('kai', 'room-nobody-can-see');
       renderLane({}, seeingTransport());
       await settleRoomList();
-      fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Show what is waiting' }));
       expect(screen.queryByTestId('live-peek-open-room')).toBeNull();
     });
 
@@ -730,7 +753,7 @@ describe('RoomLiveLane', () => {
       const transport = seeingTransport();
       renderLane({}, transport);
       await settleRoomList();
-      fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Show what is waiting' }));
       // Nothing else is waiting, so this room is already next and the control
       // would be a button that does nothing.
       expect(screen.queryByTestId('live-peek-answer-first')).toBeNull();
@@ -740,7 +763,7 @@ describe('RoomLiveLane', () => {
       waiting('kai', 'room-elsewhere', STARTED, true);
       renderLane({}, transport);
       await settleRoomList();
-      fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Show what is waiting' }));
 
       fireEvent.click(screen.getByTestId('live-peek-answer-first'));
       // The mutation is dispatched on a microtask, so the ask is flushed before

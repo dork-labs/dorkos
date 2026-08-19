@@ -382,15 +382,27 @@ export class RoomCollector {
    * instead would mean this module deciding which turn runs, which is the
    * dispatcher's job and the reason this class knows nothing about claims.
    *
+   * **ONE clock reading for the whole loop, and that is a correctness property**
+   * — the same one {@link CollectInput.arrivedAt} exists for, arrived at from
+   * the other direction. Two `Date.now()` calls a microsecond apart can straddle
+   * a millisecond boundary, and this loop is not tight: its caller re-states a
+   * held indicator between iterations, which scans the claim map. A straddle
+   * would give two of an agent's waiting rooms deadlines 1 ms apart, put them in
+   * two different sweeps, and hand the earlier one back ALONE — so the sweep's
+   * promoted-first sort, which only ever runs over one batch, would never see
+   * the promoted room and "Answer here first" would silently do nothing.
+   *
    * @param agentPath - The working directory whose claim just released.
    */
   resumeAgent(agentPath: string): void {
+    const from = Date.now();
     for (const collection of this.collections.values()) {
       if (collection.agentPath !== agentPath || !collection.parked) continue;
       collection.parked = false;
       // No gathering wait, for the reason `resume` gives: these messages have
-      // already waited out a whole turn.
-      this.arm(collection, 0);
+      // already waited out a whole turn. The shared `from` is what puts every
+      // one of them in the SAME sweep — see above.
+      this.arm(collection, 0, from);
     }
   }
 
