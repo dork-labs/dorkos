@@ -677,6 +677,11 @@ owns 12–14 above.
     answered at 2:01". The schema keeps the field because a bridged approver is
     what it is for; wiring it means carrying the deciding caller from the route
     into the resolution, which belongs with the bridged-approver work.
+    **Closed by DOR-1355**, which carries the name from the six answer routes
+    through `InteractionAnswerOptions` and the projector's resolve. The shipped
+    line is "Already answered **by** Dorian at 2:01", not "allowed": the event
+    reports allow and deny as the same `answered` outcome. A bridged approver's
+    handle rides the same seam and is still unwired.
 23. **Nobody checks who may SEE a prompt, and the changelog now says so.** The
     detail rides the per-caller global stream and the list route, both of which
     answer this cockpit's operator — the person who can answer. That is true and
@@ -770,7 +775,7 @@ In Linear-ready form — one bullet each, owner named where the record above alr
 - **`render-session-body.tsx` stays a feature export because `features/onboarding` renders `SessionMessage` for its scripted narration.** Frees only if onboarding is changed to compose `Message.*` directly (Known Issue 29). Owner: whoever next touches onboarding's narration renderer.
 - **A session's `ConversationTarget.send`/`.queue` are not the session's live send path** (Known Issue 28) — `SessionComposer`'s own `handleSubmit` and `useChatQueue` are what a session actually routes through; the target's two methods are real but unused by the shipped surface. Owner: whoever moves that funnel down into the target.
 - **Three files still exceed the 500-line guideline** — `ChatPanel.tsx` (571), `ChannelComposer.tsx` (527), `SessionComposer.tsx` (503) — each for a stated reason (Known Issue 27). Revisit when one of them next grows, not before.
-- **`resolvedBy` is never populated on a receipt.** Unreachable on a single-identity install; every cross-window receipt reads "Already answered at 2:01" rather than naming who. Wiring it belongs with the bridged-approver work (P3 Known Issue 22).
+- ~~**`resolvedBy` is never populated on a receipt.**~~ **Done (DOR-1355).** The six answer routes now resolve the person's name and carry it to the wire, so a cross-window receipt reads "Already answered by Dorian at 2:01". What remains: the relay's bridged approver (`packages/relay/src/adapters/claude-code/approval-handler.ts`) can name its own responder through the same `answeredBy` seam and does not yet.
 - **No multi-person Ask entitlement filter.** The list route and the global fan-out both answer this cockpit's one operator; if DorkOS ever has more than one person, both need a per-caller filter, which is a change to `eventFanOut`'s addressing model (P3 Known Issue 23).
 - **`GET /api/rooms/:id/sessions` and `requirePersonToAnswer` disagree about an unresolved agent header.** The rooms route treats an unverifiable token as "no agent presented" (200); the Ask's answer routes refuse it. P3's rule is the one that should win long-term, but aligning the room route is a rooms-domain decision with its own review (P2/P3 Known Issues 9/19).
 - **The `room-row-menu` e2e spec has an order-dependent flake** (`apps/e2e/manifest.json`'s own run history: 2 passed / 1 failed of 3 runs). Unrelated to this programme's own suites, which are all green; worth its own investigation rather than being carried silently.
