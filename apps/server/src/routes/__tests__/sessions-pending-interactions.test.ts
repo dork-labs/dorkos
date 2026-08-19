@@ -102,12 +102,14 @@ const TIMEOUT_MS = 10 * 60 * 1000;
  * `readCallerAuthority` reads the raw header, and a token that resolves to
  * nothing still means a machine is calling.
  *
- * @param options - The room bindings the list route joins against, and the
- *   signed-in identity, when a case has one.
+ * @param options - The room bindings the list route joins against, the
+ *   signed-in identity when a case has one, and the agent the identity
+ *   middleware resolved when a case presents a token that verifies.
  */
 function buildApp(
   options: {
     user?: RequestUser;
+    agentIdentity?: { agentId: string };
     bindings?: Record<string, { roomId: string; authorId: string }>;
   } = {}
 ): express.Express {
@@ -115,6 +117,7 @@ function buildApp(
   app.use(express.json());
   app.use((_req, res, next) => {
     if (options.user) res.locals.user = options.user;
+    if (options.agentIdentity) res.locals.agentIdentity = options.agentIdentity;
     next();
   });
   if (options.bindings) {
@@ -216,6 +219,97 @@ describe('GET /api/sessions/pending-interactions', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('interactions');
+  });
+
+  describe('who may SEE the list', () => {
+    /**
+     * Every parked session's id, as this caller is shown them.
+     *
+     * @param app - The app carrying the caller's credentials.
+     * @param headers - Raw headers the middleware stand-in does not cover.
+     */
+    async function listedFor(
+      app: express.Express,
+      headers: Record<string, string> = {}
+    ): Promise<{ status: number; sessionIds: string[] }> {
+      const req = request(app).get('/api/sessions/pending-interactions');
+      for (const [name, value] of Object.entries(headers)) req.set(name, value);
+      const res = await req;
+      return {
+        status: res.status,
+        sessionIds: res.body.interactions.map((row: { sessionId: string }) => row.sessionId),
+      };
+    }
+
+    beforeEach(() => {
+      park(SESSION_ID, '/work/alpha', 'tc-1');
+      park(OTHER_SESSION_ID, '/work/beta', 'tc-2');
+    });
+
+    it('shows a person in the cockpit every parked Ask, with login off', async () => {
+      const { status, sessionIds } = await listedFor(buildApp());
+
+      expect(status).toBe(200);
+      expect(sessionIds.sort()).toEqual([SESSION_ID, OTHER_SESSION_ID].sort());
+    });
+
+    it('shows a signed-in person every parked Ask, with login on', async () => {
+      loginEnabled = true;
+      const app = buildApp({ user: { userId: 'user_owner', credential: 'cookie' } });
+
+      const { status, sessionIds } = await listedFor(app);
+
+      expect(status).toBe(200);
+      expect(sessionIds.sort()).toEqual([SESSION_ID, OTHER_SESSION_ID].sort());
+    });
+
+    it('shows a per-user API key every parked Ask, because seeing is not answering', async () => {
+      // A program holding one of the person's keys already reads the identical
+      // detail off `GET /api/sessions/:id/events`. Withholding it here would
+      // break an integration and protect nothing — and it still cannot answer,
+      // which the guard cases above prove.
+      loginEnabled = true;
+      const app = buildApp({ user: { userId: 'user_program', credential: 'api-key' } });
+
+      const { status, sessionIds } = await listedFor(app);
+
+      expect(status).toBe(200);
+      expect(sessionIds.sort()).toEqual([SESSION_ID, OTHER_SESSION_ID].sort());
+    });
+
+    it('shows a resolved agent nothing, and says so as an empty list rather than a refusal', async () => {
+      // The capability this closes: one request listed every pending shell
+      // command in every project on the machine. A 403 would tell a machine
+      // that Asks exist, so the answer is 200 with nothing in it — the rooms
+      // domain's own rule, "not a member answers exactly as no such room".
+      const app = buildApp({ agentIdentity: { agentId: 'agent_ana' } });
+
+      const { status, sessionIds } = await listedFor(app, { 'X-DorkOS-Agent': 'tok_ana' });
+
+      expect(status).toBe(200);
+      expect(sessionIds).toEqual([]);
+    });
+
+    it('shows a caller whose agent token resolved to nothing the same empty list', async () => {
+      // A revoked or expired agent is still a machine.
+      const { status, sessionIds } = await listedFor(buildApp(), {
+        'X-DorkOS-Agent': 'a-token-that-resolves-to-nothing',
+      });
+
+      expect(status).toBe(200);
+      expect(sessionIds).toEqual([]);
+    });
+
+    it('withholds a room-bound Ask from an agent too, not just an unbound one', async () => {
+      const app = buildApp({
+        agentIdentity: { agentId: 'agent_ana' },
+        bindings: { [SESSION_ID]: { roomId: 'room-7', authorId: 'author-ana' } },
+      });
+
+      const { sessionIds } = await listedFor(app, { 'X-DorkOS-Agent': 'tok_ana' });
+
+      expect(sessionIds).toEqual([]);
+    });
   });
 });
 

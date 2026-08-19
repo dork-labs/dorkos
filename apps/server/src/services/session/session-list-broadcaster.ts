@@ -47,6 +47,7 @@ import {
   sessionOriginOverlaySteps,
   type SessionOriginResolvers,
 } from './origin/session-origin-overlays.js';
+import { askEntitlement, type AskSubject } from './asks/ask-entitlement.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger } from '../../lib/logger.js';
 
@@ -471,6 +472,20 @@ export class SessionListBroadcaster {
    * runtime-agnostic. It leaks nothing a caller's own room list does not already
    * show, and nothing else about the room goes on the event.
    *
+   * ## `pending` is addressed; `resolved` is not
+   *
+   * The `pending` frame carries the prompt's detail — the tool, the command or
+   * path it would run against, the working directory — so it goes only to a
+   * connection {@link askEntitlement} admits (ADR 260819-022912). An agent
+   * holding this stream open no longer reads every pending shell command on the
+   * machine.
+   *
+   * `interaction_resolved` deliberately keeps the plain broadcast. It carries a
+   * session id, an interaction id and an outcome, and no detail at all; a client
+   * that never received the `pending` simply has nothing to close, and
+   * addressing the receipt would cost a second subject resolution on every
+   * resolution to withhold a fact the session's own stream already carries.
+   *
    * `.parse` rather than `safeParse`: a malformed payload is a bug in this
    * module, and it should fail here — inside the listener's own throw
    * isolation — rather than reaching a client. A resolution carries no
@@ -483,6 +498,12 @@ export class SessionListBroadcaster {
   private broadcastInteraction(change: InteractionChange): void {
     if (change.type === 'pending') {
       const binding = this.roomBindings?.bindingForSession(change.sessionId);
+      // No `approvers`: this is the cockpit's transport, and a `bridged`
+      // principal cannot arrive on it. See `AskSubject.approvers`.
+      const subject: AskSubject = {
+        sessionId: change.sessionId,
+        ...(binding ? { roomId: binding.roomId } : {}),
+      };
       eventFanOut.broadcast(
         'interaction_pending',
         InteractionPendingEventSchema.parse({
@@ -490,7 +511,8 @@ export class SessionListBroadcaster {
           cwd: change.cwd,
           interaction: change.interaction,
           ...(binding ? { roomId: binding.roomId, roomAuthorId: binding.authorId } : {}),
-        })
+        }),
+        (principal) => askEntitlement(principal, subject) !== 'none'
       );
       return;
     }

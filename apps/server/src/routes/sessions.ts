@@ -39,6 +39,8 @@ import {
   requireOperatorCookieUnderLogin,
   type OperatorCookieRefusal,
 } from '../lib/caller-authority.js';
+import { readCallerPrincipal } from '../lib/caller-principal.js';
+import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
 import type { RoomBindingsPort } from '../services/session/index.js';
 import {
   aggregateSessionList,
@@ -112,6 +114,17 @@ const ANSWERING_NEEDS_COCKPIT =
  *
  * Composed from shipped pieces, with no new predicate, so "who counts as a
  * person" cannot mean one thing at an approval and another at a tool prompt.
+ *
+ * ## Its relationship to `askEntitlement`
+ *
+ * `services/session/asks/ask-entitlement.ts` is the shared statement of who may
+ * answer, and every surface that SHOWS an Ask reads it. This guard is not
+ * changed to call it and is not given a second gate: under one account an
+ * entitlement check behind this bar could never fail, and a check that cannot
+ * discriminate is worse than none. What holds the two together instead is
+ * `services/session/asks/__tests__/ask-answer-conformance.test.ts`, which drives
+ * the same callers through both and fails if they disagree — so the day a
+ * second person exists, one of them cannot quietly widen.
  *
  * @param req - The incoming request.
  * @param res - The response carrying `sessionGate`'s resolved user.
@@ -228,20 +241,39 @@ router.get('/daily-counts', async (req, res) => {
 // each fired and empty for one that was not. This is what a window reads on
 // mount so an Ask raised a minute ago shows up as fast as one raised now.
 //
-// AUTHORITY: `sessionGate` and nothing more, deliberately. Reading that
-// something needs a person is not deciding it, and the header pill must count
-// for a cockpit that has not yet proven itself for a decision. Deciding runs
-// `requirePersonToAnswer` below.
+// AUTHORITY: `sessionGate`, and then `askEntitlement` per row. Reading that
+// something needs a person is still not deciding it, and the header pill must
+// count for a cockpit that has not yet proven itself for a decision — a caller
+// holding one of the person's API keys sees every Ask here and still cannot
+// answer one. What changed (DOR-1356) is that a caller which is not a person AT
+// ALL gets nothing: an agent presenting `X-DorkOS-Agent` could otherwise list
+// every pending shell command in every project on the machine. Deciding runs
+// `requirePersonToAnswer` below, which `asks/ask-entitlement.ts` is bound to by
+// a conformance test.
+//
+// An unentitled caller gets `200` with an empty array, never `403`. That is the
+// rooms domain's own rule — "not a member answers exactly as no such room" — so
+// the response never tells a machine that Asks exist.
 router.get('/pending-interactions', (req, res) => {
   const bindings = req.app.locals.roomSessionBindings as RoomBindingsPort | undefined;
-  const interactions = listPendingInteractionsAcrossSessions().map((row) => {
+  const principal = readCallerPrincipal(req, res);
+  const interactions = listPendingInteractionsAcrossSessions().flatMap((row) => {
     const binding = bindings?.bindingForSession(row.sessionId);
-    return {
+    // No `approvers`: nothing on a chat platform reaches this route, so a
+    // `bridged` principal is unreachable here. See `AskSubject.approvers`.
+    const subject: AskSubject = {
       sessionId: row.sessionId,
-      cwd: row.cwd,
-      interaction: row.interaction,
-      ...(binding ? { roomId: binding.roomId, roomAuthorId: binding.authorId } : {}),
+      ...(binding ? { roomId: binding.roomId } : {}),
     };
+    if (askEntitlement(principal, subject) === 'none') return [];
+    return [
+      {
+        sessionId: row.sessionId,
+        cwd: row.cwd,
+        interaction: row.interaction,
+        ...(binding ? { roomId: binding.roomId, roomAuthorId: binding.authorId } : {}),
+      },
+    ];
   });
   // `warnings` is present in the schema and empty here. It exists because this
   // is the natural home for a future runtime that cannot answer the question,

@@ -23,7 +23,8 @@
  *   red with `roomId` undefined.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { eventFanOut } from '../../core/event-fan-out.js';
+import { eventFanOut, type FanOutClient } from '../../core/event-fan-out.js';
+import type { CallerPrincipal } from '../../../lib/caller-principal.js';
 import { SessionListBroadcaster } from '../session-list-broadcaster.js';
 import { disposeProjector, getOrCreateProjector, type RawSessionEvent } from '../index.js';
 
@@ -147,5 +148,84 @@ describe('the Ask on the global stream', () => {
     park(ROOM_SESSION, '/work/alpha', 'tc-1');
 
     expect(askEvents()).toEqual([]);
+  });
+});
+
+describe('who the Ask actually reaches on the wire', () => {
+  /** One recording connection, and what it was written. */
+  interface Reader {
+    client: FanOutClient;
+    events: string[];
+  }
+
+  /** Everything registered here, so the singleton is left as it was found. */
+  let registered: Array<() => void>;
+
+  /**
+   * Register a recording connection on the real fan-out.
+   *
+   * These cases deliberately do NOT stub `broadcast` — the audience is applied
+   * inside it, so a stub would be asserting the stub. This is the only place
+   * the whole path is exercised: a projector parks a turn, the broadcaster
+   * addresses the frame, and the fan-out decides who it is written to.
+   *
+   * @param principal - Who this connection is.
+   */
+  function reader(principal: CallerPrincipal): Reader {
+    const events: string[] = [];
+    const client: FanOutClient = {
+      send: (broadcast) => events.push(broadcast.event),
+      bufferedBytes: 0,
+      gone: false,
+      drop: () => {},
+    };
+    registered.push(eventFanOut.addClient(client, principal));
+    return { client, events };
+  }
+
+  beforeEach(() => {
+    registered = [];
+    // The outer suite stubs `broadcast`; these cases need the real one.
+    vi.mocked(eventFanOut.broadcast).mockRestore();
+  });
+
+  afterEach(() => {
+    for (const unregister of registered) unregister();
+  });
+
+  it('writes an Ask to the cockpit’s connection and not to an agent’s', () => {
+    const cockpit = reader({ kind: 'operator' });
+    const agent = reader({ kind: 'agent' });
+
+    park(LONE_SESSION, '/work/beta', 'tc-1');
+
+    expect(cockpit.events).toContain('interaction_pending');
+    expect(agent.events, 'an agent reads no other agent’s pending command').not.toContain(
+      'interaction_pending'
+    );
+  });
+
+  it('withholds a room-bound Ask from an agent too', () => {
+    const cockpit = reader({ kind: 'operator' });
+    const agent = reader({ kind: 'agent' });
+
+    park(ROOM_SESSION, '/work/alpha', 'tc-1');
+
+    expect(cockpit.events).toContain('interaction_pending');
+    expect(agent.events).not.toContain('interaction_pending');
+  });
+
+  it('sends the receipt to BOTH, because it names no tool, no path and no command', () => {
+    // Decision 9, pinned rather than left as prose: address
+    // `interaction_resolved` too and this goes red. A client that never got the
+    // `pending` simply has nothing to close.
+    const cockpit = reader({ kind: 'operator' });
+    const agent = reader({ kind: 'agent' });
+    park(LONE_SESSION, '/work/beta', 'tc-1');
+
+    getOrCreateProjector(LONE_SESSION, '/work/beta').resolveInteraction('tc-1', 'approved');
+
+    expect(cockpit.events).toContain('interaction_resolved');
+    expect(agent.events).toContain('interaction_resolved');
   });
 });
