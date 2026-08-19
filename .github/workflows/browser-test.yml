@@ -183,8 +183,55 @@ jobs:
       # but fails to launch, and a launch failure is an error rather than a skip
       # — but only if the binary was fetched at all, so this step failing is
       # meant to fail the job.
+      # The browser download is the one pre-suite step that talks to a CDN and
+      # to apt, and on 2026-08-19 it hung for 25 and then 60 minutes on
+      # GitHub-hosted runners (DOR-1363), eating the suite's whole budget and
+      # ending the job as an output-less cancel: the DOR-1110 failure mode from
+      # a different step. Two guards, both cheap: the browser binaries are
+      # cached between runs keyed on the Playwright version (so a healthy run
+      # downloads nothing), and the install itself gets a short deadline so a
+      # slow CDN fails THIS step, visibly, in minutes rather than an hour.
+      # `--with-deps` still runs on a cache hit because the OS packages are
+      # not part of the cache; it is apt, and fast when the mirrors are up.
+      - name: Resolve the Playwright version the cache is keyed on
+        id: pw
+        run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Chromium browser Playwright drives
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # The part that actually hung on 2026-08-19 was apt inside `--with-deps`:
+      # the runner image's first mirror (azure.archive.ubuntu.com) stopped
+      # answering and apt's default per-connection timeout is 120 s, retried
+      # per file, so a dead mirror is an hour of silence. Shorter acquire
+      # timeouts make apt fall through the image's mirror list in seconds; the
+      # retry covers a mirror that flaps rather than dies.
       - name: Install the Chromium browser Playwright drives
-        run: pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium
+        timeout-minutes: 10
+        run: |
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-ci-acquire-timeouts >/dev/null
+          # The image's mirror list puts azure.archive.ubuntu.com first. When it
+          # is down apt spends its whole budget retrying it before falling back,
+          # even with the timeouts above (measured: 6 min, still hanging). Probe
+          # it once; if it does not answer in 5 s, drop it from the list for
+          # this job and let apt go straight to archive.ubuntu.com.
+          if [ -f /etc/apt/apt-mirrors.txt ] && ! curl -sf -m 5 -o /dev/null http://azure.archive.ubuntu.com/ubuntu/; then
+            echo "azure.archive.ubuntu.com is not answering; using the upstream mirrors for this job" >&2
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+          fi
+          for attempt in 1 2; do
+            if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+              pnpm --filter @dorkos/e2e exec playwright install-deps chromium && exit 0
+            else
+              pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium && exit 0
+            fi
+            echo "playwright install attempt $attempt failed; retrying once" >&2
+            sleep 15
+          done
+          exit 1
 
       # Warm the turbo cache with everything the webServer legs need, OUTSIDE
       # their readiness timeouts. The two Express legs each run
