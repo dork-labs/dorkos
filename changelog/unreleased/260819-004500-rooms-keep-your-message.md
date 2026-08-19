@@ -13,8 +13,8 @@ covers:
 
 - Rooms never ask you to send a message again. Your agent works in one folder at a time, so when
   you write to it in one conversation while it's busy in another, DorkOS keeps your message
-  instead of turning it away. The line above the message box tells you what's happening —
-  "Kai will pick this up when it finishes in #deploys" — and when that work ends, your message
+  instead of turning it away. The line above the message box tells you what's happening:
+  "Kai will pick this up when it finishes in #deploys". When that work ends, your message
   becomes the agent's next turn and the answer lands where you asked. Click the line to open the
   conversation that's in the way, or to ask for yours to be answered first. If your agent leaves the
   room, or you put the room away, DorkOS stops waiting and stops saying an answer is coming.
