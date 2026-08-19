@@ -7,7 +7,7 @@ covers:
 
 ### Changed
 
-- A message you send from Telegram or Slack is no longer dropped when your agent is already running as much as it can. It waits, and it runs the moment the agent is free. If the wait goes past ten seconds, the chat tells you once that your message is waiting. Nothing asks you to send it again. (DOR-1362)
+- A message you send from Telegram or Slack is no longer dropped when your agent is already running as much as it can. It waits its turn, and it runs when your agent has room for it. If the wait goes past ten seconds, the chat tells you once that your message is waiting. Nothing asks you to send it again. (DOR-1362)
 
 ### Fixed
 
