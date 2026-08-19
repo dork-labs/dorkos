@@ -26,7 +26,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { STREAM_CLOSE_CODE_BASE } from '@dorkos/shared/stream-socket';
 import { createTestDb } from '@dorkos/test-utils/db';
-import type { Db } from '@dorkos/db';
+import { agents, type Db } from '@dorkos/db';
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
@@ -34,7 +34,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import { roomEventsRoute } from '../room-events-socket.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
-import type { StreamUpgradeLocals } from '../../services/core/streams/stream-upgrade-auth.js';
+import { authorizeStreamUpgrade } from '../../services/core/streams/stream-upgrade-auth.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
@@ -43,6 +43,25 @@ import {
 /** A token shaped like the real thing that resolves to nobody: a revoked agent. */
 const UNVERIFIABLE = 'dork_agent_this-token-resolves-to-nothing';
 
+const ANA_PATH = '/agents/ana';
+
+/** Register an agent so a room can resolve it by directory. */
+function registerAgent(db: Db, projectPath: string): void {
+  const now = new Date().toISOString();
+  db.insert(agents)
+    .values({
+      id: 'ULID_ANA',
+      name: 'ana',
+      displayName: 'Ana',
+      runtime: 'claude-code',
+      projectPath,
+      behaviorJson: '{"responseMode":"always"}',
+      registeredAt: now,
+      updatedAt: now,
+    })
+    .run();
+}
+
 describe('the room stream upgrade', () => {
   let db: Db;
   let roomId: string;
@@ -50,29 +69,41 @@ describe('the room stream upgrade', () => {
   beforeEach(() => {
     resetAgentIdentityService();
     db = createTestDb();
+    registerAgent(db, ANA_PATH);
     const rooms = createRoomSubsystem({ db });
     setRoomService(rooms.service);
     initAgentIdentityService(db);
     const owner = rooms.authors.localHuman().id;
+    // Ana is a MEMBER, so a token that resolves to her opens the stream on its
+    // own merits — without that the valid-token row below would pass for the
+    // wrong reason (a non-member is refused 404 whatever its token).
     roomId = rooms.service.createRoom(
-      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [ANA_PATH] },
       owner
     ).id;
   });
 
   /**
-   * Ask the route, the way the upgrade router asks it.
+   * Ask the route the way `attachUpgradeRouter` asks it: run the credential gate
+   * over the headers FIRST, then hand the route what it produced.
    *
-   * `locals` is empty for every case here on purpose: it is what
-   * `authorizeStreamUpgrade` produces for a token that did not resolve, which is
-   * precisely the state the route has to tell apart from "no header at all".
+   * Running the real {@link authorizeStreamUpgrade} rather than hand-writing
+   * `locals` is the point of this file. That function is the upgrade path's
+   * stand-in for the whole Express middleware chain, and it is where a valid
+   * token becomes an identity and an unverifiable one becomes nothing at all —
+   * so a test that filled `locals` itself would decide the very fact under test.
+   *
+   * @param headers - The upgrade request's headers.
+   * @param path - The path to route, defaulting to this test's room.
    */
-  function authorize(headers: Record<string, string>) {
+  async function authorize(headers: Record<string, string>, path = `/api/rooms/${roomId}/events`) {
+    const gate = await authorizeStreamUpgrade(headers);
+    if (!gate.ok) throw new Error(`the credential gate refused: ${gate.status}`);
     return roomEventsRoute.authorize({
-      url: new URL(`http://localhost/api/rooms/${roomId}/events`),
+      url: new URL(`http://localhost${path}`),
       headers,
-      match: /^\/api\/rooms\/([^/]+)\/events$/.exec(`/api/rooms/${roomId}/events`)!,
-      locals: {} satisfies StreamUpgradeLocals,
+      match: /^\/api\/rooms\/([^/]+)\/events$/.exec(path)!,
+      locals: gate.locals,
     });
   }
 
@@ -90,6 +121,20 @@ describe('the room stream upgrade', () => {
     expect(decision.message).not.toContain('No such room');
   });
 
+  it('opens for an agent whose token DOES resolve, as that agent', async () => {
+    // Branch 1 still works over the socket: this is what a refusal keyed on the
+    // header alone would have broken, and an agent reading the room it is in is
+    // the reason the header exists at all.
+    const token = await initAgentIdentityService(db).mint({
+      agentPath: ANA_PATH,
+      displayName: 'Ana',
+    });
+
+    const decision = await authorize({ 'x-dorkos-agent': token });
+
+    expect(decision.ok).toBe(true);
+  });
+
   it('opens for the same room with no header at all', async () => {
     // The negative control. Without it the refusal above would also pass for a
     // stream that was simply broken for everybody.
@@ -101,12 +146,7 @@ describe('the room stream upgrade', () => {
   it('still answers "no such room" for a room the caller cannot see', async () => {
     // The other refusal on this path, unchanged: an unknown room is 404 and says
     // so, which is what pins the 401 above as being about the token.
-    const decision = await roomEventsRoute.authorize({
-      url: new URL('http://localhost/api/rooms/01NOSUCHROOM/events'),
-      headers: {},
-      match: /^\/api\/rooms\/([^/]+)\/events$/.exec('/api/rooms/01NOSUCHROOM/events')!,
-      locals: {} satisfies StreamUpgradeLocals,
-    });
+    const decision = await authorize({}, '/api/rooms/01NOSUCHROOM/events');
 
     expect(decision.ok).toBe(false);
     if (decision.ok) throw new Error('unreachable');
