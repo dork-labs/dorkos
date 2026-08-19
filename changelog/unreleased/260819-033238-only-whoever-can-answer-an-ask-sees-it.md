@@ -8,6 +8,7 @@ covers:
   - 'docs(server): say who may see an Ask and who may answer one, and regenerate the API reference (DOR-1356)'
   - 'refactor(server): narrow a bridged Ask to its approval kind once, and keep the card module plain text (DOR-1356)'
   - 'fix(server,relay): reach the approver allowlist by its own subpath, so asking who may answer does not load the relay bus (DOR-1356)'
+  - "fix(server): an agent reads an Ask's detail on none of its three doors, and the bridged gates fail closed (DOR-1356)"
 ---
 
 ### Added
