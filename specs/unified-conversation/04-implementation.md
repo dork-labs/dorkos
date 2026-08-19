@@ -869,6 +869,20 @@ test-mode leg, a different server and a different database, so it cannot have sh
 specs. The failure named in the P4 review is therefore diagnosed from the code rather than from a
 reproduction.
 
+### 2026-08-18 — Known Issue 29 resolved (DOR-1353)
+
+**`render-session-body.tsx` and `SessionMessage.tsx` are in `widgets/session/ui/`.** The issue named exactly one change as what would free them, and that is the change that was made: `features/onboarding` composes `Message.*` for its scripted narration instead of rendering the session's row, which is features ← features and legal. Both files came up to the widget with the host, where §2.6 and P1's record always put them.
+
+What moved, and why only this much:
+
+- **`SessionMessage.tsx` had to move with the renderer**, not after it. `renderSessionBody` has exactly one caller — the row — so leaving the row in `features/chat` would have left a feature importing a widget, which is the violation the issue is about.
+- **`SESSION_CAPABILITIES` did not move**, because P4 already moved it. The follow-up's own text names it as still pending; the tree disagreed, and the tree was right.
+- **The blocks stayed in `features/chat`.** `AssistantMessageContent`, `UserMessageContent` and `MessageProvider` are what the renderer draws, not the host, so the barrel publishes them and the widget composes them — the same shape the chat barrel's header already described.
+- **The row's `presentation` prop was deleted.** Onboarding was its only caller. Both halves of what it did — no clock reading, no hover background — are now decided in `features/onboarding/ui/NarrationMessage.tsx` and asserted there.
+- **Three suites moved with the row** (`SessionMessage.test.tsx`, `chip-tray-survives-turn-end.test.tsx`, `QuestionOutcome.test.tsx`), and each dropped the hand-copied `SESSION_CAPABILITIES` block that P4's constraint forced on it. A widget test may import the real table.
+
+Not user-facing: the narration renders the same rows, from the same components, at the same sizes.
+
 ### 2026-08-18 — DOR-1359, "What is not done" #6 is closed for the waiting line
 
 **What changed.** `DELIVERABLE_NOTICES` in `apps/server/src/services/relay/chat-bridge/deliver.ts` grew from two codes to four: `awaiting_approval` and `agent_busy` join `turn_failed` and `halted`. A person on Telegram or Slack in a bridged room now learns that the agent has stopped and why, instead of watching an answer that is never coming.
