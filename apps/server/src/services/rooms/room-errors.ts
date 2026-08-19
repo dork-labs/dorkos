@@ -121,6 +121,25 @@ export type RoomErrorCode =
    */
   | 'UNIDENTIFIED_CALLER'
   /**
+   * A caller presented an `X-DorkOS-Agent` token this machine could not verify —
+   * a revoked agent, an expired token, or a forgery (`routes/room-caller.ts`,
+   * DOR-1361).
+   *
+   * **A refusal rather than a fall-through, and the fall-through is what it
+   * replaces.** `resolveCaller` used to read an unverifiable token as "no agent
+   * presented", which dropped the caller into branch 3 and resolved it to the
+   * install owner. On a single-identity install that is not an escalation —
+   * omitting the header entirely reaches the same place, which is the documented
+   * DOR-505 residual — but it laundered the attribution: every file attached,
+   * every handle renamed and every turn halted by a dead agent went into the
+   * record as the person's own act, and the routes that say "only a person may
+   * do this" were not enforcing it.
+   *
+   * A 401 rather than a 403, because the caller's credential IS the problem and
+   * a working token is exactly what would change the answer.
+   */
+  | 'AGENT_IDENTITY_UNVERIFIED'
+  /**
    * One agent has used up its hourly reaction allowance in one room
    * ({@link ReactionBudget}).
    *

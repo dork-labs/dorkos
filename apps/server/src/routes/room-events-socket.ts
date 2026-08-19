@@ -12,6 +12,7 @@ import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
 import { getRoomService, RoomError } from '../services/rooms/index.js';
 import { deliverRoomStream } from '../services/core/streams/room-stream-delivery.js';
 import { resolveCaller } from './room-caller.js';
+import { STATUS_BY_CODE } from './room-error-response.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upgrade-router.js';
 import { parseResumeCursor } from '../lib/stream-cursor.js';
@@ -27,7 +28,7 @@ export const roomEventsRoute: UpgradeRoute = {
   // The router runs the credential gate before this is called.
   credential: 'required',
 
-  authorize({ url, match, locals }): UpgradeDecision {
+  authorize({ url, headers, match, locals }): UpgradeDecision {
     const roomId = decodeURIComponent(match[1]!);
 
     // Refusals go out as a close frame rather than a failed handshake, because
@@ -49,13 +50,20 @@ export const roomEventsRoute: UpgradeRoute = {
       // The identity `sessionGate` and `resolveAgentIdentity` would have put on
       // `res.locals` was resolved by `authorizeStreamUpgrade` instead, because
       // neither middleware runs for an upgrade.
-      viewerAuthorId = resolveCaller({ locals }).id;
+      viewerAuthorId = resolveCaller({ headers }, { locals }).id;
       // Refuse BEFORE any frame is sent. `getRoom` is membership-scoped, so this
       // refuses an unknown room and a room the caller is not in identically —
       // subscribing to somebody else's DM by id is the same leak as reading it.
       if (!service.getRoom(roomId, viewerAuthorId)) return refuse(404, 'No such room');
     } catch (err) {
-      if (err instanceof RoomError) return refuse(404, 'No such room');
+      // Statused from the shared table rather than pinned to 404: a room the
+      // caller may not see is 404, but an agent token the server could not
+      // verify is 401 (DOR-1361). Both are already fatal to the client's retry
+      // loop (`FATAL_STREAM_STATUSES` in `transport/room-methods.ts` holds 401,
+      // 403 and 404 alike), so what this buys is not a stopped retry — it is
+      // that the close frame names the right thing. "No such room" sent to a
+      // revoked agent describes a room that is perfectly fine.
+      if (err instanceof RoomError) return refuse(STATUS_BY_CODE[err.code], err.message);
       logger.warn('[ws room] room resolve failed', {
         roomId,
         error: err instanceof Error ? err.message : String(err),

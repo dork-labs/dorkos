@@ -18,6 +18,7 @@ import path from 'path';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { user, eq, type Db } from '@dorkos/db';
 import { AuthorRegistry, type AuthorRecord } from '../../services/rooms/author-registry.js';
+import { RoomError } from '../../services/rooms/room-errors.js';
 import { LocalAvatarStore } from '../../services/identity/local-avatar-store.js';
 import type { AvatarStore } from '../../services/identity/avatar-store.js';
 import { createProfileRouter, type ProfileRouterDeps } from '../profile.js';
@@ -270,6 +271,30 @@ describe('/api/profile/avatar', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OPERATOR_ONLY');
+    });
+
+    it('answers 401 when the caller seam refuses the request outright', async () => {
+      // `resolveCaller` THROWS for an agent token this machine cannot verify
+      // (DOR-1361), and this router's `caller` seam is that function in
+      // production. All three profile writes advertise the 401; this is what
+      // pins the router actually producing one rather than a 500, and it is the
+      // seam rather than the header because the header never reaches here — the
+      // dependency is injected precisely so this file mints no author rows.
+      const refusing = () => {
+        throw new RoomError(
+          'AGENT_IDENTITY_UNVERIFIED',
+          'That agent identity could not be verified.'
+        );
+      };
+
+      const res = await request(app({ caller: refusing }))
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png' });
+
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+      // And the bytes were never stored: the seam refuses before multer runs.
+      expect(res.body).not.toHaveProperty('imageUrl');
     });
 
     it.each(['..%2Fsecret', '..', '%2e%2e%2f%2e%2e%2fetc%2fpasswd'])(

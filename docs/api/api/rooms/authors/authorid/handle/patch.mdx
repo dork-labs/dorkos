@@ -15,8 +15,9 @@ _openapi:
           ending alphanumeric, and unique across this install (case-folded). The
           server normalizes what it is given, so a client that skipped its own
           check cannot store something the grammar forbids, and an empty string
-          clears the handle. **Human-initiated only** — an agent presenting
-          `X-DorkOS-Agent` is refused. There is no MCP tool and no capability
+          clears the handle. **Human-initiated only** — any caller presenting
+          `X-DorkOS-Agent` is refused, 403 when the token resolves to a live
+          agent and 401 when it does not. There is no MCP tool and no capability
           for this: an agent able to rename itself in a loop would grow the
           tombstone table a row at a time forever, and removing the mechanism
           beats throttling it. A released handle stays reserved to the author

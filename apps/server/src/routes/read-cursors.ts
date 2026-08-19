@@ -22,7 +22,7 @@
  *
  * @module routes/read-cursors
  */
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import {
   ReadCursorParamsSchema,
   SetReadCursorPositionRequestSchema,
@@ -30,7 +30,11 @@ import {
 } from '@dorkos/shared/read-cursor-schemas';
 import { parseBody, sendError } from '../lib/route-utils.js';
 import { getReadCursorService } from '../services/core/read-cursor-service.js';
-import { getRoomService, getWelcomeBackGreeter } from '../services/rooms/index.js';
+import {
+  getRoomService,
+  getWelcomeBackGreeter,
+  type AuthorRecord,
+} from '../services/rooms/index.js';
 import { resolveCaller } from './room-caller.js';
 import { sendRoomError } from './room-error-response.js';
 
@@ -64,11 +68,15 @@ const router = Router();
  * foreign key. What that costs is bounded by what a cursor is: a number a
  * client stores about itself, inert until that same client reads it back.
  *
- * The person check is on the RESOLVED author's `kind` rather than on the
- * presence of an `X-DorkOS-Agent` header. Those are the same test today, and
- * the header is the narrower one: if `resolveCaller` ever grows a fourth
- * branch, asking what the caller turned out to BE keeps holding, while asking
- * how it authenticated quietly stops.
+ * **Two refusals, because "not a person" is two different facts.** A caller
+ * presenting an `X-DorkOS-Agent` token this machine cannot verify is refused
+ * 401 by `resolveCaller` before this router sees it — the WIDER question, since
+ * a revoked or expired agent is still an agent and used to fall through to the
+ * operator (DOR-1361). Past that, the check is on the RESOLVED author's `kind`,
+ * which is the narrower question and the right one to ask second: if
+ * `resolveCaller` ever grows a fifth branch, asking what the caller turned out
+ * to BE keeps holding, while asking how it authenticated quietly stops.
+ * {@link personOrRefuse} is where both live.
  */
 router.put('/:kind/:id', (req, res) => {
   const params = parseBody(ReadCursorParamsSchema, req.params, res);
@@ -76,14 +84,8 @@ router.put('/:kind/:id', (req, res) => {
   const body = parseBody(SetReadCursorPositionRequestSchema, req.body, res);
   if (!body) return;
 
-  const caller = resolveCaller(res);
-  if (caller.kind !== 'human') {
-    // 403 rather than 404: there is nothing to hide here, and telling an agent
-    // "this is not yours to write" is more useful than pretending the route
-    // does not exist.
-    sendError(res, 403, 'Only people have read state', 'PEOPLE_ONLY');
-    return;
-  }
+  const caller = personOrRefuse(req, res);
+  if (!caller) return;
 
   // Somebody is at the keyboard, and this request is the proof: a client only
   // marks a thread read because a person is looking at it. Told BEFORE the
@@ -130,15 +132,44 @@ router.get('/:kind/:id', (req, res) => {
   const params = parseBody(ReadCursorParamsSchema, req.params, res);
   if (!params) return;
 
-  const caller = resolveCaller(res);
-  if (caller.kind !== 'human') {
-    sendError(res, 403, 'Only people have read state', 'PEOPLE_ONLY');
-    return;
-  }
+  const caller = personOrRefuse(req, res);
+  if (!caller) return;
 
   const cursor = getReadCursorService().get(caller.id, params.kind, params.id);
   const body: ReadCursorResponse = { cursor };
   res.json(body);
 });
+
+/**
+ * The person this request is, or `null` after answering the refusal it earns.
+ *
+ * Two refusals, and they are different facts about the caller:
+ *
+ * - **401 `AGENT_IDENTITY_UNVERIFIED`**, thrown by `resolveCaller` when the
+ *   caller presented an agent token this machine could not verify. Answered
+ *   through `sendRoomError` so it reads identically here and on the room routes
+ *   — a caller that cannot be named is not a caller with no read state, it is a
+ *   caller with a credential problem (DOR-1361).
+ * - **403 `PEOPLE_ONLY`** for an agent that IS named. A 403 rather than a 404:
+ *   there is nothing to hide here, and telling an agent "this is not yours to
+ *   write" is more useful than pretending the route does not exist.
+ *
+ * @param req - The incoming request, for the raw agent header.
+ * @param res - The response, for the resolved identity and the refusal.
+ */
+function personOrRefuse(req: Request, res: Response): AuthorRecord | null {
+  let caller: AuthorRecord;
+  try {
+    caller = resolveCaller(req, res);
+  } catch (err) {
+    sendRoomError(res, err, 'read-cursors');
+    return null;
+  }
+  if (caller.kind !== 'human') {
+    sendError(res, 403, 'Only people have read state', 'PEOPLE_ONLY');
+    return null;
+  }
+  return caller;
+}
 
 export default router;

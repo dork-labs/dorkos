@@ -320,11 +320,24 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     const path = spec.body.paths['/api/rooms/{id}/entries/{entryId}/reactions'];
     expect(path?.post).toBeDefined();
     expect(path.post.tags).toEqual(['Rooms']);
-    expect(Object.keys(path.post.responses).sort()).toEqual(['202', '400', '403', '404', '409']);
+    expect(Object.keys(path.post.responses).sort()).toEqual([
+      '202',
+      '400',
+      '401',
+      '404',
+      '409',
+      '429',
+    ]);
     expect(
       path.post.description,
       'the refusal a client will actually hit has to be documented, not only returned'
-    ).toContain('PEOPLE_ONLY');
+    ).toContain('REACTION_RATE_LIMITED');
+    // The 403 this route used to advertise is gone with the rule it described:
+    // ADR 260814-195522 lets an agent react, bounded by the hourly ceiling above
+    // rather than by what kind of author it is, so there is no `PEOPLE_ONLY`
+    // left to document here and a page that still promised one was a lie a
+    // client could code against.
+    expect(path.post.description).not.toContain('PEOPLE_ONLY');
   });
 
   describe('on the room stream', () => {

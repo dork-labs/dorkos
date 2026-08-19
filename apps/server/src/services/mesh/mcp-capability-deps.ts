@@ -99,10 +99,38 @@ export function rethrowAsCapabilityError(err: unknown): never {
  * Resolve the audit principal recorded on an added server: the calling agent's
  * path when one presented an identity, otherwise the human operator.
  *
+ * **A caller whose agent token did NOT verify is refused rather than recorded**
+ * (DOR-1361). `context.identity` answers "WHICH agent", and a revoked or expired
+ * token leaves it empty — so the `?? 'operator'` below wrote a machine's act into
+ * a durable manifest field under the person's name. `addedBy` is read back by
+ * people deciding whether to trust an entry that runs a command in an agent's
+ * environment, so a wrong principal there is worse than no entry at all.
+ *
+ * Refusing beats inventing a third `addedBy` value: a new stored string would
+ * have to be understood by every reader of every manifest already on disk, and
+ * "some machine we could not name added this" is not a provenance anybody should
+ * be asked to act on.
+ *
+ * **The refusal lands later than the rooms domain's, and deliberately so.** Both
+ * callers are `destructive`, so the tier gate asks a person first — this runs
+ * only on the retry that carries a granted approval. Nothing is written before
+ * it, which is what matters; moving the check in front of the card would mean a
+ * gate-level rule about identity, and the gate deliberately never keys on whether
+ * a caller identified itself.
+ *
  * @param context - The capability handler context.
  * @returns The `addedBy` value for the manifest entry.
+ * @throws {CapabilityToolError} `AGENT_IDENTITY_UNVERIFIED` when the caller
+ *   presented an agent token this machine could not verify.
  */
 export function resolveAddedBy(context: CapabilityHandlerContext): string {
+  if (!context.identity && context.agentIdentityPresented) {
+    throw new CapabilityToolError({
+      error:
+        'That agent identity could not be verified. Its token may have been revoked, or it may have expired.',
+      code: 'AGENT_IDENTITY_UNVERIFIED',
+    });
+  }
   return context.identity?.agentPath ?? 'operator';
 }
 

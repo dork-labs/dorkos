@@ -440,7 +440,7 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
     // 404 is here because a `room` cursor is written through the rooms domain,
     // which refuses a room the caller cannot see. A client that only knew about
     // 400/403 would treat that as an unexpected failure.
-    expect(Object.keys(path.put.responses).sort()).toEqual(['200', '400', '403', '404']);
+    expect(Object.keys(path.put.responses).sort()).toEqual(['200', '400', '401', '403', '404']);
     expect(
       path.put.description,
       'the refusal a client will actually hit has to be documented, not only returned'
@@ -551,6 +551,6 @@ describe('GET /api/read-cursors/:kind/:id', () => {
 
     expect(path?.get).toBeDefined();
     expect(path.get.tags).toEqual(['Read state']);
-    expect(Object.keys(path.get.responses).sort()).toEqual(['200', '400', '403']);
+    expect(Object.keys(path.get.responses).sort()).toEqual(['200', '400', '401', '403']);
   });
 });

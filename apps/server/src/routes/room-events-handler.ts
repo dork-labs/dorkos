@@ -14,6 +14,7 @@ import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
 import { getRoomService, RoomError } from '../services/rooms/index.js';
 import { deliverRoomStream } from '../services/core/streams/room-stream-delivery.js';
 import { resolveCaller } from './room-caller.js';
+import { STATUS_BY_CODE } from './room-error-response.js';
 import { SseStreamSink } from '../services/core/streams/durable-stream-sink.js';
 import { sendError } from '../lib/route-utils.js';
 import { parseResumeCursor } from '../lib/stream-cursor.js';
@@ -42,7 +43,7 @@ export const roomEventsHandler = async (
   let viewerAuthorId: string;
   try {
     service = getRoomService();
-    viewerAuthorId = resolveCaller(res).id;
+    viewerAuthorId = resolveCaller(req, res).id;
     // Fail BEFORE headers flush, so it is a plain 404 the client can read
     // rather than a socket that opens and immediately dies. `getRoom` is
     // membership-scoped, so this refuses an unknown room and a room the caller
@@ -52,7 +53,15 @@ export const roomEventsHandler = async (
       return sendError(res, 404, 'No such room', 'ROOM_NOT_FOUND');
     }
   } catch (err) {
-    if (err instanceof RoomError) return sendError(res, 404, err.message, err.code);
+    // Statused from the shared table rather than pinned to 404, because the two
+    // ways this can throw are not the same fact: a room the caller may not see
+    // is 404 (and every `RoomError` `getRoom` can raise is one), while an agent
+    // token the server could not verify is 401 (DOR-1361). Answered BEFORE
+    // headers flush either way, so the client reads a status rather than a
+    // socket that opens and dies.
+    if (err instanceof RoomError) {
+      return sendError(res, STATUS_BY_CODE[err.code], err.message, err.code);
+    }
     return next(err);
   }
 

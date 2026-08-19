@@ -55,6 +55,27 @@ export interface CapabilityInvocationContext {
    */
   identity?: AgentIdentity;
   /**
+   * Whether the caller claimed to be a machine AT ALL — resolved or not.
+   *
+   * The wider question than {@link identity}, and a different one: that field
+   * answers "WHICH agent is this", which needs a token that verified; this
+   * answers "is a machine calling", which a token that did NOT verify still
+   * says. It is the same fact `middleware/agent-identity.ts` exposes as
+   * `presentsAgentIdentity`, threaded here so the two HTTP surfaces
+   * (`routes/capabilities-invoke.ts`, `routes/mcp.ts`) can state it — an
+   * in-process surface resolves its caller structurally and leaves it absent.
+   *
+   * **It exists because absent {@link identity} was doing double duty.** A
+   * revoked or expired agent presents a token that resolves to nothing, so it
+   * arrived as "nobody this surface could name" — indistinguishable from the
+   * person at the keyboard, whom `room-capabilities.ts` answers with the install
+   * owner when login is off. That made `post_to_room` write as the operator and
+   * `read_room_history` read the operator's rooms (DOR-1361). It changes no tier
+   * decision: the gate deliberately never keys on whether a caller identified
+   * itself, and an unidentified caller already gets the anonymous ceiling.
+   */
+  agentIdentityPresented?: boolean;
+  /**
    * Proof that this caller may decide approvals, and may therefore act without
    * one — the single, unforgeable way past the gate. Only `trusted-caller.ts` can
    * mint it, and only from the same check that guards the decide endpoint.
@@ -130,6 +151,13 @@ export interface CapabilityInvocationContext {
 export interface CapabilityHandlerContext {
   /** The agent behind this call, when one presented a resolved identity token. */
   identity?: AgentIdentity;
+  /**
+   * Whether a machine claimed this call at all, resolved or not. See
+   * {@link CapabilityInvocationContext.agentIdentityPresented} — a handler that
+   * resolves the caller to a domain principal must refuse when this holds and
+   * {@link identity} does not, rather than reading the pair as "no agent".
+   */
+  agentIdentityPresented?: boolean;
   /**
    * The signed-in person behind this call, when the surface verified one. See
    * {@link CapabilityInvocationContext.userId} for why its ABSENCE is a distinct
@@ -432,7 +460,13 @@ export function composeRegistry(
       // Always a real object, so a handler can read `context.approval` without
       // guarding for an absent context on every call site. The invoking session
       // id and its directory are adapter facts that ride through on either branch.
+      // `agentIdentityPresented` rides on BOTH branches, the trusted one
+      // included: a trusted marker and an agent identity are already refused as
+      // a contradiction above, so on that branch this can only be false — and
+      // forwarding it anyway is what keeps "the handler sees what the surface
+      // saw" true without a second rule about when it does not.
       const surface = {
+        ...(supplied.agentIdentityPresented ? { agentIdentityPresented: true } : {}),
         ...(supplied.userId ? { userId: supplied.userId } : {}),
         ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
         ...(supplied.cwd ? { cwd: supplied.cwd } : {}),

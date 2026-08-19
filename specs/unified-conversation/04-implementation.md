@@ -969,3 +969,80 @@ One thing this did NOT fix, said out loud because it touched it: `ChatPanel.tsx`
 Known Issue 27 named for revisiting the 500-line guideline. Neither trips `max-lines`, which
 counts code rather than the comments most of the growth is, so no gate moved — but the item is
 now genuinely due rather than merely open.
+
+### 2026-08-18 — the same rule for every room route (DOR-1361)
+
+**P2/P3 Known Issue 19 closed.** The entry above left the sibling room routes reading
+an unverifiable `X-DorkOS-Agent` as "no agent presented", which is exactly the
+review it said needed its own pass. This is that pass, and the answer is that the
+routes were the wrong place to ask: the refusal moved into `resolveCaller`
+itself, so a caller presenting a token this machine cannot verify is refused
+**401 `AGENT_IDENTITY_UNVERIFIED`** before any handler runs — and a route added
+later inherits it without asking.
+
+What that fixed, concretely. `POST /:id/attachments`, `PATCH
+/authors/:authorId/handle` and `POST /:id/halt` each state "only a person may do
+this" and each enforced it with `caller.kind !== 'human'`, which an expired agent
+passed as the install owner. The handle route is the sharpest: its TSDoc rests
+the absence of a rate limit on the claim that an agent cannot rename in a loop,
+and with a dead token it could. Not privilege escalation on a single-identity
+install — dropping the header reaches the same place, the DOR-505 residual — but
+attribution laundering, and an invariant the code did not hold.
+
+Three consequences worth stating:
+
+- **`GET /:id/sessions` gave back its own gate.** DOR-1357's
+  `presentsAgentIdentity` check there is now unfalsifiable, because the caller
+  seam refuses the unresolvable token first, so the route is back to
+  `caller.kind !== 'human'` — the spelling that can still fail on its own. Its
+  unresolved-token answer moves 403 → 401, and the disclosure property that
+  motivated the ordering is stronger rather than weaker: an unknown room and a
+  real one now answer identically, because neither is looked up.
+- **`resolveCaller` takes the request now**, not just the response, because the
+  predicate reads the raw header. The WebSocket route hands it
+  `UpgradeAttempt.headers`; `routes/profile.ts` takes it through its injected
+  `caller` seam. Reading the raw header rather than a flag on `locals` is
+  deliberate: a surface that somehow skips the identity middleware fails closed.
+- **Both stream paths status their refusals from `STATUS_BY_CODE`** instead of
+  pinning 404. Not a stopped retry loop — the client already treats 401, 403 and
+  404 alike as fatal (`FATAL_STREAM_STATUSES`) — but a refusal that names the
+  right thing: "no such room" told a revoked agent about a room that is fine.
+
+User-facing only at the margin: the cockpit has never sent `X-DorkOS-Agent`, but
+the `dorkos` CLI does whenever `DORKOS_AGENT_TOKEN` is set, so a stale token
+there now answers 401 where it used to act as the person. Tests:
+`routes/__tests__/room-caller-unverified-agent.test.ts` (the three named routes,
+the sessions route, the SSE stream, a read cursor, and the three postures that
+must stay green), `routes/__tests__/room-events-socket-caller.test.ts` (the
+WebSocket half, refused as close code 4401), and the updated
+`routes/__tests__/rooms-sessions.test.ts`.
+
+### 2026-08-18 — the same rule on the capability and MCP door (DOR-1361)
+
+**The entry above fixed one of the two seams that resolve a room author.** Review
+found the other still open: `room-capabilities.ts`'s `callerAuthor`, reached by
+`POST /api/capabilities/:id/invoke` and by the external `/mcp` server. Both read
+identity with `getRequestAgentIdentity` alone, so a revoked agent arrived as
+"nobody this surface could name" and, on the login-off default, was answered with
+the install owner — `post_to_room` wrote under the person's name, and
+`rooms.read_history` (tier `observe`, which allows before any other check) read
+back every room the operator is in.
+
+`agentIdentityPresented` — the same wider fact the room routes ask for — now
+rides `CapabilityInvocationContext` and reaches the handler, and `callerAuthor`
+refuses on it with the same `AGENT_IDENTITY_UNVERIFIED` code. The tier gate is
+untouched by design: it deliberately never keys on whether a caller identified
+itself, and an unidentified caller already gets the anonymous ceiling.
+
+**The lesson is about where the tests were pointed.** The registry-level suite
+(`services/rooms/__tests__/room-capabilities.test.ts`) was fully green the whole
+time this was open, because it hands `identity` in directly and never presents a
+header. Writing the new ones at ROUTE level immediately turned up a second drop
+point nobody had named: `invokeThroughRegistry` in `mcp-projection.ts` rebuilds
+the invocation context field by field, so the fact reached the `/mcp` router and
+was discarded one hop later. That allowlist is a guard against a shared object's
+leftovers, not a security boundary, and its TSDoc now says a new fact has to be
+added there or it is silently dropped.
+
+Tests: `routes/__tests__/room-capabilities-unverified-agent.test.ts`, driving both
+surfaces through their real routers.

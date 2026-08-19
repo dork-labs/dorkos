@@ -544,7 +544,7 @@ One instance serves one community, so every address on the port is the pair `(co
 
 **`read_cursors` is the single user-side read-state store.** One table in `@dorkos/db` (`packages/db/src/schema/read-cursors.ts`) answers "how far has this person read" for every kind of thread: `(user_id, thread_kind, thread_id) → last_read_seq, updated_at`, with `thread_kind` constrained to `room | session | inbox`. `last_read_seq` is a position, not a time, so both sides compare integers on a key. `thread_id` is opaque and carries no foreign key: the three kinds live in three stores, one of them (sessions) not in this database at all because session storage is runtime-owned (ADR-0310), and a cursor stays meaningful for a thread that has been deleted.
 
-`user_id` is an `authors.id` (what `resolveCaller(res).id` returns, the same namespace as `room_members.author_id`) and **never the Better Auth `user.id`**. The two are indistinguishable strings for the same human, so the mistake lands silently: the person gets a second row per thread and their divider resets the moment login is toggled.
+`user_id` is an `authors.id` (what `resolveCaller(req, res).id` returns, the same namespace as `room_members.author_id`) and **never the Better Auth `user.id`**. The two are indistinguishable strings for the same human, so the mistake lands silently: the person gets a second row per thread and their divider resets the moment login is toggled.
 
 ### Two cursors, two questions
 
@@ -559,7 +559,7 @@ The membership column survives Phase 3 unchanged as the RP3 delivery cursor (roo
 
 `PUT /api/read-cursors/:kind/:id` (`apps/server/src/routes/read-cursors.ts`), plus `GET` of the same address, is the only way a cursor moves. Its own router rather than more surface on `rooms.ts`, because two of the three kinds are not rooms.
 
-- **People only.** The check is on the resolved caller's `kind`, not on the presence of an `X-DorkOS-Agent` header, so a fourth `resolveCaller` branch keeps the boundary rather than quietly widening it. An agent gets `403 PEOPLE_ONLY`.
+- **People only, in two answers.** A caller whose `X-DorkOS-Agent` token this machine cannot verify never reaches the route: `resolveCaller` refuses it with `401 AGENT_IDENTITY_UNVERIFIED` (DOR-1361), because a revoked agent used to fall through to "no agent presented" and act as the person. Past that, the check is on the resolved caller's `kind` rather than on the header, so a fourth `resolveCaller` branch keeps the boundary rather than quietly widening it. An agent that IS named gets `403 PEOPLE_ONLY`.
 - **The cursor written is always the caller's.** No request names a user, so no client can move (and therefore read back) anyone else's read state.
 - **`kind: 'room'` delegates into `RoomService.setReadCursor`**, so a room cursor gets the room's `requireVisibleRoom` check, the monotonic guard, and the recomputed unread count in one call. Writing it straight to the table would emit an event the room list has nothing to patch with, leaving the badge lit on the second device.
 - Monotonicity is a write-path invariant, deliberately not a `CHECK`: SQLite cannot express a constraint about a value's own previous state. `ReadCursorStore.set` and `RoomStore.setReadCursor` share the same `lt()` predicate.
@@ -588,7 +588,7 @@ getReadCursorService().advance(userId, 'room', roomId, seq); // skips visibility
 store.set(session.user.id, 'room', roomId, seq); // silently splits one person into two rows
 
 // ✅ Key on the resolved author id
-store.set(resolveCaller(res).id, 'room', roomId, seq);
+store.set(resolveCaller(req, res).id, 'room', roomId, seq);
 ```
 
 There is no `PUT /api/rooms/:id/read-cursor`. It was removed once every client wrote through the generic route; a test in `rooms.test.ts` keeps it gone.

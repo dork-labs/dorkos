@@ -18,7 +18,7 @@
  *
  * @module routes/profile
  */
-import { Router, type Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
 import {
   ProfileUpdateRequestSchema,
@@ -28,6 +28,7 @@ import {
 import { logError, logger } from '../lib/logger.js';
 import { parseBody, sendError } from '../lib/route-utils.js';
 import type { AuthorRecord, AuthorRegistry } from '../services/rooms/author-registry.js';
+import { sendRoomError } from './room-error-response.js';
 import {
   InvalidAvatarIdError,
   MAX_AVATAR_BYTES,
@@ -42,8 +43,14 @@ export interface ProfileRouterDeps {
   /**
    * Who this request is — `resolveCaller`, the same answer the room routes get.
    * An agent resolves to itself here, which is exactly how it gets refused.
+   *
+   * It THROWS a `RoomError` for a caller presenting an agent token the machine
+   * could not verify (DOR-1361), which `operatorOrRefuse` answers through the
+   * rooms domain's own status table so the 401 reads the same here as on a room
+   * route. Still injected rather than imported, because what this router must
+   * not reach for is the room SERVICE — resolving a caller mints author rows.
    */
-  caller: (res: Pick<Response, 'locals'>) => AuthorRecord;
+  caller: (req: Pick<Request, 'headers'>, res: Pick<Response, 'locals'>) => AuthorRecord;
   /**
    * The rooms domain's author registry: the render cache every surface reads,
    * plus the one question that decides whether the account record is this
@@ -106,12 +113,27 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
   /**
    * The operator, or `null` after answering the refusal an agent gets.
    *
+   * Two refusals for two different facts: 401 for a caller whose agent token
+   * this machine could not verify — a credential problem, and a working token is
+   * what would change the answer — and 403 for an agent that IS named, which no
+   * credential fixes because a profile is a person's.
+   *
+   * @param req - The incoming request, for the raw agent header.
    * @param res - The response, carrying whatever the caller presented.
    * @param subject - What the agent was trying to change, so the refusal names
    *   the thing it refused rather than the route it arrived at.
    */
-  function operatorOrRefuse(res: Response, subject: string): AuthorRecord | null {
-    const caller = deps.caller(res);
+  function operatorOrRefuse(req: Request, res: Response, subject: string): AuthorRecord | null {
+    let caller: AuthorRecord;
+    try {
+      caller = deps.caller(req, res);
+    } catch (err) {
+      // The rooms domain's own mapping, shared rather than mirrored, exactly as
+      // `read-cursors.ts` shares it: a refusal that reads one way on a room
+      // route and another here would be two answers to one question.
+      sendRoomError(res, err, 'profile caller');
+      return null;
+    }
     if (caller.kind !== 'human') {
       sendError(res, 403, `Only a person can change a profile ${subject}.`, 'OPERATOR_ONLY');
       return null;
@@ -176,7 +198,7 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
    * invariant anyway rather than assuming it, and so does this.
    */
   router.patch('/', (req, res) => {
-    const operator = operatorOrRefuse(res, 'name');
+    const operator = operatorOrRefuse(req, res, 'name');
     if (!operator) return;
     const body = parseBody(ProfileUpdateRequestSchema, req.body, res);
     if (!body) return;
@@ -205,7 +227,7 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
   router.post('/avatar', (req, res) => {
     // Resolved BEFORE multer runs: an agent's upload is refused without its
     // bytes ever being read.
-    const operator = operatorOrRefuse(res, 'photo');
+    const operator = operatorOrRefuse(req, res, 'photo');
     if (!operator) return;
 
     uploadAvatar(req, res, async (err: unknown) => {
@@ -245,7 +267,7 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
 
   // DELETE /avatar — remove it from the store and from both records.
   router.delete('/avatar', async (req, res) => {
-    const operator = operatorOrRefuse(res, 'photo');
+    const operator = operatorOrRefuse(req, res, 'photo');
     if (!operator) return;
     try {
       await deps.avatars.delete(operator.id);

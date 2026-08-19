@@ -46,7 +46,7 @@ import {
   CapabilityGateRefusal,
   CapabilityToolError,
 } from '../services/core/capabilities/index.js';
-import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
 import type { RequestUser } from '../services/core/auth/index.js';
 import { logger } from '../lib/logger.js';
 
@@ -86,6 +86,13 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
       // decides that, so dropping a credential can never widen what a caller
       // reaches (see `tier-enforcement.ts`).
       const identity = getRequestAgentIdentity(res);
+      // The WIDER fact, stated separately: a token that did not resolve still
+      // means a machine is calling. Without it, a handler that turns the caller
+      // into a domain principal cannot tell a revoked agent from the person at
+      // the keyboard — which is how `rooms.post` came to write as the operator
+      // (DOR-1361, `room-capabilities.ts`'s `callerAuthor`). It changes no tier
+      // decision; the tier still decides that on its own.
+      const agentIdentityPresented = presentsAgentIdentity(req, res);
       const header = req.headers[APPROVAL_TOKEN_HEADER];
       const approvalToken = (Array.isArray(header) ? header[0] : header)?.trim();
 
@@ -102,6 +109,7 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
       const user = res.locals.user as RequestUser | undefined;
       const result = await registry.invoke(id, input, {
         ...(identity ? { identity } : {}),
+        ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
         ...(user ? { userId: user.userId } : {}),
         ...(approvalToken ? { approvalToken } : {}),
         retryChannel: 'http-header',
