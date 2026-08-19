@@ -66,27 +66,34 @@ export interface LivePeekProps {
    * has one, and two buttons for one verb is one too many.
    */
   onStopAll?: () => void;
-  /** True while a stop is in flight, so the button can say so. */
+  /** True while the room-wide stop is in flight, so its button can say so. */
   stopping?: boolean;
+  /**
+   * Stop one agent, leaving the rest of the room working.
+   *
+   * Absent on a surface with no per-agent stop behind it, which draws no row
+   * button at all rather than a disabled one.
+   */
+  onStopAgent?: (authorId: string) => void;
+  /** Author ids with a stop in flight, so their row buttons can say so. */
+  stoppingAgents?: ReadonlySet<string>;
 }
 
 /**
  * The peek.
  *
- * **Stop is the room-wide halt, and the label says so.** A per-agent stop cannot
- * be built honestly yet: `RoomTriggerDispatcher.halt` marks its halted turns
- * before its first `await` precisely to close a two-second race, and it also
- * writes one `halted` notice for the whole room and drops the room's gather
- * buffer — so a per-author version is a room-conduct decision with its own copy
- * and its own review, not a filter on that function. So the button never claims
- * a precision the server does not have:
+ * **Two stops, and the difference is the scope, not the verb.** A row's Stop
+ * ends that agent's turn here and leaves everybody else working. The footer's
+ * ends everything in the room and says how many that is. Both reach the runtimes
+ * through the room's own halt path, which marks the stopped dispatch before it
+ * does anything that can yield, so a turn that streams its last words after the
+ * interrupt has them thrown away.
  *
- * - **One agent working** — a `Stop` on its row. It halts the room, and the room
- *   is that agent.
- * - **Two or more** — no per-row stop at all. One footer action that says
- *   exactly what it will do, with the count.
+ * Every row gets a Stop, whatever state it is in — a person should not have to
+ * know which internal state a row is in to know what its button does — and the
+ * footer earns its place only when there IS something else for it to stop.
  *
- * @param props - The rows and the three things a row can do.
+ * @param props - The rows and the four things a peek can do.
  */
 export function LivePeek({
   rows,
@@ -94,10 +101,12 @@ export function LivePeek({
   onOpenSession,
   onStopAll,
   stopping = false,
+  onStopAgent,
+  stoppingAgents,
 }: LivePeekProps) {
-  // The single-agent case is the only one where stopping the room and stopping
-  // the agent are the same act.
-  const perRowStop = rows.length === 1 && onStopAll !== undefined;
+  const perRowStop = onStopAgent !== undefined;
+  // The footer is the "and everything else" action, so it earns its place only
+  // when there IS something else.
   const footerStop = rows.length > 1 && onStopAll !== undefined;
 
   return (
@@ -155,8 +164,11 @@ export function LivePeek({
                     variant="ghost"
                     size="sm"
                     data-testid="live-peek-stop"
-                    disabled={stopping}
-                    onClick={onStopAll}
+                    disabled={stoppingAgents?.has(row.authorId) === true}
+                    onClick={() => onStopAgent(row.authorId)}
+                    // Several of these can be on screen at once, so the visible
+                    // word is not enough to say which agent a button stops.
+                    aria-label={`Stop ${row.author.displayName}`}
                     className="h-7 px-2 text-xs"
                   >
                     Stop

@@ -17,6 +17,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   threadRootIdOf,
+  useHaltAgent,
   useHaltRoom,
   useRoomPresenceClaims,
   useRoomSessions,
@@ -58,6 +59,9 @@ const EXCERPT_MAX = 64;
 
 /** How many faces stack in front of the sentence before they become a count. */
 const FACE_LIMIT = 3;
+
+/** The "nobody is being stopped" set, hoisted so it is one identity per render. */
+const EMPTY_STOPPING: ReadonlySet<string> = new Set();
 
 /** What the room's lane needs to draw itself. */
 export interface RoomLiveLaneProps {
@@ -117,6 +121,27 @@ export function RoomLiveLane({
   const [peekOpen, setPeekOpen] = useState(false);
   const sessions = useRoomSessions(room.id, { enabled: peekOpen });
   const halt = useHaltRoom();
+  const haltAgent = useHaltAgent();
+  // Tracked per author rather than off one `isPending`, which would grey out
+  // every row's button the moment any one of them was pressed.
+  const [stoppingAgents, setStoppingAgents] = useState<ReadonlySet<string>>(EMPTY_STOPPING);
+  const stopAgent = useCallback(
+    (authorId: string) => {
+      setStoppingAgents((waiting) => new Set(waiting).add(authorId));
+      haltAgent.mutate(
+        { roomId: room.id, authorId },
+        {
+          onSettled: () =>
+            setStoppingAgents((waiting) => {
+              const next = new Set(waiting);
+              next.delete(authorId);
+              return next;
+            }),
+        }
+      );
+    },
+    [haltAgent, room.id]
+  );
   const agents = useRoomAgentDirectory();
   const authors = useMemo(() => authorsById(room.members), [room.members]);
   const nameOf = useCallback(
@@ -299,6 +324,8 @@ export function RoomLiveLane({
           }}
           onStopAll={() => halt.mutate({ roomId: room.id })}
           stopping={halt.isPending}
+          onStopAgent={stopAgent}
+          stoppingAgents={stoppingAgents}
         />
       }
     />
