@@ -378,7 +378,7 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD):
 ```
 User types message
   ↓
-ChatPanel → useChatSession.handleSubmit()
+SessionComposer → ConversationTarget.send() → useChatSession.submitContent()
   ↓
 transport.postMessage(sessionId, content, cwd) → POST /api/sessions/:id/messages
   ↓
@@ -400,7 +400,7 @@ React state updates → UI re-renders with new message chunks
 ```
 User types message
   ↓
-ChatPanel → useChatSession.handleSubmit()
+SessionComposer → ConversationTarget.send() → useChatSession.submitContent()
   ↓
 transport.postMessage(sessionId, content, cwd)
   ↓

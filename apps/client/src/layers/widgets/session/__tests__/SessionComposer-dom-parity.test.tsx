@@ -175,8 +175,8 @@ function baseProps(autocomplete = makeAutocomplete()) {
     chatInputRef: createRef<null>(),
     input: '',
     autocomplete: autocomplete as never,
-    handleSubmit: vi.fn(),
-    enqueueContent: vi.fn().mockResolvedValue(true),
+    submit: vi.fn(),
+    enqueue: vi.fn().mockResolvedValue(true),
     steerContent: vi.fn().mockResolvedValue(true),
     addContextContent: vi.fn().mockResolvedValue(true),
     tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
@@ -643,7 +643,9 @@ describe('SessionComposer — the keyboard ladder, against the live component', 
 
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
 
-    expect(props.handleSubmit).toHaveBeenCalledTimes(1);
+    // The draft itself, not merely "a send happened": Enter carries the words
+    // down `ConversationTarget.send`, so the text is the subject.
+    expect(props.submit).toHaveBeenCalledExactlyOnceWith('ship it');
     // Sending takes any open palette down with it (DOR-479) — the same call,
     // in the same order, that the send goes through.
     expect(autocomplete.dismissPalettes).toHaveBeenCalledTimes(1);
@@ -656,7 +658,7 @@ describe('SessionComposer — the keyboard ladder, against the live component', 
     const field = screen.getByRole('combobox');
     const consumed = !fireEvent.keyDown(field, { key: 'Enter', shiftKey: true });
 
-    expect(props.handleSubmit).not.toHaveBeenCalled();
+    expect(props.submit).not.toHaveBeenCalled();
     // The composer must not call `preventDefault` — the newline IS the browser's
     // default action for Shift+Enter in a textarea, so consuming the key would
     // silently delete the capability.

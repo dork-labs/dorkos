@@ -142,8 +142,9 @@ export function useSessionSubmit({
   // ---------------------------------------------------------------------------
 
   /**
-   * Core submission logic shared by `handleSubmit`, `submitContent`, and the
-   * auto-first-turn kickoff.
+   * Core submission logic shared by `submitContent` (and therefore by the
+   * composer's own Enter, which reaches it through the session's
+   * `ConversationTarget.send`), `retryMessage`, and the auto-first-turn kickoff.
    *
    * @param content - The trimmed message text to send (PRISTINE — never annotated).
    * @param clearInput - When true, clears the input state after triggering.
@@ -168,7 +169,8 @@ export function useSessionSubmit({
     ) => {
       // Native (client-side) command: runs locally and must NEVER reach the
       // runtime/model. This is the funnel safety net for the non-streaming paths
-      // — handleSubmit (Enter) and retryMessage. A native command typed WHILE a
+      // — submitContent (which is where Enter lands, through the session's
+      // `ConversationTarget.send`) and retryMessage. A native command typed WHILE a
       // turn streams is intercepted earlier, at the queue decision (useChatQueue),
       // so it never enters the queue (a queued native command would flush without
       // starting a turn and stall everything queued behind it). Only clear the
@@ -222,7 +224,7 @@ export function useSessionSubmit({
       // hand. The queue is the server's now (`persistent-session-runtime`):
       // {@link enqueueContent} posts with `disposition: 'queue'` and the server
       // dispatches when the running turn ends. So the only callers left are the
-      // operator's own — `handleSubmit`, `retryMessage` — plus the kickoff.
+      // operator's own — `submitContent`, `retryMessage` — plus the kickoff.
       // Were a flush ever routed back through here, it would advance Today's
       // order key at the instant an AGENT finished talking, which BC-16 forbids
       // outright; the enqueue site records instead, at the keystroke
@@ -444,25 +446,43 @@ export function useSessionSubmit({
     [sessionId, transport, queryClient, setInput, setError, tryNativeCommand]
   );
 
-  const handleSubmit = useCallback(async () => {
-    if (!input.trim() || status === 'streaming') return;
-    await executeSubmission(input.trim(), true);
-  }, [input, status, executeSubmission]);
-
   /**
-   * Submit a message by content string directly, without clearing the input state.
+   * Submit a message by content string.
+   *
+   * The one content-taking send verb: the composer's Enter reaches it through
+   * the session's `ConversationTarget.send`, and a retry or a kickoff reaches it
+   * directly. Refuses an empty message and a session already streaming, so no
+   * caller has to repeat either guard.
    *
    * @param content - The message text to submit (PRISTINE — never annotated).
    * @param opts - `{ cwd }` pins the working directory for this send.
+   *   `{ clearInput }` empties the composer once the message is actually on its
+   *   way — after the attachment transform, never before it, so a failed upload
+   *   leaves the words where they were typed (DOR-480). A retry passes neither:
+   *   its words are already in the transcript, not in the box.
    */
   const submitContent = useCallback(
-    async (content: string, opts?: { cwd?: string }) => {
+    async (content: string, opts?: { cwd?: string; clearInput?: boolean }) => {
       if (!content.trim() || status === 'streaming') return;
-      await executeSubmission(content.trim(), false, {
+      await executeSubmission(content.trim(), opts?.clearInput === true, {
         ...(opts?.cwd ? { cwd: opts.cwd } : {}),
       });
     },
     [status, executeSubmission]
+  );
+
+  /**
+   * Send whatever is in the composer right now, and empty it.
+   *
+   * The zero-argument form `useLaunchPrompt` sends through: a launch link
+   * seeds the composer and then asks for exactly what pressing Enter would do,
+   * with no second route to the runtime. The composer's own Enter does NOT come
+   * through here — it carries its draft down the session's
+   * `ConversationTarget.send` and lands in {@link submitContent} with it.
+   */
+  const handleSubmit = useCallback(
+    () => submitContent(input, { clearInput: true }),
+    [input, submitContent]
   );
 
   /**
