@@ -318,16 +318,6 @@ export function useSidebarState(): SidebarState {
       (rawPaths.length === 0 || manifestsQuery.isSuccess),
   });
 
-  // ── The repo dimension (BC-38) ──
-  const projects = useMemo(() => {
-    const byCwd: Record<string, string> = {};
-    for (const session of sessions) {
-      if (!session.cwd) continue;
-      byCwd[session.cwd] = displayNames[session.cwd] ?? session.cwd.split('/').pop() ?? session.cwd;
-    }
-    return { activeCount: Object.keys(byCwd).length, byCwd };
-  }, [sessions, displayNames]);
-
   const state = useMemo(
     () => ({
       now,
@@ -351,7 +341,6 @@ export function useSidebarState(): SidebarState {
       activeTarget,
       journey: journey.facts,
       digest: digestFacts.digest,
-      projects,
     }),
     [
       now,
@@ -372,7 +361,6 @@ export function useSidebarState(): SidebarState {
       activeTarget,
       journey.facts,
       digestFacts.digest,
-      projects,
     ]
   );
 

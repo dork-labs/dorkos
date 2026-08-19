@@ -135,10 +135,10 @@ describe('sidebar row dnd nodes', () => {
   it('carries the ungrouped section name so a hover announces the list it is over', () => {
     // "Ungrouped" is three sections now. Without the name the drag layer would
     // announce "Over Agents." while the cursor sat over Channels.
-    expect(sidebarDndData('ungrouped', roomRef, 'Channels')).toEqual({
+    expect(sidebarDndData('ungrouped', roomRef, 'channels')).toEqual({
       type: 'item',
       ref: roomRef,
-      container: { kind: 'ungrouped', section: 'Channels' },
+      container: { kind: 'ungrouped', section: 'channels' },
     });
   });
 });

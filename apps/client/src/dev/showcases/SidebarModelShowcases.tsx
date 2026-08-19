@@ -40,12 +40,10 @@ import {
   ChevronRight,
   CircleHelp,
   Clock,
-  CornerDownRight,
   Hash,
   Loader,
   MessageSquarePlus,
   Moon,
-  Search,
   ShieldQuestion,
   Sparkles,
   Sun,
@@ -54,7 +52,6 @@ import {
 import { cn, resolveAgentVisual } from '@/layers/shared/lib';
 import {
   IdentityAvatar,
-  ORIGIN_GLYPH,
   SectionHeader,
   SidebarMenu,
   SidebarRow,
@@ -64,7 +61,6 @@ import {
 import type {
   SidebarIconId,
   SidebarModel,
-  SidebarOriginMark,
   SidebarRowModel,
   SidebarSectionModel,
   SidebarZoneModel,
@@ -98,32 +94,11 @@ const ICON: Record<SidebarIconId, typeof Bot> = {
   working: Loader,
   automated: CalendarClock,
   digest: Sparkles,
-  discovery: Search,
   'add-agent': UserPlus,
   'first-session': MessageSquarePlus,
   team: Hash,
   dorkbot: Bot,
   session: MessageSquarePlus,
-};
-
-/**
- * The mark that says where a conversation came from, per origin the model emits.
- *
- * A translation table rather than a direct index, because the two vocabularies
- * are not the same set: `ORIGIN_GLYPH` is keyed by `SessionOrigin`
- * (`task`, `channel`, `external`, …) while the model speaks in the marks a
- * reader sees (`timer`, `bridged`, …), and it carries a `thread` the session
- * vocabulary has no word for. `build-sidebar-model.ts` notes that the two
- * converge when `SidebarOriginMark` moves down beside the glyph registry; until
- * they do, the mapping is written out here rather than assumed.
- */
-const ORIGIN_MARK: Record<SidebarOriginMark, (typeof ORIGIN_GLYPH)['room']> = {
-  timer: ORIGIN_GLYPH.task,
-  bridged: ORIGIN_GLYPH.channel,
-  room: ORIGIN_GLYPH.room,
-  agent: ORIGIN_GLYPH.agent,
-  /** A reply hanging off a message — the one mark the session vocabulary lacks. */
-  thread: CornerDownRight,
 };
 
 /**
@@ -173,11 +148,8 @@ function ReasonChip({
  * @param state - The snapshot the row came from, for display names.
  */
 function RowGlyph({ row, state }: { row: SidebarRowModel; state: SidebarState }) {
-  const { glyph, status } = row;
+  const { glyph } = row;
 
-  if (glyph.kind === 'hash') {
-    return <Hash aria-hidden className="text-sidebar-foreground/60 size-3.5" />;
-  }
   if (glyph.kind === 'icon') {
     const Icon = ICON[glyph.icon];
     return <Icon aria-hidden className="text-sidebar-foreground/60 size-3.5" />;
@@ -188,7 +160,6 @@ function RowGlyph({ row, state }: { row: SidebarRowModel; state: SidebarState })
       <IdentityAvatar
         kind="agent"
         size="xs"
-        status={status}
         color={visual.color}
         emoji={visual.emoji}
         fallback={(state.displayNames[glyph.agentPath] ?? '?').slice(0, 1).toUpperCase()}
@@ -196,32 +167,10 @@ function RowGlyph({ row, state }: { row: SidebarRowModel; state: SidebarState })
       />
     );
   }
-  if (glyph.kind === 'person-avatar') {
-    return (
-      <IdentityAvatar
-        kind="human"
-        size="xs"
-        status={status}
-        color={resolveAgentVisual({ id: glyph.memberId }).color}
-        fallback={row.primary.slice(0, 1).toUpperCase()}
-        className="size-[18px] text-[9px]"
-      />
-    );
-  }
-  return (
-    <span className="flex -space-x-1">
-      {glyph.memberIds.slice(0, 2).map((memberId) => (
-        <IdentityAvatar
-          key={memberId}
-          kind="human"
-          size="xs"
-          color={resolveAgentVisual({ id: memberId }).color}
-          fallback=" "
-          className="size-3.5 text-[8px]"
-        />
-      ))}
-    </span>
-  );
+  // `hash`, and the union has no fourth member — so this is the branch rather
+  // than a default after one, and adding a glyph kind makes the type error here
+  // instead of quietly drawing a `#` for it.
+  return <Hash aria-hidden className="text-sidebar-foreground/60 size-3.5" />;
 }
 
 /**
@@ -253,7 +202,7 @@ function DirectedBadge({ count }: { count: number | undefined }) {
 }
 
 /**
- * The trailing meta a row carries: its unread mark, its project, its origin.
+ * The trailing meta a row carries: its unread mark and its live-session count.
  *
  * **The `activity` tier draws nothing here on purpose.** Bold label only — no
  * badge and no dot (design-decisions §18). The bold is the row's `emphasized`
@@ -263,30 +212,16 @@ function DirectedBadge({ count }: { count: number | undefined }) {
  * @param row - The row whose trailing slot this is.
  */
 function RowTrailing({ row }: { row: SidebarRowModel }) {
-  const Origin = row.origin === undefined ? null : ORIGIN_MARK[row.origin];
   return (
     <>
       {/* `/70`, not `/60`. At 10px these are small text and owe 4.5:1; `/60`
           measured 4.21 on the active row's tint and 4.27 on the zone card, which
           the axe gate in `sidebar-model-showcase.spec.ts` failed on. The icons
           below stay at `/60` — they are graphics, not text, and owe 3:1. */}
-      {row.projectLabel !== undefined && (
-        <span className="text-sidebar-foreground/70 max-w-16 truncate text-[10px]">
-          {row.projectLabel}
-        </span>
-      )}
       {row.liveCount !== undefined && (
         <span className="text-sidebar-foreground/70 text-[10px] tabular-nums">
           {row.liveCount} live
         </span>
-      )}
-      {Origin !== null && (
-        <Origin
-          aria-hidden
-          className="text-sidebar-foreground/60 size-3"
-          data-origin={row.origin}
-          size={12}
-        />
       )}
       {row.unread.tier === 'directed' && <DirectedBadge count={row.unread.count} />}
     </>

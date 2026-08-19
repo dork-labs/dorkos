@@ -32,7 +32,8 @@ const SWITCHER_AGENT = MOCK_AGENTS[0];
  *
  * It exists so the roster has a row whose title actually reaches the trailing
  * reservation — the case the chip's placement has to survive, and the one a
- * short name can never exercise.
+ * short name can never exercise. Its chip comes from {@link LIVE_BY_PATH}, the
+ * same map the roster showcase spreads into every row.
  */
 const LONG_NAME_AGENT = MOCK_AGENTS[3];
 
@@ -148,6 +149,25 @@ const SWITCHER_LIVE: { id: string; toolName: string; target: string }[] = [
 ];
 
 /**
+ * How many live sessions each fixture agent has, for the roster row's chip.
+ *
+ * **Counted from the fixtures rather than written down beside them.** The row
+ * no longer counts for itself — `AgentListItem` draws whatever `liveCount` the
+ * sidebar model hands it (`SidebarRowModel.liveCount`, `library-rows.ts`) — so
+ * the playground has to state the number the model would have produced. A
+ * literal here could drift from the sessions seeded below and give a row a chip
+ * whose switcher then opens on a different count; deriving it means adding a
+ * live session to either list moves both at once.
+ *
+ * Only these two agents are live. A path that is absent gets no chip, which is
+ * the model's own contract: absence, never a zero.
+ */
+export const LIVE_BY_PATH: Readonly<Record<string, number>> = {
+  [SWITCHER_AGENT.path]: SWITCHER_LIVE.length,
+  [LONG_NAME_AGENT.path]: LONG_NAME_SESSIONS.length,
+};
+
+/**
  * Seed the two real stores the switcher reads, so the playground exercises the
  * production data path instead of a prop-fed lookalike: the query cache
  * `useAgentSessions` reads, and the global session-list store the lifecycle and
@@ -156,12 +176,19 @@ const SWITCHER_LIVE: { id: string; toolName: string; target: string }[] = [
  * Seeded on mount and torn down on unmount, so leaving the page leaves no
  * phantom live sessions behind for the rest of the playground.
  *
- * **Metadata AND status, because the real stream sends both.** The chip counts
- * only human-origin sessions, and origin lives on the metadata a
- * `session_upserted` carries — so a fixture that set a status alone described a
- * state production never produces (live, but of unknowable origin) and drew no
- * chip at all. Upserting first is what the server does; the fixture now does it
- * too.
+ * **Metadata AND status, because the real stream sends both**, and both are
+ * for the SWITCHER now rather than for the row's chip. The dialog reads the
+ * query cache for its rows and the session-list store for each row's lifecycle
+ * and verb; a fixture that set a status alone would describe a state production
+ * never produces (live, but of unknowable origin). Upserting first is what the
+ * server does.
+ *
+ * **The row's chip is not seeded here and cannot be.** `AgentListItem` stopped
+ * counting live sessions off this store when the sidebar model became the one
+ * place that count is decided; the roster showcase passes it as a prop from
+ * {@link LIVE_BY_PATH} instead, which is derived from the very sessions this
+ * function seeds — so the chip's number and the dialog's rows still come from
+ * one fixture.
  */
 export function useSwitcherFixture(): void {
   const queryClient = useQueryClient();

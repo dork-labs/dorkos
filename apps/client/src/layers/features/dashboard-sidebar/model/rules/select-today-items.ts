@@ -5,52 +5,13 @@
  * @module features/dashboard-sidebar/model/rules/select-today-items
  */
 import type { RoomSummary, ThreadSummary } from '@dorkos/shared/room-schemas';
-import type { Session, SessionOrigin } from '@dorkos/shared/types';
+import type { Session } from '@dorkos/shared/types';
 import { partitionSessionsByOrigin } from '@/layers/entities/session';
-import type { SidebarOriginMark, SidebarRowModel } from '../build-sidebar-model';
+import type { SidebarRowModel } from '../build-sidebar-model';
 import type { SidebarState } from '../sidebar-state';
 import { muteIndex, type MuteIndex } from './apply-mute-rules';
-import { deriveProjectLabel } from './derive-project-label';
-import { deriveRowStatus } from './derive-row-status';
 import { deriveUnreadSignal } from './derive-unread-signal';
 import { anchorKey, basename, rowKey } from './targets';
-
-/**
- * Which trailing mark a non-user session origin draws (BC-26).
- *
- * **`channel` and `room` are one word apart and must not be one picture
- * apart.** `channel` is a BRIDGED chat — Telegram, Slack, a webhook — and
- * `room` is one of this machine's own rooms; `SessionOriginSchema` says so in
- * as many words, and `origin-descriptors.ts` already keeps them visually
- * distinct on the other surfaces that draw them. Folding `channel` onto the
- * room mark would tell the operator a message from Telegram came from a
- * cockpit channel.
- */
-const ORIGIN_MARK: Partial<Record<SessionOrigin, SidebarOriginMark>> = {
-  task: 'timer',
-  external: 'bridged',
-  channel: 'bridged',
-  room: 'room',
-  agent: 'agent',
-};
-
-/**
- * The trailing mark one session's origin draws, or `undefined` for the
- * unmarked default — a human talking to an agent.
- *
- * Every origin in the table above is one `partitionSessionsByOrigin` classes as
- * automated, and there are exactly two ways such a session gets a row: behind
- * the "+ N automated" reveal ({@link revealAutomated}), and as the anchor when
- * the operator has opened one by hand ({@link anchorRow}). An ordinary Today
- * row is user-origin and draws no mark at all.
- *
- * @param origin - The session's origin, absent for a session nobody marked.
- */
-export function sessionOriginMark(
-  origin: SessionOrigin | undefined
-): SidebarOriginMark | undefined {
-  return origin === undefined ? undefined : ORIGIN_MARK[origin];
-}
 
 /**
  * The one-line summaries "Jump back in" already computed, by row key.
@@ -104,8 +65,6 @@ function sessionRow(
   } as const;
   const lifecycle = state.sessionStatuses[session.id];
   const streaming = state.workingSessionIds.includes(session.id);
-  const projectLabel = deriveProjectLabel(session.cwd, state.projects);
-  const origin = sessionOriginMark(session.origin);
   const muted = agentPath !== '' && mutes.agents.has(agentPath);
   return {
     key: rowKey(target),
@@ -115,21 +74,16 @@ function sessionRow(
       : { kind: 'icon', icon: 'session' as const },
     primary: state.displayNames[agentPath] ?? (agentPath ? basename(agentPath) : 'Session'),
     secondary: session.title,
-    status: deriveRowStatus({ lifecycle: streaming ? 'streaming' : lifecycle }),
     reservesVerbLine: streaming,
     // The phase, for the leaf that says the words (BC-37). `workingSessionIds`
-    // wins over the status map for the same reason `status` reads it first: it
-    // is the list the model's own working rules are computed from, so a row
-    // cannot reserve a verb line and then be handed a lifecycle that says
-    // nothing is happening.
+    // wins over the status map because it is the list the model's own working
+    // rules are computed from, so a row cannot reserve a verb line and then be
+    // handed a lifecycle that says nothing is happening.
     ...(streaming ? { lifecycle: 'streaming' as const } : lifecycle ? { lifecycle } : {}),
     ...(preview !== undefined && !streaming ? { preview } : {}),
-    ...(origin ? { origin } : {}),
     unread: { tier: 'none' },
-    ...(projectLabel ? { projectLabel } : {}),
     muted,
     draggable: false,
-    actions: ['open', 'pin', muted ? 'unmute' : 'mute'],
     reason: 'today:interaction-recency',
   };
 }
@@ -154,18 +108,13 @@ function roomRow(
     roomId: room.id,
     roomKind: room.kind === 'dm' ? 'dm' : 'channel',
   } as const;
-  const memberIds = (room.participants ?? []).map((p) => p.id);
   return {
     key: rowKey(target),
     target,
-    glyph:
-      room.kind === 'dm'
-        ? memberIds.length > 1
-          ? ({ kind: 'face-stack', memberIds } as const)
-          : ({ kind: 'person-avatar', memberId: memberIds[0] ?? room.id } as const)
-        : ({ kind: 'hash' } as const),
+    // Every room says `hash`; `RoomRow` draws the leading slot from the roster
+    // (faces for a direct message, `#` for a channel) and never reads this.
+    glyph: { kind: 'hash' },
     primary: room.kind === 'dm' ? room.title : (room.slug ?? room.title),
-    status: deriveRowStatus({ workingCount: room.working }),
     reservesVerbLine: (room.working ?? 0) > 0,
     ...(preview !== undefined && (room.working ?? 0) === 0 ? { preview } : {}),
     unread: deriveUnreadSignal({
@@ -176,7 +125,6 @@ function roomRow(
     }),
     muted,
     draggable: false,
-    actions: ['open', 'pin', muted ? 'unmute' : 'mute', 'mark-read'],
     reason: 'today:interaction-recency',
   };
 }
@@ -206,9 +154,7 @@ function threadRow(thread: ThreadSummary, state: SidebarState, mutes: MuteIndex)
     glyph: { kind: 'hash' },
     primary: thread.roomSlug ?? thread.roomTitle,
     secondary: thread.rootPreview,
-    status: 'idle',
     reservesVerbLine: false,
-    origin: 'thread',
     unread: deriveUnreadSignal({
       unreadCount: thread.unreadCount,
       directed: false,
@@ -217,7 +163,6 @@ function threadRow(thread: ThreadSummary, state: SidebarState, mutes: MuteIndex)
     }),
     muted,
     draggable: false,
-    actions: ['open', 'mark-read'],
     reason: 'today:interaction-recency',
   };
 }
@@ -245,12 +190,10 @@ function automatedRow(count: number, expanded: boolean): SidebarRowModel {
     target,
     glyph: { kind: 'icon', icon: 'automated' },
     primary: expanded ? 'Hide automated' : `+ ${count} automated`,
-    status: 'idle',
     reservesVerbLine: false,
     unread: { tier: 'none' },
     muted: false,
     draggable: false,
-    actions: ['open'],
     reason: 'rollup:automated',
   };
 }
@@ -300,13 +243,10 @@ function anchorRow(
         target: active,
         glyph: { kind: 'hash' },
         primary: room === undefined ? 'Thread' : (room.slug ?? room.title),
-        status: 'idle',
         reservesVerbLine: false,
-        origin: 'thread',
         unread: { tier: 'none' },
         muted,
         draggable: false,
-        actions: ['open'],
         reason: 'today:open-conversation',
       };
     }
@@ -330,13 +270,11 @@ function anchorRow(
       ? { kind: 'agent-avatar', agentPath }
       : { kind: 'icon', icon: 'session' as const },
     primary: state.displayNames[agentPath] ?? (agentPath ? basename(agentPath) : 'Session'),
-    status: deriveRowStatus({ lifecycle: streaming ? 'streaming' : lifecycle }),
     reservesVerbLine: streaming,
     ...(streaming ? { lifecycle: 'streaming' as const } : lifecycle ? { lifecycle } : {}),
     unread: { tier: 'none' },
     muted: agentPath !== '' && mutes.agents.has(agentPath),
     draggable: false,
-    actions: ['open'],
     reason: 'today:open-conversation',
   };
 }

@@ -106,12 +106,10 @@ function revealRow(count: number, label: string): SidebarRowModel | null {
     target,
     glyph: { kind: 'icon', icon: 'overflow' },
     primary: `${count} ${label}`,
-    status: 'idle',
     reservesVerbLine: false,
     unread: { tier: 'none' },
     muted: false,
     draggable: false,
-    actions: ['open'],
     reason: 'library:reveal',
   };
 }
@@ -133,9 +131,8 @@ function effectiveAttention(agent: AgentRosterEntry, muted: boolean) {
 /**
  * Agent rows split into what a section's display filter shows and what it hides.
  *
- * The same three branches `filterSidebarItems` applies today, expressed over
- * rows: `'all'` tucks never-active agents behind a reveal, `'active'` and
- * `'attention'` hide everything below their bar.
+ * Three branches over rows: `'all'` tucks never-active agents behind a reveal,
+ * `'active'` and `'attention'` hide everything below their bar.
  *
  * @param agents - The agents in this section, in their pre-filter order.
  * @param state - The snapshot.

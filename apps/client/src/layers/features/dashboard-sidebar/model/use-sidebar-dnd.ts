@@ -40,6 +40,24 @@ import {
 export const COMPUTED_ZONE_REJECTION =
   'Heads up and Today are computed — pin it to Library to keep it in place.';
 
+/**
+ * The three Library sections a row can sit in without belonging to a group.
+ *
+ * **Ids, not labels.** This travelled as the printed name ("Direct messages")
+ * while the section's own id was `dms`, so a container carried a string that
+ * could only be compared against copy — one rename away from a drop target
+ * nothing recognised. The label is looked up when a sentence needs one, in
+ * {@link UNGROUPED_SECTION_LABEL}.
+ */
+export type UngroupedSectionId = 'channels' | 'dms' | 'agents';
+
+/** What each ungrouped section is called out loud, for the announcements. */
+const UNGROUPED_SECTION_LABEL: Record<UngroupedSectionId, string> = {
+  channels: 'Channels',
+  dms: 'Direct messages',
+  agents: 'Agents',
+};
+
 /** Where a sidebar row lives — its home section during a drag, or a drop target. */
 export type SidebarContainer =
   | { kind: 'pinned' }
@@ -49,10 +67,10 @@ export type SidebarContainer =
    * sections rather than one: Agents, Channels and Direct messages. They behave
    * identically as a drop target — landing in any of them takes the row out of
    * its group and lets it fall back to wherever it belongs — so they share the
-   * kind. `section` is the name of the one actually under the cursor, read ONLY
+   * kind. `section` is the id of the one actually under the cursor, read ONLY
    * by the ARIA announcements; nothing in the reducer branches on it.
    */
-  | { kind: 'ungrouped'; section?: string }
+  | { kind: 'ungrouped'; section?: UngroupedSectionId }
   /**
    * A computed zone — Heads up, Today or Getting started (R3).
    *
@@ -127,7 +145,9 @@ function isSidebarContainer(value: unknown): value is SidebarContainer {
   if (kind === 'pinned') return true;
   if (kind === 'ungrouped') {
     const section = (value as { section?: unknown }).section;
-    return section === undefined || typeof section === 'string';
+    return (
+      section === undefined || (typeof section === 'string' && section in UNGROUPED_SECTION_LABEL)
+    );
   }
   if (kind === 'computed') {
     const zone = (value as { zone?: unknown }).zone;
@@ -439,7 +459,7 @@ function describeSidebarDragOver(
     case 'pinned':
       return 'Over Pinned.';
     case 'ungrouped':
-      return `Over ${container.section ?? 'Agents'}.`;
+      return `Over ${container.section === undefined ? 'Agents' : UNGROUPED_SECTION_LABEL[container.section]}.`;
     case 'computed':
       return container.zone === 'today' ? 'Over Today.' : 'Over Heads up.';
     case 'group':

@@ -677,12 +677,10 @@ describe('MobileTabsLayout', () => {
       //
       // **The WCAG 2.5.7 half of this claim lives where it can fail.** "Every
       // draggable row's menu carries a move action" is a property of the MENU
-      // BUILDERS, and asserting it from here meant reading `row.actions` off
-      // the model — a required field, so the guard reduced to `length > 0` and
-      // never once looked for the word "move". The real one is
-      // `build-sidebar-model.contracts.test.ts` ("R2 WCAG 2.5.7 — every
-      // draggable row offers a move action"), which asserts
-      // `row.actions` CONTAINS 'move' rather than that it is non-empty.
+      // BUILDERS, so it is asserted on them: `AgentRowMenuItems.test.tsx` and
+      // `RoomRowMenuItems.test.tsx` mount the menu and drive "Move to group".
+      // The model once carried an `actions` array that read like the same
+      // guarantee and was rendered by nothing at all.
       mockState = powerFixture;
       renderLayout();
       expect(document.querySelector('[data-dnd-context]')).toBeNull();

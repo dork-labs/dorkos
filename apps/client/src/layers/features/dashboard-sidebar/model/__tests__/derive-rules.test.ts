@@ -1,6 +1,6 @@
 /**
- * The three small derivations every zone shares: the dot, the unread tier, and
- * mute (§18, BC-40).
+ * The two small derivations every zone shares: the unread tier and mute (§18,
+ * BC-40).
  *
  * @module features/dashboard-sidebar/model/__tests__/derive-rules
  */
@@ -8,7 +8,6 @@ import { describe, expect, it } from 'vitest';
 import type { SidebarRowModel } from '../build-sidebar-model';
 import { prefs } from '../fixtures';
 import { applyMuteRules, isMuted, muteIndex } from '../rules/apply-mute-rules';
-import { deriveRowStatus } from '../rules/derive-row-status';
 import { deriveUnreadSignal } from '../rules/derive-unread-signal';
 import { basename, interactionKeyOf, rowKey } from '../rules/targets';
 
@@ -19,45 +18,14 @@ function row(target: SidebarRowModel['target'], overrides: Partial<SidebarRowMod
     target,
     glyph: { kind: 'hash' },
     primary: 'row',
-    status: 'idle',
     reservesVerbLine: false,
     unread: { tier: 'none' },
     muted: false,
     draggable: false,
-    actions: [],
     reason: 'today:interaction-recency',
     ...overrides,
   } as SidebarRowModel;
 }
-
-describe('deriveRowStatus', () => {
-  it('says working only while a turn is streaming', () => {
-    expect(deriveRowStatus({ lifecycle: 'streaming' })).toBe('working');
-    expect(deriveRowStatus({ lifecycle: 'idle' })).toBe('idle');
-  });
-
-  it('says needs-you while a turn is blocked', () => {
-    expect(deriveRowStatus({ lifecycle: 'blocked' })).toBe('needs-you');
-  });
-
-  it('says error for a failed turn and for an interrupted one', () => {
-    expect(deriveRowStatus({ lifecycle: 'error' })).toBe('error');
-    expect(deriveRowStatus({ lifecycle: 'interrupted' })).toBe('error');
-  });
-
-  it('lets a room say working through its live agent count', () => {
-    expect(deriveRowStatus({ workingCount: 2 })).toBe('working');
-    expect(deriveRowStatus({ workingCount: 0 })).toBe('idle');
-  });
-
-  it('puts needs-you above everything else', () => {
-    expect(deriveRowStatus({ lifecycle: 'streaming', needsYou: true })).toBe('needs-you');
-  });
-
-  it('says nothing when it knows nothing', () => {
-    expect(deriveRowStatus({})).toBe('idle');
-  });
-});
 
 describe('deriveUnreadSignal', () => {
   it('makes a busy channel bold and nothing more', () => {

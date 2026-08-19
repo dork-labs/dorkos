@@ -18,8 +18,15 @@
  * @module features/conversation/model/capabilities
  */
 
-/** Which of the three presentations this conversation is. */
-export type ConversationSurface = 'session' | 'room' | 'dm';
+/**
+ * Which of the two presentations this conversation is.
+ *
+ * **A direct message is a room here**, and the absent third member is the
+ * decision: `'dm'` existed as a value and nothing ever read it, because naming
+ * a room "dm" only ever changes a word and the words come from the room's own
+ * `kind`. A value nothing reads is a branch waiting to be written.
+ */
+export type ConversationSurface = 'session' | 'room';
 
 /** What this conversation can do. Behaviour branches on these, never on `surface`. */
 export interface ConversationCapabilities {

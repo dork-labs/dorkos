@@ -39,12 +39,10 @@ export function buildWorkingRollup(state: SidebarState): SidebarRowModel | null 
     target,
     glyph: { kind: 'icon', icon: 'working' },
     primary: `${working.length} working`,
-    status: 'working',
     reservesVerbLine: false,
     unread: { tier: 'none' },
     muted: false,
     draggable: false,
-    actions: ['open'],
     reason: 'rollup:working',
   };
 }

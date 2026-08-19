@@ -16,16 +16,15 @@ import type { SidebarRowModel, SidebarSectionModel } from '../build-sidebar-mode
  * unread and none has directed unread, which is the same two-tier rule a row
  * follows.
  *
- * **The working count is asked, not read off the dot** — and that is the whole
- * of `isWorking`. A row draws ONE status, and `deriveRowStatus` ranks
- * `needs-you` above `streaming`, so an agent that is both blocked and streaming
- * reports `needs-you`. Counting `status === 'working'` therefore did not merely
- * undercount such a member: with nothing else set in the section, `workingCount`
- * fell to zero, this function returned `undefined`, and **the folded header lost
- * its rollup entirely** — the exact thing BC-31 says folding never does. BC-31's
- * text is "members currently streaming", and streaming is a fact about the
- * session, not a slot in a dot's priority order. A blocked-and-working agent is
- * still working, and a folded header may say both.
+ * **The working count is asked, not inferred** — and that is the whole of
+ * `isWorking`. BC-31's text is "members currently streaming", and streaming is
+ * a fact about the session. A row draws ONE mark and needs-you outranks
+ * streaming on it, so a member that is both blocked and streaming presents as
+ * blocked; reading the count off that mark did not merely undercount such a
+ * member, it could take `workingCount` to zero, return `undefined` here, and
+ * **lose the folded header's rollup entirely** — the exact thing BC-31 says
+ * folding never does. A blocked-and-working agent is still working, and a
+ * folded header may say both.
  *
  * The predicate is the caller's because the caller is where the truth is:
  * `buildLibrarySections` holds the snapshot and the room index, so it can put

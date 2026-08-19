@@ -43,7 +43,7 @@ export function ChannelComposerBench({ room, threadRootId, ...props }: ChannelCo
   });
   return (
     <Conversation.Root
-      surface={room.kind === 'dm' ? 'dm' : 'room'}
+      surface="room"
       capabilities={ROOM_CAPABILITIES}
       target={target}
       anchor="rail"
