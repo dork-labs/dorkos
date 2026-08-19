@@ -1897,6 +1897,7 @@ describe('onProjectorInteractionChange (the Ask, fleet-wide)', () => {
 
   afterEach(() => {
     while (unsubs.length) unsubs.pop()?.();
+    vi.useRealTimers();
   });
 
   /** One permission prompt, as a runtime emits it. */
@@ -1914,6 +1915,11 @@ describe('onProjectorInteractionChange (the Ask, fleet-wide)', () => {
   }
 
   it('announces one pending prompt, with the DTO the card is drawn from', () => {
+    // Frozen clock: the DTO's `remainingMs` is recomputed at announce time, so
+    // on a loaded machine a real clock ticks between raising the prompt and
+    // reading it and the exact number below drifts by a millisecond.
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
     const projector = getOrCreateProjector('ask-1', '/work/alpha');
     const changes: InteractionChange[] = [];
     listen((change) => changes.push(change));
