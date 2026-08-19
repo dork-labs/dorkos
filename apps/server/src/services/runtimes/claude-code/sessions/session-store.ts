@@ -29,6 +29,24 @@ import type { SessionLockManager } from '../../../session/session-lock.js';
 import { awaitStopAck, type StopAck } from './bounded-stop.js';
 
 /**
+ * Is this session holding a prompt somebody could still come back and answer?
+ *
+ * The exemption's bound is the park ceiling measured from when the prompt was
+ * raised, so a stranded entry ages out on exactly the clock
+ * `listPendingInteractions` and the stall watchdog use (spec
+ * `ask-parks-on-timeout` §8).
+ *
+ * @param session - The session to weigh.
+ * @param now - Server epoch ms.
+ */
+function isWaitingOnPerson(session: AgentSession, now: number): boolean {
+  for (const pending of session.pendingInteractions.values()) {
+    if (now - pending.startedAt < SESSIONS.INTERACTION_PARK_CEILING_MS) return true;
+  }
+  return false;
+}
+
+/**
  * Manages in-memory session state for the Claude Code runtime.
  *
  * Tracks active sessions, handles the SDK session ID reverse index,
@@ -258,6 +276,7 @@ export class SessionStore {
       fastMode: opts.fastMode,
       cwd: opts.cwd,
       hasStarted: opts.hasStarted ?? false,
+      ...(opts.unattended === true ? { unattended: true } : {}),
       pendingInteractions: new Map(),
       eventQueue: [],
     });
@@ -700,21 +719,31 @@ export class SessionStore {
     const now = Date.now();
     const expiredIds: string[] = [];
     for (const [id, session] of this.sessions) {
-      if (now - session.lastActivity > this.SESSION_TIMEOUT_MS) {
-        for (const interaction of session.pendingInteractions.values()) {
-          clearTimeout(interaction.timeout);
-        }
-        const ids = new Set<string>([id]);
-        for (const [sdkId, mapKey] of this.sdkSessionIndex) {
-          if (mapKey === id) {
-            this.sdkSessionIndex.delete(sdkId);
-            ids.add(sdkId);
-          }
-        }
-        if (session.sdkSessionId) ids.add(session.sdkSessionId);
-        this.sessions.delete(id);
-        expiredIds.push(...ids);
+      if (now - session.lastActivity <= this.SESSION_TIMEOUT_MS) continue;
+      // A session parked on a person is not idle, it is waiting, and evicting
+      // it throws away the very tool call the person is coming back to answer.
+      // `lastActivity` is stamped at creation and at each turn, never during a
+      // wait, so without this the real ceiling on any wait would be thirty
+      // minutes from turn start and a four-hour park would be a lie. Bounded by
+      // the park ceiling rather than by the interaction, so a STRANDED entry
+      // cannot make a record immortal: it ages out on the same clock the
+      // selector and the stall watchdog use. `startedAt`, not a parked flag,
+      // because the exemption is right for the whole wait, not only its second
+      // half (spec `ask-parks-on-timeout` §8).
+      if (isWaitingOnPerson(session, now)) continue;
+      for (const interaction of session.pendingInteractions.values()) {
+        clearTimeout(interaction.timeout);
       }
+      const ids = new Set<string>([id]);
+      for (const [sdkId, mapKey] of this.sdkSessionIndex) {
+        if (mapKey === id) {
+          this.sdkSessionIndex.delete(sdkId);
+          ids.add(sdkId);
+        }
+      }
+      if (session.sdkSessionId) ids.add(session.sdkSessionId);
+      this.sessions.delete(id);
+      expiredIds.push(...ids);
     }
     lockManager.cleanup(expiredIds);
     return expiredIds;

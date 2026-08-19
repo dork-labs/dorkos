@@ -4,7 +4,10 @@
  * A scheduled run has to be stoppable at any moment — an operator cancels it,
  * it outlives its `maxRuntime`, or the server is shutting down. The agent's
  * stream is the wrong place to learn that: a turn parked on a tool-approval
- * prompt yields nothing for up to `SESSIONS.INTERACTION_TIMEOUT_MS`, so any
+ * prompt yields nothing for up to `SESSIONS.INTERACTION_TIMEOUT_MS` — which is
+ * still the bound here, because a scheduled run is unattended and its prompts
+ * are refused at the countdown rather than parked (spec `ask-parks-on-timeout`
+ * §7) — so any
  * check that lives inside the consumer's loop body simply never runs again.
  * This module owns the two mechanics that make a stop real, kept together
  * because neither is sufficient alone.

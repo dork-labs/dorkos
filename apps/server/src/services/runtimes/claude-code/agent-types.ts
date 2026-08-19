@@ -48,6 +48,14 @@ export interface AgentSession {
   accountRoot?: string;
   /** True once the first SDK query has been sent (JSONL file exists) */
   hasStarted: boolean;
+  /**
+   * True when nobody is watching this session — a scheduled task run.
+   *
+   * Read by the interactive handlers: an unattended prompt is refused at the
+   * ten-minute countdown and never parks, because a park is a promise that
+   * somebody will come back (spec `ask-parks-on-timeout` §7).
+   */
+  unattended?: boolean;
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
   /**
