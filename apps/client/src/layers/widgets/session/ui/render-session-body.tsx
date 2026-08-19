@@ -6,21 +6,18 @@
  * other, and `features/conversation` imports neither: the chrome is shared, the
  * content stays typed at its own end.
  *
- * **It stays in `features/chat`, and P4 verified that it has to.** The spec
- * (§2.6) and P1's own record put it in `widgets/session` once the host moved up
- * there. The host DID move — `ChatPanel` and the transcript are widgets now —
- * but the ROW that calls this renderer cannot follow them: the onboarding
- * narration renders real `SessionMessage` rows for its scripted lines
- * (`features/onboarding/ui/OnboardingConversation.tsx:378`), and a feature may
- * not import a widget. So the row stays a feature export, and its renderer stays
- * beside it. `SESSION_CAPABILITIES` had no such consumer and did move.
+ * It sits beside the host that draws it, which is where the spec puts it (§2.6)
+ * and where P1's record always said it belonged. It could not get here during
+ * the programme: `SessionMessage`, the row that calls it, was rendered by
+ * `features/onboarding` for its scripted narration, and a feature may not
+ * import a widget (Known Issue 29). Onboarding composing `Message.*` for itself
+ * is what freed both to come up here (DOR-1353).
  *
- * @module features/chat/ui/render-session-body
+ * @module widgets/session/ui/render-session-body
  */
 import type { ChatMessage } from '@/layers/shared/model';
 import type { ConversationBodyRenderer } from '@/layers/features/conversation';
-import { AssistantMessageContent } from './message/AssistantMessageContent';
-import { UserMessageContent } from './message/UserMessageContent';
+import { AssistantMessageContent, UserMessageContent } from '@/layers/features/chat';
 
 /**
  * Draw one session message's body.

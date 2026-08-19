@@ -703,7 +703,7 @@ Follow the patterns in `QuestionPrompt.tsx` and `ApprovalPrompt.tsx`.
 
 ### Step 7: Wire into `AssistantMessageContent`
 
-A session row is `SessionMessage.tsx`, and it draws no tool cards itself: the row is the shared `Message.*` chrome (`features/conversation`), and everything inside it comes from the session's body renderer, `render-session-body.tsx`. That renderer splits by role only — `UserMessageContent` for what the reader typed, `AssistantMessageContent` for everything else — so an interactive tool is wired into `AssistantMessageContent`, one part at a time:
+A session row is `widgets/session/ui/SessionMessage.tsx`, and it draws no tool cards itself: the row is the shared `Message.*` chrome (`features/conversation`), and everything inside it comes from the session's body renderer, `widgets/session/ui/render-session-body.tsx`. That renderer splits by role only — `UserMessageContent` for what the reader typed, `AssistantMessageContent` for everything else — so an interactive tool is wired into `AssistantMessageContent`, one part at a time:
 
 ```typescript
 // apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx

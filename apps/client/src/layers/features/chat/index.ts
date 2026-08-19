@@ -23,10 +23,19 @@ export { BirthCertificate } from './ui/BirthCertificate';
 export { CelebrationOverlay } from './ui/CelebrationOverlay';
 export { FirstLight } from './ui/FirstLight';
 export { TypingDots } from './ui/primitives';
-// The transcript's ROW, and its renderer's blocks. The row is a feature export
-// rather than the host widget's own because `features/onboarding` renders real
-// session rows for its scripted narration — see `render-session-body.tsx`.
-export { ErrorMessageBlock, SessionMessage, StagedContextNote } from './ui/message';
+// The blocks the session's body renderer draws, and the context they read —
+// the row and the renderer themselves are `widgets/session`'s. `StreamingText`
+// is exported for a second reader as well: `features/onboarding` draws its
+// scripted narration with it, so a story line and a real reply are styled by
+// one component rather than two.
+export {
+  AssistantMessageContent,
+  ErrorMessageBlock,
+  MessageProvider,
+  StagedContextNote,
+  StreamingText,
+  UserMessageContent,
+} from './ui/message';
 export type { InteractiveToolHandle } from './ui/message';
 export { TaskListPanel } from './ui/tasks/TaskListPanel';
 export { BackgroundTaskBar } from './ui/tasks/BackgroundTaskBar';

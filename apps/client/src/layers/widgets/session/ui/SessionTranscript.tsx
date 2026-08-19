@@ -38,7 +38,6 @@ import {
   buildListRows,
   ChatEmptyState,
   resolveMessageAuthor,
-  SessionMessage,
   StagedContextNote,
   TypingDots,
   useApprovalAnnouncer,
@@ -47,6 +46,7 @@ import {
   type ListRow,
   type MessageAuthorContext,
 } from '@/layers/features/chat';
+import { SessionMessage } from './SessionMessage';
 
 /**
  * What the transcript is called when a screen reader lands in it.
