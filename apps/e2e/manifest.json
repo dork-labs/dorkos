@@ -25,9 +25,7 @@
       "runCount": 10,
       "passCount": 9,
       "failCount": 1,
-      "relatedCode": [
-        "apps/client/src/App.tsx"
-      ],
+      "relatedCode": ["apps/client/src/App.tsx"],
       "lastModified": ""
     },
     "send-message": {
@@ -71,9 +69,7 @@
       "runCount": 13,
       "passCount": 10,
       "failCount": 1,
-      "relatedCode": [
-        "apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"
-      ],
+      "relatedCode": ["apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"],
       "lastModified": ""
     },
     "pulse-scheduler": {
@@ -356,9 +352,7 @@
       "runCount": 6,
       "passCount": 6,
       "failCount": 0,
-      "relatedCode": [
-        "apps/client/src/layers/shared/ui/navigation-layout.tsx"
-      ],
+      "relatedCode": ["apps/client/src/layers/shared/ui/navigation-layout.tsx"],
       "lastModified": ""
     },
     "adapter-wizard-fields": {
