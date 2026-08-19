@@ -772,7 +772,7 @@ router.post('/:id/halt', (req, res) => {
 router.post('/:id/halt/:authorId', (req, res) => {
   void (async () => {
     try {
-      const caller = resolveCaller(res);
+      const caller = resolveCaller(req, res);
       const stopped = await getRoomService().haltAgent(
         req.params.id,
         req.params.authorId,

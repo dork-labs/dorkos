@@ -271,6 +271,30 @@ describe('an unverifiable agent token on a room route', () => {
     });
   });
 
+  describe('POST /:id/halt/:authorId', () => {
+    it('refuses it, and it inherited the refusal the same way the promote route did', async () => {
+      // The per-agent stop (DOR-1352) also landed on main after the caller seam
+      // was fixed. Its handler was written against the old one-argument
+      // `resolveCaller`, so this row is what turns "the route inherits the
+      // refusal" from a claim into a fact after the merge.
+      const { id, anaAuthorId } = await room();
+
+      const refused = await request(app)
+        .post(`/api/rooms/${id}/halt/${anaAuthorId}`)
+        .set('X-DorkOS-Agent', UNVERIFIABLE);
+
+      expect(refused.status).toBe(401);
+      expect(refused.body.code).toBe(REFUSAL_CODE);
+      expect(refused.body).not.toHaveProperty('stopped');
+
+      // Nothing is running, so the person's answer is `stopped: 0` — a normal
+      // answer, and the negative control that keeps the 401 above about the token.
+      const allowed = await request(app).post(`/api/rooms/${id}/halt/${anaAuthorId}`);
+      expect(allowed.status).toBe(200);
+      expect(allowed.body.stopped).toBe(0);
+    });
+  });
+
   describe('POST /:id/holds/:authorId/promote', () => {
     it('refuses it, and it never had a gate of its own', async () => {
       // Landed on main (DOR-1345) AFTER the caller seam was fixed, and inherited

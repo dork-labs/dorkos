@@ -3854,7 +3854,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Stop one agent in a room',
   description:
-    'A control action, not a message, scoped to one agent. It interrupts that agent’s in-flight turn here, throws away the answer if the turn streams one anyway, drops the messages it had not read yet in this room, releases its working indicator, and writes one `halted` notice naming who stopped whom. Every other agent in the room keeps working. Takes no body. Only a person may call it. Allowed on an archived room, like the room-wide stop.',
+    'A control action, not a message, scoped to one agent. It interrupts that agent’s in-flight turn here, throws away the answer if the turn streams one anyway, drops the messages it had not read yet in this room, releases its working indicator, and writes one `halted` notice naming who stopped whom. Every other agent in the room keeps working. Takes no body. Only a person may call it — a live agent is refused 403 and a caller whose agent token does not verify is refused 401. Allowed on an archived room, like the room-wide stop.',
   request: { params: RoomMemberParams },
   responses: {
     200: {
@@ -3862,6 +3862,7 @@ registry.registerPath({
         'Whether a turn was interrupted: 1, or 0 when the agent was not running one here',
       content: { 'application/json': { schema: HaltRoomResponseSchema } },
     },
+    401: roomAgentUnverified,
     403: {
       description: 'The caller is not a person; agents do not stop each other',
       content: { 'application/json': { schema: ErrorResponseSchema } },
