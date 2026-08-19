@@ -35,6 +35,7 @@ import {
   BridgeSessionAdopter,
   ChatBridgeDelivery,
   BridgeCatchUp,
+  BridgedAskDelivery,
   ChatBridgePresence,
   type BridgeStore,
   type BridgeRoomOps,
@@ -44,6 +45,8 @@ import {
   type Bridge,
   type DeliverEntryReader,
   type DeliverAuthorReader,
+  type AskRoomBindings,
+  type AskRosterReader,
 } from './chat-bridge/index.js';
 
 /**
@@ -137,6 +140,27 @@ export interface BindingSubsystemDeps {
   roomStore?: DeliverEntryReader;
   /** The author registry, for the delivering-author check and the name prefix (§6.6, §6.7). */
   roomAuthors?: DeliverAuthorReader;
+  /**
+   * Which room a session answers for — the bridged Ask card's first question
+   * (spec `ask-entitlement` §5.2). A PORT, like every other rooms seam here:
+   * the composition root hands over the session ledger, and a boot with no
+   * rooms hands over nothing, in which case no room-bound Ask exists to card.
+   */
+  roomSessionBindings?: AskRoomBindings;
+  /**
+   * A room's membership rows, for working out who is on the other end of a
+   * bridged chat (§5.1). Only the outside people matter, and only their count
+   * and their platform ids.
+   */
+  roomMembers?: AskRosterReader;
+  /**
+   * The approver allowlist configured on one adapter, read per call (§5.1).
+   * Supplied by `AdapterManager`, which is the only thing that holds the
+   * adapter configs.
+   *
+   * @param adapterId - The adapter a bridge belongs to.
+   */
+  approverAllowlistFor?: (adapterId: string) => unknown;
   /**
    * Build a chat's `relay.human.*` subject from its bridge row — outbound
    * delivery's target (§6.4). The platform segment lives on the adapter, not the
@@ -265,6 +289,12 @@ export class BindingSubsystem {
    * when its adapter reconnects.
    */
   bridgeCatchUp: BridgeCatchUp | undefined;
+  /**
+   * The bridged Ask card sender, when the rooms seams it needs are wired
+   * (spec `ask-entitlement` §5.2). Held so {@link shutdown} can release its
+   * projector subscription.
+   */
+  private bridgedAsks: BridgedAskDelivery | undefined;
   /**
    * The bridge lifecycle coordinator (chats-as-channels §3.5), when the rooms
    * subsystem is wired. The cockpit's "Bridge to a channel" action (DOR-878)
@@ -416,6 +446,26 @@ export class BindingSubsystem {
         // are wired. Built here so it shares the lifecycle and the one
         // `bindingStore`/`relayCore` the whole subsystem already holds.
         if (deps.roomStore && deps.roomAuthors && deps.resolveBridgeSubject) {
+          // The Approve/Deny card for a room-bound Ask (spec `ask-entitlement`
+          // §5.2), built BEFORE outbound delivery because delivery asks it
+          // whether a card is already standing before sending the waiting
+          // sentence behind it (§5.4). It needs three seams beyond the outbound
+          // set, so a boot without them simply has no bridged card and keeps
+          // today's sentence-only behaviour.
+          const asks =
+            deps.roomSessionBindings && deps.roomMembers && deps.approverAllowlistFor
+              ? new BridgedAskDelivery({
+                  bindings: deps.roomSessionBindings,
+                  bridges: deps.roomBridges,
+                  members: deps.roomMembers,
+                  authors: deps.roomAuthors,
+                  approverAllowlistFor: deps.approverAllowlistFor,
+                  resolveSubject: deps.resolveBridgeSubject,
+                  publisher: deps.relayCore,
+                })
+              : undefined;
+          asks?.start();
+          subsystem.bridgedAsks = asks;
           const delivery = new ChatBridgeDelivery({
             entries: deps.roomStore,
             rooms: deps.roomService,
@@ -426,6 +476,7 @@ export class BindingSubsystem {
             resolveSubject: deps.resolveBridgeSubject,
             operatorAuthorId: deps.operatorAuthorId,
             operatorDisplayName: deps.operatorDisplayName,
+            ...(asks ? { asks } : {}),
           });
           const catchUp = new BridgeCatchUp({
             bridges: deps.roomBridges,
@@ -559,6 +610,8 @@ export class BindingSubsystem {
   async shutdown(): Promise<void> {
     if (this.isShutdown) return;
     this.isShutdown = true;
+    this.bridgedAsks?.stop();
+    this.bridgedAsks = undefined;
     if (this.bindingRouter) {
       await this.bindingRouter.shutdown();
     }

@@ -259,7 +259,8 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     this.approvalUnsub = subscribeApprovalHandler(
       relay,
       this.deps.agentManager,
-      this.deps.logger ?? console
+      this.deps.logger ?? console,
+      this.deps.approvalAuthorizer
     );
     this.taskCancelUnsub = subscribeTaskCancelHandler(
       relay,

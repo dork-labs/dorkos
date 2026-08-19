@@ -23,6 +23,15 @@
  *   honest signal either way. A second claim that is genuinely still live is
  *   restored by the next republish, within 10s.
  *
+ * **What a frame carries beyond the lifecycle is bounded on the server side.**
+ * A publish also says what the turn is doing, and the dispatcher throttles a new
+ * reading to one every two seconds per claim — so the hooks below that do NOT
+ * draw a verb ({@link useRoomPresenceAuthorIds},
+ * {@link useRoomPresenceEverywhere}) re-run their memos at most that often while
+ * an agent works, and neither re-renders on a clock. `useRoomWorking` pays
+ * nothing at all: it reads the global stream's bare per-room count out of its
+ * own store, which this field never reaches.
+ *
  * **One state here is not work at all.** `held` says this room's message has NOT
  * started, because the agent is mid-turn in a different room that shares its
  * checkout. It lives in the same store because it has the same shape and the same
@@ -41,6 +50,7 @@ import type {
   RoomPresenceState,
   RoomSignalEvent,
 } from '@dorkos/shared/room-schemas';
+import type { SessionActivity } from '@dorkos/shared/session-stream';
 
 /**
  * How long an indicator survives without being restated.
@@ -84,6 +94,15 @@ interface PresenceRecord {
   /** ISO 8601 — when the work, or the wait, started. Never when the event was sent. */
   since: string;
   /**
+   * What the turn is doing right now, when the room has heard a tool call for
+   * it — structure, never words (the client phrases it).
+   *
+   * Absent far more often than the other fields: a turn before its first tool
+   * has none, and a turn that has ended has had it cleared. Absent is not a gap
+   * to fill — the room's own sentence is the honest thing to say instead.
+   */
+  activity?: SessionActivity;
+  /**
    * What a `held` indicator is waiting behind, or `undefined` on every other
    * state.
    *
@@ -113,6 +132,16 @@ export interface RoomPresenceAuthor {
   state: WorkingState;
   /** ISO 8601 — when its oldest live claim started. */
   since: string;
+  /**
+   * What its OLDEST live claim is doing, when the room has heard a tool call
+   * for it.
+   *
+   * From the same claim `entryId` comes from, for the same reason: the collapse
+   * to one row per agent has already chosen which claim speaks for it, and
+   * reading a second claim's reading onto this row would describe one turn with
+   * another's work.
+   */
+  activity?: SessionActivity;
   /** How long that claim has been running, by this client's clock. */
   elapsedMs: number;
 }
@@ -226,7 +255,7 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
       rooms: {},
 
       observe: (roomId, event, now = Date.now()) => {
-        const { state, entryId, since } = event;
+        const { state, entryId, since, activity } = event;
         if (state === undefined || entryId === undefined || since === undefined) return;
         const key = indicatorKey(event.authorId, entryId);
         set(
@@ -243,6 +272,11 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
               entryId,
               state,
               since,
+              // Spread rather than assigned, so a frame that carries no reading
+              // REPLACES one that did instead of leaving it standing. Every
+              // publish is self-contained (signals never replay), so the last
+              // frame is the whole truth about this claim.
+              ...(activity ? { activity } : {}),
               // Only a `held` frame carries one, and it is stored exactly as it
               // arrived: an id and a boolean. Spread conditionally so a frame
               // that changed state stops claiming to be waiting on anything.
@@ -380,6 +414,7 @@ function summarize(
       // drawing a working dot over a message that has not started.
       state: record.state as WorkingState,
       since: record.since,
+      ...(record.activity ? { activity: record.activity } : {}),
       elapsedMs: Math.max(0, now - Date.parse(record.since)),
     }));
 }
@@ -556,11 +591,12 @@ export function useRoomPresenceClaims(
     // `summarize` reads the clock to age records out, which is a filter here
     // rather than a value: the elapsed time it computed is dropped on this line,
     // so nothing this hook returns is a function of when it was called.
-    return working.map(({ authorId, entryId, state, since }) => ({
+    return working.map(({ authorId, entryId, state, since, activity }) => ({
       authorId,
       entryId,
       state,
       since,
+      ...(activity ? { activity } : {}),
     }));
   }, [indicators, scope]);
 }
@@ -712,6 +748,7 @@ export function useRoomPresenceEverywhere(): readonly RoomPresenceClaim[] {
           entryId: agent.entryId,
           state: agent.state,
           since: agent.since,
+          ...(agent.activity ? { activity: agent.activity } : {}),
         });
       }
     }

@@ -62,6 +62,7 @@ import { logger } from '../../../lib/logger.js';
 import type { AuthorRecord } from '../../rooms/author-registry.js';
 import {
   bridgeTurnFailedText,
+  bridgeWaitingText,
   buildBridgeBlockedNotice,
   buildBridgeUndeliveredNotice,
   type BridgeBlockedReason,
@@ -92,15 +93,21 @@ import type { Bridge, BridgeStore, ExternalRef } from './bridge-store.js';
  * STOPPED, and both are exactly what somebody on Telegram is missing while they
  * wait for an answer that is never coming. Until DOR-1359 they learned nothing.
  *
- * **Both forward the room's stored words unchanged, and neither is actionable.**
- * The waiting line is deliberately vague, late and damped
- * (`notice-copy.ts`'s `buildWaitingNotice`) — it carries no tool name, path or command, which
- * is what keeps one member's approval decision out of a shared chat (DOR-613).
- * Making the chat able to ANSWER the Ask is a different piece of work: it needs
- * the platform user to be entitled to approve, which is the relay adapters'
- * approver allowlist (`mayApprove`, `adapters/approver-allowlist.ts`) and today
- * only covers agents bound straight to a chat, not rooms projected into one.
- * That is DOR-1356.
+ * **`agent_busy` forwards the room's stored words; `awaiting_approval` is
+ * re-rendered.** The room's own waiting line ends "open its session to answer",
+ * which points a bridged reader at a door they may not have, so the far end
+ * gets its own sentence per kind ({@link ChatBridgeDelivery.buildNoticeContent},
+ * `notice-copy.ts`'s `bridgeWaitingText`). Both stay deliberately vague, late
+ * and damped: no tool name, path or command, which is what keeps one member's
+ * approval decision out of a shared chat (DOR-613).
+ *
+ * **A chat CAN now answer the Ask, and that is why this notice is sometimes
+ * skipped.** DOR-1356 gives an allowlisted approver on a bridged PRIVATE chat a
+ * real Approve/Deny card (`ask-card.ts`, gated by `mayApprove` through
+ * `askEntitlement`). Where a card is standing for that agent, the sentence
+ * behind it would be a near-duplicate a minute late, so it is not delivered —
+ * see {@link ChatBridgeDeliveryDeps.asks}. The room's own entry is written
+ * either way; only its delivery is suppressed.
  *
  * **`agent_busy` carries its own damper, `awaiting_approval` does not, and the
  * asymmetry is measured rather than assumed.** `RoomNoticeLog.reportWaiting`
@@ -239,6 +246,17 @@ export interface DeliverPublisher {
   publish(subject: string, payload: unknown, options: PublishOptions): Promise<PublishResult>;
 }
 
+/** Whether a bridged Ask card is standing, so its waiting sentence is redundant. */
+export interface StandingAskCards {
+  /**
+   * Whether a card this process sent is still standing for one room's agent.
+   *
+   * @param roomId - The room the notice is about.
+   * @param authorId - The agent the notice is about (`subjectAuthorId`).
+   */
+  hasStandingCard(roomId: string, authorId: string | undefined): boolean;
+}
+
 /** Archive a bridge on a terminal delivery failure — {@link BridgeLifecycle.unbridge}. */
 export interface DeliverLifecycle {
   /**
@@ -295,6 +313,13 @@ export interface ChatBridgeDeliveryDeps {
   sleep?: (ms: number) => Promise<void>;
   /** The retry backoff schedule (spec §10.1); overridable for tests. */
   retryBackoffMs?: readonly number[];
+  /**
+   * Whether an Approve/Deny card is already standing in this chat for the agent
+   * a waiting notice is about (spec `ask-entitlement` §5.4). Absent when the
+   * bridged-card path is not wired, in which case every waiting notice is
+   * delivered — today's behaviour.
+   */
+  asks?: StandingAskCards;
 }
 
 /** The in-process serialization key for one platform chat. */
@@ -500,6 +525,17 @@ export class ChatBridgeDelivery {
     if (entry.kind === 'notice') {
       if (!bridge.deliverNotices) return 'skipped';
       if (!entry.body.notice || !DELIVERABLE_NOTICES.has(entry.body.notice)) return 'skipped';
+      // A turn that already got a real Approve/Deny card does not also get the
+      // sentence: the approver would see the card immediately and a
+      // near-duplicate line a minute later (spec `ask-entitlement` §5.4). The
+      // room's own entry is written either way — only its DELIVERY is
+      // suppressed — so the cockpit's reading of the room is unchanged.
+      if (
+        entry.body.notice === 'awaiting_approval' &&
+        this.deps.asks?.hasStandingCard(bridge.roomId, entry.body.subjectAuthorId)
+      ) {
+        return 'skipped';
+      }
     } else if (entry.kind !== 'post') {
       return 'skipped';
     }
@@ -738,11 +774,26 @@ export class ChatBridgeDelivery {
    */
   private buildNoticeContent(entry: RoomEntry): string {
     if (entry.body.notice === 'turn_failed') {
-      const subjectId = entry.body.subjectAuthorId;
-      const subject = subjectId ? this.deps.authors.getById(subjectId) : null;
-      return bridgeTurnFailedText(subject?.displayName ?? 'The agent');
+      return bridgeTurnFailedText(this.subjectName(entry));
+    }
+    if (entry.body.notice === 'awaiting_approval') {
+      // `waitingKind` is absent on entries written before it existed, and
+      // `bridgeWaitingText` reads that as an approval — the commonest kind and
+      // the one whose sentence says least.
+      return bridgeWaitingText(this.subjectName(entry), entry.body.waitingKind);
     }
     return entry.body.text;
+  }
+
+  /**
+   * The display name of whoever a notice is ABOUT, for the far-end rendering.
+   *
+   * @param entry - The notice entry, carrying `subjectAuthorId`.
+   */
+  private subjectName(entry: RoomEntry): string {
+    const subjectId = entry.body.subjectAuthorId;
+    const subject = subjectId ? this.deps.authors.getById(subjectId) : null;
+    return subject?.displayName ?? 'The agent';
   }
 
   /** The outbound payload: content, plus reply/topic targeting for a reply (spec §6.5). */

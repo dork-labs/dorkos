@@ -47,6 +47,8 @@ import {
   sessionOriginOverlaySteps,
   type SessionOriginResolvers,
 } from './origin/session-origin-overlays.js';
+import { askEntitlement, type AskSubject } from './asks/ask-entitlement.js';
+import type { CallerPrincipal } from '../../lib/caller-principal.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger } from '../../lib/logger.js';
 
@@ -95,6 +97,61 @@ const SNAPSHOT_LIFECYCLES: ReadonlySet<SessionLifecycle> = new Set<SessionLifecy
   'blocked',
   'error',
 ]);
+
+/**
+ * Whether this connection may see what a session is blocked ON.
+ *
+ * `SessionStatus.activity` names the tool a session most recently started and
+ * the one argument of it a person would recognize — a command's first line, a
+ * file path. While the session is `blocked` that IS the Ask's detail, arriving
+ * on a frame that was never addressed. So the same predicate that governs
+ * `interaction_pending` governs this too (review finding 1).
+ *
+ * **The room is deliberately not resolved here.** Only a `bridged` principal
+ * reads `AskSubject.roomId`, and one never arrives over HTTP or a socket
+ * (`readCallerPrincipal` cannot produce it), so a binding lookup on every
+ * lifecycle transition would cost an indexed read to change no answer.
+ *
+ * @param principal - Who is on the other end.
+ * @param sessionId - The session the frame is about.
+ */
+function maySeeBlockedDetail(principal: CallerPrincipal, sessionId: string): boolean {
+  return askEntitlement(principal, { sessionId }) !== 'none';
+}
+
+/**
+ * The same `session_status` event with nothing in it about what the session is
+ * blocked on, or the event unchanged when there was nothing to withhold.
+ *
+ * Only `blocked` is redacted. A session that is `streaming` has a tool RUNNING
+ * rather than a person parked on it, which is a different fact and not this
+ * spec's to change; see the module doc's note on what an agent still sees.
+ *
+ * @param event - The validated event.
+ * @returns The event to send an unentitled connection.
+ */
+function withoutBlockedDetail(event: SessionListEvent): SessionListEvent {
+  if (event.type !== 'session_status') return event;
+  if (event.status.lifecycle !== 'blocked' || event.status.activity == null) return event;
+  const { activity: _dropped, ...status } = event.status;
+  return { ...event, status };
+}
+
+/**
+ * Whether an event carries a blocked session's detail at all.
+ *
+ * The two renderings are only worth paying for when they differ, so an
+ * ordinary transition takes the plain single-frame path.
+ *
+ * @param event - The validated event.
+ */
+function carriesBlockedDetail(event: SessionListEvent): boolean {
+  return (
+    event.type === 'session_status' &&
+    event.status.lifecycle === 'blocked' &&
+    event.status.activity != null
+  );
+}
 
 /**
  * Send a newly connected client the fleet's current lifecycles, as ordinary
@@ -146,8 +203,12 @@ const SNAPSHOT_LIFECYCLES: ReadonlySet<SessionLifecycle> = new Set<SessionLifecy
  * honest floor.
  *
  * @param client - The client that has just registered with the fan-out.
+ * @param principal - Who is on the other end, so a connection that may not see
+ *   an Ask's detail does not receive it on the preamble either — the live path
+ *   addresses these frames and a snapshot that did not would be the hole
+ *   (review finding 1).
  */
-export function sendSessionStatusSnapshot(client: FanOutClient): void {
+export function sendSessionStatusSnapshot(client: FanOutClient, principal: CallerPrincipal): void {
   for (const update of listProjectorStatuses()) {
     if (!SNAPSHOT_LIFECYCLES.has(update.status.lifecycle)) continue;
     if (client.bufferedBytes > SSE.MAX_BUFFERED_BYTES) {
@@ -165,7 +226,11 @@ export function sendSessionStatusSnapshot(client: FanOutClient): void {
       cwd: update.cwd,
       status: update.status,
     });
-    if (event) client.send(encodeBroadcast(event.type, event));
+    if (!event) continue;
+    const outgoing = maySeeBlockedDetail(principal, update.sessionId)
+      ? event
+      : withoutBlockedDetail(event);
+    client.send(encodeBroadcast(outgoing.type, outgoing));
   }
 }
 
@@ -471,6 +536,27 @@ export class SessionListBroadcaster {
    * runtime-agnostic. It leaks nothing a caller's own room list does not already
    * show, and nothing else about the room goes on the event.
    *
+   * ## `pending` is addressed; `resolved` is not
+   *
+   * The `pending` frame carries the prompt's detail — the tool, the command or
+   * path it would run against, the working directory — so it goes only to a
+   * connection {@link askEntitlement} admits (ADR 260819-022912). An agent
+   * holding this stream open no longer reads every pending shell command on the
+   * machine: not here, not on the `session_status` frame that carries the same
+   * tool and target while a session is `blocked` (see
+   * {@link withoutBlockedDetail}), and not on a session's own stream
+   * (`session-stream-delivery.ts`).
+   *
+   * What it DOES still see is the tool a session is RUNNING, on an ordinary
+   * `session_status`. That is a different fact — nobody is being asked for
+   * anything — and narrowing it is not this spec's to do.
+   *
+   * `interaction_resolved` deliberately keeps the plain broadcast. It carries a
+   * session id, an interaction id and an outcome, and no detail at all; a client
+   * that never received the `pending` simply has nothing to close, and
+   * addressing the receipt would cost a second subject resolution on every
+   * resolution to withhold a fact the session's own stream already carries.
+   *
    * `.parse` rather than `safeParse`: a malformed payload is a bug in this
    * module, and it should fail here — inside the listener's own throw
    * isolation — rather than reaching a client.
@@ -486,6 +572,12 @@ export class SessionListBroadcaster {
   private broadcastInteraction(change: InteractionChange): void {
     if (change.type === 'pending') {
       const binding = this.roomBindings?.bindingForSession(change.sessionId);
+      // No `approvers`: this is the cockpit's transport, and a `bridged`
+      // principal cannot arrive on it. See `AskSubject.approvers`.
+      const subject: AskSubject = {
+        sessionId: change.sessionId,
+        ...(binding ? { roomId: binding.roomId } : {}),
+      };
       eventFanOut.broadcast(
         'interaction_pending',
         InteractionPendingEventSchema.parse({
@@ -493,7 +585,8 @@ export class SessionListBroadcaster {
           cwd: change.cwd,
           interaction: change.interaction,
           ...(binding ? { roomId: binding.roomId, roomAuthorId: binding.authorId } : {}),
-        })
+        }),
+        (principal) => askEntitlement(principal, subject) !== 'none'
       );
       return;
     }
@@ -543,6 +636,16 @@ export class SessionListBroadcaster {
     // stringly-typed drift: clients filter on the same `type` values.
     const outgoing = this.withOverlays(validated);
     if (outgoing.type === 'session_removed') notifySessionRemoved(outgoing.sessionId);
+    if (carriesBlockedDetail(outgoing)) {
+      const sessionId = outgoing.type === 'session_status' ? outgoing.sessionId : '';
+      eventFanOut.broadcastRedacted(
+        outgoing.type,
+        outgoing,
+        withoutBlockedDetail(outgoing),
+        (principal) => maySeeBlockedDetail(principal, sessionId)
+      );
+      return;
+    }
     eventFanOut.broadcast(outgoing.type, outgoing);
   }
 }

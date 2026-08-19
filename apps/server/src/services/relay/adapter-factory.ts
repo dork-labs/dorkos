@@ -24,6 +24,7 @@ import {
 } from '@dorkos/relay';
 import type {
   AgentRuntimeLike,
+  ApprovalAuthorizer,
   TraceStoreLike,
   TasksStoreLike,
   AgentSessionStoreLike,
@@ -46,6 +47,12 @@ export interface AdapterFactoryDeps {
   taskStore?: TasksStoreLike;
   /** Optional persistent store for agent key → SDK session UUID mappings. */
   agentSessionStore?: AgentSessionStoreLike;
+  /**
+   * Whether a click on a chat platform may authorize one session's tool call
+   * (spec `ask-entitlement` §5.3). Required so a caller cannot forget it — the
+   * same posture-as-data argument `UpgradeRoute.credential` makes.
+   */
+  approvalAuthorizer: ApprovalAuthorizer;
 }
 
 /** Default status for adapters that are not currently running. */
@@ -102,6 +109,9 @@ export async function createAdapter(
         // guess: this is the `'claude-code'` branch, and the runtime it resolves
         // against is the one the lookup above took from that exact map entry.
         resolveExecutionSettings: createTurnExecutionSettingsResolver('claude-code'),
+        // Every approval that arrives on the relay bus is checked here too,
+        // before the runtime is touched (spec `ask-entitlement` §5.3).
+        approvalAuthorizer: deps.approvalAuthorizer,
         logger,
       });
     }

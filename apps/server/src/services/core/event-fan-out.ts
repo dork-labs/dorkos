@@ -17,6 +17,7 @@
 import { encodeStreamFrame } from '@dorkos/shared/stream-socket';
 import { SSE } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
+import type { CallerPrincipal } from '../../lib/caller-principal.js';
 
 /**
  * One broadcast, pre-rendered for both wire formats.
@@ -76,6 +77,21 @@ export function encodeBroadcast(eventName: string, data: unknown): EncodedBroadc
 }
 
 /**
+ * Decide, per connected client, whether one broadcast is that client's to
+ * receive.
+ *
+ * Omitted at the call site means everyone, which is what every event on this bus
+ * has always meant and what all but one still mean. The one exception is
+ * `interaction_pending`, which carries a prompt's detail — the tool, the command
+ * and the working directory — and so goes only to a connection entitled to it
+ * (ADR 260819-022912).
+ *
+ * @param principal - What the connection registered itself as.
+ * @returns Whether to write the frame to that connection.
+ */
+export type BroadcastAudience = (principal: CallerPrincipal) => boolean;
+
+/**
  * A listener on the in-process half of the global event stream.
  *
  * Deliberately not exported: the one subscriber passes an inline arrow, and an
@@ -94,7 +110,7 @@ type EventFanOutListener = (eventName: string, data: unknown) => void;
  * Manages a set of connected clients and distributes events to all of them.
  */
 class EventFanOut {
-  private clients = new Set<FanOutClient>();
+  private clients = new Set<{ client: FanOutClient; principal: CallerPrincipal }>();
   private listeners = new Set<EventFanOutListener>();
 
   /**
@@ -115,16 +131,23 @@ class EventFanOut {
    * separated by a handshake, and a full fan-out must stay full.
    *
    * @param client - The connected reader.
+   * @param principal - Who is on the other end, for the events that are
+   *   addressed rather than broadcast. **Required, never defaulted**: a default
+   *   would be a silent allow for the next stream somebody adds, which is the
+   *   argument `UpgradeRoute.credential` already makes — the gate gets tested,
+   *   the WIRING of it does not. Both transports read it from the same
+   *   `res.locals`-shaped facts through `readCallerPrincipal`.
    */
-  addClient(client: FanOutClient): () => void {
+  addClient(client: FanOutClient, principal: CallerPrincipal): () => void {
     if (this.clients.size >= SSE.MAX_TOTAL_CLIENTS) {
       logger.warn(`[EventFanOut] Max clients reached (${SSE.MAX_TOTAL_CLIENTS}), rejecting`);
       client.drop();
       return () => {};
     }
-    this.clients.add(client);
+    const entry = { client, principal };
+    this.clients.add(entry);
     return () => {
-      this.clients.delete(client);
+      this.clients.delete(entry);
     };
   }
 
@@ -141,6 +164,11 @@ class EventFanOut {
    * A listener that throws is logged and skipped rather than allowed to break
    * the broadcast: a room write must never fail because something downstream of
    * it did.
+   *
+   * **A listener receives every broadcast, including an addressed one.** The
+   * audience a caller may pass to {@link broadcast} governs the CLIENT loop
+   * only: these consumers are the server itself, not callers, so there is no
+   * principal to ask about and nothing an audience could mean here.
    *
    * **Two contracts a listener owes, both easy to violate by accident:**
    *
@@ -191,9 +219,76 @@ class EventFanOut {
    * cannot await any single client.
    *
    * The frame is encoded ONCE per wire format and the same strings sent to
-   * every client — see {@link EncodedBroadcast}.
+   * every client — see {@link EncodedBroadcast}. That stays true of an
+   * addressed broadcast: the audience decides who a frame is written to, never
+   * how many times it is rendered.
+   *
+   * A client the audience skips is left exactly as it was — not measured for
+   * backpressure, not dropped, not removed from the set. It is simply not this
+   * frame's reader.
+   *
+   * @param eventName - The event name, e.g. `session_status`.
+   * @param data - The payload, serialized once per wire format.
+   * @param audience - Which connections this frame is for. Omitted means every
+   *   one of them, which is what all but one event on this bus mean — see
+   *   {@link BroadcastAudience}.
    */
-  broadcast(eventName: string, data: unknown): void {
+  broadcast(eventName: string, data: unknown, audience?: BroadcastAudience): void {
+    this.notifyListeners(eventName, data);
+    this.writeToClients(() => encodeBroadcast(eventName, data), audience);
+  }
+
+  /**
+   * Broadcast ONE event rendered two ways: in full to the connections entitled
+   * to its detail, and redacted to the rest.
+   *
+   * `session_status` needs this and an audience alone cannot give it.
+   * `SessionStatus.activity` carries the tool a session is on and the one
+   * argument of it a person would recognize — for a `blocked` session that is
+   * the very thing the Ask is asking about — while the same frame carries the
+   * lifecycle every reader legitimately needs. Withholding the whole frame
+   * would leave an unentitled reader's view of that session silently stuck on
+   * its previous lifecycle, which is a worse property than the leak it closes;
+   * sending it whole is the leak. So the detail is dropped and the lifecycle is
+   * kept (spec `ask-entitlement`, review finding 1).
+   *
+   * Every property {@link broadcast} holds is held here:
+   *
+   * - **In-process listeners are notified ONCE**, with the FULL payload. They
+   *   are the server itself, not callers; a listener that received the same
+   *   event twice — or received a redacted one — would be a new bug.
+   * - **Each rendering is encoded once**, whatever the split, and the redacted
+   *   one is not encoded at all when every connection is entitled.
+   * - **Backpressure is unchanged**: each client is measured on the one frame
+   *   it actually received.
+   *
+   * @param eventName - The event name.
+   * @param full - The payload for entitled connections.
+   * @param redacted - The payload for everybody else.
+   * @param entitled - Which connections may have the full one.
+   */
+  broadcastRedacted(
+    eventName: string,
+    full: unknown,
+    redacted: unknown,
+    entitled: BroadcastAudience
+  ): void {
+    this.notifyListeners(eventName, full);
+    this.writeToClients(() => encodeBroadcast(eventName, full), entitled);
+    this.writeToClients(
+      () => encodeBroadcast(eventName, redacted),
+      (principal) => !entitled(principal)
+    );
+  }
+
+  /**
+   * Hand one event to every in-process listener, isolating a listener that
+   * throws.
+   *
+   * @param eventName - The event name.
+   * @param data - The LIVE payload; see {@link EventFanOut.subscribe}.
+   */
+  private notifyListeners(eventName: string, data: unknown): void {
     for (const listener of this.listeners) {
       try {
         listener(eventName, data);
@@ -204,23 +299,40 @@ class EventFanOut {
         });
       }
     }
-    const broadcast = encodeBroadcast(eventName, data);
-    for (const client of this.clients) {
+  }
+
+  /**
+   * Write one frame to the connected clients an audience admits, dropping the
+   * gone and the hopelessly backed-up.
+   *
+   * `render` is a thunk, called AT MOST ONCE and only if some client is going
+   * to receive it. That is what keeps "encoded once per broadcast" true when a
+   * rendering has no readers at all — the redacted variant on an install where
+   * only the cockpit is connected, which is the common case.
+   *
+   * @param render - Produces the frame, once.
+   * @param audience - Which connections it is for; omitted means all.
+   */
+  private writeToClients(render: () => EncodedBroadcast, audience?: BroadcastAudience): void {
+    let broadcast: EncodedBroadcast | undefined;
+    for (const entry of this.clients) {
+      const { client } = entry;
       if (client.gone) {
-        this.clients.delete(client);
+        this.clients.delete(entry);
         continue;
       }
+      if (audience && !audience(entry.principal)) continue;
       try {
-        client.send(broadcast);
+        client.send((broadcast ??= render()));
         if (client.bufferedBytes > SSE.MAX_BUFFERED_BYTES) {
           logger.warn('[EventFanOut] dropping slow client (buffer over limit)', {
             bufferedBytes: client.bufferedBytes,
           });
           client.drop();
-          this.clients.delete(client);
+          this.clients.delete(entry);
         }
       } catch {
-        this.clients.delete(client);
+        this.clients.delete(entry);
       }
     }
   }

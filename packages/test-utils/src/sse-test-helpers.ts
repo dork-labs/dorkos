@@ -43,6 +43,12 @@ export interface CollectDurableEventsOptions {
    * `{dorkHome}/agents/dorkbot`) to prove it is not rejected.
    */
   cwd?: string;
+  /**
+   * Extra request headers, for the cases about WHO is reading — a caller
+   * presenting `X-DorkOS-Agent`, say. Merged over the resume header, so a test
+   * can send both.
+   */
+  headers?: Record<string, string>;
 }
 
 /** Parse SSE wire text into frames, attaching the most recent `id:` to each. */
@@ -90,11 +96,16 @@ export interface OpenSseStream {
  * @param path - The stream path, query string included.
  * @param opts.until - Stop predicate over the frames collected so far.
  * @param opts.lastEventId - Sent as the `Last-Event-ID` resume header.
+ * @param opts.headers - Extra request headers, for the cases about who is reading.
  */
 export function openSseStream(
   port: number,
   path: string,
-  opts: { until: (frames: SseFrame[]) => boolean; lastEventId?: string }
+  opts: {
+    until: (frames: SseFrame[]) => boolean;
+    lastEventId?: string;
+    headers?: Record<string, string>;
+  }
 ): OpenSseStream {
   let signalReady = (): void => {};
   let resolveFrames: (frames: SseFrame[]) => void = () => {};
@@ -118,7 +129,10 @@ export function openSseStream(
       port,
       path,
       method: 'GET',
-      headers: opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {},
+      headers: {
+        ...(opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {}),
+        ...opts.headers,
+      },
     },
     (res) => {
       resolveStatus(res.statusCode ?? 0);
@@ -233,7 +247,10 @@ export function collectDurableEvents(
           port,
           path: eventsPath(sessionId, opts),
           method: 'GET',
-          headers: opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {},
+          headers: {
+            ...(opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {}),
+            ...opts.headers,
+          },
         },
         opts.until
       )
@@ -275,7 +292,10 @@ export function collectDurableEventsAt(
       port: Number(url.port),
       path: eventsPath(sessionId, opts),
       method: 'GET',
-      headers: opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {},
+      headers: {
+        ...(opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {}),
+        ...opts.headers,
+      },
     },
     opts.until
   );

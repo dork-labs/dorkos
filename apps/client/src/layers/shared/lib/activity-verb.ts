@@ -11,16 +11,46 @@
  * which is why an idle session gets `null` rather than a stale phrase.
  *
  * **This is the only place in the client that turns a session's state into
- * words.** The sidebar reaches it through `SessionVerbLine`, the chat status
- * strip calls it directly, and `formatActivityLabel` — the tool-naming rung
- * underneath — is not called anywhere else outside this module. A test reads
- * the sources and fails if a second caller appears, because the failure mode
- * here is not a crash: it is two surfaces quietly describing one turn two ways.
+ * words.** The sidebar reaches it through `SessionVerbLine` and the chat status
+ * strip calls it directly. `tool-labels.ts` — the tool-naming rung underneath —
+ * is reachable from here and from nowhere else: `formatActivityLabel` (the
+ * session's finished sentence) is not called outside this module at all, and
+ * `activityClause` travels outward through the barrel because a room needs the
+ * same reading in a different grammar (DOR-1351). A test reads the sources and
+ * fails if either name is taken straight off `tool-labels`, because the failure
+ * mode here is not a crash: it is two surfaces quietly describing one turn two
+ * ways.
  *
  * @module shared/lib/activity-verb
  */
 import type { SessionActivity, SessionLifecycle } from '@dorkos/shared/session-stream';
-import { formatActivityLabel } from './tool-labels';
+import { activityClause, formatActivityLabel } from './tool-labels';
+
+/**
+ * The clause a room's sentence puts after "is" — `reading standup.md`.
+ *
+ * Re-exported from the rung rather than re-derived, so the room lane and the
+ * session lane cannot describe one tool call two ways (BC-37). `null` means the
+ * caller should say its own less specific truth, never that it should invent
+ * one.
+ */
+export { activityClause };
+
+/**
+ * The same reading as a standalone line — `Reading standup.md` — or `null` when
+ * nothing is known.
+ *
+ * Capitalised and WITHOUT the trailing ellipsis {@link activityVerb}'s session
+ * framing carries: the ellipsis says "this line is a status that keeps moving",
+ * which is true of a strip that is always on screen and false of a row inside a
+ * card somebody opened on purpose.
+ *
+ * @param activity - The reading, or `null`/`undefined` when there is none.
+ */
+export function activitySentence(activity: SessionActivity | null | undefined): string | null {
+  const clause = activityClause(activity);
+  return clause === null ? null : `${clause[0]!.toUpperCase()}${clause.slice(1)}`;
+}
 
 /**
  * What a blocked session says, and the one phrase the ladder writes itself.

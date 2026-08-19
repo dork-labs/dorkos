@@ -39,6 +39,7 @@ import { readManifest } from '@dorkos/shared/manifest';
 import {
   isBlockingInteractionEvent,
   type BlockingInteractionEventType,
+  type SessionActivity,
 } from '@dorkos/shared/session-stream';
 import { logger } from '../../lib/logger.js';
 import { ROOMS } from '../../config/constants.js';
@@ -48,6 +49,7 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import {
   dispatchMessage,
   getOrCreateProjector,
+  deriveSessionActivity,
   persistenceModeFor,
   resolveUnattendedSessionDefaults,
   type SessionStateProjector,
@@ -255,6 +257,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         ceilingMs: Math.max(readCeilingMs(), waitMs),
         ownTurn,
         onWaiting: request.onWaiting,
+        onActivity: request.onActivity,
         graceMs: readGraceMs(),
       });
 
@@ -552,6 +555,8 @@ const WAITING_KINDS: Record<BlockingInteractionEventType, RoomTurnWaiting['kind'
  * @param bounds.ownTurn - This turn's identity, filled in when it opens.
  * @param bounds.onWaiting - Called when the turn has been stopped for a person
  *   for longer than `graceMs`, and is still stopped.
+ * @param bounds.onActivity - Called with the tool this turn just started, and
+ *   once with `null` when it can no longer be doing anything.
  * @param bounds.graceMs - How long a prompt may stand before it is mentioned.
  */
 function collectReply(
@@ -562,6 +567,7 @@ function collectReply(
     ceilingMs: number;
     ownTurn: OwnTurn;
     onWaiting: (waiting: RoomTurnWaiting) => void;
+    onActivity: (activity: SessionActivity | null) => void;
     graceMs: number;
   }
 ): ReplyCollector {
@@ -591,6 +597,22 @@ function collectReply(
   const stopWaitingOnEverything = (): void => {
     for (const grace of waitingOn.values()) clearTimeout(grace);
     waitingOn.clear();
+  };
+
+  /** Whether this turn has already said it is doing nothing. */
+  let cleared = false;
+  /**
+   * Say the turn is no longer doing anything nameable — at most once.
+   *
+   * Three endings reach it (the `turn_end` branch, the read failing, and the
+   * ceiling or a cancel in the `finally`) and a turn that ends and is then
+   * aborted reaches two of them. Once is what the room should hear: a second
+   * clear is a second publish for work that was already over.
+   */
+  const clearActivity = (): void => {
+    if (cleared) return;
+    cleared = true;
+    bounds.onActivity(null);
   };
 
   const closed: Promise<CollectedTurn> = (async () => {
@@ -637,9 +659,18 @@ function collectReply(
         if (event.type === 'interaction_resolved') stopWaitingOn(event.id);
         if (event.type === 'text_delta') collecting += event.text;
         else if (MESSAGE_BOUNDARY.has(event.type)) endParagraph();
+        // What the turn is doing, for the room's own live lane (DOR-1351).
+        // Derived by the SESSION's function, never a second one: the basename
+        // rule, the first-line rule, the host rule and the 40-character
+        // truncation are all its, and a second derivation is a second answer
+        // that can disagree about one tool call.
+        if (event.type === 'tool_call') {
+          bounds.onActivity(deriveSessionActivity(event.toolName, event.input) ?? null);
+        }
         if (event.type === 'turn_end') {
           ended = true;
           failed = event.terminalReason === 'error';
+          clearActivity();
           break;
         }
       }
@@ -649,6 +680,7 @@ function collectReply(
         error: err instanceof Error ? err.message : String(err),
       });
       failed = true;
+      clearActivity();
     } finally {
       clearTimeout(ceiling);
       // The turn has ended, one way or another. A prompt it was stopped on can
@@ -656,6 +688,11 @@ function collectReply(
       // can act on — and a timer outliving its turn is a room that speaks about
       // work that is over.
       stopWaitingOnEverything();
+      // The ceiling gave up, or the collector was cancelled. A verb that
+      // outlives its turn is the one thing this feature must not do, so every
+      // exit says so — and `clearActivity` makes saying it three times cost one
+      // publish.
+      clearActivity();
     }
     // Whatever was streaming when the turn closed — or when the ceiling gave up
     // on it — is a paragraph too. An abandoned read still keeps what it heard.

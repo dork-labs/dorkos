@@ -21,6 +21,7 @@ import {
   buildBusyNotice,
   buildTurnFailedNotice,
   buildWaitingNotice,
+  type WaitingKind,
 } from '../../../rooms/notices/notice-copy.js';
 import { externalSenderIdentity } from '../../platform-identity.js';
 import {
@@ -112,8 +113,16 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
   /**
    * Build a delivery over the real room service and the REAL consent gate, with
    * a fake publish pipeline whose adapter outcome the test controls.
+   *
+   * @param seedBinding - The binding row the lifecycle reads.
+   * @param asks - Whether a bridged Approve/Deny card is standing, for the
+   *   waiting-notice suppression (spec `ask-entitlement` §5.4). Omitted means
+   *   the bridged-card path is not wired, which is today's behaviour.
    */
-  function makeDelivery(seedBinding: LifecycleBinding): ChatBridgeDelivery {
+  function makeDelivery(
+    seedBinding: LifecycleBinding,
+    asks?: { hasStandingCard: (roomId: string, authorId: string | undefined) => boolean }
+  ): ChatBridgeDelivery {
     // The real gate, reading the mutable `binding` for this chat.
     const gate = createInitiateConsentGate({
       bindingStore: { resolve: () => binding },
@@ -167,6 +176,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
       operatorDisplayName: () => operatorDisplayName(),
       sleep: async () => {},
       retryBackoffMs: [1, 1],
+      ...(asks ? { asks } : {}),
     });
   }
 
@@ -679,10 +689,10 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
       // isolates the NOTICE-CODE eligibility test from the deliverNotices gate
       // itself: each must be 'skipped' even though THIS bridge delivers notices.
       // One `it` per excluded code — `cascade_stopped`, `budget_reached`,
-      // `agent_gone`, `agent_unavailable` — so a future code added to the wrong
-      // set fails a named test, not a shared one. `agent_busy` and
-      // `awaiting_approval` used to sit here and are now delivered (DOR-1359);
-      // their cases moved to the block below.
+      // `agent_gone`, `agent_unavailable`, `bridge_rate_limited` — so a future
+      // code added to the wrong set fails a named test, not a shared one.
+      // `agent_busy` and `awaiting_approval` used to sit here and are now
+      // delivered (DOR-1359); their cases moved to the block below.
       function dmDelivery(chatId: string) {
         const dm = harness.service.createBridgedRoom(bridgeRequest(chatId));
         binding = makeBinding({ canReply: true, canInitiate: true });
@@ -724,6 +734,15 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         });
         expect(await delivery.deliverEntry(notice)).toBe('skipped');
       });
+
+      it('bridge_rate_limited is never delivered (it is about DorkOS, not about the chat)', async () => {
+        const { dm, delivery } = dmDelivery('607');
+        const notice = harness.service.postNotice(dm.id, {
+          text: 'Messages are arriving from the chat faster than this channel can record them.',
+          notice: 'bridge_rate_limited',
+        });
+        expect(await delivery.deliverEntry(notice)).toBe('skipped');
+      });
     });
 
     describe('DOR-1359: a stopped agent is reported to the chat — awaiting_approval and agent_busy', () => {
@@ -749,29 +768,22 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         return (publish.mock.calls[0][1] as Record<string, unknown>).content as string;
       }
 
-      it('an awaiting_approval notice reaches the chat, word for word as the room wrote it', async () => {
+      it('an awaiting_approval notice reaches the chat, re-rendered for a reader with no session', async () => {
+        // DOR-1359 forwarded the room's own words. DOR-1356 re-renders them:
+        // the stored line ends "Open Ana's session to answer", which points a
+        // bridged reader at a door they may not have. The per-kind sentences
+        // and the fallback are pinned in the `ask-entitlement` block below;
+        // what this case holds is that the notice still ARRIVES and still names
+        // the agent, which is the whole point of the line.
         const { dm, delivery, inbound, ana } = bridgedDm('610');
-        // The REAL copy builder, so the delivered words are pinned to
-        // `notice-copy.ts` itself rather than to a string typed twice.
         const body = buildWaitingNotice('Ana', ana.id, 'approval');
         const notice = harness.service.postNotice(dm.id, body, { root: inbound.id, depth: 1 });
 
         expect(await delivery.deliverEntry(notice)).toBe('delivered');
-        expect(deliveredText()).toBe(body.text);
-        // The agent is named on the platform, which is the whole point of the
-        // line — a chat reader has to know WHICH agent stopped.
         expect(deliveredText()).toContain('Ana');
-      });
-
-      it('the other two waiting kinds deliver their own words, not the approval one', async () => {
-        const { dm, delivery, inbound, ana } = bridgedDm('611');
-        const body = buildWaitingNotice('Ana', ana.id, 'question');
-        const notice = harness.service.postNotice(dm.id, body, { root: inbound.id, depth: 1 });
-
-        expect(await delivery.deliverEntry(notice)).toBe('delivered');
-        expect(deliveredText()).toBe(body.text);
-        expect(deliveredText()).toBe(
-          "Ana has a question for you before it can carry on. Open Ana's session to answer. It will wait, but not forever."
+        expect(deliveredText()).not.toBe(body.text);
+        expect(deliveredText(), 'the far end is not sent to a session tab').not.toContain(
+          "Ana's session"
         );
       });
 
@@ -1015,6 +1027,144 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         "Ana ran into a problem and couldn't answer. Try sending your message again."
       );
       expect(payload.content).not.toContain('session');
+    });
+
+    describe('awaiting_approval — the far-end waiting sentence (spec `ask-entitlement` §5.4)', () => {
+      /** A distinctive tool name, so a leak of the prompt's detail is unmistakable. */
+      const SECRET_TOOL = 'ZzTopSecretTool';
+
+      /**
+       * Post a waiting notice the way `buildWaitingNotice` writes one, and
+       * deliver it.
+       *
+       * The body comes from the REAL copy function rather than a hand-written
+       * literal: the assertion below is that the far-end text DIFFERS from the
+       * room's own, and a literal would let both drift together.
+       *
+       * @param chatId - The bridged chat.
+       * @param kind - What the agent stopped for.
+       * @param asks - The standing-card port, when the case is about suppression.
+       */
+      async function deliverWaiting(
+        chatId: string,
+        kind: WaitingKind,
+        asks?: { hasStandingCard: (roomId: string, authorId: string | undefined) => boolean }
+      ) {
+        const dm = harness.service.createBridgedRoom(bridgeRequest(chatId));
+        const delivery = makeDelivery(bindingRow(dm.id, chatId), asks);
+        binding = makeBinding({ canReply: true, canInitiate: true });
+        const ana = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+        const notice = harness.service.postNotice(dm.id, buildWaitingNotice('Ana', ana.id, kind));
+        const outcome = await delivery.deliverEntry(notice);
+        return { dm, ana, outcome };
+      }
+
+      it('reaches a bridged DM, re-rendered so it does not point at a session the reader has no access to', async () => {
+        // An agent that stops for a person and says nothing to the chat it
+        // stopped in is indistinguishable from one that crashed.
+        const { outcome } = await deliverWaiting('620', 'approval');
+
+        expect(outcome).toBe('delivered');
+        const [, payload] = publish.mock.calls[0] as [string, Record<string, unknown>];
+        expect(payload.content).toBe(
+          'Ana is waiting for someone to approve something before it can carry on. Answer it in DorkOS. It gives up if nobody does.'
+        );
+        expect(payload.content, 'the room’s own line points at a session tab').not.toContain(
+          "Ana's session"
+        );
+      });
+
+      it('says something different for a question than for an approval', async () => {
+        const { outcome } = await deliverWaiting('621', 'question');
+
+        expect(outcome).toBe('delivered');
+        const [, payload] = publish.mock.calls[0] as [string, Record<string, unknown>];
+        expect(payload.content).toBe(
+          'Ana has a question that needs answering before it can carry on. Answer it in DorkOS. It gives up if nobody does.'
+        );
+      });
+
+      it('says something different again for an elicitation', async () => {
+        const { outcome } = await deliverWaiting('622', 'elicitation');
+
+        expect(outcome).toBe('delivered');
+        const [, payload] = publish.mock.calls[0] as [string, Record<string, unknown>];
+        expect(payload.content).toBe(
+          'Ana needs something before it can carry on. Answer it in DorkOS. It gives up if nobody does.'
+        );
+      });
+
+      it('falls back to the approval sentence for an entry stored before the kind was recorded', async () => {
+        // Every `awaiting_approval` entry written before `waitingKind` existed
+        // is still in somebody's room log, and the catch-up scan will hand one
+        // to this path.
+        const dm = harness.service.createBridgedRoom(bridgeRequest('623'));
+        const delivery = makeDelivery(bindingRow(dm.id, '623'));
+        binding = makeBinding({ canReply: true, canInitiate: true });
+        const ana = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+        const notice = harness.service.postNotice(dm.id, {
+          text: "Ana has a question for you before it can carry on. Open Ana's session to answer.",
+          notice: 'awaiting_approval',
+          subjectAuthorId: ana.id,
+        });
+
+        expect(await delivery.deliverEntry(notice)).toBe('delivered');
+        const [, payload] = publish.mock.calls[0] as [string, Record<string, unknown>];
+        expect(payload.content).toBe(
+          'Ana is waiting for someone to approve something before it can carry on. Answer it in DorkOS. It gives up if nobody does.'
+        );
+      });
+
+      it('carries none of the prompt’s detail — no tool name, no input, no path', async () => {
+        // The room's own line already keeps this rule (DOR-613); the far end is
+        // further away, not closer. The tool name below is a token nothing else
+        // in the fixture spells, so any leak of it is unmistakable.
+        const dm = harness.service.createBridgedRoom(bridgeRequest('624'));
+        const delivery = makeDelivery(bindingRow(dm.id, '624'));
+        binding = makeBinding({ canReply: true, canInitiate: true });
+        const ana = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+        const notice = harness.service.postNotice(dm.id, {
+          ...buildWaitingNotice('Ana', ana.id, 'approval'),
+          // A body that DOES carry the detail, so the assertion is about what
+          // the renderer chooses rather than about what the fixture omitted.
+          text: `Ana wants to run ${SECRET_TOOL} against /work/alpha/secrets.env`,
+        });
+
+        expect(await delivery.deliverEntry(notice)).toBe('delivered');
+        const [, payload] = publish.mock.calls[0] as [string, Record<string, unknown>];
+        expect(payload.content).not.toContain(SECRET_TOOL);
+        expect(payload.content).not.toContain('/work/alpha/secrets.env');
+      });
+
+      it('is suppressed while a card is standing for that agent, and the room entry is still written', async () => {
+        // Without this, an approver sees the card immediately and a
+        // near-duplicate line a minute later.
+        const { dm, outcome } = await deliverWaiting('625', 'approval', {
+          hasStandingCard: () => true,
+        });
+
+        expect(outcome).toBe('skipped');
+        expect(publish).not.toHaveBeenCalled();
+        expect(
+          noticesOf(dm.id, 'awaiting_approval'),
+          'the room log is untouched — only the DELIVERY is suppressed'
+        ).toHaveLength(1);
+      });
+
+      it('is delivered once no card stands for that agent any more', async () => {
+        const { outcome } = await deliverWaiting('626', 'approval', {
+          hasStandingCard: () => false,
+        });
+
+        expect(outcome).toBe('delivered');
+      });
+
+      it('asks about the room and the agent the notice is about, not about the room alone', async () => {
+        const hasStandingCard = vi.fn(() => false);
+        const { dm, ana } = await deliverWaiting('627', 'approval', { hasStandingCard });
+
+        expect(hasStandingCard).toHaveBeenCalledWith(dm.id, ana.id);
+      });
     });
   });
 

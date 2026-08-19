@@ -100,7 +100,7 @@ describe('stopping a relay-dispatched run, end to end', () => {
       'claude-code',
       // One slot, so the stop has to arrive by a route that does not need one.
       { defaultCwd: '/tmp', maxConcurrent: 1 },
-      { agentManager, traceStore, taskStore }
+      { agentManager, traceStore, taskStore, approvalAuthorizer: () => true }
     );
     relay = new RelayCore({
       dataDir: tmpDir,

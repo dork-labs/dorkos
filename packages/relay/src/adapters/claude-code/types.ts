@@ -9,6 +9,7 @@
  */
 
 import type { PermissionMode, SessionSettings, StreamEvent } from '@dorkos/shared/types';
+import type { ApprovalAuthorizer } from './approval-handler.js';
 
 /**
  * What a relay-triggered turn runs with, beyond its permission mode.
@@ -177,6 +178,15 @@ export interface ClaudeCodeAdapterDeps {
    * is what every host did before this existed.
    */
   resolveExecutionSettings?: ExecutionSettingsResolver;
+  /**
+   * Whether a click on a chat platform may authorize one session's tool call.
+   *
+   * **Required**, never defaulted: the adapters' own `mayApprove` gate answers
+   * for the binding it lives on, and a room-bound Ask reaches the approval bus
+   * by a path no adapter binding covers (spec `ask-entitlement` §5.3). A
+   * default here would be an allow for whatever publisher is added next.
+   */
+  approvalAuthorizer: ApprovalAuthorizer;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 

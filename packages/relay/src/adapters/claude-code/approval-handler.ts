@@ -61,20 +61,45 @@ function parseApprovalPayload(payload: unknown): ApprovalPayload | null {
 }
 
 /**
+ * Whether this platform user may authorize this session's tool call.
+ *
+ * A REQUIRED parameter of the two functions below, never optional and never
+ * defaulted. The adapters' own `mayApprove` gate answers for the binding it
+ * lives on, and a room-bound Ask reaches this bus by a path no adapter binding
+ * covers (spec `ask-entitlement` §5.3), so this bus carries no authority of its
+ * own. A default would be an allow for whatever publisher is added next.
+ *
+ * @param decision - What arrived on the bus: which session's tool call, which
+ *   chat platform, and the platform user id that clicked — `undefined` when the
+ *   platform gave none, which every implementation must refuse.
+ * @returns Whether to touch the runtime at all.
+ */
+export type ApprovalAuthorizer = (decision: {
+  readonly sessionId: string;
+  readonly platform: string;
+  readonly respondedBy: string | undefined;
+}) => boolean;
+
+/**
  * Handle a single approval response envelope.
  *
- * Validates the payload, calls `agentManager.approveTool()`, and logs
- * the outcome. Returns false if the interaction was not found (e.g., already
- * timed out) without throwing — the deferred promise has already been settled.
+ * Validates the payload, asks `authorize`, calls `agentManager.approveTool()`,
+ * and logs the outcome. Returns false if the interaction was not found (e.g.,
+ * already timed out) without throwing — the deferred promise has already been
+ * settled.
  *
  * @param envelope - The relay envelope containing the approval response
  * @param agentManager - The agent runtime to forward the approval decision to
  * @param log - Logger instance for diagnostics
+ * @param authorize - Whether this platform user may authorize this session's
+ *   tool call. Runs BEFORE the runtime is touched; a refusal logs one line and
+ *   has no other effect.
  */
 export function handleApprovalResponse(
   envelope: RelayEnvelope,
   agentManager: AgentRuntimeLike,
-  log: Pick<Console, 'warn' | 'debug'>
+  log: Pick<Console, 'warn' | 'debug'>,
+  authorize: ApprovalAuthorizer
 ): void {
   const approval = parseApprovalPayload(envelope.payload);
   if (!approval) {
@@ -86,6 +111,18 @@ export function handleApprovalResponse(
   }
 
   const { toolCallId, sessionId, approved, platform = 'unknown' } = approval;
+
+  if (!authorize({ sessionId, platform, respondedBy: approval.respondedBy })) {
+    // The second of two independent gates: the adapter's own `mayApprove` ran
+    // in process on the click, and this one runs before the runtime is touched.
+    // Neither is trusted to be the only one.
+    log.warn(
+      `[CCA] approval-handler: refused an approval this caller may not give — ` +
+        `platform=${platform} sessionId=${sessionId} toolCallId=${toolCallId}`
+    );
+    return;
+  }
+
   log.debug?.(
     `[CCA] approval-handler: ${approved ? 'approve' : 'deny'} ` +
       `toolCallId=${toolCallId} sessionId=${sessionId} platform=${platform}`
@@ -111,13 +148,16 @@ export function handleApprovalResponse(
  * @param relay - The RelayPublisher to subscribe through
  * @param agentManager - The agent runtime to forward approval decisions to
  * @param log - Logger instance for diagnostics
+ * @param authorize - Whether the clicking platform user may authorize the
+ *   session's tool call. Required; see {@link ApprovalAuthorizer}.
  */
 export function subscribeApprovalHandler(
   relay: RelayPublisher,
   agentManager: AgentRuntimeLike,
-  log: Pick<Console, 'warn' | 'debug'>
+  log: Pick<Console, 'warn' | 'debug'>,
+  authorize: ApprovalAuthorizer
 ): Unsubscribe {
   return relay.subscribe(APPROVAL_SUBJECT_PATTERN, (envelope) => {
-    handleApprovalResponse(envelope, agentManager, log);
+    handleApprovalResponse(envelope, agentManager, log, authorize);
   });
 }

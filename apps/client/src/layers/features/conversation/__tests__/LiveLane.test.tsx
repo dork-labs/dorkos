@@ -15,15 +15,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { LaneState } from '../model/lane-state';
 import { LiveLane } from '../ui/LiveLane';
+import { LivePeek, type LivePeekRow } from '../ui/LivePeek';
+import { laneAnnouncement, laneMotionKey } from '../ui/LaneContent';
 
 /** One agent working, as `deriveLaneState` reports it. */
 const WORKING: LaneState = {
   kind: 'presence',
   sentence: 'Kai is working on it',
+  line: 'Kai is working on it',
   authorIds: ['kai'],
   since: '2026-08-18T10:00:00.000Z',
   late: false,
 };
+
+/** The same claim, with the room having heard what Kai is doing. */
+const READING: LaneState = { ...WORKING, line: 'Kai is reading standup.md' };
 
 /** The peek's stand-in: what it draws is `LivePeek`'s business, not this file's. */
 const PEEK = <div data-testid="peek-body">who is working</div>;
@@ -164,5 +170,62 @@ describe('LiveLane', () => {
       "New messages aren't coming through right now"
     );
     expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
+  });
+
+  it('draws the verb and reads the verb-free sentence aloud', () => {
+    render(<LiveLane state={READING} />);
+
+    // The eye moves…
+    expect(screen.getByTestId('room-presence').textContent).toContain('Kai is reading standup.md');
+    // …and the ear does not.
+    expect(screen.getByRole('status').textContent).toBe('Kai is working on it');
+    expect(laneAnnouncement(READING, false)).toBe('Kai is working on it');
+  });
+
+  it('does not re-fade for a state that differs only in what is drawn', () => {
+    // The crossfade key is the accessibility contract's other half. Wired to
+    // `line` instead, a turn starting a tool every two seconds would replay the
+    // fade 300 times in ten minutes.
+    expect(laneMotionKey(READING)).toBe(laneMotionKey(WORKING));
+    expect(laneMotionKey(READING)).toBe('presence:Kai is working on it');
+    // …while a real change — the wait going long — still moves it.
+    expect(laneMotionKey({ ...READING, sentence: 'Kai is still working' })).not.toBe(
+      laneMotionKey(READING)
+    );
+  });
+});
+
+describe('LivePeek — what each agent is doing', () => {
+  /** One working agent, with only the fields this file's assertions read. */
+  function row(overrides: Partial<LivePeekRow> = {}): LivePeekRow {
+    return {
+      authorId: 'kai',
+      author: { id: 'kai', kind: 'agent', displayName: 'Kai' },
+      state: 'working',
+      since: '2026-08-18T10:00:00.000Z',
+      doing: 'Reading standup.md',
+      replyingTo: null,
+      sessionId: null,
+      ...overrides,
+    };
+  }
+
+  it('gives the reading its own line under the name', () => {
+    render(<LivePeek rows={[row()]} />);
+
+    expect(screen.getByTestId('live-peek-doing')).toHaveTextContent('Reading standup.md');
+  });
+
+  it('still shows it once the wait has gone long — unlike the lane', () => {
+    render(<LivePeek rows={[row({ state: 'working_late', doing: 'Running pnpm test' })]} />);
+
+    expect(screen.getByTestId('live-peek-doing')).toHaveTextContent('Running pnpm test');
+  });
+
+  it('draws no empty line for a row that has heard nothing', () => {
+    // An empty node here would shift the card for a fact nobody has.
+    render(<LivePeek rows={[row({ doing: null })]} />);
+
+    expect(screen.queryByTestId('live-peek-doing')).toBeNull();
   });
 });

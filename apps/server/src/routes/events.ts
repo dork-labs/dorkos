@@ -19,6 +19,7 @@ import { Router } from 'express';
 import { SSE } from '../config/constants.js';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
+import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { sendSessionStatusSnapshot } from '../services/session/session-list-broadcaster.js';
 
 /**
@@ -61,7 +62,12 @@ router.get('/', (req, res) => {
   // that matters: it is what makes it impossible to MISS a transition that
   // fires while the connect is being served. The reverse — snapshot, then
   // register — has a window in which a transition reaches nobody.
-  const unsubscribe = eventFanOut.addClient(client);
+  //
+  // The principal comes from the same Express chain that already ran
+  // `sessionGate` and `resolveAgentIdentity`, so an addressed event (today only
+  // `interaction_pending`) can tell this connection apart from an agent's.
+  const principal = readCallerPrincipal(req, res);
+  const unsubscribe = eventFanOut.addClient(client, principal);
 
   // Keepalive heartbeat to prevent proxies/browsers from closing the connection
   const heartbeat = setInterval(() => {
@@ -87,7 +93,7 @@ router.get('/', (req, res) => {
   // place this handler writes more than a single frame, and it should not be
   // the one stretch with no close handler behind it.
   client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
-  sendSessionStatusSnapshot(client);
+  sendSessionStatusSnapshot(client, principal);
 });
 
 export default router;

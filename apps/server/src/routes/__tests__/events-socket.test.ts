@@ -25,11 +25,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 import { globalEventsRoute } from '../events-socket.js';
+import { eventFanOut } from '../../services/core/event-fan-out.js';
+import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import {
   getOrCreateProjector,
   disposeProjector,
   type RawSessionEvent,
 } from '../../services/session/session-state-projector.js';
+import type { UpgradeAttempt } from '../../services/core/streams/upgrade-router.js';
 
 const ERRORED_ID = '88888888-8888-4888-8888-888888888888';
 const IDLE_ID = '99999999-9999-4999-8999-999999999999';
@@ -54,12 +57,29 @@ function recordingSocket(): { ws: WebSocket; frames: () => { event: string; data
   };
 }
 
-/** Open the route against a recording socket and return what it wrote. */
-async function connect(): Promise<{ event: string; data?: unknown }[]> {
-  // This route's `authorize` reads nothing off the attempt — it asks the
-  // fan-out for capacity and nothing else — so an empty one is the honest
-  // fixture rather than a stub that would have to be kept in sync.
-  const decision = await globalEventsRoute.authorize({} as never);
+/**
+ * An upgrade as the router hands it to this route.
+ *
+ * `headers` and `locals` are the two the route reads, because the principal it
+ * registers with the fan-out comes from exactly the facts the credential gate
+ * resolved (`StreamUpgradeLocals` is `res.locals`-shaped for this reason).
+ *
+ * @param attempt - Whatever this case wants to vary.
+ */
+function upgradeAttempt(attempt: Partial<UpgradeAttempt> = {}): UpgradeAttempt {
+  return { headers: {}, locals: {}, ...attempt } as UpgradeAttempt;
+}
+
+/**
+ * Open the route against a recording socket and return what it wrote.
+ *
+ * @param attempt - The upgrade to authorize; a credential-free cockpit by
+ *   default.
+ */
+async function connect(
+  attempt: Partial<UpgradeAttempt> = {}
+): Promise<{ event: string; data?: unknown }[]> {
+  const decision = await globalEventsRoute.authorize(upgradeAttempt(attempt));
   if (!decision.ok) throw new Error('the fan-out refused the connection');
   const { ws, frames } = recordingSocket();
   decision.open(ws);
@@ -109,5 +129,42 @@ describe('globalEventsRoute — connect preamble', () => {
     // about the idle one below is a decision rather than an empty stream.
     expect(statuses.map((status) => status.sessionId)).toContain(ERRORED_ID);
     expect(statuses.map((status) => status.sessionId)).not.toContain(IDLE_ID);
+  });
+});
+
+describe('globalEventsRoute — the principal it registers', () => {
+  /**
+   * Register a connection and report what principal the fan-out was told.
+   *
+   * Spying on `addClient` rather than broadcasting is deliberate: the wiring is
+   * what an exploit reaches, and a route that resolved the principal correctly
+   * but registered a different one would broadcast an Ask to an agent while
+   * every policy test stayed green.
+   *
+   * @param attempt - The upgrade to authorize.
+   */
+  async function principalOf(attempt: Partial<UpgradeAttempt>): Promise<unknown> {
+    const addClient = vi.spyOn(eventFanOut, 'addClient').mockReturnValue(() => {});
+    await connect(attempt);
+    return addClient.mock.calls[0]?.[1];
+  }
+
+  it('registers a credential-free cockpit as the operator', async () => {
+    expect(await principalOf({})).toEqual({ kind: 'operator' });
+  });
+
+  it('registers a connection presenting an agent header as an agent', async () => {
+    const principal = await principalOf({
+      headers: { [AGENT_IDENTITY_HEADER]: 'tok_agent' },
+      locals: { agentIdentity: { agentId: 'agent_ana' } as never },
+    });
+    expect(principal).toEqual({ kind: 'agent' });
+  });
+
+  it('registers a connection holding a per-user API key as a program', async () => {
+    const principal = await principalOf({
+      locals: { user: { userId: 'user_owner', credential: 'api-key' } },
+    });
+    expect(principal).toEqual({ kind: 'program', userId: 'user_owner' });
   });
 });

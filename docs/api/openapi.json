@@ -7084,6 +7084,9 @@
           "moment": {
             "$ref": "#/components/schemas/RoomMoment"
           },
+          "waitingKind": {
+            "$ref": "#/components/schemas/RoomWaitingKind"
+          },
           "answersEntryId": {
             "type": "string",
             "description": "The entry this post answers, set on every agent-authored post the room writes for a turn. Chat posts in arrival order whatever a message is responding to, and an agent whose message waited behind work in another conversation answers out of order often rather than rarely — so the pointer is what a reader follows back to the question."
@@ -7184,6 +7187,14 @@
           "session",
           "connection",
           "activity"
+        ]
+      },
+      "RoomWaitingKind": {
+        "type": "string",
+        "enum": [
+          "approval",
+          "question",
+          "elicitation"
         ]
       },
       "MentionSpan": {
@@ -8002,6 +8013,9 @@
           "since": {
             "type": "string"
           },
+          "activity": {
+            "$ref": "#/components/schemas/SessionActivity"
+          },
           "heldBehind": {
             "$ref": "#/components/schemas/RoomHeldBehind"
           }
@@ -8622,7 +8636,7 @@
           "Sessions"
         ],
         "summary": "Every prompt waiting on a person",
-        "description": "One envelope per prompt any live session is parked on — a tool approval, a question, or an MCP elicitation — with server-authoritative time left and expired entries already dropped. `roomId` is present only for a session bound to a room. This is the seed a window reads on mount; after that the `interaction_pending` and `interaction_resolved` events on `/api/events` keep it current, so it is never polled. Bounded to live sessions: a projector lives until its session is evicted or the server restarts, so this answers for the recent fleet and not for all history.",
+        "description": "One envelope per prompt any live session is parked on — a tool approval, a question, or an MCP elicitation — with server-authoritative time left and expired entries already dropped. `roomId` is present only for a session bound to a room. This is the seed a window reads on mount; after that the `interaction_pending` and `interaction_resolved` events on `/api/events` keep it current, so it is never polled. Bounded to live sessions: a projector lives until its session is evicted or the server restarts, so this answers for the recent fleet and not for all history. The list is SCOPED TO THE CALLER: a prompt is only ever listed to somebody who could act on it, so a caller presenting `X-DorkOS-Agent` receives an empty array — and an empty array, never a `403`, because a refusal would itself say that prompts exist.",
         "responses": {
           "200": {
             "description": "Every pending prompt, with the room each belongs to when it has one",

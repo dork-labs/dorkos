@@ -95,7 +95,11 @@ import type {
   ThreadSummary,
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
-import { RoomMomentSchema, THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
+import {
+  RoomMomentSchema,
+  THREAD_PREVIEW_MAX_CHARS,
+  withoutActivityTarget,
+} from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
 import { logger } from '../../lib/logger.js';
@@ -3016,7 +3020,17 @@ export class RoomService {
     // same shape as `publishEntry`'s guard around `onEntryCommitted`.
     if (this.onSignalPublished) {
       try {
-        this.onSignalPublished(roomId, signal, authorId, presence);
+        // The verb travels; the target does not. A bridged chat is other
+        // people's surface, and the room's own durable waiting notice already
+        // refuses to put "file paths and commands included" in front of
+        // everybody else (ADR 260819-022127). The broadcast above is untouched:
+        // that one IS this operator's cockpit.
+        this.onSignalPublished(
+          roomId,
+          signal,
+          authorId,
+          presence && withoutActivityTarget(presence)
+        );
       } catch (err) {
         logger.warn('[rooms] signal listener threw', {
           roomId,
