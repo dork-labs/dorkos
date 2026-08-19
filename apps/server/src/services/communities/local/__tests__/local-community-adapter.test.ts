@@ -372,6 +372,45 @@ describe('LocalCommunityAdapter signals', () => {
     }
   });
 
+  it('carries no activity across the port, target or otherwise', async () => {
+    // The room's own signal can say what a turn is DOING (DOR-1351). The port
+    // does not carry it: `CommunityPresencePayloadSchema` has no field for one,
+    // and adding it would be the first half of a leak somebody completes later
+    // (ADR 260819-022127). This is the test that turns that decision into a
+    // guarantee — red the moment somebody completes the projection out of
+    // tidiness.
+    const { adapter, harness } = setup();
+    await adapter.connect();
+    const roomId = await seed(adapter);
+    const [first] = (await adapter.listEntries(roomId)).entries;
+    const agent = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+
+    const iterator = adapter.subscribeRoom(roomId)[Symbol.asyncIterator]();
+    try {
+      expect((await iterator.next()).value?.type).toBe('snapshot');
+
+      harness.service.publishSignal(roomId, 'progress', agent.id, {
+        state: 'working',
+        entryId: first!.id,
+        since: '2026-07-29T00:00:00.000Z',
+        activity: { toolName: 'Read', target: 'standup.md' },
+      });
+
+      const presence = await iterator.next();
+      const payload =
+        presence.value?.type === 'signal' ? (presence.value.payload as object | undefined) : {};
+      // Not the target, and not the bare verb either.
+      expect(payload).toEqual({
+        state: 'working',
+        memberId: agent.id,
+        entryId: first!.id,
+        since: '2026-07-29T00:00:00.000Z',
+      });
+    } finally {
+      await iterator.return?.();
+    }
+  });
+
   it('refuses to publish presence about somebody who is not in the room', async () => {
     // `memberId` is not decoration: whatever it says lands verbatim on every
     // subscriber's presence line as "X is working". The port leaves it
