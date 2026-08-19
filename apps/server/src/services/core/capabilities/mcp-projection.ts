@@ -301,6 +301,14 @@ export async function invokeCapabilityAsMcpResult(
  * nothing to do with. Only the adapter's own facts reach the registry — and note
  * what is absent: an MCP adapter never mints a trusted marker, because everything
  * arriving here arrived over the wire.
+ *
+ * **The cost of the allowlist is that a new fact has to be added here or it is
+ * silently dropped**, which is what happened to `agentIdentityPresented` on its
+ * first pass (DOR-1361): the external `/mcp` router set it, the handler never saw
+ * it, and a revoked agent kept posting as the operator with every other seam
+ * fixed. Anything a SURFACE observes about its caller belongs in this list; the
+ * list is not a security boundary, it is a guard against a shared object's
+ * leftovers.
  */
 function invokeThroughRegistry(
   registry: CapabilityRegistry,
@@ -311,6 +319,7 @@ function invokeThroughRegistry(
 ): Promise<unknown> {
   return registry.invoke(id, input, {
     ...(context?.identity ? { identity: context.identity } : {}),
+    ...(context?.agentIdentityPresented ? { agentIdentityPresented: true } : {}),
     ...(context?.userId ? { userId: context.userId } : {}),
     ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
     ...(approvalToken ? { approvalToken } : {}),

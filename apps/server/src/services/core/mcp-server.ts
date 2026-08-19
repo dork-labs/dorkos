@@ -65,13 +65,21 @@ import { gatedToolRegistrar } from './mcp-tool-gate.js';
  *   carried an `X-DorkOS-Agent` token. This server is rebuilt per request, so
  *   the identity is captured by every capability tool handler it registers and
  *   the resulting invocations are attributed to that agent.
+ * @param userId - The signed-in person behind the call, when the surface
+ *   verified one. Its ABSENCE is a distinct fact from "the owner".
+ * @param agentIdentityPresented - Whether an `X-DorkOS-Agent` header was there
+ *   at all, resolved or not. Carried SEPARATELY from `identity` because a
+ *   revoked or expired token leaves that empty while still meaning a machine is
+ *   calling — see `CapabilityInvocationContext.agentIdentityPresented`
+ *   (DOR-1361).
  */
 export function createExternalMcpServer(
   deps: McpToolDeps,
   marketplaceDeps?: MarketplaceMcpDeps,
   registry?: CapabilityRegistry,
   identity?: AgentIdentity,
-  userId?: string
+  userId?: string,
+  agentIdentityPresented?: boolean
 ): McpServer {
   const server = new McpServer({
     name: 'dorkos',
@@ -104,13 +112,23 @@ export function createExternalMcpServer(
       operatorDeps: deps,
       ...(marketplaceDeps && { marketplaceDeps }),
     });
-  // Both facts ride, and the absence of either is a fact too: a capability that
-  // acts on somebody's own data reads `userId` to know WHICH person is asking,
-  // and reads its absence as "this surface could name nobody" rather than as
-  // "the owner" (see `CapabilityInvocationContext.userId`).
+  // All three facts ride, and the absence of each is a fact too: a capability
+  // that acts on somebody's own data reads `userId` to know WHICH person is
+  // asking, and reads its absence as "this surface could name nobody" rather
+  // than as "the owner" (see `CapabilityInvocationContext.userId`).
+  //
+  // `agentIdentityPresented` is in the guard as well as in the object, and that
+  // is the whole of DOR-1361 on this surface: a revoked agent presents a token
+  // that resolves to nothing and signs in as nobody, so it produced neither of
+  // the other two facts and the context collapsed to `undefined` — leaving
+  // `callerAuthor` to answer with the install owner.
   const caller =
-    identity || userId
-      ? { ...(identity ? { identity } : {}), ...(userId ? { userId } : {}) }
+    identity || userId || agentIdentityPresented
+      ? {
+          ...(identity ? { identity } : {}),
+          ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
+          ...(userId ? { userId } : {}),
+        }
       : undefined;
   registerCapabilitiesAsMcpTools(server, capabilityRegistry, 'external', caller);
 

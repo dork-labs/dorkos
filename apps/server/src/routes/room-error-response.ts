@@ -50,10 +50,15 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // the tool. The canonical 429.
   REACTION_RATE_LIMITED: 429,
   // A 401 rather than a 403: the caller presented nothing this surface could
-  // resolve, so a credential IS what would change the answer. Not reachable from
-  // the room routes, which resolve a caller for themselves and always find one —
-  // it belongs to the capability surfaces, where "nobody" is a real answer.
+  // resolve, so a credential IS what would change the answer. It belongs to the
+  // capability surfaces, where "nobody" is a real answer; the room routes reach
+  // 401 by the neighbouring code instead.
   UNIDENTIFIED_CALLER: 401,
+  // The same reasoning, for a caller that presented a credential rather than
+  // none: a token this machine could not verify. `resolveCaller` throws it
+  // before any room is read, so it is the first thing every room route can
+  // answer (DOR-1361).
+  AGENT_IDENTITY_UNVERIFIED: 401,
   BROADCAST_NOT_BRIDGEABLE: 400,
   CHAT_ALREADY_BRIDGED: 409,
   BRIDGE_SECOND_AGENT_REFUSED: 409,

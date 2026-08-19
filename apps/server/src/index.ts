@@ -1893,7 +1893,8 @@ async function start() {
         marketplaceMcpDeps,
         capabilityRegistry,
         caller.identity,
-        caller.userId
+        caller.userId,
+        caller.agentIdentityPresented
       );
     })
   );
@@ -2346,7 +2347,7 @@ async function start() {
     '/api/profile',
     createProfileRouter({
       avatars: new LocalAvatarStore(dorkHome),
-      caller: (res) => resolveCaller(res),
+      caller: (req, res) => resolveCaller(req, res),
       authors: roomAuthors,
       ownerAccount: () => readOwnerAccount(),
       setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),

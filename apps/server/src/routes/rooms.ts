@@ -9,9 +9,11 @@
  *   (ADR-0264). The poster is a reader too, so it gets its own entry back on
  *   the stream and has one delivery path rather than two.
  * - **The caller is resolved to an author, never trusted from the body.** An
- *   agent presenting `X-DorkOS-Agent` posts as itself; anyone else posts as
- *   this install's owner. `resolveCaller` owns that decision and its three
- *   branches; every handler here just takes the id it hands back.
+ *   agent presenting a VALID `X-DorkOS-Agent` posts as itself; a caller
+ *   presenting one this machine cannot verify is refused 401 outright; anyone
+ *   else posts as this install's owner. `resolveCaller` owns that decision and
+ *   all of it — every handler here just takes the id it hands back, and a route
+ *   added below inherits the refusal without asking for it.
  *
  * @module routes/rooms
  */
@@ -53,7 +55,6 @@ import { sniffImageContentType } from '../services/identity/image-sniff.js';
 import { storedExtension } from '../services/rooms/attachments/attachment-paths.js';
 import { sweepUnboundAttachments } from '../services/rooms/attachments/unbound-sweep.js';
 import { configManager } from '../services/core/config-manager.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { parseBody, sendError } from '../lib/route-utils.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import { resolveCaller } from './room-caller.js';
@@ -76,7 +77,7 @@ router.get('/', async (req, res) => {
   const query = parseBody(ListRoomsQuerySchema, req.query, res);
   if (!query) return;
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     res.json(
       await listRoomsAcrossCommunities({
         service: getRoomService(),
@@ -103,7 +104,7 @@ router.post('/', (req, res) => {
   const body = parseBody(CreateRoomRequestSchema, req.body, res);
   if (!body) return;
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     const { created, ...room } = getRoomService().createRoom(body, caller.id);
     res.status(created ? 201 : 200).json(room);
   } catch (err) {
@@ -128,7 +129,7 @@ router.get('/threads', (req, res) => {
   const query = parseBody(ListThreadsQuerySchema, req.query, res);
   if (!query) return;
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     res.json({ threads: getRoomService().listThreads(caller.id, query.limit) });
   } catch (err) {
     sendRoomError(res, err, 'GET /threads');
@@ -138,7 +139,7 @@ router.get('/threads', (req, res) => {
 /** GET /:id — one room with its roster. 404s unless the caller is a member. */
 router.get('/:id', (req, res) => {
   try {
-    const room = getRoomService().getRoom(req.params.id, resolveCaller(res).id);
+    const room = getRoomService().getRoom(req.params.id, resolveCaller(req, res).id);
     if (!room) return res.status(404).json({ error: 'No such room', code: 'ROOM_NOT_FOUND' });
     res.json(room);
   } catch (err) {
@@ -155,7 +156,7 @@ router.patch('/:id', (req, res) => {
   const body = parseBody(UpdateRoomRequestSchema, req.body, res);
   if (!body) return;
   try {
-    res.json(getRoomService().updateRoom(req.params.id, resolveCaller(res).id, body));
+    res.json(getRoomService().updateRoom(req.params.id, resolveCaller(req, res).id, body));
   } catch (err) {
     sendRoomError(res, err, 'PATCH /:id');
   }
@@ -175,23 +176,16 @@ router.patch('/:id', (req, res) => {
  *   is arbitration this domain has declined; a person asking "where is that work
  *   running" is the reason the route exists.
  *
- * **A header that did not resolve is refused too, and that is what DOR-1357
- * changed.** The gate used to be `caller.kind !== 'human'`, which asks who the
- * caller resolved TO — and `resolveCaller` treats an unverifiable token as "no
- * agent presented", so `curl -H 'X-DorkOS-Agent: garbage'` read this route as
- * the operator. {@link presentsAgentIdentity} is the same predicate the Ask's
- * answer routes already refuse on (`requirePersonToAnswer`, `routes/sessions.ts`),
- * and it is strictly WIDER than the check it replaces: `resolveCaller` returns an
- * agent only when `getRequestAgentIdentity` resolved, which is this predicate's
- * first disjunct, so everything the old gate refused is still refused — plus the
- * token that went nowhere. A revoked agent is still an agent, and this route is
- * a read no person loses by DorkOS being strict about it.
- *
- * The sibling room routes (attachments, read cursors, and every route that only
- * takes `resolveCaller`) still take the lenient reading. That is deliberate here
- * rather than overlooked: changing them is a change to every room route's caller
- * model, and this route is the one the record singled out (P2/P3 Known Issues
- * 9/19).
+ * **A header that did not resolve is refused too — by `resolveCaller`, before
+ * this handler runs.** DOR-1357 closed that hole here alone, by asking the wider
+ * `presentsAgentIdentity` question in this route instead of `caller.kind`.
+ * DOR-1361 moved the same question into `resolveCaller`, where every room route
+ * gets it, so an unverifiable token answers 401 `AGENT_IDENTITY_UNVERIFIED`
+ * before any room is looked up and this gate is back to the simple question it
+ * was always asking: is the caller a person. The two spellings would be
+ * indistinguishable from here now, and the simple one is the one that can still
+ * fail on its own — deleting it turns the resolved-agent case red, which is what
+ * a gate is for.
  *
  * **Visibility is checked first, and the order is deliberate.** `POST
  * /:id/attachments` asks the other way round, for a reason that does not apply
@@ -211,11 +205,11 @@ router.patch('/:id', (req, res) => {
  */
 router.get('/:id/sessions', (req, res) => {
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     // Throws `ROOM_NOT_FOUND` for a room this caller may not see, whoever they
     // are — see the note above on why that comes first.
     const bindings = getRoomService().listRoomSessions(req.params.id, caller.id);
-    if (presentsAgentIdentity(req, res)) {
+    if (caller.kind !== 'human') {
       // A 403 rather than a 404: the visibility check above already passed for
       // whoever this resolved to, so there is nothing left to hide, and telling
       // an agent "this is not yours to read" is more useful than pretending the
@@ -234,7 +228,7 @@ router.get('/:id/entries', (req, res) => {
   if (!query) return;
   try {
     res.json({
-      entries: getRoomService().listEntries(req.params.id, resolveCaller(res).id, query),
+      entries: getRoomService().listEntries(req.params.id, resolveCaller(req, res).id, query),
     });
   } catch (err) {
     sendRoomError(res, err, 'GET /:id/entries');
@@ -266,7 +260,7 @@ router.get('/:id/entries', (req, res) => {
  */
 router.get('/:id/export', (req, res) => {
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     const lines = getRoomService().exportRoom(req.params.id, caller.id);
     const first = lines.next();
     // Checked rather than cast. The generator's contract is that its first line
@@ -316,7 +310,7 @@ router.post('/:id/entries', (req, res) => {
   const body = parseBody(PostToRoomRequestSchema, req.body, res);
   if (!body) return;
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     const entry = getRoomService().post(req.params.id, {
       authorId: caller.id,
       text: body.text,
@@ -372,7 +366,7 @@ function sanitizeAttachmentName(original: string): string {
 router.post('/:id/attachments', (req, res) => {
   let caller;
   try {
-    caller = resolveCaller(res);
+    caller = resolveCaller(req, res);
     // Resolved BEFORE multer runs: an agent's upload is refused without its
     // bytes ever being read. An agent shares files by writing them into its own
     // working directory, which it already has.
@@ -513,7 +507,7 @@ router.post('/:id/attachments', (req, res) => {
  */
 router.get('/:id/attachments/:attachmentId', async (req, res) => {
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     const row = getAttachmentRowStore().get(req.params.id, req.params.attachmentId);
     if (!row || !getRoomService().canReadAttachment(req.params.id, caller.id, row)) {
       return sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
@@ -590,7 +584,7 @@ router.post('/:id/entries/:entryId/reactions', (req, res) => {
   const body = parseBody(ToggleReactionRequestSchema, req.body, res);
   if (!body) return;
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     const { reacted, frequents } = getRoomService().toggleReaction(
       req.params.id,
       req.params.entryId,
@@ -615,7 +609,9 @@ router.post('/:id/members', (req, res) => {
   const body = parseBody(AddRoomMemberRequestSchema, req.body, res);
   if (!body) return;
   try {
-    res.status(201).json(getRoomService().addMember(req.params.id, resolveCaller(res).id, body));
+    res
+      .status(201)
+      .json(getRoomService().addMember(req.params.id, resolveCaller(req, res).id, body));
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/members');
   }
@@ -629,7 +625,7 @@ router.patch('/:id/members/:authorId', (req, res) => {
     res.json(
       getRoomService().updateMembership(
         req.params.id,
-        resolveCaller(res).id,
+        resolveCaller(req, res).id,
         req.params.authorId,
         body.responseMode
       )
@@ -643,11 +639,18 @@ router.patch('/:id/members/:authorId', (req, res) => {
  * PATCH /authors/:authorId/handle — set or clear an author's address.
  *
  * **Human-initiated only, and that is an invariant rather than a convention.**
- * An agent presenting `X-DorkOS-Agent` is refused here, there is no MCP tool for
- * it, and no capability exposes it. That is the instrument chosen over a rate
- * limit: an agent that could rename itself in a loop would grow the tombstone
- * table a row at a time forever, and removing the mechanism beats tuning a
- * throttle around it.
+ * Any caller presenting `X-DorkOS-Agent` is refused here — 403 when the token
+ * resolves to a live agent, 401 from `resolveCaller` when it does not — there is
+ * no MCP tool for it, and no capability exposes it. That is the instrument
+ * chosen over a rate limit: an agent that could rename itself in a loop would
+ * grow the tombstone table a row at a time forever, and removing the mechanism
+ * beats tuning a throttle around it.
+ *
+ * **The 401 half is DOR-1361, and until it landed this paragraph was not true.**
+ * `resolveCaller` used to read an unverifiable token as "no agent presented", so
+ * an agent whose token had been revoked or had expired resolved to the install
+ * owner and renamed as the person — in a loop, at whatever rate it liked, which
+ * is precisely the mechanism this route claims not to have.
  *
  * Declared before `/:id/…` would be a problem? No — `/authors` cannot be
  * mistaken for a room id, because a room id is a ULID and this path has a second
@@ -657,7 +660,7 @@ router.patch('/authors/:authorId/handle', (req, res) => {
   const body = parseBody(SetAuthorHandleRequestSchema, req.body, res);
   if (!body) return;
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     if (caller.kind !== 'human') {
       throw new RoomError('OPERATOR_ONLY', 'Only a person can change a handle.');
     }
@@ -672,7 +675,7 @@ router.patch('/authors/:authorId/handle', (req, res) => {
 /** DELETE /:id/members/:authorId — remove a member. */
 router.delete('/:id/members/:authorId', (req, res) => {
   try {
-    getRoomService().removeMember(req.params.id, resolveCaller(res).id, req.params.authorId);
+    getRoomService().removeMember(req.params.id, resolveCaller(req, res).id, req.params.authorId);
     res.status(204).end();
   } catch (err) {
     sendRoomError(res, err, 'DELETE /:id/members/:authorId');
@@ -714,7 +717,7 @@ router.post('/:id/threads', (req, res) => {
   const body = parseBody(PostThreadReplyRequestSchema, req.body, res);
   if (!body) return;
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     const entry = getRoomService().post(req.params.id, {
       authorId: caller.id,
       text: body.text,
@@ -744,7 +747,7 @@ router.post('/:id/threads', (req, res) => {
 router.post('/:id/halt', (req, res) => {
   void (async () => {
     try {
-      const caller = resolveCaller(res);
+      const caller = resolveCaller(req, res);
       const stopped = await getRoomService().haltRoom(req.params.id, caller.id);
       res.json({ stopped });
     } catch (err) {
@@ -769,7 +772,7 @@ router.post('/:id/halt', (req, res) => {
 router.post('/:id/halt/:authorId', (req, res) => {
   void (async () => {
     try {
-      const caller = resolveCaller(res);
+      const caller = resolveCaller(req, res);
       const stopped = await getRoomService().haltAgent(
         req.params.id,
         req.params.authorId,
@@ -798,7 +801,7 @@ router.post('/:id/halt/:authorId', (req, res) => {
  */
 router.post('/:id/holds/:authorId/promote', (req, res) => {
   try {
-    const caller = resolveCaller(res);
+    const caller = resolveCaller(req, res);
     const promoted = getRoomService().promoteHold(req.params.id, req.params.authorId, caller.id);
     res.json({ promoted });
   } catch (err) {

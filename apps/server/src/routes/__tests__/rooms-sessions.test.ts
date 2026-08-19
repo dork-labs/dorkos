@@ -6,16 +6,18 @@
  * things are under test and neither is reachable from the service:
  *
  * - a room the caller cannot see answers **404**, exactly as reading it does,
- * - a caller PRESENTING an agent identity is refused **403**, however visible the
- *   room is to it and whether or not its token resolves (DOR-1357).
+ * - a caller whose agent token RESOLVES is refused **403**, however visible the
+ *   room is to it,
+ * - a caller whose token does NOT resolve is refused **401** by `resolveCaller`
+ *   before this route runs at all (DOR-1357 refused it here; DOR-1361 moved the
+ *   rule into the caller seam every room route shares).
  *
  * Seeded defects, each run and each red before the fix:
  *
- * - Dropping the `presentsAgentIdentity` guard turns every agent case red —
- *   they answer 200 with the bindings.
- * - Narrowing that guard back to the pre-DOR-1357 `caller.kind !== 'human'`
- *   turns the unresolved-token case red, and only it: an unverifiable token
- *   resolved to the operator and read the room's bindings.
+ * - Dropping the person guard turns the resolved-agent cases red — they answer
+ *   200 with the bindings.
+ * - Dropping `resolveCaller`'s refusal turns the unresolved-token case red: an
+ *   unverifiable token resolved to the operator and read the room's bindings.
  * - Dropping the room filter from `listRoomSessions` turns "answers only THIS
  *   room’s bindings" red.
  * - Dropping `requireVisibleRoom` turns "404s a room this caller cannot see" red.
@@ -238,12 +240,12 @@ describe('GET /api/rooms/:id/sessions', () => {
   });
 
   it('refuses a caller whose agent token does not resolve, where the same room reads 200 without it', async () => {
-    // The DOR-1357 alignment, and the case the record singled out (P2/P3 Known
-    // Issues 9/19). `resolveCaller` treats an unverifiable token as "no agent
-    // presented", so this caller resolves to the operator and the room IS
-    // visible to it — which is exactly why the refusal has to key on the header
-    // rather than on who the caller resolved to. `requirePersonToAnswer` has
-    // refused this shape since P3; this route now agrees.
+    // The case the record singled out (P2/P3 Known Issues 9/19). DOR-1357
+    // refused it HERE, after the visibility check, because `resolveCaller` read
+    // an unverifiable token as "no agent presented" and handed this caller the
+    // operator. DOR-1361 moved that refusal into `resolveCaller`, so the answer
+    // is now 401 and arrives before any room is read — still refused, and by a
+    // rule every room route shares rather than this one alone.
     const room = await roomWithAgents();
     bind(room.id, room.anaAuthorId, 'session-ana');
     // A live identity service, so the token is one the server tried to resolve
@@ -254,13 +256,13 @@ describe('GET /api/rooms/:id/sessions', () => {
       .get(`/api/rooms/${room.id}/sessions`)
       .set('X-DorkOS-Agent', 'dork_agent_this-token-resolves-to-nothing');
 
-    expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe('PEOPLE_ONLY');
+    expect(refused.status).toBe(401);
+    expect(refused.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
     expect(refused.body).not.toHaveProperty('bindings');
 
     // The header is the ONLY difference: drop it and the same caller, on the
     // same room, is the operator and gets the bindings. Without this half the
-    // 403 above would also pass for a room nobody could read.
+    // 401 above would also pass for a room nobody could read.
     const allowed = await request(app).get(`/api/rooms/${room.id}/sessions`);
     expect(allowed.status).toBe(200);
     expect(allowed.body.bindings).toEqual([
@@ -268,18 +270,22 @@ describe('GET /api/rooms/:id/sessions', () => {
     ]);
   });
 
-  it('404s a room it cannot see before it refuses an unresolvable token', async () => {
-    // Visibility still comes first for the widened gate, not just for the
-    // resolved-agent one: an unknown room answers 404 rather than 403, so a
-    // caller with a junk token cannot use the refusal to learn which room ids
-    // exist.
+  it('tells an unresolvable token nothing about which rooms exist', async () => {
+    // The disclosure property DOR-1357 protected by checking visibility first is
+    // stronger now, not weaker: an unknown room and a real one answer the SAME
+    // 401, because the token is refused before either is looked up.
     initAgentIdentityService(db);
+    const room = await roomWithAgents();
+    bind(room.id, room.anaAuthorId, 'session-ana');
 
-    const res = await request(app)
+    const unknown = await request(app)
       .get('/api/rooms/01NOSUCHROOM/sessions')
       .set('X-DorkOS-Agent', 'dork_agent_this-token-resolves-to-nothing');
+    const real = await request(app)
+      .get(`/api/rooms/${room.id}/sessions`)
+      .set('X-DorkOS-Agent', 'dork_agent_this-token-resolves-to-nothing');
 
-    expect(res.status).toBe(404);
-    expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    expect(unknown.status).toBe(401);
+    expect(unknown.body).toEqual(real.body);
   });
 });

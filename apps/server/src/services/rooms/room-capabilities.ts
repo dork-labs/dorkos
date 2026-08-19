@@ -126,40 +126,58 @@ function requireRoomDeps(deps: CapabilityDeps): RoomService {
 }
 
 /**
- * Who is calling, as a room author — the same three branches `resolveCaller`
- * draws for the HTTP room routes, in the same order and with the same answers.
+ * Who is calling, as a room author — the same answers `resolveCaller`
+ * (`routes/room-caller.ts`) gives the HTTP room routes, asked in the same order.
  *
- * 1. **An agent that presented an identity token** acts as itself. This is the
- *    case every one of these tools is for, and the id is resolved from the token's
- *    `agentPath`, never from a tool argument: an author a caller could name is an
- *    author a caller could impersonate, and every room read is scoped to the
- *    caller's membership, so naming a member would also be a way to read their
- *    rooms.
- * 2. **A signed-in person** acts as THEMSELVES — the owner when it is the owner,
+ * 1. **An agent that presented a VALID identity token** acts as itself. This is
+ *    the case every one of these tools is for, and the id is resolved from the
+ *    token's `agentPath`, never from a tool argument: an author a caller could
+ *    name is an author a caller could impersonate, and every room read is scoped
+ *    to the caller's membership, so naming a member would also be a way to read
+ *    their rooms.
+ * 2. **A caller whose agent token did NOT verify is refused.** A revoked or
+ *    expired agent is still an agent, so it must never fall through into the
+ *    branches below.
+ * 3. **A signed-in person** acts as THEMSELVES — the owner when it is the owner,
  *    and their own author when it is anybody else.
- * 3. **Nobody the surface could name** is the person at the keyboard, and ONLY
+ * 4. **Nobody the surface could name** is the person at the keyboard, and ONLY
  *    when login is off. With login off there is genuinely nothing left to tell a
  *    local program from the operator (the documented DOR-505 residual, which this
  *    domain cannot close). With login ON, an unattributable caller is refused.
  *
- * **Branch 3's guard is the whole point of this function.** It used to resolve
- * every non-agent caller to the install owner unconditionally, which with login
- * on made "authenticated as somebody" mean "acting as the owner": an invited
- * person's API key would read the owner's direct messages and post under the
- * owner's name. The fix is not a narrower fallback but a REFUSAL — falling back
- * to the owner because we could not name the caller is precisely the inference
- * that was wrong, and a login-on install has no honest default.
+ * **Branch 4's guard is the reason this function exists at all.** It used to
+ * resolve every non-agent caller to the install owner unconditionally, which with
+ * login on made "authenticated as somebody" mean "acting as the owner": an
+ * invited person's API key would read the owner's direct messages and post under
+ * the owner's name. The fix is not a narrower fallback but a REFUSAL — falling
+ * back to the owner because we could not name the caller is precisely the
+ * inference that was wrong, and a login-on install has no honest default.
+ *
+ * **Branch 2 is the same lesson, learned again on the other axis (DOR-1361).**
+ * `context.identity` answers "WHICH agent", and an unverifiable token leaves it
+ * empty — so a revoked agent reached branch 4 and, on the login-OFF default,
+ * acted as the operator: `post_to_room` wrote under the person's name and
+ * `read_room_history` handed back their rooms. `agentIdentityPresented` is the
+ * wider fact the two HTTP surfaces now state, and it is what makes this function
+ * agree with `resolveCaller` rather than merely resemble it.
  *
  * @param rooms - The rooms service, for its author registry.
  * @param context - What the registry resolved about this call.
  * @returns The author these verbs act as.
- * @throws {RoomError} `UNIDENTIFIED_CALLER` when login is on and the surface
- *   named neither an agent nor a person.
+ * @throws {RoomError} `AGENT_IDENTITY_UNVERIFIED` when the caller presented an
+ *   agent token this machine could not verify, and `UNIDENTIFIED_CALLER` when
+ *   login is on and the surface named neither an agent nor a person.
  */
 function callerAuthor(rooms: RoomService, context: CapabilityHandlerContext): AuthorRecord {
   const registry = rooms.authorRegistry;
   if (context.identity) {
     return registry.resolveAgent(context.identity.agentPath, context.identity.displayName);
+  }
+  if (context.agentIdentityPresented) {
+    throw new RoomError(
+      'AGENT_IDENTITY_UNVERIFIED',
+      'That agent identity could not be verified. Its token may have been revoked, or it may have expired.'
+    );
   }
 
   const owner = readOwnerAccount();
