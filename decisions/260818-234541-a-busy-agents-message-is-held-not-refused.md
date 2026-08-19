@@ -1,7 +1,7 @@
 ---
 id: 260818-234541
 title: A busy agent's message is held, not refused, and the promise lives only where it can be kept
-status: proposed
+status: accepted
 created: 2026-08-18
 spec: room-hold-when-busy
 superseded-by: null
@@ -12,7 +12,7 @@ amends: 260726-170125
 
 ## Status
 
-Proposed. **Amends [260726-170125](260726-170125-a-room-is-a-membership-scoped-durable-stream.md)**
+Accepted, and shipped on `main` (DOR-1345, 2026-08-19). **Amends [260726-170125](260726-170125-a-room-is-a-membership-scoped-durable-stream.md)**
 (A room is a membership-scoped durable stream, not a session), which stays `accepted`.
 
 **Exactly one reading is retired:** that "**Rooms carry addressing and atomicity, never a concurrency

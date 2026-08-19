@@ -16,6 +16,10 @@
  *   "counts from the OLDEST claim" red.
  * - Dropping the ten-second floor in `laneElapsed` turns "no number under ten
  *   seconds" red.
+ * - Swapping rungs 3 and 4 (checking `held` before `presence`) turns "somebody
+ *   actually working outranks somebody about to" red.
+ * - Reading `held[held.length - 1]!` instead of `held[0]!` turns "counts from
+ *   the OLDEST wait" red.
  */
 import { describe, it, expect } from 'vitest';
 import type { ConversationCapabilities } from '../capabilities';
@@ -25,6 +29,7 @@ import {
   LANE_TIMER_FLOOR_MS,
   NO_ASKS,
   type LaneAsk,
+  type LaneHeldAuthor,
   type LanePresenceAuthor,
   type LaneStateInput,
   type LaneTurn,
@@ -99,6 +104,24 @@ function claim(
   };
 }
 
+/**
+ * One agent whose answer to this room has not started, `minutesIn` minutes ago.
+ *
+ * @param name - What to call it.
+ * @param minutesIn - How long the message has been waiting.
+ * @param behindTitle - What to call the conversation in the way, or `null` when
+ *   this reader cannot see it.
+ */
+function waiting(name: string, minutesIn: number, behindTitle: string | null): LaneHeldAuthor {
+  return {
+    authorId: name.toLowerCase(),
+    name,
+    since: new Date(NOW - minutesIn * 60_000).toISOString(),
+    behind: { roomId: 'room-elsewhere', title: behindTitle },
+    othersWaiting: false,
+  };
+}
+
 /** A session's turn, streaming unless told otherwise. */
 function turn(overrides: Partial<LaneTurn> = {}): LaneTurn {
   return {
@@ -125,6 +148,7 @@ function input(overrides: Partial<LaneStateInput> = {}): LaneStateInput {
     asks: NO_ASKS,
     stalled: false,
     presence: [],
+    held: [],
     turn: null,
     ...overrides,
   };
@@ -375,6 +399,86 @@ describe('deriveLaneState — the priority stack', () => {
     expect(
       deriveLaneState(input({ capabilities: SESSION_CAPABILITIES, turn: turn({ status: 'idle' }) }))
     ).toEqual({ kind: 'empty' });
+  });
+});
+
+describe('deriveLaneState — a message that has not started', () => {
+  it('says who will pick it up and where they are, counting from the oldest wait', () => {
+    // The rung's whole job. The room is named because THIS reader can see it —
+    // a reader who cannot gets "another conversation" from the same sentence,
+    // and the surface passes `null` rather than guessing.
+    const state = deriveLaneState(
+      input({ held: [waiting('Mio Clicker PM', 3, '#mio-engagement'), waiting('Ana', 1, null)] })
+    );
+
+    expect(state).toEqual({
+      kind: 'held',
+      sentence: "Mio Clicker PM and Ana will pick this up when they're free",
+      authorIds: ['mio clicker pm', 'ana'],
+      // **The OLDEST wait**, which is the longest anybody here has been waiting.
+      // Reading the last one instead reports the shortest, and the number beside
+      // the sentence then understates the problem it exists to describe.
+      since: new Date(NOW - 3 * 60_000).toISOString(),
+    });
+  });
+
+  it('names the conversation in the way when this reader can see it', () => {
+    const state = deriveLaneState(
+      input({ held: [waiting('Mio Clicker PM', 1, '#mio-engagement')] })
+    );
+
+    expect(state).toMatchObject({
+      kind: 'held',
+      sentence: 'Mio Clicker PM will pick this up when it finishes in #mio-engagement',
+    });
+  });
+
+  it('says "another conversation" when it cannot', () => {
+    const state = deriveLaneState(input({ held: [waiting('Mio Clicker PM', 1, null)] }));
+
+    expect(state).toMatchObject({
+      kind: 'held',
+      sentence: 'Mio Clicker PM will pick this up when it finishes in another conversation',
+    });
+  });
+
+  it('lets somebody actually working outrank somebody about to', () => {
+    // **Seeded defect:** swap rungs 3 and 4, and a room where one agent is
+    // mid-answer reports the OTHER one's wait instead — hiding live work to
+    // report a queue, which is the exact trade the deleted `queued` rung was
+    // rejected for.
+    const state = deriveLaneState(
+      input({ presence: [claim('Kai', 2)], held: [waiting('Mio Clicker PM', 5, null)] })
+    );
+
+    expect(state).toMatchObject({ kind: 'presence' });
+  });
+
+  it('beats an empty lane, which is the case it exists for', () => {
+    // The reachable one: the agent is busy ELSEWHERE, so nobody is working here
+    // and rung 3 is empty. Without this rung the lane says nothing at all, which
+    // is what the old refusal notice was covering for.
+    expect(deriveLaneState(input({ held: [waiting('Mio Clicker PM', 1, null)] })).kind).toBe(
+      'held'
+    );
+  });
+
+  it('withholds it from a conversation that carries no presence at all', () => {
+    // A session's own composer has no room-mates and no waits: the rung rides
+    // `capabilities.presence` because it comes off the same store and the same
+    // stream, and a session that turned presence off must not get half of it.
+    const state = deriveLaneState(
+      input({ capabilities: SESSION_CAPABILITIES, held: [waiting('Mio Clicker PM', 1, null)] })
+    );
+
+    expect(state).toEqual({ kind: 'empty' });
+  });
+
+  it('counts past the naming limit instead of listing everybody', () => {
+    const many = ['A', 'B', 'C', 'D'].map((name) => waiting(name, 1, null));
+    expect(deriveLaneState(input({ held: many }))).toMatchObject({
+      sentence: "4 agents will pick this up when they're free",
+    });
   });
 });
 

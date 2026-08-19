@@ -2221,6 +2221,9 @@
               },
               "reasonGiven": {
                 "type": "boolean"
+              },
+              "resolvedBy": {
+                "type": "string"
               }
             },
             "required": [
@@ -7071,6 +7074,10 @@
           },
           "waitingKind": {
             "$ref": "#/components/schemas/RoomWaitingKind"
+          },
+          "answersEntryId": {
+            "type": "string",
+            "description": "The entry this post answers, set on every agent-authored post the room writes for a turn. Chat posts in arrival order whatever a message is responding to, and an agent whose message waited behind work in another conversation answers out of order often rather than rarely — so the pointer is what a reader follows back to the question."
           }
         },
         "required": [
@@ -7909,6 +7916,17 @@
           "stopped"
         ]
       },
+      "PromoteHoldResponse": {
+        "type": "object",
+        "properties": {
+          "promoted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "promoted"
+        ]
+      },
       "RoomSnapshot": {
         "type": "object",
         "properties": {
@@ -7982,6 +8000,9 @@
           },
           "since": {
             "type": "string"
+          },
+          "heldBehind": {
+            "$ref": "#/components/schemas/RoomHeldBehind"
           }
         },
         "required": [
@@ -8007,7 +8028,26 @@
         "enum": [
           "working",
           "working_late",
+          "held",
           "done"
+        ]
+      },
+      "RoomHeldBehind": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The room whose turn is in the way. An id and nothing else: the reader resolves it against the rooms they can already see, and a reader who cannot see it reads \"another conversation\"."
+          },
+          "othersWaiting": {
+            "type": "boolean",
+            "description": "This agent is holding a message in at least one OTHER conversation too. A boolean, never a count or a list — it exists only to decide whether \"Answer here first\" would do anything."
+          }
+        },
+        "required": [
+          "roomId",
+          "othersWaiting"
         ]
       },
       "RoomReactionEvent": {
@@ -9715,6 +9755,9 @@
                         },
                         "reasonGiven": {
                           "type": "boolean"
+                        },
+                        "resolvedBy": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -17893,6 +17936,67 @@
           },
           "403": {
             "description": "The caller is not a person; agents do not stop each other",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or not a member of it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/holds/{authorId}/promote": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Ask for this room to be answered first",
+        "description": "One agent is one working directory, so a message addressed to an agent that is mid-turn in another room waits rather than being refused. This asks for THIS room to be the next one that agent answers. It REORDERS and never preempts: the blocking turn is untouched, nothing is interrupted, and the promoted message still waits for the agent to be free — a room that is passed over is next after that. Takes no body. Only a person may call it, exactly as with `halt`. `{ \"promoted\": false }` means there was nothing waiting, which is a normal answer and not an error.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "authorId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Whether there was a waiting message to move to the front",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoteHoldResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not a person; agents do not reorder each other",
             "content": {
               "application/json": {
                 "schema": {

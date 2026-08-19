@@ -62,62 +62,66 @@ export function buildBudgetNotice(scope: BudgetRefusalScope = 'room'): RoomEntry
 }
 
 /**
- * What the room knows about why an agent could not pick a message up.
+ * What the room knows about why an agent never picked a message up.
  *
  * Two states, and each one is a different remedy for the reader, which is the
  * only reason to have more than one.
  *
- * **There is deliberately no `working-here`.** There used to be, and RP8 removed
- * the situation rather than the words: an agent mid-turn in THIS room is no
- * longer refused at all, because the message is held and becomes its next turn
- * (`room-collect.ts`, room-participation spec §10.4). A line saying "it didn't
- * pick this one up" about a message it is about to pick up would be the room
- * lying to be reassuring, so the copy went with the refusal it described. If a
- * new path ever needs to refuse an agent working here, it needs new words, not
- * these.
+ * **Neither of them asks anybody to send anything again, and there used to be
+ * two that did.** `working-here` went when RP8 made a message for an agent
+ * mid-turn HERE into that agent's next turn; `working-elsewhere` went the same
+ * way when a message for an agent mid-turn in ANOTHER room stopped being refused
+ * and started waiting (spec `room-hold-when-busy`). Both were removed for one
+ * reason: a line saying "it didn't pick this one up" about a message it IS
+ * picking up is the room lying to be reassuring. If a new path ever needs to
+ * refuse a busy agent outright, it needs new words, not these.
  *
- * - `working-elsewhere` — the agent holds a claim in a DIFFERENT room. One
- *   agent is one working directory, so two turns in it are two writers on one
- *   checkout; the dispatcher refuses the second (room-participation spec,
- *   constraint 8). Waiting is still the remedy, but the answer is NOT coming
- *   here, so the reader has to send the message again.
+ * - `held-too-long` — the message DID wait, and waited past
+ *   `rooms.lateReplyCeilingMinutes`, so the room stopped owing it a turn of its
+ *   own. It is not lost: it sits behind the agent's read cursor and reaches the
+ *   next turn as ambient context, which is what the second sentence says.
  * - `unknown` — no claim anywhere, which happens when the turn never started
  *   because another writer held the agent's session (most often the person
- *   typing into that agent directly). The room has nothing to read, so it does
- *   not guess.
+ *   typing into that agent directly). It cannot be held, because nothing
+ *   publishes an event when a foreign session lock releases, so there is no seam
+ *   to hang a resume on.
  *
- * **`working-elsewhere` is earned, not guessed, and an earlier draft of it was
- * neither.** That draft chose it by comparing the claim's `cascadeRoot` against
- * the refused entry's — which is wrong, because every message a person sends
- * mints its own root, so an ordinary follow-up compared root A against root B
- * and was told the agent was "working on something else". It was working on that
- * person's previous message, in front of them. What makes the variant honest now
- * is that the dispatcher holds every room's claims and looks the agent's own
- * working directory up across all of them, so "elsewhere" means a claim that
- * demonstrably exists somewhere this reader cannot see.
- *
- * **It never names the other room**, and that is deliberate rather than terse: a
- * reader in this room may not be a member of that one, and a busy line is not a
- * way to learn which conversations somebody else is having.
+ * **Neither names the other conversation**, and that is deliberate rather than
+ * terse: a reader in this room may not be a member of that one, and a durable
+ * line is not a way to learn which conversations somebody else is having. The
+ * LIVE lane may say more, because it resolves the room per reader against the
+ * rooms that reader can already see.
  */
-export type BusyContext = 'working-elsewhere' | 'unknown';
+export type BusyContext = 'held-too-long' | 'unknown';
 
 /**
- * The durable `notice` for a trigger that was skipped because that agent was
- * already working.
+ * Every busy context there is, so the damping key can enumerate them.
  *
- * Says the agent is occupied, not broken, and — this is what changed — says
- * something the reader can act on. The old line was "was busy with something
- * else and did not pick this up. Send it again when X is free", which was false
- * in the commonest case (the agent was busy with THIS room, usually with that
- * same person's previous message) and un-followable in every case: a room shows
- * no "free" state, so "send it again when X is free" asks the reader to watch
- * for a signal that does not exist. Both variants below point at something that
- * does.
+ * A keyed object rather than an array literal, for the reason `SILENCE_REASONS`
+ * is one: `Record<BusyContext, true>` is the assertion that runs the completeness
+ * way round, so adding a context without listing it here is a type error at this
+ * line rather than a notice that survives its own recovery.
+ */
+export const BUSY_CONTEXTS = Object.keys({
+  'held-too-long': true,
+  unknown: true,
+} satisfies Record<BusyContext, true>) as BusyContext[];
+
+/**
+ * The durable `notice` for a message that never became a turn because the agent
+ * was working.
+ *
+ * Says the agent is occupied, not broken, and says what happens to the message
+ * next. The old lines were "was busy with something else and did not pick this
+ * up. Send it again when X is free" and its successor "Send it again in a few
+ * minutes" — the first false in the commonest case, both un-followable, and both
+ * asking a person to do work the machine could do over a message the room had
+ * already committed to its log. Both variants below are past tense and end with
+ * what happens without anybody retyping anything.
  *
  * @param agentName - Display name of the agent that did not take the turn.
  * @param subjectAuthorId - Author id of that agent, for rendering.
- * @param busyWith - What the room knows it is doing, from the live claim.
+ * @param busyWith - What the room knows it was doing, from the live claim.
  */
 export function buildBusyNotice(
   agentName: string,
@@ -137,10 +141,10 @@ export function buildBusyNotice(
  * the vaguest line in the set, which is the one it was added to stop saying.
  */
 const BUSY_LINES: Record<BusyContext, (agentName: string) => string> = {
-  'working-elsewhere': (agentName) =>
-    `${agentName} is working in another conversation right now, so it didn't pick this up. Send it again in a few minutes.`,
+  'held-too-long': (agentName) =>
+    `${agentName} has been working in another conversation for a long time, so it hasn't got to your message yet. It will read it the next time it picks up work here.`,
   unknown: (agentName) =>
-    `${agentName} was busy and didn't pick this up. Send it again in a moment.`,
+    `${agentName} was busy in its own session, so it didn't answer here. It will read your message the next time it picks up work in this room.`,
 };
 
 /**

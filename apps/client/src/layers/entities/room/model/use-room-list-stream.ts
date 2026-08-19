@@ -97,6 +97,9 @@ function movedByReader(queryClient: QueryClient, event: ReadCursorMoved): boolea
  * carrying the count on the wire. The count comes from the server because a room
  * summary holds no seq to measure the new cursor against, so this client could
  * only guess zero and be wrong about anything that arrived in between.
+ *
+ * The one round trip it can still cost is a replacement for the list fetch its
+ * own cancel interrupted, if there was one — see the re-ask at the end.
  */
 function applyReadCursor(queryClient: QueryClient, event: ReadCursorMoved): void {
   // Cancel before writing — the ordering every optimistic update needs. A list
@@ -104,9 +107,11 @@ function applyReadCursor(queryClient: QueryClient, event: ReadCursorMoved): void
   // carries the old count and would land on top of the patch below and put the
   // badge back on, where it would stay until the next thing to touch the list.
   // (`room_activity` starts exactly such a refetch, which is how the two race.)
-  // Cancelling keeps the data already in the cache, so the cost is the rest of
-  // what that response would have refreshed — an ordering bump, a renamed room —
-  // staying as it was for one more event, against a badge that is simply wrong.
+  //
+  // Whether anything was actually interrupted has to be read BEFORE the cancel,
+  // because afterwards there is nothing left to ask — see the re-ask at the end
+  // of this function for what it is for.
+  const interrupted = queryClient.isFetching({ queryKey: roomKeys.lists() }) > 0;
   void queryClient.cancelQueries({ queryKey: roomKeys.lists() });
 
   // `null` means "not a member here", which is not a number to overwrite.
@@ -162,6 +167,32 @@ function applyReadCursor(queryClient: QueryClient, event: ReadCursorMoved): void
   if (threads?.some((thread) => thread.roomId === event.threadId && thread.unreadCount > 0)) {
     void queryClient.invalidateQueries({ queryKey: roomKeys.threads() });
   }
+
+  // Ask again for whatever the cancel above threw away (DOR-1358).
+  //
+  // A cancelled fetch is REVERTED, and TanStack schedules nothing in its place:
+  // the query goes back to idle holding the data it had, and stays there until
+  // something else invalidates it. So the cancel does not merely postpone "an
+  // ordering bump, a renamed room" — it DROPS them, along with anything else
+  // that response was carrying, for as long as the room list is quiet.
+  //
+  // The case that made this visible: a person rejoins a channel, the rejoin
+  // invalidates the list, and a cursor event lands while that GET is in flight
+  // — from their phone, or from any other room, since a cursor in a room this
+  // client has never opened reaches here too. The list is reverted to the copy
+  // where they are still not a member, and the sidebar row goes on saying "Left"
+  // in a channel they are back in.
+  //
+  // Only ever paid for by an interrupted fetch, and in the OPEN room that is
+  // routine rather than rare: `useMarkRoomRead` invalidates the list on success
+  // and the server echoes the `read_cursor` back to this client, so the
+  // mutation's own list GET is usually the fetch this cancels. About one extra
+  // list GET per cursor advance, self-limiting. With nothing in flight there is
+  // nothing to make good, and turning every cursor into a refetch is exactly
+  // what patching the badge in place exists to avoid. The patch is written
+  // first, so the badge is already right while the replacement GET runs — and
+  // that GET is computed AFTER the cursor moved, so its answer agrees with it.
+  if (interrupted) void queryClient.invalidateQueries({ queryKey: roomKeys.lists() });
 }
 
 /**

@@ -17,6 +17,7 @@ import type {
   AddRoomMemberRequest,
   CreateRoomRequest,
   HaltRoomResponse,
+  PromoteHoldResponse,
   ListRoomEntriesQuery,
   ListRoomsQuery,
   ListThreadsQuery,
@@ -180,6 +181,22 @@ export interface RoomTransport {
    * @returns How many in-flight turns were interrupted; `0` when it was idle.
    */
   haltRoom(id: string): Promise<HaltRoomResponse>;
+  /**
+   * Ask for this room's waiting message to be answered before the other rooms
+   * waiting on the same agent.
+   *
+   * **It reorders and never preempts.** The turn that is in the way is not
+   * touched, nothing is interrupted, and the promoted message still waits for
+   * the agent to be free — a room that gets passed over is next after that. Like
+   * {@link RoomTransport.haltRoom} it is a control action a person presses, and
+   * only a person may call it.
+   *
+   * @param id - The room asking to be answered first.
+   * @param authorId - The agent it is waiting on.
+   * @returns Whether there was a waiting message to move to the front. `false`
+   *   is a normal answer: the wait had already ended.
+   */
+  promoteHold(id: string, authorId: string): Promise<PromoteHoldResponse>;
   /**
    * Where each agent's work in this room actually runs.
    *

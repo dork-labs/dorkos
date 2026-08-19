@@ -399,6 +399,46 @@ export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceCo
       }
     });
 
+    it('C15a passes a backend that only ever says working and done', async () => {
+      const { adapter, caps, roomId, identityMemberId } = await arrange();
+
+      if (caps.signals === 'none') {
+        // Covered by C15's own off-branch; there is nothing to publish here.
+        return;
+      }
+
+      // **The presence lifecycle grew a member and this asserts it stayed
+      // additive.** `held` says a message is waiting on a turn the agent is
+      // running somewhere else — a fact only a backend that owns the claim can
+      // know, and one a remote community may have no notion of at all. So the
+      // port requires nothing of it: a backend that publishes `working` then
+      // `done` and never anything in between is complete, and adding a case that
+      // demanded more would fail a correct backend. Red if `held` ever becomes
+      // required, or if the payload gains a required field beside it.
+      const before = await adapter.listEntries(roomId);
+      const entryId = before.entries[0]!.id;
+      const observer = adapter.subscribeRoom(roomId)[Symbol.asyncIterator]();
+      try {
+        await nextEvent(observer, "the observer's opening snapshot", eventTimeoutMs);
+        for (const state of ['working', 'done'] as const) {
+          await adapter.publishSignal(roomId, 'progress', {
+            state,
+            memberId: identityMemberId,
+            entryId,
+            since: '2026-08-18T00:00:00.000Z',
+          });
+          const event = await awaitRoomEvent(
+            observer,
+            (e) => e.type === 'signal',
+            `the ${state} signal`
+          );
+          expect(event.type === 'signal' && event.payload?.state).toBe(state);
+        }
+      } finally {
+        await observer.return?.();
+      }
+    });
+
     if (declared.credential === 'machine-managed') {
       it('C16 connects with no configuration step in between', async () => {
         // The mechanical form of "nothing to write down and nothing to lose":

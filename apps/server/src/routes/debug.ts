@@ -104,12 +104,19 @@ router.get('/dispatches', (req, res) => {
   // rather than failing the whole response: this endpoint is read during an
   // incident, which is when a subsystem is most likely to be mid-crash.
   let claims: unknown[] = [];
+  // Beside the claims, because the pair is the question: who is working, and who
+  // is waiting on somebody who is. A room with neither a claim nor an answer is
+  // otherwise indistinguishable from a room whose message was lost.
+  let holds: unknown[] = [];
   try {
-    claims = getRoomService().listActiveClaims();
+    const rooms = getRoomService();
+    claims = rooms.listActiveClaims();
+    holds = rooms.listHolds();
   } catch {
     claims = [];
+    holds = [];
   }
-  res.json({ claims, recent: recentDispatches(readLimit(req.query.limit)) });
+  res.json({ claims, holds, recent: recentDispatches(readLimit(req.query.limit)) });
 });
 
 // GET /api/debug/refusals — every path that recently declined to do the obvious thing.

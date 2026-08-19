@@ -21,6 +21,9 @@
  *   ordering case goes red; drop the notify entirely → every case here goes red.
  * - Drop the `roomBindings` join → "names the room a session answers for" goes
  *   red with `roomId` undefined.
+ * - Drop the `resolvedBy` spread from `broadcastInteraction` → "carries the name
+ *   of whoever answered onto the wire" goes red and the unnamed case stays
+ *   green, which is the pair that tells a relay from an invention.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { eventFanOut, type FanOutClient } from '../../core/event-fan-out.js';
@@ -137,8 +140,40 @@ describe('the Ask on the global stream', () => {
       outcome: 'answered',
     });
     expect(typeof resolved[0]!.payload.resolvedAt).toBe('string');
-    // Nobody is named on a single-identity install, and inventing one would be
-    // the denormalization the wire shape exists to avoid.
+    // Nobody was named on the way in, so nobody is named on the way out. This
+    // module never fills the field itself — it has no caller to name.
+    expect(resolved[0]!.payload).not.toHaveProperty('resolvedBy');
+  });
+
+  it('carries the name of whoever answered onto the wire', () => {
+    park(ROOM_SESSION, '/work/alpha', 'tc-1');
+    const projector = getOrCreateProjector(ROOM_SESSION, '/work/alpha');
+
+    projector.resolveInteraction('tc-1', 'approved', { answeredBy: 'Ada' });
+
+    const resolved = askEvents().filter((event) => event.name === 'interaction_resolved');
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]!.payload).toMatchObject({
+      sessionId: ROOM_SESSION,
+      interactionId: 'tc-1',
+      outcome: 'answered',
+      resolvedBy: 'Ada',
+    });
+  });
+
+  it('names nobody when a parked turn is torn down under the prompt', () => {
+    // A cancellation is the clock's answer, not a person's. Naming the last
+    // person who happened to answer anything here would put "Already answered
+    // by Ada" over a card nobody ever saw.
+    park(ROOM_SESSION, '/work/alpha', 'tc-1');
+    const projector = getOrCreateProjector(ROOM_SESSION, '/work/alpha');
+    projector.ingest({ type: 'turn_start' } as unknown as RawSessionEvent);
+
+    projector.markInterrupted();
+
+    const resolved = askEvents().filter((event) => event.name === 'interaction_resolved');
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]!.payload).toMatchObject({ interactionId: 'tc-1', outcome: 'cancelled' });
     expect(resolved[0]!.payload).not.toHaveProperty('resolvedBy');
   });
 

@@ -122,6 +122,32 @@ function working(
   useRoomPresenceStore.getState().observe(ROOM, event);
 }
 
+/**
+ * Put one waiting message in the store, the way the stream would.
+ *
+ * The complement of {@link working}: nothing is running here, this room's
+ * message is behind a turn the same agent has somewhere else, and the id of
+ * that room is all the wire carries.
+ */
+function waiting(
+  authorId: string,
+  behindRoomId: string | null = 'room-elsewhere',
+  since = STARTED,
+  othersWaiting = false
+): void {
+  const event: RoomSignalEvent = {
+    type: 'signal',
+    signal: 'progress',
+    authorId,
+    at: since,
+    state: 'held',
+    entryId: `trigger-${authorId}`,
+    since,
+    ...(behindRoomId === null ? {} : { heldBehind: { roomId: behindRoomId, othersWaiting } }),
+  };
+  useRoomPresenceStore.getState().observe(ROOM, event);
+}
+
 /** The line's text, with the separators normalised to single spaces. */
 function line(): string {
   return screen.getByTestId('room-presence').textContent!.replace(/\s+/gu, ' ').trim();
@@ -605,5 +631,195 @@ describe('RoomLiveLane', () => {
     expect(lane.textContent).not.toContain('elsewhere.md');
     // And it is named from the room's own roster, not from a directory.
     expect(lane.textContent).toContain('Kai');
+  });
+
+  describe('a message waiting on an agent working elsewhere', () => {
+    /**
+     * Let the room-list query resolve, without running the clock forward.
+     *
+     * `runOnlyPendingTimersAsync` would advance fake time to the furthest
+     * pending timer — TanStack Query's five-minute garbage collector among them
+     * — which walks straight past `PRESENCE_TTL_MS` and prunes the very
+     * indicator the case is about.
+     */
+    async function settleRoomList(): Promise<void> {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+    }
+
+    /** A transport whose room list this reader CAN see the other room in. */
+    function seeingTransport() {
+      const transport = createMockTransport();
+      transport.listRooms = vi.fn().mockResolvedValue([
+        { id: ROOM, kind: 'channel', slug: 'deploys', title: 'Deploys' },
+        { id: 'room-elsewhere', kind: 'channel', slug: 'mio-engagement', title: 'Mio Engagement' },
+      ]);
+      return transport;
+    }
+
+    it('calls the peek trigger "what is waiting", never "who is working"', async () => {
+      // **Seeded defect: leave `popoverLabel` on `peekLabel` for every non-Ask
+      // rung.** A screen-reader user then gets back the exact sentence this
+      // change retires — "Show who is working" — over a line whose whole content
+      // is that nobody is. It is the one surface where the visible text and the
+      // accessible name can disagree, because a reader has only one of them.
+      waiting('kai');
+      renderLane({}, seeingTransport());
+      await settleRoomList();
+
+      expect(screen.getByRole('button', { name: 'Show what is waiting' })).toBeVisible();
+      expect(screen.queryByRole('button', { name: 'Show who is working' })).toBeNull();
+
+      // And the working line keeps its own words, so this is a branch rather
+      // than a rename.
+      cleanup();
+      useRoomPresenceStore.setState({ rooms: {} });
+      working('kai');
+      renderLane({}, seeingTransport());
+      await settleRoomList();
+      expect(screen.getByRole('button', { name: 'Show who is working' })).toBeVisible();
+    });
+
+    it('says who will pick it up and where, when this reader can see that room', async () => {
+      waiting('kai');
+      renderLane({}, seeingTransport());
+      await settleRoomList();
+
+      expect(screen.getByTestId('room-held').textContent).toContain(
+        'Kai will pick this up when it finishes in #mio-engagement'
+      );
+      // And it is NOT the working line: nothing is running here.
+      expect(screen.queryByTestId('room-presence')).toBeNull();
+    });
+
+    it('says "another conversation" when this reader cannot see that room', async () => {
+      waiting('kai', 'room-nobody-can-see');
+      renderLane({}, seeingTransport());
+      await settleRoomList();
+
+      expect(screen.getByTestId('room-held').textContent).toContain(
+        'Kai will pick this up when it finishes in another conversation'
+      );
+    });
+
+    it('puts the wait under the working rows in the peek, and counts only work in Stop', () => {
+      vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+      working('ana');
+      waiting('kai');
+      renderLane();
+      fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+
+      const rows = screen.getAllByTestId('live-peek-row');
+      expect(rows).toHaveLength(2);
+      expect(rows[0].textContent).toContain('Ana');
+      expect(rows[1].textContent).toContain('Kai');
+      expect(rows[1].textContent).toContain('waiting to start');
+
+      // **Stop counts working rows only.** A waiting agent is not something this
+      // room can stop, so with one live turn beside one wait the peek still
+      // offers the single-agent Stop rather than a footer claiming two.
+      expect(screen.getByTestId('live-peek-stop')).toHaveTextContent('Stop');
+      expect(screen.queryByTestId('live-peek-stop-all')).toBeNull();
+    });
+
+    it('offers a way into the room in the way, and none when it cannot name it', async () => {
+      vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+      waiting('kai');
+      renderLane({}, seeingTransport());
+      await settleRoomList();
+      fireEvent.click(screen.getByRole('button', { name: 'Show what is waiting' }));
+
+      fireEvent.click(screen.getByTestId('live-peek-open-room'));
+      expect(navigateSpy).toHaveBeenCalledWith({
+        to: '/channels',
+        search: { id: 'room-elsewhere' },
+      });
+
+      // A room this reader cannot see gets NO link rather than a dead one: it
+      // would open onto the same refusal a room that does not exist gives.
+      cleanup();
+      useRoomPresenceStore.setState({ rooms: {} });
+      waiting('kai', 'room-nobody-can-see');
+      renderLane({}, seeingTransport());
+      await settleRoomList();
+      fireEvent.click(screen.getByRole('button', { name: 'Show what is waiting' }));
+      expect(screen.queryByTestId('live-peek-open-room')).toBeNull();
+    });
+
+    it('offers "Answer here first" only when it would change something', async () => {
+      vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+      waiting('kai');
+      const transport = seeingTransport();
+      renderLane({}, transport);
+      await settleRoomList();
+      fireEvent.click(screen.getByRole('button', { name: 'Show what is waiting' }));
+      // Nothing else is waiting, so this room is already next and the control
+      // would be a button that does nothing.
+      expect(screen.queryByTestId('live-peek-answer-first')).toBeNull();
+
+      cleanup();
+      useRoomPresenceStore.setState({ rooms: {} });
+      waiting('kai', 'room-elsewhere', STARTED, true);
+      renderLane({}, transport);
+      await settleRoomList();
+      fireEvent.click(screen.getByRole('button', { name: 'Show what is waiting' }));
+
+      fireEvent.click(screen.getByTestId('live-peek-answer-first'));
+      // The mutation is dispatched on a microtask, so the ask is flushed before
+      // it is read back.
+      await settleRoomList();
+      expect(transport.promoteHold).toHaveBeenCalledWith(ROOM, 'kai');
+      // Once asked, the control settles into a statement rather than staying a
+      // button somebody can press again.
+      expect(screen.getByTestId('live-peek-next-up')).toHaveTextContent('Next up here');
+      expect(screen.queryByTestId('live-peek-answer-first')).toBeNull();
+    });
+
+    it('lets the ask lapse with the wait it was about', async () => {
+      // **Seeded defect: key `promoted` on the author id alone.** The mark then
+      // outlives the wait it was about, and the NEXT time this agent holds a
+      // message here the peek renders the static "Next up here" over a fresh
+      // server collection at `promoted: false` — telling the reader they are
+      // next when they are not, and taking away the one control that would make
+      // it true. Server-side the mark dies with the collection, so the client's
+      // has to die with the hold.
+      vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+      waiting('kai', 'room-elsewhere', STARTED, true);
+      const transport = seeingTransport();
+      renderLane({}, transport);
+      await settleRoomList();
+      fireEvent.click(screen.getByRole('button', { name: 'Show what is waiting' }));
+      fireEvent.click(screen.getByTestId('live-peek-answer-first'));
+      await settleRoomList();
+      expect(screen.getByTestId('live-peek-next-up')).toBeVisible();
+
+      // That wait ends and a NEW one opens — a different message, so a different
+      // `entryId`, which is the whole key.
+      act(() => {
+        useRoomPresenceStore.getState().observe(ROOM, {
+          type: 'signal',
+          signal: 'progress',
+          authorId: 'kai',
+          at: STARTED,
+          state: 'done',
+          entryId: 'trigger-kai',
+          since: STARTED,
+        });
+        useRoomPresenceStore.getState().observe(ROOM, {
+          type: 'signal',
+          signal: 'progress',
+          authorId: 'kai',
+          at: STARTED,
+          state: 'held',
+          entryId: 'trigger-kai-again',
+          since: STARTED,
+          heldBehind: { roomId: 'room-elsewhere', othersWaiting: true },
+        });
+      });
+
+      expect(screen.queryByTestId('live-peek-next-up')).toBeNull();
+      expect(screen.getByTestId('live-peek-answer-first')).toBeVisible();
+    });
   });
 });
