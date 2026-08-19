@@ -76,6 +76,7 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 
 - An agent can never answer a question, including its own. Anything calling DorkOS as an agent is refused. With Require login turned on, so is anything holding one of your API keys, which is the kind of password a program uses instead of signing in. Only a person signed in on this machine can answer (DOR-1330)
 - A channel still shows only a short note when an agent is waiting, with no file name, no command and no countdown. The question itself, with all of its detail, goes to this copy of DorkOS, where you are the person who can answer it (DOR-1330)
+- A program calling DorkOS with an agent token DorkOS cannot verify can no longer see which session each agent in a channel is working in. Only a person can (DOR-1357)
 
 ## [0.61.0] - 2026-08-17
 
