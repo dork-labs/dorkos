@@ -32,7 +32,9 @@
  *
  * @module services/relay/chat-bridge/ask-card
  */
-import { toIdList } from '@dorkos/relay';
+// The narrow subpath for the value import; the barrel is types only here, which
+// costs nothing at runtime.
+import { toIdList } from '@dorkos/relay/approver-allowlist';
 import type { PublishOptions, PublishResult } from '@dorkos/relay';
 
 import { logger } from '../../../lib/logger.js';
@@ -41,7 +43,7 @@ import { onProjectorInteractionChange } from '../../session/session-state-projec
 import type { InteractionChange } from '../../session/session-state-projector.js';
 import type { PendingInteractionDTO } from '@dorkos/shared/schemas';
 import { buildBridgePrincipal } from '../bridge-principal.js';
-import { bridgedAskIsActionable } from './ask-audience.js';
+import { bridgedAskIsActionable, type ExternalChatAuthor } from './ask-audience.js';
 import type { Bridge, BridgeStore } from './bridge-store.js';
 
 /** Which room a session answers for, as a port — never an import of the ledger. */
@@ -115,16 +117,21 @@ interface StandingCard {
 }
 
 /**
- * Key a standing card by the (room, agent) pair a waiting notice also names.
+ * Whether a publish actually reached the chat.
  *
- * The separator is a NUL rather than anything typable, so no id containing the
- * separator can make two different pairs collide.
+ * Two ways it does not, and the consent gate's is the one that matters here: it
+ * comes back as a REJECTION rather than a throw (spec §6.6), so a caller that
+ * only caught exceptions would count a refused card as sent. The other is an
+ * adapter that took the call and failed at the platform.
  *
- * @param roomId - The room.
- * @param authorId - The agent in it.
+ * `adapterResult` is absent on a publish that no adapter handled at all, which
+ * is also not a delivery.
+ *
+ * @param result - What the relay publish returned.
  */
-function cardKey(roomId: string, authorId: string): string {
-  return `${roomId}\u0000${authorId}`;
+function delivered(result: PublishResult): boolean {
+  if ((result.rejected ?? []).some((r) => r.reason === 'initiate_denied')) return false;
+  return result.adapterResult?.success === true;
 }
 
 /**
@@ -171,15 +178,23 @@ export class BridgedAskDelivery {
    * way — the notice is always written, only its delivery is suppressed — which
    * keeps the cockpit's reading of the room identical.
    *
+   * **The key is the (room, agent) pair, not the interaction**, because a
+   * waiting notice carries no interaction id — only `subjectAuthorId`. So a
+   * standing approval card for an agent suppresses ANY waiting sentence for
+   * that agent in that room, including the question and elicitation kinds the
+   * card path deliberately does not cover. In practice a turn parks on one
+   * thing at a time, so the two coincide; where they would not, the card is
+   * the louder and more actionable of the two and the sentence is the one
+   * worth losing.
+   *
    * @param roomId - The room the notice is about.
    * @param authorId - The agent the notice is about (`subjectAuthorId`).
    * @returns Whether to skip delivering the sentence.
    */
   hasStandingCard(roomId: string, authorId: string | undefined): boolean {
     if (authorId === undefined) return false;
-    const key = cardKey(roomId, authorId);
     for (const card of this.standing.values()) {
-      if (cardKey(card.roomId, card.authorId) === key) return true;
+      if (card.roomId === roomId && card.authorId === authorId) return true;
     }
     return false;
   }
@@ -248,7 +263,7 @@ export class BridgedAskDelivery {
     const subject = this.deps.resolveSubject(bridge);
     if (!subject) return;
 
-    await this.deps.publisher.publish(
+    const result = await this.deps.publisher.publish(
       subject,
       {
         // The shipped card payload, verbatim: the adapters read
@@ -271,6 +286,19 @@ export class BridgedAskDelivery {
       }
     );
 
+    // **Recorded only on a card that really landed.** The record's one job is
+    // to suppress the waiting sentence, and a card the consent gate refused
+    // (`initiate_denied` on a `canInitiate: false` binding) or the platform
+    // never accepted would suppress it in exchange for nothing — the approver
+    // would get silence, which is the failure this whole path exists to end.
+    if (!delivered(result)) {
+      logger.info('[BridgedAskDelivery] the chat did not take the approval card', {
+        roomId: binding.roomId,
+        sessionId: change.sessionId,
+        consentDenied: (result.rejected ?? []).some((r) => r.reason === 'initiate_denied'),
+      });
+      return;
+    }
     this.standing.set(interaction.id, { roomId: binding.roomId, authorId: binding.authorId });
   }
 
@@ -305,12 +333,13 @@ export class BridgedAskDelivery {
    *
    * @param roomId - The room.
    */
-  private externalAuthorsOf(roomId: string): { platformUserId: string }[] {
-    const external: { platformUserId: string }[] = [];
+  private externalAuthorsOf(roomId: string): ExternalChatAuthor[] {
+    const external: ExternalChatAuthor[] = [];
     for (const member of this.deps.members.listMembers(roomId)) {
       const author = this.deps.authors.getById(member.authorId);
       if (!author || !isExternalNaturalKey(author.naturalKey)) continue;
-      external.push({ platformUserId: externalAuthorParts(author.naturalKey).platformUserId });
+      const { instanceId, platformUserId } = externalAuthorParts(author.naturalKey);
+      external.push({ instanceId, platformUserId });
     }
     return external;
   }

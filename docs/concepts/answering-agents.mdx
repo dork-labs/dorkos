@@ -87,9 +87,13 @@ the buttons and nobody sees what the agent wants to run, because DorkOS has no w
 else is reading. Everyone there gets the same short sentence the room gets: an agent is waiting,
 and the answer happens in DorkOS.
 
-Programs you have given an agent identity to — a script holding one of your API keys, another
-agent on this machine — never see what an agent is waiting for. They could never answer it, and
-now they cannot read it either.
+Another agent on this machine never sees what an agent is waiting for. It could never answer
+one, and now it cannot read one either.
+
+A script of your own, holding one of your API keys, is treated differently on purpose. It can
+still see what an agent is waiting for, because it can already read that from the session
+itself, and cutting it off would break your own integrations for no gain. It cannot answer.
+Answering is for a person signed in to DorkOS.
 
 <Callout title="What DorkOS doesn't do yet">
   An Ask only reaches you while your DorkOS cockpit is open, unless a named approver is on a chat

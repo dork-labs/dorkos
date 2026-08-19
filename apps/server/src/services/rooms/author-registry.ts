@@ -1322,6 +1322,11 @@ export function authorOrigin(naturalKey: string): AuthorOrigin {
  * together, because a platform's ids may contain one; the two segments before it
  * are checked at mint time and cannot.
  *
+ * `instanceId` is the middle segment — WHICH BOT this person reached us
+ * through, not which chat. The bridged Ask card compares it against the
+ * bridge's own `adapterId`, because an id is only meaningful on the
+ * installation that issued it.
+ *
  * A malformed key — the prefix with no platform behind it, which
  * {@link externalNaturalKey} cannot produce — reports `'unknown'` rather than an
  * empty string. Losing the platform name costs a label; a caller that read the
@@ -1332,12 +1337,14 @@ export function authorOrigin(naturalKey: string): AuthorOrigin {
  */
 export function externalAuthorParts(naturalKey: string): {
   platform: string;
+  instanceId: string;
   platformUserId: string;
 } {
   const segments = naturalKey.slice(EXTERNAL_KEY_PREFIX.length).split(KEY_SEPARATOR);
   const platform = segments[0] ?? '';
   return {
     platform: platform.length > 0 ? platform : 'unknown',
+    instanceId: segments[1] ?? '',
     platformUserId: segments.slice(2).join(KEY_SEPARATOR),
   };
 }

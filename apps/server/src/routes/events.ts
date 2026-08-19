@@ -66,7 +66,8 @@ router.get('/', (req, res) => {
   // The principal comes from the same Express chain that already ran
   // `sessionGate` and `resolveAgentIdentity`, so an addressed event (today only
   // `interaction_pending`) can tell this connection apart from an agent's.
-  const unsubscribe = eventFanOut.addClient(client, readCallerPrincipal(req, res));
+  const principal = readCallerPrincipal(req, res);
+  const unsubscribe = eventFanOut.addClient(client, principal);
 
   // Keepalive heartbeat to prevent proxies/browsers from closing the connection
   const heartbeat = setInterval(() => {
@@ -92,7 +93,7 @@ router.get('/', (req, res) => {
   // place this handler writes more than a single frame, and it should not be
   // the one stretch with no close handler behind it.
   client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
-  sendSessionStatusSnapshot(client);
+  sendSessionStatusSnapshot(client, principal);
 });
 
 export default router;

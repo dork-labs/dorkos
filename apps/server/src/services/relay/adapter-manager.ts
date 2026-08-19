@@ -709,6 +709,21 @@ export class AdapterManager {
   }
 
   /**
+   * Which platform an adapter instance speaks — `'telegram'`, `'slack'`.
+   *
+   * The adapter's configured `type`, which is exactly the string its inbound
+   * path stamps onto an approval's `platform` field, so the two are comparable
+   * by construction rather than by convention.
+   *
+   * @param adapterId - The adapter instance.
+   * @returns Its platform, or `undefined` when there is no such adapter — which
+   *   matches no principal, and so authorizes nobody.
+   */
+  private platformOf(adapterId: string): string | undefined {
+    return this.getAdapter(adapterId)?.config.type;
+  }
+
+  /**
    * Whether a click on a chat platform may authorize one session's tool call
    * (spec `ask-entitlement` §5.3).
    *
@@ -720,10 +735,13 @@ export class AdapterManager {
    *
    * Two branches:
    *
+   * - **the port is missing** — refused. See the body: a wiring omission must
+   *   not read as a direct-bind session.
    * - **the session is room-bound** — {@link askEntitlement} must say `answer`,
-   *   which means the clicking person is named on that room's bridge adapter's
-   *   approver allowlist. A `respondedBy` of `undefined` fails it, the same
-   *   answer the adapters give an unidentified caller.
+   *   which means the click arrived from the platform that room is bridged to
+   *   AND the clicking person is named on that bridge adapter's approver
+   *   allowlist. A `respondedBy` of `undefined` fails it, the same answer the
+   *   adapters give an unidentified caller.
    * - **the session is NOT room-bound** — allowed, the direct-bind path keeping
    *   the shipped gate it has. A stated boundary, not a fail-open default: the
    *   spec's Non-Goals say the direct-bind path is not widened here, and
@@ -737,7 +755,22 @@ export class AdapterManager {
     platform: string;
     respondedBy: string | undefined;
   }): boolean {
-    const binding = this.deps.roomSessionBindings?.bindingForSession(decision.sessionId);
+    const bindings = this.deps.roomSessionBindings;
+    if (!bindings) {
+      // **Absent means refuse, not allow.** Without this port nothing here can
+      // tell a room-bound session from a direct-bound one, so the "not
+      // room-bound → keep the shipped direct-bind gate" branch below would
+      // swallow every room-bound approval as well — a wiring omission would
+      // silently become a fail-open. The composition root always supplies it;
+      // a boot that did not has no rooms, and therefore no room-bound Ask for
+      // this to refuse.
+      logger.warn(
+        '[AdapterManager] refusing a bridged approval: no room-session binding port is wired, ' +
+          'so this decision cannot be attributed to a room'
+      );
+      return false;
+    }
+    const binding = bindings.bindingForSession(decision.sessionId);
     if (!binding) return true;
 
     const bridge = this.deps.roomBridges?.findBridgeByRoom(binding.roomId);
@@ -756,6 +789,10 @@ export class AdapterManager {
           roomId: binding.roomId,
           // No bridge means no allowlist to consult, which authorizes nobody.
           approvers: bridge ? toIdList(this.approverAllowlistFor(bridge.adapterId)) : [],
+          // The list and the platform come from the SAME bridge, so the pair is
+          // always one platform's answer — which is what lets `askEntitlement`
+          // refuse a click that arrived from a different one.
+          ...(bridge ? { approverPlatform: this.platformOf(bridge.adapterId) } : {}),
         }
       ) === 'answer'
     );

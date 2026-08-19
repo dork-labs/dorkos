@@ -670,13 +670,13 @@ describe('sendSessionStatusSnapshot — the connect preamble', () => {
     errorProjector(SESSION_A);
 
     const congested = recordingClient(0, SSE.MAX_BUFFERED_BYTES + 1);
-    sendSessionStatusSnapshot(congested.client);
+    sendSessionStatusSnapshot(congested.client, { kind: 'operator' });
 
     // Paired deliberately: "sent nothing" is worthless on its own, since a
     // registry with no non-idle projector in it would satisfy it too. The
     // healthy client is what proves there was something to send.
     const healthy = recordingClient();
-    sendSessionStatusSnapshot(healthy.client);
+    sendSessionStatusSnapshot(healthy.client, { kind: 'operator' });
 
     expect(congested.sessionIds()).toEqual([]);
     expect(healthy.sessionIds()).toEqual([SESSION_A]);
@@ -690,7 +690,7 @@ describe('sendSessionStatusSnapshot — the connect preamble', () => {
     // Congested by its own first frame: the ceiling is crossed after one send,
     // so this walks the loop rather than failing its very first check.
     const client = recordingClient(SSE.MAX_BUFFERED_BYTES + 1);
-    sendSessionStatusSnapshot(client.client);
+    sendSessionStatusSnapshot(client.client, { kind: 'operator' });
 
     expect(client.sessionIds()).toHaveLength(1);
     // The opposite of what a broadcast does to a slow client, and deliberately:

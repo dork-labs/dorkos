@@ -21,6 +21,7 @@ const roomBound: AskSubject = {
   sessionId: 'sess_room',
   roomId: 'room_ops',
   approvers: ['tg_owner', 'tg_deputy'],
+  approverPlatform: 'telegram',
 };
 
 /** A person clicking a button on a chat platform. */
@@ -57,19 +58,48 @@ describe('askEntitlement', () => {
     // Being named on a room's allowlist says nothing about a session that room
     // does not own, and the approvers list would not even have been resolved.
     expect(
-      askEntitlement(bridged('tg_owner'), { sessionId: 'sess_solo', approvers: ['tg_owner'] })
+      askEntitlement(bridged('tg_owner'), {
+        sessionId: 'sess_solo',
+        approvers: ['tg_owner'],
+        approverPlatform: 'telegram',
+      })
+    ).toBe('none');
+  });
+
+  it('refuses a click from a platform the allowlist does not belong to', () => {
+    // A platform user id is unique only within its own platform. A Slack
+    // adapter publishing for a Telegram-bridged room would otherwise be checked
+    // against Telegram's list, and a string spelled the same way in both places
+    // would authorize a tool call the operator named nobody for.
+    expect(
+      askEntitlement({ kind: 'bridged', platform: 'slack', platformUserId: 'tg_owner' }, roomBound)
+    ).toBe('none');
+  });
+
+  it('refuses when the caller could not say which platform the allowlist is for', () => {
+    expect(
+      askEntitlement(bridged('tg_owner'), {
+        sessionId: 'sess_room',
+        roomId: 'room_ops',
+        approvers: ['tg_owner'],
+      })
     ).toBe('none');
   });
 
   it('treats an empty allowlist and an absent one alike: nobody', () => {
     expect(
-      askEntitlement(bridged('tg_owner'), { sessionId: 'sess_room', roomId: 'room_ops' })
+      askEntitlement(bridged('tg_owner'), {
+        sessionId: 'sess_room',
+        roomId: 'room_ops',
+        approverPlatform: 'telegram',
+      })
     ).toBe('none');
     expect(
       askEntitlement(bridged('tg_owner'), {
         sessionId: 'sess_room',
         roomId: 'room_ops',
         approvers: [],
+        approverPlatform: 'telegram',
       })
     ).toBe('none');
   });
@@ -81,6 +111,7 @@ describe('askEntitlement', () => {
       sessionId: 'sess_room',
       roomId: 'room_ops',
       approvers: ' tg_owner \n tg_deputy ' as unknown as readonly string[],
+      approverPlatform: 'telegram',
     };
     expect(askEntitlement(bridged('tg_deputy'), subject)).toBe('answer');
     expect(askEntitlement(bridged('tg_stranger'), subject)).toBe('none');

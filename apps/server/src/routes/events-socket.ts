@@ -80,10 +80,8 @@ export const globalEventsRoute: UpgradeRoute = {
         // `StreamUpgradeLocals` is `res.locals`-shaped precisely so this reads
         // the same principal an HTTP request would, with no second notion of
         // who a caller is (`stream-upgrade-auth.ts`).
-        const unsubscribe = eventFanOut.addClient(
-          client,
-          readCallerPrincipal({ headers }, { locals })
-        );
+        const principal = readCallerPrincipal({ headers }, { locals });
+        const unsubscribe = eventFanOut.addClient(client, principal);
         socket.signal.addEventListener('abort', unsubscribe, { once: true });
         // The connect preamble: `connected`, then the fleet's current
         // lifecycles, so a window that opened after a session errored or
@@ -91,7 +89,7 @@ export const globalEventsRoute: UpgradeRoute = {
         // await in between, so a live transition cannot land ahead of the
         // snapshot it supersedes.
         client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
-        sendSessionStatusSnapshot(client);
+        sendSessionStatusSnapshot(client, principal);
       },
     };
   },

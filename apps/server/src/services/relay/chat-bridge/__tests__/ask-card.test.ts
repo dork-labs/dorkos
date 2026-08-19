@@ -29,6 +29,8 @@ const APPROVER_AUTHOR = 'author-miguel';
 
 /** The approver's stored natural key, in the shape `AuthorRegistry` mints. */
 const APPROVER_KEY = 'platform:telegram:tg-main:145223';
+/** The same person, reached through a different bot entirely. */
+const OTHER_BOT_KEY = 'platform:slack:slack-acme:145223';
 /** Somebody on the roster who is not on the allowlist. */
 const STRANGER_KEY = 'platform:telegram:tg-main:999999';
 
@@ -121,7 +123,11 @@ function approvalEvent(id = 'tc-1'): Record<string, unknown> {
 }
 
 beforeEach(() => {
-  publish = vi.fn(async () => ({ messageId: 'm-1', deliveredTo: 1 }));
+  publish = vi.fn(async () => ({
+    messageId: 'm-1',
+    deliveredTo: 1,
+    adapterResult: { success: true },
+  }));
 });
 
 afterEach(() => {
@@ -201,6 +207,14 @@ describe('BridgedAskDelivery', () => {
     await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
   });
 
+  it('sends nothing when the roster’s only outsider came through a different bot', async () => {
+    startDelivery({ keys: { [AGENT_AUTHOR]: '/agents/ana', [APPROVER_AUTHOR]: OTHER_BOT_KEY } });
+
+    park(ROOM_SESSION, approvalEvent());
+
+    await expectNoPublish();
+  });
+
   it('sends nothing when the chat’s subject cannot be built', async () => {
     startDelivery({ subject: null });
 
@@ -258,6 +272,48 @@ describe('BridgedAskDelivery', () => {
 
       park(ROOM_SESSION, approvalEvent());
       await expectNoPublish();
+
+      expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(false);
+    });
+
+    it('records nothing when the consent gate refused the card', async () => {
+      // `canInitiate: false` comes back as a REJECTION, not a throw. Recording
+      // it would suppress the waiting sentence in exchange for a card that was
+      // never sent, and the approver would get silence — which is the failure
+      // this whole path exists to end.
+      publish.mockResolvedValue({
+        messageId: 'm-1',
+        deliveredTo: 0,
+        rejected: [{ endpointHash: 'e', reason: 'initiate_denied' }],
+      });
+      startDelivery();
+
+      park(ROOM_SESSION, approvalEvent());
+      await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
+
+      expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(false);
+    });
+
+    it('records nothing when the platform refused the send', async () => {
+      publish.mockResolvedValue({
+        messageId: 'm-1',
+        deliveredTo: 1,
+        adapterResult: { success: false, error: 'chat not found' },
+      });
+      startDelivery();
+
+      park(ROOM_SESSION, approvalEvent());
+      await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
+
+      expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(false);
+    });
+
+    it('records nothing when no adapter handled the publish at all', async () => {
+      publish.mockResolvedValue({ messageId: 'm-1', deliveredTo: 0 });
+      startDelivery();
+
+      park(ROOM_SESSION, approvalEvent());
+      await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
 
       expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(false);
     });

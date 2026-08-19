@@ -140,6 +140,16 @@ export default defineConfig({
     //   accept, where a passive watcher makes every Stop report success (DOR-808).
     //   Measured: changing the prefix in `src/` with `dist/` left stale reddens 2 with
     //   this alias and 0 without it.
+    // - `@dorkos/relay/approver-allowlist` backs `mayApprove`, the single answer to
+    //   "may this platform user authorize a tool call" — read by `askEntitlement`
+    //   and by the bridged Ask card's audience predicate, and the only thing
+    //   between a chat button and a shell command on the operator's machine.
+    //   Same family as `untrusted-text` and `session-stream`: a pure gate whose
+    //   source text is the subject. Measured on review: replacing the whole body
+    //   with `return true` in `src/` reddened 0 of 127 server tests without this
+    //   alias — every one of them read `dist/` — and 12 with it. The subpath is
+    //   a single self-contained module with no imports at all, which is why the
+    //   alias costs nothing measurable.
     // - `@dorkos/marketplace/package-types` backs `install-roots`, which iterates
     //   `PackageTypeSchema.options` to prove no package type installs somewhere the
     //   scanners never look. The test used to import the schema from the package
@@ -264,6 +274,12 @@ export default defineConfig({
         find: '@dorkos/marketplace/package-types',
         replacement: fileURLToPath(
           new URL('../../packages/marketplace/src/package-types.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/relay/approver-allowlist',
+        replacement: fileURLToPath(
+          new URL('../../packages/relay/src/adapters/approver-allowlist.ts', import.meta.url)
         ),
       },
     ],

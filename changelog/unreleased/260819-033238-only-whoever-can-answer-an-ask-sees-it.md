@@ -17,4 +17,4 @@ covers:
 
 ### Security
 
-- What an agent is waiting for now reaches only the people who could answer it. In a group chat nobody sees it, because DorkOS cannot know who else is reading. And a program you have given an agent identity to no longer sees other agents' prompts at all: it could never answer one, and now it cannot read one either (DOR-1356)
+- What an agent is waiting for now reaches only the people who could answer it. In a group chat nobody sees it, because DorkOS cannot know who else is reading. And another agent on your machine no longer sees any of it: not in the fleet-wide list, not on the live feed, and not on a session's own stream. It could never answer one of these, and now it cannot read one either. Your own scripts, holding your API key, can still see them and still cannot answer them (DOR-1356)

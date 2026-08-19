@@ -11,7 +11,10 @@
  *
  * @module services/relay/chat-bridge/ask-audience
  */
-import { mayApprove } from '@dorkos/relay';
+// The narrow subpath, not the `@dorkos/relay` barrel — the barrel pulls in
+// `RelayCore` and its subscription registry, and this predicate needs one
+// self-contained module (see `asks/ask-entitlement.ts` for the incident).
+import { mayApprove } from '@dorkos/relay/approver-allowlist';
 
 import type { Bridge } from './bridge-store.js';
 
@@ -19,6 +22,16 @@ import type { Bridge } from './bridge-store.js';
 export interface ExternalChatAuthor {
   /** The platform's own id for them, as an approver allowlist names it. */
   readonly platformUserId: string;
+  /**
+   * The adapter instance they reached us through, off their stored natural key.
+   *
+   * Compared against the bridge's own `adapterId` below. A roster is a room's,
+   * not a chat's, so nothing else guarantees that the person the roster names
+   * is a person on the chat this card would go to — and a platform user id is
+   * only unique on the installation that issued it, so a match against another
+   * platform's allowlist proves nothing.
+   */
+  readonly instanceId: string;
 }
 
 /**
@@ -26,7 +39,8 @@ export interface ExternalChatAuthor {
  * actionable card.
  *
  * True only for a live `private` chat — one person on the other end — whose
- * single external author is on that adapter's approver allowlist.
+ * single external author reached us through THIS bridge's own adapter and is
+ * on that adapter's approver allowlist.
  *
  * **A group or supergroup is never eligible**, however many approvers are in
  * it, because the platform cannot tell us who is READING: a lurker who has
@@ -50,5 +64,7 @@ export function bridgedAskIsActionable(input: {
   if (bridge.archivedAt !== null) return false;
   if (bridge.platformChatType !== 'private') return false;
   if (externalAuthors.length !== 1) return false;
-  return mayApprove(approvers, externalAuthors[0]?.platformUserId);
+  const person = externalAuthors[0];
+  if (person === undefined || person.instanceId !== bridge.adapterId) return false;
+  return mayApprove(approvers, person.platformUserId);
 }

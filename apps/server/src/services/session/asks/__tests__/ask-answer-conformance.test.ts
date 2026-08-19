@@ -79,7 +79,7 @@ interface AnswerSeam {
 }
 
 /**
- * The four callers that can actually reach both seams.
+ * The five callers that can actually reach both seams.
  *
  * The agent is the caller this spec exists for: it clears `sessionGate` in
  * every posture and must answer nothing.

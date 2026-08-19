@@ -259,14 +259,17 @@ describe('EventFanOut', () => {
       expect(encodeSpy, 'one encode per broadcast, not one per client').toHaveBeenCalledTimes(1);
     });
 
-    it('encodes once even when the audience admits nobody', () => {
+    it('does not encode at all when the audience admits nobody', () => {
+      // A frame with no readers costs nothing to render, and that is what makes
+      // the two-rendering path below affordable: the redacted variant is never
+      // built on the ordinary install where only the cockpit is connected.
       addTrackedClient(createMockClient(), { kind: 'agent' });
       addTrackedClient(createMockClient(), { kind: 'agent' });
       encodeSpy.mockClear();
 
       eventFanOut.broadcast('interaction_pending', { sessionId: 's1' }, operatorOnly);
 
-      expect(encodeSpy).toHaveBeenCalledTimes(1);
+      expect(encodeSpy).not.toHaveBeenCalled();
     });
 
     it('never measures or drops a client the audience skipped', () => {
@@ -291,6 +294,105 @@ describe('EventFanOut', () => {
       expect(bufferedReads, 'a skipped client is not measured').toBe(0);
       expect(stalledAgent.drop).not.toHaveBeenCalled();
       expect(eventFanOut.clientCount).toBe(1);
+    });
+  });
+
+  describe('broadcastRedacted — one event, two renderings', () => {
+    /** Only the cockpit's connection may hold a blocked session's detail. */
+    const operatorOnly = (principal: CallerPrincipal) => principal.kind === 'operator';
+
+    /** Every payload a client was written, decoded back off its JSON frame. */
+    function payloads(client: MockClient): unknown[] {
+      return client.send.mock.calls.map(
+        ([broadcast]) => (JSON.parse(broadcast.json) as { data: unknown }).data
+      );
+    }
+
+    it('writes the full payload to the entitled and the redacted one to everybody else', () => {
+      const cockpit = createMockClient();
+      const agent = createMockClient();
+      addTrackedClient(cockpit, { kind: 'operator' });
+      addTrackedClient(agent, { kind: 'agent' });
+
+      eventFanOut.broadcastRedacted(
+        'session_status',
+        { sessionId: 's1', activity: { toolName: 'Bash', target: 'rm -rf build' } },
+        { sessionId: 's1' },
+        operatorOnly
+      );
+
+      expect(payloads(cockpit)).toEqual([
+        { sessionId: 's1', activity: { toolName: 'Bash', target: 'rm -rf build' } },
+      ]);
+      expect(payloads(agent), 'an agent gets the frame without the detail').toEqual([
+        { sessionId: 's1' },
+      ]);
+    });
+
+    it('writes each connection exactly one of the two renderings, never both', () => {
+      const cockpit = createMockClient();
+      const agent = createMockClient();
+      addTrackedClient(cockpit, { kind: 'operator' });
+      addTrackedClient(agent, { kind: 'agent' });
+
+      eventFanOut.broadcastRedacted('session_status', { a: 1 }, { b: 2 }, operatorOnly);
+
+      expect(cockpit.send).toHaveBeenCalledTimes(1);
+      expect(agent.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('notifies an in-process listener ONCE, with the full payload', () => {
+      // A listener is the server itself. Twice would be a new bug, and a
+      // redacted one would be a lie to code that is not a caller.
+      const seen: unknown[] = [];
+      const unsub = eventFanOut.subscribe((_name, data) => seen.push(data));
+      addTrackedClient(createMockClient(), { kind: 'agent' });
+      try {
+        eventFanOut.broadcastRedacted(
+          'session_status',
+          { full: true },
+          { full: false },
+          operatorOnly
+        );
+        expect(seen).toEqual([{ full: true }]);
+      } finally {
+        unsub();
+      }
+    });
+
+    it('renders each variant once, and skips the one nobody is going to read', () => {
+      const cockpit = createMockClient();
+      addTrackedClient(cockpit, { kind: 'operator' });
+      addTrackedClient(createMockClient(), { kind: 'operator' });
+      encodeSpy.mockClear();
+
+      eventFanOut.broadcastRedacted('session_status', { a: 1 }, { b: 2 }, operatorOnly);
+
+      expect(
+        encodeSpy,
+        'two entitled clients, one full frame, no redacted one'
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders both when both kinds of reader are connected', () => {
+      addTrackedClient(createMockClient(), { kind: 'operator' });
+      addTrackedClient(createMockClient(), { kind: 'agent' });
+      encodeSpy.mockClear();
+
+      eventFanOut.broadcastRedacted('session_status', { a: 1 }, { b: 2 }, operatorOnly);
+
+      expect(encodeSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops a slow client on the frame it actually received', () => {
+      const slowAgent = createMockClient({ bufferedBytes: 4096 });
+      addTrackedClient(slowAgent, { kind: 'agent' });
+
+      eventFanOut.broadcastRedacted('session_status', { a: 1 }, { b: 2 }, operatorOnly);
+
+      expect(slowAgent.send).toHaveBeenCalledTimes(1);
+      expect(slowAgent.drop).toHaveBeenCalled();
+      expect(eventFanOut.clientCount).toBe(0);
     });
   });
 

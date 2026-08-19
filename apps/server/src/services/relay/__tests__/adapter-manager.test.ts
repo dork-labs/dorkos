@@ -2257,8 +2257,12 @@ describe('AdapterManager', () => {
      * bound to `ROOM_ID`.
      *
      * @param approvers - The configured allowlist, in whatever shape.
+     * @param opts.bridged - Whether the room has a live bridge at all.
      */
-    async function managerWithApprovers(approvers: unknown): Promise<AdapterManager> {
+    async function managerWithApprovers(
+      approvers: unknown,
+      opts: { bridged?: boolean } = {}
+    ): Promise<AdapterManager> {
       vi.mocked(readFile).mockResolvedValue(
         JSON.stringify({
           adapters: [
@@ -2273,7 +2277,7 @@ describe('AdapterManager', () => {
       );
       const m = new AdapterManager(registry, configPath, {
         ...mockDeps,
-        roomBridges: bridgesForRoom(),
+        roomBridges: opts.bridged === false ? new BridgeStore(createTestDb()) : bridgesForRoom(),
         roomSessionBindings: {
           bindingForSession: (sessionId: string) =>
             sessionId === BOUND_SESSION ? { roomId: ROOM_ID, authorId: 'author-ana' } : undefined,
@@ -2341,6 +2345,55 @@ describe('AdapterManager', () => {
           respondedBy: '145223',
         })
       ).toBe(true);
+    });
+
+    it('refuses a room-bound approval when the room has no live bridge to check against', async () => {
+      // A room whose chat was unbridged still has its session binding. With no
+      // bridge there is no allowlist and no platform to compare, which
+      // authorizes nobody rather than everybody.
+      const m = await managerWithApprovers(['145223'], { bridged: false });
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: BOUND_SESSION,
+          platform: 'telegram',
+          respondedBy: '145223',
+        })
+      ).toBe(false);
+    });
+
+    it('refuses a click that arrived from a platform the room is not bridged to', async () => {
+      // A platform user id is unique only within its own platform, so an id
+      // spelled the same way on Slack must not clear a Telegram allowlist.
+      const m = await managerWithApprovers(['145223']);
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: BOUND_SESSION,
+          platform: 'slack',
+          respondedBy: '145223',
+        })
+      ).toBe(false);
+    });
+
+    it('refuses everything when the room-session binding port is not wired', async () => {
+      // Fail CLOSED on a wiring omission: without the port nothing here can
+      // tell a room-bound session from a direct-bound one, so the direct-bind
+      // branch would swallow every room-bound approval as well.
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      const m = new AdapterManager(registry, configPath, {
+        ...mockDeps,
+        roomBridges: bridgesForRoom(),
+      });
+      await initAndStart(m);
+
+      expect(
+        m.authorizeBridgedApproval({
+          sessionId: BOUND_SESSION,
+          platform: 'telegram',
+          respondedBy: '145223',
+        })
+      ).toBe(false);
     });
 
     it('leaves a session no room owns to the direct-bind gate it already has', async () => {

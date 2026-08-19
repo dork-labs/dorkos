@@ -38,9 +38,11 @@ function bridgeOn(overrides: Partial<Bridge> = {}): Bridge {
   };
 }
 
-const OWNER = { platformUserId: 'tg_owner' };
-const DEPUTY = { platformUserId: 'tg_deputy' };
-const STRANGER = { platformUserId: 'tg_stranger' };
+const OWNER = { platformUserId: 'tg_owner', instanceId: 'tg-main' };
+const DEPUTY = { platformUserId: 'tg_deputy', instanceId: 'tg-main' };
+const STRANGER = { platformUserId: 'tg_stranger', instanceId: 'tg-main' };
+/** The same id, but reached through a DIFFERENT bot — a Slack workspace, say. */
+const OWNER_ELSEWHERE = { platformUserId: 'tg_owner', instanceId: 'slack-acme' };
 const APPROVERS = ['tg_owner', 'tg_deputy'];
 
 describe('bridgedAskIsActionable', () => {
@@ -98,6 +100,20 @@ describe('bridgedAskIsActionable', () => {
   it('refuses a private chat with no external author at all', () => {
     expect(
       bridgedAskIsActionable({ bridge: bridgeOn(), externalAuthors: [], approvers: APPROVERS })
+    ).toBe(false);
+  });
+
+  it('refuses a person who reached us through a different bot, even on an allowlisted id', () => {
+    // The roster belongs to the ROOM, not to the chat, so nothing else says the
+    // person it names is a person on the chat this card would go to. And a
+    // platform user id is only unique on the installation that issued it, so a
+    // match against another adapter's allowlist proves nothing.
+    expect(
+      bridgedAskIsActionable({
+        bridge: bridgeOn(),
+        externalAuthors: [OWNER_ELSEWHERE],
+        approvers: APPROVERS,
+      })
     ).toBe(false);
   });
 

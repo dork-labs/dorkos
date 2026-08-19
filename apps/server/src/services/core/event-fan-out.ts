@@ -234,6 +234,61 @@ class EventFanOut {
    *   {@link BroadcastAudience}.
    */
   broadcast(eventName: string, data: unknown, audience?: BroadcastAudience): void {
+    this.notifyListeners(eventName, data);
+    this.writeToClients(() => encodeBroadcast(eventName, data), audience);
+  }
+
+  /**
+   * Broadcast ONE event rendered two ways: in full to the connections entitled
+   * to its detail, and redacted to the rest.
+   *
+   * `session_status` needs this and an audience alone cannot give it.
+   * `SessionStatus.activity` carries the tool a session is on and the one
+   * argument of it a person would recognize — for a `blocked` session that is
+   * the very thing the Ask is asking about — while the same frame carries the
+   * lifecycle every reader legitimately needs. Withholding the whole frame
+   * would leave an unentitled reader's view of that session silently stuck on
+   * its previous lifecycle, which is a worse property than the leak it closes;
+   * sending it whole is the leak. So the detail is dropped and the lifecycle is
+   * kept (spec `ask-entitlement`, review finding 1).
+   *
+   * Every property {@link broadcast} holds is held here:
+   *
+   * - **In-process listeners are notified ONCE**, with the FULL payload. They
+   *   are the server itself, not callers; a listener that received the same
+   *   event twice — or received a redacted one — would be a new bug.
+   * - **Each rendering is encoded once**, whatever the split, and the redacted
+   *   one is not encoded at all when every connection is entitled.
+   * - **Backpressure is unchanged**: each client is measured on the one frame
+   *   it actually received.
+   *
+   * @param eventName - The event name.
+   * @param full - The payload for entitled connections.
+   * @param redacted - The payload for everybody else.
+   * @param entitled - Which connections may have the full one.
+   */
+  broadcastRedacted(
+    eventName: string,
+    full: unknown,
+    redacted: unknown,
+    entitled: BroadcastAudience
+  ): void {
+    this.notifyListeners(eventName, full);
+    this.writeToClients(() => encodeBroadcast(eventName, full), entitled);
+    this.writeToClients(
+      () => encodeBroadcast(eventName, redacted),
+      (principal) => !entitled(principal)
+    );
+  }
+
+  /**
+   * Hand one event to every in-process listener, isolating a listener that
+   * throws.
+   *
+   * @param eventName - The event name.
+   * @param data - The LIVE payload; see {@link EventFanOut.subscribe}.
+   */
+  private notifyListeners(eventName: string, data: unknown): void {
     for (const listener of this.listeners) {
       try {
         listener(eventName, data);
@@ -244,7 +299,22 @@ class EventFanOut {
         });
       }
     }
-    const broadcast = encodeBroadcast(eventName, data);
+  }
+
+  /**
+   * Write one frame to the connected clients an audience admits, dropping the
+   * gone and the hopelessly backed-up.
+   *
+   * `render` is a thunk, called AT MOST ONCE and only if some client is going
+   * to receive it. That is what keeps "encoded once per broadcast" true when a
+   * rendering has no readers at all — the redacted variant on an install where
+   * only the cockpit is connected, which is the common case.
+   *
+   * @param render - Produces the frame, once.
+   * @param audience - Which connections it is for; omitted means all.
+   */
+  private writeToClients(render: () => EncodedBroadcast, audience?: BroadcastAudience): void {
+    let broadcast: EncodedBroadcast | undefined;
     for (const entry of this.clients) {
       const { client } = entry;
       if (client.gone) {
@@ -253,7 +323,7 @@ class EventFanOut {
       }
       if (audience && !audience(entry.principal)) continue;
       try {
-        client.send(broadcast);
+        client.send((broadcast ??= render()));
         if (client.bufferedBytes > SSE.MAX_BUFFERED_BYTES) {
           logger.warn('[EventFanOut] dropping slow client (buffer over limit)', {
             bufferedBytes: client.bufferedBytes,

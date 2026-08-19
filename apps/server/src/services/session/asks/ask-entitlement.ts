@@ -48,6 +48,20 @@ export interface AskSubject {
    * rather than incomplete.
    */
   readonly approvers?: readonly string[];
+  /**
+   * Which platform {@link AskSubject.approvers} are ids ON — `'telegram'`,
+   * `'slack'`.
+   *
+   * **Required whenever `approvers` is given, and the reason is a collision.**
+   * A platform user id is only unique within its own platform, so a Slack
+   * adapter publishing an approval for a session whose room is bridged to
+   * Telegram would otherwise be checked against Telegram's allowlist, and any
+   * id that happens to be spelled the same way in both places would authorize
+   * a tool call the operator named nobody for. The caller resolves this from
+   * the same bridge it resolved the list from, so the pair is always one
+   * platform's answer.
+   */
+  readonly approverPlatform?: string;
 }
 
 /** What a principal may do with one Ask. */
@@ -79,10 +93,11 @@ export type AskEntitlement =
  *   caller, unchanged.
  * - **`program` → `see`.** Refused at the answer routes since DOR-474; it
  *   already reads the same detail one route over.
- * - **`bridged` → `answer`** only when the Ask is room-bound AND that room's
- *   approver allowlist names this person. Otherwise `none`: absence is not
- *   consent, and a chat platform user has no standing over a session no room
- *   owns.
+ * - **`bridged` → `answer`** only when the Ask is room-bound, the allowlist it
+ *   is checked against belongs to the platform this person clicked from, AND
+ *   that allowlist names them. Otherwise `none`: absence is not consent, a
+ *   chat platform user has no standing over a session no room owns, and an id
+ *   from one platform proves nothing about the same string on another.
  *
  * Fails closed on every uncertainty, the same discipline `mayApprove` states.
  *
@@ -100,6 +115,10 @@ export function askEntitlement(principal: CallerPrincipal, subject: AskSubject):
       return 'see';
     case 'bridged':
       if (subject.roomId === undefined) return 'none';
+      // The list has to be one this caller's platform issued the ids for. An
+      // absent platform is a caller that could not say, which is not a caller
+      // that may — see {@link AskSubject.approverPlatform}.
+      if (subject.approverPlatform !== principal.platform) return 'none';
       return mayApprove(subject.approvers, principal.platformUserId) ? 'answer' : 'none';
   }
 }
