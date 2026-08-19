@@ -130,12 +130,27 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   carried on talking" from "they are repeating themselves". Do not add an
   `agent_busy` line back for that case: the message IS picked up, so the line
   would be false, and `working-here` was deleted from `BusyContext` rather than
-  left as dead copy. The refusal survives for the OTHER ceiling only — an agent
-  working in a different room is in a different checkout, and nothing here will
-  finish that turn. Holding is not the scheduler this domain declined twice
-  (ADR 260726-170125): what is stored is what the agent has not read yet, one
-  turn per agent per room is still enforced, and nothing orders two agents
-  against each other.
+  left as dead copy.
+  **The OTHER ceiling holds too, since `room-hold-when-busy`** (ADR
+  `260818-234541`). An agent working in a DIFFERENT room is in a different
+  checkout, so no second turn starts — but the message is kept rather than
+  refused: the blocking claim's release re-arms every room waiting on that
+  `agentPath` (`RoomCollector.resumeAgent`, hung off the same `releaseClaim`),
+  and the first to reach `claimCollected` takes the claim while the rest park
+  again. One agent's own waiting rooms run oldest-first, promotable by a person
+  (`POST /:id/holds/:authorId/promote`), which orders somebody's own unanswered
+  messages and never two agents. `working-elsewhere` is gone from `BusyContext`
+  for the reason `working-here` went: the message IS picked up. **Do not write a
+  durable line when a hold opens.** The promise lives only on the ephemeral lane
+  (`state: 'held'` + `heldBehind`), which dies with the process that could keep
+  it — a durable "it will pick this up" that a restart silently breaks is worse
+  than the refusal it replaced. The two bounds are `rooms.collectMaxEntries` per
+  batch and `rooms.lateReplyCeilingMinutes` per wait; crossing the second drops
+  the wait and writes ONE past-tense `agent_busy` line, which is the only busy
+  line a room ceiling still produces. Holding is not the scheduler this domain
+  declined twice (ADR 260726-170125): what is stored is what the agent has not
+  read yet, one turn per agent per room is still enforced, and nothing orders two
+  agents against each other.
   **The claim is the only thing that may answer "is this agent busy HERE".**
   The room claim is not the only lock a room turn meets — the session it runs on
   has its own write-lock, and the dispatcher mirrors it in `inFlight`
@@ -427,6 +442,14 @@ Current as of 2026-07-31; fix them rather than working around them.
   log and nothing is shown twice; what is lost is the promptness. Making it
   durable is the scheduler this domain has declined twice
   (ADR `260726-170125`), so it needs arguing as one rather than adding a table.
+  **A cross-room hold costs one thing more, and it is why the promise is
+  ephemeral.** A message waiting on an agent busy elsewhere had a LINE saying an
+  answer was coming; a restart forgets the hold, and the line goes with it
+  because it only ever lived on the room's ephemeral stream. So the promise is
+  never left standing after the machinery that could keep it is gone — which is
+  the whole reason nothing durable is written when a hold opens. What the person
+  is left with is an unread message and a room that no longer owes it a turn,
+  and nothing on the log claiming otherwise.
 - No room is bridged to a chat platform. Room presence reaches the cockpit
   (`RoomService.publishSignal` → the room's event stream) and stops there. The
   Telegram adapter keeps a signal seam for it (`handleTypingSignal`), but

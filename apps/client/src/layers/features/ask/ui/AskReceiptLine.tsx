@@ -21,10 +21,16 @@ function clockTime(isoTime: string): string {
  * | Ending                                 | Line                            |
  * | -------------------------------------- | ------------------------------- |
  * | you answered it here                   | `You allowed this` / `You said no` |
- * | somebody else did, and we know who     | `Already allowed by Dorian at 2:01` |
- * | somebody else did, and we do not       | `Already answered at 2:01`      |
+ * | answered elsewhere, and we know who     | `Already answered by Dorian at 2:01` |
+ * | answered elsewhere, and we do not       | `Already answered at 2:01`      |
  * | the session went away                  | `No longer needed`              |
  * | the clock answered                     | `Nobody answered in time`       |
+ *
+ * The named line says **answered**, not allowed, and the tone stays neutral.
+ * The event that carries the name says only that somebody answered — allow and
+ * deny arrive as the same `answered` outcome — so a green "Already allowed by
+ * Dorian" would be a coin flip printed as a fact. Only the window that made the
+ * choice knows which it was, and that window says "You allowed this".
  *
  * @param receipt - How the prompt ended.
  */
@@ -46,8 +52,7 @@ export function AskReceiptLine({ receipt }: { receipt: AskReceipt }) {
           ? 'You answered this'
           : 'You allowed this';
   } else if (receipt.resolvedBy) {
-    tone = 'allowed';
-    line = `Already allowed by ${receipt.resolvedBy}${at ? ` at ${at}` : ''}`;
+    line = `Already answered by ${receipt.resolvedBy}${at ? ` at ${at}` : ''}`;
   } else {
     line = `Already answered${at ? ` at ${at}` : ''}`;
   }

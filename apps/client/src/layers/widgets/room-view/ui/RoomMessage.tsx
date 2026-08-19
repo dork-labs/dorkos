@@ -18,6 +18,11 @@
  * history is indistinguishable from a new remark, which is a small lie the
  * reader has no way to catch.
  *
+ * `answers` adds the other one: which message this post is an answer TO, when it
+ * is not the one directly above. A room posts in arrival order, so an answer
+ * that waited behind a turn in another conversation lands wherever the room had
+ * got to — see `answeredReference` for when the chip is worth drawing.
+ *
  * **Every post carries the action surface** — a toolbar on hover or focus, the
  * same actions on right-click, and a drawer on a long press. The row is a tab
  * stop so the toolbar can be reached without a pointer; its buttons join the tab
@@ -119,6 +124,13 @@ interface RoomMessageProps {
    */
   orphanedReply?: boolean;
   /**
+   * The message this post answers, quoted back — or `null`/absent when there is
+   * nothing worth saying. Resolved by the host, which is the only thing that
+   * knows what the rendered feed put directly above this row; see
+   * `answeredReference` for when it is suppressed.
+   */
+  answers?: { entryId: string; excerpt: string } | null;
+  /**
    * Where this row sits in the feed it is rendering inside — the room's flow,
    * or an open thread's root and replies.
    *
@@ -156,6 +168,7 @@ export function RoomMessage({
   isMember = true,
   grouping,
   orphanedReply,
+  answers,
   feedPosition,
   rowId,
 }: RoomMessageProps) {
@@ -332,6 +345,19 @@ export function RoomMessage({
         {orphanedReply === true && (
           <p data-testid="room-entry-orphan" className="text-muted-foreground text-xs italic">
             Replying to an earlier message
+          </p>
+        )}
+        {/* Which message this one answers, when it is not the one directly
+            above. Static text rather than a link: the row it points at may not
+            be in the document at all — the flow is virtualized and a reply lives
+            in a panel — and a link that scrolls to nothing is worse than none.
+            The words are the whole of it. */}
+        {answers != null && (
+          <p
+            data-testid="room-entry-answers"
+            className="text-muted-foreground truncate text-xs italic"
+          >
+            {`Answering \u201C${answers.excerpt}\u201D`}
           </p>
         )}
         <Message.Content
