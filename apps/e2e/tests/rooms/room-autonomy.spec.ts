@@ -469,6 +469,71 @@ test.describe('Stopping a room @smoke', () => {
     }
   });
 
+  test('stopping one agent leaves the other working, and the room names both', async ({
+    page,
+    basePage,
+    request,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // **Sandbox caveat, same as the room-wide case above.**
+    // `TestModeRuntime.interruptQuery` returns `false`, so what this observes is
+    // the claim being dropped and the notice being written, not a killed
+    // generation. `.claude/commands/chat/rooms-test.md` records the same limit.
+    const tag = roomsApi.runId;
+    const first = `Onea${tag}`;
+    const second = `Oneb${tag}`;
+    const agents = [
+      await roomsApi.registerAgent(first, '🛑', '#ef4444'),
+      await roomsApi.registerAgent(second, '🚦', '#f59e0b'),
+    ];
+    const room = await roomsApi.createChannel(`one-${tag}`, `One ${tag}`, agents);
+    const firstSeat = await seatThatAnswers(roomsApi, room, first);
+    await seatThatAnswers(roomsApi, room, second);
+
+    await openRoom(page, basePage, roomsPage, room.id);
+
+    await useScenario(request, 'long-turn');
+    try {
+      await roomsApi.postEntries(room.id, [`everyone look at this ${tag}`]);
+      await expect(page.getByTestId('room-header-working')).toHaveText(/2 agents working/, {
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+
+      await page.getByRole('button', { name: 'Show who is working' }).click();
+      // **The assertion that fails against the old build**, and therefore the
+      // reason this case exists: the peek used to draw a row Stop only when
+      // exactly one agent was working.
+      await expect(page.getByTestId('live-peek-stop')).toHaveCount(2);
+
+      await page.getByRole('button', { name: `Stop ${first}` }).click();
+
+      // One line, and its words carry who stopped whom — which is how a browser
+      // can tell "stopped one of them" from "stopped everything".
+      const halted = page.locator('[data-testid="room-notice"][data-notice="halted"]');
+      await expect(halted).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
+      await expect(halted).toContainText(`stopped ${first}`);
+      await expect(halted).toContainText('has been interrupted');
+
+      // **The whole claim, in one pair**: one stopped, one still going.
+      await expect(page.getByTestId('room-header-working')).toHaveText(/1 agent working/, {
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+      await expect(page.getByTestId('room-header-halt')).toBeVisible();
+
+      // In the room, not just on the screen. A rendered string can be fooled;
+      // the stored row's `subjectAuthorId` cannot.
+      const stored = await roomsApi.listEntries(room.id);
+      const notices = stored.filter((entry) => entry.body.notice === 'halted');
+      expect(notices, 'a per-agent stop wrote more than one notice').toHaveLength(1);
+      expect(notices[0].body.subjectAuthorId, 'the notice named the wrong agent').toBe(firstSeat);
+    } finally {
+      await request.post(`/api/rooms/${room.id}/halt`).catch(() => {});
+      await request.post('/api/test/finish-turn').catch(() => {});
+      await useScenario(request, 'simple-text').catch(() => {});
+    }
+  });
+
   test('a message whose text is "stop" is answered like any other message', async ({
     page,
     basePage,

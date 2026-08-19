@@ -984,6 +984,14 @@ This is the one server addition in P2, and it is named as such in §8.
 
 #### 5.3.4 Stop — honest, and why it is the room-wide halt
 
+> **Superseded (2026-08-19, DOR-1352).** The follow-up this section filed is
+> `specs/room-per-agent-stop`, and it is built: `POST /api/rooms/:id/halt/:authorId` and
+> `RoomTriggerDispatcher.haltAgent` are the room-wide halt scoped to one `(room, agent)` key, so
+> **every** row of the peek now has a Stop and the table below no longer describes the product.
+> The reasoning is left standing rather than rewritten, because it is the record of why this
+> phase shipped what it did — and of the three costs the follow-up had to pay (ADR
+> `260819-023317`).
+
 The mockup draws a per-row **Stop**. A per-agent stop cannot be built honestly in this phase, for a measured reason:
 
 - Calling `POST /api/sessions/:id/interrupt` (`routes/sessions.ts:943`) directly would bypass the room's halt bookkeeping. `RoomTriggerDispatcher.halt` (`room-trigger.ts:2386`) marks `haltedTurns` **before its first `await`** precisely because _"a turn whose stream closes while this method is still delivering interrupts must find the mark already there, or it posts the answer Stop was pressed to prevent — the two-second race measured on 2026-08-15."_ An interrupt that skipped the mark would re-open that race.

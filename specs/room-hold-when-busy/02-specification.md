@@ -477,6 +477,15 @@ would be stopping. The row-level `Stop` and the footer `Stop everything in this 
 as they are and count **working** rows only — a held agent is not working here, so it is not
 something this room can stop.
 
+> **Amended (2026-08-19) by `specs/room-per-agent-stop` (DOR-1352), which shipped first.** The
+> last sentence above no longer holds: the row `Stop` is now `haltAgent`, scoped to one
+> `(room, agent)` key, so pressing it on a held row stops nothing anybody else is doing. A held
+> row therefore gets the same Stop as a working one, and it means what it says — this room stops
+> waiting for that agent, its collection is dropped, and the room writes the `unstarted` line. The
+> refusal in the paragraph above is unchanged and still right: it does **not** touch the turn in
+> the other room, which stays one click away behind `Open where it's working`. What this spec adds
+> is `state: 'held'` rows and the hold record; the button on them already exists.
+
 #### 5.4 Where holds come from on the client
 
 One store, two readers. `use-room-presence.ts`:
