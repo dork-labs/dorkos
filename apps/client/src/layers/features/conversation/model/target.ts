@@ -86,7 +86,16 @@ export interface ConversationTarget {
   readonly id: string;
   /** Placeholder, already phrased for this surface ("Message #mio…"). */
   readonly placeholder: string;
-  /** False while the conversation cannot accept input (archived room, gone session). */
+  /**
+   * False while the conversation cannot accept input.
+   *
+   * Each surface's own answer, and both shipped ones have more than one: a room
+   * refuses while it is still loading, while it is archived, and while the
+   * viewer is not on its roster; a session refuses while it has no id yet, which
+   * is a conversation the cockpit has not finished resolving. (The spec's
+   * example was a "gone session", which the client has no notion of — a session
+   * whose turn ended is perfectly writable.)
+   */
   readonly canSend: boolean;
   /**
    * Why not, in a sentence a person can act on.

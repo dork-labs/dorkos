@@ -1,21 +1,25 @@
 // @vitest-environment jsdom
 /**
- * The one seam Ask DorkBot's two well-tested halves meet at.
+ * The composer empties when the words are genuinely on their way, and not one
+ * moment sooner.
  *
- * `useDorkBotSeed` builds the background and `useSessionSubmit` puts it on the
- * wire; each is covered on its own. What joins them is three lines in
- * `ChatPanel` — an effect that parks the provider's callback in a ref the submit
- * path reads — and that shim has no shape a unit test of either half can see.
- * Deleting it is silent: the composer is still empty, the URL is still stripped,
- * no error is raised, and the feature simply does nothing. So this file mounts
- * the REAL panel with the REAL session hook and asserts the background reaches
- * `postMessage`.
+ * This used to be structural: `useSessionSubmit.handleSubmit` hard-coded a
+ * `true` in the `clearInput` position of `executeSubmission`, so no caller
+ * could get it wrong. DOR-1354 made it a caller-supplied option — `ChatPanel` passes
+ * `{ clearInput: true }` into the session's `ConversationTarget.send` — which
+ * moved the guarantee out of the function and into one line of wiring that
+ * nothing was watching. Dropping that line left every one of the repo's 954
+ * client test files green while the box stopped emptying on every send.
  *
- * The panel is mounted with the composer container stubbed down to a submit
- * button. Everything under test — the seed hook, the shim, `useChatSession`,
- * `useSessionSubmit`, the transport call — is the real thing; only the surface
- * a finger would touch is replaced, because "typing into the composer" is
- * already `SessionComposer`'s own suite's job.
+ * So both halves are pinned here, at the seam that owns them, with the REAL
+ * submit path underneath: the clear happens on a confirmed send, and it does
+ * NOT happen when the attachment transform throws (DOR-480 — the words are the
+ * only copy, and an upload that failed must leave them where they were typed).
+ *
+ * The panel is mounted with the composer stubbed down to a textarea and a send
+ * button that calls `target.send` — the same port Enter reaches in the real
+ * composer. Everything under it is real: `useChatSession`, `useSessionSubmit`,
+ * `executeSubmission`, the chat store the draft lives in.
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -25,8 +29,6 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 
 // The durable stream: attach/connect must never open a real fetch in jsdom.
-// Nothing is waiting on anybody. The lane reads the fleet-wide list now, and a
-// bare render has no global stream behind it.
 vi.mock('@/layers/entities/attention', () => ({
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
 }));
@@ -56,23 +58,14 @@ vi.mock('@tanstack/react-router', () => ({
   useLocation: () => ({ pathname: '/session' }),
 }));
 
-// The roster the seed reads its fleet size from.
-vi.mock('@/layers/entities/mesh/model/use-mesh-agent-paths', () => ({
-  useMeshAgentPaths: () => ({
-    data: { agents: [{ id: 'a1', name: 'dorkbot', projectPath: '/dorkbot' }] },
-  }),
-}));
 vi.mock('@/layers/entities/config/model/use-config', () => ({
   useConfig: () => ({ data: { version: '0.58.0', latestVersion: null } }),
 }));
 
-// The panel's neighbours. None of them is the subject; each would otherwise drag
-// in a provider stack of its own.
+// The panel's neighbours. None of them is the subject; each would otherwise
+// drag in a provider stack of its own.
 vi.mock('@/layers/entities/command/model/use-commands', () => ({
   useCommands: () => ({ data: { commands: [] } }),
-}));
-vi.mock('../ui/SessionTranscript', () => ({
-  SessionTranscript: vi.fn(() => <div data-testid="message-list" />),
 }));
 vi.mock('../ui/SessionTranscript', () => ({
   SessionTranscript: () => <div data-testid="chat-message-area" />,
@@ -90,10 +83,7 @@ vi.mock('@/layers/features/chat/ui/status', () => ({
   ChatStatusSection: () => null,
 }));
 
-// The composer, reduced to the two things this test needs: a way to put text in
-// and a way to send it. The send reads the conversation's own target and calls
-// `send` on it — the same port Enter reaches in the real composer — so the send
-// path under test is untouched (DOR-1354).
+// The composer, reduced to a box and a send that goes through the port.
 vi.mock('../ui/SessionComposer', async () => {
   const { useConversation } = await import('@/layers/features/conversation');
   return {
@@ -117,22 +107,32 @@ vi.mock('../ui/SessionComposer', async () => {
 
 import { ChatPanel } from '../ui/ChatPanel';
 import { TransportProvider } from '@/layers/shared/model';
-import { setAskDorkBotOrigin, takeAskDorkBotOrigin } from '@/layers/shared/lib';
 import {
   useSessionChatStore,
   useSessionListStore,
   useSessionStreamStore,
   resetSessionStreamBinding,
 } from '@/layers/entities/session';
-import { __resetDorkBotSeedsForTest } from '@/layers/features/chat/model/launch/use-dorkbot-seed';
-import { __resetLaunchPromptsForTest } from '@/layers/features/chat/model/launch/use-launch-prompt';
 
-function renderPanel(transport: Transport, launchSeed?: string) {
+const SESSION_ID = 's1';
+
+/** The draft this session is holding right now, straight out of the store. */
+function draft(): string {
+  return useSessionChatStore.getState().getSession(SESSION_ID).input;
+}
+
+function renderPanel(
+  transport: Transport,
+  transformContent?: (content: string) => Promise<string>
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <ChatPanel sessionId="s1" launchSeed={launchSeed} onLaunchConsumed={vi.fn()} />
+        <ChatPanel
+          sessionId={SESSION_ID}
+          {...(transformContent === undefined ? {} : { transformContent })}
+        />
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -141,9 +141,6 @@ function renderPanel(transport: Transport, launchSeed?: string) {
 /** Type something and press the panel's own submit. */
 async function send(text: string) {
   const composer = screen.getByTestId('composer') as HTMLTextAreaElement;
-  act(() => {
-    composer.dispatchEvent(new Event('input', { bubbles: true }));
-  });
   const setter = Object.getOwnPropertyDescriptor(
     window.HTMLTextAreaElement.prototype,
     'value'
@@ -152,9 +149,7 @@ async function send(text: string) {
     setter.call(composer, text);
     composer.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await waitFor(() =>
-    expect((screen.getByTestId('composer') as HTMLTextAreaElement).value).toBe(text)
-  );
+  await waitFor(() => expect(draft()).toBe(text));
   await act(async () => {
     screen.getByTestId('send').click();
   });
@@ -162,9 +157,6 @@ async function send(text: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  __resetDorkBotSeedsForTest();
-  __resetLaunchPromptsForTest();
-  takeAskDorkBotOrigin();
   useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
   useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
   useSessionListStore.setState({
@@ -185,36 +177,39 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe('ChatPanel — the Ask DorkBot seam', () => {
-  it('puts the background on the first turn when the panel was launched with the seed', async () => {
+describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
+  it('empties the composer once the trigger has been accepted', async () => {
+    // **Seeded defect:** drop `{ clearInput: true }` from `sendMessage` in
+    // `ChatPanel` and this is the only assertion in the client suite that goes
+    // red. That is the entire reason this file exists.
     const postMessage = vi
       .fn()
       .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    setAskDorkBotOrigin('/marketplace');
-
-    renderPanel(createMockTransport({ postMessage }), 'dorkbot-help');
-    await send('why is my agent stuck?');
-
-    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
-    const options = postMessage.mock.calls[0][3] as { seedContext?: string };
-    expect(options.seedContext).toBeDefined();
-    // The facts the mocks above establish — so this fails if the shim is wired
-    // but the builder is fed nothing.
-    expect(options.seedContext).toContain('/marketplace');
-    expect(options.seedContext).toContain('1 agent registered');
-    expect(options.seedContext).toContain('v0.58.0');
-  });
-
-  it('sends nothing extra when the panel was launched without it', async () => {
-    const postMessage = vi
-      .fn()
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    setAskDorkBotOrigin('/marketplace');
 
     renderPanel(createMockTransport({ postMessage }));
-    await send('an ordinary question');
+    await send('ship it');
 
     await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
-    expect(postMessage.mock.calls[0][3]).not.toHaveProperty('seedContext');
+    expect(postMessage.mock.calls[0][1]).toBe('ship it');
+    await waitFor(() => expect(draft()).toBe(''));
+  });
+
+  it('leaves the words in the box when the attachment transform throws', async () => {
+    // DOR-480, restated at the new seam: the clear runs INSIDE the submit,
+    // after the transform succeeds. Hoisting it up to the caller — clearing
+    // beside `target.send` rather than passing the option — would empty the box
+    // on a failed upload with nothing anywhere holding the sentence.
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transformContent = vi.fn().mockRejectedValue(new Error('The attachment did not upload.'));
+
+    renderPanel(createMockTransport({ postMessage }), transformContent);
+    await send('look at this file');
+
+    await waitFor(() => expect(transformContent).toHaveBeenCalledTimes(1));
+    // Nothing was sent, and the sentence is still exactly where it was typed.
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(draft()).toBe('look at this file');
   });
 });
