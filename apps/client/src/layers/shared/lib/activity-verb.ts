@@ -11,11 +11,15 @@
  * which is why an idle session gets `null` rather than a stale phrase.
  *
  * **This is the only place in the client that turns a session's state into
- * words.** The sidebar reaches it through `SessionVerbLine`, the chat status
- * strip calls it directly, and `formatActivityLabel` — the tool-naming rung
- * underneath — is not called anywhere else outside this module. A test reads
- * the sources and fails if a second caller appears, because the failure mode
- * here is not a crash: it is two surfaces quietly describing one turn two ways.
+ * words.** The sidebar reaches it through `SessionVerbLine` and the chat status
+ * strip calls it directly. `tool-labels.ts` — the tool-naming rung underneath —
+ * is reachable from here and from nowhere else: `formatActivityLabel` (the
+ * session's finished sentence) is not called outside this module at all, and
+ * `activityClause` travels outward through the barrel because a room needs the
+ * same reading in a different grammar (DOR-1351). A test reads the sources and
+ * fails if either name is taken straight off `tool-labels`, because the failure
+ * mode here is not a crash: it is two surfaces quietly describing one turn two
+ * ways.
  *
  * @module shared/lib/activity-verb
  */

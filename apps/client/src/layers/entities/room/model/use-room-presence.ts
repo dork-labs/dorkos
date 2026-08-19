@@ -25,10 +25,12 @@
  *
  * **What a frame carries beyond the lifecycle is bounded on the server side.**
  * A publish also says what the turn is doing, and the dispatcher throttles a new
- * reading to one every two seconds per claim — so the three hooks below that do
- * NOT draw a verb (`useRoomPresenceAuthorIds`, `useRoomPresenceEverywhere`,
- * `useRoomWorking`) re-run their memos at most that often while an agent works,
- * and none of them re-renders on a clock.
+ * reading to one every two seconds per claim — so the hooks below that do NOT
+ * draw a verb ({@link useRoomPresenceAuthorIds},
+ * {@link useRoomPresenceEverywhere}) re-run their memos at most that often while
+ * an agent works, and neither re-renders on a clock. `useRoomWorking` pays
+ * nothing at all: it reads the global stream's bare per-room count out of its
+ * own store, which this field never reaches.
  *
  * @module entities/room/model/use-room-presence
  */
