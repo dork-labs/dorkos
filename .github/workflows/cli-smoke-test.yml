@@ -78,8 +78,31 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      # apt hung for a full 10 minutes on four runs on 2026-08-19 while the
+      # Ubuntu mirrors were unreachable (DOR-1363). A short deadline plus one
+      # retry turns that into a fast, named failure instead of a job that sits
+      # on a stalled mirror. ubuntu-latest already ships python3 and
+      # build-essential, so on a healthy runner this is a no-op either way.
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y python3 build-essential
+        timeout-minutes: 6
+        run: |
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-ci-acquire-timeouts >/dev/null
+          # The image's mirror list puts azure.archive.ubuntu.com first. When it
+          # is down apt spends its whole budget retrying it before falling back,
+          # even with the timeouts above (measured: 6 min, still hanging). Probe
+          # it once; if it does not answer in 5 s, drop it from the list for
+          # this job and let apt go straight to archive.ubuntu.com.
+          if [ -f /etc/apt/apt-mirrors.txt ] && ! curl -sf -m 5 -o /dev/null http://azure.archive.ubuntu.com/ubuntu/; then
+            echo "azure.archive.ubuntu.com is not answering; using the upstream mirrors for this job" >&2
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+          fi
+          for attempt in 1 2; do
+            if sudo apt-get update && sudo apt-get install -y python3 build-essential; then exit 0; fi
+            echo "apt attempt $attempt failed; retrying once" >&2
+            sleep 15
+          done
+          exit 1
 
       - uses: actions/download-artifact@v4
         with:
