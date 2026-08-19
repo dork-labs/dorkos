@@ -4,6 +4,9 @@ covers:
   - 'feat(server): the global stream knows who each connection is, and a broadcast can be addressed (DOR-1356)'
   - 'feat(server): the fleet-wide Ask list and its live stream answer only whoever may act on it (DOR-1356)'
   - 'feat(server,relay): an allowlisted approver gets a real Approve and Deny on a bridged chat, and everybody else gets one plain sentence (DOR-1356)'
+  - "test(server): the bridged approval gate refuses everyone the room's allowlist does not name (DOR-1356)"
+  - 'docs(server): say who may see an Ask and who may answer one, and regenerate the API reference (DOR-1356)'
+  - 'refactor(server): narrow a bridged Ask to its approval kind once, and keep the card module plain text (DOR-1356)'
 ---
 
 ### Added
