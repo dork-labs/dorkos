@@ -768,7 +768,7 @@ In Linear-ready form — one bullet each, owner named where the record above alr
 - **Approvals tier C: park-instead-of-deny for the ten-minute timeout.** The single most valuable follow-on named in the spec's "What is not done" #1. Owner: whoever picks up `design-decisions.md` §2.
 - **The per-author room halt (spec §5.3.4).** The peek's Stop is single-agent-or-everyone today because a per-author halt needs its own notice copy and a scoped gather-buffer drop without re-opening the 2026-08-15 interrupt race. Owner: a future room-lane phase.
 - **`render-session-body.tsx` stays a feature export because `features/onboarding` renders `SessionMessage` for its scripted narration.** Frees only if onboarding is changed to compose `Message.*` directly (Known Issue 29). Owner: whoever next touches onboarding's narration renderer.
-- **A session's `ConversationTarget.send`/`.queue` are not the session's live send path** (Known Issue 28) — `SessionComposer`'s own `handleSubmit` and `useChatQueue` are what a session actually routes through; the target's two methods are real but unused by the shipped surface. Owner: whoever moves that funnel down into the target.
+- ~~**A session's `ConversationTarget.send`/`.queue` are not the session's live send path** (Known Issue 28) — `SessionComposer`'s own `handleSubmit` and `useChatQueue` are what a session actually routes through; the target's two methods are real but unused by the shipped surface. Owner: whoever moves that funnel down into the target.~~ **Resolved 2026-08-18 (DOR-1354)** — see the note below.
 - **Three files still exceed the 500-line guideline** — `ChatPanel.tsx` (571), `ChannelComposer.tsx` (527), `SessionComposer.tsx` (503) — each for a stated reason (Known Issue 27). Revisit when one of them next grows, not before.
 - **`resolvedBy` is never populated on a receipt.** Unreachable on a single-identity install; every cross-window receipt reads "Already answered at 2:01" rather than naming who. Wiring it belongs with the bridged-approver work (P3 Known Issue 22).
 - **No multi-person Ask entitlement filter.** The list route and the global fan-out both answer this cockpit's one operator; if DorkOS ever has more than one person, both need a per-caller filter, which is a change to `eventFanOut`'s addressing model (P3 Known Issue 23).
@@ -780,3 +780,48 @@ In Linear-ready form — one bullet each, owner named where the record above alr
 - **The timeline's prop is `renderRow`, not the spec's `renderBody`** (P4 Known Issue 20). The spec's shape would need `SessionMessage` and `RoomMessage`'s surface knowledge lifted into props, undoing P1's own seam. Owner: whoever revisits `ConversationBodyRenderer`, if anybody does — otherwise the spec is what is wrong, not the code.
 - **`ConversationTarget` has no mention port** (P4 Known Issue 21), so `capabilities.mentions` is the only fact about the `@` picker in the neutral tree and the picker itself rides the host's slot. The consequence to watch is a third surface wanting mentions and finding nothing shared to reuse. Owner: whoever adds that surface.
 - **No unit test can see a virtualization bug** (P4 Known Issue 23): `@tanstack/react-virtual` is mocked globally in `test-setup.ts`, without which the room and chat suites could assert nothing. The nets that do see them are named in the issue, both in `apps/e2e`. Owner: a testing-infrastructure pass, not a feature phase — and not worth opening until a virtualization regression actually escapes.
+
+## Post-programme follow-ups
+
+Items from the list above, once somebody has actually done them. Dated, so the record says
+when the shape changed rather than only that it did.
+
+### Known Issue 28 — resolved (2026-08-18, DOR-1354)
+
+**A session's Enter now ends in `ConversationTarget.send`, and Enter mid-turn in `.queue`.** The
+port declared two send methods and only the room half used them; the session composed through a
+`handleSubmit` prop and an `enqueueContent` prop passed down from `ChatPanel`, so both methods
+were real, covered and unreachable — the exact shape where "the composer sends through the
+target" was true of one surface and false of the other.
+
+What moved, and what deliberately did not:
+
+- **`SessionComposer.submitAndDismiss` calls `target.send({ text })`.** The `handleSubmit` prop
+  is gone. `ChatPanel` hands the target a `sendMessage` seam instead
+  (`submitContent(content, { clearInput: true })`).
+- **`useChatQueue`'s `onEnqueue` is `target.queue`**, wired in `SessionComposer` as `holdForTurn`
+  — which turns the port's rejection back into the boolean the funnel is built on, because the
+  composer holds the words until the server confirms it has them (DOR-480).
+- **`useChatQueue` itself stayed in `features/chat`, and that is the point rather than a
+  shortcut.** It is the session's own funnel — native-command intercept, duplicate-press latch,
+  keystroke record, clear-on-confirmed, and every queue-editing verb the panel needs — and it
+  plays exactly the role `ChannelComposer.handleSubmit` plays for a room, which also does work
+  before reaching `target.send`. The port is where a surface's funnel ENDS, not the whole of it.
+  Pulling the funnel into `session-target.ts` would have moved queue editing into a model file
+  that has no business with it and left a second copy of `deliver` for steer and stage.
+- **Steer and Add context stay props.** The port has two verbs because those are the two every
+  surface could have; steering is one runtime's capability on one surface.
+- **`canSend` became a real answer.** There is no "gone session" notion anywhere in the client —
+  the spec's own example was aspirational — so the case it now covers is the one that genuinely
+  exists and is genuinely reachable: `sessionId === ''`. The Obsidian embed seeds no session id
+  until a conversation is opened, and `deliverWithDisposition` returns `false` without asking
+  while `executeSubmission` has no session to address. The box says "Still opening this
+  conversation…", the same sentence the room target uses for its own still-loading case.
+- **`useSessionSubmit.handleSubmit` folded into `submitContent`**, which now takes
+  `{ clearInput }`. `handleSubmit` survives as the zero-argument form `useLaunchPrompt` sends
+  through, so the `?prompt=&send=1` link still takes the composer's own path and no other.
+
+The net is one new cross-surface test rather than one more per surface:
+`test-helpers/__tests__/composer-target-contract.test.tsx` mounts each host composer over a spy
+target and presses Enter. It lives beside the two benches because no widget may import another
+and the case is about the pair.
