@@ -41,6 +41,7 @@ import {
 import {
   authorsById,
   entryRowId,
+  answeredReference,
   groupByThread,
   threadRowId,
   toMessageAuthor,
@@ -159,7 +160,15 @@ export function RoomHistorySkeleton({ roomName }: { roomName?: string }) {
 type RoomFlowRow =
   | { kind: 'day-divider'; id: string; label: string }
   | { kind: 'unread-divider'; id: string }
-  | { kind: 'message'; id: string; entry: RoomEntry; grouping: MessageGrouping; position: number }
+  | {
+      kind: 'message';
+      id: string;
+      entry: RoomEntry;
+      grouping: MessageGrouping;
+      position: number;
+      /** What this post answers, when it is not the row directly above it. */
+      answers: { entryId: string; excerpt: string } | null;
+    }
   | { kind: 'thread-reply'; id: string; rootId: string; replies: RoomEntry[] };
 
 /**
@@ -212,6 +221,9 @@ export function RoomFlow({
   // fact this component can simply ask for.
   const pending = usePendingPosts(roomId, null);
   const { topLevel, repliesByRoot, orphaned } = useMemo(() => groupByThread(entries), [entries]);
+  // Every loaded entry by id, so resolving what a post answers is one lookup
+  // rather than a scan per row.
+  const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
 
   const flowRows = useMemo<RoomFlowRow[]>(() => {
     const unread = unreadPlacement(topLevel, lastReadSeq);
@@ -246,6 +258,10 @@ export function RoomFlow({
         entry,
         grouping: row.grouping,
         position: row.index + 1,
+        // Against the room's OWN flow, which is what the reader sees: the entry
+        // directly above this one here, not the previous entry in the log. A
+        // thread reply sits in the panel, so it is not what is above anything.
+        answers: answeredReference(entry, topLevel[row.index - 1], byId.get.bind(byId)),
       });
       const replies = repliesByRoot.get(entry.id);
       if (replies) {
@@ -258,7 +274,7 @@ export function RoomFlow({
       }
     }
     return built;
-  }, [topLevel, repliesByRoot, lastReadSeq, now]);
+  }, [topLevel, repliesByRoot, byId, lastReadSeq, now]);
 
   const rows = useMemo<ConversationRow[]>(
     () =>
@@ -321,6 +337,7 @@ export function RoomFlow({
           isMember={isMember}
           grouping={row.grouping}
           orphanedReply={orphaned.has(row.entry.id)}
+          answers={row.answers}
           // Where the row sits, counted over the room's own flow — a thread's
           // replies live in the panel, so numbering them here would promise a
           // reader articles they will never reach with Page Down.
