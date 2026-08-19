@@ -1,5 +1,5 @@
 import { getEventListeners } from 'node:events';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
   SessionStateProjector,
   CAPABILITY_HOLD_PAUSE_GRACE_MS,
@@ -1880,8 +1880,19 @@ describe('onProjectorInteractionChange (the Ask, fleet-wide)', () => {
     unsubs.push(onProjectorInteractionChange(fn));
   };
 
+  // A frozen clock, like the blocks above: `remainingMs` on the announced DTO is
+  // the budget minus the time since `startedAt`, so on real timers any
+  // millisecond a busy runner spends between raising the prompt and reading
+  // the change turns `TIMEOUT_MS` into `TIMEOUT_MS - 1` and reddens the exact
+  // match below (seen on CI for #1116, green alone every time).
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(3_000_000);
+  });
+
   afterEach(() => {
     while (unsubs.length) unsubs.pop()?.();
+    vi.useRealTimers();
   });
 
   /** One permission prompt, as a runtime emits it. */
