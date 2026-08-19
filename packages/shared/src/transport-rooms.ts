@@ -182,6 +182,24 @@ export interface RoomTransport {
    */
   haltRoom(id: string): Promise<HaltRoomResponse>;
   /**
+   * Stop ONE agent's turn in this room, and leave the others working.
+   *
+   * The same verb as {@link RoomTransport.haltRoom} with a scope, not a
+   * different one: it interrupts that agent's turn here, throws away the answer
+   * if the turn streams one anyway, drops the messages it had not read yet in
+   * this room, and writes one `halted` notice naming who stopped whom. Every
+   * other agent in the room carries on.
+   *
+   * A separate call rather than an optional field on the room-wide stop,
+   * because an omitted target would stop everything.
+   *
+   * @param id - The room the agent is working in.
+   * @param authorId - The agent to stop.
+   * @returns `1` when a turn was interrupted, `0` when that agent was not
+   *   running one here. `0` is a success.
+   */
+  haltRoomAgent(id: string, authorId: string): Promise<HaltRoomResponse>;
+  /**
    * Ask for this room's waiting message to be answered before the other rooms
    * waiting on the same agent.
    *

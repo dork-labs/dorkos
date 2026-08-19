@@ -24,6 +24,7 @@ import type { MaildirStore } from './maildir-store.js';
 import type { DeadLetterQueue } from './dead-letter-queue.js';
 import type { AdapterRegistryLike, AdapterContext, DeliveryResult } from './types.js';
 import type { ChatNoticeSender } from './chat-notice.js';
+import { requiresInitiateConsent } from './lib/consent-scope.js';
 
 import type { Logger } from '@dorkos/shared/logger';
 
@@ -39,6 +40,13 @@ const AGENT_SUBJECT_PREFIX = 'relay.agent.';
  * deliberately broad, because getting it wrong only picks the more general of
  * two true sentences.
  *
+ * `agent_busy` is now the END of a wait, not the start of one: the built-in
+ * runtime holds a message rather than refusing it, so this is reached only when
+ * the hold ran out of time or room, when the message was never eligible to
+ * wait, or when an adapter that cannot hold reports capacity. Its line may name
+ * a resend, because by then the machine has genuinely tried — the wait itself
+ * is `agent_held`, and that one asks for nothing.
+ *
  * @param reason - The failure text.
  * @param code - The adapter's machine code, when it gave one.
  */
@@ -50,6 +58,41 @@ function classifyChatFailure(
   return /\b(at capacity|capacity|too busy|queue full|concurren\w+ limit)\b/i.test(reason)
     ? 'agent_busy'
     : 'delivery_failed';
+}
+
+/**
+ * Whether this delivery may be held for a busy runtime, rather than refused.
+ *
+ * **Only a message a person is waiting on in a bridged chat**, and the tempting
+ * wrong rule here is "anything detached". `relay_send_and_wait` and the A2A
+ * executor also publish to `relay.agent.*` — the pipeline detaches them all —
+ * but each then BLOCKS on a reply inbox with its own, much shorter deadline
+ * (60 s and 120 s, against a hold that can last five minutes). Holding one of
+ * those does not delay a reply, it destroys it: the caller times out saying
+ * "timed out" where the truth was capacity, tears down its inbox, and the turn
+ * still runs minutes later into a reply nobody is reading. A retry then runs
+ * the same turn twice. A fast refusal is the kind answer for a caller that can
+ * act on one.
+ *
+ * The predicate is {@link requiresInitiateConsent}, which is exactly "a bound
+ * external human chat" — the same test {@link ChatNoticeSender} applies before
+ * it will say anything. So the licence to hold and the ability to explain the
+ * hold are one decision, and a message can never be parked in a place where
+ * nobody could be told about it.
+ *
+ * **Known gap, deliberately not closed here.** The binding's paused /
+ * receive-denied state is checked by `BindingRouter` BEFORE this publish, and
+ * nothing re-asks across the park. A chat paused while its message waits still
+ * gets that turn when the slot frees. The hold is bounded in minutes and the
+ * message was already accepted when the binding said yes, so this is the same
+ * window an in-flight turn has always had; closing it means giving this module
+ * a binding store it has deliberately never had (`chat-notice.ts` resolves
+ * through an injected resolver for exactly that reason).
+ *
+ * @param envelope - The envelope being delivered; its `replyTo` is the reader.
+ */
+function mayHold(envelope: RelayEnvelope): boolean {
+  return envelope.replyTo !== undefined && requiresInitiateConsent(envelope.replyTo);
 }
 
 /**
@@ -179,8 +222,10 @@ export class AdapterDelivery {
    *
    * The returned result marks the message as accepted so publish() counts the
    * adapter as a delivery target. If the background turn ultimately fails
-   * (adapter error, capacity rejection, thrown exception), the envelope is
-   * dead-lettered for forensics; on success the audit row is indexed.
+   * (adapter error, thrown exception, or a wait for capacity that ran out), the
+   * envelope is dead-lettered for forensics; on success the audit row is
+   * indexed. A turn that is merely WAITING for a free slot is neither — it says
+   * so through {@link AdapterContext.onHeld} and then runs.
    */
   private deliverDetached(
     subject: string,
@@ -189,8 +234,18 @@ export class AdapterDelivery {
   ): DeliveryResult {
     const startTime = Date.now();
 
+    // The adapter may park this delivery to wait for a free slot, but ONLY when
+    // a person in a bridged chat is the one waiting — see `mayHold`. Adding the
+    // callback here rather than in the context builder keeps it off the awaited
+    // path, which never reaches this method at all.
+    // Passed through untouched when this message may not be held, so a delivery
+    // that cannot wait is handed exactly what it was handed before.
+    const heldContext: AdapterContext | undefined = mayHold(envelope)
+      ? { ...context, onHeld: () => void this.noticeHeld(subject, envelope) }
+      : context;
+
     void this.deps
-      .adapterRegistry!.deliver(subject, envelope, context)
+      .adapterRegistry!.deliver(subject, envelope, heldContext)
       .then(async (result) => {
         if (result === null) {
           // Acceptance was already reported, so a no-match here (registry
@@ -257,6 +312,29 @@ export class AdapterDelivery {
       };
     } finally {
       if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Tell the chat that its message is waiting for a busy agent, not lost.
+   *
+   * The one notice here that is not about a failure. It is fired from inside
+   * the adapter's wait, so it must swallow everything: a notice that threw
+   * would reject a timer callback with nobody to catch it, and the delivery it
+   * is about is still perfectly alive.
+   *
+   * The subject is the failed envelope's `replyTo`, which on `relay_send` the
+   * model writes — the notifier resolves it through the binding store and says
+   * nothing for a chat nothing is bound to, exactly as on the failure path.
+   */
+  private async noticeHeld(subject: string, envelope: RelayEnvelope): Promise<void> {
+    if (!envelope.replyTo || !this.chatFailureNotifier) return;
+    this.logger.warn(`RelayCore: ${subject} is waiting for a free slot on a busy adapter`);
+    try {
+      await this.chatFailureNotifier(envelope.replyTo, 'agent_held');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`RelayCore: failed to tell a chat its message is waiting: ${message}`);
     }
   }
 

@@ -564,6 +564,44 @@ export class RoomService {
   }
 
   /**
+   * Stop one agent in a room, leaving the others working.
+   *
+   * The same three refusals as {@link RoomService.haltRoom}, plus one it cannot
+   * have: the target has to be an agent on this room's roster. Answering
+   * `0` for a name that is not there would hide a client bug behind a success,
+   * and nothing leaks by saying so — `requireVisibleRoom` has already
+   * established that this caller can see the room and its roster.
+   *
+   * A person on the roster is refused by the same code, and the sentence is
+   * literally true: there is no agent by that id here. A second code that no
+   * client would treat differently is a second thing to keep true.
+   *
+   * Order is load-bearing and matches every other verb here: **room first, then
+   * caller, then target.** A caller who cannot see the room gets
+   * `ROOM_NOT_FOUND` whether or not the agent exists, so a room id is never a
+   * way to enumerate a roster.
+   *
+   * Archived rooms are allowed, exactly as they are for the room-wide halt.
+   *
+   * @param roomId - The room.
+   * @param authorId - The agent to stop.
+   * @param viewerAuthorId - Who is stopping it.
+   * @returns `1` when a turn was interrupted, `0` when the agent was not running
+   *   one here. `0` is a success.
+   */
+  async haltAgent(roomId: string, authorId: string, viewerAuthorId: string): Promise<number> {
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+    this.requirePersonAuthor(viewerAuthorId, 'stop an agent');
+    if (
+      this.store.getMember(roomId, authorId) === null ||
+      this.authors.getById(authorId)?.kind === 'human'
+    ) {
+      throw new RoomError('MEMBER_NOT_FOUND', 'No such agent in this room.');
+    }
+    return this.triggers.haltAgent(room, authorId, viewerAuthorId);
+  }
+
+  /**
    * Ask for this room's waiting message to be answered before the other rooms
    * waiting on the same agent.
    *

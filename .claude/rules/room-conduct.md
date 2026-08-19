@@ -194,7 +194,23 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   a held batch, so the other order would answer, one macrotask later, the very
   messages the person pressed Stop over. The halt route
   (`POST /api/rooms/:id/halt`) and the header button reach the runtimes; nothing
-  pattern-matches a message for "stop", in this phase or any later one. An
+  pattern-matches a message for "stop", in this phase or any later one.
+  **It comes in two scopes and the scope is a path segment, never a body
+  field** (`specs/room-per-agent-stop`, ADR `260819-023317`).
+  `POST /api/rooms/:id/halt/:authorId` and the peek's per-row Stop are the same
+  verb narrowed to one `(room, agent)` key: `RoomTriggerDispatcher.haltAgent`
+  performs the same steps under the same constraints as `halt` — all three of
+  them about what is true BEFORE the claim is released, rather than one fixed
+  statement order, because a per-agent stop has to know what it dropped before it
+  can say what it found — and reads no other key, which is what makes "the
+  others keep working" a property of the code. Two rules are specific to it.
+  **A per-agent stop drops that agent's collection and nothing else, and it
+  still drops it before releasing the claim** — the room scope would throw away
+  what agents nobody stopped are waiting to answer. And
+  the target is a segment rather than an optional field because an optional
+  target fails OPEN: a client that forgot it would stop the whole room. Only a
+  person may call either one; an agent stopping ONE room-mate is the same
+  arbitration as stopping all of them. An
   operator typing "you are in a loop, stop" is a message a looping agent answers
   like any other (spec §10.4), which is exactly why the mechanism cannot live in
   the conversation. `room-stopped-turns.test.ts` pins the guard: a message whose
@@ -246,9 +262,14 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   a new code there, never a free-text line. `RoomNoticeCodeSchema` carries one
   more, `addressing_changed`, and it is deliberately not in that module:
   migration 0039 wrote it once, into every channel whose members it moved to
-  `engaged`, and nothing at runtime writes it. `halted` is damped per room and
-  re-armed by the next claim, so pressing Stop twice in a quiet room is one
-  line. Two silences are deliberate and pinned by tests: an agent that ran a
+  `engaged`, and nothing at runtime writes it. `halted` is written at two scopes
+  and damped on two keys — **per room** for the room-wide stop, per
+  `(room, agent)` for the per-agent one — each re-armed by the next claim there,
+  so pressing Stop twice in a quiet room is one line either way and the two
+  never damp each other. `subjectAuthorId` tells them apart on the wire: absent
+  means the room, present names one agent, so anything reading
+  `notice === 'halted'` as "the whole room stopped" is now wrong.
+  Two silences are deliberate and pinned by tests: an agent that ran a
   turn and chose to say nothing (conduct, not a fault), and the depth refusal
   against an agent's own un-provenanced post (nothing was triggered, and no
   damping key exists that would keep a notice from spraying).

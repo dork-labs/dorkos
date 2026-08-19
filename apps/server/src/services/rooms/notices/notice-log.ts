@@ -39,6 +39,7 @@ import {
 import type { AuthorRegistry } from '../author-registry.js';
 import {
   buildAgentGoneNotice,
+  buildAgentHaltedNotice,
   buildAgentUnavailableNotice,
   buildBudgetNotice,
   buildBusyNotice,
@@ -46,6 +47,7 @@ import {
   buildTurnFailedNotice,
   buildWaitingNotice,
   BUSY_CONTEXTS,
+  type AgentHaltOutcome,
   type BusyContext,
   type WaitingKind,
 } from './notice-copy.js';
@@ -224,13 +226,21 @@ export class RoomNoticeLog {
   private readonly noticedBudget = new Set<string>();
 
   /**
-   * Rooms that have already been told everything in them was stopped.
+   * What has already been told that work here was stopped, re-armed by the next
+   * claim — for the reason the budget memory is: a second Stop press where
+   * nothing has happened since the first is the same question asked twice, and
+   * two identical lines about it are the over-participation this whole module
+   * damps.
    *
-   * Keyed on the room and re-armed by the next claim, for the reason the budget
-   * memory is: a second Stop press in a room where nothing has happened since
-   * the first is the same question asked twice, and two identical lines about it
-   * are the over-participation this whole module damps. The moment an agent
-   * starts working there again, a halt is news again.
+   * **Two key shapes in one set, because there are two scopes of the same
+   * news.** A bare room id is the room-wide stop; a `(room, agent)` key
+   * ({@link agentNoticeKey}) is one agent stopped inside it. They never damp
+   * each other: a room-wide stop after a per-agent one is a bigger statement
+   * everybody needs, and a per-agent one after a room-wide one answers a
+   * question the person asked about one member. Collision is impossible — the
+   * pair key carries a separator no room id contains. Unbounded on purpose,
+   * unlike the traffic-driven sets: it is bounded by the install's rooms and
+   * their rosters, which is not something a busy room can grow.
    */
   private readonly noticedHalt = new Set<string>();
 
@@ -585,16 +595,71 @@ export class RoomNoticeLog {
   }
 
   /**
-   * An agent started working in this room, so a halt is worth reporting again.
+   * Say that somebody stopped one agent here.
+   *
+   * Damped on `(room, agent)` and re-armed by that agent's next claim, the same
+   * shape and the same reason as the room-wide key beside it: what makes a
+   * second line a repeat is that nothing happened in between. Two presses on Ana
+   * in a quiet room are one line. Ana and then Bo are two, because they are two
+   * different statements about two different members.
+   *
+   * The room key and the per-agent keys never damp each other. A room-wide stop
+   * after a per-agent one is a bigger statement that everybody in the room
+   * needs, and a per-agent one after a room-wide one answers a question the
+   * person asked about one member.
+   *
+   * Stamped as its own cascade, like the room-wide halt: a stop answers no
+   * message, so inheriting one's provenance would file it inside an exchange it
+   * had nothing to do with.
+   *
+   * @param room - The room.
+   * @param about - Who stopped whom, and what the stop found.
+   * @param about.byAuthorId - The person who pressed Stop.
+   * @param about.subjectAuthorId - The agent that was stopped.
+   * @param about.outcome - What the stop found.
+   */
+  reportAgentHalted(
+    room: Room,
+    about: { byAuthorId: string; subjectAuthorId: string; outcome: AgentHaltOutcome }
+  ): void {
+    const key = agentNoticeKey(room.id, about.subjectAuthorId);
+    if (this.noticedHalt.has(key)) return;
+    // Both rows exist: the caller passed `requirePersonAuthor` a moment ago, and
+    // the subject passed the roster check. The fallbacks cover a row deleted
+    // between those checks and this line, and say something true either way.
+    const personName = this.deps.authors.getById(about.byAuthorId)?.displayName ?? 'Somebody';
+    const agentName = this.deps.authors.getById(about.subjectAuthorId)?.displayName ?? 'An agent';
+    if (
+      this.write(
+        room.id,
+        buildAgentHaltedNotice(personName, agentName, about.subjectAuthorId, about.outcome),
+        about.subjectAuthorId,
+        { cascade: { root: room.id, depth: 0 } }
+      )
+    ) {
+      this.noticedHalt.add(key);
+    }
+  }
+
+  /**
+   * An agent started working in this room, so a stop is worth reporting again.
    *
    * Recovery IS the re-arm, exactly as it is for the budget: what makes a second
    * halt notice a repeat is that nothing has happened since the first one, and a
    * claim being taken is precisely something happening.
    *
+   * Clears BOTH keys: the room's, because a claim being taken is something
+   * happening in the room, and this agent's, because it is something happening
+   * to this agent. Another agent's claim re-arms the room line and leaves this
+   * agent's alone, which is the honest split — nothing has happened to Ana just
+   * because Bo started working.
+   *
    * @param roomId - The room a claim was just taken in.
+   * @param authorId - The agent that took it.
    */
-  workStarted(roomId: string): void {
+  workStarted(roomId: string, authorId: string): void {
     this.noticedHalt.delete(roomId);
+    this.noticedHalt.delete(agentNoticeKey(roomId, authorId));
   }
 
   /**

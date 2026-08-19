@@ -863,6 +863,10 @@ export const roomStubs = {
     throw new Error('Rooms are not supported in embedded mode');
   },
 
+  async haltRoomAgent(_id: string, _authorId: string): Promise<HaltRoomResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
   async promoteHold(_id: string, _authorId: string): Promise<PromoteHoldResponse> {
     throw new Error('Rooms are not supported in embedded mode');
   },
