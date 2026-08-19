@@ -145,10 +145,13 @@ export default defineConfig({
     //   and by the bridged Ask card's audience predicate, and the only thing
     //   between a chat button and a shell command on the operator's machine.
     //   Same family as `untrusted-text` and `session-stream`: a pure gate whose
-    //   source text is the subject. Measured on review: replacing the whole body
-    //   with `return true` in `src/` reddened 0 of 127 server tests without this
-    //   alias — every one of them read `dist/` — and 12 with it. The subpath is
-    //   a single self-contained module with no imports at all, which is why the
+    //   source text is the subject. Measured back to back in one session over
+    //   the same 804 tests (`services/session/asks` + `services/relay`), with
+    //   the whole body replaced by `return true` in `src/` and `dist/` left
+    //   stale: WITHOUT this alias all 804 passed — every one of them read the
+    //   dist — and WITH it 9 failed, across the policy, the bridged audience
+    //   predicate, the card and the server-side approval gate. The subpath is a
+    //   single self-contained module with no imports at all, which is why the
     //   alias costs nothing measurable.
     // - `@dorkos/marketplace/package-types` backs `install-roots`, which iterates
     //   `PackageTypeSchema.options` to prove no package type installs somewhere the
