@@ -167,7 +167,7 @@ describe('the portrait, in one fixed order', () => {
     expect(screen.getByRole('button', { name: 'Copy @handle' })).toBeInTheDocument();
     expect(screen.getByText(/Working in #team ·/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Managed by/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Message' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open session' })).toBeInTheDocument();
   });
 
   it('flags you, the system agent and the default one', async () => {
@@ -270,10 +270,21 @@ describe('who it belongs to', () => {
 });
 
 describe('the one button', () => {
+  // It reads "Open session", not "Message": what it does is land on `/session`
+  // with this agent's directory, and a person who reads "Message" is promised
+  // a DM instead (spec `sidebar-simplification` §D2). Re-seed the old word and
+  // every case in this block goes red on the query alone.
+  it('says what it does rather than promising a message', async () => {
+    await renderProfile(MANAGED);
+
+    expect(screen.getByRole('button', { name: 'Open session' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
+  });
+
   it('opens the agent’s own directory, and records the agent', async () => {
     await renderProfile(MANAGED);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Message' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open session' }));
 
     // It names a directory, not a session — which conversation opens is
     // resolved afterwards — so the agent is the only honest thing to record.
@@ -284,30 +295,30 @@ describe('the one button', () => {
 
   it('is gone on your own profile', async () => {
     await renderProfile(SELF);
-    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open session' })).toBeNull();
   });
 
   it('is gone when the profile is docked in that agent’s own session', async () => {
     // The composer is right there. A button that scrolls you to where you
     // already are is the panel arguing with itself.
     await renderProfile(MANAGED, { inOwnSession: true });
-    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open session' })).toBeNull();
   });
 
-  it('is gone when there is nowhere for a message to go', async () => {
-    // No DM route to a person exists, and none out over Telegram (§8). Never a
-    // dead button.
+  it('is gone when there is nowhere for a session to open', async () => {
+    // No session belongs to a person, and none to an identity that reaches us
+    // over Telegram (§8). Never a dead button.
     await renderProfile(PRIYA);
-    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open session' })).toBeNull();
     cleanup();
 
     await renderProfile(BRIDGED);
-    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open session' })).toBeNull();
     cleanup();
 
     // An agent whose folder the roster cannot place is one we cannot open.
     await renderProfile(UNPLACED);
-    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open session' })).toBeNull();
   });
 });
 

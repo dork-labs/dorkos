@@ -22,10 +22,14 @@ export interface RoomCommandItemProps {
  * **A channel and a direct message are named differently on purpose.** A
  * channel is a place, so its row reads as the name you would type — `#general`
  * — and `RoomTitle` keeps the spoken `#` out of the visible text so the row
- * does not read `# #general` beside the mark that already draws it. A DM is not
- * a place but an act, so its row reads **"Message Ana"**: typing `@ana` offers
- * both that and the agent herself, and the two are different things to do
- * (spec `rooms` §13.2).
+ * does not read `# #general` beside the mark that already draws it. A DM is a
+ * conversation that already exists, so its row reads **"Open conversation with
+ * Ana"**: typing `@ana` offers both that and the agent herself, and the two are
+ * different things to do (spec `rooms` §13.2).
+ *
+ * It used to read "Message Ana", which promised a blank message this row does
+ * not write — pressing it opens the existing conversation and shows you what is
+ * already in it (spec `sidebar-simplification` §D2).
  *
  * The badge reads `unreadCount` strictly. `null` means "you are not in this
  * room", which is not `0` ("you are in it and caught up") — so a room the
@@ -51,7 +55,7 @@ export function RoomCommandItem({ room, onSelect }: RoomCommandItemProps) {
     >
       <RoomAvatar room={room} participants={room.participants} className="shrink-0" />
       {room.kind === 'dm' ? (
-        <span className="min-w-0 flex-1 truncate text-sm">Message {room.title}</span>
+        <span className="min-w-0 flex-1 truncate text-sm">Open conversation with {room.title}</span>
       ) : (
         <RoomTitle room={room} className="min-w-0 flex-1 text-sm" />
       )}

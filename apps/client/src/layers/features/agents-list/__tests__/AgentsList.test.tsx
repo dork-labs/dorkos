@@ -550,12 +550,17 @@ describe('AgentsList', () => {
     expect(screen.getByText('No agents registered.')).toBeInTheDocument();
   });
 
-  it('renders Chat action button with correct aria-label for each agent', () => {
+  // The row action lands on `/session` with the agent's directory. "Chat with"
+  // named the other surface — a DM — so a person who wanted one and pressed
+  // this got the other (spec `sidebar-simplification` §D2). Re-seed the old
+  // word and the second assertion goes red.
+  it('names the session its row action opens, and never calls it a chat', () => {
     render(<AgentsList agents={[makeAgent({ id: '1', name: 'Alpha' })]} isLoading={false} />, {
       wrapper: createWrapper(),
     });
 
-    expect(screen.getByRole('button', { name: 'Chat with Alpha' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open session with Alpha' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Chat with/ })).not.toBeInTheDocument();
   });
 
   it('renders the View profile action button with correct aria-label for each agent', () => {
@@ -566,17 +571,17 @@ describe('AgentsList', () => {
     expect(screen.getByRole('button', { name: 'Open Alpha’s profile' })).toBeInTheDocument();
   });
 
-  it('renders Chat and View profile buttons for every agent row', () => {
+  it('renders Open session and View profile buttons for every agent row', () => {
     render(<AgentsList agents={multiNsAgents} isLoading={false} />, {
       wrapper: createWrapper(),
     });
 
     // Each of the 3 agents should have both action buttons
-    expect(screen.getByRole('button', { name: 'Chat with Agent A' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open session with Agent A' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open Agent A’s profile' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Chat with Agent B' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open session with Agent B' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open Agent B’s profile' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Chat with Agent C' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open session with Agent C' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open Agent C’s profile' })).toBeInTheDocument();
   });
 
@@ -595,14 +600,16 @@ describe('AgentsList', () => {
         { wrapper: createWrapper() }
       );
 
-      expect(screen.queryByRole('button', { name: 'Chat with Agent A' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Open session with Agent A' })
+      ).not.toBeInTheDocument();
       expect(screen.getByText(/This table lists agents/)).toBeInTheDocument();
     });
 
     it('leaves the fleet alone when no roster filter is driving it', () => {
       render(<AgentsList agents={multiNsAgents} isLoading={false} />, { wrapper: createWrapper() });
 
-      expect(screen.getByRole('button', { name: 'Chat with Agent A' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Open session with Agent A' })).toBeInTheDocument();
       expect(screen.queryByText(/This table lists agents/)).not.toBeInTheDocument();
     });
   });
