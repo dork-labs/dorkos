@@ -473,10 +473,13 @@ export class SessionListBroadcaster {
    *
    * `.parse` rather than `safeParse`: a malformed payload is a bug in this
    * module, and it should fail here — inside the listener's own throw
-   * isolation — rather than reaching a client. A resolution carries no
-   * `resolvedBy` on a single-identity install, because "you" is the only
-   * possible answer and inventing a name would be the denormalization this wire
-   * shape exists to avoid.
+   * isolation — rather than reaching a client.
+   *
+   * `resolvedBy` is relayed exactly as the projector announced it and is never
+   * filled in here. This module has no caller to name — the answer was taken by
+   * a route several layers up — so a name it invented would be a guess, and a
+   * receipt reading "Already answered at 2:01" is the honest thing to say when
+   * nobody upstream knew who.
    *
    * @param change - The transition a projector announced.
    */
@@ -501,6 +504,7 @@ export class SessionListBroadcaster {
         interactionId: change.interactionId,
         outcome: change.outcome,
         resolvedAt: new Date().toISOString(),
+        ...(change.resolvedBy ? { resolvedBy: change.resolvedBy } : {}),
       })
     );
   }

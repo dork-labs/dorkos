@@ -2221,6 +2221,9 @@
               },
               "reasonGiven": {
                 "type": "boolean"
+              },
+              "resolvedBy": {
+                "type": "string"
               }
             },
             "required": [
@@ -9704,6 +9707,9 @@
                         },
                         "reasonGiven": {
                           "type": "boolean"
+                        },
+                        "resolvedBy": {
+                          "type": "string"
                         }
                       },
                       "required": [

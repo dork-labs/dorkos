@@ -9,6 +9,7 @@ import type {
   RuntimeCapabilities,
   McpAppServerConnection,
   RuntimeSettingsCapability,
+  InteractionAnswerOptions,
   ToolDecisionOptions,
   DeliverIntoTurnOpts,
   RuntimeDeliveryResult,
@@ -327,7 +328,14 @@ export class FakeAgentRuntime implements AgentRuntime {
       ) => boolean
     >();
   submitAnswers = vi
-    .fn<(sessionId: string, toolCallId: string, answers: Record<string, string>) => boolean>()
+    .fn<
+      (
+        sessionId: string,
+        toolCallId: string,
+        answers: Record<string, string>,
+        options?: InteractionAnswerOptions
+      ) => boolean
+    >()
     .mockReturnValue(true);
   submitElicitation = vi
     .fn<
@@ -335,7 +343,8 @@ export class FakeAgentRuntime implements AgentRuntime {
         sessionId: string,
         interactionId: string,
         action: 'accept' | 'decline' | 'cancel',
-        content?: Record<string, unknown>
+        content?: Record<string, unknown>,
+        options?: InteractionAnswerOptions
       ) => boolean
     >()
     .mockReturnValue(true);

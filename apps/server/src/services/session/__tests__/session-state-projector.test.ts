@@ -1951,6 +1951,33 @@ describe('onProjectorInteractionChange (the Ask, fleet-wide)', () => {
     disposeProjector('ask-2');
   });
 
+  it('carries the name of whoever answered, when the caller gave one', () => {
+    // DOR-1355. The projector never resolves a name of its own — only the
+    // caller that took the answer knows it — so this is a pass-through, and the
+    // case above proves the field stays absent when nobody was named.
+    const projector = getOrCreateProjector('ask-named', '/work/alpha');
+    projector.ingest(approvalRequired('tc-named'));
+    const changes: InteractionChange[] = [];
+    listen((change) => changes.push(change));
+
+    projector.resolveInteraction('tc-named', 'approved', { answeredBy: 'Ada' });
+
+    expect(changes).toEqual([
+      {
+        type: 'resolved',
+        sessionId: 'ask-named',
+        interactionId: 'tc-named',
+        outcome: 'answered',
+        resolvedBy: 'Ada',
+      },
+    ]);
+    // And it is on the durable stream too, so a replay says the same thing.
+    expect(
+      projector.replayFrom(0).find((event) => event.type === 'interaction_resolved')
+    ).toMatchObject({ id: 'tc-named', resolvedBy: 'Ada' });
+    disposeProjector('ask-named');
+  });
+
   it('says EXPIRED when the clock answered, and CANCELLED when nobody was ever asked', () => {
     const projector = getOrCreateProjector('ask-3', '/work/alpha');
     projector.ingest(approvalRequired('tc-expired'));

@@ -332,6 +332,14 @@ export type InteractionChange =
       sessionId: string;
       interactionId: string;
       outcome: 'answered' | 'cancelled' | 'expired';
+      /**
+       * The name of the person who answered, when the caller that took the
+       * answer named one. Carried straight off the resolving event, so it is
+       * present exactly when a person answered AND this install knows what to
+       * call them — never on a cancellation or an expiry, which nobody
+       * answered.
+       */
+      resolvedBy?: string;
     };
 
 /** Notified when a projector starts or stops holding a pending interaction. */
@@ -925,6 +933,9 @@ export class SessionStateProjector {
               sessionId: this.sessionId,
               interactionId: event.id,
               outcome: askOutcomeOf(event.resolution),
+              // Only ever carried by an answer a person gave; the clock and a
+              // torn-down turn both arrive here with nothing to name.
+              ...(event.resolvedBy ? { resolvedBy: event.resolvedBy } : {}),
             });
           }
         }
@@ -1277,11 +1288,14 @@ export class SessionStateProjector {
    * @param opts.reasonGiven - Whether the person's own words were delivered to
    *   the agent with a denial. Only the caller that delivered them can say so,
    *   which is why this is passed in rather than derived here.
+   * @param opts.answeredBy - What to call the person who answered, for the
+   *   receipt every other window draws. Passed in for the same reason
+   *   `reasonGiven` is: only the caller that took the answer knows who gave it.
    */
   resolveInteraction(
     interactionId: string,
     resolution?: 'approved' | 'denied' | 'answered',
-    opts?: { reasonGiven?: boolean }
+    opts?: { reasonGiven?: boolean; answeredBy?: string }
   ): void {
     if (!this.interactions.has(interactionId)) return;
     // RawSessionEvent's Omit-on-union collapses to the common keys, so the
@@ -1296,6 +1310,9 @@ export class SessionStateProjector {
       // Carried only when true: an absent field is the honest shape for "no
       // reason", and it keeps every pre-existing resolution byte-identical.
       ...(opts?.reasonGiven === true ? { reasonGiven: true } : {}),
+      // Same rule for the answerer's name: absent unless the caller named one,
+      // so a resolution nobody can attribute stays unattributed on the wire.
+      ...(opts?.answeredBy ? { resolvedBy: opts.answeredBy } : {}),
     } as unknown as RawSessionEvent);
   }
 
