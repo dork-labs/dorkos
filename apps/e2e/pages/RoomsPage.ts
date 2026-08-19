@@ -747,6 +747,34 @@ export class RoomsPage {
     });
   }
 
+  /**
+   * The same message, read only once the room has stopped moving under it.
+   *
+   * The list measures each row as it draws it, so for a few frames after any
+   * jump its total height — and with it every row's position — is still
+   * changing, and a single read catches a row the room is about to leave. Two
+   * identical reads in a row is the settle. Use this, not
+   * {@link RoomsPage.topVisibleEntryText}, whenever the answer is being RECORDED
+   * to compare against later: a stale record is a test that fails for its own
+   * reasons (DOR-1364).
+   *
+   * @returns The text of the top visible message, once it holds still.
+   */
+  async settledTopVisibleEntryText(): Promise<string | null> {
+    let previous: string | null = null;
+    let read = false;
+    await expect
+      .poll(async () => {
+        const current = await this.topVisibleEntryText();
+        const settled = read && current === previous;
+        previous = current;
+        read = true;
+        return settled;
+      })
+      .toBe(true);
+    return previous;
+  }
+
   /** How far the room's history is scrolled, in pixels from the top. */
   async scrollTop(): Promise<number> {
     return this.scroller.evaluate((el) => el.scrollTop);
