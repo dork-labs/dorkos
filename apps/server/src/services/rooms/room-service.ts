@@ -132,7 +132,7 @@ import { parseEntryBody, type NewRoom } from './room-rows.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomBroadcaster } from './room-stream.js';
 import { RoomTriggerDispatcher, type RoomTurnRunner } from './room-trigger.js';
-import type { ActiveClaimView } from './room-claims.js';
+import type { ActiveClaimView, HeldView } from './room-claims.js';
 import type { RoomTurnBudget } from './turn-budget.js';
 
 /** Everything {@link RoomService} is constructed from. */
@@ -197,6 +197,12 @@ export interface RoomServiceDeps {
   engagedWindow(): EngagedWindow;
   /** The live `rooms.collect*` ceilings, injected for the same reason. */
   collect(): CollectWindow;
+  /**
+   * The live `rooms.lateReplyCeilingMinutes` in milliseconds — how long a room
+   * waits on an agent busy elsewhere before it gives up. Injected for the same
+   * reason.
+   */
+  holdCeilingMs(): number;
   /**
    * The live `uploads.maxFiles` — how many files one post may carry.
    *
@@ -456,6 +462,7 @@ export class RoomService {
       maxAgentDepth: deps.maxAgentDepth,
       engagedWindow: deps.engagedWindow,
       collect: deps.collect,
+      holdCeilingMs: deps.holdCeilingMs,
       writer: {
         post: (roomId, input) => this.post(roomId, input),
         postNotice: (roomId, body, cascade, replyTo) =>
@@ -508,6 +515,20 @@ export class RoomService {
     return this.triggers.listClaims();
   }
 
+  /**
+   * Every message waiting on an agent that is busy in another room.
+   *
+   * {@link RoomService.listActiveClaims}'s sibling, and the question it cannot
+   * answer during an incident: a room showing no claim and no answer looks
+   * exactly like a room whose message went nowhere. Delegated for the same
+   * reason — the dispatcher's hold map IS the answer.
+   *
+   * @returns One row per live hold.
+   */
+  listHolds(): HeldView[] {
+    return this.triggers.listHolds();
+  }
+
   triggersIdle(): Promise<void> {
     return this.triggers.idle();
   }
@@ -540,6 +561,33 @@ export class RoomService {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     this.requirePersonAuthor(viewerAuthorId, 'stop a room');
     return this.triggers.halt(room);
+  }
+
+  /**
+   * Ask for this room's waiting message to be answered before the other rooms
+   * waiting on the same agent.
+   *
+   * **It reorders and never preempts**, which is what keeps it out of the
+   * arbitration this domain has declined twice (ADR 260726-170125): the blocking
+   * turn is untouched, no second turn is started, and a promoted message still
+   * waits for the agent to be free. What it orders is one agent's own unanswered
+   * messages, which is what a person means by "answer me first".
+   *
+   * Gated exactly as {@link RoomService.haltRoom} is — a caller who cannot see
+   * the room gets the same `ROOM_NOT_FOUND` a room that does not exist gets, and
+   * only a person may ask, because an agent reordering its own queue would be
+   * the agent deciding whose question matters.
+   *
+   * @param roomId - The room asking to be answered first.
+   * @param authorId - The agent it is waiting on.
+   * @param viewerAuthorId - Who is asking.
+   * @returns `false` when there was nothing waiting — a stale button, not an
+   *   error.
+   */
+  promoteHold(roomId: string, authorId: string, viewerAuthorId: string): boolean {
+    this.requireVisibleRoom(roomId, viewerAuthorId);
+    this.requirePersonAuthor(viewerAuthorId, 'ask to be answered first');
+    return this.triggers.promoteHold(roomId, authorId);
   }
 
   /**
@@ -1880,6 +1928,10 @@ export class RoomService {
    *   this install observed rather than something a caller claimed. Minting one
    *   buys no extra permission — the post is written by the same path, with the
    *   same membership check, cascade stamp and turn budget behind it.
+   * @param input.answersEntryId - The message this post answers, set by the
+   *   dispatcher on every agent-authored reply. Distinct from `replyTo`, which
+   *   picks a THREAD: a channel post has no thread and still answers something,
+   *   and a room posts in arrival order whatever a message responds to.
    * @returns The committed entry.
    */
   post(
@@ -1892,6 +1944,7 @@ export class RoomService {
       replyTo?: string;
       attachmentIds?: readonly string[];
       moment?: RoomMoment;
+      answersEntryId?: string;
     }
   ): RoomEntry {
     const room = this.requireVisibleRoom(roomId, input.authorId);
@@ -2412,6 +2465,7 @@ export class RoomService {
       trigger?: PostTrigger;
       replyTo?: string;
       moment?: RoomMoment;
+      answersEntryId?: string;
     },
     within?: (tx: DbTransaction) => void,
     opts?: {
@@ -2470,7 +2524,11 @@ export class RoomService {
         kind: 'post',
         // The milestone rides beside the words, never instead of them: a moment
         // a client cannot read is a blank line in the feed.
-        body: { text: input.text, ...(input.moment && { moment: input.moment }) },
+        body: {
+          text: input.text,
+          ...(input.moment && { moment: input.moment }),
+          ...(input.answersEntryId !== undefined && { answersEntryId: input.answersEntryId }),
+        },
         mentions: addressed.mentions,
         // The per-occurrence positions of those mentions, resolved in the SAME
         // pass and stored beside them so the client draws pills without ever

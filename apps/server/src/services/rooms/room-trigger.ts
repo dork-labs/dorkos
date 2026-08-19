@@ -124,6 +124,7 @@ import type {
   Room,
   RoomAttachment,
   RoomEntry,
+  RoomHeldBehind,
   RoomPresencePayload,
   RoomPresenceState,
 } from '@dorkos/shared/room-schemas';
@@ -143,10 +144,14 @@ import {
   claimsWorkingIn,
   deepestClaimOf,
   describeClaims,
+  describeHolds,
   type ActiveClaim,
   type ActiveClaimView,
   type ClaimBusy,
   type ClaimOutcome,
+  type HeldRecord,
+  type HoldEnd,
+  type HeldView,
   type TriggerTarget,
 } from './room-claims.js';
 import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
@@ -208,6 +213,15 @@ export interface RoomTriggerWriter extends RoomNoticeWriter {
       sessionId?: string;
       trigger: CascadeStamp;
       replyTo?: string;
+      /**
+       * The entry this post answers.
+       *
+       * `replyTo` says which THREAD to land in; this says which MESSAGE was
+       * answered, and the two are different questions — a channel post has no
+       * thread and still answers something. Set on every agent-authored post,
+       * because a reader cannot tell from the outside which answers waited.
+       */
+      answersEntryId?: string;
     }
   ): RoomEntry;
 }
@@ -275,6 +289,16 @@ export interface RoomTriggerDeps {
    * the gathering window in Settings has to bind the very next message.
    */
   collect(): CollectWindow;
+  /**
+   * How long a message may wait on an agent busy in another room before this
+   * room gives up on it, in milliseconds — `rooms.lateReplyCeilingMinutes`.
+   *
+   * The same ceiling the turn runner uses for a late answer, read here for the
+   * same reason it is read there: the two are the same judgement about when a
+   * room stops waiting, at two different grains. Read per tick so a change in
+   * Settings binds the very next sweep.
+   */
+  holdCeilingMs(): number;
   /**
    * Put one agent's working state on the room's stream — live only, never
    * logged.
@@ -345,6 +369,31 @@ export class RoomTriggerDispatcher {
    * while every test still passed.
    */
   private readonly claimed = new Map<string, ActiveClaim>();
+
+  /**
+   * Rooms waiting on an agent that is mid-turn in a DIFFERENT room, keyed
+   * `(room, agent)` — one apiece, which is the grain of the collection each one
+   * stands for.
+   *
+   * **This class is the only writer, for the same reason it is the only writer of
+   * {@link RoomTriggerDispatcher.claimed}: a held indicator is this map made
+   * visible.** A second writer would be a second source of a promise the room is
+   * making to a person, and the whole honesty argument for saying "it will pick
+   * this up" rests on the promise existing exactly as long as the machinery that
+   * can keep it.
+   *
+   * **Only the `elsewhere` ceiling records one.** A same-room hold needs none:
+   * the agent already holds a claim here, so the room is showing it as working
+   * and the peek already has a row for it. A second indicator under the same
+   * author would draw one agent twice.
+   *
+   * Process memory, like the claim it waits behind. A restart forgets it, the
+   * message stays behind the agent's read cursor and reaches it on the next turn
+   * as ambient context, and nothing durable was ever written that a restart could
+   * make untrue — see `.claude/rules/room-conduct.md` on why a room trigger is
+   * never a durable queue row.
+   */
+  private readonly held = new Map<string, HeldRecord>();
 
   /**
    * The turns a halt stopped, by dispatch id — the answers this room throws
@@ -455,16 +504,22 @@ export class RoomTriggerDispatcher {
   }
 
   /**
-   * Put one message into one agent's collection, or refuse it outright.
+   * Put one message into one agent's collection.
    *
-   * **The two busy ceilings part company here, and that is the whole of RP8's
-   * steering.** An agent working in ANOTHER room is working in another checkout;
-   * nothing this room does will finish that turn, so the refusal stands and says
-   * so. An agent working in THIS room is about to be free, and its answer lands
-   * in front of this reader — so the message is held rather than refused, and
-   * the claim's release runs a turn for it. The old busy line for that case
-   * ("it didn't pick this one up") described the truth before this existed and
-   * would now be a lie: the agent picks it up, one turn later.
+   * **Nothing a person sends is refused for a scheduling reason any more, and
+   * that is the whole change.** Both busy ceilings hold: an agent mid-turn HERE
+   * is about to be free and its answer lands in front of this reader; an agent
+   * mid-turn in ANOTHER room is in another checkout, so this room's message waits
+   * for that turn to end and then runs here. The line that used to be written for
+   * the second case asked the person to send the message again — work the machine
+   * could do, over a message that was already committed to this room's log.
+   *
+   * **The two ceilings still part company on two things a reader can see.** A
+   * `here` hold marks its messages `arrivedDuringPrevTurn`; an `elsewhere` one
+   * must not, because the agent was not working here. And an `elsewhere` hold
+   * records a held indicator, so the room can say what is happening while it is
+   * still true — a `here` hold needs none, because the room is already showing
+   * that agent as working.
    *
    * @param room - The room the message landed in.
    * @param entry - The message.
@@ -479,19 +534,6 @@ export class RoomTriggerDispatcher {
     arrivedAt: number
   ): void {
     const busyWith = this.busyWith(room.id, candidate.authorId, candidate.agentPath);
-    if (busyWith === 'working-elsewhere') {
-      this.notices.reportSilence(
-        room,
-        entry,
-        { authorId: candidate.authorId, displayName: candidate.displayName },
-        'busy',
-        // Refused before it became a target, so it has no dispatch of its own
-        // — and the ambient one belongs to whoever's reply triggered this.
-        null,
-        { busyWith }
-      );
-      return;
-    }
     const opened = this.collector.collect({
       room,
       authorId: candidate.authorId,
@@ -500,9 +542,13 @@ export class RoomTriggerDispatcher {
       entry,
       depth: candidate.depth,
       engaged: candidate.engaged,
-      duringTurn: busyWith === 'working-here',
+      duringTurnHere: busyWith?.where === 'here',
+      park: busyWith !== null,
       arrivedAt,
     });
+    if (busyWith?.where === 'elsewhere') {
+      this.noteHold(room.id, candidate.authorId, candidate.agentPath, entry.id, busyWith);
+    }
     // One credit per COLLECTION, taken the moment one is opened and returned by
     // whatever settles it — the turn it produces, the refusal it earns, or the
     // halt that drops it. Taking one per message instead would make `idle()`
@@ -911,26 +957,38 @@ export class RoomTriggerDispatcher {
     const { room, authorId, agentPath, displayName } = collection;
     const newest = collection.entries.at(-1);
     if (!newest) {
-      this.settleOne();
+      this.settleCollection(collection, 'refused');
       return null;
     }
     // Asked AGAIN, not merely re-read: a window that opened while the agent was
     // free can still close after something else claimed it — an aside turn, or
     // a burst in another room reaching the same checkout.
     const busyWith = this.busyWith(room.id, authorId, agentPath);
-    if (busyWith === 'working-here') {
+    if (busyWith !== null) {
       // Parked, not refused: this is the same steer `collectOne` makes, arrived
       // at from the other direction. The credit stays with the collection —
       // unless parking MERGED it into one already waiting, in which case two
       // pending turns have become one and the surplus is settled here.
-      if (this.collector.park(collection)) this.settleOne();
-      return null;
-    }
-    if (busyWith === 'working-elsewhere') {
-      this.notices.reportSilence(room, newest.entry, { authorId, displayName }, 'busy', null, {
-        busyWith,
-      });
-      this.settleOne();
+      //
+      // **The hold is re-stated AFTER the park, against whatever is in the way
+      // now.** A batch re-armed by one claim's release frequently finds another
+      // room's claim already taken by the time it gets here, and the indicator
+      // has to point at that room rather than the one that just finished.
+      const merged = this.collector.park(collection);
+      if (busyWith.where === 'elsewhere') {
+        // The batch's OLDEST message keys a new hold, which is the same choice
+        // `collectOne` makes: an indicator is keyed `(room, author, entryId)`,
+        // so it has to be an id that does not move while the person keeps
+        // typing. An existing hold keeps its own — see `noteHold`.
+        this.noteHold(
+          room.id,
+          authorId,
+          agentPath,
+          collection.entries[0]?.entry.id ?? newest.entry.id,
+          busyWith
+        );
+      }
+      if (merged) this.settleOne();
       return null;
     }
 
@@ -939,7 +997,7 @@ export class RoomTriggerDispatcher {
       // EVERY message in the batch was refused, so the batch is refused — and
       // the refusals are already on the log, written by `chooseTrigger` under
       // the same narrowness a single refusal has always had.
-      this.settleOne();
+      this.settleCollection(collection, 'refused');
       return null;
     }
     const entry = chosen.held.entry;
@@ -992,7 +1050,7 @@ export class RoomTriggerDispatcher {
       // This one CAN be correlated: the target survived the guard and was given
       // its id above, so the refusal belongs to a real dispatch that never ran.
       this.notices.reportBudget(room, entry, afford.scope ?? 'room', target.dispatchId);
-      this.settleOne();
+      this.settleCollection(collection, 'refused');
       return null;
     }
     // Spending again means the window moved, so re-arm the notice: the next
@@ -1047,7 +1105,7 @@ export class RoomTriggerDispatcher {
         ...logError(err),
       });
       this.notices.reportSilence(room, entry, target, 'unavailable', target.dispatchId);
-      this.settleOne();
+      this.settleCollection(collection, 'refused');
       return null;
     }
 
@@ -1564,6 +1622,13 @@ export class RoomTriggerDispatcher {
       // top-level entry — every reply carries the root, never another reply —
       // so re-resolving it in `post` cannot refuse this write.
       replyTo: entry.threadRootEntryId ?? undefined,
+      // **Unconditionally, in-frame answers included.** A room posts in arrival
+      // order, so an answer is not always next to its question — and holding a
+      // message behind another room's turn makes that common rather than rare.
+      // The client decides whether to DRAW the pointer (it does not, when the
+      // answered entry is the one immediately above); the server just records
+      // which message this is about, because it is the only thing that knows.
+      answersEntryId: entry.id,
     });
     return 'answered';
   }
@@ -2056,7 +2121,15 @@ export class RoomTriggerDispatcher {
     // Something is happening here again, so a halt is news again.
     this.notices.workStarted(claim.roomId);
     const before = this.workingCount(claim.roomId);
-    this.claimed.set(agentKey(claim.roomId, claim.authorId), claim);
+    const key = agentKey(claim.roomId, claim.authorId);
+    // **Before the `working` publish, so the held line RESOLVES into the working
+    // one rather than sitting beside it.** A person watching this room asked a
+    // question, was told it was waiting, and is now being told it is running:
+    // that is one indicator changing its mind, not two indicators about one
+    // message. Published in this order, the `done` for the hold lands first and
+    // the client's store never holds both.
+    this.releaseHold(key, 'started');
+    this.claimed.set(key, claim);
     this.publishPresence(claim, 'working');
     this.publishWorkingCount(claim.roomId, before);
     if (this.republishing === null) {
@@ -2179,22 +2252,269 @@ export class RoomTriggerDispatcher {
     // which is why stopping a room does not answer the messages it was stopped
     // over.
     this.collector.resume(claim.roomId, claim.authorId);
+    // **And the cross-room half of it** (spec `room-hold-when-busy`). One agent
+    // is one working directory, so the rooms this agent was asked something in
+    // while it worked here have been waiting rather than being refused, and this
+    // is the moment they can run. Hung off the same one seam for the same reason:
+    // the ordinary terminal, a late answer settling, a failure and a halt all
+    // reach it, so a held message runs however the blocking turn ended.
+    this.resumeElsewhere(claim.agentPath);
   }
 
   /**
-   * Re-state every live claim, on the interval.
+   * Record that this room's message is waiting behind a turn somewhere else, and
+   * put that on the room's stream.
+   *
+   * **Idempotent, and the two fields it keeps are why.** An existing hold keeps
+   * its `since` — the lane counts up from when the person's message actually
+   * started waiting, not from the last time something re-checked — and its
+   * `entryId`, because the indicator is keyed on that and a moving id would open
+   * a second indicator every time the person typed again. Only `behindRoomId`
+   * is re-pointed, because the room in the way genuinely changes as claims come
+   * and go.
+   *
+   * @param roomId - The room whose message is waiting.
+   * @param authorId - The agent it is waiting for.
+   * @param agentPath - That agent's directory — the ceiling being waited on.
+   * @param entryId - The message to key a NEW hold on. Ignored when one exists.
+   * @param busy - What is in the way, from the live claim map.
+   */
+  private noteHold(
+    roomId: string,
+    authorId: string,
+    agentPath: string,
+    entryId: string,
+    busy: ClaimBusy
+  ): void {
+    const key = agentKey(roomId, authorId);
+    const open = this.held.get(key);
+    const record: HeldRecord =
+      open === undefined
+        ? {
+            roomId,
+            authorId,
+            agentPath,
+            entryId,
+            since: new Date().toISOString(),
+            behindRoomId: busy.blocking.roomId,
+          }
+        : { ...open, behindRoomId: busy.blocking.roomId };
+    this.held.set(key, record);
+    this.publishHold(record, 'held');
+  }
+
+  /**
+   * Drop a hold and publish `done` for it.
+   *
+   * **Called from every path that ends a collection without taking a claim**, so
+   * "no hold is ever left standing" is structural rather than remembered — the
+   * same shape {@link RoomTriggerDispatcher.releaseClaim} gives claims. Releasing
+   * a key that holds nothing is a no-op, because most collections never had one.
+   *
+   * **It writes no notice, whatever the reason**, and each reason has a durable
+   * sibling written by the path that caused it: `started` is the turn itself,
+   * `halted` is the room-wide `halted` line, `refused` is the guard's or the
+   * budget's own notice, and `expired` is the one `agent_busy` line
+   * {@link RoomTriggerDispatcher.expireHolds} writes — there, because only there
+   * is the dropped collection in hand to write it about.
+   *
+   * @param key - The `(room, agent)` key whose hold is ending.
+   * @param reason - How it ended, for the log. Never rendered.
+   */
+  private releaseHold(key: string, reason: HoldEnd): void {
+    const record = this.held.get(key);
+    if (record === undefined) return;
+    this.held.delete(key);
+    logger.info('[rooms] a message that was waiting on a busy agent stopped waiting', {
+      roomId: record.roomId,
+      authorId: record.authorId,
+      entryId: record.entryId,
+      behindRoomId: record.behindRoomId,
+      heldMs: Math.max(0, Date.now() - Date.parse(record.since)),
+      reason,
+    });
+    this.publishHold(record, 'done');
+  }
+
+  /**
+   * Re-arm every held collection for one agent, and re-point the ones that are
+   * still blocked.
+   *
+   * Two halves, and the second is what keeps the lane honest. Re-arming is the
+   * cross-room `resume`. Re-pointing is for the collections that will find
+   * ANOTHER claim in the way when they reach `claimCollected` a macrotask later:
+   * their indicator has to name the room that is in the way now, not the one
+   * that just finished. A hold with nothing left in its way is left alone — the
+   * turn it is waiting for is about to start, and `holdClaim` resolves it then.
+   *
+   * @param agentPath - The working directory whose claim just released.
+   */
+  private resumeElsewhere(agentPath: string): void {
+    this.collector.resumeAgent(agentPath);
+    for (const record of this.held.values()) {
+      if (record.agentPath !== agentPath) continue;
+      const busy = this.busyWith(record.roomId, record.authorId, record.agentPath);
+      if (busy === null) continue;
+      record.behindRoomId = busy.blocking.roomId;
+      this.publishHold(record, 'held');
+    }
+  }
+
+  /**
+   * Give up on the holds that have waited longer than the room's late ceiling,
+   * and say so once each.
+   *
+   * **The bound exists to stop a chain, not to hurry anybody.** A blocks B and B
+   * blocks C is a wait with no natural end, and a lane that says "it will pick
+   * this up" for an hour has stopped being a promise and become furniture.
+   * `rooms.lateReplyCeilingMinutes` is reused rather than a new setting invented:
+   * it already means "when the room stops listening", which is this same fact at
+   * a different grain.
+   *
+   * The notice is written HERE rather than in `releaseHold`, because only here is
+   * the dropped collection in hand — a notice has to be about a message somebody
+   * actually sent, and the newest one in the batch is the one they are waiting on.
+   */
+  private expireHolds(): void {
+    const ceiling = this.deps.holdCeilingMs();
+    const now = Date.now();
+    for (const [key, record] of [...this.held]) {
+      if (now - Date.parse(record.since) < ceiling) continue;
+      const dropped = this.collector.dropOne(record.roomId, record.authorId);
+      this.releaseHold(key, 'expired');
+      if (dropped === null) continue;
+      // One credit back per collection, exactly as a halt returns them.
+      this.settleOne();
+      const newest = dropped.entries.at(-1);
+      const room = this.deps.store.getRoom(record.roomId);
+      if (newest === undefined || room === null) continue;
+      this.notices.reportSilence(
+        room,
+        newest.entry,
+        { authorId: dropped.authorId, displayName: dropped.displayName },
+        'busy',
+        // No dispatch of its own: no turn was ever started for this batch.
+        null,
+        { busyWith: 'held-too-long' }
+      );
+    }
+  }
+
+  /**
+   * Put one room's waiting message at the front of that agent's queue.
+   *
+   * The whole body of `POST /api/rooms/:id/holds/:authorId/promote`. It reorders
+   * and never preempts: the blocking turn is untouched, and a promoted hold still
+   * waits for the agent to be free.
+   *
+   * @param roomId - The room asking to be answered first.
+   * @param authorId - The agent it is waiting on.
+   * @returns `false` when there was no hold to promote — a stale button rather
+   *   than an error.
+   */
+  promoteHold(roomId: string, authorId: string): boolean {
+    if (!this.held.has(agentKey(roomId, authorId))) return false;
+    return this.collector.promote(roomId, authorId);
+  }
+
+  /**
+   * Every message waiting on a busy agent right now, for the diagnostic read
+   * surface.
+   *
+   * {@link RoomTriggerDispatcher.listClaims}'s sibling, and it answers what that
+   * one cannot: a room showing no claim and no answer is otherwise
+   * indistinguishable from a room whose message went nowhere.
+   *
+   * @returns One row per live hold.
+   */
+  listHolds(): HeldView[] {
+    return describeHolds(this.held);
+  }
+
+  /**
+   * Put one hold's state on its room's ephemeral stream.
+   *
+   * `since` is the hold's own start on every publish, for the reason
+   * {@link RoomTriggerDispatcher.publishPresence} carries the claim's: an event
+   * that said "now" would reset the wait every ten seconds, and a client that
+   * connected mid-wait could never learn how long it has been.
+   *
+   * @param record - The hold this is about.
+   * @param state - `'held'` while it waits, `'done'` once it stops.
+   */
+  private publishHold(record: HeldRecord, state: 'held' | 'done'): void {
+    this.deps.publishPresence(record.roomId, record.authorId, {
+      state,
+      entryId: record.entryId,
+      since: record.since,
+      // Only on the `held` frame. A `done` clears an indicator by its key and
+      // says nothing else; carrying a room id on it would be a last disclosure
+      // for no reader's benefit.
+      ...(state === 'held' ? { heldBehind: this.heldBehind(record) } : {}),
+    });
+  }
+
+  /**
+   * What one hold is waiting behind, as the wire carries it.
+   *
+   * An id and a boolean, and no more: the reader may not be a member of the room
+   * in the way, so the name is resolved on the client against the rooms it can
+   * already see. `othersWaiting` is a boolean rather than a count because it
+   * exists only to decide whether "Answer here first" would change anything —
+   * a count would let a reader enumerate rooms it cannot see.
+   *
+   * @param record - The hold being described.
+   */
+  private heldBehind(record: HeldRecord): RoomHeldBehind {
+    let othersWaiting = false;
+    for (const other of this.held.values()) {
+      if (other.agentPath !== record.agentPath || other.roomId === record.roomId) continue;
+      othersWaiting = true;
+      break;
+    }
+    return { roomId: record.behindRoomId, othersWaiting };
+  }
+
+  /**
+   * End one collection's accounting AND its hold, in one call.
+   *
+   * **The seam that makes "no hold is ever forgotten" structural.**
+   * `claimCollected` gives up in four places and each one used to call
+   * `settleOne` alone; a fifth added later would have had to remember the hold.
+   * The same shape {@link RoomTriggerDispatcher.releaseClaim} uses for claims:
+   * one function, every terminal.
+   *
+   * @param collection - The batch that will not become a turn.
+   * @param reason - How it ended, for the log.
+   */
+  private settleCollection(collection: RoomCollection, reason: HoldEnd): void {
+    this.releaseHold(agentKey(collection.room.id, collection.authorId), reason);
+    this.settleOne();
+  }
+
+  /**
+   * Re-state every live claim and every live hold, on the interval.
    *
    * One event per claim, carrying the indicator's full identity —
    * `(room, author, entryId)` — because that is what the client keys its store
    * on (room-presence spec §3.2, §5.1). An agent holds at most one claim per
    * room, so this is also one event per working agent per room.
+   *
+   * Holds ride the same tick, and must: the client expires an indicator it has
+   * not heard about for 30 s, so a hold that was not restated would blink off
+   * the lane while it was still true. The tick runs whenever any claim exists,
+   * and a hold cannot exist without one.
    */
   private republishPresence(): void {
+    // Before the re-state, so nothing that has outlived the room's patience is
+    // announced one more time on its way out.
+    this.expireHolds();
     const rooms = new Set<string>();
     for (const claim of this.claimed.values()) {
       this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
       rooms.add(claim.roomId);
     }
+    for (const record of this.held.values()) this.publishHold(record, 'held');
     // One repaint per ROOM, not per claim: the sidebar draws a count, so two
     // claims in one room are one dot and one event. The global stream has no
     // replay, so this tick is the only way a reader who opened the cockpit
@@ -2331,17 +2651,20 @@ export class RoomTriggerDispatcher {
    * still running — and on the shipped defaults that window is up to fifty
    * minutes, so it is where nearly every collision lives.
    *
-   * **The two ceilings now have two different OUTCOMES, which is why the answer
-   * is an enum rather than a boolean** (RP8). The first one holds the message
-   * for the agent's next turn; the second refuses it and says so. See
+   * **Both ceilings hold the message; the answer is a record rather than a
+   * boolean because they differ in what a reader is shown.** A `here` hold marks
+   * its messages as having arrived mid-turn and needs no indicator of its own —
+   * the room is already showing the agent working. An `elsewhere` hold marks
+   * nothing and publishes a `held` indicator pointing at the claim in the way,
+   * which is why the claim itself comes back with the answer. See
    * {@link RoomTriggerDispatcher.collectOne}.
    *
    * @param roomId - The room being triggered.
    * @param authorId - The agent a trigger would run.
    * @param agentPath - That agent's directory, which is what the second ceiling
    *   is really about.
-   * @returns What the room can truthfully say it is doing, or `null` when it is
-   *   doing nothing.
+   * @returns What the room can truthfully say it is doing and the claim in the
+   *   way, or `null` when it is doing nothing.
    */
   private busyWith(roomId: string, authorId: string, agentPath: string): ClaimBusy | null {
     return claimBusyWith(this.claimed, roomId, authorId, agentPath);
@@ -2420,7 +2743,12 @@ export class RoomTriggerDispatcher {
         authorId: dropped.authorId,
         waiting: dropped.entries.length,
       });
-      this.settleOne();
+      // Its held indicator goes with it, and the `halted` line written a few
+      // lines above is its durable sibling. Stopping THIS room drops what it was
+      // waiting for; stopping the room that was in the way is the opposite case
+      // and runs the wait, because the person stopped one conversation and not
+      // the other.
+      this.settleCollection(dropped, 'halted');
     }
     for (const claim of claims) {
       const sessionId = this.deps.store.getRoomSession(room.id, claim.authorId);

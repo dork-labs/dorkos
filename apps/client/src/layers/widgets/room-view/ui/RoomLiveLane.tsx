@@ -16,9 +16,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
+  roomDisplayTitle,
   threadRootIdOf,
   useHaltRoom,
+  usePromoteHold,
+  useRoomHolds,
   useRoomPresenceClaims,
+  useRooms,
   useRoomSessions,
   type PresenceScope,
   type RoomEntry,
@@ -29,6 +33,7 @@ import {
   MessageAuthorAvatar,
   deriveLaneState,
   type LaneScope,
+  type LaneHeldAuthor,
   type LanePresenceAuthor,
   type LivePeekRow,
 } from '@/layers/features/conversation';
@@ -114,9 +119,17 @@ export function RoomLiveLane({
 }: RoomLiveLaneProps) {
   const navigate = useNavigate();
   const claims = useRoomPresenceClaims(room.id, scope);
+  const holds = useRoomHolds(room.id, scope);
   const [peekOpen, setPeekOpen] = useState(false);
   const sessions = useRoomSessions(room.id, { enabled: peekOpen });
   const halt = useHaltRoom();
+  const promote = usePromoteHold();
+  const [promoted, setPromoted] = useState<ReadonlySet<string>>(() => new Set());
+  // **The reader's OWN room list, and that is the disclosure design.** The wire
+  // carries an id and nothing else, so a room this reader cannot see resolves to
+  // nothing and the copy says "another conversation" — the vagueness is enforced
+  // by what this client can see rather than by the server refusing to say.
+  const rooms = useRooms();
   const agents = useRoomAgentDirectory();
   const authors = useMemo(() => authorsById(room.members), [room.members]);
   const nameOf = useCallback(
@@ -158,6 +171,24 @@ export function RoomLiveLane({
     [claims, nameOf]
   );
 
+  const held = useMemo<LaneHeldAuthor[]>(
+    () =>
+      holds.map((hold) => {
+        const behind = rooms.data?.find((candidate) => candidate.id === hold.behindRoomId);
+        return {
+          authorId: hold.authorId,
+          name: nameOf(hold.authorId),
+          since: hold.since,
+          behind: {
+            roomId: hold.behindRoomId,
+            title: behind === undefined ? null : roomDisplayTitle(behind),
+          },
+          othersWaiting: hold.othersWaiting,
+        };
+      }),
+    [holds, nameOf, rooms.data]
+  );
+
   const state = useMemo(
     () =>
       deriveLaneState({
@@ -166,11 +197,12 @@ export function RoomLiveLane({
         agentNames: askAgentNames,
         stalled,
         presence,
+        held,
         // A room has no turn of its own: `turnStatus` is off in its capability
         // table.
         turn: null,
       }),
-    [asks, askAgentNames, presence, stalled]
+    [asks, askAgentNames, presence, held, stalled]
   );
 
   const sessionByAuthor = useMemo(() => {
@@ -227,25 +259,41 @@ export function RoomLiveLane({
     [entries, laneScope]
   );
 
-  const peekRows = useMemo<LivePeekRow[]>(
-    () =>
-      claims.map((claim) => {
-        const excerpt = excerptOf(claim.entryId);
-        const rowId = rowIdFor(claim.entryId);
-        return {
-          authorId: claim.authorId,
-          author: toMessageAuthor(claim.authorId, authors, agents.faces),
-          state: claim.state,
-          since: claim.since,
-          // Both halves or neither: a link with nothing to say and a link with
-          // nowhere to go are the same broken promise.
-          replyingTo:
-            excerpt === null || rowId === null ? null : { entryId: claim.entryId, excerpt, rowId },
-          sessionId: sessionByAuthor.get(claim.authorId) ?? null,
-        };
-      }),
-    [claims, authors, agents.faces, excerptOf, rowIdFor, sessionByAuthor]
-  );
+  const peekRows = useMemo<LivePeekRow[]>(() => {
+    const working: LivePeekRow[] = claims.map((claim) => {
+      const excerpt = excerptOf(claim.entryId);
+      const rowId = rowIdFor(claim.entryId);
+      return {
+        authorId: claim.authorId,
+        author: toMessageAuthor(claim.authorId, authors, agents.faces),
+        state: claim.state,
+        since: claim.since,
+        // Both halves or neither: a link with nothing to say and a link with
+        // nowhere to go are the same broken promise.
+        replyingTo:
+          excerpt === null || rowId === null ? null : { entryId: claim.entryId, excerpt, rowId },
+        sessionId: sessionByAuthor.get(claim.authorId) ?? null,
+      };
+    });
+    // **After the working rows, never mixed in.** The peek reads "who is working
+    // here", then "what is waiting to start" — two different facts, and putting
+    // a wait between two live turns makes the list mean neither.
+    const waiting: LivePeekRow[] = held.map((hold) => ({
+      authorId: hold.authorId,
+      author: toMessageAuthor(hold.authorId, authors, agents.faces),
+      state: 'held' as const,
+      since: hold.since,
+      // No "replying to" quote: nothing is being replied to yet, and quoting
+      // the message that is waiting would read as an answer in progress.
+      replyingTo: null,
+      // A held agent is not working HERE, so there is no session of this room's
+      // to open. The way in is the room it is working in instead.
+      sessionId: null,
+      behind: hold.behind,
+      othersWaiting: hold.othersWaiting,
+    }));
+    return [...working, ...waiting];
+  }, [claims, held, authors, agents.faces, excerptOf, rowIdFor, sessionByAuthor]);
 
   const faces = useMemo(() => {
     if (claims.length === 0) return null;
@@ -297,6 +345,18 @@ export function RoomLiveLane({
           onOpenSession={(sessionId) => {
             void navigate({ to: '/session', search: { session: sessionId } });
           }}
+          onOpenRoom={(roomId) => {
+            void navigate({ to: '/channels', search: { id: roomId } });
+          }}
+          onAnswerFirst={(authorId) => {
+            // Marked optimistically: the server's answer is a boolean about a
+            // wait that may already have ended, and the row is about to be
+            // replaced by a working one either way. What the person needs back
+            // is that the room heard them.
+            setPromoted((asked) => new Set(asked).add(authorId));
+            promote.mutate({ roomId: room.id, authorId });
+          }}
+          promoted={promoted}
           onStopAll={() => halt.mutate({ roomId: room.id })}
           stopping={halt.isPending}
         />
