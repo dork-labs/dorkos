@@ -235,6 +235,7 @@ Four adapters ship with DorkOS. Their manifests are defined as static constants 
 - **Multi-instance**: No
 - **Config fields**: `maxConcurrent` (number, default 3), `defaultTimeoutMs` (number, default 300000)
 - **Note**: Auto-configured; typically not modified by users
+- **Capacity**: `maxConcurrent` is a waiting line, not a wall. A detached agent delivery that finds every slot busy parks in `capacity-hold.ts` and starts when one frees; `defaultTimeoutMs` doubles as the hold ceiling. Deliveries the publish pipeline **awaits** (Tasks dispatch, control messages) are refused immediately instead — the pipeline marks the difference by setting `AdapterContext.onHeld` on the detached path only.
 
 ## CatalogEntry and Instances
 

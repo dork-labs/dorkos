@@ -23,6 +23,7 @@ import type {
   RelayPublisher,
   RelayAdapter,
   AdapterRegistryLike,
+  AdapterContext,
   DeliveryResult,
 } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -37,10 +38,19 @@ const BOUND_CHAT = 'relay.human.telegram.tg-bot.12345';
 /** A chat on the same adapter that nobody bound to anything. */
 const UNBOUND_CHAT = 'relay.human.telegram.tg-bot-other.99999';
 
-/** Every agent delivery FAILS after acceptance — the detached dead-letter path. */
+/**
+ * Every agent delivery FAILS after acceptance — the detached dead-letter path.
+ *
+ * Switch {@link FailingRegistry.mode} to `'hold'` and it behaves like the real
+ * adapter instead: it parks the delivery, announces the wait through
+ * `context.onHeld`, and then succeeds. Nothing is dropped on that path, so the
+ * only thing to check is what the chat is told.
+ */
 class FailingRegistry implements AdapterRegistryLike {
   readonly dispatches: RelayEnvelope[] = [];
   readonly platform: Array<{ subject: string; envelope: RelayEnvelope }> = [];
+  /** `'fail'` refuses at capacity; `'hold'` waits and says so. */
+  mode: 'fail' | 'hold' = 'fail';
 
   setRelay(_relay: RelayPublisher): void {
     /* nothing to hold */
@@ -51,9 +61,17 @@ class FailingRegistry implements AdapterRegistryLike {
     return { id: 'cca' } as unknown as RelayAdapter;
   }
 
-  async deliver(subject: string, envelope: RelayEnvelope): Promise<DeliveryResult | null> {
+  async deliver(
+    subject: string,
+    envelope: RelayEnvelope,
+    context?: AdapterContext
+  ): Promise<DeliveryResult | null> {
     if (subject.startsWith('relay.agent.')) {
       this.dispatches.push(envelope);
+      if (this.mode === 'hold') {
+        context?.onHeld?.();
+        return { success: true };
+      }
       return { success: false, code: 'at_capacity', error: 'agent queue at capacity' };
     }
     if (envelope.from.startsWith('relay.human.telegram')) return { success: true, skipped: true };
@@ -147,7 +165,33 @@ describe('the notice for a turn that died', () => {
 
     expect(registry.dispatches).toHaveLength(1);
     expect(registry.notices()).toHaveLength(1);
-    expect(registry.notices()[0]!.text).toContain('as much as it can');
+    // This registry refuses at capacity outright, which is what an adapter that
+    // cannot hold does. The line it produces states what happened and asks for
+    // nothing — it used to end "Send it again in a moment."
+    expect(registry.notices()[0]!.text).toContain('stayed busy');
+    expect(registry.notices()[0]!.text).not.toMatch(/again/i);
+  });
+
+  it('says a held message is waiting, and that line does not start a turn either', async () => {
+    registry.mode = 'hold';
+
+    await relay.publish(
+      BOUND_CHAT,
+      { content: 'do the thing' },
+      { from: 'relay.human.telegram.tg-bot.bot', replyTo: BOUND_CHAT }
+    );
+
+    await vi.waitFor(() => expect(registry.notices()).toHaveLength(1));
+    // A held notice lands on the same chat subject the binding router
+    // subscribes to, exactly as a failure notice does. Give it every chance to
+    // be routed back into a second turn before asserting it was not.
+    await new Promise((r) => setTimeout(r, 120));
+
+    expect(registry.notices()[0]!.subject).toBe(BOUND_CHAT);
+    expect(registry.notices()[0]!.text).toContain('waiting its turn');
+    expect(registry.notices()[0]!.text).not.toMatch(/again/i);
+    // One dispatch: the message itself. The notice did not become a second one.
+    expect(registry.dispatches).toHaveLength(1);
   });
 
   it('does not post into a chat nobody bound, however the agent addresses it', async () => {

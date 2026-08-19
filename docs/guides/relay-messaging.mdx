@@ -204,6 +204,8 @@ The Claude Code adapter is on by default whenever Relay starts. It listens on `r
 
 `maxConcurrent` limits how many agent sessions run at once. `defaultTimeoutMs` sets the longest a session can run before it's stopped.
 
+A message that arrives while every session is busy is not turned away. It waits, and it runs as soon as one of those sessions finishes. If the wait lasts more than ten seconds, the chat gets one line saying the message is waiting. If it waits longer than `defaultTimeoutMs` and no session ever frees up, the chat gets one more line saying it was not picked up. Holds live in memory only, so restarting the server drops any message still waiting.
+
 ### Telegram adapter
 
 The Telegram adapter connects a Telegram bot to Relay. Messages from the chat are published to `relay.human.telegram.{chatId}`, and replies on that subject get delivered back to the chat, including live-updating drafts as the agent writes its answer.

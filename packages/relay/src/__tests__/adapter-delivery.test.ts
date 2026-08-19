@@ -269,7 +269,10 @@ describe('AdapterDelivery', () => {
       expect(deps.adapterRegistry!.deliver).toHaveBeenCalledWith(
         AGENT_SUBJECT,
         expect.objectContaining({ subject: AGENT_SUBJECT }),
-        undefined
+        // The detached path always hands the adapter a context, even when the
+        // caller built none: it carries `onHeld`, the adapter's way of saying
+        // this message is waiting for a free slot rather than lost.
+        { onHeld: expect.any(Function) }
       );
     });
 
@@ -441,6 +444,101 @@ describe('AdapterDelivery', () => {
       await vi.waitFor(() =>
         expect(chatNotice).toHaveBeenCalledWith(CHANNEL_SUBJECT, 'agent_busy')
       );
+    });
+
+    it('never licenses an AWAITED delivery to wait for capacity', async () => {
+      const delivery = new AdapterDelivery(deps);
+
+      await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
+
+      // `onHeld` is the adapter's licence to park a delivery, and the awaited
+      // path must never grant it: a parked delivery here would sit in the
+      // adapter's line spending this caller's 120s timeout, and report a
+      // timeout where the truth was capacity.
+      // Seeded defect: build the held context in `deliver()` instead of
+      // `deliverDetached()`. Every Tasks dispatch and control message then
+      // becomes holdable, and a stop published while a run is parked never
+      // resolves at all.
+      const context = vi.mocked(deps.adapterRegistry!.deliver).mock.calls[0]![2];
+      expect(context?.onHeld).toBeUndefined();
+    });
+
+    it('tells the chat its message is waiting when the adapter parks it', async () => {
+      const chatNotice = vi.fn().mockResolvedValue(true);
+      // An adapter that HOLDS: it announces the wait, then succeeds. Nothing is
+      // dead-lettered, because nothing was dropped.
+      vi.mocked(deps.adapterRegistry!.deliver).mockImplementation(
+        async (_subject, _envelope, context) => {
+          context?.onHeld?.();
+          return { success: true } as DeliveryResult;
+        }
+      );
+      const delivery = new AdapterDelivery(deps);
+      delivery.setChatFailureNotifier(chatNotice);
+
+      await delivery.deliver(
+        AGENT_SUBJECT,
+        createEnvelope({ subject: AGENT_SUBJECT, replyTo: CHANNEL_SUBJECT })
+      );
+
+      // Seeded defect: pass `context` straight through to the registry instead
+      // of the `heldContext` that carries `onHeld`. The adapter then holds the
+      // message in silence and the chat sees nothing until the answer lands.
+      await vi.waitFor(() =>
+        expect(chatNotice).toHaveBeenCalledWith(CHANNEL_SUBJECT, 'agent_held')
+      );
+      expect(deps.deadLetterQueue.reject).not.toHaveBeenCalled();
+      // `agent_held` and nothing else: a held message is not a failed one.
+      expect(chatNotice.mock.calls.map((call) => call[1])).toEqual(['agent_held']);
+    });
+
+    it('says nothing about a hold in a chat that has no reply subject', async () => {
+      const chatNotice = vi.fn().mockResolvedValue(true);
+      vi.mocked(deps.adapterRegistry!.deliver).mockImplementation(
+        async (_subject, _envelope, context) => {
+          context?.onHeld?.();
+          return { success: true } as DeliveryResult;
+        }
+      );
+      const delivery = new AdapterDelivery(deps);
+      delivery.setChatFailureNotifier(chatNotice);
+
+      await delivery.deliver(AGENT_SUBJECT, createEnvelope({ subject: AGENT_SUBJECT }));
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(chatNotice).not.toHaveBeenCalled();
+    });
+
+    it('reports a hold that ran out of time as the busy line, not a resend request', async () => {
+      const chatNotice = vi.fn().mockResolvedValue(true);
+      // The whole life of a hold that never got its slot: it announces the
+      // wait, then gives up at the ceiling and reports capacity.
+      vi.mocked(deps.adapterRegistry!.deliver).mockImplementation(
+        async (_subject, _envelope, context) => {
+          context?.onHeld?.();
+          return {
+            success: false,
+            code: 'at_capacity',
+            error: 'waited 300000ms for a free session slot and none came free',
+          } as DeliveryResult;
+        }
+      );
+      const delivery = new AdapterDelivery(deps);
+      delivery.setChatFailureNotifier(chatNotice);
+
+      await delivery.deliver(
+        AGENT_SUBJECT,
+        createEnvelope({ subject: AGENT_SUBJECT, replyTo: CHANNEL_SUBJECT })
+      );
+
+      // Both lines, in order, on separate damper keys: "it is waiting", then
+      // "it stayed busy". Seeded defect: reuse `agent_held` for the expiry.
+      // The damper swallows the second line and the hold ends in silence —
+      // the person is left with a promise the machine quietly broke.
+      await vi.waitFor(() =>
+        expect(chatNotice.mock.calls.map((call) => call[1])).toEqual(['agent_held', 'agent_busy'])
+      );
+      expect(deps.deadLetterQueue.reject).toHaveBeenCalledTimes(1);
     });
 
     it('reports any other failure as a plain delivery failure', async () => {

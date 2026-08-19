@@ -149,6 +149,7 @@ describe('chat notices', () => {
       'agent_missing',
       'session_failed',
       'agent_busy',
+      'agent_held',
       'rate_limited',
       'budget_exceeded',
       'channel_archived',
@@ -159,6 +160,37 @@ describe('chat notices', () => {
       // No stack traces, no subject grammar, no codes.
       expect(text).not.toMatch(/relay\.|_[a-z]+_|Error:/);
     }
+  });
+
+  it('never asks a person to resend a message the machine could have kept', () => {
+    // The scheduling lines only. `rate_limited` is excluded on purpose: that
+    // one is about something the person did (a burst of their own messages),
+    // and waiting a minute is a remedy they can actually follow.
+    for (const reason of ['agent_busy', 'agent_held', 'delivery_failed'] as const) {
+      // Seeded defect: restore `agent_busy`'s old second sentence, "Send it
+      // again in a moment." A person is then asked to do work the machine now
+      // does for them — the whole point of the hold (ADR 260818-234541).
+      expect(chatNoticeText(reason)).not.toMatch(/again/i);
+    }
+  });
+
+  it('tells a chat its message is waiting, not that it was dropped', async () => {
+    const { publish, notify } = harness();
+    expect(await notify(CHAT, 'agent_held')).toBe(true);
+
+    const text = chatNoticeText('agent_held');
+    // The one notice here that is about work still to come. It must promise the
+    // turn, because that is exactly what the adapter's waiting line will do.
+    expect(text).toMatch(/waiting its turn/);
+    expect(text).toMatch(/will be picked up/);
+    expect(publish).toHaveBeenCalledWith(CHAT, { content: text }, { from: CHAT_NOTICE_SENDER });
+
+    // Damped on its own key: a chat that has been told it is waiting is not
+    // told again, and being told this does not silence the `agent_busy` line
+    // that a hold running out of time still owes it.
+    expect(await notify(CHAT, 'agent_held')).toBe(false);
+    expect(await notify(CHAT, 'agent_busy')).toBe(true);
+    expect(publish).toHaveBeenCalledTimes(2);
   });
 
   it('tells a chat, once, that its channel was archived out from under the bridge (spec §10.9)', async () => {

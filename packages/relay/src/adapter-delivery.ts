@@ -39,6 +39,12 @@ const AGENT_SUBJECT_PREFIX = 'relay.agent.';
  * deliberately broad, because getting it wrong only picks the more general of
  * two true sentences.
  *
+ * `agent_busy` is now the END of a wait, not the start of one: the built-in
+ * runtime holds a message rather than refusing it, so this is reached only when
+ * the hold ran out of time or room (or when an adapter that does not hold at all
+ * reports capacity). The line it produces says what happened and asks for
+ * nothing — {@link ChatNoticeSender} carries `agent_held` for the wait itself.
+ *
  * @param reason - The failure text.
  * @param code - The adapter's machine code, when it gave one.
  */
@@ -179,8 +185,10 @@ export class AdapterDelivery {
    *
    * The returned result marks the message as accepted so publish() counts the
    * adapter as a delivery target. If the background turn ultimately fails
-   * (adapter error, capacity rejection, thrown exception), the envelope is
-   * dead-lettered for forensics; on success the audit row is indexed.
+   * (adapter error, thrown exception, or a wait for capacity that ran out), the
+   * envelope is dead-lettered for forensics; on success the audit row is
+   * indexed. A turn that is merely WAITING for a free slot is neither — it says
+   * so through {@link AdapterContext.onHeld} and then runs.
    */
   private deliverDetached(
     subject: string,
@@ -189,8 +197,17 @@ export class AdapterDelivery {
   ): DeliveryResult {
     const startTime = Date.now();
 
+    // The adapter may park this delivery to wait for a free slot. It knows the
+    // message is waiting; only this module knows where the person who wrote it
+    // is reading. Adding the callback HERE rather than in the context builder
+    // keeps it on the detached path only — the awaited path never waits.
+    const heldContext: AdapterContext = {
+      ...context,
+      onHeld: () => void this.noticeHeld(subject, envelope),
+    };
+
     void this.deps
-      .adapterRegistry!.deliver(subject, envelope, context)
+      .adapterRegistry!.deliver(subject, envelope, heldContext)
       .then(async (result) => {
         if (result === null) {
           // Acceptance was already reported, so a no-match here (registry
@@ -257,6 +274,29 @@ export class AdapterDelivery {
       };
     } finally {
       if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Tell the chat that its message is waiting for a busy agent, not lost.
+   *
+   * The one notice here that is not about a failure. It is fired from inside
+   * the adapter's wait, so it must swallow everything: a notice that threw
+   * would reject a timer callback with nobody to catch it, and the delivery it
+   * is about is still perfectly alive.
+   *
+   * The subject is the failed envelope's `replyTo`, which on `relay_send` the
+   * model writes — the notifier resolves it through the binding store and says
+   * nothing for a chat nothing is bound to, exactly as on the failure path.
+   */
+  private async noticeHeld(subject: string, envelope: RelayEnvelope): Promise<void> {
+    if (!envelope.replyTo || !this.chatFailureNotifier) return;
+    this.logger.warn(`RelayCore: ${subject} is waiting for a free slot on a busy adapter`);
+    try {
+      await this.chatFailureNotifier(envelope.replyTo, 'agent_held');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`RelayCore: failed to tell a chat its message is waiting: ${message}`);
     }
   }
 

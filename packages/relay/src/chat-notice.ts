@@ -15,6 +15,12 @@
  * to the same chat subject the message arrived on, so the person reads it in
  * the conversation they were already looking at.
  *
+ * One reason here is not a stop at all. `agent_held` reports a message that is
+ * **waiting** for a busy agent rather than one that was turned away, and it
+ * exists because the alternative was asking a person to send their message
+ * again (ADR `260818-234541`). Every other line states something that has
+ * already happened; none of them asks anyone to type anything twice.
+ *
  * ## Two rules that keep this from becoming a new bug
  *
  * 1. **The principal must be one the binding router skips.**
@@ -62,6 +68,15 @@ export type ChatNoticeReason =
   | 'agent_missing'
   | 'session_failed'
   | 'agent_busy'
+  /**
+   * The agent was already running everything it can, so this message is waiting
+   * its turn. **Not a refusal** — nothing was dropped, and this is the one
+   * notice here that reports work still to come rather than work declined. It
+   * is sent only once a hold has lasted long enough to be worth a line
+   * (`adapters/claude-code/capacity-hold.ts`), so an ordinary two-second wait
+   * says nothing at all.
+   */
+  | 'agent_held'
   | 'delivery_failed'
   | 'rate_limited'
   | 'budget_exceeded'
@@ -102,8 +117,10 @@ const NOTICE_TEXT: Record<ChatNoticeReason, string> = {
     'I could not start a session for this chat, so your message was not passed on. ' +
     'The DorkOS server log says why.',
   agent_busy:
-    'The agent is handling as much as it can right now, so your message was not picked up. ' +
-    'Send it again in a moment.',
+    'The agent stayed busy, so your message was not picked up. ' + 'Nothing is working on it now.',
+  agent_held:
+    'The agent was busy when your message arrived, so it is waiting its turn. ' +
+    'It will be picked up as soon as the agent is free.',
   delivery_failed: 'Your message did not reach the agent.',
   rate_limited:
     'That was a lot of messages very quickly, so this one was not passed on. ' +

@@ -691,6 +691,25 @@ export interface AdapterContext {
     spanId: string;
     parentSpanId?: string;
   };
+  /**
+   * Set by the delivery pipeline on deliveries **nobody is awaiting**, and by
+   * nothing else. It carries two things at once, and both matter:
+   *
+   * 1. **Its presence is the adapter's licence to wait for capacity.** A
+   *    delivery the pipeline awaits (a Tasks dispatch, a control message) must
+   *    be answered now: waiting there spends the caller's own timeout and
+   *    reports a timeout where the truth was capacity. Only the detached path
+   *    sets this field, so an adapter that keys on it cannot get that wrong.
+   * 2. **Calling it announces the wait**, once the wait has lasted long enough
+   *    to be worth mentioning. The adapter knows a message is waiting; only the
+   *    pipeline knows where the person who wrote it is reading.
+   *
+   * Together they are what turns a busy runtime into "your message is waiting"
+   * instead of the refusal that used to ask people to send it again (ADR
+   * `260818-234541`). Called at most once per delivery, never for a hold that
+   * clears quickly, and implementations must neither throw nor block.
+   */
+  onHeld?: () => void;
 }
 
 /**
