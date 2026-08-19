@@ -99,12 +99,17 @@
  *    get one considered answer instead of three rushed ones, and the running
  *    turn is never cancelled or re-prompted.
  *
- *    The busy REFUSAL survives for the other ceiling, and only for it: an agent
- *    working in another room is working in another checkout, and nothing this
- *    room does will finish that turn. Refusing there is still refusing rather
- *    than queueing (ADR 260726-170125); holding here is not a queue either,
- *    because what is stored is what the agent has not read yet rather than a
- *    plan for a turn that is already scheduled.
+ *    **The other ceiling holds too, and no longer refuses** (ADR 260818-234541,
+ *    which amends 260726-170125 on exactly this point). An agent working in
+ *    another room is working in another checkout, so no second turn starts —
+ *    but the message is kept, the blocking claim's release re-arms every room
+ *    waiting on that working directory, and the turn runs in the room that
+ *    ASKED. Neither hold is a queue: what is stored is what the agent has not
+ *    read yet, rather than a plan for a turn that is already scheduled. What a
+ *    cross-room hold adds is a promise to a person, and it is made only on the
+ *    room's ephemeral lane — which dies with the process that could keep it, so
+ *    a restart cannot leave a durable line saying an answer is coming when none
+ *    is.
  *
  * 7. **Stopping is a control action, and it is the one thing here that is not
  *    a reaction to a message.** {@link RoomTriggerDispatcher.halt} interrupts
@@ -1785,7 +1790,9 @@ export class RoomTriggerDispatcher {
       logger.debug('[rooms] skipped a welcome-back offer: the agent is already working', {
         roomId: room.id,
         authorId,
-        busyWith,
+        // The ceiling only — never the blocking claim, which carries an
+        // `agentPath`, and a filesystem path does not belong in a log context.
+        busyWith: busyWith.where,
       });
       return null;
     }
