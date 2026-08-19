@@ -47,6 +47,36 @@ export function getRequestAgentIdentity(res: Pick<Response, 'locals'>): AgentIde
 }
 
 /**
+ * Whether this request claims to be a machine at all — resolved or not.
+ *
+ * The wider question than {@link getRequestAgentIdentity}, and a different one:
+ * that reader answers "WHICH agent is this", which needs a token that verified;
+ * this answers "is a machine calling", which a token that did NOT verify still
+ * says. A revoked or expired agent is still an agent, and a person in the
+ * cockpit never sends this header at all.
+ *
+ * It is a fact about the request, not a decision about it — this module still
+ * rejects nothing (see the module doc). What the surfaces that read it DO with
+ * the answer is theirs: `lib/caller-authority.ts` feeds it to
+ * `resolveDecisionAuthority` as `agentIdentityPresented`, and
+ * `GET /api/rooms/:id/sessions` refuses on it outright. It lives here, in the
+ * module that owns the header, so those two cannot come to mean different
+ * things by "an agent presented itself" (DOR-1357).
+ *
+ * @param req - The incoming request, for the raw header.
+ * @param res - The response carrying whatever the middleware resolved.
+ * @returns True when the header was present, however it resolved.
+ */
+export function presentsAgentIdentity(
+  req: Pick<Request, 'headers'>,
+  res: Pick<Response, 'locals'>
+): boolean {
+  return (
+    getRequestAgentIdentity(res) !== undefined || req.headers[AGENT_IDENTITY_HEADER] !== undefined
+  );
+}
+
+/**
  * Resolve `X-DorkOS-Agent` from a set of request headers.
  *
  * Split out of the middleware because a WebSocket upgrade needs the identical
