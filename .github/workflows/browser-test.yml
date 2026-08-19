@@ -183,8 +183,33 @@ jobs:
       # but fails to launch, and a launch failure is an error rather than a skip
       # — but only if the binary was fetched at all, so this step failing is
       # meant to fail the job.
+      # The browser download is the one pre-suite step that talks to a CDN and
+      # to apt, and on 2026-08-19 it hung for 25 and then 60 minutes on
+      # GitHub-hosted runners (DOR-1363), eating the suite's whole budget and
+      # ending the job as an output-less cancel: the DOR-1110 failure mode from
+      # a different step. Two guards, both cheap: the browser binaries are
+      # cached between runs keyed on the Playwright version (so a healthy run
+      # downloads nothing), and the install itself gets a short deadline so a
+      # slow CDN fails THIS step, visibly, in minutes rather than an hour.
+      # `--with-deps` still runs on a cache hit because the OS packages are
+      # not part of the cache; it is apt, and fast when the mirrors are up.
+      - name: Resolve the Playwright version the cache is keyed on
+        id: pw
+        run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Chromium browser Playwright drives
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - name: Install the Chromium browser Playwright drives
-        run: pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium
+        timeout-minutes: 10
+        run: |
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+            pnpm --filter @dorkos/e2e exec playwright install-deps chromium
+          else
+            pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium
+          fi
 
       # Warm the turbo cache with everything the webServer legs need, OUTSIDE
       # their readiness timeouts. The two Express legs each run
