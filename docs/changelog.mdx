@@ -5,6 +5,78 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.62.0] - 2026-08-18
+
+### Added
+
+- Settings has a new **Experiments** section: things we are still proving out, not yet ready to be the default. Each one says what it gives you and what it costs, and they are all off until you turn them on. Two are waiting there now. **Keep agents warm between messages** leaves your agent running between messages, so replies from the second message on start about 4× faster — it holds up to about 1 GB of memory per warm agent, and applies to chats you start after turning it on. **Let outside agents reach yours** opens the A2A gateway, which lets agents built by other people send work to yours; it is still early alpha, and turning it on opens a door, so only do it when you know what is on the other side. Every experiment ends the same two ways — it becomes the normal behaviour, or it goes away — so an empty list means nothing is waiting on you (DOR-1304).
+- See a dev server you're running in the canvas from your phone, your tablet, or another laptop — not just the machine it runs on. Live reload keeps working, and pages with deep links open where you asked for them. When a preview can't be shown, the canvas says why in a sentence you can act on instead of going blank.
+- Click the line above the message box in a channel to see each agent that is working, how long it has been going, and what it is answering (DOR-1329)
+- From there, jump to the message an agent is replying to, open the session its work runs in, or stop the room (DOR-1329)
+- When an agent stops to ask you something, you can now answer it from wherever you are in DorkOS. The question shows up in the header on every page, in the sidebar, on the home screen, and on the line above the message box in the channel it came from (DOR-1330)
+- The question says what the agent actually wants, in its own words: "Meeting Notes wants to edit standup.md", not "waiting on you" (DOR-1330)
+- Press `Cmd+Shift+Y` to jump to the next thing waiting on you. With the card in front of you, `A` allows it and `D` refuses it (DOR-1330)
+- Several requests from one agent for the same tool arrive as one card, so five files to read is one decision and one Allow (DOR-1330)
+- **Let all my agents talk to each other** — a single switch in Team → Access. Until now, two agents you made a minute apart could not message each other: each one lands in its own project, and agents only talk inside a project unless you add a rule for the pair, one dropdown pair at a time. Five agents meant twenty rules, and nothing told you until an agent hit the wall in the middle of a job. Flip the switch and every agent on this machine can reach every other one. Flip it back and you're where you were, with any pairs you'd already allowed still there. It's off when you install DorkOS — your agents stay in their own project until you say otherwise. (DOR-1338)
+- The switch also shows up while you're making an agent, once you have another one it wouldn't be able to reach — so you find out before the agent does, not after. (DOR-1338)
+- Packages that need npm libraries now get them installed for you. When you install something from the Marketplace, DorkOS lists the libraries it will download before you approve — in the cockpit dialog and in the terminal — then fetches them as part of the install. No more running `npm install` by hand to make a plugin work (DOR-1341).
+- If a package's libraries cannot be fetched — no npm on your machine, or the download fails — the package still installs and DorkOS tells you exactly what to run to finish the job. The note stays on the package in "Manage Installed", so you can still find it long after the pop-up is gone (DOR-1341).
+- The API reference now documents the two mesh topology endpoints — reading who can talk to whom, and changing it — including the "Let all my agents talk to each other" switch and what happens if you use `*` on only one side of a rule (DOR-1343)
+- New guide, [Answer your agents from anywhere](https://dorkos.ai/docs/concepts/answering-agents), explaining how to answer a question or approval from the header, the sidebar, the home screen, or right above the message box where it came up
+
+### Changed
+
+- The A2A gateway can now be turned on from Settings instead of only from an environment variable. If your machine sets `DORKOS_A2A_ENABLED`, that still wins either way, and the switch shows you what is really running rather than offering a choice the server would ignore (DOR-1304).
+- Turn on message timestamps in Settings and they now show in channels too, not only in sessions (DOR-1328)
+- Rest the pointer on a message's time in a session and you get the whole date, the way a channel already did (DOR-1328)
+- Move through a run of messages with the keyboard and each one now shows its time as you land on it (DOR-1328)
+- The line that says who is working moved above the message box, and it is always the same height, so an agent picking something up no longer pushes what you were reading (DOR-1329)
+- A session's own line lives in the same place now, and still carries how long the turn has taken, what it has spent, and a warning when its permission stops are off (DOR-1329)
+- The line waits ten seconds before it puts a timer up, because a number that starts at zero is nothing to read (DOR-1329)
+- Answer a question once and it is answered everywhere. Every copy of it turns into a line saying what happened: what you chose, or who answered it first and when, or that it is no longer needed (DOR-1330)
+- The question still has ten minutes. If nobody answers in that time it is refused for you and the agent carries on without it, exactly as before. Showing it everywhere is how you get to it in time (DOR-1330)
+- A question that arrives while you are typing never takes the cursor, and `A` is still just the letter A in your message (DOR-1330)
+- When an agent is blocked from messaging another agent, it now names the switch and where to find it, so it can tell you exactly what to turn on. (DOR-1338)
+- Agents that are set up to talk to each other now start every turn with the tools for it already in hand, instead of spending part of their time looking them up (DOR-1337)
+- See exactly which files an install will touch. The install dialog used to say only "134 files will be created, modified, or deleted". It now names the folder they land in, counts how many are new, changed, and removed, and lets you open the full list of paths. Removed files are listed first, because those are the ones an uninstall cannot give back. If a package writes anywhere outside that folder, the dialog says so and names those files. (DOR-1339)
+- Find DorkOS packages in the Marketplace without searching. The catalog carries nearly 300 packages, most of them mirrored from other registries. The browse page now opens with DorkOS's own packages first, and a new Source filter in the sidebar lets you narrow to any single marketplace. Each card names where the package came from. (DOR-1339)
+- Long channels scroll smoothly. A channel now draws only the messages you can see, the way a session's chat already did, so a room with months of history stays as quick to scroll as a room with ten messages (DOR-1331)
+- When a message arrives while you are reading back through a channel, you get a "New messages" button instead of being taken to the bottom. Press it when you are ready (DOR-1331)
+- Open a thread on your phone and come back, and the channel is on the same message you were reading (DOR-1331)
+- Hover a message longer than the window and its buttons stay where you can reach them, at any point in the message (DOR-1331)
+
+### Fixed
+
+- Dev servers you run on your own machine — Vite, Next, anything on a `localhost` address — now show up in the canvas, live reload included. They used to render as a blank white page. Using DorkOS from another device? "localhost" means that device, so the page won't render there yet; the browser toolbar's "Open in system browser" button still gets you to it (DOR-1259).
+- The canvas now tells you when a preview goes wrong instead of showing you nothing: when there's no dev server on that address, when a page is taking too long, and when a page failed to load some of its own files (DOR-1259).
+- Stop now works while an agent is finishing up. Right at the end of a reply, an agent can wake itself back up — a background job it started reports in, or one of its own scripts runs — and DorkOS shows the reply as running again, with a Stop button on it. Pressing that button did nothing: DorkOS asked the agent to stop and then waited for an answer that could never arrive, so the reply kept going until the agent ended it on its own. Stop now gives up on asking politely after three seconds and ends the agent's work itself, and when DorkOS already knows the agent can't hear it, it ends the work straight away. The reply is then marked as one you stopped — not as finished, and not as an error, whether or not the agent had said anything yet. That marking sticks: reopen the chat later and it still shows as stopped. (One rough edge left: the agent's own written record of the chat won't say it was stopped, because it never got the message.) (DOR-1244)
+- Stopping a single background task is bounded the same way: if the agent doesn't answer within three seconds, DorkOS tells you it couldn't stop that task instead of leaving the request hanging — and it never ends the rest of the reply to do it (DOR-1244).
+- Adding context to a chat no longer quietly starts a second agent. "Add context" was starting one even with the "Keep agents warm between messages" experiment turned off, and every message after that in the chat stayed on it. Now the chat says "Added context for the next reply" and your words go to the agent when you next write to it. They are kept in memory until then, so restarting DorkOS in between loses them (DOR-1307)
+- Extensions no longer restart every time you open DorkOS or open a new tab. Each browser tab used to ask the server to start the extensions again, which shut down the running ones and started them over — seconds after launch, and again on every tab. DorkOS now leaves an extension alone when nothing about it has changed, and only restarts it when its code actually changed or you ask for a reload. (DOR-1336)
+- Running DorkOS from your home folder no longer fills the log with warnings about its own bundled extensions. When your working folder is the one that holds DorkOS's own settings, DorkOS was reading its extensions folder twice and mistaking its own extensions for project copies of themselves. It now reads that folder once. (DOR-1336)
+- An API key you save for an extension now works straight away. Extensions read their saved keys fresh every time, so pasting a key in Settings no longer needs a DorkOS restart before the extension can use it. (DOR-1336)
+- When the background half of an extension stops building, its card in Settings now says so — "Server side failed to rebuild… the previous version is still running" — instead of looking perfectly healthy while DorkOS quietly runs the last version that worked. The rest of the extension, including the part you see on screen, keeps working while you fix it. (DOR-1336)
+- Your agents can reach each other by following their own instructions. The address one agent needs to message another was written one way in the instructions and matched another way by the access rules, so an agent that did exactly what it was told got "access denied" — even with the permission switched on. Agents now read the real address straight from the agent list, and a shortened address still gets delivered instead of refused (DOR-1337)
+- An agent whose turn crashes no longer looks like an agent with nothing to say. The agent that asked now gets a clear failure, plus whatever partial work came through, instead of an empty answer it had no way to question (DOR-1337)
+- The Mac app no longer says "Claude Code CLI: missing" when it ships with Claude Code. It was looking for the copy inside its own app bundle in a place it could never run it, and it never looked at the one the app hands it. Both checks now walk the same list of places as the agent itself, so what the setup screen says and what your sessions actually run are the same thing (DOR-1334)
+- Codex now shows up with an honest status even when the Codex tool is not installed. It used to vanish from the setup screen entirely, leaving a card with nothing to say. If you start a Codex chat without it, you get a plain sentence telling you what to install (DOR-1334)
+- "Install Claude" now installs Claude, and the next chat you start uses it — no restart. The button was there but had nothing behind it, so clicking it looked like nothing happening. If a one-click install is not available for something, you get a sentence saying so and the command to run yourself (DOR-1334)
+- `dorkos` and `dorkos doctor` no longer warn that Claude Code is missing when it is right there. They were looking in fewer places than DorkOS itself does (DOR-1334)
+- When a check reports something missing, the server log now says why — which tool, where it looked, and what went wrong — instead of staying silent (DOR-1334)
+- The Mac app now finds the tools you already have installed. Opening DorkOS from the Dock or Spotlight used to hide everything outside a handful of system folders, so agents installed in places like `~/.local/bin` or Homebrew looked missing — even though the same DorkOS found them instantly from a terminal. The app now reads your shell's own setup at startup. (DOR-1335)
+- The Mac app now opens in your home folder instead of somewhere inside the app itself. That wrong starting point was why it could show an empty list of chats and a folder path that nothing would open. (DOR-1335)
+- Codex is now included in the Mac app. It was left out of the download by mistake, so the app acted as if Codex did not exist. (DOR-1335)
+- Add-ons from the Marketplace now load in the Mac app. A missing piece of the build stopped them starting every time you opened it. (DOR-1335)
+- With **Keep agents warm between messages** turned on (Settings → Experiments), a chat now reaches the agent the first message warmed up from the second message on, instead of starting a second one beside it. Replies start faster, and DorkOS stops holding a spare agent open for every chat. (DOR-1309)
+- A new agent no longer changes namespace five minutes after you create it. The namespace is the group an agent's permissions hang off, shown in Team → Access. DorkOS put every agent it created into one shared namespace and then moved it into its own on the next background check, so two agents made in the app could talk for a few minutes and then quietly could not. They now land in the namespace they keep (DOR-1342)
+- When an agent does change namespace, it no longer leaves its old one behind it. An agent created by an older version still moves once, on the first background check after you upgrade, and that move now clears the permissions of the namespace it left, instead of leaving them there for good (DOR-1342)
+- Agents you message through Relay now answer with the model you set for them, whether the message comes from another agent or from a chat app like Telegram or Slack. An agent pinned to a fast, cheap model was quietly answering on whatever the runtime picked instead — the same agent already used your setting in channels and in chat. A conversation you have already changed the model on keeps your choice. (DOR-1344)
+
+### Security
+
+- An agent can never answer a question, including its own. Anything calling DorkOS as an agent is refused. With Require login turned on, so is anything holding one of your API keys, which is the kind of password a program uses instead of signing in. Only a person signed in on this machine can answer (DOR-1330)
+- A channel still shows only a short note when an agent is waiting, with no file name, no command and no countdown. The question itself, with all of its detail, goes to this copy of DorkOS, where you are the person who can answer it (DOR-1330)
+
 ## [0.61.0] - 2026-08-17
 
 ### Added
@@ -2029,70 +2101,4 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Docker packaging is more reliable: the release tarball is guarded against missing files, `docker:run` works out of the box, and `smoke:npm` can be pinned to a specific version.
 - Fixed a blank cockpit when the host port is remapped (Docker `-p`, an SSH tunnel, or a reverse proxy).
 
-## [0.52.0] - 2026-07-20
-
-> Shapes install a whole working setup in one step, creating an agent is a real moment that ends with the agent saying hello, and DorkOS docs now speak the markdown that AI tools read.
-
-### Added
-
-- **Shapes: install a whole setup, not just a tool.** Shapes are a new kind of marketplace package (DOR-355). A plugin adds one capability; a Shape describes a complete working setup: which extensions to turn on, how the dashboard and sidebar are arranged, a suggested agent, and the schedules that keep it running.
-  - Install a Shape from the marketplace like any other package, with the same safety net as plugins: a failed install cleans up after itself completely. (DOR-355)
-  - Apply an installed Shape through the API (`POST /api/shapes/:name/apply`). Applying is idempotent, and anything missing (an extension, an agent, an API key) never blocks the rest — it shows up as an honest warning instead. (DOR-355)
-  - Fork a Shape to make your own version, with a "forked from" lineage trail, using the new `dorkos shape fork` command. (DOR-355)
-  - Shape-aware conflict detection, validator coverage for Shape manifests, and a scaffold command that generates a valid starter skeleton to build your own Shape from. (DOR-355)
-- **Switch Shapes from inside the cockpit.** Open the command palette and pick "Switch Shape" to see every Shape you've installed and apply one in a click (DOR-355). Applying a Shape rearranges your workspace, turns on its extensions live with no reload, and offers its suggested agent for you to bring in or skip. If a piece is missing, you get an honest note about it instead of a silent gap.
-- **A brand-new agent says hello first.** The moment you bring an agent to life, its first session opens with a quiet birth line — its name, the day it was born, where it lives, and the runtime it runs on — and then the agent speaks, without you typing a thing. A ready-made agent introduces itself in its own voice and offers a first action (it waits for your go-ahead). A blank "Design your own" agent says a warm hello and asks what you'd like it to take care of. The greeting is genuinely the agent's — the prompt that sparks it never shows up as if you had typed it. (DOR-355)
-- **Browse the marketplace by category.** The Marketplace page now shows a row of category chips — click one (like Security or Code Review) to narrow the grid, and share the filtered view as a link. New category pages on dorkos.ai, one per category, list the packages in each and link back to the full marketplace. (DOR-356)
-- **See what a package does before you install it** — the marketplace detail panel now shows each package's README right below its permissions.
-- **Extensions can now add their own tabs to the sidebar.** An extension that contributes a `sidebar.tabs` view shows up as a real tab alongside the built-in Overview, Sessions, Schedules, and Connections — so the Linear Ops shape's Linear tab actually appears once you enable it. A contributed tab opens its own panel, keeps its place across reloads, and quietly steps aside back to Overview if you later remove the extension.
-- Extensions can now tell which agent they're running beside: the app resolves the agent registered in the current project folder and hands its id to the extension, updating live when you switch folders. (DOR-362)
-- Extension panels can now show or hide based on the agent and project folder you're working in — a right-panel tab can be scoped to appear only for a specific agent, or only in a certain folder. (DOR-364)
-- AI tools can now ask any docs page for a markdown version: send `Accept: text/markdown` to a normal docs URL, or add `.md` to the end (like `/docs/getting-started/quickstart.md`), and you get clean markdown instead of the full web page. (DOR-345)
-- A markdown sitemap at `/sitemap.md` gives agents one plain-text list of every docs, feature, blog, and marketplace page. (DOR-345)
-- New "Open in Perplexity" and "Open in Claude Desktop" shortcuts on docs pages, alongside the existing Claude, ChatGPT, Cursor, and Scira links. (DOR-345)
-- A `context7.json` file so DorkOS docs get indexed by Context7, a common docs source for coding agents. (DOR-345)
-- Every docs page now has its own link-preview image and describes itself to search engines and AI answer tools, so a shared docs link shows a real card and the page is easier to surface as a source. (DOR-346)
-- Search engines and AI tools now see DorkOS as one connected entity: the site tells them who makes DorkOS (with a logo), that it is open source, and where the code lives, all linked to the app itself. (DOR-347)
-- The DorkOS blog feed is now advertised on every page across the site, so a feed reader can find it from anywhere. (DOR-347)
-- Added a web app manifest and app icons, so saving DorkOS to a phone home screen shows the DorkOS mark and name instead of a generic thumbnail. (DOR-347)
-- The install page now has its own share image with platform badges (macOS, npm/CLI, and the Windows alpha), so links to it preview the ways to get DorkOS. (DOR-347)
-- Added a script to notify Bing and Yandex when pages change, so their search and AI answers pick up updates faster. (DOR-347)
-
-### Changed
-
-- **Creating an agent is a real moment now.** "New agent" opens a fullscreen gallery that asks one thing — what will your agent do? Start from a ready-made agent, shown like a job listing with a face, what it does, and how it connects, or choose **Design your own** and describe the job in your own words. The naming screen shows a live preview of your agent taking shape: type a name (or pick a suggestion and reroll for more), give it a face, and tuck the details behind a single "Details" toggle. When it's ready, **Bring it to life**. (DOR-355)
-- **A "Design your own" agent now writes its own personality, live in your first chat.** Instead of a plain hello, the new agent runs a short interview: it asks what you'd like it to take care of, asks at most a couple of sharp follow-ups, then writes its own personality file right in front of you. When it's done, it sums up what it understood and offers one first thing it could do. It waits for your go-ahead and never starts the real work on its own. Give a one-word answer, or say "just figure it out," and it won't grill you. (DOR-355)
-- **One entry to create agents.** Every path now leads to the same welcome: when your first-run scan finds no projects, DorkOS offers "Create your first agent" and opens the real agent gallery — no more bare fill-in-the-blanks form. Installing a ready-made agent from the Marketplace introduces it first — meet it, name it, give it a face — and brings it to life through the standard creation flow, so it always lands in its own place and can never overwrite an agent you already have. (DOR-355)
-- **Import becomes its own flow, with a real finish.** Bring in existing projects from the gallery, the sidebar's add menu, or the command palette: scan your machine, add the projects you want, and see a clear "N projects joined" summary with a Done button instead of a dead end. (DOR-355)
-- **"Set up" a Shape's suggested agent, and it arrives ready — not blank.** When a Shape offers an agent you don't have yet, the switcher's "Set up" opens a single confirm card: meet the agent, read what it does in its own words, and see plainly what turns on, where it will live, and which skills it uses. One click creates it, already carrying its personality and its runtime. "Customize first" still lets you rename it before it's born. (DOR-355)
-- **Marketplace filters moved into the sidebar.** Opening the Marketplace now hands the sidebar over to a filter panel: pick a package type or check off one or more categories — each row shows how many packages match — and the grid updates as you go. Category filters combine, so you can browse Security and Code Review at once. Your filters still live in the URL, so a filtered view is shareable and survives a refresh. (DOR-379)
-- Switching agents now live-remounts the extension slots for the new folder instead of reloading the whole page — your open session, scroll position, and unsent message survive the switch. (DOR-363)
-- Social preview images now use the real DorkOS brand font and share one set of building blocks, so previews look consistent across the blog, marketplace, and feature pages. (DOR-344)
-- Blog post previews now show a reading-time estimate and when the post was last updated, not just when it was first published. (DOR-344)
-- The security, privacy, terms, cookies, and telemetry pages now carry the same link-preview and canonical-URL details as the rest of the site. (DOR-344)
-- Named every welcome AI crawler in `robots.txt` (OpenAI, Anthropic including Claude Code, Perplexity, and Meta) with a clear, explicit invitation instead of relying on the catch-all rule. (DOR-345)
-
-### Fixed
-
-- Shapes you install now show up in the marketplace's Installed view, where you can uninstall or update them just like plugins and agents.
-- Updating the Shape you're currently in keeps you in it: the new version is re-applied automatically, instead of the update silently dropping your cockpit back to no Shape.
-- Uninstalling the Shape you're currently in now clears it cleanly, instead of leaving your cockpit pointed at a Shape that's no longer there.
-- The install preview for a Shape now shows the real folder its files will land in (`shapes/`), not a `plugins/` path.
-- Installing a Shape no longer offers the agent scope choice that was silently ignored — Shapes set up your whole cockpit, so they install once for you.
-- A schedule that comes with a Shape — like a tick that checks your Linear inbox every 15 minutes — now switches on by itself the moment its agent exists. Before, a schedule set up ahead of its agent was left switched off for good. Schedules you made yourself are never touched, and one you turned off yourself stays off.
-- Agents can now switch which agent you're viewing: when an agent runs the "switch agent" command, the cockpit jumps to that agent's folder and chat, instead of quietly doing nothing. (DOR-354)
-- A Marketplace package whose README has a fenced code-block no longer risks crashing the whole page. If the code-block viewer fails to load, the README is replaced by a short note and the package stays open — and a chat message with code survives a broken chunk instead of taking down the transcript.
-- The README preview reads package files safely — a symlinked or oversized README can't leak your local files or eat memory (the read is capped at 200 KB and symlinks are rejected).
-- The dorkos.ai marketplace page adds back its missing "Shape" filter tab, so you can browse Shapes the way you can Agents, Plugins, Skill Packs, and Adapters.
-- The Featured rail on the marketplace page was always empty because it read the featured flag from the wrong place. It now shows featured packages of every type and steps out of the way the moment you search or pick a filter.
-- The 16 marketplace category pages are now listed in the sitemap so search engines can find them.
-- Marketplace browse now labels its two filter rows — "Type" and "Category" — so they no longer read as two identical rows, and the category filter drops its redundant "All" chip for a small ✕ you click to clear it.
-- The Marketplace browse sort menu drops "Popular" and "Recent" — both quietly did nothing — leaving an honest choice between Featured and A–Z.
-- The right panel (terminal, files, agent profile) now opens at a comfortable width instead of a squished sliver, and always keeps a readable minimum width. (DOR-388)
-- The sidebar no longer spills past its edge while you switch views. The panel that slides in or out now stays neatly clipped inside the sidebar, and slide-out panels, dialogs, and menus animate open and closed instead of popping into place — including the marketplace package details sheet.
-- Docs pages now point search engines at a single canonical address and set their own preview title and description instead of falling back to the sitewide default. (DOR-346)
-- Link previews on X now match the rest of the page: every page sets its own title and description instead of a generic fallback, and the sitemap reports honest "last updated" dates. (DOR-344)
-- Link previews and structured data now show a page's edit date only when it actually has one, instead of inventing a change date. (DOR-344)
-- Docs pages now advertise their plain-markdown version, so tools know they can fetch the `.md` alternate. (DOR-345)
-
-Older releases (v0.1.0 – v0.51.0) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.52.0) live in the [Changelog archive](/changelog-archive).
