@@ -202,14 +202,27 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # The part that actually hung on 2026-08-19 was apt inside `--with-deps`:
+      # the runner image's first mirror (azure.archive.ubuntu.com) stopped
+      # answering and apt's default per-connection timeout is 120 s, retried
+      # per file, so a dead mirror is an hour of silence. Shorter acquire
+      # timeouts make apt fall through the image's mirror list in seconds; the
+      # retry covers a mirror that flaps rather than dies.
       - name: Install the Chromium browser Playwright drives
         timeout-minutes: 10
         run: |
-          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
-            pnpm --filter @dorkos/e2e exec playwright install-deps chromium
-          else
-            pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium
-          fi
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-ci-acquire-timeouts >/dev/null
+          for attempt in 1 2; do
+            if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+              pnpm --filter @dorkos/e2e exec playwright install-deps chromium && exit 0
+            else
+              pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium && exit 0
+            fi
+            echo "playwright install attempt $attempt failed; retrying once" >&2
+            sleep 15
+          done
+          exit 1
 
       # Warm the turbo cache with everything the webServer legs need, OUTSIDE
       # their readiness timeouts. The two Express legs each run

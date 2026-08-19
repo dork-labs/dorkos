@@ -86,6 +86,8 @@ jobs:
       - name: Install build tools
         timeout-minutes: 6
         run: |
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-ci-acquire-timeouts >/dev/null
           for attempt in 1 2; do
             if sudo apt-get update && sudo apt-get install -y python3 build-essential; then exit 0; fi
             echo "apt attempt $attempt failed; retrying once" >&2
