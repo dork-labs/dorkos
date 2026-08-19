@@ -952,7 +952,7 @@ The plugin uses a **hexagonal architecture** with a `Transport` interface that d
 Send is **trigger-only** (ADR-0264): posting a message starts a detached turn and returns immediately; all delivery rides the durable stream the `Transport` seam sources, not the return value of the post itself.
 
 ```
-User input → ObsidianApp → useChatSession.handleSubmit()
+User input → SessionComposer → ConversationTarget.send() → useChatSession.submitContent()
   → transport.postMessage(sessionId, content)   // trigger-only, resolves immediately
     → DirectTransport.turnTrigger → createEmbeddedTurnTrigger(runtime) → ClaudeCodeRuntime → Claude SDK query()
       → feeds the session projector, in-process

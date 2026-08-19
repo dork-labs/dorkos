@@ -169,7 +169,20 @@ function ComposerDemo({
           <Conversation.Composer
             value={value}
             onChange={setValue}
-            onSubmit={() => {}}
+            // Through the port, which is what both shipped surfaces do since
+            // DOR-1354 — a demo whose Enter went nowhere would leave the bench
+            // claiming a card is wired when only its chrome is.
+            //
+            // The clear is the ROOM's shape, not a session's, and the demo
+            // borrows it deliberately: a fixture target has no submit behind it
+            // to own the clear the way a session's does (it empties the box
+            // itself, inside the send, once the attachment transform
+            // succeeded). Emptying here is the only way the demo can show the
+            // one thing a person actually sees on Enter.
+            onSubmit={() => {
+              void target.send({ text: value });
+              setValue('');
+            }}
             {...(target.queue !== undefined &&
               showQueueItems && {
                 queue: (
@@ -333,16 +346,19 @@ function AttachmentsDemo({
 
 /**
  * `Conversation.Composer`, benched against the session and room/DM adapters —
- * idle, typing, attachments, mentions, queue depth, an Ask takeover, and the
- * archived / `canSend: false` refusal.
+ * idle, typing, attachments, mentions, queue depth, an Ask takeover, and each
+ * surface's own `canSend: false` refusal.
  */
 export function ComposerShowcases() {
   const sessionIdle = buildSessionTarget();
   const sessionTyping = buildSessionTarget();
   const sessionQueued = buildSessionTarget();
-  const sessionArchived = buildSessionTarget({
+  // The session's REAL refusal, not an invented one: `useSessionTarget` closes
+  // the box only when there is no conversation selected — the Obsidian embed's
+  // first load — and says exactly this.
+  const sessionNoConversation = buildSessionTarget({
     canSend: false,
-    canSendReason: 'This session has ended. Start a new one to keep going.',
+    canSendReason: 'Pick a conversation, or start a new one.',
   });
   const roomIdle = buildRoomTarget();
   const roomTyping = buildRoomTarget();
@@ -422,10 +438,10 @@ export function ComposerShowcases() {
       </TransportProvider>
 
       <ComposerDemo
-        label="Archived / canSend: false — session, with its own reason"
+        label="canSend: false — a session with no conversation selected, with its own reason"
         surface="session"
         capabilities={SESSION_CAPABILITIES}
-        target={sessionArchived}
+        target={sessionNoConversation}
       />
       <ComposerDemo
         label="Archived / canSend: false — room, with its own reason"

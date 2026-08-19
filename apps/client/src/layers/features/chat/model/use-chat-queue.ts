@@ -24,6 +24,13 @@ interface UseChatQueueOptions {
    * server has it — the composer holds the words until then, which is the whole
    * of the "nothing typed is lost" promise now that no undo handle is needed
    * (DOR-480).
+   *
+   * The session's host supplies its `ConversationTarget.queue` here (DOR-1354),
+   * so this hook is the surface's own funnel into the port — the same role
+   * `ChannelComposer.handleSubmit` plays on the way into the room target's
+   * `send`. It stays a parameter because everything ABOVE the port is this
+   * hook's: the native-command intercept, the duplicate-press latch, the
+   * keystroke record, and the clear that waits for the server's answer.
    */
   onEnqueue: (content: string) => Promise<boolean>;
   /**
