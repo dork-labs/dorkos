@@ -207,6 +207,14 @@ export function SessionComposer({
    * back into the boolean the funnel is built on: the composer keeps the words
    * until the server confirms it has them (DOR-480), so "did it land" has to be
    * an answer rather than an unhandled rejection.
+   *
+   * The missing-`queue` branch is unreachable as this ships and is a `false`
+   * rather than a throw for that reason. Every session target defines `queue`
+   * (its presence is what draws the queue chrome at all), and `target` itself
+   * is non-null by the time anything can press a key — `Conversation.Composer`
+   * refuses to render without one. It exists because the port permits a
+   * queueless surface, and "the words were not taken" is the honest answer for
+   * one: the composer keeps them, which is what it would do anyway.
    */
   const holdForTurn = useCallback(
     async (content: string): Promise<boolean> => {

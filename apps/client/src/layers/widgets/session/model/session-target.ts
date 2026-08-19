@@ -140,13 +140,24 @@ export function useSessionTarget(input: SessionTargetInput): ConversationTarget 
       placeholder,
       // A session this browser is about to create already HAS an id — it is
       // minted client-side and the first message is what makes it real on the
-      // server — so an empty one is not "new", it is "not resolved yet". Both
-      // delivery paths refuse it outright (the queue POST returns `false`
-      // without asking, and the trigger has no session to address), so the box
-      // says so rather than eating a message. Same sentence the room target
-      // uses for its own still-loading case, because it is the same state.
+      // server — so an empty one is not "new" and it is not "loading" either:
+      // there is no conversation selected. The Obsidian embed opens in exactly
+      // that state (`app-store` seeds `sessionId: null`, nothing auto-mints
+      // one, and switching agents resets it), and it keeps a composer on screen
+      // the whole time.
+      //
+      // **This is a fix, not a new restriction.** Enter there used to reach
+      // `postMessage(null, …)`, which the route rejects outright —
+      // `parseSessionId` is a uuid check, so `/api/sessions/null/messages` is a
+      // 400 — and the composer had already been emptied by then. The words were
+      // gone and all that came back was "Could not send message".
+      //
+      // The sentence is its OWN, deliberately not the room target's "Still
+      // opening this conversation…": nothing is opening here, and telling
+      // somebody to wait for something that will never arrive is the dishonest
+      // half of refusing. It names the way out instead.
       canSend: sessionId !== '',
-      ...(sessionId === '' ? { canSendReason: 'Still opening this conversation…' } : {}),
+      ...(sessionId === '' ? { canSendReason: 'Pick a conversation, or start a new one.' } : {}),
       send,
       queue,
       attachments,

@@ -446,6 +446,46 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
     expect(screen.queryByTestId('clear-armed-hint')).not.toBeInTheDocument();
   });
 
+  it('closes the box and names the way out when no conversation is selected', () => {
+    // The Obsidian embed's first load, exactly: `app-store` seeds
+    // `sessionId: null`, nothing auto-mints one, and the composer is on screen
+    // the whole time. Enter used to reach `postMessage(null, …)`, which the
+    // route answers `400 INVALID_SESSION_ID` — after the composer had already
+    // been emptied, so the words were gone and all that came back was "Could
+    // not send message".
+    //
+    // **Seeded defect:** put `canSend: true` back in `useSessionTarget` and
+    // this goes red on both assertions.
+    render(<SessionComposerBench {...baseProps} sessionId="" input="hello?" />);
+
+    const props = lastChatInputProps();
+    expect(props.canSubmit).toBe(false);
+    // Its own sentence, never the room's "Still opening this conversation…":
+    // nothing is opening, and there is a way out to name.
+    expect(props.canSubmitReason).toBe('Pick a conversation, or start a new one.');
+  });
+
+  it('sends nothing at all when no conversation is selected', () => {
+    // The other half: the reason is drawn AND the send is genuinely closed.
+    // Reason-without-refusal would be a label over a live box.
+    const submit = vi.fn();
+    const enqueue = vi.fn().mockResolvedValue(true);
+    render(
+      <SessionComposerBench
+        {...baseProps}
+        sessionId=""
+        input="hello?"
+        submit={submit}
+        enqueue={enqueue}
+      />
+    );
+
+    lastChatInputProps().onSubmit!();
+
+    expect(submit).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
   it('keeps the queue panel out of the tree entirely when nothing is queued', () => {
     // The presence guard lives at the call site so AnimatePresence can watch the
     // panel leave; a panel that merely renders null never animates out.

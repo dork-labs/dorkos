@@ -811,12 +811,25 @@ What moved, and what deliberately did not:
   that has no business with it and left a second copy of `deliver` for steer and stage.
 - **Steer and Add context stay props.** The port has two verbs because those are the two every
   surface could have; steering is one runtime's capability on one surface.
-- **`canSend` became a real answer.** There is no "gone session" notion anywhere in the client —
-  the spec's own example was aspirational — so the case it now covers is the one that genuinely
-  exists and is genuinely reachable: `sessionId === ''`. The Obsidian embed seeds no session id
-  until a conversation is opened, and `deliverWithDisposition` returns `false` without asking
-  while `executeSubmission` has no session to address. The box says "Still opening this
-  conversation…", the same sentence the room target uses for its own still-loading case.
+- **`canSend` became a real answer, and it fixes a real bug.** There is no "gone session" notion
+  anywhere in the client — the spec's own example was aspirational — so the case it covers is the
+  one that genuinely exists and is genuinely reachable: `sessionId === ''`, which is the Obsidian
+  embed's first load. `app-store` seeds `sessionId: null`, nothing auto-mints one (`EmbedSidebar`
+  mints on a row click or New), switching agents resets it to null again
+  (`use-directory-state.ts`), and `App.tsx` keeps a composer on screen throughout.
+
+  What happened there before was checked rather than assumed: Enter reached
+  `postMessage(null, …)`, and `POST /api/sessions/:id/messages` validates its id with
+  `parseSessionId`, which is a **uuid** check — so `/api/sessions/null/messages` is a
+  `400 INVALID_SESSION_ID`. The composer had already been emptied by then (`clearInput` runs
+  before the POST), so the words were gone and all that came back was "Could not send message".
+  Refusing up front is strictly better than that.
+
+  The sentence is its **own** — "Pick a conversation, or start a new one." — deliberately not the
+  room target's "Still opening this conversation…". Nothing is opening in that state; telling
+  somebody to wait for something that will never arrive is the dishonest half of refusing, and
+  the honest version names the way out.
+
 - **`useSessionSubmit.handleSubmit` folded into `submitContent`**, which now takes
   `{ clearInput }`. `handleSubmit` survives as the zero-argument form `useLaunchPrompt` sends
   through, so the `?prompt=&send=1` link still takes the composer's own path and no other.
@@ -825,6 +838,19 @@ The net is one new cross-surface test rather than one more per surface:
 `test-helpers/__tests__/composer-target-contract.test.tsx` mounts each host composer over a spy
 target and presses Enter. It lives beside the two benches because no widget may import another
 and the case is about the pair.
+
+Two more tests came out of review, both pinning things the refactor made possible to get wrong
+silently:
+
+- `widgets/session/__tests__/ChatPanel-send-clears.test.tsx`. Emptying the composer used to be
+  structural — `handleSubmit` hard-coded the `clearInput` argument — and is now one line of
+  wiring in `ChatPanel`. Dropping `{ clearInput: true }` left all 954 client test files green
+  while the box stopped emptying on every send. This mounts the real panel over the real submit
+  path and asserts both halves: the draft is `''` after an accepted trigger, and it is untouched
+  when the attachment transform throws (DOR-480).
+- Two cases in `SessionComposer.test.tsx` for the no-conversation state — that the box is closed
+  with its own sentence, and that Enter reaches neither `send` nor `queue`. A reason drawn over a
+  live box would be a label, not a refusal.
 
 One thing this did NOT fix, said out loud because it touched it: `ChatPanel.tsx` and
 `SessionComposer.tsx` both grew (571 → 583 and 503 → 534 raw lines), which is the trigger
