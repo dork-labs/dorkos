@@ -901,7 +901,11 @@ describe('projectSessionMessages', () => {
     );
     const parts = (messages[2].parts ?? []).filter((p) => p.type === 'tool_call');
     expect(parts).toHaveLength(1);
-    expect(parts[0]).toMatchObject({ toolCallId: 'rec-1', status: 'pending', approvalParked: true });
+    expect(parts[0]).toMatchObject({
+      toolCallId: 'rec-1',
+      status: 'pending',
+      approvalParked: true,
+    });
   });
 
   it('carries PARKED onto a card the turn does not represent at all', () => {
