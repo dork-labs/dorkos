@@ -18,6 +18,7 @@ import { useNavigate } from '@tanstack/react-router';
 import {
   roomDisplayTitle,
   threadRootIdOf,
+  useHaltAgent,
   useHaltRoom,
   usePromoteHold,
   useRoomHolds,
@@ -64,6 +65,9 @@ const EXCERPT_MAX = 64;
 
 /** How many faces stack in front of the sentence before they become a count. */
 const FACE_LIMIT = 3;
+
+/** The "nobody is being stopped" set, hoisted so it is one identity per render. */
+const EMPTY_STOPPING: ReadonlySet<string> = new Set();
 
 /** What the room's lane needs to draw itself. */
 export interface RoomLiveLaneProps {
@@ -124,6 +128,30 @@ export function RoomLiveLane({
   const [peekOpen, setPeekOpen] = useState(false);
   const sessions = useRoomSessions(room.id, { enabled: peekOpen });
   const halt = useHaltRoom();
+  // `mutate` rather than the whole result: the mutation object is a new identity
+  // on every state transition of its own, so depending on it would rebuild this
+  // callback the moment a stop starts — the one instant a row is mid-press.
+  const { mutate: stopOneAgent } = useHaltAgent();
+  // Tracked per author rather than off one `isPending`, which would grey out
+  // every row's button the moment any one of them was pressed.
+  const [stoppingAgents, setStoppingAgents] = useState<ReadonlySet<string>>(EMPTY_STOPPING);
+  const stopAgent = useCallback(
+    (authorId: string) => {
+      setStoppingAgents((waiting) => new Set(waiting).add(authorId));
+      stopOneAgent(
+        { roomId: room.id, authorId },
+        {
+          onSettled: () =>
+            setStoppingAgents((waiting) => {
+              const next = new Set(waiting);
+              next.delete(authorId);
+              return next;
+            }),
+        }
+      );
+    },
+    [stopOneAgent, room.id]
+  );
   const promote = usePromoteHold();
   /**
    * Which wait this reader has asked to be answered first — author id → the
@@ -397,6 +425,8 @@ export function RoomLiveLane({
           promoted={promotedNow}
           onStopAll={() => halt.mutate({ roomId: room.id })}
           stopping={halt.isPending}
+          onStopAgent={stopAgent}
+          stoppingAgents={stoppingAgents}
         />
       }
     />

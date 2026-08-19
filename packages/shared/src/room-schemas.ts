@@ -115,10 +115,12 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   the prompt auto-denies ten minutes later — the 2026-07-31 incident, where
  *   agents were silent for up to forty-one minutes with nothing written
  *   anywhere (DOR-784).
- * - `halted` — somebody stopped everything running in this room. A control
- *   action, never inferred from anything anybody typed (room-participation spec
- *   §10.4). About the room rather than one member, so it carries no
- *   `subjectAuthorId`.
+ * - `halted` — somebody stopped work here. A control action, never inferred from
+ *   anything anybody typed (room-participation spec §10.4). It comes in two
+ *   scopes and `subjectAuthorId` is the tell: **absent** means the whole room was
+ *   stopped, **present** names the one agent that was
+ *   (`specs/room-per-agent-stop`). Both are written by the same log, damped on
+ *   different keys.
  * - `addressing_changed` — DorkOS itself changed when the agents in this room
  *   answer. The only code not written by `rooms/notices/notice-copy.ts`: migration 0039 wrote
  *   it once, into every channel whose members it moved from `mention-only` to

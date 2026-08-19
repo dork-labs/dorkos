@@ -40,9 +40,13 @@ to the session interrupt endpoint, would silently re-open all three.
 ## Decision
 
 A per-agent stop is the room-wide halt with its scope narrowed to one `(room, agent)` key, not a
-new verb. `RoomTriggerDispatcher.haltAgent` performs the same five steps in the same order as
-`halt` — mark the dispatch, drop that agent's collection, write the notice, interrupt, release the
-claim through `releaseClaim` — and touches no other key. It is reached by a sibling route,
+new verb. `RoomTriggerDispatcher.haltAgent` performs the same five steps under the same
+constraints as `halt` — mark the dispatch, drop that agent's collection, write the notice,
+interrupt, release the claim through `releaseClaim` — and touches no other key. The constraints,
+not the statement order, are what carries over: all three are about what must be true **before the
+claim is released**, and the two bodies order the middle pair differently on purpose, because a
+per-agent stop has to know what it dropped before it can say what it found while the room-wide one
+speaks for everybody and can say it first. It is reached by a sibling route,
 `POST /api/rooms/:id/halt/:authorId`, rather than by an optional target field on the existing
 route, because an optional target fails open: a client that omits it stops the whole room. It
 reuses the `halted` notice code and distinguishes the two scopes by `subjectAuthorId` (absent =
@@ -91,3 +95,21 @@ the same way, or it is not built.
 - The temptation to give an agent this button grows, because a scoped stop looks less drastic than
   a room-wide one. The gate is unchanged and is asserted in the route test table rather than
   assumed.
+
+### Inherited, and chosen rather than overlooked
+
+Two shapes come with reusing the `halted` notice at a smaller scope. Both were traced before this
+was accepted; neither is a bug to be fixed later, and each is written down so the next reader does
+not "discover" it.
+
+- **The stopped agent does not read its own stop line.** The ambient window an agent is shown
+  excludes entries whose `subjectAuthorId` is that agent (`room-store.ts`, `excludeAuthorId`), so
+  every notice about a member is written for everybody EXCEPT that member — the same rule that
+  keeps an agent from reading "Ana is busy" about itself and answering it. A stop reaches the
+  runtime, never the model (ADR `260726-170127`), so the agent has nothing to learn from the line
+  anyway: what stopped it was a transport signal, and the next thing it sees is the next message.
+- **A second stop before any new claim is silent.** Damping re-arms on `workStarted`, which only
+  fires when a claim is taken. Pressing Stop twice on an idle agent is one line, exactly as it is
+  for the room-wide halt, and for the same reason: what makes a second line a repeat is that
+  nothing happened in between. The person still gets an answer to the second press — the HTTP
+  `{ stopped: 0 }` — and the room does not say the same sentence twice.
