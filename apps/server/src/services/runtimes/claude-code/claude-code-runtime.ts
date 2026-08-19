@@ -33,6 +33,7 @@ import type {
   RelayPort,
   SessionSettingsPort,
   McpAppServerConnection,
+  InteractionAnswerOptions,
   ToolDecisionOptions,
   SessionWarmth,
   DeliverIntoTurnOpts,
@@ -689,15 +690,25 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // why" can never outrun what was delivered.
       this.notifyInteractionResolved(sessionId, toolCallId, approved ? 'approved' : 'denied', {
         reasonGiven: !approved && (options?.denyReason?.trim() ?? '') !== '',
+        ...(options?.answeredBy ? { answeredBy: options.answeredBy } : {}),
       });
     }
     return resolved;
   }
 
   /** @inheritdoc */
-  submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean {
+  submitAnswers(
+    sessionId: string,
+    toolCallId: string,
+    answers: Record<string, string>,
+    options?: InteractionAnswerOptions
+  ): boolean {
     const resolved = this.sessionStore.submitAnswers(sessionId, toolCallId, answers);
-    if (resolved) this.notifyInteractionResolved(sessionId, toolCallId, 'answered');
+    if (resolved) {
+      this.notifyInteractionResolved(sessionId, toolCallId, 'answered', {
+        ...(options?.answeredBy ? { answeredBy: options.answeredBy } : {}),
+      });
+    }
     return resolved;
   }
 
@@ -706,14 +717,16 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     sessionId: string,
     interactionId: string,
     action: 'accept' | 'decline' | 'cancel',
-    content?: Record<string, unknown>
+    content?: Record<string, unknown>,
+    options?: InteractionAnswerOptions
   ): boolean {
     const resolved = this.sessionStore.submitElicitation(sessionId, interactionId, action, content);
     if (resolved) {
       this.notifyInteractionResolved(
         sessionId,
         interactionId,
-        action === 'accept' ? 'answered' : 'denied'
+        action === 'accept' ? 'answered' : 'denied',
+        { ...(options?.answeredBy ? { answeredBy: options.answeredBy } : {}) }
       );
     }
     return resolved;
@@ -726,12 +739,17 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * snapshot, leaving ghost Approve/Deny cards and a `blocked` projection.
    * Peeks under the client-facing id first, then the canonical alias (a
    * pre-rekey projector may still be keyed by the request UUID's canonical id).
+   *
+   * `opts.answeredBy` rides along untouched. This adapter never resolves a name
+   * of its own: whoever called in is the only thing that knows who answered, so
+   * an answer that arrived with nobody named stays unnamed all the way to the
+   * receipt.
    */
   private notifyInteractionResolved(
     sessionId: string,
     interactionId: string,
     resolution: 'approved' | 'denied' | 'answered',
-    opts?: { reasonGiven?: boolean }
+    opts?: { reasonGiven?: boolean; answeredBy?: string }
   ): void {
     this.resolveLiveProjector(sessionId)?.resolveInteraction(interactionId, resolution, opts);
   }

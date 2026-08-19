@@ -19,7 +19,12 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { AuthorRegistry, toAuthorRef } from '../../rooms/author-registry.js';
 import { aggregateTeamRoster } from '../aggregate-team.js';
-import { OPERATOR_FALLBACK_DISPLAY_NAME, resolveOperatorProfile } from '../operator-profile.js';
+import { IDENTITY_MAX_LENGTH } from '@dorkos/shared/untrusted-text';
+import {
+  OPERATOR_FALLBACK_DISPLAY_NAME,
+  resolveAnswererName,
+  resolveOperatorProfile,
+} from '../operator-profile.js';
 
 const OWNER_USER_ID = 'user-1';
 
@@ -102,6 +107,51 @@ describe('resolveOperatorProfile', () => {
         null
       ).displayName
     ).not.toContain('<');
+  });
+
+  it('sanitizes the ACCOUNT name too, which the Ask receipt now broadcasts', () => {
+    // DOR-1355 review. The account name used to be exempt on the grounds that a
+    // person typed it at signup. Better Auth enforces no cap and strips no
+    // control character, and the name is now printed inside a sentence DorkOS
+    // wrote in every open window, so "typed by a person" is not a guarantee
+    // about length or about what is in it.
+    const hostile = `Ada\u0000<script>\nLovelace ${'x'.repeat(200)}`;
+
+    const { displayName } = resolveOperatorProfile(
+      {
+        account: () => ({ id: OWNER_USER_ID, name: hostile, email: null }),
+        configDisplayName: () => null,
+      },
+      null
+    );
+
+    expect(displayName).toHaveLength(IDENTITY_MAX_LENGTH);
+    expect(displayName).not.toContain('<');
+    expect(displayName).not.toContain('>');
+    expect([...displayName].filter((ch) => ch.codePointAt(0)! < 0x20)).toEqual([]);
+    expect(displayName.startsWith('Ada script')).toBe(true);
+  });
+
+  it('gives the Ask receipt the same sanitized name, and nothing to fall back on', () => {
+    // The receipt shares the ladder's two real rungs and stops before its
+    // fallbacks: "Already answered by You" in a window that did not answer
+    // would be flatly wrong, so an install that knows no name gets no name.
+    const account = { id: OWNER_USER_ID, name: 'Ada<script>', email: null };
+
+    expect(resolveAnswererName({ account: () => account, configDisplayName: () => null })).toBe(
+      'Ada script'
+    );
+    expect(
+      resolveAnswererName({ account: () => null, configDisplayName: () => null })
+    ).toBeUndefined();
+    // A name that is nothing but control characters is not a name, so it falls
+    // through rather than winning and then vanishing.
+    expect(
+      resolveAnswererName({
+        account: () => ({ id: OWNER_USER_ID, name: '<<<', email: null }),
+        configDisplayName: () => 'Ada',
+      })
+    ).toBe('Ada');
   });
 
   it('carries the account email, and nothing when there is no account', () => {

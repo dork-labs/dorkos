@@ -775,6 +775,27 @@ export interface RuntimeDeliveryResult {
 }
 
 /**
+ * Who answered a prompt, for the receipt every other window draws.
+ *
+ * Shared by all three ways of answering — a permission prompt, a question, an
+ * elicitation — because they are one object to whoever is being asked, and a
+ * receipt that named the answerer for one of them and not the others would read
+ * as a bug rather than as a distinction.
+ *
+ * The runtime never invents this. Only the caller that took the answer knows who
+ * gave it, so it is passed in; a runtime with nobody to name simply omits it and
+ * the receipt says "Already answered at 2:01" instead.
+ */
+export interface InteractionAnswerOptions {
+  /**
+   * A label for the person who answered, when the caller knows one — the name
+   * this install knows them by. Never an id, and never a placeholder: the
+   * receipt prints it verbatim, so an unknown answerer is better left unnamed.
+   */
+  answeredBy?: string;
+}
+
+/**
  * How a tool-approval decision was made, beyond allow-versus-deny.
  *
  * One object rather than two trailing positional flags, because the two fields
@@ -782,7 +803,7 @@ export interface RuntimeDeliveryResult {
  * approval, `denyReason` only on a refusal. A caller passes the one that fits
  * its answer instead of padding the other with `undefined`.
  */
-export interface ToolDecisionOptions {
+export interface ToolDecisionOptions extends InteractionAnswerOptions {
   /**
    * Approve persistently — forwards the runtime's own permission suggestions so
    * the same call is not asked about again. Ignored on a denial.
@@ -920,9 +941,15 @@ export interface AgentRuntime {
    * @param sessionId - Target session
    * @param toolCallId - The question tool call to answer
    * @param answers - Canonical answers keyed by question index
+   * @param options - Who answered; see {@link InteractionAnswerOptions}
    * @returns false if the session or interaction was not found
    */
-  submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean;
+  submitAnswers(
+    sessionId: string,
+    toolCallId: string,
+    answers: Record<string, string>,
+    options?: InteractionAnswerOptions
+  ): boolean;
 
   /**
    * Submit a response to an MCP elicitation prompt.
@@ -931,13 +958,15 @@ export interface AgentRuntime {
    * @param interactionId - The elicitation interaction to respond to
    * @param action - Accept, decline, or cancel the elicitation
    * @param content - Form field values (form mode only)
+   * @param options - Who answered; see {@link InteractionAnswerOptions}
    * @returns false if the session or interaction was not found
    */
   submitElicitation(
     sessionId: string,
     interactionId: string,
     action: 'accept' | 'decline' | 'cancel',
-    content?: Record<string, unknown>
+    content?: Record<string, unknown>,
+    options?: InteractionAnswerOptions
   ): boolean;
 
   /**

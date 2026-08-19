@@ -92,6 +92,48 @@ export function presenceCountSentence(count: number, state: PresenceCopyState): 
 }
 
 /**
+ * What the line says about a message that has not started yet.
+ *
+ * **It is not a presence sentence and must not read like one.** Nobody is
+ * working here: this agent is mid-turn in a conversation that shares its working
+ * directory, so this room's message is waiting for that to finish and will then
+ * run here. The sentence says what will happen and roughly where, which is what
+ * a person waiting can actually act on.
+ *
+ * **The room is named only when the reader could have opened it anyway.** The
+ * wire carries an id; the surface resolves it against the rooms this reader can
+ * already see and passes `null` when it cannot. "another conversation" is then
+ * the honest answer, and it is deliberately vaguer rather than absent — a reader
+ * who is told nothing cannot tell a busy agent from a broken one.
+ *
+ * @param names - The agents to name, oldest wait first. Up to
+ *   {@link PRESENCE_NAME_LIMIT}; above that use {@link heldCountSentence}.
+ * @param behind - What to call the conversation in the way, or `null` when this
+ *   reader cannot see it. Read only in the single-agent case: with two or more
+ *   there is more than one room in the way, and naming one of them would be
+ *   picking a favourite.
+ */
+export function heldSentence(names: readonly string[], behind: string | null): string {
+  if (names.length <= 1) {
+    return `${names[0] ?? 'An agent'} will pick this up when it finishes in ${behind ?? 'another conversation'}`;
+  }
+  return `${readAsList(names)} will pick this up when they're free`;
+}
+
+/**
+ * The same sentence once there are more agents than the line will name.
+ *
+ * Counted rather than named, exactly as {@link presenceCountSentence} is — so
+ * crossing the naming limit changes who is listed and nothing else.
+ *
+ * @param count - How many agents are waiting to start. Above
+ *   {@link PRESENCE_NAME_LIMIT} wherever this is called from.
+ */
+export function heldCountSentence(count: number): string {
+  return `${count} agents will pick this up when they're free`;
+}
+
+/**
  * Everything a one-line row says EXCEPT the name — what this claim is bound to,
  * and whether it has outrun the room.
  *

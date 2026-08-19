@@ -15,7 +15,12 @@ import {
   type ConversationRowRenderer,
   type ConversationTimelineHandle,
 } from '@/layers/features/conversation';
-import { authorsById, threadPanelRowId, toMessageAuthor } from '../lib/room-timeline';
+import {
+  answeredReference,
+  authorsById,
+  threadPanelRowId,
+  toMessageAuthor,
+} from '../lib/room-timeline';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import { useRoomTarget } from '../model/room-target';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
@@ -288,6 +293,14 @@ export function RoomThreadPanel({
           streamStalled={streamStalled}
           isMember={isMember}
           grouping={{ position: 'only' }}
+          // Against the PANEL's own order, which is what a reader here sees: the
+          // root, then the replies. A reply that answers the one above it needs
+          // no chip; one that answers something further back does.
+          answers={answeredReference(
+            entry,
+            replyIndex <= 0 ? root : replies[replyIndex - 1],
+            (id: string) => (root?.id === id ? root : replies.find((reply) => reply.id === id))
+          )}
           feedPosition={{
             // After the root where there is one. An orphaned thread numbers from
             // its first surviving reply rather than leaving a gap for the message

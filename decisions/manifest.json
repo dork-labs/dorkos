@@ -4585,11 +4585,51 @@
       "id": "260818-234541",
       "slug": "a-busy-agents-message-is-held-not-refused",
       "title": "A busy agent's message is held, not refused, and the promise lives only where it can be kept",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-18",
       "extractedFrom": "room-hold-when-busy",
       "specSlug": "room-hold-when-busy",
       "amends": "260726-170125"
+    },
+    {
+      "id": "260819-022127",
+      "slug": "a-presence-glimpse-carries-structure-and-its-target-stops-at-the-operators-cockpit",
+      "title": "A presence glimpse carries structure, not prose, and its target stops at the operator's cockpit",
+      "status": "proposed",
+      "created": "2026-08-18",
+      "extractedFrom": "presence-verb-glimpse",
+      "specSlug": "presence-verb-glimpse",
+      "amends": null
+    },
+    {
+      "id": "260819-022636",
+      "slug": "an-unanswered-prompt-parks-and-the-park-is-derived-and-bounded",
+      "title": "An unanswered prompt parks instead of being refused, and the park is derived from elapsed time and bounded by a ceiling",
+      "status": "proposed",
+      "created": "2026-08-18",
+      "extractedFrom": "ask-parks-on-timeout",
+      "specSlug": "ask-parks-on-timeout",
+      "amends": null
+    },
+    {
+      "id": "260819-022912",
+      "slug": "an-asks-detail-is-addressed-not-broadcast",
+      "title": "An Ask's detail is addressed, not broadcast",
+      "status": "proposed",
+      "created": "2026-08-19",
+      "extractedFrom": "ask-entitlement",
+      "specSlug": "ask-entitlement",
+      "amends": null
+    },
+    {
+      "id": "260819-023317",
+      "slug": "stopping-one-agent-is-the-room-halt-scoped-not-a-new-verb",
+      "title": "Stopping one agent is the room halt scoped, not a new verb, and scoping it is not arbitration",
+      "status": "proposed",
+      "created": "2026-08-19",
+      "extractedFrom": "room-per-agent-stop",
+      "specSlug": "room-per-agent-stop",
+      "amends": null
     }
   ]
 }

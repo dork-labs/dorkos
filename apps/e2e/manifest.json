@@ -703,7 +703,7 @@
     "room-autonomy": {
       "specFile": "tests/rooms/room-autonomy.spec.ts",
       "feature": "rooms",
-      "description": "three quick messages become ONE answer, and it answers the newest, a message sent while the agent is working is answered, not turned away, the Stop button stops every agent working here, and the room says so once, a message whose text is \"stop\" is answered like any other message",
+      "description": "three quick messages become ONE answer, and it answers the newest, a message sent while the agent is working is answered, not turned away, a message for an agent busy in ANOTHER room waits and is never turned away, the Stop button stops every agent working here, and the room says so once, a message whose text is \"stop\" is answered like any other message",
       "lastRun": "",
       "lastStatus": "",
       "runCount": 0,
@@ -714,7 +714,10 @@
         "apps/server/src/services/rooms/room-trigger.ts",
         "apps/server/src/services/rooms/notices/notice-copy.ts",
         "apps/client/src/layers/widgets/room-view/ui/RoomHeader.tsx",
+        "apps/client/src/layers/widgets/room-view/ui/RoomLiveLane.tsx",
+        "apps/client/src/layers/features/conversation/ui/LaneContent.tsx",
         "apps/client/src/layers/entities/room/model/use-halt-room.ts",
+        "apps/client/src/layers/entities/room/model/use-room-presence.ts",
         "apps/client/src/layers/features/conversation/ui/rows/NoticeRow.tsx"
       ],
       "explorationNotes": [
@@ -724,7 +727,8 @@
         "long-turn + POST /api/test/finish-turn is the only lever for a turn that is still running. finish-turn is STICKY until POST /api/test/reset, so every test here resets first — without it the halt test silently gets an instant turn and 'room-header-halt' never renders, which reads as a broken button.",
         "The file is mode:'serial'. fullyParallel schedules individual TESTS onto workers, and these share two pieces of server-global state (the collect window and the scenario). --repeat-each must be run with --workers=1, which is what CI runs.",
         "The burst's observable is the reply TEXT: the turn prompt is the newest entry verbatim, and the simple-text scenario echoes it. arrivedDuringPrevTurn is model-facing only — no entry field, no DOM node — so the mid-turn test asserts a COUNT (two messages, two answers) and never a text match; long-turn echoes nothing.",
-        "Halt on this leg proves the room's half only: TestModeRuntime.interruptQuery answers false, so this is deliberately the stubborn-runtime path. The halted notice copy carries the count ('2 agents were working'), which is how a browser can tell 'stopped everything' from 'stopped one'."
+        "Halt on this leg proves the room's half only: TestModeRuntime.interruptQuery answers false, so this is deliberately the stubborn-runtime path. The halted notice copy carries the count ('2 agents were working'), which is how a browser can tell 'stopped everything' from 'stopped one'.",
+        "The cross-room wait test seeds TWO channels sharing one agent, because the ceiling it is about is the agent's working directory rather than the room. Its observable is the room-held line, which is the only half a browser can add: the FIFO ordering across three rooms and the promote route need a deterministic clock and are pinned in room-hold-elsewhere.test.ts."
       ],
       "lastModified": ""
     },
