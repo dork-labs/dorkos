@@ -44,6 +44,16 @@ type SessionComposerBenchProps = Omit<
 > & {
   /** The session being written to. */
   sessionId?: string;
+  /**
+   * Start a turn with these words — the session's own send, as `ChatPanel`
+   * hands it to the target. This is what pressing Enter reaches.
+   */
+  submit?: (content: string) => Promise<void> | void;
+  /**
+   * Hold these words for the running turn — the session's own enqueue, as
+   * `ChatPanel` hands it to the target. This is what Enter mid-turn reaches.
+   */
+  enqueue?: (content: string) => Promise<boolean>;
   /** The staged files. Omitted means none, and no chip bar. */
   fileUpload?: BenchFileUpload;
   /**
@@ -77,6 +87,8 @@ export function SessionComposerBench({
   sessionId = 'test-session',
   fileUpload = NO_FILES,
   waiting,
+  submit = () => {},
+  enqueue = async () => true,
   ...props
 }: SessionComposerBenchProps) {
   const serverQueue = useSessionQueue(sessionId);
@@ -100,8 +112,8 @@ export function SessionComposerBench({
     // What the box says with no agent registered at the working directory,
     // which is what these suites render against.
     placeholder: 'Send a message...',
-    submit: () => props.handleSubmit(),
-    enqueue: props.enqueueContent,
+    submit,
+    enqueue,
     files,
   });
   return (
