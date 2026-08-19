@@ -84,6 +84,8 @@
 #     values must be exactly 1..N with no gaps and no duplicates.
 #   * A report from an unsharded run must arrive alone. A whole run plus
 #     anything else describes two different runs, not one.
+#   * Every shard must have executed something OF ITS OWN. A complete set whose
+#     totals look healthy can still hide one shard that ran nothing at all.
 #
 # Nothing about the CI workflow's artifact names or layout is encoded here: the
 # reports carry their own identity, so this stays true whatever the workflow
@@ -252,6 +254,7 @@ done
 # 0. The reports handed in must together be ONE COMPLETE RUN — see SHARDING.
 shard_totals=''
 shard_currents=''
+silent_shards=''
 whole_runs=0
 for report in "${reports[@]}"; do
   jq -e '.config | has("shard")' "$report" >/dev/null 2>&1 ||
@@ -265,6 +268,18 @@ same change."
   else
     shard_totals="$shard_totals$(jq -r '.config.shard.total' "$report")"$'\n'
     shard_currents="$shard_currents$(jq -r '.config.shard.current' "$report")"$'\n'
+    # Every shard must have run something OF ITS OWN. The union's total is
+    # checked further down, but a total says nothing about which report
+    # contributed it: a shard that executed nothing while its siblings covered
+    # the suite between them is caught today only by the accident of how
+    # `--shard` happened to split the files. That is the one shape where the set
+    # of reports is complete, the total is healthy, and a third of the suite
+    # still never ran — so it is named here, per shard, rather than left to luck.
+    ran_here=$(jq -r '
+      [ .suites[] | recurse(.suites[]?) | .specs[]? | .tests[]?
+        | select(.status != "skipped") ] | length
+    ' "$report" 2>/dev/null) || fail "could not read $report — unexpected JSON shape."
+    [ "$ran_here" -gt 0 ] || silent_shards="$silent_shards  shard $(jq -r '.config.shard.current' "$report") ($report)"$'\n'
   fi
 done
 
@@ -299,6 +314,15 @@ shard uploaded its results.json."
     fail "the shard reports are not 1..$declared_total exactly: got [ $seen], wanted [ $wanted].
 A repeated shard would count one third of the suite twice and leave another
 third unchecked."
+  fi
+  # Last, because a structural problem above explains itself better than its
+  # symptom does.
+  if [ -n "$silent_shards" ]; then
+    fail "these shards executed no tests at all:
+${silent_shards%$'\n'}
+Their share of the suite went unrun while the other shards made the totals look
+healthy. This is what a dead webServer leg on one runner, or a shard whose whole
+range was filtered away, looks like from outside."
   fi
 fi
 

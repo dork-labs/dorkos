@@ -393,6 +393,52 @@ shardedGap=$tmp/shardedGap/apps/e2e/test-results
 check 'a spec missing from every shard is still named' "$tmp/shardedGap" 1 'beta.spec.ts' \
   "$shardedGap/shard-1.json" "$shardedGap/shard-2.json" "$shardedGap/shard-3.json"
 
+# A failure in ONE shard must fail the union. The unsharded red case above only
+# exercises a single report, so nothing there pins that the stats are SUMMED —
+# reading `.[0].stats.unexpected` instead of `map(.stats.unexpected) | add`
+# passes every other case in this file while letting a red shard 2 or 3 through.
+make_workspace "$tmp/shardedRed"
+make_shards "$tmp/shardedRed" 3
+python3 - "$tmp/shardedRed/apps/e2e/test-results/shard-2.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d['suites'][0]['specs'][0]['tests'][0]['status'] = 'unexpected'
+d['stats']['expected'] -= 1
+d['stats']['unexpected'] += 1
+json.dump(d, open(p, 'w'))
+PY
+shardedRed=$tmp/shardedRed/apps/e2e/test-results
+check 'a failure in one shard fails the union' "$tmp/shardedRed" 1 'did not pass' \
+  "$shardedRed/shard-1.json" "$shardedRed/shard-2.json" "$shardedRed/shard-3.json"
+
+# A complete set of shards where one of them ran nothing. The totals still look
+# healthy because its siblings cover the specs it should have run, so only a
+# per-shard check names it.
+make_workspace "$tmp/shardSilent"
+make_shards "$tmp/shardSilent" 3
+python3 - "$tmp/shardSilent/apps/e2e/test-results" <<'PY'
+import json, sys
+root = sys.argv[1]
+empty = json.load(open(f'{root}/shard-2.json'))
+whole = json.load(open(f'{root}/results.json'))
+# Shard 3 picks up everything shard 2 was carrying, so the union is still the
+# whole suite and every total is unchanged — the only thing wrong is that one
+# shard executed nothing.
+third = json.load(open(f'{root}/shard-3.json'))
+third['suites'] += empty['suites']
+for key in third['stats']:
+    third['stats'][key] += empty['stats'][key]
+empty['suites'] = []
+empty['stats'] = {'expected': 0, 'unexpected': 0, 'flaky': 0, 'skipped': 0}
+json.dump(third, open(f'{root}/shard-3.json', 'w'))
+json.dump(empty, open(f'{root}/shard-2.json', 'w'))
+assert whole  # the untouched whole-run report stays on disk for other cases
+PY
+shardSilent=$tmp/shardSilent/apps/e2e/test-results
+check 'a shard that executed nothing is named' "$tmp/shardSilent" 1 'shards executed no tests' \
+  "$shardSilent/shard-1.json" "$shardSilent/shard-2.json" "$shardSilent/shard-3.json"
+
 # A shard whose artifact never arrived. Without the completeness check this is
 # the dangerous case: two thirds of the suite would be certified while the
 # missing third's specs read as "on disk but never ran" — a true statement with a

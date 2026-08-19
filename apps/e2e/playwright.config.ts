@@ -62,7 +62,13 @@ const CI = !!process.env.CI;
  * variable come from it.
  *
  * Defaults to 1, which is the truth everywhere else — a local run, or any CI
- * invocation that does not shard, really is running the whole suite.
+ * invocation that does not shard, really is running the whole suite. The cost of
+ * that default being wrong is a loose deadline, never a tight one: a CI run that
+ * DOES shard while forgetting this variable gets the unsharded 75-minute budget,
+ * so a hung shard sits past its job ceiling and is cancelled without a report
+ * instead of failing with one. That is the DOR-1110 failure mode, which is why
+ * the workflow sets it from the same `shard:` list the `--shard` flag comes from
+ * rather than leaving the two to be kept in step by hand.
  */
 function shardTotal(): number {
   const value = process.env.E2E_SHARD_TOTAL;
@@ -291,11 +297,8 @@ export default defineConfig({
   // proves nothing is worse than a red one, because a red one at least names a
   // spec.
   //
-  // So Playwright gets its own deadline, deliberately BELOW the job's. When
-  // this fires, Playwright stops the run itself — gracefully, through its own
-  // shutdown path — which means every reporter still flushes: the HTML report,
-  // the JSON the assert step reads, and the `github` annotations. The job then
-  // fails on a non-zero exit with output, instead of vanishing.
+  // So Playwright gets its own deadline, deliberately BELOW the job's — what
+  // happens when it fires is spelled out with the ladder further down.
   //
   // DERIVED, NOT TYPED IN (DOR-1363). This used to be a flat 45 minutes, chosen
   // as ~48% headroom over a 30m24s green run measured on 2026-08-12. By

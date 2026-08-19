@@ -369,12 +369,18 @@ jobs:
       # `if-no-files-found: error` because a silent absence here would reach the
       # gate as a smaller union of specs — i.e. as a mysterious "these files
       # exist on disk but no test from them appears in the run".
+      #
+      # `overwrite: true` because artifact names are unique per RUN, not per
+      # attempt: v4 answers 409 Conflict when the name already exists, so "Re-run
+      # all jobs" after a flake would fail three green shards at their upload
+      # step. A re-run is meant to replace the attempt it repeats.
       - name: Upload this shard's JSON report
         uses: actions/upload-artifact@v4
         with:
           name: browser-results-shard-${{ matrix.shard }}
           path: apps/e2e/test-results/results.json
           if-no-files-found: error
+          overwrite: true
           retention-days: 7
 
       # The report is the only way to read a browser failure after the fact: it
@@ -391,12 +397,16 @@ jobs:
       # the "cancelled with zero output" failure this ticket is about. Naming
       # `cancelled()` opts the step into GitHub's best-effort window so the
       # report is uploaded even then.
+      #
+      # `overwrite: true` for the same reason as the JSON upload above: a re-run
+      # of a failed attempt must replace that attempt's report, not 409 on it.
       - name: Upload the Playwright report
         if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-shard-${{ matrix.shard }}
           path: apps/e2e/playwright-report/
+          overwrite: true
           retention-days: 7
 
   # THE CHECK. Everything above is an implementation detail of this job's answer.
@@ -410,7 +420,11 @@ jobs:
   #      suite into a green required check. Running always, and refusing on
   #      `needs.browser-shard.result`, is what makes the name mean what it says.
   #      (`result` on a matrix dependency is the aggregate: `success` only when
-  #      every leg succeeded.)
+  #      every leg succeeded.) The accepted cost: a run somebody cancels by hand
+  #      now posts a RED `browser-test` rather than a cancelled one, because
+  #      `cancelled` is not `success`. That is the side to err on — the obvious
+  #      softening, `if: ${{ !cancelled() }}`, would skip this job on a cancel,
+  #      and a skipped check reads as satisfied the day this becomes required.
   #   2. Prove the suite actually executed — see the step's own comment. That
   #      question can only be answered here, because assertion 2 of the script is
   #      "every spec file on disk appears in the report" and no single shard
