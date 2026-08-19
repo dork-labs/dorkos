@@ -10,12 +10,22 @@
  * else — including unknown future modes and permission keys nobody has seen —
  * falls through to the safe default of asking the user.
  *
- * Every forwarded request arms an auto-deny timer for
- * `SESSIONS.INTERACTION_TIMEOUT_MS` — exactly the `timeoutMs` the mapper
- * advertises on `approval_required` — so the client's countdown can never end
- * on a ghost: when it hits zero the server has actually responded `reject`,
- * and OpenCode's `permission.replied` echo clears the card. This mirrors the
- * Claude adapter's interactive-handler timeouts.
+ * Every forwarded request waits in two stages, exactly as the Claude adapter's
+ * prompts do (spec `ask-parks-on-timeout`). The card counts down for
+ * `SESSIONS.INTERACTION_TIMEOUT_MS`, which is the `timeoutMs` the mapper
+ * advertises on `approval_required` and is left there deliberately: it is the
+ * number a person is counting down against, not the number the sidecar is
+ * answered at. Past it the card PARKS — `listPendingInteractions` derives that
+ * from the same two numbers, so OpenCode gets it without a line of its own —
+ * and the auto-deny timer here fires only at
+ * `SESSIONS.INTERACTION_PARK_CEILING_MS`, so the countdown can never end on a
+ * ghost either way.
+ *
+ * **What OpenCode does NOT get: a park notice.** The Claude adapter pushes a
+ * `system_status` line at ten minutes through its own event queue. This pass is
+ * a generator over the sidecar's stream with no seam to inject a DorkOS-authored
+ * event, so the card and the room lane park identically and the "I am waiting
+ * here" sentence is claude-code's only. Named here rather than discovered later.
  *
  * @module services/runtimes/opencode/approvals
  */
@@ -66,7 +76,7 @@ interface PendingApproval {
   ocSessionId: string;
   /** Working directory for `getClient` routing. */
   cwd: string;
-  /** Armed auto-deny timer. */
+  /** Armed auto-deny timer, which fires at the park ceiling. */
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -94,6 +104,10 @@ export class PendingApprovalStore {
   /**
    * Track a forwarded request and arm its auto-deny timer.
    *
+   * The timer fires at {@link SESSIONS.INTERACTION_PARK_CEILING_MS}: the card
+   * counts down for ten minutes, then parks and says the agent is waiting, and
+   * only four hours in does the sidecar hear a `reject`.
+   *
    * @param sessionId - DorkOS session the request belongs to
    * @param permissionId - `Permission.id` (the `approval_required.toolCallId`)
    * @param entry - Respond-routing info for the request
@@ -113,13 +127,17 @@ export class PendingApprovalStore {
     // their decision as "nobody was there".
     this.take(sessionId, permissionId);
     this.consumeExpired(sessionId, permissionId);
+    // The PARK CEILING, not the countdown: past ten minutes the card says the
+    // agent is waiting, and this is when the agent actually gives up (spec
+    // `ask-parks-on-timeout` §6). The mapper still advertises the countdown,
+    // which is what the person watches.
     const timer = setTimeout(() => {
       if (!this.take(sessionId, permissionId)) return;
       const forSession = this.expired.get(sessionId) ?? new Set<string>();
       forSession.add(permissionId);
       this.expired.set(sessionId, forSession);
       onTimeout();
-    }, SESSIONS.INTERACTION_TIMEOUT_MS);
+    }, SESSIONS.INTERACTION_PARK_CEILING_MS);
     // Never hold the event loop open for an approval countdown.
     timer.unref?.();
     let forSession = this.pending.get(sessionId);

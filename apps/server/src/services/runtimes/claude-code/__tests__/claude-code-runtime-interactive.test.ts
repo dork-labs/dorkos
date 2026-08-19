@@ -1170,7 +1170,7 @@ describe('ClaudeCodeRuntime interactive tools', () => {
   // ---- Timeout behavior ----
 
   describe('interaction timeout', () => {
-    it('question interaction times out after 10 minutes with deny', async () => {
+    it('question interaction is refused four hours on, having parked at ten minutes', async () => {
       manager.ensureSession('sess-1', { permissionMode: 'bypassPermissions' });
 
       let canUseToolFn: (
@@ -1209,20 +1209,32 @@ describe('ClaudeCodeRuntime interactive tools', () => {
         { signal: new AbortController().signal, toolUseID: 'tool-q-timeout' }
       );
 
-      // Advance past the 10-minute timeout
+      // Past the countdown the prompt PARKS: nothing is answered on the
+      // person's behalf, and the tool call stays held (spec
+      // `ask-parks-on-timeout`).
       await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1);
+      expect(manager.submitAnswers('sess-1', 'tool-q-timeout', {})).toBe(true);
 
-      const result = await permissionPromise;
+      // A second prompt, this time left to run all the way out.
+      const parked = canUseToolFn!(
+        'AskUserQuestion',
+        { questions: [] },
+        { signal: new AbortController().signal, toolUseID: 'tool-q-ceiling' }
+      );
+      await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000 + 1);
+
+      await permissionPromise;
+      const result = await parked;
       expect(result).toEqual({
         behavior: 'deny',
-        message: 'User did not respond within 10 minutes',
+        message: 'User did not respond within 4 hours',
       });
 
       // submitAnswers should return false since interaction was cleaned up
-      expect(manager.submitAnswers('sess-1', 'tool-q-timeout', {})).toBe(false);
+      expect(manager.submitAnswers('sess-1', 'tool-q-ceiling', {})).toBe(false);
     });
 
-    it('tool approval interaction times out after 10 minutes with deny', async () => {
+    it('tool approval is refused four hours on, having parked at ten minutes', async () => {
       manager.ensureSession('sess-1', { permissionMode: 'default' });
 
       let canUseToolFn: (
@@ -1261,15 +1273,25 @@ describe('ClaudeCodeRuntime interactive tools', () => {
         { signal: new AbortController().signal, toolUseID: 'tool-a-timeout' }
       );
 
+      // Parked, not denied: the card is still answerable ten minutes on.
       await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1);
+      expect(manager.approveTool('sess-1', 'tool-a-timeout', true)).toBe(true);
 
-      const result = await permissionPromise;
+      const parked = canUseToolFn!(
+        'Bash',
+        { command: 'ls' },
+        { signal: new AbortController().signal, toolUseID: 'tool-a-ceiling' }
+      );
+      await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000 + 1);
+
+      await permissionPromise;
+      const result = await parked;
       expect(result).toEqual({
         behavior: 'deny',
-        message: 'Tool approval timed out after 10 minutes',
+        message: 'Tool approval timed out after 4 hours',
       });
 
-      expect(manager.approveTool('sess-1', 'tool-a-timeout', true)).toBe(false);
+      expect(manager.approveTool('sess-1', 'tool-a-ceiling', true)).toBe(false);
     });
   });
 });

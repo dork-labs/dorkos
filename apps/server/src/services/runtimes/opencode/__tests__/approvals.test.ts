@@ -25,7 +25,12 @@ describe('PendingApprovalStore expiry marking', () => {
     store.register('s1', 'per_1', ENTRY, onTimeout);
 
     expect(store.consumeExpired('s1', 'per_1')).toBe(false);
-    vi.advanceTimersByTime(SESSIONS.INTERACTION_TIMEOUT_MS + 1);
+    // The countdown ends and the card PARKS: the agent is waiting, and nothing
+    // has been answered on the person's behalf yet (spec `ask-parks-on-timeout`).
+    vi.advanceTimersByTime(SESSIONS.INTERACTION_TIMEOUT_MS + 60_000);
+    expect(onTimeout).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(SESSIONS.INTERACTION_PARK_CEILING_MS);
 
     expect(onTimeout).toHaveBeenCalledOnce();
     expect(store.consumeExpired('s1', 'per_1')).toBe(true);
@@ -40,7 +45,7 @@ describe('PendingApprovalStore expiry marking', () => {
     store.register('s1', 'per_1', ENTRY, vi.fn());
 
     store.take('s1', 'per_1'); // the person answered
-    vi.advanceTimersByTime(SESSIONS.INTERACTION_TIMEOUT_MS + 1);
+    vi.advanceTimersByTime(SESSIONS.INTERACTION_PARK_CEILING_MS + 1);
 
     expect(store.consumeExpired('s1', 'per_1')).toBe(false);
   });
@@ -52,7 +57,7 @@ describe('PendingApprovalStore expiry marking', () => {
     vi.useFakeTimers();
     const store = new PendingApprovalStore();
     store.register('s1', 'per_1', ENTRY, vi.fn());
-    vi.advanceTimersByTime(SESSIONS.INTERACTION_TIMEOUT_MS + 1);
+    vi.advanceTimersByTime(SESSIONS.INTERACTION_PARK_CEILING_MS + 1);
 
     store.register('s1', 'per_1', ENTRY, vi.fn()); // upstream re-publish
     store.take('s1', 'per_1'); // and this time a person answers
@@ -65,7 +70,7 @@ describe('PendingApprovalStore expiry marking', () => {
     vi.useFakeTimers();
     const store = new PendingApprovalStore();
     store.register('s1', 'per_1', ENTRY, vi.fn());
-    vi.advanceTimersByTime(SESSIONS.INTERACTION_TIMEOUT_MS + 1);
+    vi.advanceTimersByTime(SESSIONS.INTERACTION_PARK_CEILING_MS + 1);
 
     store.clearSession('s1');
 

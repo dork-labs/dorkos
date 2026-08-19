@@ -9,11 +9,13 @@ import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
 import { logRefusal } from '../../../observability/refusals.js';
+import { logger } from '../../../../lib/logger.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
 import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
 import {
   approvalTimeoutDenial,
+  describeWaited,
   questionTimeoutDenial,
   toolDenial,
   WITHDRAWN_DENIALS,
@@ -497,13 +499,25 @@ export interface InteractiveSession {
    * the conservative answer — those verbs ask rather than skip the card.
    */
   cwd?: string;
+  /**
+   * True when nobody is watching this session — a scheduled task run.
+   *
+   * A prompt in such a session refuses at
+   * {@link SESSIONS.INTERACTION_TIMEOUT_MS} and never parks, because a park is
+   * a promise that somebody will come back and there is nobody here to keep it.
+   * Waiting four hours per ask would stall the run rather than protect anyone
+   * (spec `ask-parks-on-timeout` §7). Absent means a person may well be
+   * watching, which is the setting every interactive session runs under.
+   */
+  unattended?: boolean;
 }
 
 /**
  * Say that nobody answered, so this was denied.
  *
  * **The only DURABLE trace an expired prompt leaves.** All three handlers
- * below hand the model a denial after {@link SESSIONS.INTERACTION_TIMEOUT_MS}
+ * below hand the model a denial once the wait runs out — four hours for a
+ * session somebody could come back to, ten minutes for an unattended run —
  * and, until DOR-1158, wrote nothing anywhere: the card vanished from any
  * client that happened to be watching, the turn carried on as though a person
  * had refused, and there was no record that the refusal was a clock rather
@@ -526,25 +540,59 @@ export interface InteractiveSession {
  * @param interaction.id - The interaction's id (the tool-use id, for a tool).
  * @param interaction.kind - Which of the three kinds of prompt expired.
  * @param interaction.toolName - The tool an approval was about, when there is one.
+ * @param interaction.waitedMs - How long the prompt actually went unanswered.
  */
 function logInteractionTimeout(
   session: InteractiveSession,
-  interaction: { id: string; kind: 'approval' | 'question' | 'elicitation'; toolName?: string }
+  interaction: {
+    id: string;
+    kind: 'approval' | 'question' | 'elicitation';
+    toolName?: string;
+    waitedMs: number;
+  }
 ): void {
-  logRefusal('[claude-code] nobody answered in time, so this was denied', {
-    reason: 'interaction_expired',
-    // `silent` because nothing DURABLE is written for an expired prompt: the
-    // companion live notice (DOR-1158) is best-effort and clears with the next
-    // turn event, so this log line is still the only record an operator who
-    // checks back later can find. See this function's TSDoc.
-    visibility: 'silent',
+  logRefusal(
+    `[claude-code] nobody answered in ${describeWaited(interaction.waitedMs)}, so this was denied`,
+    {
+      reason: 'interaction_expired',
+      // `silent` because nothing DURABLE is written for an expired prompt: the
+      // companion live notice (DOR-1158) is best-effort and clears with the next
+      // turn event, so this log line is still the only record an operator who
+      // checks back later can find. See this function's TSDoc.
+      visibility: 'silent',
+      ...(session.sdkSessionId !== undefined ? { sessionId: session.sdkSessionId } : {}),
+      detail: {
+        interactionId: interaction.id,
+        kind: interaction.kind,
+        toolName: interaction.toolName,
+        waitedMs: interaction.waitedMs,
+      },
+    }
+  );
+}
+
+/**
+ * Say that the countdown ran out and the agent is now waiting.
+ *
+ * `info`, not `warn`: nothing was thrown away. This is the line that makes a
+ * long silence explainable to somebody reading the log later — the durability
+ * gap DOR-1158 named — and unlike {@link logInteractionTimeout} it reports a
+ * state rather than a loss. Nothing from the prompt's INPUT is logged, for the
+ * reason its sibling gives.
+ *
+ * @param session - The session holding the prompt.
+ * @param interaction.kind - Which of the three kinds of prompt parked.
+ * @param interaction.toolName - The tool an approval was about, when there is one.
+ */
+function logInteractionParked(
+  session: InteractiveSession,
+  interaction: { kind: 'approval' | 'question' | 'elicitation'; toolName?: string }
+): void {
+  logger.info('[claude-code] nobody answered in time, so the agent is waiting', {
+    kind: interaction.kind,
+    toolName: interaction.toolName,
     ...(session.sdkSessionId !== undefined ? { sessionId: session.sdkSessionId } : {}),
-    detail: {
-      interactionId: interaction.id,
-      kind: interaction.kind,
-      toolName: interaction.toolName,
-      waitedMs: SESSIONS.INTERACTION_TIMEOUT_MS,
-    },
+    waitsUntilMs: SESSIONS.INTERACTION_PARK_CEILING_MS,
   });
 }
 
@@ -614,11 +662,20 @@ function notifyInteractionTimeoutNotice(session: InteractiveSession, message: st
   session.eventQueueNotify?.();
 }
 
-/** The operator-facing notice for an AskUserQuestion that timed out unanswered. */
-function questionTimeoutNotice(questions: QuestionItem[]): string {
-  const base = `I asked you something and waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I moved on.`;
+/** The operator-facing notice for an AskUserQuestion nobody has answered yet. */
+function questionParkedNotice(questions: QuestionItem[]): string {
+  const base = `I asked you something ${INTERACTION_TIMEOUT_MINUTES} minutes ago and nobody has answered, so I am waiting here.`;
   const first = questions[0]?.question;
   return first ? `${base} The question was: "${truncateForNotice(first, 120)}"` : base;
+}
+
+/**
+ * The operator-facing notice for an AskUserQuestion nobody ever answered.
+ *
+ * @param waited - How long the agent waited, in words.
+ */
+function questionTimeoutNotice(waited: string): string {
+  return `I waited ${waited} for an answer and nobody came, so I moved on.`;
 }
 
 /**
@@ -631,14 +688,151 @@ function toolLabelFor(displayName: string | undefined, toolName: string): string
   return displayName?.trim() ? displayName : toolName;
 }
 
-/** The operator-facing notice for a tool approval that timed out unanswered. */
-function approvalTimeoutNotice(toolLabel: string): string {
-  return `I asked to run ${toolLabel} and waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I treated it as declined.`;
+/** The operator-facing notice for a tool approval nobody has answered yet. */
+function approvalParkedNotice(toolLabel: string): string {
+  return `I asked to run ${toolLabel} and nobody has answered yet, so I am waiting here until somebody does.`;
 }
 
-/** The operator-facing notice for an MCP elicitation that timed out unanswered. */
-function elicitationTimeoutNotice(serverName: string): string {
-  return `${serverName} asked you something and I waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I declined on your behalf.`;
+/**
+ * The operator-facing notice for a tool approval nobody ever answered.
+ *
+ * @param toolLabel - What the tool is called, in the agent's own prose.
+ * @param waited - How long the agent waited, in words.
+ */
+function approvalTimeoutNotice(toolLabel: string, waited: string): string {
+  return `I waited ${waited} for an answer about ${toolLabel} and nobody came, so I treated it as declined.`;
+}
+
+/** The operator-facing notice for an MCP elicitation nobody has answered yet. */
+function elicitationParkedNotice(serverName: string): string {
+  return `${serverName} asked you something and nobody has answered yet, so I am waiting here until somebody does.`;
+}
+
+/**
+ * The operator-facing notice for an MCP elicitation nobody ever answered.
+ *
+ * @param serverName - The MCP server that asked.
+ * @param waited - How long the agent waited, in words.
+ */
+function elicitationTimeoutNotice(serverName: string, waited: string): string {
+  return `${serverName} asked you something. I waited ${waited} and nobody came, so I declined on your behalf.`;
+}
+
+/**
+ * How long a prompt in this session goes unanswered before it is refused.
+ *
+ * Four hours for a session somebody could still come back to, and the plain
+ * countdown for an unattended run, which never parks (spec
+ * `ask-parks-on-timeout` §7). Every sentence that names the wait — the two
+ * denials the model reads, the notice the operator sees, the log line — is
+ * built from this number, so none of them can claim a wait that did not happen.
+ *
+ * @param session - The session holding the prompt.
+ */
+function refusalDeadlineMs(session: InteractiveSession): number {
+  return session.unattended === true
+    ? SESSIONS.INTERACTION_TIMEOUT_MS
+    : SESSIONS.INTERACTION_PARK_CEILING_MS;
+}
+
+/**
+ * Arm the two-stage wait for one prompt: park at
+ * {@link SESSIONS.INTERACTION_TIMEOUT_MS}, refuse at
+ * {@link SESSIONS.INTERACTION_PARK_CEILING_MS}.
+ *
+ * Parking is not a resolution. Nothing is handed to the model, the tool call
+ * stays held, and the SDK holds its loop open for as long as the promise stays
+ * unresolved (`sdk.d.ts:196-205`). What happens at ten minutes is a sentence to
+ * the operator, a log line, and a second timer.
+ *
+ * **The returned timer is the FIRST one.** It is stored on the pending entry as
+ * `timeout` and REPLACED there when it fires, so anything that cancels the wait
+ * must read the entry rather than close over this value — see
+ * {@link clearInteractionTimer}. Closing over it was the shape that let a
+ * cancelled prompt leave its ceiling timer armed to refuse an interaction that
+ * had already been answered.
+ *
+ * **An unattended session never parks.** A scheduled run has nobody coming back
+ * to it, so waiting four hours would only stall the run; it refuses at the
+ * countdown exactly as it does today ({@link refusalDeadlineMs}).
+ *
+ * @param session - The session holding the prompt.
+ * @param interactionId - The pending entry's key.
+ * @param notices - What to say to the operator at each stage.
+ * @param log - What kind of prompt this is, for the log.
+ * @param refuse - Hands the model its refusal and settles the prompt. It owns
+ *   detaching the SDK abort listener too, because only the caller holds it.
+ * @returns The first stage's timer, for the entry's `timeout` slot.
+ */
+function armInteractionWait(
+  session: InteractiveSession,
+  interactionId: string,
+  notices: { parked: string; expired: string },
+  log: { kind: 'approval' | 'question' | 'elicitation'; toolName?: string },
+  refuse: () => void
+): ReturnType<typeof setTimeout> {
+  const expire = (): void => {
+    session.pendingInteractions.delete(interactionId);
+    logInteractionTimeout(session, {
+      id: interactionId,
+      ...log,
+      waitedMs: refusalDeadlineMs(session),
+    });
+    notifyInteractionCancelled(session, interactionId, 'timeout');
+    notifyInteractionTimeoutNotice(session, notices.expired);
+    refuse();
+  };
+
+  if (session.unattended === true) {
+    const only = setTimeout(expire, SESSIONS.INTERACTION_TIMEOUT_MS);
+    only.unref?.();
+    return only;
+  }
+
+  const park = (): void => {
+    // Answered inside the same tick this timer fired: there is nothing left to
+    // say, and saying it would push a notice over a card that is already gone.
+    const entry = session.pendingInteractions.get(interactionId);
+    if (entry === undefined) return;
+    logInteractionParked(session, log);
+    notifyInteractionTimeoutNotice(session, notices.parked);
+    // The REMAINDER, not a fresh ceiling, so the deadline is
+    // `startedAt + INTERACTION_PARK_CEILING_MS` — the same instant
+    // `listPendingInteractions` measures against, which is what stops the card
+    // and the server disagreeing about when the wait ends.
+    const ceiling = setTimeout(
+      expire,
+      SESSIONS.INTERACTION_PARK_CEILING_MS - SESSIONS.INTERACTION_TIMEOUT_MS
+    );
+    ceiling.unref?.();
+    entry.timeout = ceiling;
+    // No `interaction_cancelled`, no resolution, no deny: the entry stays in
+    // `session.pendingInteractions` and the promise stays unresolved.
+  };
+
+  const countdown = setTimeout(park, SESSIONS.INTERACTION_TIMEOUT_MS);
+  // A wait must never hold the event loop open, the reason `PendingApprovalStore`
+  // already gives for its own timer.
+  countdown.unref?.();
+  return countdown;
+}
+
+/**
+ * Cancel whichever stage of a prompt's wait is currently armed.
+ *
+ * Reads the timer off the entry rather than a captured local, because
+ * {@link armInteractionWait} REPLACES it when the prompt parks. A closure over
+ * the first timer clears a timer that has already fired and leaves the ceiling
+ * armed on an interaction nobody is waiting for.
+ *
+ * Call it BEFORE deleting the entry, or there is nothing left to read.
+ *
+ * @param session - The session holding the prompt.
+ * @param interactionId - The pending entry's key.
+ */
+function clearInteractionTimer(session: InteractiveSession, interactionId: string): void {
+  const entry = session.pendingInteractions.get(interactionId);
+  if (entry !== undefined) clearTimeout(entry.timeout);
 }
 
 /**
@@ -669,21 +863,27 @@ export function handleAskUserQuestion(
 
   return new Promise((resolve) => {
     const onAbort = (): void => {
-      clearTimeout(timeout);
+      clearInteractionTimer(session, toolUseId);
       session.pendingInteractions.delete(toolUseId);
       notifyInteractionCancelled(session, toolUseId, 'aborted');
       resolve({ behavior: 'deny', message: WITHDRAWN_DENIALS.question });
     };
     signal?.addEventListener('abort', onAbort, { once: true });
 
-    const timeout = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      session.pendingInteractions.delete(toolUseId);
-      logInteractionTimeout(session, { id: toolUseId, kind: 'question' });
-      notifyInteractionCancelled(session, toolUseId, 'timeout');
-      notifyInteractionTimeoutNotice(session, questionTimeoutNotice(questions));
-      resolve({ behavior: 'deny', message: questionTimeoutDenial(INTERACTION_TIMEOUT_MINUTES) });
-    }, SESSIONS.INTERACTION_TIMEOUT_MS);
+    const waitedMs = refusalDeadlineMs(session);
+    const timeout = armInteractionWait(
+      session,
+      toolUseId,
+      {
+        parked: questionParkedNotice(questions),
+        expired: questionTimeoutNotice(describeWaited(waitedMs)),
+      },
+      { kind: 'question' },
+      () => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve({ behavior: 'deny', message: questionTimeoutDenial(waitedMs) });
+      }
+    );
 
     session.pendingInteractions.set(toolUseId, {
       type: 'question',
@@ -691,7 +891,7 @@ export function handleAskUserQuestion(
       startedAt,
       snapshot: { questions },
       resolve: (answers) => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         signal?.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
         // Translate DorkOS's canonical (index-keyed) answers into the SDK's
@@ -704,7 +904,7 @@ export function handleAskUserQuestion(
         });
       },
       reject: () => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         signal?.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
         resolve({ behavior: 'deny', message: WITHDRAWN_DENIALS.interaction });
@@ -749,21 +949,29 @@ export function handleElicitation(
 
     // Auto-decline if the SDK query is aborted
     const onAbort = () => {
-      clearTimeout(timeout);
+      clearInteractionTimer(session, interactionId);
       session.pendingInteractions.delete(interactionId);
       notifyInteractionCancelled(session, interactionId, 'aborted');
       decline();
     };
     signal.addEventListener('abort', onAbort, { once: true });
 
-    const timeout = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      session.pendingInteractions.delete(interactionId);
-      logInteractionTimeout(session, { id: interactionId, kind: 'elicitation' });
-      notifyInteractionCancelled(session, interactionId, 'timeout');
-      notifyInteractionTimeoutNotice(session, elicitationTimeoutNotice(request.serverName));
-      decline();
-    }, SESSIONS.INTERACTION_TIMEOUT_MS);
+    const timeout = armInteractionWait(
+      session,
+      interactionId,
+      {
+        parked: elicitationParkedNotice(request.serverName),
+        expired: elicitationTimeoutNotice(
+          request.serverName,
+          describeWaited(refusalDeadlineMs(session))
+        ),
+      },
+      { kind: 'elicitation' },
+      () => {
+        signal.removeEventListener('abort', onAbort);
+        decline();
+      }
+    );
 
     session.pendingInteractions.set(interactionId, {
       type: 'elicitation',
@@ -778,13 +986,13 @@ export function handleElicitation(
         requestedSchema: request.requestedSchema,
       },
       resolve: (result) => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, interactionId);
         signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(interactionId);
         resolve(result as ElicitationResult);
       },
       reject: () => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, interactionId);
         signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(interactionId);
         decline();
@@ -976,7 +1184,6 @@ export function handleToolApproval(
   context: ToolApprovalContext
 ): Promise<PermissionResult> {
   const startedAt = Date.now();
-  const timeoutMinutes = Math.ceil(SESSIONS.INTERACTION_TIMEOUT_MS / 60_000);
 
   session.eventQueue.push({
     type: 'approval_required',
@@ -1002,24 +1209,28 @@ export function handleToolApproval(
 
     // Auto-deny if the SDK query is aborted (e.g. user interrupts the stream)
     const onAbort = () => {
-      clearTimeout(timeout);
+      clearInteractionTimer(session, toolUseId);
       session.pendingInteractions.delete(toolUseId);
       notifyInteractionCancelled(session, toolUseId, 'aborted');
       deny(WITHDRAWN_DENIALS.approval);
     };
     context.signal.addEventListener('abort', onAbort, { once: true });
 
-    const timeout = setTimeout(() => {
-      context.signal.removeEventListener('abort', onAbort);
-      session.pendingInteractions.delete(toolUseId);
-      logInteractionTimeout(session, { id: toolUseId, kind: 'approval', toolName });
-      notifyInteractionCancelled(session, toolUseId, 'timeout');
-      notifyInteractionTimeoutNotice(
-        session,
-        approvalTimeoutNotice(toolLabelFor(context.displayName, toolName))
-      );
-      deny(approvalTimeoutDenial(timeoutMinutes));
-    }, SESSIONS.INTERACTION_TIMEOUT_MS);
+    const toolLabel = toolLabelFor(context.displayName, toolName);
+    const waitedMs = refusalDeadlineMs(session);
+    const timeout = armInteractionWait(
+      session,
+      toolUseId,
+      {
+        parked: approvalParkedNotice(toolLabel),
+        expired: approvalTimeoutNotice(toolLabel, describeWaited(waitedMs)),
+      },
+      { kind: 'approval', toolName },
+      () => {
+        context.signal.removeEventListener('abort', onAbort);
+        deny(approvalTimeoutDenial(waitedMs));
+      }
+    );
 
     session.pendingInteractions.set(toolUseId, {
       type: 'approval',
@@ -1037,7 +1248,7 @@ export function handleToolApproval(
         hasSuggestions: (context.suggestions?.length ?? 0) > 0,
       },
       resolve: (result, denyReason) => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         context.signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
 
@@ -1057,7 +1268,7 @@ export function handleToolApproval(
         }
       },
       reject: () => {
-        clearTimeout(timeout);
+        clearInteractionTimer(session, toolUseId);
         context.signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
         deny(WITHDRAWN_DENIALS.interaction);
