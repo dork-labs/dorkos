@@ -109,6 +109,13 @@ export interface NotificationPayloads {
   'dm.received': {
     roomId: string;
     entryId: string;
+    /**
+     * The entry's room-local `seq`. Never rendered — it is what lets a room's
+     * read cursor tell the read-cursor service which rows it just passed
+     * (`markRoomRead`, `read-cursor-service.ts`), without a second query back
+     * into the room's own log.
+     */
+    entrySeq: number;
     agentId?: string;
     /** Who sent it. */
     fromName: string;
@@ -119,6 +126,8 @@ export interface NotificationPayloads {
   'mention.received': {
     roomId: string;
     entryId: string;
+    /** The entry's room-local `seq`. See `dm.received`'s field of the same name. */
+    entrySeq: number;
     roomName: string;
     agentId?: string;
     fromName: string;
@@ -383,9 +392,15 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   'dm.received': {
-    // Reserved: emitter lands in W4 (spec task T11, messages into the pipeline).
-    // Declared now so the vocabulary is complete and the tier is reviewable;
-    // nothing raises it yet.
+    // Wired in `services/rooms/room-service.ts`'s `writePost` (spec task T11,
+    // DOR-1388): raised when an agent posts in a room that is a 1:1 DM with the
+    // operator (`kind: 'dm'`, exactly one agent on the roster) and it is the
+    // sole agent there — never for an agent-to-agent DM the owner was only
+    // seeded into (the three-way rule), and never for a human author, because
+    // in a DM room a human is always the operator — their own cockpit voice, or
+    // their own bridged phone leg answering as an external author (chats-as-
+    // channels spec §3.4, §4.1). Muting the room suppresses this kind
+    // (`RoomServiceDeps.isRoomMuted`); it never suppresses `mention.received`.
     kind: 'dm.received',
     tier: 'notable',
     storage: 'event',
@@ -398,7 +413,10 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   'mention.received': {
-    // Reserved: emitter lands in W4 (spec task T11, messages into the pipeline).
+    // Wired in `services/rooms/room-service.ts`'s `writePost` (spec task T11,
+    // DOR-1388): raised whenever an entry's resolved mentions name the
+    // operator, in any room kind. Pierces mute on purpose — an @-mention is a
+    // directed call-out, not the room's ambient chatter.
     kind: 'mention.received',
     tier: 'notable',
     storage: 'event',
@@ -508,9 +526,9 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * that are real, so the gap is a listed fact rather than something a reader has
  * to discover by grepping for call sites.
  *
- * Absent, with their wave noted at each entry: `dm.received` / `mention.received`
- * / `report.daily` (W4), and the RAISE edge of `schedule.parked` (W3 escalation
- * — its resolutions are wired).
+ * Absent, with its wave noted at the entry: `report.daily` (W4 task T12), and
+ * the RAISE edge of `schedule.parked` (W3 escalation — its resolutions are
+ * wired).
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',
@@ -518,6 +536,8 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'session.error',
   'turn.completed',
   'run.completed',
+  'dm.received',
+  'mention.received',
   'agent.note',
   'dead-letter.created',
   'agent.unreachable',

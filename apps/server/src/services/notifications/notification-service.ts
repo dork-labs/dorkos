@@ -246,6 +246,25 @@ export class NotificationService {
   }
 
   /**
+   * Mark every `dm.received` / `mention.received` row in one room read, up to
+   * where the room's read cursor now stands (read-cursor auto-read, spec
+   * `notification-system` task T11) — the same reasoning as {@link
+   * NotificationService.markRead}, aimed at a whole room's rows a cursor just
+   * passed rather than one id a click named.
+   *
+   * @param roomId - The room whose cursor moved.
+   * @param uptoSeq - The entry `seq` the cursor now stands at.
+   */
+  markRoomRead(roomId: string, uptoSeq: number): MarkNotificationsReadResponse {
+    const ids = this.store.markRoomEntriesRead(roomId, uptoSeq);
+    const unreadCount = this.store.unreadCount();
+    if (ids.length > 0) {
+      broadcastNotificationRead({ ids, all: false, readAt: new Date().toISOString(), unreadCount });
+    }
+    return { ok: true, marked: ids.length, unreadCount };
+  }
+
+  /**
    * The shared body of both entry points: dedupe, dispatch, store, announce.
    *
    * **The channel goes first, and that ordering is load-bearing.** An agent's
@@ -487,4 +506,22 @@ export async function resolveStanding<K extends StandingNotificationKind>(
     return { notification: null, deduped: false };
   }
   return current.resolveStanding(kind, payload, opts);
+}
+
+/**
+ * Mark a room's `dm.received` / `mention.received` rows read up to where its
+ * cursor now stands, from anywhere — the read-cursor auto-read hook
+ * (`RoomService.setReadCursor` calls this directly, the same way a route calls
+ * {@link notify}). A no-op, not a throw, before boot has wired a service: a
+ * cursor move must never fail because the inbox is not up yet.
+ *
+ * @param roomId - The room whose cursor moved.
+ * @param uptoSeq - The entry `seq` the cursor now stands at.
+ */
+export function markRoomRead(roomId: string, uptoSeq: number): MarkNotificationsReadResponse {
+  if (!current) {
+    logger.debug('[Notifications] Nothing marked: no service is wired', { roomId });
+    return { ok: true, marked: 0, unreadCount: 0 };
+  }
+  return current.markRoomRead(roomId, uptoSeq);
 }

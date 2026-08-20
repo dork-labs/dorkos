@@ -421,6 +421,76 @@ describe('read state', () => {
     expect(service.markAllRead()).toEqual({ ok: true, marked: 0, unreadCount: 0 });
     expect(sentAs('notification_read')).toHaveLength(0);
   });
+
+  it("marks a room's dm/mention rows read up to where its cursor now stands", async () => {
+    const service = new NotificationService(store);
+    const passed = await service.notify('dm.received', {
+      roomId: 'room-1',
+      entryId: 'entry-1',
+      entrySeq: 3,
+      agentId: 'agent-1',
+      fromName: 'Ana',
+      preview: 'first',
+    });
+    const alsoPassed = await service.notify('mention.received', {
+      roomId: 'room-1',
+      entryId: 'entry-2',
+      entrySeq: 5,
+      roomName: 'general',
+      agentId: 'agent-1',
+      fromName: 'Ana',
+      preview: 'second',
+    });
+    const notYet = await service.notify('dm.received', {
+      roomId: 'room-1',
+      entryId: 'entry-3',
+      entrySeq: 9,
+      agentId: 'agent-1',
+      fromName: 'Ana',
+      preview: 'third',
+    });
+    // A different room's row at the same seq must not be swept up by this room's cursor.
+    const otherRoom = await service.notify('dm.received', {
+      roomId: 'room-2',
+      entryId: 'entry-4',
+      entrySeq: 3,
+      agentId: 'agent-1',
+      fromName: 'Bo',
+      preview: 'elsewhere',
+    });
+
+    const response = service.markRoomRead('room-1', 5);
+    expect(response).toEqual({ ok: true, marked: 2, unreadCount: 2 });
+
+    const rows = service.list({ limit: 25, unread: false }).notifications;
+    const readAtOf = (id: string) => rows.find((r) => r.id === id)?.readAt;
+    expect(readAtOf(passed.notification!.id)).toBeDefined();
+    expect(readAtOf(alsoPassed.notification!.id)).toBeDefined();
+    expect(readAtOf(notYet.notification!.id)).toBeUndefined();
+    expect(readAtOf(otherRoom.notification!.id)).toBeUndefined();
+
+    const [, payload] = sentAs('notification_read')[0];
+    expect(payload).toMatchObject({
+      ids: expect.arrayContaining([passed.notification!.id, alsoPassed.notification!.id]),
+      all: false,
+      unreadCount: 2,
+    });
+  });
+
+  it('announces nothing when the cursor has not reached any row yet', async () => {
+    const service = new NotificationService(store);
+    await service.notify('dm.received', {
+      roomId: 'room-1',
+      entryId: 'entry-1',
+      entrySeq: 5,
+      agentId: 'agent-1',
+      fromName: 'Ana',
+      preview: 'first',
+    });
+
+    expect(service.markRoomRead('room-1', 1)).toEqual({ ok: true, marked: 0, unreadCount: 1 });
+    expect(sentAs('notification_read')).toHaveLength(0);
+  });
 });
 
 describe('prune on write', () => {

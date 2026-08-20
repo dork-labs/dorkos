@@ -106,6 +106,8 @@ import { logger } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { ReadCursorService } from '../core/read-cursor-service.js';
+import { notifyRoomMessage as emitRoomMessageNotification } from '../notifications/emitters/room-messages.js';
+import { markRoomRead as markRoomNotificationsRead } from '../notifications/notification-service.js';
 import type {
   Bridge,
   BridgeStore,
@@ -243,6 +245,18 @@ export interface RoomServiceDeps {
    * still owns and still writes (room-participation spec §8.3).
    */
   readCursors: ReadCursorService;
+  /**
+   * Whether the operator has muted this room (spec `notification-system`
+   * task T11).
+   *
+   * Injected in the same style as {@link RoomServiceDeps.maxAgentDepth}, so this
+   * domain still reads no config: mute lives in `ui.sidebar.muted`, which is a
+   * client-organization concern, not a rooms one. Read per post, not captured,
+   * so toggling mute in the sidebar takes effect on the very next message —
+   * and a config manager that is not up yet must default to "not muted" rather
+   * than silently going deaf to a real DM.
+   */
+  isRoomMuted(roomId: string): boolean;
 }
 
 /**
@@ -396,6 +410,15 @@ export class RoomService {
   /** Where the PEOPLE in a room have read up to. Never an agent's cursor. */
   private readonly readCursors: ReadCursorService;
   /**
+   * The mesh agent table, keyed by directory — read here only to resolve a
+   * posting agent's `agents.id` for a notification payload (spec
+   * `notification-system` task T11). Every other agent lookup in this domain
+   * goes through {@link RoomService.authors} or {@link RoomService.roster}.
+   */
+  private readonly agents: RoomAgentLookup;
+  /** Whether the operator has muted a room. Read per post, never captured. */
+  private readonly isRoomMuted: (roomId: string) => boolean;
+  /**
    * Called synchronously after every committed entry — the chat bridge's
    * inline-delivery fast path (chats-as-channels §6.1). Registered after
    * construction (the delivery engine is built later, in the binding subsystem)
@@ -432,6 +455,8 @@ export class RoomService {
     this.isOwnerAuthor = deps.isOwnerAuthor;
     this.bridges = deps.bridges;
     this.readCursors = deps.readCursors;
+    this.agents = deps.agents;
+    this.isRoomMuted = deps.isRoomMuted;
     this.roster = new RoomRoster({
       store: deps.store,
       authors: deps.authors,
@@ -1912,6 +1937,23 @@ export class RoomService {
     const cursor = this.readCursors.advance(authorId, 'room', roomId, lastReadSeq, {
       unreadCount: (seq) => this.store.countUnread(roomId, seq),
     });
+    // Read-cursor auto-read (spec `notification-system` task T11): reading a
+    // room reads its inbox rows too, so an unread bell count and an unread room
+    // never disagree. Scoped to the OPERATOR's own cursor — notifications are
+    // single-operator by design (`notifications` table's own doc comment), and
+    // a second human account's cursor moving is not a fact about what the
+    // operator has seen. Never lets a notification-store problem fail a read
+    // cursor that already moved.
+    if (this.isOwnerAuthor(authorId)) {
+      try {
+        markRoomNotificationsRead(roomId, cursor.lastReadSeq);
+      } catch (err) {
+        logger.warn("[rooms] could not mark this room's notifications read", {
+          roomId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
     return { ...member, lastReadSeq: cursor.lastReadSeq };
   }
 
@@ -2605,6 +2647,11 @@ export class RoomService {
     );
 
     this.publishEntry(entry, opts?.attachments ?? []);
+    // Never on the transaction, never before the entry is durable: a
+    // notification is the least important thing this write does, and it must
+    // never be able to delay or fail the post that produced it (mirrors the
+    // dispatch try/catch immediately below).
+    this.notifyRoomMessage(room, entry, author, addressed.mentions);
     // Trigger-only, both ways: the post reaches its readers now, and whoever it
     // addresses answers on their own schedule. Deliberately not awaited — the
     // HTTP 202 must not wait on a model call, and the reply arrives on the same
@@ -2628,6 +2675,104 @@ export class RoomService {
       });
     }
     return entry;
+  }
+
+  /**
+   * Raise `dm.received` / `mention.received` for one committed entry, when it
+   * earned either (spec `notification-system` task T11, DOR-1388).
+   *
+   * **Never notifies the operator about their own words.** `isOwnerAuthor`
+   * catches their cockpit voice; a human author in a `dm`-kind room catches
+   * the other half — the bridged-DM identity model (chats-as-channels spec
+   * §3.4, §4.1) means a `dm` room's only human parties are ever the operator,
+   * local or answering from their own phone over a bridge as an external
+   * author, so "a human posted in this DM" is never a stranger reaching in.
+   * A CHANNEL keeps no such guarantee — a bridged group really can hold
+   * strangers — which is exactly the room kind an @-mention from one of them
+   * is supposed to notify.
+   *
+   * A ghost author (its row vanished, ADR 260801-003051) is skipped outright:
+   * there is nobody's name to put in a title.
+   *
+   * Never throws: called after the entry and its broadcast are already
+   * durable, so a problem here must not be able to touch either.
+   *
+   * @param room - The room the entry landed in.
+   * @param entry - The committed entry.
+   * @param author - Its author, or `undefined` for a ghost.
+   * @param mentions - The author ids this entry's resolved `@`-mentions name.
+   */
+  private notifyRoomMessage(
+    room: Room,
+    entry: RoomEntry,
+    author: AuthorRecord | null,
+    mentions: readonly string[]
+  ): void {
+    try {
+      if (!author) return;
+      const authorIsOperator =
+        this.isOwnerAuthor(author.id) || (room.kind === 'dm' && author.kind === 'human');
+      if (authorIsOperator) return;
+
+      const mentionsOperator = mentions.some((id) => this.isOwnerAuthor(id));
+      const isDirectMessage =
+        room.kind === 'dm' && author.kind === 'agent' && this.isOneOnOneDmWithOperator(room.id);
+      if (!isDirectMessage && !mentionsOperator) return;
+
+      emitRoomMessageNotification({
+        roomId: room.id,
+        roomName: room.title,
+        entryId: entry.id,
+        entrySeq: entry.seq,
+        ...(author.kind === 'agent' && { agentId: this.agents.byPath(author.naturalKey)?.id }),
+        fromName: author.displayName,
+        text: entry.body.text,
+        isDirectMessage,
+        mentionsOperator,
+        roomMuted: isDirectMessage && this.isRoomMuted(room.id),
+      });
+    } catch (err) {
+      logger.warn('[rooms] could not evaluate whether an entry should notify', {
+        roomId: room.id,
+        entryId: entry.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Whether a `dm`-kind room is genuinely a 1:1 between the operator and one
+   * agent — exactly one agent on the roster, AND the operator among its human
+   * members.
+   *
+   * Holds whether the room is a plain two-member DM or a bridged one that has
+   * also gained the operator's own external phone identity as a third, human
+   * member (chats-as-channels §3.4) — a human member never changes this
+   * answer, only another AGENT does, which is exactly the agent-to-agent DM
+   * the three-way rule forces the owner onto (`room-conduct.md`) and the agent
+   * half of this check exists to exclude.
+   *
+   * The operator half exists for the other edge the three-way rule leaves:
+   * an agent may open a `dm` room for itself alone, with nobody else on the
+   * roster at all ("Ana notes", `three-way-rule.test.ts`). One agent, zero
+   * humans, is not a DM with anybody — there is nobody there to notify.
+   *
+   * @param roomId - The room. Only ever called for a `dm`-kind room.
+   */
+  private isOneOnOneDmWithOperator(roomId: string): boolean {
+    const members = this.store.listMembers(roomId);
+    const authors = this.authors.getMany(members.map((member) => member.authorId));
+    let agentCount = 0;
+    let operatorPresent = false;
+    for (const member of members) {
+      if (authors.get(member.authorId)?.kind === 'agent') {
+        agentCount += 1;
+        if (agentCount > 1) return false;
+      } else if (this.isOwnerAuthor(member.authorId)) {
+        operatorPresent = true;
+      }
+    }
+    return agentCount === 1 && operatorPresent;
   }
 
   /**
