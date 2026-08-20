@@ -107,6 +107,16 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
 }
 
 /**
+ * Frozen at module load rather than read per call, so every row in one run is
+ * the same age and a suite that takes a minute cannot have its first fixture
+ * age differently from its last.
+ */
+const LOADED_AT = Date.now();
+
+/** One minute, in milliseconds. */
+const MINUTE_MS = 60_000;
+
+/**
  * An Inbox page holding one "agent stopped answering" row per name.
  *
  * The cheapest way to put one real Recent-Activity row on screen: those rows are
@@ -123,7 +133,12 @@ function offlineAgents(...names: string[]) {
       subject: { type: 'agent' as const, id: name },
       agentId: name,
       title: `${name} stopped answering`,
-      createdAt: '2026-08-19T09:00:00.000Z',
+      // RELATIVE, never a literal date. The activity group only draws the last
+      // 24 hours (`useActivityNotifications`), so a fixture pinned to a calendar
+      // day is a test that passes until the wall clock walks past it and then
+      // fails for a reason that has nothing to do with the code. This one did:
+      // written at 22h old, red by the same afternoon.
+      createdAt: new Date(LOADED_AT - MINUTE_MS).toISOString(),
     })),
     nextCursor: null,
     unreadCount: names.length,
