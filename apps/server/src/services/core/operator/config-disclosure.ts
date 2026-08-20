@@ -174,6 +174,17 @@ export const CONFIG_DISCLOSURE = {
   // closer to anything than one that does not.
   'ui.autonomyAcknowledgedAt': 'expose',
 
+  // How loud DorkOS may be, and how long before it tries a louder channel. All
+  // preferences: none of them names a credential, a host or a device, and an
+  // agent reading them learns only how its own interruptions will land — which
+  // is the sort of thing a well-behaved one should know before it interrupts.
+  'notifications.escalation.phoneAfterMinutes': 'expose',
+  'notifications.sounds.knock': 'expose',
+  'notifications.sounds.allClear': 'expose',
+  'notifications.sounds.turnEnd': 'expose',
+  'notifications.notifyOnTurnCompleteWhileAway': 'expose',
+  'notifications.browserPermissionPrimerDismissed': 'expose',
+
   'logging.level': 'expose',
   'logging.maxLogSizeKb': 'expose',
   'logging.maxLogFiles': 'expose',

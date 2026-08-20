@@ -89,6 +89,8 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     keywords: [
       'appearance',
       'preferences',
+      'notifications',
+      'sound',
       'status bar',
       'server',
       'tools',

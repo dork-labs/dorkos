@@ -29,8 +29,6 @@ export function PreferencesTab() {
     toggleDevtools,
     showTaskCelebrations,
     setShowTaskCelebrations,
-    enableNotificationSound,
-    setEnableNotificationSound,
     enableTasksNotifications,
     setEnableTasksNotifications,
     promoEnabled,
@@ -107,12 +105,10 @@ export function PreferencesTab() {
             onCheckedChange={setShowTaskCelebrations}
           />
 
-          <SwitchSettingRow
-            label="Notification sound"
-            description="Play a sound when AI finishes responding (3s+ responses)"
-            checked={enableNotificationSound}
-            onCheckedChange={setEnableNotificationSound}
-          />
+          {/* "Notification sound" used to sit here. Every sound DorkOS makes is
+              now on the Notifications tab, beside the browser-notification and
+              escalation settings — one place to answer "how loud may this be?"
+              rather than one switch here and another in a session's popover. */}
 
           <SwitchSettingRow
             label="Tasks run notifications"

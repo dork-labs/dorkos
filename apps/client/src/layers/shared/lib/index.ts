@@ -111,7 +111,7 @@ export {
   generateTasksFrames,
   setFavicon,
 } from './favicon-utils';
-export { playNotificationSound } from './notification-sound';
+export { playNotificationCue, type NotificationCue } from './notification-sound';
 export { playSliderTick, playCelebration } from './sound';
 export { formatCompactAge } from './format-compact-age';
 export {

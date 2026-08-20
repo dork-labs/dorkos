@@ -77,7 +77,7 @@ vi.mock('@/layers/entities/session/model/use-recent-sessions', () => ({
 
 import { TransportProvider } from '@/layers/shared/model';
 import { useSessionListStore } from '@/layers/entities/session';
-import { useAttentionSignals } from '../model/use-attention-signals';
+import { useAttentionSignals, useAttentionSignalsLoading } from '../model/use-attention-signals';
 import { useIdleNudgeStore } from '../model/idle-nudge-store';
 
 /** A `session_status` projection with a lifecycle and, optionally, a live verb. */
@@ -196,5 +196,47 @@ describe('useAttentionSignals', () => {
     // A wedged session is not something the operator may wave away — it clears
     // by being resolved, and nothing in Heads up offers a snooze.
     expect(result.current.map((s) => s.id)).toEqual(['error:ses-1']);
+  });
+});
+
+describe('useAttentionSignalsLoading', () => {
+  beforeEach(() => {
+    const transport = createMockTransport();
+    transport.listPendingApprovals = vi.fn().mockResolvedValue({ approvals: [] });
+    providers = {
+      transport,
+      queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    };
+    useSessionListStore.getState().resetStatuses();
+    useIdleNudgeStore.getState().reset();
+  });
+  afterEach(() => cleanup());
+
+  it('stays loading while the PROMPT queue has not answered (DOR-1385 review)', async () => {
+    // The staggered settle, which is the ordinary shape of a page load: the
+    // session listing and the approval queue land, and the prompt queue lands a
+    // beat later.
+    //
+    // Why it matters, in one sentence: `deriveAttentionSignals` reads a blocked
+    // session's PROMPT to build the signal's id, so before the prompts arrive a
+    // blocked session is `blocked:<sessionId>` and afterwards it is
+    // `blocked:<interactionId>`. Calling the list believable in between hands an
+    // arrival watcher an id that is about to change, and the change reads as an
+    // Ask arriving when it had been sitting there the whole time.
+    providers.transport.listPendingInteractions = vi.fn(() => new Promise<never>(() => {}));
+
+    const { result } = renderHook(() => useAttentionSignalsLoading(), { wrapper });
+
+    // Wait for the two that DO settle, so this is asserting "still loading
+    // because of the prompts" rather than "still loading because nothing has
+    // run yet" — which would pass even with the prompt query omitted.
+    await waitFor(() => expect(providers.transport.listPendingApprovals).toHaveBeenCalled());
+    await waitFor(() => expect(providers.transport.listPendingInteractions).toHaveBeenCalled());
+    expect(result.current).toBe(true);
+  });
+
+  it('is believable once all three queries have answered', async () => {
+    const { result } = renderHook(() => useAttentionSignalsLoading(), { wrapper });
+    await waitFor(() => expect(result.current).toBe(false));
   });
 });

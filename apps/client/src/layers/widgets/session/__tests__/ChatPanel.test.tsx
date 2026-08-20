@@ -133,6 +133,10 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
     ...actual,
     useQuery: vi.fn(() => ({ data: undefined })),
     useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
+    // The notification-preferences hook (the turn-finished cue, and the
+    // permission card near the composer) writes through a mutation. The real
+    // one reaches for a provider this file deliberately does not stand up.
+    useMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   };
 });
 
@@ -159,8 +163,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setIsTextStreaming: vi.fn(),
       setIsWaitingForUser: vi.fn(),
       setActiveForm: vi.fn(),
-      enableNotificationSound: false,
-      setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
     };

@@ -728,6 +728,97 @@ export type ComposerPrefs = z.infer<typeof ComposerPrefsSchema>;
 export const COMPOSER_PREFS_DEFAULTS: ComposerPrefs = ComposerPrefsSchema.parse({});
 
 /**
+ * How long something may sit waiting on you before DorkOS tries your phone.
+ *
+ * Minutes, or `'never'` for "the cockpit and this computer are the only places
+ * I want to hear about it". Four steps rather than a free number because the
+ * question a person is actually answering is coarse — "right away", "give me a
+ * moment", "only if I have really walked off" — and a spinner asking for 7
+ * invites a precision the ladder does not have.
+ */
+export const EscalationDelaySchema = z.union([
+  z.literal(1),
+  z.literal(2),
+  z.literal(5),
+  z.literal(15),
+  z.literal('never'),
+]);
+
+/** How long something may wait before DorkOS tries your phone. */
+export type EscalationDelay = z.infer<typeof EscalationDelaySchema>;
+
+/**
+ * How DorkOS gets your attention (`notifications`, spec `notification-system`).
+ *
+ * Person-scoped and server-held rather than per-browser, for the reason
+ * {@link ComposerPrefsSchema} gives above: "how loud may my agents be" is a fact
+ * about the person, and answering it on a laptop should answer it on a phone.
+ */
+export const NotificationPrefsSchema = z.object({
+  escalation: z
+    .object({
+      /**
+       * How long a blocked agent waits for you here before DorkOS tries a
+       * louder channel. `'never'` keeps everything on this computer.
+       *
+       * Two minutes by default: long enough that stepping away from the keyboard
+       * for a moment does not buzz a phone, short enough that a ten-minute
+       * prompt window is not mostly gone before anybody is told.
+       */
+      phoneAfterMinutes: EscalationDelaySchema.default(2),
+    })
+    .default(() => ({ phoneAfterMinutes: 2 as const })),
+  sounds: z
+    .object({
+      /** A soft knock when an agent stops and needs you. */
+      knock: z.boolean().default(true),
+      /** A gentle chord when the last thing waiting on you is answered. */
+      allClear: z.boolean().default(true),
+      /**
+       * A chime every time any turn finishes.
+       *
+       * **Off**, and the change is deliberate: it used to be on for every turn
+       * of every session, which on a fleet of agents is a sound with no
+       * information in it. The knock above is the one that means something.
+       */
+      turnEnd: z.boolean().default(false),
+    })
+    .default(() => ({ knock: true, allClear: true, turnEnd: false })),
+  /**
+   * Whether news that is worth knowing but is not blocking anything — a turn
+   * that finished, a message addressed to you — may raise a notification while
+   * you are looking at something else.
+   *
+   * One switch for the whole class rather than a grid of per-kind toggles. It is
+   * named for the case that dominates it (a turn finishing while you are away),
+   * and a per-kind matrix is the thing this deliberately is not: research §5.4
+   * has the argument, and the short version is that nobody tends a matrix.
+   *
+   * Only ever consulted while the window is hidden. Nothing pops up over what
+   * you are already reading.
+   */
+  notifyOnTurnCompleteWhileAway: z.boolean().default(true),
+  /**
+   * Whether this person has already answered the browser-permission card.
+   *
+   * Set by pressing either button on it — "Not now" as much as "Turn on
+   * notifications", because the card's promise is that it is asked once. It is
+   * config rather than browser storage so that "not now" said on a laptop is not
+   * re-asked on a phone.
+   */
+  browserPermissionPrimerDismissed: z.boolean().default(false),
+});
+
+/** How DorkOS gets your attention (`notifications`). */
+export type NotificationPrefs = z.infer<typeof NotificationPrefsSchema>;
+
+/**
+ * Fully-defaulted {@link NotificationPrefs}. Parsed once so the config route,
+ * the cockpit's own reader, and the conf migration share one canonical default.
+ */
+export const NOTIFICATION_PREFS_DEFAULTS: NotificationPrefs = NotificationPrefsSchema.parse({});
+
+/**
  * The shipped default for `agents.defaultDirectory`.
  *
  * **A portable spelling of `{dorkHome}/agents`, not a literal filesystem path.**
@@ -992,6 +1083,21 @@ export const UserConfigSchema = z.object({
       composer: { richText: true },
       autonomyAcknowledgedAt: null,
     })),
+  /**
+   * How DorkOS gets your attention, and how hard it tries.
+   *
+   * One block, because the answers belong together: a person deciding "how loud
+   * should this be?" should not have to find three settings in three places. It
+   * is also the reason these are config and not browser storage — how loud your
+   * agents may be is a fact about you, not about the laptop you happened to open
+   * (the same argument `ui.promos.dismissedIds` makes next door).
+   */
+  notifications: NotificationPrefsSchema.default(() => ({
+    escalation: { phoneAfterMinutes: 2 as const },
+    sounds: { knock: true, allClear: true, turnEnd: false },
+    notifyOnTurnCompleteWhileAway: true,
+    browserPermissionPrimerDismissed: false,
+  })),
   logging: LoggingConfigSchema.default(() => ({
     level: 'info' as const,
     maxLogSizeKb: 500,

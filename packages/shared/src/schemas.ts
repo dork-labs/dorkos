@@ -19,6 +19,7 @@ import {
   ShapeUserPrefsSchema,
   StatusBarPrefsSchema,
   ComposerPrefsSchema,
+  NotificationPrefsSchema,
 } from './config-schema.js';
 // The effort ladder itself lives in the dependency-free constants module so this
 // file and `config-schema.ts` (which this file already imports) can both build
@@ -3232,6 +3233,14 @@ export const ServerConfigSchema = z
       description:
         'Feature-promo ids the user has waved away. Server-held rather than per-browser, so dismissing a card on one device settles it on all of them',
     }),
+    // How DorkOS gets this person's attention: the escalation delay, the three
+    // sounds, whether news may interrupt while the window is hidden, and whether
+    // the browser-permission card has been answered. Sent WHOLE rather than
+    // flattened like the two dismissal lists above — a settings screen reads all
+    // four together, and so does the cockpit's sound and browser-notification
+    // code. Defined in config-schema.ts (no OpenAPI extension), so it is embedded
+    // rather than `.openapi()`-annotated here.
+    notifications: NotificationPrefsSchema,
     port: z.number().int(),
     uptime: z.number(),
     workingDirectory: z.string(),

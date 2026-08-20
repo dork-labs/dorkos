@@ -43,7 +43,10 @@ export const BOOL_KEYS = {
   expandToolCalls: 'dorkos-expand-tool-calls',
   autoHideToolCalls: 'dorkos-auto-hide-tool-calls',
   showTaskCelebrations: 'dorkos-show-task-celebrations',
-  enableNotificationSound: 'dorkos-enable-notification-sound',
+  // `dorkos-enable-notification-sound` is deliberately absent: the
+  // turn-finished chime is `notifications.sounds.turnEnd` in config now, so it
+  // follows a person between devices. The retired key is read once and deleted
+  // by `entities/config/use-notification-prefs` (DOR-1385).
   enableTasksNotifications: 'dorkos-enable-tasks-notifications',
   enableMessagePolling: 'dorkos-enable-message-polling',
   promoEnabled: 'dorkos-promo-enabled',
@@ -102,7 +105,6 @@ export const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
   expandToolCalls: false,
   autoHideToolCalls: true,
   showTaskCelebrations: true,
-  enableNotificationSound: true,
   enableTasksNotifications: true,
   enableMessagePolling: false,
   promoEnabled: true,

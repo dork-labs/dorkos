@@ -12,6 +12,7 @@
  */
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import { deriveRuntimeReadiness } from '@dorkos/shared/agent-runtime';
+import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { UploadFile, WriteFileResult, ClientErrorReport } from '@dorkos/shared/transport';
 import type {
@@ -680,6 +681,11 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
         // session, so pressing x still takes the card away and keeps it away for
         // as long as the pane is open — it just cannot outlive a restart here.
         dismissedPromoIds: [],
+        // The shipped defaults, and equally unpersistable here for the reason
+        // above. The embed has no browser-notification leg and no bell of its
+        // own, so nothing in it reads these — they are on the wire because the
+        // contract says so.
+        notifications: NOTIFICATION_PREFS_DEFAULTS,
         port: 0,
         uptime: 0,
         workingDirectory: services.vaultRoot,

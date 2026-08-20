@@ -80,6 +80,7 @@ import { CreateAgentDialog } from '@/layers/features/agent-creation';
 import { ImportProjectsDialog } from '@/layers/features/mesh';
 import { PipHost } from '@/layers/features/pip-panel';
 import { TourHost } from '@/layers/features/tours';
+import { NotificationCenter } from '@/layers/features/notifications';
 import { ShortcutsPanel, useShortcutsPanel } from '@/layers/features/shortcuts';
 import { PanelGroup, Panel } from 'react-resizable-panels';
 import {
@@ -707,6 +708,11 @@ export function AppShell() {
         <Toaster />
         <PipHost />
         <TourHost />
+        {/* Draws nothing. Knocks when something starts waiting on you, and
+            raises a browser notification if this tab is hidden while it does.
+            Mounted here because both are about arrivals and have to outlive
+            every route. */}
+        <NotificationCenter />
       </MotionConfig>
     </TooltipProvider>
   );

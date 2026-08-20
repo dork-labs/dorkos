@@ -48,8 +48,6 @@ function promotionContext(overrides: Partial<StatusPromotionContext> = {}): Stat
 }
 
 const controls = {
-  sound: true,
-  onToggleSound: vi.fn(),
   refresh: false,
   onToggleRefresh: vi.fn(),
   plan: null,
@@ -241,17 +239,24 @@ describe('SessionPopover — pins', () => {
 });
 
 describe('SessionPopover — controls', () => {
-  it('renders the sound and refresh settings as switches, not pins', () => {
+  it('renders the refresh setting as a switch, not a pin', () => {
     renderPanel();
-    const sound = screen.getByRole('switch', { name: 'Play a sound when a turn finishes' });
-    expect(sound).toBeChecked();
-    fireEvent.click(sound);
-    expect(controls.onToggleSound).toHaveBeenCalled();
-
     const refresh = screen.getByRole('switch', {
       name: 'Keep checking for updates in the background',
     });
     expect(refresh).not.toBeChecked();
+    fireEvent.click(refresh);
+    expect(controls.onToggleRefresh).toHaveBeenCalled();
+  });
+
+  it('no longer carries a sound switch — every sound is a Settings question now', () => {
+    // It read as a per-session control and never was one: it flipped a
+    // preference for the whole machine, and it could reach only the least
+    // important of the three sounds (DOR-1385).
+    renderPanel();
+    expect(
+      screen.queryByRole('switch', { name: 'Play a sound when a turn finishes' })
+    ).not.toBeInTheDocument();
   });
 });
 

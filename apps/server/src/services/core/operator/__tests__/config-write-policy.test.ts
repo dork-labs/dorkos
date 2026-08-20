@@ -74,6 +74,15 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'mcp.rateLimit.maxPerWindow',
       'mcp.rateLimit.windowSecs',
       'mesh.scanRoots',
+      // Every way the operator finds out something is waiting on them. An agent
+      // able to write these could silence its own alarm and then park on a
+      // question nobody is told about (spec `notification-system`, DOR-1385).
+      'notifications.browserPermissionPrimerDismissed',
+      'notifications.escalation.phoneAfterMinutes',
+      'notifications.notifyOnTurnCompleteWhileAway',
+      'notifications.sounds.allClear',
+      'notifications.sounds.knock',
+      'notifications.sounds.turnEnd',
       'providers',
       'relay.dataDir',
       'rooms.collectDebounceMs',
