@@ -86,12 +86,14 @@ export function useRenameSession(cwd: string | null) {
       if (context?.previous) {
         queryClient.setQueryData(sessionKeys.list(cwd), context.previous);
       }
-      toast.error('Failed to rename session');
     },
 
     onSettled: () => {
       // Always refetch after mutation to ensure cache consistency
       queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
     },
+    // The shared mutation toast (`query-client.ts`) reports the failure now
+    // — this used to show its own on top of it.
+    meta: { errorLabel: "Couldn't rename that session" },
   });
 }

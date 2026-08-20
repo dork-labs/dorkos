@@ -5,6 +5,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { TransportProvider } from '@/layers/shared/model';
+import { createQueryClientConfig } from '@/layers/shared/lib';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { UnclaimedChat } from '@dorkos/shared/relay-schemas';
@@ -56,8 +57,9 @@ function chat(overrides: Partial<UnclaimedChat> = {}): UnclaimedChat {
 
 let transport: Transport;
 
-function renderFeed() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderFeed(
+  client: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+) {
   return render(
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
@@ -71,6 +73,7 @@ beforeEach(() => {
   navigateSpy.mockReset();
   vi.mocked(toast.success).mockReset();
   vi.mocked(toast.warning).mockReset();
+  vi.mocked(toast.error).mockReset();
   transport = createMockTransport({
     listUnclaimedChats: vi.fn().mockResolvedValue([chat()]),
     listMeshAgents: vi.fn().mockResolvedValue({ agents: [{ id: 'dorkbot', name: 'DorkBot' }] }),
@@ -125,6 +128,43 @@ describe('ClaimFeed — "Answer in a channel" (DOR-882)', () => {
       })
     );
     expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it('a chat already claimed by someone else opens the move dialog, never a duplicate toast', async () => {
+    // The real error policy (`createQueryClientConfig`), not the bare test
+    // client — `useClaimUnclaimedChat`'s `meta.suppressErrorToast` is what
+    // this proves: without it, the shared mutation cache would ALSO toast
+    // underneath the dialog this opens instead.
+    const conflict = Object.assign(new Error('already bound'), {
+      code: 'CHAT_ALREADY_BOUND',
+      body: { conflict: { bindingId: 'b-existing', agentId: 'scribe' } },
+    });
+    transport.claimUnclaimedChat = vi.fn().mockRejectedValue(conflict);
+    renderFeed(new QueryClient(createQueryClientConfig()));
+
+    await waitFor(() => expect(screen.getByText('Miguel messaged your bot')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Answer in a channel' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('This chat already reaches someone')).toBeInTheDocument()
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('a genuine claim failure still reports exactly once, now from ClaimFeed itself', async () => {
+    // Suppressing the shared toast (finding above) must not go silent on a
+    // REAL failure — this is the fallback that keeps it a one-toast story.
+    transport.claimUnclaimedChat = vi.fn().mockRejectedValue(new Error('adapter unreachable'));
+    renderFeed(new QueryClient(createQueryClientConfig()));
+
+    await waitFor(() => expect(screen.getByText('Miguel messaged your bot')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Answer in a channel' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('adapter unreachable'));
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('This chat already reaches someone')).not.toBeInTheDocument();
   });
 
   it('a bridge failure still reports the claim as answered, with a warning naming why — never a silent drop', async () => {

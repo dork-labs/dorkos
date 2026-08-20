@@ -49,7 +49,7 @@ export interface BindingBridgeSectionProps {
  * first.
  */
 export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionProps) {
-  const updateBinding = useUpdateBinding();
+  const updateBinding = useUpdateBinding({ errorLabel: "Couldn't bridge that chat" });
   const navigate = useNavigate();
 
   if (binding.bridge === 'room') {
@@ -98,8 +98,9 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
         void navigate({ to: '/channels', search: { id: updated.roomId } });
       }
       onDone?.();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't bridge that chat");
+    } catch {
+      // Reported by the shared mutation toast (`useUpdateBinding`'s
+      // `meta.errorLabel`, set above).
     }
   }
 
@@ -141,7 +142,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
  * un-bridge (with its consequences stated before you confirm).
  */
 function BridgedControls({ binding, onDone }: BindingBridgeSectionProps) {
-  const updateBinding = useUpdateBinding();
+  const updateBinding = useUpdateBinding({ errorLabel: "Couldn't un-bridge that chat" });
   const setDeliverNotices = useSetDeliverNotices();
   const { data: room } = useRoom(binding.roomId ?? null);
   // Until the room resolves we do not know the seeded value (a DM seeds true, a
@@ -155,8 +156,9 @@ function BridgedControls({ binding, onDone }: BindingBridgeSectionProps) {
       await updateBinding.mutateAsync({ id: binding.id, updates: { bridge: 'off' } });
       toast.success('This chat is a private line again');
       onDone?.();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't un-bridge that chat");
+    } catch {
+      // Reported by the shared mutation toast (`useUpdateBinding`'s
+      // `meta.errorLabel`, set above).
     }
   }
 

@@ -95,8 +95,9 @@ export function AdapterCard({
         label: '',
       });
       toast.success('Integration added');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add integration');
+    } catch {
+      // Reported by the shared mutation toast (`useCreateBinding`'s
+      // `meta.errorLabel`).
     }
   }
 

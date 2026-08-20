@@ -122,8 +122,10 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
           canReceive: true,
         });
         toast.success('Connection added');
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to add connection');
+      } catch {
+        // The shared mutation toast (`useCreateBinding`'s `meta.errorLabel`)
+        // reports the failure — the catch only keeps the success toast from
+        // firing.
       }
     },
     [agent.id, createBinding]
@@ -149,8 +151,9 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
       try {
         await deleteBinding.mutateAsync(bindingId);
         toast.success('Connection removed');
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to remove connection');
+      } catch {
+        // Reported by the shared mutation toast (`useDeleteBinding`'s
+        // `meta.errorLabel`).
       }
     },
     [deleteBinding]
@@ -161,8 +164,9 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
       try {
         await updateBinding.mutateAsync({ id: bindingId, updates: { enabled } });
         toast.success(enabled ? 'Connection resumed' : 'Connection paused');
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to update connection');
+      } catch {
+        // Reported by the shared mutation toast (`useUpdateBinding`'s
+        // `meta.errorLabel`).
       }
     },
     [updateBinding]
@@ -170,18 +174,20 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
 
   const handleTest = useCallback(
     async (bindingId: string) => {
-      try {
-        const result = await testBinding.mutateAsync(bindingId);
-        if (result.ok) {
-          toast.success(`Test OK \u2014 routed in ${result.latencyMs}ms`);
-        } else {
-          toast.error(`Test failed: ${result.reason ?? 'unknown error'}`);
-        }
-        return result;
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Test failed');
-        throw err;
+      // A network/transport failure (mutateAsync rejecting) reports through
+      // the shared mutation toast (`useTestBinding`'s `meta.errorLabel`) and
+      // propagates to the caller \u2014 `IntegrationBindingCard`'s own
+      // try/finally still resets its pending state. `result.ok === false` is
+      // a different thing: the call itself succeeded and the server is
+      // naming why routing would fail, so that toast stays local \u2014 it is the
+      // only place that reports it.
+      const result = await testBinding.mutateAsync(bindingId);
+      if (result.ok) {
+        toast.success(`Test OK \u2014 routed in ${result.latencyMs}ms`);
+      } else {
+        toast.error(`Test failed: ${result.reason ?? 'unknown error'}`);
       }
+      return result;
     },
     [testBinding]
   );
@@ -196,8 +202,9 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
         });
         toast.success('Connection updated');
         setEditDialog(CLOSED_EDIT_DIALOG);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to update connection');
+      } catch {
+        // Reported by the shared mutation toast (`useUpdateBinding`'s
+        // `meta.errorLabel`).
       }
     },
     [editDialog.binding, updateBinding]
@@ -209,8 +216,9 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
         await deleteBinding.mutateAsync(bindingId);
         toast.success('Connection removed');
         setEditDialog(CLOSED_EDIT_DIALOG);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to remove connection');
+      } catch {
+        // Reported by the shared mutation toast (`useDeleteBinding`'s
+        // `meta.errorLabel`).
       }
     },
     [deleteBinding]

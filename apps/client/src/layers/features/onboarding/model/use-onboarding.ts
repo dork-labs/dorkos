@@ -80,6 +80,9 @@ export function useOnboarding() {
       const keys = Object.keys(patch).join(', ');
       toast.error(`Failed to save onboarding progress (${keys})`);
     },
+    // Names which fields failed to save — richer than the shared mutation
+    // toast's static label, so this opts out of it rather than duplicating it.
+    meta: { suppressErrorToast: true },
   });
 
   /** Mark a step as completed. */
