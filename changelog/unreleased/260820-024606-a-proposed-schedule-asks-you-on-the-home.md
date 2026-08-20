@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): one attention engine — a proposed schedule asks you on the Home screen, and idle rows stop nagging (DOR-1381)'
+  - 'fix(client): the review pass on the one attention engine — answers stay in place, all-clear waits for every source (DOR-1381)'
 ---
 
 ### Added
