@@ -63,7 +63,8 @@ export function TextSettingRow({
         }
       );
       if (!res.ok) throw new Error(`${res.status}`);
-      toast.success(`${status.label} saved`);
+      // No success toast: the field already shows the value that was just
+      // saved — a toast on top of it would say the same thing twice.
     } catch {
       toast.error(`Failed to save ${status.label}`);
     } finally {
@@ -120,7 +121,8 @@ export function NumberSettingRow({
         }
       );
       if (!res.ok) throw new Error(`${res.status}`);
-      toast.success(`${status.label} saved`);
+      // No success toast: the field already shows the value that was just
+      // saved — a toast on top of it would say the same thing twice.
     } catch {
       toast.error(`Failed to save ${status.label}`);
     } finally {
@@ -180,7 +182,8 @@ export function BooleanSettingRow({
         }
       );
       if (!res.ok) throw new Error(`${res.status}`);
-      toast.success(`${status.label} ${newValue ? 'enabled' : 'disabled'}`);
+      // No success toast: the switch itself already reads enabled/disabled —
+      // a toast on top of it would say the same thing twice.
       await onChanged();
     } catch {
       toast.error(`Failed to update ${status.label}`);
@@ -228,7 +231,8 @@ export function SelectSettingRow({
         }
       );
       if (!res.ok) throw new Error(`${res.status}`);
-      toast.success(`${status.label} updated`);
+      // No success toast: the dropdown already shows the option that was
+      // just chosen — a toast on top of it would say the same thing twice.
       await onChanged();
     } catch {
       toast.error(`Failed to update ${status.label}`);

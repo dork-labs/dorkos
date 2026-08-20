@@ -353,10 +353,9 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
                     ? 'That run had already finished'
                     : 'Stopping the run'
                 ),
-              onError: (err) =>
-                toast.error(
-                  `Couldn't stop the run: ${err instanceof Error ? err.message : 'Unknown error'}`
-                ),
+              // No local onError: the shared mutation toast
+              // (`useCancelTaskRun`'s `meta.errorLabel`) reports a failure —
+              // this used to show its own on top of it.
             })
           }
           isCancelling={cancelTaskRun.isPending}

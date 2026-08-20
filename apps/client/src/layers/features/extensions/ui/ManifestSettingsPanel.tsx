@@ -266,7 +266,9 @@ function SecretRow({
       });
       if (!res.ok) throw new Error(`${res.status}`);
       setValue('');
-      toast.success(`${secret.label} saved`);
+      // No success toast: `onChanged` flips this row straight to its
+      // "Configured" badge — that IS the confirmation, and a toast beside it
+      // would say the same thing twice.
       await onChanged();
     } catch {
       toast.error(`Failed to save ${secret.label}`);
@@ -282,7 +284,9 @@ function SecretRow({
         method: 'DELETE',
       });
       if (!res.ok) throw new Error(`${res.status}`);
-      toast.success(`${secret.label} removed`);
+      // No success toast: `onChanged` flips this row back to its empty
+      // input — that IS the confirmation, and a toast beside it would say
+      // the same thing twice.
       await onChanged();
     } catch {
       toast.error(`Failed to remove ${secret.label}`);
