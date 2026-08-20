@@ -131,6 +131,12 @@ export function NotificationsTab() {
           </SettingRow>
         </FieldCardContent>
       </FieldCard>
+
+      <p className="text-muted-foreground text-xs">
+        On a phone, choose &ldquo;Add to Home Screen&rdquo; to install DorkOS like an app: full
+        screen, with its own icon. iPhone only shows notifications from an installed app, and DorkOS
+        does not send notifications to a phone yet.
+      </p>
     </div>
   );
 }
