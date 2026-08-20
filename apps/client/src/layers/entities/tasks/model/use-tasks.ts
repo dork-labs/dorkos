@@ -43,6 +43,9 @@ export function useUpdateTask() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...TASKS_KEY] });
     },
+    // The shared mutation toast (`query-client.ts`) reports the failure —
+    // `TaskRow.tsx`'s own call-time `onError` used to duplicate it.
+    meta: { errorLabel: "Couldn't update the schedule" },
   });
 }
 
@@ -56,6 +59,7 @@ export function useDeleteTask() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...TASKS_KEY] });
     },
+    meta: { errorLabel: "Couldn't delete the schedule" },
   });
 }
 
@@ -69,5 +73,6 @@ export function useTriggerTask() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks', 'runs'] });
     },
+    meta: { errorLabel: "Couldn't run the task" },
   });
 }

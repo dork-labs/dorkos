@@ -6,7 +6,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { TransportProvider } from '@/layers/shared/model';
-import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
+import { createQueryClientConfig } from '@/layers/shared/lib';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useNativeCommands, isNativeCommandContent } from '../use-native-commands';
 import { useUsageReveal } from '../../use-usage-reveal';

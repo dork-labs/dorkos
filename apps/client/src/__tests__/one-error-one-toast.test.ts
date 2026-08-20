@@ -11,9 +11,16 @@
  *
  * The fix is `meta.errorLabel` (compose with the shared toast) or
  * `meta.suppressErrorToast` (opt out because the surface reports it richer,
- * or handles it as something other than a toast). Either is fine; declaring
- * neither while a `useMutation` handler still calls `toast(...)` is the
- * defect this file watches for.
+ * or handles it as something other than a toast) — **but only when the
+ * mutation's own `onError` has stopped toasting.** `errorLabel` does not
+ * suppress the global toast; it only names the line it prints. A mutation
+ * whose `onError` STILL calls `toast(...)` doubles up regardless of
+ * `errorLabel` — the global handler fires with the labelled line, and the
+ * local `onError` fires its own on top of it. Only `suppressErrorToast`
+ * silences the global side of that pair, so it is the one hatch this scan
+ * accepts for an `onError` that still toasts. Declaring neither, or
+ * declaring only `errorLabel` while `onError` still toasts, is the defect
+ * this file watches for.
  *
  * **Checked against the source, not a rendered tree** — the shape here is a
  * hook nobody thought to mount inside a toast-asserting test, the same
@@ -97,12 +104,17 @@ function extractBalancedValue(text: string, start: number): string {
 /** A `toast(...)` or `toast.<method>(...)` call. */
 const TOAST_CALL = /\btoast(\.\w+)?\s*\(/;
 
-/** Either escape hatch `query-client.ts`'s `MutationCache.onError` honors. */
-const META_ESCAPE_HATCH = /\berrorLabel\b|\bsuppressErrorToast\b/;
+/**
+ * The ONLY meta key that stops `query-client.ts`'s `MutationCache.onError`
+ * from also firing. `errorLabel` composes with that toast — it does not
+ * cancel it — so a mutation whose own `onError` still toasts is unfixed by
+ * `errorLabel` alone; the global handler and the local one both run.
+ */
+const SUPPRESSES_GLOBAL_TOAST = /\bsuppressErrorToast\b/;
 
 /**
- * Does `meta`'s captured value carry an escape hatch, resolving one level of
- * indirection when the value is a bare identifier?
+ * Does `meta`'s captured value carry `suppressErrorToast`, resolving one
+ * level of indirection when the value is a bare identifier?
  *
  * `entities/relay/model/use-adapter-catalog.ts` declares `meta: OWN_ERROR_TOAST`
  * three times, pointing at one documented `const OWN_ERROR_TOAST = {
@@ -116,26 +128,32 @@ const META_ESCAPE_HATCH = /\berrorLabel\b|\bsuppressErrorToast\b/;
  * @param fileText - The whole file, to look up an identifier's declaration in.
  * @param metaValue - The captured value that followed `meta:`.
  */
-function metaHasEscapeHatch(fileText: string, metaValue: string): boolean {
-  if (META_ESCAPE_HATCH.test(metaValue)) return true;
+function metaSuppressesGlobalToast(fileText: string, metaValue: string): boolean {
+  if (SUPPRESSES_GLOBAL_TOAST.test(metaValue)) return true;
   const identifier = metaValue.trim().match(/^[A-Za-z_$][\w$]*$/);
   if (!identifier) return false;
   const declaration = new RegExp(`\\b(?:const|let|var)\\s+${identifier[0]}\\s*=`).exec(fileText);
   if (!declaration) return false;
   const declaredValue = extractBalancedValue(fileText, declaration.index + declaration[0].length);
-  return META_ESCAPE_HATCH.test(declaredValue);
+  return SUPPRESSES_GLOBAL_TOAST.test(declaredValue);
 }
 
 /**
  * Every `useMutation({ onError: ... })` in `fileText` that toasts from
- * `onError` without declaring either escape hatch on the same options object.
+ * `onError` without also suppressing the shared mutation toast on the same
+ * options object.
+ *
+ * `errorLabel` is deliberately NOT treated as a clearance here — see
+ * {@link SUPPRESSES_GLOBAL_TOAST}. The call site itself allows an optional
+ * generic argument list (`useMutation<Result, Error, Vars>({ ... })`), which
+ * a plain `useMutation\s*\(` would step past and never scan at all.
  *
  * @param filePath - Only used to label the returned violations.
  * @param fileText - The file's source text.
  */
 function findViolations(filePath: string, fileText: string): string[] {
   const violations: string[] = [];
-  const callSite = /useMutation\s*\(/g;
+  const callSite = /useMutation\s*(<[^(]*>)?\s*\(/g;
   let match: RegExpExecArray | null;
   while ((match = callSite.exec(fileText))) {
     const optionsText = extractBalancedValue(fileText, match.index + match[0].length);
@@ -147,7 +165,7 @@ function findViolations(filePath: string, fileText: string): string[] {
     const metaIdx = optionsText.indexOf('meta:');
     const metaValue =
       metaIdx === -1 ? '' : extractBalancedValue(optionsText, metaIdx + 'meta:'.length);
-    if (metaIdx !== -1 && metaHasEscapeHatch(fileText, metaValue)) continue;
+    if (metaIdx !== -1 && metaSuppressesGlobalToast(fileText, metaValue)) continue;
 
     const line = fileText.slice(0, match.index).split('\n').length;
     violations.push(`${filePath}:${line}`);
@@ -192,14 +210,19 @@ describe('the detector itself', () => {
     expect(findViolations('fixture.ts', snippet)).toEqual([]);
   });
 
-  it('does not flag onError toasting when the SAME call declares errorLabel', () => {
+  it('STILL flags onError toasting when the same call declares only errorLabel', () => {
+    // The blocker this guards against: `errorLabel` composes with the shared
+    // toast, it does not cancel it. A mutation shaped exactly like this
+    // doubles up at runtime — the global handler fires "Couldn't save that —
+    // …" AND this onError fires its own 'Could not save' underneath it. Only
+    // `suppressErrorToast` actually stops the global side of that pair.
     const snippet = `
       useMutation({
         onError: () => toast.error('Could not save'),
         meta: { errorLabel: "Couldn't save that" },
       });
     `;
-    expect(findViolations('fixture.ts', snippet)).toEqual([]);
+    expect(findViolations('fixture.ts', snippet)).toEqual(['fixture.ts:2']);
   });
 
   it('does not flag onError toasting when the SAME call declares suppressErrorToast', () => {
@@ -253,6 +276,20 @@ describe('the detector itself', () => {
           const keys = Object.keys(vars ?? {}).join(', ');
           toast.error(\`Failed to save (\${keys})\`);
         },
+      });
+    `;
+    expect(findViolations('fixture.ts', snippet)).toEqual(['fixture.ts:2']);
+  });
+
+  it('sees a generic-typed call site, not just the bare form', () => {
+    // `useMutation<Result, Error, Vars>({ ... })` — the shape
+    // `use-test-binding.ts` and 28 other real sites use. A bare
+    // `useMutation\s*\(` regex steps past the `<...>` and never scans this
+    // call at all, which would silently exempt every generic-typed mutation
+    // from the whole contract.
+    const snippet = `
+      useMutation<Result, Error, string>({
+        onError: (err) => toast.error(err.message),
       });
     `;
     expect(findViolations('fixture.ts', snippet)).toEqual(['fixture.ts:2']);

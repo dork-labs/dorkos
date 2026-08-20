@@ -120,6 +120,12 @@ export function useStartDirectMessage(): UseMutationResult<
     // Its one caller (`NewMenu.tsx`, outside this task's remit) names who the
     // conversation was with in its own onError — richer than a static label —
     // so this opts the shared mutation toast out rather than duplicating it.
+    // Known risk: that onError is a per-call `mutate(vars, { onError })`
+    // callback, which TanStack drops if the component unmounts before the
+    // mutation settles — closing the sidebar sheet mid-flight on mobile could
+    // leave a failure entirely unreported. Sidebar-owned, so not this task's
+    // to fix; tracked as a follow-up on DOR-1391 (the sidebar-integration
+    // task), which already inherits this mutation's shape.
     meta: { suppressErrorToast: true },
   });
 }

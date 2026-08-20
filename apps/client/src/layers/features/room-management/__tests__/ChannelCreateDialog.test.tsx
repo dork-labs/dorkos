@@ -18,7 +18,7 @@ import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
+import { createQueryClientConfig } from '@/layers/shared/lib';
 import { ChannelCreateDialog } from '../ui/ChannelCreateDialog';
 
 /**
