@@ -2,6 +2,7 @@
 covers:
   - 'feat(server,client): the daily Shift Report tells you what happened while you were away (DOR-1389)'
   - 'fix(server,client): the Shift Report counts the trailing 24 hours, not just what woke it (DOR-1389)'
+  - "fix(e2e): the quiet-header specs start from an operator who has already seen today's Shift Report (DOR-1389)"
 ---
 
 ### Added
