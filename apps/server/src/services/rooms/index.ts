@@ -23,7 +23,7 @@ import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
 import { roomsSource, searchMessages } from '../search/index.js';
 import { BridgeStore } from '../relay/chat-bridge/bridge-store.js';
-import { AuthorRegistry } from './author-registry.js';
+import { AuthorRegistry, isOwnerRecord } from './author-registry.js';
 import { ensureHandles } from './handles/ensure-handles.js';
 import type { EngagedWindow } from './engagement.js';
 import type { CollectWindow } from './room-collect.js';
@@ -356,6 +356,9 @@ export function createRoomSubsystem(opts: {
     // captured at boot would leave the rooms domain believing forever that the
     // unbound `'local'` author is still the operator.
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+    // The record-based twin, for a caller that already fetched a batch of
+    // rows and would otherwise pay `isOwnerAuthor`'s re-query per member.
+    isOwnerRecord: (record) => isOwnerRecord(record, readOwnerAccount()?.id ?? null),
     readCursors,
     // Read per post, for the same reason as every reader above: muting a room
     // in the sidebar has to silence the very next `dm.received`, not the next

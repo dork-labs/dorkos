@@ -441,10 +441,17 @@ describe('read state', () => {
       fromName: 'Ana',
       preview: 'second',
     });
-    const notYet = await service.notify('dm.received', {
+    // A second `mention.received` rather than a second `dm.received`:
+    // dm.received now dedupes per ROOM (coalescing a DM burst into one row),
+    // so a second one in this same room within the window would be dropped
+    // as a repeat rather than becoming a distinct, not-yet-passed row.
+    // mention.received still dedupes per entry, so it is what proves the
+    // partial-cursor case.
+    const notYet = await service.notify('mention.received', {
       roomId: 'room-1',
       entryId: 'entry-3',
       entrySeq: 9,
+      roomName: 'general',
       agentId: 'agent-1',
       fromName: 'Ana',
       preview: 'third',
@@ -490,6 +497,43 @@ describe('read state', () => {
 
     expect(service.markRoomRead('room-1', 1)).toEqual({ ok: true, marked: 0, unreadCount: 1 });
     expect(sentAs('notification_read')).toHaveLength(0);
+  });
+
+  it('never blind-marks a row with no entrySeq read, however far the cursor moves', () => {
+    // A row written before `entrySeq` existed, or one whose payload failed to
+    // parse — `entrySeqOf`'s sentinel has to sort AFTER every real `seq` so
+    // this is treated as "position unknown", not "already passed". Pins the
+    // direction of that sentinel (`Number.POSITIVE_INFINITY`, not `-1`).
+    const service = new NotificationService(store);
+    store.insert({
+      kind: 'dm.received',
+      tier: 'notable',
+      subjectType: 'room',
+      subjectId: 'room-1',
+      roomId: 'room-1',
+      agentId: 'agent-1',
+      title: 'Ana messaged you',
+      body: 'legacy row',
+      payload: {
+        roomId: 'room-1',
+        entryId: 'entry-1',
+        agentId: 'agent-1',
+        fromName: 'Ana',
+        preview: 'legacy row',
+        // entrySeq deliberately absent.
+      },
+      dedupeKey: 'dm:room-1',
+    });
+
+    // A cursor at the largest possible `seq` — if the sentinel sorted before
+    // real positions instead of after, this alone would mark the row read.
+    expect(service.markRoomRead('room-1', Number.MAX_SAFE_INTEGER)).toEqual({
+      ok: true,
+      marked: 0,
+      unreadCount: 1,
+    });
+    const [row] = service.list({ limit: 25, unread: false }).notifications;
+    expect(row.readAt).toBeUndefined();
   });
 });
 

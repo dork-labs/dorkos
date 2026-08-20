@@ -276,6 +276,21 @@ export class NotificationService {
    * message bus rather than a wait on a chat network, so nothing is delayed by
    * asking first.
    *
+   * **Accepted ordering hazard: a caller's own primary write can be visible
+   * on its OWN stream a beat before this settles and broadcasts on the
+   * `notification` stream.** `notify()` is fire-and-forget by contract (its
+   * doc says so), and a seam like `RoomService.writePost` publishes the room
+   * entry synchronously and only then calls `notify()` — so a client watching
+   * both the room's SSE stream and the notification stream can, for a few
+   * milliseconds, see the new room entry before the inbox row that explains
+   * it. This is not reordered to close that gap: the RATE_LIMITED rule above
+   * requires the channel dispatch to run and settle before the row is even
+   * decided, so an insert-first order would either lose that guarantee or
+   * require a second write to retract a row the allowance then refused. The
+   * gap is eventual consistency, not a correctness bug — every reader
+   * converges once `notify()`'s promise resolves — and is deliberately left
+   * as a documented trade-off rather than a `TODO`.
+   *
    * @param kind - Which registry entry.
    * @param payload - That kind's payload.
    * @param opts - Who acted, and how to reach out of the app.

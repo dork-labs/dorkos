@@ -224,6 +224,24 @@ describe('notification registry', () => {
     expect(second).not.toBe(first);
   });
 
+  it('coalesces a DM burst by room, but gives every mention its own row', () => {
+    // dm.received dedupes on the ROOM, deliberately coarser than every other
+    // kind: two messages in one DM within the window are one notification.
+    const dm = notificationEntry('dm.received');
+    expect(dm.dedupeKey({ ...PAYLOADS['dm.received'], entryId: 'entry-2' })).toBe(
+      dm.dedupeKey(PAYLOADS['dm.received'])
+    );
+    expect(dm.dedupeKey({ ...PAYLOADS['dm.received'], roomId: 'room-2' })).not.toBe(
+      dm.dedupeKey(PAYLOADS['dm.received'])
+    );
+
+    // mention.received still dedupes per entry — each mention is its own event.
+    const mention = notificationEntry('mention.received');
+    expect(mention.dedupeKey({ ...PAYLOADS['mention.received'], entryId: 'entry-2' })).not.toBe(
+      mention.dedupeKey(PAYLOADS['mention.received'])
+    );
+  });
+
   it('never puts a tool input in a title or a body', () => {
     // A notification title can end up on a phone lock screen. The Ask summary is
     // the tool's name or display name, never the command it proposed to run.

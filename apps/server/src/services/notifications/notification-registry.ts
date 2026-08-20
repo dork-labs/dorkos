@@ -394,13 +394,22 @@ const ENTRIES: NotificationRegistryMap = {
   'dm.received': {
     // Wired in `services/rooms/room-service.ts`'s `writePost` (spec task T11,
     // DOR-1388): raised when an agent posts in a room that is a 1:1 DM with the
-    // operator (`kind: 'dm'`, exactly one agent on the roster) and it is the
-    // sole agent there — never for an agent-to-agent DM the owner was only
-    // seeded into (the three-way rule), and never for a human author, because
-    // in a DM room a human is always the operator — their own cockpit voice, or
-    // their own bridged phone leg answering as an external author (chats-as-
-    // channels spec §3.4, §4.1). Muting the room suppresses this kind
+    // operator (`kind: 'dm'`, exactly one agent on the roster, the operator
+    // among its human members) and it is the sole agent there — never for an
+    // agent-to-agent DM the owner was only seeded into (the three-way rule),
+    // and never for a human author, since only an agent can BE the DM's other
+    // party (a human posting in a `dm` room is either the operator's own
+    // cockpit voice or a bridged collaborator, and neither is "an agent
+    // messaged you"). Muting the room suppresses this kind
     // (`RoomServiceDeps.isRoomMuted`); it never suppresses `mention.received`.
+    //
+    // Dedupes per ROOM, not per entry — deliberately coarser than every other
+    // kind here. A burst of messages from the same agent in the same DM is
+    // one conversation, and the point of a notification is "you have
+    // something waiting in this DM", not a running tally of how many lines it
+    // grew by. The room's own log is still the full per-message history; this
+    // is one row/banner per room, per dedupe window — `dedupeWindowMs` is not
+    // set here, so it defaults to `DEFAULT_DEDUPE_WINDOW_MS` (five minutes).
     kind: 'dm.received',
     tier: 'notable',
     storage: 'event',
@@ -408,7 +417,7 @@ const ENTRIES: NotificationRegistryMap = {
     locate: (p) => ({ subjectId: p.roomId, roomId: p.roomId, agentId: p.agentId }),
     title: (p) => `${p.fromName} messaged you`,
     body: (p) => p.preview,
-    dedupeKey: (p) => `dm:${p.entryId}`,
+    dedupeKey: (p) => `dm:${p.roomId}`,
     relay: 'never',
   },
 
@@ -416,7 +425,16 @@ const ENTRIES: NotificationRegistryMap = {
     // Wired in `services/rooms/room-service.ts`'s `writePost` (spec task T11,
     // DOR-1388): raised whenever an entry's resolved mentions name the
     // operator, in any room kind. Pierces mute on purpose — an @-mention is a
-    // directed call-out, not the room's ambient chatter.
+    // directed call-out, not the room's ambient chatter. Dedupes per ENTRY,
+    // unlike `dm.received`: each mention is its own event worth its own row.
+    //
+    // **Inert until the operator has set their own handle.** A mention is
+    // resolved from `@handle` text against the roster (`mentions.ts`), and the
+    // local human author's handle is `null` until asked for one
+    // (`author-registry.ts`) — so nobody can spell an `@`-mention that
+    // resolves to the operator, agent or collaborator alike, until they set
+    // one in their profile. This is expected, not a bug to chase: the same
+    // gap exists for every other `@`-mention on the install.
     kind: 'mention.received',
     tier: 'notable',
     storage: 'event',

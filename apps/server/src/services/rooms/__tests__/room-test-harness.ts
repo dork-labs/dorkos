@@ -17,7 +17,7 @@ import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import { ReadCursorService } from '../../core/read-cursor-service.js';
 import { ReadCursorStore } from '../../core/read-cursor-store.js';
 import { roomsSource, searchMessages, SearchIndexer } from '../../search/index.js';
-import { AuthorRegistry } from '../author-registry.js';
+import { AuthorRegistry, isOwnerRecord } from '../author-registry.js';
 import type { EngagedWindow } from '../engagement.js';
 import type { CollectWindow } from '../room-collect.js';
 import { ReactionBudget } from '../reactions/reaction-budget.js';
@@ -510,6 +510,7 @@ export function createRoomHarness(opts: {
     holdCeilingMs: () => holdCeilingMs,
     maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
+    isOwnerRecord: (record) => isOwnerRecord(record, ownerUserId),
     readCursors,
     isRoomMuted,
   });

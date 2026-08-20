@@ -228,6 +228,14 @@ export interface RoomServiceDeps {
    */
   isOwnerAuthor(authorId: string): boolean;
   /**
+   * The record-based twin of {@link RoomServiceDeps.isOwnerAuthor}, for a
+   * caller that already holds the row — resolving an id `isOwnerAuthor`
+   * would otherwise re-fetch from a batch {@link AuthorRegistry.getMany}
+   * already answered (`author-registry.ts`'s own warning against paying
+   * that query per member when a caller already has the roster loaded).
+   */
+  isOwnerRecord(record: AuthorRecord): boolean;
+  /**
    * Where {@link RoomService.createBridgedRoom} writes the `room_bridges` row
    * that IS a bridged room's identity (chats-as-channels spec §3.2). Consumed,
    * never reshaped: this domain calls only {@link BridgeStore.createBridge},
@@ -406,6 +414,8 @@ export class RoomService {
   private readonly maxAttachmentsPerEntry: () => number;
   /** Whether an author is the install's owner. Read per check, never captured. */
   private readonly isOwnerAuthor: (authorId: string) => boolean;
+  /** The record-based twin of {@link RoomService.isOwnerAuthor}. */
+  private readonly isOwnerRecord: (record: AuthorRecord) => boolean;
   private readonly bridges: BridgeStore;
   /** Where the PEOPLE in a room have read up to. Never an agent's cursor. */
   private readonly readCursors: ReadCursorService;
@@ -453,6 +463,7 @@ export class RoomService {
     this.maxAgentDepth = deps.maxAgentDepth;
     this.maxAttachmentsPerEntry = deps.maxAttachmentsPerEntry;
     this.isOwnerAuthor = deps.isOwnerAuthor;
+    this.isOwnerRecord = deps.isOwnerRecord;
     this.bridges = deps.bridges;
     this.readCursors = deps.readCursors;
     this.agents = deps.agents;
@@ -2681,18 +2692,37 @@ export class RoomService {
    * Raise `dm.received` / `mention.received` for one committed entry, when it
    * earned either (spec `notification-system` task T11, DOR-1388).
    *
-   * **Never notifies the operator about their own words.** `isOwnerAuthor`
-   * catches their cockpit voice; a human author in a `dm`-kind room catches
-   * the other half — the bridged-DM identity model (chats-as-channels spec
-   * §3.4, §4.1) means a `dm` room's only human parties are ever the operator,
-   * local or answering from their own phone over a bridge as an external
-   * author, so "a human posted in this DM" is never a stranger reaching in.
-   * A CHANNEL keeps no such guarantee — a bridged group really can hold
-   * strangers — which is exactly the room kind an @-mention from one of them
-   * is supposed to notify.
+   * **Never notifies the operator about their own words** — `isOwnerAuthor`
+   * alone, and that is the whole check. An earlier revision also treated any
+   * HUMAN author in a `dm`-kind room as the operator, reasoning that a
+   * bridged private chat is always the operator's own conversation. That is
+   * false: a bridged `dm` room is minted from an unclaimed chat somebody ELSE
+   * started with the bot (`postExternal`), so its human party can be a real
+   * collaborator, not the operator's own phone. Their `@dorian` in that room
+   * has to reach the operator like any other mention, which is why this gate
+   * is `isOwnerAuthor` and nothing wider.
+   *
+   * **A bridged echo of DorkOS's own outbound post never reaches this
+   * method at all.** `isBotSender` (`adapters/telegram/inbound.ts`) drops any
+   * inbound update whose sender is itself a bot account — which the bot's
+   * own delivery always is — before `postExternal` ever mints an author or
+   * writes an entry, so that suppression is structural and upstream of this
+   * seam. What this gate does NOT catch is the operator genuinely texting
+   * their own agent from their own phone: that is a real external human
+   * author (`platform:` naturalKey, not `isOwnerAuthor`), and if their
+   * message happens to spell their own handle it raises one `mention.received`
+   * about a message they just sent themselves — accepted as the far cheaper
+   * failure next to silently dropping every real collaborator's mention.
+   * `dm.received` is unaffected either way: it is gated on `author.kind ===
+   * 'agent'` below, so no human author, phone or stranger, can ever raise it.
    *
    * A ghost author (its row vanished, ADR 260801-003051) is skipped outright:
    * there is nobody's name to put in a title.
+   *
+   * **A DM that also happens to name the operator raises `dm.received` only,
+   * never both.** `isDirectMessage` already says the operator was reached;
+   * a redundant `mention.received` for the same entry would be a second
+   * banner for one message the operator is about to open from the first.
    *
    * Never throws: called after the entry and its broadcast are already
    * durable, so a problem here must not be able to touch either.
@@ -2710,9 +2740,7 @@ export class RoomService {
   ): void {
     try {
       if (!author) return;
-      const authorIsOperator =
-        this.isOwnerAuthor(author.id) || (room.kind === 'dm' && author.kind === 'human');
-      if (authorIsOperator) return;
+      if (this.isOwnerAuthor(author.id)) return;
 
       const mentionsOperator = mentions.some((id) => this.isOwnerAuthor(id));
       const isDirectMessage =
@@ -2728,7 +2756,9 @@ export class RoomService {
         fromName: author.displayName,
         text: entry.body.text,
         isDirectMessage,
-        mentionsOperator,
+        // Suppressed once the entry already raised dm.received — see the
+        // method doc. A mention in any OTHER room still notifies normally.
+        mentionsOperator: mentionsOperator && !isDirectMessage,
         roomMuted: isDirectMessage && this.isRoomMuted(room.id),
       });
     } catch (err) {
@@ -2757,6 +2787,11 @@ export class RoomService {
    * roster at all ("Ana notes", `three-way-rule.test.ts`). One agent, zero
    * humans, is not a DM with anybody — there is nobody there to notify.
    *
+   * Reads the owner check off the record `getMany` already fetched rather
+   * than `isOwnerAuthor(id)`, which re-queries by id — the exact cost
+   * `AuthorRegistry.isOwner`'s own doc warns a caller already holding the
+   * roster should not pay (`author-registry.ts`).
+   *
    * @param roomId - The room. Only ever called for a `dm`-kind room.
    */
   private isOneOnOneDmWithOperator(roomId: string): boolean {
@@ -2765,10 +2800,12 @@ export class RoomService {
     let agentCount = 0;
     let operatorPresent = false;
     for (const member of members) {
-      if (authors.get(member.authorId)?.kind === 'agent') {
+      const record = authors.get(member.authorId);
+      if (!record) continue;
+      if (record.kind === 'agent') {
         agentCount += 1;
         if (agentCount > 1) return false;
-      } else if (this.isOwnerAuthor(member.authorId)) {
+      } else if (this.isOwnerRecord(record)) {
         operatorPresent = true;
       }
     }

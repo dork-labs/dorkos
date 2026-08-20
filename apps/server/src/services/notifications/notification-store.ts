@@ -525,17 +525,25 @@ function buildActions(
 
 /**
  * The room-local `seq` a `dm.received` / `mention.received` row's payload
- * names, or `-1` when it carries none — which sorts before every real `seq`
- * (they start at 1), so a row {@link NotificationStore.markRoomEntriesRead}
- * cannot parse is never marked read by a cursor that has not actually passed
- * it.
+ * names, or `Number.POSITIVE_INFINITY` when it carries none.
+ *
+ * **Infinity, not `-1`.** {@link NotificationStore.markRoomEntriesRead} marks
+ * a row read on `entrySeqOf(row) <= uptoSeq` — so a sentinel has to sort
+ * AFTER every real `seq` to mean "not yet passed". A `-1` sentinel sorts
+ * BEFORE every real `seq` (they start at 1) and would satisfy that
+ * comparison against any cursor position at all, marking a row read on the
+ * very first cursor move in the room — backwards from the intent, and the
+ * opposite of the safe failure direction: absence of information must never
+ * assert a row was read. Infinity is never `<=` a finite `uptoSeq`, so a row
+ * this cannot parse simply never auto-reads through this path; the operator
+ * can still clear it with "Mark all read".
  */
 function entrySeqOf(dataJson: string | null): number {
-  if (!dataJson) return -1;
+  if (!dataJson) return Number.POSITIVE_INFINITY;
   try {
     const payload = JSON.parse(dataJson) as { entrySeq?: unknown };
-    return typeof payload.entrySeq === 'number' ? payload.entrySeq : -1;
+    return typeof payload.entrySeq === 'number' ? payload.entrySeq : Number.POSITIVE_INFINITY;
   } catch {
-    return -1;
+    return Number.POSITIVE_INFINITY;
   }
 }

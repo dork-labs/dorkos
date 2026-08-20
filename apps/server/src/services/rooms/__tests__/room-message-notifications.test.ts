@@ -105,15 +105,16 @@ describe('an agent DM to the operator', () => {
     expect(stored()).toHaveLength(0);
   });
 
-  it('never fires for the operator answering from their own bridged phone leg', async () => {
+  it('never fires dm.received for a human posting in a bridged DM, mention or not', async () => {
+    // dm.received is agent-only (`isDirectMessage` requires `author.kind ===
+    // 'agent'`), so a human posting in a `dm`-kind room never raises it —
+    // whether that human is the operator's own bridged phone leg or a real
+    // collaborator (see the paired test below for the mention half of that
+    // second case).
     const harness = open();
     const bridged = harness.service.createBridgedRoom(bridgeDm(harness));
     expect(bridged.kind).toBe('dm');
 
-    // The operator's own Telegram account, answering the agent from their
-    // phone — a DIFFERENT author row than their local `human` identity
-    // (chats-as-channels §4.1), and by the bridged-DM invariant the only kind
-    // of human this room's roster can ever gain.
     harness.service.postExternal(bridged.id, {
       identity: {
         platformType: 'telegram',
@@ -126,6 +127,64 @@ describe('an agent DM to the operator', () => {
     await flush();
 
     expect(stored()).toHaveLength(0);
+  });
+
+  it('raises no row for an agent DMing itself with nobody else on the roster', async () => {
+    // The other edge `isOneOnOneDmWithOperator` guards: one agent, zero
+    // humans, is a scratch room ("Ana notes", `three-way-rule.test.ts`), not
+    // a DM with the operator — there is nobody there to notify.
+    const harness = open();
+    const ana = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+    const room = harness.service.createRoom(
+      { kind: 'dm', title: 'Ana notes', members: [], agentPaths: [] },
+      ana
+    );
+    expect(room.members).toHaveLength(1); // ana alone; the owner was never seeded in
+
+    harness.service.post(room.id, { authorId: ana, text: 'reminder to self' });
+    await flush();
+
+    expect(stored()).toHaveLength(0);
+  });
+
+  it('raises dm.received only, never a second mention.received, when the DM also names the operator', async () => {
+    const harness = open();
+    harness.authors.setHandle(harness.human, 'dorian');
+    const room = harness.service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      harness.human
+    );
+    const ana = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+
+    harness.service.post(room.id, { authorId: ana, text: '@dorian the deploy is green' });
+    await flush();
+
+    expect(announced('dm.received')).toHaveLength(1);
+    expect(announced('mention.received')).toHaveLength(0);
+    expect(stored()).toHaveLength(1);
+  });
+
+  it('coalesces a burst of DMs in one room into a single row', async () => {
+    const harness = open();
+    const room = harness.service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      harness.human
+    );
+    const ana = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+
+    // `flush()` between the two: two REAL messages arrive as two separate
+    // calls (a fresh HTTP request or tool round trip each), never inside one
+    // synchronous turn, so this is what a burst a few seconds apart actually
+    // looks like — the first notify() call settles (dedupe key indexed, row
+    // written) before the second one's own dedupe check runs.
+    harness.service.post(room.id, { authorId: ana, text: 'one' });
+    await flush();
+    harness.service.post(room.id, { authorId: ana, text: 'two' });
+    await flush();
+
+    // Two messages, both within the dedupe window, one room — one row.
+    expect(stored()).toHaveLength(1);
+    expect(stored()[0].body).toBe('one');
   });
 
   it('never fires for an agent DMing a colleague, even with the owner forced onto the roster', async () => {
@@ -216,6 +275,34 @@ describe('a mention of the operator', () => {
 
     expect(stored()).toHaveLength(0);
   });
+
+  it('reaches the operator from a real collaborator in a bridged DM — the bug this fixes', async () => {
+    // The invariant this used to get wrong: "any human author in a `dm` room
+    // is the operator". A bridged private chat is minted from an unclaimed
+    // chat somebody ELSE started with the bot, so its human party can be a
+    // genuine collaborator — and their `@dorian` has to reach the operator
+    // like any other mention, not be silently swallowed because the room
+    // happens to be a DM.
+    const harness = open();
+    harness.authors.setHandle(harness.human, 'dorian');
+    const bridged = harness.service.createBridgedRoom(bridgeDm(harness));
+    expect(bridged.kind).toBe('dm');
+
+    harness.service.postExternal(bridged.id, {
+      identity: {
+        platformType: 'telegram',
+        instanceId: 'tg-main',
+        platformUserId: '145223',
+        displayName: 'Miguel',
+      },
+      text: '@dorian look at this',
+    });
+    await flush();
+
+    expect(announced('mention.received')).toHaveLength(1);
+    const [row] = stored();
+    expect(row).toMatchObject({ kind: 'mention.received', roomId: bridged.id });
+  });
 });
 
 describe('plain channel chatter', () => {
@@ -261,24 +348,36 @@ describe('read-cursor auto-read', () => {
   });
 
   it('leaves it unread while the cursor has not reached it yet', async () => {
+    // Two separate mentions rather than two DMs: `dm.received` dedupes per
+    // ROOM (a burst is one row, see the coalescing test above), which would
+    // make two rows in one DM room impossible to produce here regardless of
+    // the cursor. `mention.received` dedupes per ENTRY, so it is what
+    // actually exercises "the cursor passed row A but not row B".
     const harness = open();
+    harness.authors.setHandle(harness.human, 'dorian');
     const room = harness.service.createRoom(
-      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      {
+        kind: 'channel',
+        slug: 'general',
+        title: '#general',
+        members: [],
+        agentPaths: ['/agents/ana'],
+      },
       harness.human
     );
     const ana = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
 
-    // A first message the cursor will pass, then a second that stays ahead of it.
-    const first = harness.service.post(room.id, { authorId: ana, text: 'one' });
-    harness.service.post(room.id, { authorId: ana, text: 'two' });
+    // A first mention the cursor will pass, then a second that stays ahead of it.
+    const first = harness.service.post(room.id, { authorId: ana, text: '@dorian one' });
+    harness.service.post(room.id, { authorId: ana, text: '@dorian two' });
     await flush();
 
     harness.service.setReadCursor(room.id, harness.human, first.seq);
     await flush();
 
     const rows = stored();
-    expect(rows.find((r) => r.body === 'one')?.readAt).toBeDefined();
-    expect(rows.find((r) => r.body === 'two')?.readAt).toBeUndefined();
+    expect(rows.find((r) => r.body === '@dorian one')?.readAt).toBeDefined();
+    expect(rows.find((r) => r.body === '@dorian two')?.readAt).toBeUndefined();
   });
 });
 
