@@ -207,17 +207,20 @@ test.describe('SidebarRow — the reserved right gutter @smoke', () => {
     // so the assertion has to be the wide mark against the narrow one.
     const geometry = page.locator('[data-slot="sidebar-geometry-frame"]');
     const hash = await box(geometry.locator('[data-slot="sidebar-geometry-row"] svg').first());
-    const stack = await box(
-      geometry
-        .locator('[data-slot="sidebar-geometry-stack-row"] [data-slot="identity-avatar"]')
-        .first()
-    );
+    // **The STACK, not one of its faces.** A single face is 18px — the slot's own
+    // width — so measuring one could never show the overflow this test is about,
+    // and the "is it wider?" floor below would fail on a correct build. The
+    // container is what measures 22.
+    const stackRow = geometry.locator('[data-slot="sidebar-geometry-stack-row"]');
+    const stack = await box(stackRow.locator('[data-slot="room-avatar"]'));
+    const firstFace = await box(stackRow.locator('[data-slot="identity-avatar"]').first());
+
     expect(
       stack.width,
-      'the stack is not wider than the slot, so it proves nothing'
+      'the stack is not wider than the 18px slot, so it proves nothing'
     ).toBeGreaterThan(18);
     expect(
-      stack.x,
+      firstFace.x,
       'a group conversation’s faces start left of every other row’s glyph'
     ).toBeCloseTo(hash.x, 0);
   });

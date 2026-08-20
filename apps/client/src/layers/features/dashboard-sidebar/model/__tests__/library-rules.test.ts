@@ -511,16 +511,15 @@ describe('SIDEBAR_LIBRARY_SECTION_IDS is the order', () => {
     }
   });
 
-  it('narrows every id that has somewhere to store a fold, Heads up and Today included', () => {
+  it('narrows every id that has somewhere to store a fold, computed zones included', () => {
     // Catches the half-landed widening: if `now`/`today` gained a header and a
     // toggle but not a persisted key, `useSectionChrome.toggleCollapsed` would
     // return early and the fold would look like a dead control.
     for (const id of SIDEBAR_FOLDING_SECTION_IDS) expect(persistedSectionId(id)).toBe(id);
-    expect(persistedSectionId('now')).toBe('now');
-    expect(persistedSectionId('today')).toBe('today');
-    // Getting started has no key by design, and a group\u2019s fold lives on the
-    // group. Neither has a slot in `prefs.sections`.
-    expect(persistedSectionId('getting-started')).toBeNull();
+    for (const id of ['now', 'today', 'getting-started'] as const) {
+      expect(persistedSectionId(id), `"${id}" has nowhere to store its fold`).toBe(id);
+    }
+    // A group\u2019s fold lives on the group itself, not in `prefs.sections`.
     expect(persistedSectionId('group:anything')).toBeNull();
   });
 });

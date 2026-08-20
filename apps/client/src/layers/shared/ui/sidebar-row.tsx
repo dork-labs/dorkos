@@ -586,7 +586,15 @@ export function SidebarRow({
                 </span>
               </>
             ) : null}
-            <span className={ROW_TITLE_CLASS}>{title}</span>
+            {/* The cell that CLIPS the name, marked so a browser test can find
+                it without knowing what kind of row it is. It used to be located
+                through `[data-slot="agent-identity"]`'s parent, which tied the
+                chip-clearance measurement to one row type's internals — and
+                broke the moment the agent row stopped drawing that lockup (D1).
+                A row's title is a row-grammar fact; the mark belongs here. */}
+            <span data-slot="sidebar-row-title" className={ROW_TITLE_CLASS}>
+              {title}
+            </span>
             {(trailing !== undefined || (trailingAction !== undefined && !isMobile)) && (
               <span className={cn('flex items-center gap-1.5', ROW_TRAILING_CLASS)}>
                 {trailing}

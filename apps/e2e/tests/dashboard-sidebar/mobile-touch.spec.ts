@@ -139,6 +139,40 @@ test.describe('Touch — 390×844 @smoke', () => {
     await expect(sheet(page)).toBeVisible();
   });
 
+  /**
+   * Wait for the bottom slot's card to stop growing before anything is measured.
+   *
+   * **The card animates its own height in.** `BottomSlot` mounts its winner
+   * inside an `AnimatePresence`, so for the first ~160ms the card and every
+   * control inside it are somewhere between 0px and their real size. A sweep
+   * that started during that window measured a real 44px button at whatever
+   * fraction of it had been drawn, and reported a touch-target failure that
+   * nothing was wrong with — intermittently, and on a required check.
+   *
+   * Polls for a height that is both non-zero and unchanged between two reads,
+   * because either alone is a race: a mid-animation frame is non-zero, and two
+   * equal reads of `0px` are equally stable. A slot with no card to show stays
+   * empty (`empty:p-0`) and is skipped rather than waited on.
+   *
+   * @param panel - The mobile panel being measured.
+   */
+  async function settleBottomSlot(panel: Locator): Promise<void> {
+    const card = panel.locator('[data-slot="sidebar-bottom-slot"] > *').first();
+    if ((await card.count()) === 0) return;
+    let previous = -1;
+    await expect
+      .poll(
+        async () => {
+          const height = await card.evaluate((node) => node.getBoundingClientRect().height);
+          const settled = height > 0 && height === previous;
+          previous = height;
+          return settled;
+        },
+        { message: 'the bottom slot never settled to a stable height' }
+      )
+      .toBe(true);
+  }
+
   test('every row and every control a thumb can reach is at least 40px', async ({
     page,
     basePage,
@@ -161,6 +195,7 @@ test.describe('Touch — 390×844 @smoke', () => {
     async function measurePanel(id: 'home' | 'library' | 'you'): Promise<[string, number][]> {
       await goTo(page, id);
       const panel = page.getByTestId(`mobile-tab-panel-${id}`);
+      await settleBottomSlot(panel);
       // **`aria-hidden` is the one honest exclusion, and it is not a
       // convenience.** The New menu mounts the direct-message picker with
       // `hideTrigger`, whose anchor is a 1px `sr-only` button carrying

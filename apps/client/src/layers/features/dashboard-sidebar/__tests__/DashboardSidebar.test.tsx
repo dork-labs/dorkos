@@ -784,8 +784,18 @@ describe('DashboardSidebar', () => {
     });
 
     it('unfolds everything when everything is already folded', async () => {
+      // **"Everything" has to mean every header the panel is CURRENTLY drawing**,
+      // Getting started included — it folds like the rest now (D1), so a fixture
+      // that left it open would make this press mean "fold the one that is
+      // still open" and the assertion below would be testing the other branch.
       mockSidebarPrefs.mockReturnValue(
-        makePrefs({ sections: { channels: { collapsed: true }, agents: { collapsed: true } } })
+        makePrefs({
+          sections: {
+            'getting-started': { collapsed: true },
+            channels: { collapsed: true },
+            agents: { collapsed: true },
+          },
+        })
       );
       mockRooms.mockReturnValue([channel('r1', 'general')]);
       renderWithProviders(<DashboardSidebar />);
