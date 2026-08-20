@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useLoadedRoomEntries } from '@/layers/entities/room';
 import { useTasks, useTasksEnabled } from '@/layers/entities/tasks';
 import { usePendingApprovals } from '@/layers/entities/attention';
-import { useAttentionItems } from '@/layers/features/dashboard-attention';
+import { useAttentionRows } from '@/layers/features/dashboard-attention';
 import { QuietSuggestion } from '@/layers/features/feature-promos';
 import { useNow } from '@/layers/shared/model';
 import { useFrozenRoomCursor } from '../model/use-frozen-room-cursor';
@@ -69,7 +69,7 @@ export interface HomeQuietStateProps {
  * therefore plays exactly once, on the mount it belongs to.
  *
  * **The reads are the header's own reads.** `usePendingApprovals` and
- * `useAttentionItems` are the same cached queries the header holds, so asking
+ * `useAttentionRows` are the same cached queries the header holds, so asking
  * them here costs no request — and asking them, rather than being told, is what
  * keeps this component's rule in one place instead of split across a prop the
  * host would have to compute.
@@ -88,7 +88,7 @@ export function HomeQuietState({ roomId, presenceOccupied }: HomeQuietStateProps
   const entries = useLoadedRoomEntries(roomId);
   const frozenSeq = useFrozenRoomCursor(roomId);
   const { approvals, isError: approvalsUnavailable } = usePendingApprovals();
-  const { items } = useAttentionItems();
+  const { total: headerRows } = useAttentionRows();
 
   const hasHistory = entries !== undefined && entries.length > 0;
   // `null` is "cannot say", and cannot say is not caught up. Compared on `seq`
@@ -98,7 +98,7 @@ export function HomeQuietState({ roomId, presenceOccupied }: HomeQuietStateProps
   const caughtUp =
     frozenSeq !== null && entries !== undefined && entries.every((entry) => entry.seq <= frozenSeq);
   const headerSpeaks =
-    approvals.length > 0 || approvalsUnavailable || items.length > 0 || presenceOccupied;
+    approvals.length > 0 || approvalsUnavailable || headerRows > 0 || presenceOccupied;
   const quiet = hasHistory && caughtUp && !headerSpeaks;
 
   const [phase, setPhase] = useState<QuietPhase>('waiting');

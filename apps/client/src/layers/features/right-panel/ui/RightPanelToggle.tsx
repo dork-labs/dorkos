@@ -4,7 +4,7 @@ import { useAppStore } from '@/layers/shared/model';
 import { isMac } from '@/layers/shared/lib';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { Kbd } from '@/layers/shared/ui/kbd';
-import { useAttentionItems } from '@/layers/features/dashboard-attention';
+import { useAttentionRows } from '@/layers/features/dashboard-attention';
 import { AttentionCountBadge } from './AttentionCountBadge';
 
 /**
@@ -31,16 +31,17 @@ function toggleAriaLabel(open: boolean, count: number): string {
  * same spring animation and tooltip pattern as CanvasToggle.
  *
  * It also carries the ambient {@link AttentionCountBadge}: riding the same
- * `useAttentionItems` query Pulse reads (shared cache key — no double fetch), the
- * badge ticks up while the panel is CLOSED, so the operator sees "3 things need
- * you" without opening anything. Zero items → no badge, no decoration.
+ * {@link useAttentionRows} composition Pulse reads (shared cache keys — no double
+ * fetch), the badge ticks up while the panel is CLOSED, so the operator sees "3
+ * things need you" without opening anything. Zero rows → no badge, no
+ * decoration. It counts exactly what the panel behind it will draw, which is
+ * why both read the one hook rather than each counting for itself.
  */
 export function RightPanelToggle() {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
   const toggleRightPanel = useAppStore((s) => s.toggleRightPanel);
-  // Same query key as Pulse's attention section → TanStack dedupes to one fetch.
-  const { items } = useAttentionItems();
-  const attentionCount = items.length;
+  // Same query keys as Pulse's attention section → TanStack dedupes to one fetch.
+  const { total: attentionCount } = useAttentionRows();
 
   const Icon = rightPanelOpen ? PanelRightClose : PanelRight;
   const ariaLabel = toggleAriaLabel(rightPanelOpen, attentionCount);

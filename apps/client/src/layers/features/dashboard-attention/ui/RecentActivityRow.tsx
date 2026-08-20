@@ -1,7 +1,7 @@
 import { Button } from '@/layers/shared/ui';
 import { motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
-import type { AttentionItem as AttentionItemType } from '../model/use-attention-items';
+import type { RecentActivityItem } from '../model/use-recent-activity-items';
 import { formatRelativeTime } from '../lib/format-relative-time';
 
 const staggerItem = {
@@ -9,12 +9,12 @@ const staggerItem = {
   animate: { opacity: 1, y: 0 },
 } as const;
 
-interface AttentionItemProps {
-  item: AttentionItemType;
+interface RecentActivityRowProps {
+  item: RecentActivityItem;
 }
 
-/** Single attention row with icon, description, relative timestamp, and action button. */
-export function AttentionItemRow({ item }: AttentionItemProps) {
+/** Single activity row with icon, description, relative timestamp, and action button. */
+export function RecentActivityRow({ item }: RecentActivityRowProps) {
   const Icon = item.icon;
   const relativeTime = formatRelativeTime(item.timestamp);
 

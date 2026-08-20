@@ -3,11 +3,18 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
+import type { Task } from '@dorkos/shared/types';
+import type { AttentionSignal } from '@/layers/entities/attention';
 import { cn } from '@/layers/shared/lib';
 import { useScrollOverflow } from '@/layers/shared/model';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
 import { AskList } from '@/layers/features/ask';
-import { AttentionItemRow, type AttentionItem } from '@/layers/features/dashboard-attention';
+import {
+  AttentionSignalRow,
+  RecentActivityRow,
+  ScheduleApprovalRow,
+  type RecentActivityItem,
+} from '@/layers/features/dashboard-attention';
 import { triageSummary } from '../lib/triage-summary';
 
 /**
@@ -53,15 +60,35 @@ const COLLAPSE = {
   exit: { height: 0, opacity: 0 },
 } as const;
 
-/** One titled group inside the header. */
-function TriageGroup({ title, children }: { title: string; children: ReactNode }) {
+/**
+ * One titled group inside the header.
+ *
+ * `tone` is not decoration: amber is the header's promise that something is
+ * waiting on a person, and spending it on a group where nothing is — the
+ * after-the-fact "Recent Activity" rows — is how the colour stops meaning
+ * anything.
+ *
+ * @param props - The group's title, its tone, and the rows it holds.
+ */
+function TriageGroup({
+  title,
+  tone = 'waiting',
+  children,
+}: {
+  title: string;
+  tone?: 'waiting' | 'neutral';
+  children: ReactNode;
+}) {
   const headingId = useId();
 
   return (
     <section aria-labelledby={headingId} className="min-w-0">
       <h2
         id={headingId}
-        className="text-status-warning-fg mb-2 text-xs font-medium tracking-widest uppercase"
+        className={cn(
+          'mb-2 text-xs font-medium tracking-widest uppercase',
+          tone === 'waiting' ? 'text-status-warning-fg' : 'text-muted-foreground'
+        )}
       >
         {title}
       </h2>
@@ -98,7 +125,7 @@ function ScrollEdgeFade({ edge }: { edge: 'top' | 'bottom' }) {
   );
 }
 
-/** The stagger the attention rows inherit — `AttentionItemRow` declares the child half. */
+/** The stagger the rows inherit — each row component declares the child half. */
 const staggerContainer = {
   animate: { transition: { staggerChildren: 0.04 } },
 } as const;
@@ -164,8 +191,17 @@ export interface PinnedTriageHeaderViewProps {
   approvalsUnavailable: boolean;
   /** Read the approval list again. */
   onRetryApprovals: () => void;
-  /** What is wrong and still wrong — stalled sessions, failed runs, dead letters, offline agents. */
-  attentionItems: AttentionItem[];
+  /** Schedules an agent proposed and parked, waiting for a yes or a no. */
+  scheduleApprovals: readonly Task[];
+  /**
+   * Sessions that stopped with an error, from the one attention engine.
+   *
+   * Only the `error` kind arrives here — see {@link PinnedTriageHeaderView} for
+   * why the other blockages the engine raises stay out of this group.
+   */
+  errorSignals: readonly AttentionSignal[];
+  /** What recently went wrong — failed runs, dead letters, offline agents. */
+  activityItems: readonly RecentActivityItem[];
   /**
    * The presence strip slot, empty until the strip lands.
    *
@@ -200,6 +236,17 @@ export interface PinnedTriageHeaderViewProps {
  * and something that broke — sit above the feed and stay there while it
  * scrolls. Everything else about the home surface is a conversation; this is
  * the part that is a queue.
+ *
+ * **Three groups, and nothing appears in two of them.** "Waiting On You" holds
+ * the full cards — capability approvals and the prompts agents are parked on.
+ * "Needs Attention" holds the rows for the other two blockages the one engine
+ * raises: a schedule an agent proposed, and a session that stopped. It
+ * deliberately does NOT repeat permission prompts or questions, even though the
+ * engine raises those too — they already have a card three lines above, and one
+ * header saying the same thing twice is how a person learns to read neither.
+ * "Recent activity" is the honest bottom group: nothing there is waiting on
+ * anybody, it is just what went wrong lately, and the Inbox takes it over
+ * (DOR-1384).
  *
  * **Nothing waiting and nothing wrong draws nothing.** No "all clear" card, no
  * empty box, no border. A header that is always there is chrome, and chrome
@@ -244,7 +291,9 @@ export function PinnedTriageHeaderView({
   onOpenSession,
   approvalsUnavailable,
   onRetryApprovals,
-  attentionItems,
+  scheduleApprovals,
+  errorSignals,
+  activityItems,
   presence,
   condensed,
   onExpand,
@@ -263,14 +312,18 @@ export function PinnedTriageHeaderView({
   // rules out — the same guard the header pill runs.
   const showsWaiting =
     approvals.length > 0 || asks.length > 0 || settlingAsks.length > 0 || approvalsUnavailable;
-  const showsAttention = attentionItems.length > 0;
-  const occupied = showsWaiting || showsAttention || presence?.occupied === true;
+  const showsAttention = scheduleApprovals.length > 0 || errorSignals.length > 0;
+  const showsActivity = activityItems.length > 0;
+  const occupied = showsWaiting || showsAttention || showsActivity || presence?.occupied === true;
   const summary = triageSummary({
     // One count for both, because they are one thing to whoever is being asked:
     // something is waiting on a person, and the card says which kind.
     approvals: approvals.length + asks.length,
     approvalsUnavailable,
-    attention: attentionItems.length,
+    // Blockages and after-the-fact rows are one number here on purpose: the
+    // condensed line has one screen-width to spend, and "3 need attention" is
+    // what a person can act on. Which three is what opening it answers.
+    attention: scheduleApprovals.length + errorSignals.length + activityItems.length,
   });
   // Only where there is something to name. A header held open by the presence
   // strip alone has no counts to condense to, so it stays out of the way by
@@ -385,8 +438,25 @@ export function PinnedTriageHeaderView({
                 <TriageGroup title="Needs Attention">
                   <div className="border-status-warning-border/40 bg-background/60 rounded-lg border p-2">
                     <motion.div variants={staggerContainer} initial="initial" animate="animate">
-                      {attentionItems.map((item) => (
-                        <AttentionItemRow key={item.id} item={item} />
+                      {/* Schedules first: a proposal is stopping something from
+                          ever running, and a wedged session already stopped. */}
+                      {scheduleApprovals.map((task) => (
+                        <ScheduleApprovalRow key={task.id} task={task} />
+                      ))}
+                      {errorSignals.map((signal) => (
+                        <AttentionSignalRow key={signal.id} signal={signal} />
+                      ))}
+                    </motion.div>
+                  </div>
+                </TriageGroup>
+              )}
+
+              {showsActivity && (
+                <TriageGroup title="Recent Activity" tone="neutral">
+                  <div className="border-border/60 bg-background/60 rounded-lg border p-2">
+                    <motion.div variants={staggerContainer} initial="initial" animate="animate">
+                      {activityItems.map((item) => (
+                        <RecentActivityRow key={item.id} item={item} />
                       ))}
                     </motion.div>
                   </div>

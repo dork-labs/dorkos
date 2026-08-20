@@ -1,6 +1,8 @@
-import { Clock, Mail, WifiOff } from 'lucide-react';
+import { Mail, WifiOff } from 'lucide-react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
-import type { AttentionItem } from '@/layers/features/dashboard-attention';
+import type { Task } from '@dorkos/shared/types';
+import type { AttentionSignal } from '@/layers/entities/attention';
+import type { RecentActivityItem } from '@/layers/features/dashboard-attention';
 import { PinnedTriageHeaderView } from '@/layers/widgets/home';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -44,7 +46,43 @@ const APPROVALS: PendingApproval[] = [
   },
 ];
 
-const ATTENTION: AttentionItem[] = [
+/** A schedule an agent proposed. It parks until somebody says yes or no. */
+const SCHEDULES: Task[] = [
+  {
+    id: 'task-standup',
+    name: 'morning-standup',
+    displayName: 'Morning standup digest',
+    description: null,
+    prompt: 'Summarise what the fleet did overnight.',
+    cron: '0 9 * * 1-5',
+    timezone: 'America/Chicago',
+    agentId: '/Users/dev/agents/dorkbot',
+    enabled: false,
+    maxRuntime: null,
+    permissionMode: 'default',
+    status: 'pending_approval',
+    filePath: '/Users/dev/agents/dorkbot/.dork/tasks/morning-standup/SKILL.md',
+    createdAt: minutesFromLoad(-26),
+    updatedAt: minutesFromLoad(-26),
+  },
+];
+
+/** A session that stopped, straight from the one attention engine. */
+const ERRORS: AttentionSignal[] = [
+  {
+    id: 'error:ses-9',
+    kind: 'error',
+    primary: 'tangerines',
+    secondary: 'Stopped with an error',
+    since: minutesFromLoad(-8),
+    deepLink: '/session?session=ses-9',
+    dismissible: false,
+    agentPath: '/Users/dev/agents/tangerines',
+  },
+];
+
+/** What went wrong lately. Nothing here is waiting on anybody. */
+const ACTIVITY: RecentActivityItem[] = [
   {
     id: 'offline-agents',
     type: 'offline-agent',
@@ -65,16 +103,6 @@ const ATTENTION: AttentionItem[] = [
     action: { label: 'View →', onClick: () => {} },
     severity: 'warning',
   },
-  {
-    id: 'stalled-session',
-    type: 'stalled-session',
-    icon: Clock,
-    title: 'Session "Refactor auth middleware" idle',
-    description: 'Session idle for 47 minutes',
-    timestamp: minutesFromLoad(-47),
-    action: { label: 'Open →', onClick: () => {} },
-    severity: 'warning',
-  },
 ];
 
 /**
@@ -91,8 +119,8 @@ const APPROVALS_OVERFLOWING: PendingApproval[] = Array.from({ length: 6 }, (_, i
   expiresAt: minutesFromLoad(90 - i * 7),
 }));
 
-const ATTENTION_OVERFLOWING: AttentionItem[] = Array.from({ length: 8 }, (_, i) => ({
-  ...ATTENTION[i % ATTENTION.length]!,
+const ACTIVITY_OVERFLOWING: RecentActivityItem[] = Array.from({ length: 8 }, (_, i) => ({
+  ...ACTIVITY[i % ACTIVITY.length]!,
   id: `overflow-${i}`,
   timestamp: minutesFromLoad(-3 - i * 6),
 }));
@@ -111,8 +139,8 @@ function PresenceSlotStandIn() {
 }
 
 /**
- * The pinned triage header, in the four states a real cockpit reaches at
- * different times of a bad afternoon.
+ * The pinned triage header, in the states a real cockpit reaches at different
+ * times of a bad afternoon.
  *
  * Drawn from props rather than from the live queues, because the interesting
  * states are the ones you cannot ask for: an approval you have not been sent,
@@ -122,7 +150,7 @@ export function TriageHeaderShowcases() {
   return (
     <PlaygroundSection
       title="Pinned triage header"
-      description="What sits above the home feed and stays there while it scrolls — a band of its own between the room's masthead and the conversation, never inside it: the approvals waiting on a decision, and what broke. Nothing waiting and nothing wrong draws no header at all — no border, no 'all clear' card, nothing. Answers happen where the card is; the feed underneath never moves. It is capped at a fraction of the viewport and scrolls inside itself past that, with a fade over whichever edge still has cards behind it — and only while they are really there. On a phone it condenses to one line of counts while the composer holds the caret, because a software keyboard and this header cannot both have the screen."
+      description="What sits above the home feed and stays there while it scrolls — a band of its own between the room's masthead and the conversation, never inside it: what is waiting on a decision, what needs you, and what went wrong lately. Nothing waiting and nothing wrong draws no header at all — no border, no 'all clear' card, nothing. Answers happen where the card is; the feed underneath never moves. It is capped at a fraction of the viewport and scrolls inside itself past that, with a fade over whichever edge still has cards behind it — and only while they are really there. On a phone it condenses to one line of counts while the composer holds the caret, because a software keyboard and this header cannot both have the screen."
     >
       <ShowcaseLabel>
         Quiet: zero DOM, not an empty box (the frame below is the demo&rsquo;s)
@@ -137,7 +165,9 @@ export function TriageHeaderShowcases() {
             approvals={[]}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
-            attentionItems={[]}
+            scheduleApprovals={[]}
+            errorSignals={[]}
+            activityItems={[]}
           />
           <p className="text-muted-foreground text-xs">Feed starts here.</p>
         </div>
@@ -154,12 +184,14 @@ export function TriageHeaderShowcases() {
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
-            attentionItems={[]}
+            scheduleApprovals={[]}
+            errorSignals={[]}
+            activityItems={[]}
           />
         </div>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Needs attention</ShowcaseLabel>
+      <ShowcaseLabel>Needs attention: a proposed schedule and a session that stopped</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
@@ -170,12 +202,32 @@ export function TriageHeaderShowcases() {
             approvals={[]}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
-            attentionItems={ATTENTION}
+            scheduleApprovals={SCHEDULES}
+            errorSignals={ERRORS}
+            activityItems={[]}
           />
         </div>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Both, plus the presence slot</ShowcaseLabel>
+      <ShowcaseLabel>Recent activity: nothing is waiting, something went wrong</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full">
+          <PinnedTriageHeaderView
+            asks={[]}
+            settlingAsks={[]}
+            askAgentNames={{}}
+            onOpenSession={() => {}}
+            approvals={[]}
+            approvalsUnavailable={false}
+            onRetryApprovals={() => {}}
+            scheduleApprovals={[]}
+            errorSignals={[]}
+            activityItems={ACTIVITY}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>All three, plus the presence slot</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full">
           <PinnedTriageHeaderView
@@ -186,7 +238,9 @@ export function TriageHeaderShowcases() {
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
-            attentionItems={ATTENTION}
+            scheduleApprovals={SCHEDULES}
+            errorSignals={ERRORS}
+            activityItems={ACTIVITY}
             presence={{ occupied: true, node: <PresenceSlotStandIn /> }}
           />
         </div>
@@ -205,7 +259,9 @@ export function TriageHeaderShowcases() {
             approvals={APPROVALS_OVERFLOWING}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
-            attentionItems={ATTENTION_OVERFLOWING}
+            scheduleApprovals={[]}
+            errorSignals={[]}
+            activityItems={ACTIVITY_OVERFLOWING}
           />
         </div>
       </ShowcaseDemo>
@@ -223,7 +279,9 @@ export function TriageHeaderShowcases() {
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
-            attentionItems={ATTENTION}
+            scheduleApprovals={SCHEDULES}
+            errorSignals={ERRORS}
+            activityItems={ACTIVITY}
             condensed
             onExpand={() => {}}
           />
@@ -243,7 +301,9 @@ export function TriageHeaderShowcases() {
             approvals={[]}
             approvalsUnavailable
             onRetryApprovals={() => {}}
-            attentionItems={[]}
+            scheduleApprovals={[]}
+            errorSignals={[]}
+            activityItems={[]}
           />
         </div>
       </ShowcaseDemo>

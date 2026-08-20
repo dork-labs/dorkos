@@ -1,9 +1,10 @@
 /**
  * @vitest-environment jsdom
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import type { Session } from '@dorkos/shared/types';
 import type { TaskRun } from '@dorkos/shared/types';
 import type { AggregatedDeadLetter } from '@dorkos/shared/transport';
 import type { MeshStatus } from '@dorkos/shared/types';
@@ -11,15 +12,6 @@ import type { MeshStatus } from '@dorkos/shared/types';
 // ---------------------------------------------------------------------------
 // Mocks — must be before imports
 // ---------------------------------------------------------------------------
-
-const mockSessions = vi.fn<() => { sessions: Session[]; isLoading?: boolean }>(() => ({
-  sessions: [],
-}));
-vi.mock('@/layers/entities/session', async (importOriginal) => ({
-  // Keep the real sessionDisplayTitle — only the data hook is stubbed.
-  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
-  useSessions: () => mockSessions(),
-}));
 
 const mockUseRuns = vi.fn<() => { data: TaskRun[] | undefined; isLoading?: boolean }>(() => ({
   data: undefined,
@@ -49,24 +41,11 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-import { useAttentionItems } from '../model/use-attention-items';
-import { useInteractionStore } from '@/layers/entities/interactions';
+import { useRecentActivityItems } from '../model/use-recent-activity-items';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function makeSession(overrides: Partial<Session> = {}): Session {
-  return {
-    id: 'sess-1',
-    title: 'Test Session',
-    createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(), // 45 min ago
-    permissionMode: 'default',
-    runtime: 'claude-code',
-    ...overrides,
-  };
-}
 
 function makeRun(overrides: Partial<TaskRun> = {}): TaskRun {
   return {
@@ -112,17 +91,16 @@ function makeMeshStatus(unreachableCount: number): MeshStatus {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('useAttentionItems', () => {
+describe('useRecentActivityItems', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSessions.mockReturnValue({ sessions: [] });
     mockUseRuns.mockReturnValue({ data: undefined });
     mockUseAggregatedDeadLetters.mockReturnValue({ data: undefined });
     mockUseMeshStatus.mockReturnValue({ data: undefined });
   });
 
-  it('returns empty array when no issues exist', () => {
-    const { result } = renderHook(() => useAttentionItems());
+  it('returns empty array when nothing has gone wrong', () => {
+    const { result } = renderHook(() => useRecentActivityItems());
     expect(result.current.items).toHaveLength(0);
   });
 
@@ -131,14 +109,32 @@ describe('useAttentionItems', () => {
     // here mesh is still on its first fetch, so isLoading is true even though no
     // items have materialised yet.
     mockUseMeshStatus.mockReturnValue({ data: undefined, isLoading: true });
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
     expect(result.current.isLoading).toBe(true);
     expect(result.current.items).toHaveLength(0);
   });
 
   it('reports not-loading once every backing query has settled', () => {
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
     expect(result.current.isLoading).toBe(false);
+  });
+
+  it('has no session source at all — a quiet session can never become a row (DOR-1381)', () => {
+    // "Session idle for N minutes" was the loudest group on the home surface
+    // and the least actionable, and it is gone at the source rather than
+    // filtered downstream. Enforced by the SHAPE: this module reads no session
+    // hook, so no future branch can raise one without adding a dependency
+    // somebody has to review. Comments are stripped, because a scan that reds
+    // on its own explanation would be satisfied by deleting the explanation.
+    const source = readFileSync(join(__dirname, '..', 'model', 'use-recent-activity-items.ts'))
+      .toString()
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '');
+
+    // The read reaches real code — a spelling that IS there is found.
+    expect(source).toContain('useMeshStatus');
+    expect(source).not.toContain('useSessions');
+    expect(source).not.toContain('stalled');
   });
 
   it('returns failed Tasks runs from last 24h with severity error', () => {
@@ -148,7 +144,7 @@ describe('useAttentionItems', () => {
     });
     mockUseRuns.mockReturnValue({ data: [recentRun] });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
 
     expect(result.current.items).toHaveLength(1);
     expect(result.current.items[0].type).toBe('failed-run');
@@ -162,7 +158,7 @@ describe('useAttentionItems', () => {
     });
     mockUseRuns.mockReturnValue({ data: [oldRun] });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
 
     expect(result.current.items).toHaveLength(0);
   });
@@ -172,7 +168,7 @@ describe('useAttentionItems', () => {
       data: [makeDeadLetterGroup({ count: 3 })],
     });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
 
     expect(result.current.items).toHaveLength(1);
     expect(result.current.items[0].type).toBe('dead-letter');
@@ -184,7 +180,7 @@ describe('useAttentionItems', () => {
       data: [makeDeadLetterGroup({ count: 0 })],
     });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
 
     expect(result.current.items).toHaveLength(0);
   });
@@ -192,7 +188,7 @@ describe('useAttentionItems', () => {
   it('returns offline mesh agents when unreachableCount > 0 with severity error', () => {
     mockUseMeshStatus.mockReturnValue({ data: makeMeshStatus(2) });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
 
     expect(result.current.items).toHaveLength(1);
     expect(result.current.items[0].type).toBe('offline-agent');
@@ -203,44 +199,9 @@ describe('useAttentionItems', () => {
   it('uses singular "agent" when exactly 1 agent is offline', () => {
     mockUseMeshStatus.mockReturnValue({ data: makeMeshStatus(1) });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
 
     expect(result.current.items[0].title).toContain('1 agent offline');
-  });
-
-  it('returns stalled sessions where updatedAt is >30min ago', () => {
-    const stalledSession = makeSession({
-      updatedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(), // 45 min ago
-    });
-    mockSessions.mockReturnValue({ sessions: [stalledSession] });
-
-    const { result } = renderHook(() => useAttentionItems());
-
-    expect(result.current.items).toHaveLength(1);
-    expect(result.current.items[0].type).toBe('stalled-session');
-    expect(result.current.items[0].severity).toBe('warning');
-  });
-
-  it('excludes sessions updated less than 30 minutes ago', () => {
-    const recentSession = makeSession({
-      updatedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(), // 10 min ago
-    });
-    mockSessions.mockReturnValue({ sessions: [recentSession] });
-
-    const { result } = renderHook(() => useAttentionItems());
-
-    expect(result.current.items).toHaveLength(0);
-  });
-
-  it('excludes stalled sessions older than 24 hours', () => {
-    const veryOldSession = makeSession({
-      updatedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(), // 25h ago
-    });
-    mockSessions.mockReturnValue({ sessions: [veryOldSession] });
-
-    const { result } = renderHook(() => useAttentionItems());
-
-    expect(result.current.items).toHaveLength(0);
   });
 
   it('sorts items by timestamp most recent first', () => {
@@ -254,14 +215,13 @@ describe('useAttentionItems', () => {
     });
     mockUseRuns.mockReturnValue({ data: [olderRun, newerRun] });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
 
     expect(result.current.items[0].id).toBe('failed-newer');
     expect(result.current.items[1].id).toBe('failed-older');
   });
 
   it('caps results at 8 items', () => {
-    // 3 failed runs + 3 dead letter groups + 1 offline + many stalled sessions
     const runs = Array.from({ length: 5 }, (_, i) =>
       makeRun({
         id: `run-${i}`,
@@ -275,7 +235,7 @@ describe('useAttentionItems', () => {
     );
     mockUseAggregatedDeadLetters.mockReturnValue({ data: deadLetterGroups });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
 
     expect(result.current.items.length).toBeLessThanOrEqual(8);
   });
@@ -289,35 +249,17 @@ describe('useAttentionItems', () => {
     });
     mockUseMeshStatus.mockReturnValue({ data: makeMeshStatus(1) });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
 
     for (const item of result.current.items) {
       expect(typeof item.action.onClick).toBe('function');
     }
   });
 
-  it('opening a stalled session records the interaction (DOR-1156)', () => {
-    useInteractionStore.getState().reset();
-    mockSessions.mockReturnValue({
-      sessions: [makeSession({ id: 'sess-stalled', cwd: '/code/api' })],
-    });
-
-    const { result } = renderHook(() => useAttentionItems());
-    expect(Object.keys(useInteractionStore.getState().opened)).toEqual([]);
-    result.current.items[0].action.onClick();
-
-    // Reaching a conversation from here is reaching it — Today has to keep the
-    // row after the operator looks at something else.
-    expect(Object.keys(useInteractionStore.getState().opened).sort()).toEqual([
-      'agent:/code/api',
-      'session:sess-stalled',
-    ]);
-  });
-
   it('failed run action navigates with detail search params', () => {
     mockUseRuns.mockReturnValue({ data: [makeRun()] });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
     result.current.items[0].action.onClick();
 
     expect(mockNavigate).toHaveBeenCalledWith({
@@ -331,7 +273,7 @@ describe('useAttentionItems', () => {
       data: [makeDeadLetterGroup()],
     });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
     result.current.items[0].action.onClick();
 
     expect(mockNavigate).toHaveBeenCalledWith({
@@ -343,7 +285,7 @@ describe('useAttentionItems', () => {
   it('offline agent action navigates with sentinel itemId', () => {
     mockUseMeshStatus.mockReturnValue({ data: makeMeshStatus(1) });
 
-    const { result } = renderHook(() => useAttentionItems());
+    const { result } = renderHook(() => useRecentActivityItems());
     result.current.items[0].action.onClick();
 
     expect(mockNavigate).toHaveBeenCalledWith({

@@ -21,6 +21,7 @@ import {
 } from '@tanstack/react-router';
 import type { Transport } from '@dorkos/shared/transport';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { Session, Task } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 
 /**
@@ -35,6 +36,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 });
 
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
+import { useSessionListStore } from '@/layers/entities/session';
 import { PinnedTriageHeader } from '../ui/PinnedTriageHeader';
 import { PinnedTriageHeaderView, type TriagePresenceSlot } from '../ui/PinnedTriageHeaderView';
 
@@ -106,8 +108,8 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
 
 /**
  * A mesh report with agents nobody can reach — the cheapest way to put one real
- * attention row on screen, because it needs a single transport answer and the
- * row it produces owns the `?detail=offline-agent` deep link.
+ * Recent-Activity row on screen, because it needs a single transport answer and
+ * the row it produces owns the `?detail=offline-agent` deep link.
  */
 function unreachable(count: number) {
   return {
@@ -119,6 +121,50 @@ function unreachable(count: number) {
     byRuntime: {},
     byProject: {},
   };
+}
+
+/** A schedule an agent proposed and parked, waiting on a yes or a no. */
+function parkedSchedule(overrides: Partial<Task> = {}): Task {
+  return {
+    id: 'task-1',
+    name: 'nightly-sweep',
+    displayName: 'Nightly sweep',
+    description: null,
+    prompt: 'Sweep the backlog.',
+    cron: '0 3 * * *',
+    timezone: 'UTC',
+    agentId: null,
+    enabled: false,
+    maxRuntime: null,
+    permissionMode: 'default',
+    status: 'pending_approval',
+    filePath: '/tmp/nightly-sweep/SKILL.md',
+    createdAt: new Date(Date.now() - 20 * 60_000).toISOString(),
+    updatedAt: new Date(Date.now() - 20 * 60_000).toISOString(),
+    ...overrides,
+  };
+}
+
+/** A session row as the recent-sessions read answers with it. */
+function sessionRow(id: string, title: string): Session {
+  return {
+    id,
+    title,
+    cwd: '/projects/alpha',
+    createdAt: new Date(Date.now() - 60 * 60_000).toISOString(),
+    updatedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+    permissionMode: 'default',
+    runtime: 'claude-code',
+  };
+}
+
+/** Tell the global session store what each session is doing. */
+function setLifecycles(entries: Record<string, 'blocked' | 'error'>) {
+  act(() => {
+    for (const [id, lifecycle] of Object.entries(entries)) {
+      useSessionListStore.getState().setSessionStatus(id, { lifecycle } as never);
+    }
+  });
 }
 
 /**
@@ -224,6 +270,12 @@ function renderHeaderRerenderable(initial: HeaderProps) {
     rerender: (next: HeaderProps) => act(() => apply?.(next)),
   };
 }
+
+// The session store is a module singleton, so a lifecycle one case seeds would
+// otherwise still be there for the next one.
+beforeEach(() => {
+  useSessionListStore.getState().resetStatuses();
+});
 
 /**
  * Getting out of the keyboard's way (spec task 2.7's browser gate).
@@ -434,7 +486,9 @@ describe('PinnedTriageHeader at its height cap', () => {
             )}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
-            attentionItems={[]}
+            scheduleApprovals={[]}
+            errorSignals={[]}
+            activityItems={[]}
           />
         </>
       );
@@ -501,6 +555,7 @@ describe('PinnedTriageHeader', () => {
     expect(header()).toBeNull();
     expect(screen.queryByText('Waiting On You')).not.toBeInTheDocument();
     expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
+    expect(screen.queryByText('Recent Activity')).not.toBeInTheDocument();
     // The live region stays — always mounted, and silent.
     expect(announcement()).toBe('');
   });
@@ -625,14 +680,18 @@ describe('PinnedTriageHeader', () => {
     expect(await screen.findByText('Uninstall a marketplace package')).toBeInTheDocument();
   });
 
-  it('shows what needs attention', async () => {
+  it('shows what recently went wrong, under its own quiet heading', async () => {
+    // Agents nobody can reach is not a thing WAITING on a person — nothing is
+    // blocked on an answer — so it draws under Recent Activity rather than
+    // spending the header's amber on it.
     renderHeader({ getMeshStatus: vi.fn().mockResolvedValue(unreachable(2)) });
 
-    expect(await screen.findByText('Needs Attention')).toBeInTheDocument();
+    expect(await screen.findByText('Recent Activity')).toBeInTheDocument();
     expect(screen.getByText('2 mesh agents unreachable')).toBeInTheDocument();
+    expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
   });
 
-  it('keeps the attention row deep link, and opens the sheet it addresses', async () => {
+  it('keeps the activity row deep link, and opens the sheet it addresses', async () => {
     const { router } = renderHeader({ getMeshStatus: vi.fn().mockResolvedValue(unreachable(2)) });
 
     await screen.findByText('2 mesh agents unreachable');
@@ -653,8 +712,80 @@ describe('PinnedTriageHeader', () => {
     });
 
     expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
-    expect(await screen.findByText('Needs Attention')).toBeInTheDocument();
+    expect(await screen.findByText('Recent Activity')).toBeInTheDocument();
     expect(header()).not.toBeNull();
+  });
+
+  it('puts a schedule an agent parked under Needs Attention, with both answers on the row', async () => {
+    // The event that most deserved a signal and had none: an agent proposes a
+    // scheduled run, it parks because nothing arms itself, and until now the
+    // only way to find it was to wander into the Tasks page.
+    renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]) });
+
+    expect(await screen.findByText('Needs Attention')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject Nightly sweep' })).toBeInTheDocument();
+    expect(screen.getByText(/At 03:00 AM/i)).toBeInTheDocument();
+  });
+
+  it('says nothing about a schedule that is already running', async () => {
+    // The discriminating half: without the `pending_approval` filter, every
+    // schedule anybody ever made would pile into the header.
+    const { transport } = renderHeader({
+      listTasks: vi.fn().mockResolvedValue([parkedSchedule({ status: 'active', enabled: true })]),
+    });
+
+    await waitFor(() => expect(transport.listTasks).toHaveBeenCalled());
+    await waitFor(() => expect(transport.getMeshStatus).toHaveBeenCalled());
+    expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
+  });
+
+  it('approves a parked schedule in place', async () => {
+    const updateTask = vi.fn().mockResolvedValue(parkedSchedule({ status: 'active' }));
+    renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]), updateTask });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    // The Tasks page's own mutation, unchanged: arming it is a status AND an
+    // enabled flag, and sending only one of them leaves a schedule that is
+    // approved but never fires.
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+  });
+
+  it('rejects a parked schedule in place', async () => {
+    const deleteTask = vi.fn().mockResolvedValue(undefined);
+    renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]), deleteTask });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Reject Nightly sweep' }));
+
+    expect(deleteTask).toHaveBeenCalledWith('task-1');
+  });
+
+  it('draws an agent waiting on you ONCE — the card, never a second row below it', async () => {
+    // Both sessions raise a signal from the one engine: `blocked` becomes a
+    // permission prompt, `error` becomes a wedge. Only the wedge belongs in
+    // Needs Attention — a blocked agent already has a card in Waiting On You,
+    // and the same fact twice in one header is how a person learns to read
+    // neither. Seeded defect: pass every blocking kind through and there are
+    // two rows here instead of one.
+    renderHeader({
+      listRecentSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          sessionRow('ses-blocked', 'Ship the parser'),
+          sessionRow('ses-wedged', 'Wedged'),
+        ],
+        agentActivity: {},
+      }),
+    });
+    setLifecycles({ 'ses-blocked': 'blocked', 'ses-wedged': 'error' });
+
+    expect(await screen.findByText('Needs Attention')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-slot="attention-signal-row"]')).toHaveLength(1)
+    );
+    expect(document.querySelector('[data-slot="attention-signal-row"]')?.textContent).toContain(
+      'Stopped with an error'
+    );
   });
 
   it('keeps the group open while an answered prompt is still saying how it ended', async () => {
@@ -694,7 +825,9 @@ describe('PinnedTriageHeader', () => {
             approvals={[]}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
-            attentionItems={[]}
+            scheduleApprovals={[]}
+            errorSignals={[]}
+            activityItems={[]}
           />
         </TransportProvider>
       </QueryClientProvider>
