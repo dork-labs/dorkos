@@ -111,6 +111,12 @@ router.get('/', async (_req, res) => {
     dismissedUpgradeVersions:
       (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)
         ?.dismissedUpgradeVersions ?? [],
+    // The sidebar's bottom slot reads this to know which promo cards the person
+    // has already waved away. Flattened to match `dismissedUpgradeVersions`
+    // above: the cockpit's config DTO is curated, not a mirror of the file.
+    dismissedPromoIds:
+      (configManager.get('ui') as { promos?: { dismissedIds?: string[] } } | undefined)?.promos
+        ?.dismissedIds ?? [],
     port: env.DORKOS_PORT,
     uptime: process.uptime(),
     // The resolved default working directory (lib/resolve-root.js) — the same

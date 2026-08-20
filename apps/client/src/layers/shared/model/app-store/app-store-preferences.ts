@@ -51,8 +51,6 @@ export interface PreferencesSlice {
 
   promoEnabled: boolean;
   setPromoEnabled: (enabled: boolean) => void;
-  dismissedPromoIds: string[];
-  dismissPromo: (id: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,24 +165,11 @@ export const createPreferencesSlice: StateCreator<
     writeBool(BOOL_KEYS.promoEnabled, v);
     set({ promoEnabled: v });
   },
-  dismissedPromoIds: (() => {
-    try {
-      const stored = localStorage.getItem('dorkos-dismissed-promo-ids');
-      if (stored) {
-        const parsed: unknown = JSON.parse(stored);
-        if (Array.isArray(parsed))
-          return parsed.filter((id): id is string => typeof id === 'string');
-      }
-    } catch {}
-    return [];
-  })(),
-  dismissPromo: (id) =>
-    set((s) => {
-      if (s.dismissedPromoIds.includes(id)) return s;
-      const next = [...s.dismissedPromoIds, id];
-      try {
-        localStorage.setItem('dorkos-dismissed-promo-ids', JSON.stringify(next));
-      } catch {}
-      return { dismissedPromoIds: next };
-    }),
+  // `dismissedPromoIds` / `dismissPromo` were here, backed by localStorage.
+  // They are `usePromoDismissals` (entities/config) now: which cards somebody
+  // has waved away is a fact about the person, not about the browser, so it
+  // rides `ui.promos.dismissedIds` in their config and follows them between
+  // devices (spec `sidebar-simplification` D4). A store slice cannot do that —
+  // it has no transport — which is why the pair moved out rather than being
+  // rewritten in place. `promoEnabled` stays: it is a display toggle.
 });

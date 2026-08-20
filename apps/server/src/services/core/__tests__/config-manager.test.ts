@@ -48,6 +48,7 @@ import {
   backfillRuntimeExecutionDefaults,
   backfillDefaultTrustStops,
   backfillClaudeCodePersistentSession,
+  backfillPromoDismissals,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -165,6 +166,31 @@ describe('ConfigManager', () => {
     expect(config.server.cwd).toBe(null);
     expect(config.tunnel.enabled).toBe(false);
     expect(config.ui.theme).toBe('system');
+  });
+
+  it('keeps promo dismissals a person already has across a real load', () => {
+    // Over a real file and the real conf/Ajv seam, which is the only place this
+    // can be settled: Zod strips unknown keys where Ajv REJECTS them, and a
+    // rejected file is replaced wholesale. So what this catches is the schema
+    // shape being wrong for the data the cockpit writes — the dismissals would
+    // not merely read empty, the person's whole config would be reset behind
+    // them. (It deliberately does NOT claim to exercise the migration: Ajv's
+    // `useDefaults` supplies `ui.promos` on read whether or not the migration
+    // runs, which is measured, and is why the migration is documented as an
+    // anchor rather than as the thing that makes the field reachable.)
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        ui: { theme: 'dark', promos: { dismissedIds: ['remote-access'] } },
+        __internal__: { migrations: { version: '0.62.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+    expect(configManager.getDot('ui.promos.dismissedIds')).toEqual(['remote-access']);
+    expect(configManager.get('ui').theme).toBe('dark');
   });
 
   it('gets top-level config section', () => {
@@ -434,6 +460,38 @@ describe('backfillProfileDefaults migration', () => {
     const store = createMockStore({ profile: existing });
     backfillProfileDefaults(store);
     expect(store.data.profile).toBe(existing);
+  });
+});
+
+describe('backfillPromoDismissals migration (sidebar-simplification D4)', () => {
+  it('reserves ui.promos on a `ui` block that predates it', () => {
+    // What this catches: conf merges top-level defaults SHALLOWLY, so an
+    // upgrading install with a stored `ui` block never inherits the new nested
+    // section on its own. Drop the body and this reads `undefined`.
+    const store = createMockStore({ ui: { theme: 'dark', dismissedUpgradeVersions: ['0.1.0'] } });
+    backfillPromoDismissals(store);
+    expect(store.data.ui).toEqual({
+      theme: 'dark',
+      dismissedUpgradeVersions: ['0.1.0'],
+      promos: { dismissedIds: [] },
+    });
+  });
+
+  it('never erases a dismissal it finds (idempotent)', () => {
+    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
+    // seeding `[]` over ids the person had already waved away, so every promo
+    // they dismissed would come back.
+    const store = createMockStore({ ui: { promos: { dismissedIds: ['remote-access'] } } });
+    backfillPromoDismissals(store);
+    expect(store.data.ui).toEqual({ promos: { dismissedIds: ['remote-access'] } });
+  });
+
+  it('does nothing when there is no `ui` block to extend', () => {
+    // The schema default supplies the whole section on read in that case, and
+    // writing a partial `ui` here would drop every other default in it.
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillPromoDismissals(store);
+    expect(store.data.ui).toBeUndefined();
   });
 });
 

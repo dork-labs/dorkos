@@ -10,6 +10,12 @@ vi.mock('../ui/PromoDialog', () => ({
   PromoDialog: () => null,
 }));
 
+// The card's × writes to config. The spy is what the dismissal case asserts on.
+const dismissPromo = vi.fn();
+vi.mock('@/layers/entities/config', () => ({
+  usePromoDismissals: () => ({ dismissedIds: [], dismissPromo }),
+}));
+
 import { PromoCard } from '../ui/PromoCard';
 
 function makePromo(overrides?: Partial<PromoDefinition>): PromoDefinition {
@@ -44,7 +50,49 @@ describe('PromoCard', () => {
     render(<PromoCard promo={makePromo()} />);
     expect(screen.getByText('Test Title')).toBeInTheDocument();
     expect(screen.getByText('Test description')).toBeInTheDocument();
-    expect(screen.getByRole('button')).toHaveAttribute('data-slot', 'promo-card-compact');
+    // Named rather than "the only button": the card has two now, and the ×
+    // beside it is the point of the cases below.
+    expect(screen.getByRole('button', { name: /Test Title/ })).toHaveAttribute(
+      'data-slot',
+      'promo-card-compact'
+    );
+  });
+
+  it('offers a dismiss control, always visible, that records the promo id', () => {
+    // What this catches: the card shipping without any way to say no — which is
+    // what it did, because the spec put the × on the `dashboard-main` format
+    // that was retired with `team-room-home` (spec `sidebar-simplification` D4).
+    render(<PromoCard promo={makePromo()} />);
+
+    const dismiss = screen.getByRole('button', { name: 'Dismiss' });
+    // Not hover-gated: a control a touch screen cannot reveal is a control it
+    // does not have.
+    expect(dismiss.className).not.toMatch(/\bopacity-0\b/);
+
+    fireEvent.click(dismiss);
+    expect(dismissPromo).toHaveBeenCalledWith('test-promo');
+  });
+
+  it('does not activate the promo when the dismiss control is pressed', () => {
+    // What this catches: nesting the × inside the card's own button, which is
+    // invalid HTML and fires both handlers in the browsers that tolerate it —
+    // so saying "no thanks" would open the dialog it is refusing.
+    const MockDialog: React.FC<{ open: boolean; onOpenChange: (v: boolean) => void }> = vi.fn(
+      () => null
+    );
+    render(
+      <PromoCard promo={makePromo({ action: { type: 'open-dialog', component: MockDialog } })} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+    // Asserted over EVERY render rather than the last one: pressing × causes no
+    // state change of its own, so "the most recent call" would be the mount's
+    // and would read `open: false` whether or not the activation also fired.
+    const opened = vi
+      .mocked(MockDialog)
+      .mock.calls.some(([props]) => (props as { open: boolean }).open);
+    expect(opened).toBe(false);
   });
 
   it('separates by tint and carries no hairline anywhere in it (R1)', () => {
@@ -54,7 +102,7 @@ describe('PromoCard', () => {
     // `SidebarRow` bans it: it is lighter than the panel in light mode and
     // darker in dark, so it separates in opposite directions between themes.
     const { container } = render(<PromoCard promo={makePromo()} />);
-    const card = screen.getByRole('button');
+    const card = screen.getByRole('button', { name: /Test Title/ });
     expect(card.className).toMatch(/\bbg-sidebar-accent\/40\b/);
     expect(card.className).toMatch(/\bhover:bg-sidebar-accent\/70\b/);
     expect(container.innerHTML).not.toMatch(/\bborder\b|\bbg-card\b|\bbg-muted\b/);

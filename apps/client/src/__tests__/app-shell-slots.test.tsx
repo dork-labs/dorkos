@@ -69,6 +69,10 @@ vi.mock('@/layers/features/dashboard-sidebar', async () => {
     // BC-47).
     SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
     SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
+    // The panel's one bottom card. Stubbed at the same seam as the strip: this
+    // suite is about WHICH cockpit the shell mounts, and the slot's own
+    // arbitration is `shared/ui/__tests__/bottom-slot.test.tsx`.
+    SidebarBottomSlot: () => <div data-slot="sidebar-bottom-slot">Bottom slot</div>,
     // What the mobile tabs compose. Stubbed at the feature seam so this suite
     // stays about the SHELL — which cockpit it mounts and where a takeover
     // lands — while `MobileTabsLayout.test.tsx` drives the real model through

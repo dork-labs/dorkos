@@ -20,9 +20,12 @@ import { AgentChatDialog } from '../ui/dialogs/AgentChatDialog';
  * the person did** — not by a default they never chose. Two entries carry one,
  * and the two that do not are instructive:
  *
- * - **Remote Access** never speaks: its `shouldShow` is `() => true`, so as the
- *   highest-priority promo it would print the same sentence under "All quiet."
- *   every morning until somebody dismissed it.
+ * - **Remote Access** never speaks. It no longer qualifies unconditionally —
+ *   `sidebar-simplification` D4 gave it a real trigger — but the quiet state is
+ *   a different bar from a card: at priority 90 it would still be the sentence
+ *   every browser-based install without a tunnel read under "All quiet." every
+ *   morning, and "you have not set up remote access" is a standing fact rather
+ *   than something the person just did.
  * - **Relay Adapters** no longer speaks either. Its condition reads as a
  *   qualification — Relay on, no adapter connected — but Relay ships ON and a
  *   fresh install has no adapters, so it describes the factory settings of a
@@ -41,7 +44,13 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
     id: 'remote-access',
     placements: ['dashboard-sidebar'],
     priority: 90,
-    shouldShow: () => true,
+    // Not on the desktop app — offering somebody remote access to the machine
+    // they are sitting at is not an offer — and not once remote access is set
+    // up, whether or not the tunnel is currently running. Until
+    // `sidebar-simplification` D4 this read `() => true`, which is the
+    // definition of an ad: at priority 90 it was the card the sidebar showed
+    // every morning forever, and there was no × to answer it with.
+    shouldShow: (ctx) => !ctx.isDesktopApp && !ctx.remoteAccessConfigured,
     content: {
       icon: Globe,
       title: 'Use DorkOS on the go',

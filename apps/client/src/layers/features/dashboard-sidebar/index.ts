@@ -25,6 +25,14 @@ export { useNewSessionShortcut } from './model/use-new-session-shortcut';
 // retired `SidebarNavHeader`, tour anchor and all, so the tour-anchor guard
 // mounts THIS at both widths for the reason it always mounted that.
 export { SidebarFooterStrip, useAskDorkBot } from './ui/SidebarFooterStrip';
+// The panel's one bottom card — arbitrated, pinned above the footer, and
+// mounted by the phone cockpit's Home panel too (spec `sidebar-simplification`
+// D4).
+export { SidebarBottomSlot } from './ui/bottom-slot/SidebarBottomSlot';
+export { UpdatePill } from './ui/bottom-slot/UpdatePill';
+export type { UpdatePillProps } from './ui/bottom-slot/UpdatePill';
+export { useUpdateReady } from './ui/bottom-slot/use-update-ready';
+export type { UpdateReadiness } from './ui/bottom-slot/use-update-ready';
 // ── The panel, in parts, for the mobile tabs (P4) ──
 // A phone splits one sidebar across two destinations, so the widget assembles
 // the state once, builds the model once, and draws two subsets of the same

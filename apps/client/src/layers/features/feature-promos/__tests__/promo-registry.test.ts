@@ -124,6 +124,8 @@ describe('promo-registry', () => {
       agentCount: 1,
       taskCount: 0,
       daysSinceFirstUse: 0,
+      isDesktopApp: false,
+      remoteAccessConfigured: false,
     };
     for (const promo of PROMO_REGISTRY) {
       if (!promo.content.suggestion) continue;
@@ -148,6 +150,8 @@ describe('promo-registry', () => {
       agentCount: 1,
       taskCount: 0,
       daysSinceFirstUse: 6,
+      isDesktopApp: false,
+      remoteAccessConfigured: false,
     };
     const speaking = PROMO_REGISTRY.filter(
       (p) => p.content.suggestion && p.shouldShow(usedInstallCtx)
@@ -169,6 +173,8 @@ describe('promo-registry', () => {
       agentCount: 1,
       taskCount: 1,
       daysSinceFirstUse: 6,
+      isDesktopApp: false,
+      remoteAccessConfigured: false,
     };
     const schedules = PROMO_REGISTRY.find((p) => p.id === 'schedules');
     expect(schedules?.shouldShow(withSchedules)).toBe(false);
@@ -187,6 +193,50 @@ describe('promo-registry', () => {
     }
   });
 
+  describe('remote-access has a real trigger, not `() => true`', () => {
+    // It used to qualify unconditionally, at the highest priority in the
+    // registry, on a card with no dismiss control — which is the definition of
+    // an ad rather than an offer (spec `sidebar-simplification` D4). The truth
+    // table is the whole fix, so it is asserted as one.
+    const remoteAccess = PROMO_REGISTRY.find((p) => p.id === 'remote-access');
+
+    function ctx(over: { isDesktopApp: boolean; remoteAccessConfigured: boolean }) {
+      return {
+        hasAdapter: () => false,
+        isTasksEnabled: true,
+        isMeshEnabled: true,
+        isRelayEnabled: true,
+        sessionCount: 3,
+        agentCount: 2,
+        taskCount: 1,
+        daysSinceFirstUse: 30,
+        ...over,
+      };
+    }
+
+    const cases: [boolean, boolean, boolean][] = [
+      // isDesktopApp, remoteAccessConfigured, shows
+      [false, false, true],
+      [false, true, false],
+      [true, false, false],
+      [true, true, false],
+    ];
+
+    it.each(cases)(
+      'desktop=%s configured=%s -> shows=%s',
+      (isDesktopApp, remoteAccessConfigured, shows) => {
+        expect(remoteAccess?.shouldShow(ctx({ isDesktopApp, remoteAccessConfigured }))).toBe(shows);
+      }
+    );
+
+    it('is the one row that can be true — a browser with no remote access set up', () => {
+      // Guards the direction of both clauses at once: flipping either to `||`,
+      // or dropping a `!`, moves this count.
+      const showing = cases.filter(([, , shows]) => shows);
+      expect(showing).toEqual([[false, false, true]]);
+    });
+  });
+
   it('all shouldShow functions are callable with a mock context', () => {
     const mockCtx = {
       hasAdapter: () => false,
@@ -197,6 +247,8 @@ describe('promo-registry', () => {
       agentCount: 0,
       taskCount: 0,
       daysSinceFirstUse: 0,
+      isDesktopApp: false,
+      remoteAccessConfigured: false,
     };
     for (const promo of PROMO_REGISTRY) {
       expect(() => promo.shouldShow(mockCtx)).not.toThrow();

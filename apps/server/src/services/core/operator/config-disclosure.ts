@@ -158,6 +158,11 @@ export const CONFIG_DISCLOSURE = {
   // still a first-run card on screen.
   'ui.sidebar.gettingStarted.retired': 'expose',
   'ui.sidebar.digest.lastShownDate': 'expose',
+  // Which feature-promo cards this person has waved away. A list of promo ids
+  // and nothing else — the same class of fact as the retired Getting-started
+  // suggestions above, and an agent that reads it can tell whether the sidebar's
+  // bottom card is still on screen.
+  'ui.promos.dismissedIds': 'expose',
   'ui.shapes.active': 'expose',
   // An open record (see EXPOSED_RECORD_PATHS): agent projectPath -> Shape name.
   'ui.shapes.agentDefaults': 'expose',

@@ -394,7 +394,18 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
     .humanOriginSessionIds,
 }));
 
-vi.mock('@/layers/features/feature-promos', () => ({ PromoSlot: () => null }));
+// The slot's candidates come from three features and a config read; this file
+// is about the PANEL, so the promo is the one candidate stubbed to qualify —
+// it gives the slot something to draw so its POSITION can be asserted. The old
+// `PromoSlot: () => null` stub drew nothing at all, which is why the promo
+// sitting inside the scroller went unnoticed here for as long as it did.
+vi.mock('@/layers/features/feature-promos', () => ({
+  usePromoCandidate: () => ({
+    id: 'promo:test',
+    show: true,
+    render: () => <div data-testid="bottom-slot-card">A promo</div>,
+  }),
+}));
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
@@ -957,6 +968,40 @@ describe('DashboardSidebar', () => {
       for (const row of rows) {
         expect(row.closest('[aria-roledescription="sortable"]')).toBeNull();
       }
+    });
+  });
+
+  // ── The bottom slot is pinned, not scrolled (spec `sidebar-simplification` D4) ──
+
+  describe('the bottom slot', () => {
+    it('sits outside the scroller, so a long list can never push it out of sight', () => {
+      // The defect this replaces: `PromoSlot` was the LAST CHILD of
+      // `SidebarContent`, which is the `overflow-auto` element. Anyone with
+      // more than a screen of rows never saw the card again. Moving it back
+      // inside the scroller reds this.
+      renderWithProviders(<DashboardSidebar />);
+
+      const slot = document.querySelector('[data-slot="sidebar-bottom-slot"]');
+      expect(slot).not.toBeNull();
+      expect(slot!.closest('[data-slot="sidebar-content"]')).toBeNull();
+      // And it really is inside the panel's landmark, not floating loose.
+      expect(slot!.closest('nav[aria-label="Sidebar"]')).not.toBeNull();
+    });
+
+    it('draws the winning card, and draws it after the scroller in the DOM', () => {
+      // Order matters for reading order and for the visual result: the slot is
+      // pinned BELOW the list, above the footer.
+      renderWithProviders(<DashboardSidebar />);
+
+      const scroller = document.querySelector('[data-slot="sidebar-content"]');
+      const slot = document.querySelector('[data-slot="sidebar-bottom-slot"]');
+      expect(screen.getByTestId('bottom-slot-card')).toBeTruthy();
+      // CONTAINED_BY is excluded deliberately: a descendant also reports as
+      // FOLLOWING, so the bare flag would be true for the very arrangement this
+      // case exists to forbid — the slot back inside the scroller.
+      const position = scroller!.compareDocumentPosition(slot!);
+      expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(position & Node.DOCUMENT_POSITION_CONTAINED_BY).toBeFalsy();
     });
   });
 

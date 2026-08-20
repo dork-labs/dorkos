@@ -3,6 +3,7 @@ import type { PromoDefinition, PromoPlacement } from './promo-types';
 import { PROMO_REGISTRY } from './promo-registry';
 import { selectPromos } from './select-promos';
 import { usePromoContext } from './use-promo-context';
+import { usePromoDismissals } from '@/layers/entities/config';
 import { useAppStore } from '@/layers/shared/model';
 
 /**
@@ -16,7 +17,7 @@ import { useAppStore } from '@/layers/shared/model';
  */
 export function usePromoSlot(placement: PromoPlacement, maxUnits: number): PromoDefinition[] {
   const ctx = usePromoContext();
-  const dismissedPromoIds = useAppStore((s) => s.dismissedPromoIds);
+  const { dismissedIds: dismissedPromoIds } = usePromoDismissals();
   const promoEnabled = useAppStore((s) => s.promoEnabled);
 
   return useMemo(() => {

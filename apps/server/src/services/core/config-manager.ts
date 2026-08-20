@@ -2397,6 +2397,41 @@ export function seedA2aDisabled(store: {
 }
 
 /**
+ * Migration body: put `ui.promos` into its `{ dismissedIds: [] }` shape on an
+ * existing `ui` block (spec `sidebar-simplification` D4).
+ *
+ * Which promo cards a person has waved away moved off `localStorage` and into
+ * config, so the answer follows them between devices instead of being re-asked
+ * on every browser. This body only reserves the shape; the cockpit imports
+ * whatever the old browser key holds the first time it reads the new list, and
+ * that import is per browser, which is the only place those ids exist.
+ *
+ * This is a no-op ANCHOR, in the same sense {@link backfillProfileDefaults} and
+ * {@link seedA2aDisabled} are, and the distinction is worth stating because the
+ * nested backfills above it are not: conf builds Ajv with `useDefaults`, so
+ * `ui.promos` is written into a stored `ui` block during validation whether or
+ * not this runs — measured, not assumed. What the body buys is that the seed is
+ * reviewable in the table rather than implicit in a schema default, and that the
+ * section is written through on the upgrade where it lands. Do not describe it
+ * as the thing that makes the field reachable.
+ *
+ * Additive + idempotent: seeds only when `promos` is missing, so re-running can
+ * never erase a dismissal.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillPromoDismissals(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (ui == null || typeof ui !== 'object') return;
+  if ('promos' in ui && (ui as { promos?: unknown }).promos != null) return;
+  store.set('ui', { ...(ui as Record<string, unknown>), promos: { dismissedIds: [] } });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -2812,6 +2847,19 @@ export const CONFIG_MIGRATIONS = {
     // (DOR-1304). Seeds the gate CLOSED, matching the behavior before the field
     // existed.
     seedA2aDisabled(store);
+  },
+  // v0.62.0 is the newest tag, so 0.63.0 is the next key that can still run for
+  // everybody. Frozen from merge, not from the release bump, for the reason
+  // `'0.60.0'` above states; anything further opens `'0.64.0'`.
+  '0.63.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `ui.promos.dismissedIds` — which feature-promo cards this person has waved
+    // away (spec `sidebar-simplification` D4). Seeds the list EMPTY: a dismissal
+    // has only ever existed per browser, so there is nothing on the server to
+    // carry over, and the cockpit imports the old browser key on first read.
+    backfillPromoDismissals(store);
   },
 } as const;
 

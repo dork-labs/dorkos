@@ -1,4 +1,4 @@
-import { useAppStore } from '@/layers/shared/model';
+import { usePromoDismissals } from '@/layers/entities/config';
 import type { SuggestingPromo } from '../model/use-quiet-suggestion';
 import { useQuietSuggestion } from '../model/use-quiet-suggestion';
 import { QuietSuggestionView } from './QuietSuggestionView';
@@ -6,7 +6,7 @@ import { usePromoActivation } from './use-promo-activation';
 
 /** The chosen suggestion, wired to its action and its dismissal. */
 function WiredSuggestion({ promo }: { promo: SuggestingPromo }) {
-  const dismissPromo = useAppStore((s) => s.dismissPromo);
+  const { dismissPromo } = usePromoDismissals();
   const { activate, dialog } = usePromoActivation(promo);
 
   return (
@@ -36,8 +36,9 @@ function WiredSuggestion({ promo }: { promo: SuggestingPromo }) {
  * is a plain `null` rather than a hook called with a promo that does not exist.
  *
  * **Dismissal is the promo dismissal**, so waving it away here also takes the
- * matching card out of the sidebar. Saying no once should mean no everywhere,
- * and it is remembered across pages and restarts.
+ * matching card out of the sidebar's bottom slot. Saying no once should mean no
+ * everywhere — and since the answer lives in config rather than in this browser,
+ * "everywhere" now includes the other devices this person uses.
  *
  * It inherits the quiet state's own gates by living inside it: the host only
  * mounts this when the room is quiet, the reader is caught up, and the pinned

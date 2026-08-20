@@ -19,3 +19,9 @@ export { OnboardingConversation } from './ui/OnboardingConversation';
 export { OnboardingNavBar } from './ui/OnboardingNavBar';
 export { ProgressCard } from './ui/ProgressCard';
 export { ProfilePromptCard } from './ui/ProfilePromptCard';
+export type { ProfilePromptCardProps } from './ui/ProfilePromptCard';
+// The role prompt's show condition and its ask → saved → gone arc, lifted out of
+// the card so the sidebar's bottom slot can arbitrate it (spec
+// `sidebar-simplification` D4).
+export { useProfilePrompt } from './model/use-profile-prompt';
+export type { ProfilePromptApi, ProfilePromptPhase } from './model/use-profile-prompt';

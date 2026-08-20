@@ -2,11 +2,16 @@ import { useState } from 'react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { Button } from '@/layers/shared/ui';
+import { BottomSlot, Button, SidebarContent } from '@/layers/shared/ui';
+import type { BottomSlotCandidate } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
-import { PROMO_REGISTRY, PromoSlot, usePromoSlot } from '@/layers/features/feature-promos';
+import { usePromoDismissals, useUpdateConfig } from '@/layers/entities/config';
+import { PROMO_REGISTRY, PromoCard, usePromoSlot } from '@/layers/features/feature-promos';
 import type { PromoPlacement } from '@/layers/features/feature-promos';
 import { PromoDialog } from '@/layers/features/feature-promos/ui/PromoDialog';
+import { UpdatePill } from '@/layers/features/dashboard-sidebar';
+import { ProfilePromptCard, ProgressCard } from '@/layers/features/onboarding';
+import type { ProfilePromptApi } from '@/layers/features/onboarding';
 
 // ---------------------------------------------------------------------------
 // Mock context used for the shouldShow column in the registry table
@@ -21,6 +26,10 @@ const MOCK_CTX = {
   agentCount: 3,
   taskCount: 0,
   daysSinceFirstUse: 7,
+  // A browser with no tunnel set up — the one state in which `remote-access`
+  // qualifies, now that it has a real trigger instead of `() => true`.
+  isDesktopApp: false,
+  remoteAccessConfigured: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -74,29 +83,123 @@ function RegistryTable() {
 }
 
 // ---------------------------------------------------------------------------
-// Live slot preview — renders the actual PromoSlot component
+// Live preview — the real promo this install qualifies for
 // ---------------------------------------------------------------------------
 
-interface LiveSlotPreviewProps {
-  placement: PromoPlacement;
-  maxUnits: number;
-}
+/** How many promos a bottom slot shows. Mirrors the slot's own cap. */
+const SLOT_UNITS = 1;
 
-function LiveSlotPreview({ placement, maxUnits }: LiveSlotPreviewProps) {
-  const promos = usePromoSlot(placement, maxUnits);
+function LiveSlotPreview({ placement }: { placement: PromoPlacement }) {
+  const promos = usePromoSlot(placement, SLOT_UNITS);
+  const registered = PROMO_REGISTRY.filter((p) => p.placements.includes(placement)).length;
+  const [top] = promos;
 
   return (
     <div className="space-y-3">
       <div className="text-muted-foreground text-xs">
-        Qualifying promos: {promos.length} /{' '}
-        {PROMO_REGISTRY.filter((p) => p.placements.includes(placement)).length} registered
+        Showing {promos.length} of {registered} registered for this placement (the slot takes one)
       </div>
-      <PromoSlot placement={placement} maxUnits={maxUnits} />
-      {promos.length === 0 && (
+      {top === undefined ? (
         <p className="text-muted-foreground text-xs italic">
-          (No promos qualify — check dismissals or global toggle below)
+          (No promo qualifies — check dismissals or the global toggle below)
         </p>
+      ) : (
+        <PromoCard promo={top} />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The bottom slot, in a real 272px panel with a list that overflows it
+// ---------------------------------------------------------------------------
+
+/** The slot's four candidates, in priority order, as the playground names them. */
+const SLOT_STATES = ['getting-started', 'update', 'profile-prompt', 'promo', 'empty'] as const;
+
+type SlotState = (typeof SLOT_STATES)[number];
+
+/** A profile prompt frozen mid-ask, so the card can be drawn without a config write. */
+const MOCK_PROMPT: ProfilePromptApi = {
+  visible: true,
+  phase: 'ask',
+  selected: [],
+  setSelected: () => {},
+  confirmLabel: 'Save',
+  errorMessage: null,
+  save: () => {},
+  skip: () => {},
+};
+
+function BottomSlotInPanel() {
+  const [state, setState] = useState<SlotState>('getting-started');
+  const promo = PROMO_REGISTRY[0]!;
+
+  // Exactly the shape `SidebarBottomSlot` builds, with the qualification
+  // hard-coded so each candidate can be looked at on its own.
+  const candidates: BottomSlotCandidate[] = [
+    {
+      id: 'getting-started',
+      show: state === 'getting-started',
+      render: () => <ProgressCard onDismiss={() => setState('empty')} />,
+    },
+    {
+      id: 'update',
+      show: state === 'update',
+      render: () => (
+        <UpdatePill
+          update={{ kind: 'command', latestVersion: '9.9.9', dismiss: () => setState('empty') }}
+        />
+      ),
+    },
+    {
+      id: 'profile-prompt',
+      show: state === 'profile-prompt',
+      render: () => <ProfilePromptCard prompt={MOCK_PROMPT} />,
+    },
+    {
+      id: `promo:${promo.id}`,
+      show: state === 'promo',
+      render: () => <PromoCard promo={promo} />,
+    },
+  ];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {SLOT_STATES.map((option) => (
+          <Button
+            key={option}
+            size="sm"
+            variant={state === option ? 'default' : 'outline'}
+            onClick={() => setState(option)}
+          >
+            {option}
+          </Button>
+        ))}
+      </div>
+
+      {/* **A 272px panel with more rows than fit.** This is the whole point of
+          the showcase: the promo used to be the last child inside the scroller,
+          so on a real cockpit it was below the fold and nobody saw it — and the
+          old playground drew the slot free-floating in a `max-w-xs` box, which
+          is exactly why the bug was invisible here. Scroll the list: the card
+          stays put. */}
+      <div className="bg-sidebar text-sidebar-foreground flex h-80 w-[272px] flex-col rounded-lg border">
+        <SidebarContent className="px-2 py-3">
+          <div className="space-y-1">
+            {Array.from({ length: 30 }, (_, i) => (
+              <div
+                key={i}
+                className="text-sidebar-foreground/70 truncate rounded-md px-2 py-1.5 text-[13px]"
+              >
+                A row that pushes the list past the fold #{i + 1}
+              </div>
+            ))}
+          </div>
+        </SidebarContent>
+        <BottomSlot candidates={candidates} ready />
+      </div>
     </div>
   );
 }
@@ -106,18 +209,16 @@ function LiveSlotPreview({ placement, maxUnits }: LiveSlotPreviewProps) {
 // ---------------------------------------------------------------------------
 
 function OverrideControls() {
-  const dismissedPromoIds = useAppStore((s) => s.dismissedPromoIds);
+  const { dismissedIds: dismissedPromoIds, dismissPromo } = usePromoDismissals();
   const promoEnabled = useAppStore((s) => s.promoEnabled);
   const setPromoEnabled = useAppStore((s) => s.setPromoEnabled);
-  const dismissPromo = useAppStore((s) => s.dismissPromo);
+  const updateConfig = useUpdateConfig();
 
+  // Dismissals are config now, so undoing them is a config write. There is no
+  // product affordance for un-dismissing — deliberately, saying no should stay
+  // said — which is why this reaches for the patch directly.
   const resetDismissals = () => {
-    try {
-      localStorage.removeItem('dorkos-dismissed-promo-ids');
-    } catch {}
-    // Directly set Zustand slice — no store action exists for this, but
-    // setState is the standard escape hatch for dev tooling.
-    useAppStore.setState({ dismissedPromoIds: [] });
+    updateConfig.mutate({ ui: { promos: { dismissedIds: [] } } });
   };
 
   return (
@@ -158,8 +259,9 @@ function OverrideControls() {
       )}
 
       <div className="text-muted-foreground text-xs">
-        Dismiss a promo card above to see its ID appear here. Use &quot;Reset dismissals&quot; to
-        restore it.
+        Press the × on a card above, or a button below, to see its id appear here. These are stored
+        in your config (<code>ui.promos.dismissedIds</code>), not in this browser, so a dismissal
+        holds on every device. &quot;Reset dismissals&quot; writes the list back to empty.
       </div>
 
       <ShowcaseLabel>Dismiss individual promos</ShowcaseLabel>
@@ -239,30 +341,39 @@ export function PromoShowcases() {
       </PlaygroundSection>
 
       <PlaygroundSection
-        title="PromoSlot — dashboard-sidebar"
-        description="Compact vertical stack, no section header, no dismiss button."
+        title="Bottom slot in a 272px panel with an overflowing list"
+        description="The real slot, pinned between a scroller and the footer, cycling through its four candidates in priority order: getting-started progress > update pill > profile prompt > promo. Scroll the list — the card does not move."
+      >
+        <ShowcaseDemo>
+          <BottomSlotInPanel />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Promo card — dashboard-sidebar"
+        description="The promo this install actually qualifies for on the cockpit panel, with its dismiss control."
       >
         <ShowcaseDemo>
           <div className="max-w-xs">
-            <LiveSlotPreview placement="dashboard-sidebar" maxUnits={3} />
+            <LiveSlotPreview placement="dashboard-sidebar" />
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>
 
       <PlaygroundSection
-        title="PromoSlot — agent-sidebar"
-        description="Same compact format as dashboard-sidebar, rendered in the agent session sidebar."
+        title="Promo card — agent-sidebar"
+        description="The same card in the Obsidian embed's placement, which is the only candidate that slot has."
       >
         <ShowcaseDemo>
           <div className="max-w-xs">
-            <LiveSlotPreview placement="agent-sidebar" maxUnits={2} />
+            <LiveSlotPreview placement="agent-sidebar" />
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>
 
       <PlaygroundSection
         title="Override Controls"
-        description="Reset dismissals and toggle the global promo setting to test slot filtering. Changes persist to localStorage."
+        description="Reset dismissals and toggle the global promo setting to test slot filtering. Dismissals persist to your config; the global toggle is per-browser."
       >
         <ShowcaseDemo>
           <OverrideControls />
