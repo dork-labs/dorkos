@@ -23,6 +23,7 @@ export default defineConfig({
     './src/schema/read-cursors.ts',
     './src/schema/bridges.ts',
     './src/schema/search.ts',
+    './src/schema/notifications.ts',
   ],
   out: './drizzle',
   dialect: 'sqlite',

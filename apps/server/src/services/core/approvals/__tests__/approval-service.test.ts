@@ -86,20 +86,27 @@ describe('ApprovalService', () => {
     it('broadcasts approval_pending with the card payload and no token', () => {
       const ticket = requestOne('ops-agent');
 
-      expect(broadcast).toHaveBeenCalledWith('approval_pending', {
-        approvalId: ticket.approvalId,
-        capabilityId: 'marketplace.uninstall',
-        // No registry lookup is wired here, so the title falls back to the id.
-        capabilityTitle: 'marketplace.uninstall',
-        tier: 'destructive',
-        // Nobody identified themselves, so this approval can never become a
-        // standing permission and the card must not offer to make it one.
-        hasAgentPath: false,
-        summary: 'Uninstall "sentry-monitor"',
-        requestedBy: 'ops-agent',
-        requestedAt: expect.any(String),
-        expiresAt: ticket.expiresAt,
-      });
+      // A third argument names the audience: the card says what would run, so it
+      // is addressed rather than written to every connection (DOR-1383). What
+      // the predicate decides is pinned in `approval-events-addressed.test.ts`.
+      expect(broadcast).toHaveBeenCalledWith(
+        'approval_pending',
+        {
+          approvalId: ticket.approvalId,
+          capabilityId: 'marketplace.uninstall',
+          // No registry lookup is wired here, so the title falls back to the id.
+          capabilityTitle: 'marketplace.uninstall',
+          tier: 'destructive',
+          // Nobody identified themselves, so this approval can never become a
+          // standing permission and the card must not offer to make it one.
+          hasAgentPath: false,
+          summary: 'Uninstall "sentry-monitor"',
+          requestedBy: 'ops-agent',
+          requestedAt: expect.any(String),
+          expiresAt: ticket.expiresAt,
+        },
+        expect.any(Function)
+      );
       expect(JSON.stringify(broadcast.mock.calls)).not.toContain(ticket.token);
     });
 

@@ -51,7 +51,19 @@ import { initBoundary } from './lib/boundary.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
-import { TaskCompletionNotifier } from './services/tasks/task-completion-notifier.js';
+import { createNotificationsRouter } from './routes/notifications.js';
+import { NotificationStore } from './services/notifications/notification-store.js';
+import {
+  NotificationService,
+  notify,
+  setNotificationService,
+} from './services/notifications/notification-service.js';
+import { watchSessionLifecycle } from './services/notifications/emitters/session-lifecycle.js';
+import { watchAskResolution } from './services/notifications/emitters/ask-resolution.js';
+import { notifyRunCompleted } from './services/notifications/emitters/run-completed.js';
+import { agentLivenessObserver } from './services/notifications/emitters/agent-liveness.js';
+import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
+import type { NotifyDmDeps } from './services/relay/notify-dm.js';
 import { broadcastRunTerminal } from './services/tasks/run-terminal-broadcaster.js';
 import {
   TaskSchedulerService,
@@ -1138,8 +1150,15 @@ async function start() {
           traceStore,
           logger,
           // Tick the Pulse attention badge the instant a message is dead-lettered
-          // (DOR-403) instead of waiting for the 30s dead-letters poll.
-          onDeadLetter: (notice) => eventFanOut.broadcast('relay_dead_letter', notice),
+          // (DOR-403) instead of waiting for the 30s dead-letters poll, and
+          // leave a quiet row in the inbox so it is still findable tomorrow.
+          onDeadLetter: (notice) => {
+            eventFanOut.broadcast('relay_dead_letter', notice);
+            void notify('dead-letter.created', {
+              deadLetterId: notice.messageId,
+              reason: notice.reason,
+            });
+          },
         })
       );
       await relayCore.registerEndpoint('relay.system.console');
@@ -1232,6 +1251,12 @@ async function start() {
         changedAt: new Date().toISOString(),
       })
     );
+
+    // Say WHICH agent went quiet, once each, in the inbox. A second subscriber
+    // rather than a line inside the one above: the badge wants counts and this
+    // wants identities, and the observer list is what makes both possible
+    // without either owning the other.
+    meshCore.onLivenessChange(agentLivenessObserver(meshCore.agentRegistry));
 
     // Start periodic reconciliation (every 5 minutes)
     meshCore.startPeriodicReconciliation(300_000);
@@ -1443,6 +1468,50 @@ async function start() {
     );
   }
 
+  // Where a proactive message goes when no external chat integration can carry
+  // it: the sending agent's own direct message with the operator (DOR-1209).
+  // Needs mesh to place the sender on disk, which is what an author row keys on
+  // — without it a proactive note reports non-delivery rather than guessing at
+  // an identity. Hoisted to one binding because two things need it now: the MCP
+  // tool deps below, and the notification pipeline's relay channel.
+  const notifyDm: NotifyDmDeps | undefined = meshCore
+    ? {
+        rooms: roomService,
+        authors: roomAuthors,
+        mesh: meshCore,
+        operatorAuthorId: resolveOperatorAuthorId,
+        logger,
+      }
+    : undefined;
+
+  // The notification pipeline (spec `notification-system`). Constructed here,
+  // after the relay and adapter wiring above, because its out-of-app leg needs
+  // them; every seam that RAISES a notification calls the module-level `notify`
+  // instead of holding this, so a projector, an MCP tool and a route do not each
+  // grow a dependency on the inbox to say one sentence.
+  const notificationService = new NotificationService(new NotificationStore(db), {
+    relay: {
+      relayCore,
+      ...(adapterManager
+        ? {
+            adapterManager,
+            bindingStore: adapterManager.getBindingStore(),
+            bindingRouter: adapterManager.getBindingRouter(),
+          }
+        : {}),
+      bridgeStore: roomBridges,
+      notifyDm,
+    },
+  });
+  setNotificationService(notificationService);
+
+  // A finished turn, and the history row an error leaves when it clears.
+  watchSessionLifecycle();
+  // How every Ask ended — including the ones nobody answered.
+  watchAskResolution();
+  // Nothing tells the server it was updated, so it compares versions on boot.
+  void announceInstalledVersion(dorkHome);
+
   // Store-level run-terminal hook (DOR-240): the single seam that fires exactly
   // once per non-terminal → terminal transition, for BOTH scheduler-side
   // failures and relay-delivered runs finalized by the receiver's
@@ -1451,29 +1520,14 @@ async function start() {
   //   1. Pulse attention broadcast (DOR-403) — always on when Tasks is enabled;
   //      broadcastRunTerminal fans `task_run_failed` onto /api/events so the
   //      badge ticks the instant a run fails, on every execution path.
-  //   2. TaskCompletionNotifier (DOR-240) — optional, only when the relay deps
-  //      it needs to deliver a channel notification are present.
+  //   2. The `run.completed` notification (DOR-240, folded into the pipeline by
+  //      DOR-1383) — always on, unlike the notifier it replaced: the inbox row
+  //      is written whether or not any chat integration can carry the news, and
+  //      the relay leg is what degrades when one cannot.
   if (taskStore) {
-    let notifier: TaskCompletionNotifier | undefined;
-    if (relayCore && adapterManager) {
-      const bindingStore = adapterManager.getBindingStore();
-      const bindingRouter = adapterManager.getBindingRouter();
-      if (bindingStore && bindingRouter) {
-        notifier = new TaskCompletionNotifier({
-          bindingStore,
-          bindingRouter,
-          adapterManager,
-          bridgeStore: roomBridges,
-          relayCore,
-          taskStore,
-          logger,
-        });
-        logger.info('[Tasks] Completion notifier wired to run-terminal hook');
-      }
-    }
     taskStore.setOnRunTerminal((run, task) => {
       broadcastRunTerminal(run);
-      if (notifier) void notifier.handle(run, task);
+      void notifyRunCompleted(run, task);
     });
   }
 
@@ -1811,20 +1865,9 @@ async function start() {
       bridgeStore: roomBridges,
       ...(traceStore && { traceStore }),
       ...(meshCore && { meshCore }),
-      // Where a proactive message goes when no external chat integration can
-      // carry it: the sending agent's own direct message with the operator
-      // (DOR-1209). Needs mesh to place the sender on disk, which is what an
-      // author row keys on — without it the tool reports non-delivery rather
-      // than guessing at an identity.
-      ...(meshCore && {
-        notifyDm: {
-          rooms: roomService,
-          authors: roomAuthors,
-          mesh: meshCore,
-          operatorAuthorId: resolveOperatorAuthorId,
-          logger,
-        },
-      }),
+      // The DorkOS-DM fallback, hoisted above so the notification pipeline's
+      // relay channel shares this one seam rather than building a second.
+      ...(notifyDm && { notifyDm }),
     };
     claudeRuntime.setMcpServerFactory((session, sessionId) =>
       // Managed servers first, connectors second, `dorkos` last so it can never
@@ -2380,6 +2423,11 @@ async function start() {
   app.use('/api/activity', createActivityRouter(activityService));
   app.locals.activityService = activityService;
   mountedRouters.push('activity');
+
+  // The Inbox — always available for the same reason: the history is written
+  // whether or not any channel could carry it.
+  app.use('/api/notifications', createNotificationsRouter(notificationService));
+  mountedRouters.push('notifications');
 
   // Mount Extensions routes if extension system initialized successfully.
   if (extensionManager) {

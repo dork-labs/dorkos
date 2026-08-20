@@ -1,0 +1,183 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
+import type { Db } from '@dorkos/db';
+import { TaskStore, type CreateTaskStoreInput } from '../../tasks/task-store.js';
+import { SessionStateProjector } from '../../session/session-state-projector.js';
+import { eventFanOut } from '../../core/event-fan-out.js';
+import { NotificationStore } from '../notification-store.js';
+import { NotificationService, setNotificationService } from '../notification-service.js';
+import { notifyRunCompleted } from '../emitters/run-completed.js';
+import { watchAskResolution } from '../emitters/ask-resolution.js';
+import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
+
+/** One captured SSE broadcast. */
+type Broadcast = [string, unknown];
+
+let db: Db;
+let service: NotificationService;
+let sent: Broadcast[] = [];
+let unsubscribes: Array<() => void> = [];
+
+/** Every `notification` event announced so far. */
+function announced(): Array<{ kind: string; title: string; outcome?: string; readAt?: string }> {
+  return sent
+    .filter(([name]) => name === 'notification')
+    .map(([, data]) => (data as { notification: never }).notification);
+}
+
+/** Let the fire-and-forget microtask dispatch and the async notify settle. */
+async function flush(): Promise<void> {
+  for (let i = 0; i < 6; i += 1) await Promise.resolve();
+}
+
+function taskInput(name: string): CreateTaskStoreInput {
+  return {
+    name,
+    description: 'test',
+    prompt: 'test',
+    agentId: 'agent-1',
+    filePath: `/tmp/tasks/${name}/SKILL.md`,
+  };
+}
+
+beforeEach(() => {
+  db = createTestDb();
+  service = new NotificationService(new NotificationStore(db));
+  setNotificationService(service);
+  sent = [];
+  unsubscribes = [];
+  vi.spyOn(eventFanOut, 'broadcast').mockImplementation((name, data) => {
+    sent.push([name, data]);
+  });
+});
+
+afterEach(() => {
+  for (const off of unsubscribes) off();
+  setNotificationService(null);
+  vi.restoreAllMocks();
+});
+
+describe('a finished run', () => {
+  it('announces a notification and leaves a row behind', async () => {
+    const store = new TaskStore(db);
+    store.setOnRunTerminal((run, task) => void notifyRunCompleted(run, task));
+
+    const task = store.createTask(taskInput('nightly'));
+    const run = store.createRun(task.id, 'scheduled');
+    store.updateRun(run.id, { status: 'completed', durationMs: 134_000 });
+    await flush();
+
+    expect(announced()).toHaveLength(1);
+    expect(announced()[0]).toMatchObject({ kind: 'run.completed', title: 'nightly finished' });
+
+    const listed = service.list({ limit: 25, unread: false });
+    expect(listed.notifications).toHaveLength(1);
+    expect(listed.notifications[0].subject).toEqual({ type: 'run', id: run.id });
+    expect(listed.notifications[0].body).toBe('Done in 2m 14s.');
+  });
+
+  it('says a failed run failed, and files it against the same run', async () => {
+    const store = new TaskStore(db);
+    store.setOnRunTerminal((r, t) => void notifyRunCompleted(r, t));
+
+    const task = store.createTask(taskInput('deploy'));
+    const run = store.createRun(task.id, 'scheduled');
+    store.updateRun(run.id, { status: 'failed', error: 'exit 1\nstack…', durationMs: 2000 });
+    await flush();
+
+    expect(announced()[0]).toMatchObject({ kind: 'run.completed', title: 'deploy failed' });
+    expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
+      'Failed after 2s. exit 1'
+    );
+  });
+
+  it('stays quiet about a run the operator cancelled — they already know', async () => {
+    const store = new TaskStore(db);
+    store.setOnRunTerminal((r, t) => void notifyRunCompleted(r, t));
+
+    const task = store.createTask(taskInput('long-job'));
+    const run = store.createRun(task.id, 'manual');
+    store.updateRun(run.id, { status: 'cancelled' });
+    await flush();
+
+    expect(announced()).toHaveLength(0);
+    expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(0);
+  });
+});
+
+describe('an ask that ends', () => {
+  it('leaves a history row saying nobody answered', async () => {
+    unsubscribes.push(watchAskResolution());
+    const projector = new SessionStateProjector('sess-1');
+    projector.cwd = '/Users/dev/acme';
+
+    projector.ingest({
+      type: 'approval_required',
+      id: 'int-1',
+      toolName: 'Bash',
+      displayName: 'Run a shell command',
+      input: 'rm -rf ./build',
+      hasSuggestions: false,
+    } as never);
+    projector.ingest({
+      type: 'interaction_resolved',
+      id: 'int-1',
+      resolution: 'expired',
+      at: Date.now(),
+    } as never);
+    await flush();
+
+    const [row] = service.list({ limit: 25, unread: false }).notifications;
+    expect(row).toMatchObject({
+      kind: 'ask.pending',
+      outcome: 'expired',
+      title: 'acme is waiting on your answer',
+      body: 'Run a shell command',
+      sessionId: 'sess-1',
+    });
+    expect(row.resolvedAt).toBeDefined();
+    // Nobody dealt with it, so it is genuinely news.
+    expect(row.readAt).toBeUndefined();
+    // The tool INPUT never travels: a title can end up on a lock screen.
+    expect(JSON.stringify(row)).not.toContain('rm -rf');
+  });
+
+  it('leaves an answered ask already read', async () => {
+    unsubscribes.push(watchAskResolution());
+    const projector = new SessionStateProjector('sess-2');
+    projector.cwd = '/Users/dev/acme';
+
+    projector.ingest({
+      type: 'question_prompt',
+      id: 'int-2',
+      question: 'Which branch?',
+    } as never);
+    projector.ingest({
+      type: 'interaction_resolved',
+      id: 'int-2',
+      resolution: 'answered',
+      at: Date.now(),
+    } as never);
+    await flush();
+
+    const [row] = service.list({ limit: 25, unread: false }).notifications;
+    expect(row).toMatchObject({ outcome: 'answered' });
+    expect(row.readAt).toBeDefined();
+  });
+});
+
+describe('a turn that finishes', () => {
+  it('announces once when the session settles from streaming to idle', async () => {
+    unsubscribes.push(watchSessionLifecycle());
+    const projector = new SessionStateProjector('sess-3');
+    projector.cwd = '/Users/dev/acme';
+
+    projector.ingest({ type: 'turn_start' } as never);
+    projector.ingest({ type: 'turn_end' } as never);
+    await flush();
+
+    const turns = announced().filter((n) => n.kind === 'turn.completed');
+    expect(turns).toHaveLength(1);
+    expect(turns[0].title).toBe('acme finished');
+  });
+});

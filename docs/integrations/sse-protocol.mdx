@@ -373,18 +373,26 @@ This single persistent connection multiplexes all background events, distinguish
 | `session_status`       | `{ sessionId: string, cwd?: string, retiredSessionId?: string, status }`                                      | A session's status projection changed (lifecycle, tokens, cost). `retiredSessionId` announces a first-turn rekey: drop state held under the old id |
 | `interaction_pending`  | `{ sessionId: string, cwd: string, interaction: PendingInteraction, roomId?: string, roomAuthorId?: string }` | An agent anywhere on this machine has stopped and is waiting on a person. Addressed — see below                                                    |
 | `interaction_resolved` | `{ sessionId: string, interactionId: string, outcome, resolvedAt: string }`                                   | That prompt is over: answered, cancelled, or timed out. Drop the card                                                                              |
+| `approval_pending`     | `{ approval: PendingApproval }`                                                                               | Something needs your permission before it runs. Addressed — see below                                                                              |
+| `notification`         | `{ notification: Notification }`                                                                              | An inbox row appeared, or an existing one changed. Addressed — see below                                                                           |
+| `notification_read`    | `{ ids: string[], all: boolean, readAt: string, unreadCount: number }`                                        | Notifications were marked read somewhere. Addressed — see below                                                                                    |
 | `relay_*`              | varies                                                                                                        | Relay adapter activity, message delivery                                                                                                           |
 | `tunnel_*`             | varies                                                                                                        | Tunnel start/stop, URL changes                                                                                                                     |
 | `ext:{id}:*`           | varies                                                                                                        | Extension-emitted events (namespaced per extension ID)                                                                                             |
 
 These session-list events keep sidebars and dashboards live without polling `GET /api/sessions`.
 
-### `interaction_pending` goes only to whoever may answer it
+### Four events go only to whoever they are about
 
-Every other event on this stream is written to every connection. `interaction_pending` is not.
-It carries what an agent is waiting for — the tool it wants to run, the command or path it
-would run it against, and the session's working directory — so it is delivered only to a
+Most events on this stream are written to every connection. Four are not:
+`interaction_pending`, `approval_pending`, `notification` and `notification_read`. Each carries
+something about what your agents are doing or what is waiting on you, so each goes only to a
 connection that could act on it.
+
+`interaction_pending` carries what an agent is waiting for — the tool it wants to run, the
+command or path it would run it against, and the session's working directory.
+`approval_pending` carries the capability being asked for and a sentence describing what would
+happen. The two `notification` events carry the titles and bodies of your inbox.
 
 In practice that means one thing: **a connection presenting an `X-DorkOS-Agent` header never
 receives it.** The same connection also stops receiving `activity` on a `session_status` frame
@@ -402,7 +410,12 @@ tell "you may not see this" from "there is nothing waiting".
 
 `interaction_resolved` is deliberately NOT filtered. It carries a session id, an interaction id
 and an outcome, and nothing about what was asked; a client that never received the `pending` has
-nothing to close.
+nothing to close. `approval_resolved` and `approval_grant_changed` are unfiltered for the same
+reason: one says a card is over, the other says only that the permission list moved.
+
+`GET /api/notifications` filters the same way the events do, and answers `200` with an empty
+list rather than an error. Marking something read is refused outright instead, because "I have
+seen this" is a claim only a person looking at a screen can make.
 
 ### What you get when you connect
 

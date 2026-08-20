@@ -146,6 +146,11 @@ import {
   StandingPermissionNotRecordedResponseSchema,
   StandingPermissionsResponseSchema,
 } from '@dorkos/shared/approval-schemas';
+import {
+  ListNotificationsQuerySchema,
+  ListNotificationsResponseSchema,
+  MarkNotificationsReadResponseSchema,
+} from '@dorkos/shared/notification-schemas';
 import { registerCapabilitiesInOpenApi } from './capabilities/index.js';
 import { composeCapabilityRegistryForDocs } from './self-description/dorkos-registry.js';
 import {
@@ -4240,6 +4245,65 @@ registry.registerPath({
 // Every capability with an `http` surface auto-registers its path here, after
 // all legacy hand-registered paths above so the collision guard can see them
 // (spec `capability-registry`, task 2.5). Runs once at module load; the
+// --- Notifications (spec `notification-system`) ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/notifications',
+  tags: ['Notifications'],
+  summary: 'List notification history',
+  description:
+    'Newest first, cursor-paged. Filters are lenses, not a search. A caller that is not ' +
+    'entitled to the operator view reads an empty list rather than a refusal, so a response ' +
+    'never says that notifications exist.',
+  request: { query: ListNotificationsQuerySchema },
+  responses: {
+    200: {
+      description: 'One page of history, with the unfiltered unread count',
+      content: { 'application/json': { schema: ListNotificationsResponseSchema } },
+    },
+    400: {
+      description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/notifications/{id}/read',
+  tags: ['Notifications'],
+  summary: 'Mark one notification read',
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'How many rows moved, and the unread count after',
+      content: { 'application/json': { schema: MarkNotificationsReadResponseSchema } },
+    },
+    403: {
+      description: 'Only the operator may move read state',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/notifications/read-all',
+  tags: ['Notifications'],
+  summary: 'Mark every unread notification read',
+  responses: {
+    200: {
+      description: 'How many rows moved, and the unread count after',
+      content: { 'application/json': { schema: MarkNotificationsReadResponseSchema } },
+    },
+    403: {
+      description: 'Only the operator may move read state',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // projection throws if a capability path shadows a hand-registered one.
 registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
 

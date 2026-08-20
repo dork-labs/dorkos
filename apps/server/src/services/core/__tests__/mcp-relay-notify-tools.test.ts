@@ -815,6 +815,8 @@ describe('relay_notify_user', () => {
           getSubjectByPath: vi
             .fn()
             .mockReturnValue({ subject: 'relay.agent.ns.agent-1', agentId: 'agent-1' }),
+          // Read for the inbox row's "who is talking" line (DOR-1383).
+          get: vi.fn().mockReturnValue({ name: 'ana', displayName: 'Ana' }),
         } as unknown as McpToolDeps['meshCore'],
       });
       const identity = resolveSenderIdentity(deps, '/agents/ana');
@@ -893,7 +895,7 @@ describe('relay_notify_user', () => {
   // A bridged binding vacates sessionMap (chats-as-channels spec §7.2), so
   // this tool must resolve through a live bridge row too, and publish under
   // the bridge delivery principal rather than the caller's own agent
-  // identity (DOR-876, spec §7.5) — matching TaskCompletionNotifier's other
+  // identity (DOR-876, spec §7.5) — matching the run-completion path's other
   // proactive path so both honor identical binding/consent rules.
   describe('bridged bindings (§7.5)', () => {
     it('resolves and publishes under relay.bridge.initiate.* when the chat is bridged', async () => {

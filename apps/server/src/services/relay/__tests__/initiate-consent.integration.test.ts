@@ -121,7 +121,7 @@ describe('DOR-277 — canInitiate enforced at the delivery layer', () => {
     await bindingStore.create({ adapterId: 'tg1', agentId: 'agent-1', canInitiate: false });
     const delivered = watchOutbound();
 
-    // The TaskCompletionNotifier resolved consent upstream and publishes as the
+    // The run-completion path resolved consent upstream and publishes as the
     // trusted system principal; the delivery gate exempts it.
     const result = await relay.publish(
       HUMAN,
