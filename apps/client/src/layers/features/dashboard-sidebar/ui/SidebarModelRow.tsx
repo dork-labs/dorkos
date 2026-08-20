@@ -280,7 +280,10 @@ function GenericRowFromModel({
       {...(row.secondary === undefined ? {} : { who: row.primary })}
       title={row.secondary ?? row.primary}
       isActive={isActive}
-      emphasized={row.unread.tier !== 'none'}
+      // Muted drops every signal the row was using to ask for something — the
+      // bold, and the badge below — and keeps the label at full contrast
+      // (DOR-1098).
+      emphasized={row.unread.tier !== 'none' && !row.muted}
       muted={row.muted}
       {...(row.reservesVerbLine ? { reservesVerbLine: true } : {})}
       {...(row.target.kind === 'session'
@@ -301,7 +304,7 @@ function GenericRowFromModel({
       {...(drag ? { drag } : {})}
       {...menu}
       trailing={
-        row.unread.tier === 'directed' && row.unread.count !== undefined ? (
+        row.unread.tier === 'directed' && row.unread.count !== undefined && !row.muted ? (
           <span
             className="bg-brand/15 text-brand rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
             aria-label={`${row.unread.count} unread`}

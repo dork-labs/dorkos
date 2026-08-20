@@ -365,6 +365,20 @@ describe('MobileTabsLayout', () => {
       expect(zonesIn('library')).toEqual(['library']);
     });
 
+    it('calls that destination "All", under the id `library` (D1)', () => {
+      // The word named a heading the panel no longer draws anywhere, so the
+      // label changed and the ID did not — the id is the zone's, the panel's DOM
+      // id and half the browser suite's handles. Same pattern as DOR-1155's
+      // `now`/"Heads up": label only, never the id.
+      renderLayout();
+      const tab = screen.getByTestId('mobile-tab-library');
+      expect(tab).toHaveTextContent('All');
+      expect(tab).not.toHaveTextContent('Library');
+      expect(tab).toHaveAccessibleName('All');
+      // …and the id it is keyed by, and the zone it draws, are untouched.
+      expect(zonesIn('library')).toEqual(['library']);
+    });
+
     it('renders no zone twice, and leaves none of the model undrawn', () => {
       renderLayout();
       const drawn = [...zonesIn('home'), ...zonesIn('library')];

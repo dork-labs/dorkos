@@ -360,7 +360,7 @@ export type {
 export { SidebarRow, SIDEBAR_ROW_INSET } from './sidebar-row';
 export { TOUCH_TARGET_MIN_H } from './touch-target';
 export type { RowDragBindings, SidebarRowMenu, SidebarRowProps } from './sidebar-row';
-export { SectionHeader } from './section-header';
+export { SectionHeader, SIDEBAR_HOVER_REVEAL } from './section-header';
 // The one pinned card at the bottom of a sidebar. The arbiter is here rather
 // than in the panel because its candidates come from three different features
 // and, in the Obsidian embed, from a fourth surface entirely.

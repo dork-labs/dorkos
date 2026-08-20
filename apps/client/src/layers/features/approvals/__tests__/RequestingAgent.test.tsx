@@ -52,7 +52,7 @@ describe('RequestingAgent', () => {
   it('draws the mark at the size the approvals row is built around', () => {
     const { container } = render(<RequestingAgent requestedBy="/repo/ana" hasAgentPath />);
 
-    expect(avatarIn(container)).toHaveClass('size-5');
+    expect(avatarIn(container)).toHaveClass('size-[18px]');
   });
 
   it('draws the square, filled, Bot-badged disc every agent surface draws, once hasAgentPath confirms one', () => {

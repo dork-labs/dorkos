@@ -45,7 +45,11 @@ export interface MobileTabDescriptor {
  */
 export const MOBILE_TABS: readonly MobileTabDescriptor[] = [
   { id: 'home', label: 'Home', icon: LayoutDashboard, badged: true, kind: 'panel' },
-  { id: 'library', label: 'Library', icon: Hash, badged: false, kind: 'panel' },
+  // **"All", not "Library".** The id stays `library` — it is the zone's id, the
+  // panel's DOM id and half the browser suite's handles — but the WORD named a
+  // heading that no longer exists anywhere in the product (D1). "All" is what
+  // the panel actually is: everything, in one place.
+  { id: 'library', label: 'All', icon: Hash, badged: false, kind: 'panel' },
   { id: 'dorkbot', label: 'DorkBot', icon: Sparkles, badged: false, kind: 'action' },
   { id: 'you', label: 'You', icon: UserRound, badged: false, kind: 'panel' },
 ];

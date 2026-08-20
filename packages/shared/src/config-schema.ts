@@ -377,10 +377,23 @@ export type SidebarGroup = z.infer<typeof SidebarGroupSchema>;
  * state the person set. They go when the sections that read them do; nothing new
  * should start using them.
  *
- * Zones are deliberately absent: Heads up, Today and Getting started are computed and
- * never collapse, so there is no state for them to hold (BC-2).
+ * `now`, `today` and `getting-started` are here because every header folds now —
+ * one rule instead of an exception (`specs/sidebar-simplification` D1,
+ * superseding BC-2's "a zone never collapses"). They are the computed zones'
+ * single bodies, so folding one folds the zone; the id is the zone's own id, so
+ * nothing has to translate.
+ *
+ * **Widening this enum is a non-event, and that is by construction.** The
+ * `dropUnknownSectionIds` preprocessor below strips any key a build does not
+ * recognise, so a config written by a newer DorkOS loads on an older one — it
+ * loses a fold flag rather than becoming permanently unwritable. That property
+ * is what makes adding an id here safe with no data migration: nothing already
+ * on disk changes shape, and nothing has to be rewritten.
  */
 export const SidebarSectionIdSchema = z.enum([
+  'now',
+  'today',
+  'getting-started',
   'pins',
   'channels',
   'dms',

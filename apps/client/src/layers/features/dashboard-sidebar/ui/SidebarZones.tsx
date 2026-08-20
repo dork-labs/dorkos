@@ -15,9 +15,10 @@ import {
   useUpdateSidebarPrefs,
 } from '@/layers/entities/config';
 import {
-  librarySectionId,
+  persistedSectionId,
   ZONE_LABEL,
   type SidebarModel,
+  type SidebarSectionModel,
   type SidebarZoneId,
   type SidebarZoneModel,
 } from '../model/build-sidebar-model';
@@ -40,6 +41,18 @@ const ALL_CLEAR_ZONE: SidebarZoneModel = {
   sections: [],
   reason: 'zone:now',
 };
+
+/**
+ * Whether a section is one the fold-all gesture may touch.
+ *
+ * `collapsible` alone is not enough: Getting started has no persisted key, so
+ * folding it would last exactly until the next render.
+ *
+ * @param section - Any section the model emitted.
+ */
+function isFoldable(section: SidebarSectionModel): boolean {
+  return section.collapsible && persistedSectionId(section.id) !== null;
+}
 
 /** Props for {@link SidebarZones}. */
 export interface SidebarZonesProps {
@@ -104,11 +117,14 @@ export function SidebarZones({
   // `model` is still the builder's answer, and the two differ on exactly one
   // zone for exactly as long as the damping lasts.
   const { model: drawn, handlers: slotHandlers } = useGettingStartedReturn(model);
-  // Off the BUILDER's model, like `nowSlotTaken` below. Alt-click fold-all is
-  // about Library, which the damping never touches, and reading it from `drawn`
+  // Off the BUILDER's model, like `nowSlotTaken` below. Reading it from `drawn`
   // would make a whole-panel gesture a function of whether a zone above it
-  // happened to be held back at that instant.
-  const library = model.zones.find((zone) => zone.id === 'library');
+  // happened to be held back by the Getting-started damping at that instant.
+  //
+  // **Every zone, not just Library** (D1). Alt-click used to fold Library's four
+  // sections and leave Heads up and Today standing, because those two could not
+  // fold at all; now that every header does, "fold everything" means everything.
+  const foldable = model.zones.flatMap((zone) => zone.sections).filter(isFoldable);
   // "Is this zone mine to draw?" asked once. `undefined` means the whole
   // panel — the desktop case — so nothing about the existing call site changes.
   const draws = useCallback(
@@ -117,15 +133,14 @@ export function SidebarZones({
   );
 
   const onToggleAll = useCallback(() => {
-    const sections = library?.sections ?? [];
-    if (sections.length === 0) return;
+    if (foldable.length === 0) return;
     // Fold everything unless everything is already folded, in which case the
     // gesture opens them: one key press, and it always does something.
-    const collapsed = sections.some((section) => !section.collapsed);
+    const collapsed = foldable.some((section) => !section.collapsed);
     update((prev) => {
       let next = prev;
-      for (const section of sections) {
-        const stored = librarySectionId(section.id);
+      for (const section of foldable) {
+        const stored = persistedSectionId(section.id);
         if (stored !== null) next = setSectionCollapsed(next, stored, collapsed);
         for (const sub of section.subsections ?? []) {
           if (!sub.id.startsWith('group:')) continue;
@@ -134,7 +149,7 @@ export function SidebarZones({
       }
       return next;
     });
-  }, [library, update]);
+  }, [foldable, update]);
 
   // BC-50. Drawn before the map so the beat sits in Heads up's own slot at the top,
   // and suppressed the moment anything real wants that slot back — a zone the

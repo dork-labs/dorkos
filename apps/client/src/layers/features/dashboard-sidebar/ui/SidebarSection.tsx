@@ -12,7 +12,7 @@
  */
 import { cn } from '@/layers/shared/lib';
 import { useRovingFocus } from '@/layers/shared/model';
-import { SectionHeader, SidebarGroup, SidebarMenu, statusDotClass } from '@/layers/shared/ui';
+import { SectionHeader, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import type { SidebarSectionModel } from '../model/build-sidebar-model';
 import type { SidebarContainer, UngroupedSectionId } from '../model/use-sidebar-dnd';
 import { Droppable, Sortable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
@@ -123,16 +123,7 @@ export function SidebarSection({
 
   const header = (
     <SectionHeader
-      // **One indent level, on the sub-header and nowhere else** (BC-28: "groups
-      // are sub-headers inside Agents, one indent level (14px)"). It is
-      // deliberately NOT applied to the group's rows: `16px` of total left inset
-      // is a locked decision (design-decisions §11) and the browser bar measures
-      // EVERY row control against it, so indenting a group's members would move
-      // half the sidebar's rows off the one number the density rests on. The
-      // sub-header is the thing that is nested; its rows are rows like any other.
-      className={isSubsection ? 'pl-[14px]' : undefined}
       label={section.label ?? ''}
-      {...(chrome.icon === undefined ? {} : { icon: chrome.icon })}
       collapsed={section.collapsed}
       {...(section.collapsible ? { onToggle: chrome.toggleCollapsed, onToggleAll } : {})}
       controlsId={bodyId}
@@ -142,7 +133,14 @@ export function SidebarSection({
       {...(chrome.hasSectionAction ? { hasSectionAction: true } : {})}
       {...(chrome.adornment === undefined ? {} : { adornment: chrome.adornment })}
       {...(chrome.editor === undefined ? {} : { editor: chrome.editor })}
-      trailing={<SectionRollup section={section} />}
+      // Folded and holding unread: the label goes bold, whichever tier it is.
+      // `directed` also spells its count out in the roll-up; `activity` is a
+      // bold label and nothing else (design-decisions §18), so the weight is
+      // where it lives.
+      emphasized={section.collapsed && (section.rollup?.unread.tier ?? 'none') !== 'none'}
+      {...(section.collapsed && section.rollup !== undefined
+        ? { trailing: <SectionRollup section={section} /> }
+        : {})}
     />
   );
 
@@ -153,7 +151,15 @@ export function SidebarSection({
       // menu surface, so it needs a named group of its own to watch (R2's
       // "nothing renders at rest", with `focus-visible` and touch as the two
       // other paths).
-      className="group/section px-0"
+      className={cn(
+        'group/section px-0',
+        // **One indent level, and it moves the whole section** — header AND
+        // rows. `--sidebar-nested-x` lands a member's header at 24, its glyph at
+        // 32 and its label at 58 (D1). It used to be 14px on the sub-header
+        // alone, with the rows left flush: a nested list that reads as nested
+        // only where nobody is looking.
+        isSubsection && 'pl-[var(--sidebar-nested-x)]'
+      )}
       // A stable handle for the page objects. `[data-slot="sidebar-group"]`
       // alone is ambiguous the moment a section nests: a group's wrapper sits
       // INSIDE the Agents wrapper, so a filter for "the group whose header says
@@ -208,44 +214,49 @@ export function SidebarSection({
 }
 
 /**
- * The signal a folded section keeps (BC-31).
+ * What a folded section says about what it is hiding, as one line of text
+ * (BC-31, D1).
  *
- * Renders nothing while the section is open — the rows say it better — and
- * nothing when there is nothing to say, so an idle folded section is a plain
- * label rather than a row of zeroes.
+ * **Words, not marks.** It used to be a dot and a pill — two shapes borrowed
+ * from the row vocabulary, sitting on a header where no row was. Now that every
+ * header in the panel folds, folding is an ordinary act and its receipt is an
+ * ordinary sentence: "12 · 3 unread". A screen reader gets the same string.
+ *
+ * Heads up says "2 need you" instead of a row count, because its rows include
+ * the "N working" report — which needs nobody — and folding it must never be a
+ * quiet way to hide a permission prompt.
+ *
+ * Renders nothing while the section is open: the rows say it better.
  *
  * @param props - The section.
  */
 function SectionRollup({ section }: { section: SidebarSectionModel }) {
   const rollup = section.rollup;
   if (!section.collapsed || rollup === undefined) return null;
-  const badge = rollup.unread.tier === 'directed' ? (rollup.unread.count ?? 0) : 0;
-  if (badge === 0 && rollup.workingCount === 0 && rollup.unread.tier !== 'activity') return null;
-  return (
-    <>
-      {rollup.workingCount > 0 && (
-        <span
-          role="img"
-          aria-label={
-            rollup.workingCount === 1 ? '1 agent working' : `${rollup.workingCount} agents working`
-          }
-          className={cn('size-1.5 shrink-0 rounded-full', statusDotClass('working'))}
-        />
-      )}
-      {badge > 0 && (
-        <span
-          className="bg-brand/15 text-brand rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
-          aria-label={`${badge} unread`}
-        >
-          {badge}
-        </span>
-      )}
-      {badge === 0 && rollup.unread.tier === 'activity' && (
-        // Tier one is a bold label and nothing else (design-decisions §18). A
-        // folded header has no row to embolden, so it says so in words a screen
-        // reader reads and a sighted reader never needs.
-        <span className="sr-only">Unread messages inside</span>
-      )}
-    </>
-  );
+  const parts: string[] = [];
+  const working = rollup.workingCount > 0 ? `${rollup.workingCount} working` : null;
+  if (rollup.needsYouCount !== undefined) {
+    // **Heads up counts what needs answering, and never a bare item count.**
+    // Its rows include the "N working" report, which needs nobody — so a Heads
+    // up holding only that report folded to "1", which reads as one thing
+    // waiting on you when nothing is. With nothing to answer, the fold says
+    // what is actually in there: the work.
+    if (rollup.needsYouCount > 0) parts.push(`${rollup.needsYouCount} need you`);
+    else if (working !== null) parts.push(working);
+  } else {
+    parts.push(`${rollup.count}`);
+  }
+  if (rollup.unread.tier === 'directed' && (rollup.unread.count ?? 0) > 0) {
+    parts.push(`${rollup.unread.count} unread`);
+  } else if (rollup.unread.tier === 'activity') {
+    // Tier one is a bold label and nothing else (design-decisions §18) — which
+    // the header wears through `emphasized`. "new" is here so a reader who
+    // cannot see the weight is told the same thing, and it is deliberately not
+    // the word "unread": beside "3 unread" on the same line, a bare "unread"
+    // read as a truncated count rather than as a different tier.
+    parts.push('new');
+  }
+  // Already spent above when Heads up had nothing to answer.
+  if (working !== null && !parts.includes(working)) parts.push(working);
+  return <>{parts.join(' · ')}</>;
 }

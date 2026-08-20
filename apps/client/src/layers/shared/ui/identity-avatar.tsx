@@ -109,7 +109,11 @@ const identityAvatarVariants = cva(
   {
     variants: {
       size: {
-        xs: 'size-5 text-xs',
+        // 18px, exactly the row's glyph slot (`--sidebar-row-x` + 18). It was
+        // 20, which meant a single-face direct message sat 2px proud of the `#`
+        // above it and 2px proud of the agent face below it — three marks in one
+        // column, each starting somewhere slightly different (D1).
+        xs: 'size-[18px] text-xs',
         sm: 'size-7 text-sm',
         md: 'size-9 text-lg',
         lg: 'size-12 text-2xl',
@@ -119,7 +123,7 @@ const identityAvatarVariants = cva(
        * distinction that does not depend on the badge rendering (spec
        * `composer-identity-components`, direction C). The base radius here is
        * `xs`'s: a fixed radius that reads fine on a 48px `lg` disc clamps to a
-       * full circle on a 20px `xs` one — 12px of corner rounding on a 20px box
+       * full circle on an 18px `xs` one — 12px of corner rounding on an 18px box
        * IS a circle — which would erase the shape distinction exactly where the
        * design calls it dominant (the picker, the sidebar). `compoundVariants`
        * below step the radius up with the diameter instead.
@@ -143,7 +147,7 @@ const identityAvatarVariants = cva(
       },
     },
     // The square radius steps up with the diameter — `rounded-md` (6px) is
-    // sized for `xs` (20px) and stays the `shape` default above; `sm`/`md`/`lg`
+    // sized for `xs` (18px) and stays the `shape` default above; `sm`/`md`/`lg`
     // override it here rather than in `size`, because `size` also drives
     // `circle`, which has no radius to scale (`rounded-full` is already
     // correct at every diameter).

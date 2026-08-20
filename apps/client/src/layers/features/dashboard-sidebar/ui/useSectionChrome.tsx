@@ -18,11 +18,12 @@
  * @module features/dashboard-sidebar/ui/useSectionChrome
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Bot, Hash, ListFilter, MessageSquare, Pin, Plus, type LucideIcon } from 'lucide-react';
+import { ListFilter, Plus } from 'lucide-react';
 import type { SidebarGroup, SmartGroupRules } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
-import { useIsMobile } from '@/layers/shared/model';
+import { useIsMobile, SIDEBAR_SECTION_ACTION_ATTRIBUTE } from '@/layers/shared/model';
 import {
+  SIDEBAR_HOVER_REVEAL,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -52,7 +53,7 @@ import {
 } from '@/layers/entities/config';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { hasUnread } from '@/layers/entities/room';
-import { librarySectionId, type SidebarSectionModel } from '../model/build-sidebar-model';
+import { persistedSectionId, type SidebarSectionModel } from '../model/build-sidebar-model';
 import { useCreateFlowStore, type NewMenuItemId } from '../model/create-flow-store';
 import { useMarkRoomsRead } from '../model/use-mark-rooms-read';
 import { GroupCreateInput } from './GroupCreateInput';
@@ -68,18 +69,8 @@ import { useSidebarChrome } from './SidebarChrome';
 /** Longest group name the schema accepts (`SidebarGroupSchema.name`). */
 const MAX_GROUP_NAME = 40;
 
-/** The identity mark each section wears, and morphs out of on hover (§11). */
-const SECTION_ICON: Record<string, LucideIcon> = {
-  pins: Pin,
-  channels: Hash,
-  dms: MessageSquare,
-  agents: Bot,
-};
-
 /** Everything a section's header and body need beyond the model. */
 export interface SectionChrome {
-  /** Its identity mark, absent for a headerless body. */
-  icon?: LucideIcon;
   /** Its menu, as data, dual-rendered into the "⋮" and the context menu. */
   menuNodes: SidebarMenuNode[];
   /** Whether a `+` sits in the header's top-right corner. */
@@ -143,7 +134,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
       update((prev) => setGroupCollapsed(prev, groupId, !section.collapsed));
       return;
     }
-    const stored = librarySectionId(section.id);
+    const stored = persistedSectionId(section.id);
     if (stored === null) return;
     update((prev) => setSectionCollapsed(prev, stored, !section.collapsed));
   };
@@ -200,18 +191,24 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
    * A section's `+`: the deep link into the one New menu, on the item that
    * matches this section (BC-45).
    *
-   * Hidden at rest, revealed by hover AND by `focus-visible`, and drawn
-   * permanently on touch — hover-only chrome is unreachable from a keyboard and
-   * does not exist at all on a phone (R2).
+   * Hidden at rest, revealed by hover AND by focus anywhere in the section, and
+   * drawn permanently on touch — hover-only chrome is unreachable from a
+   * keyboard and does not exist at all on a phone (R2).
+   *
+   * **It is a roving-focus stop of its own** ({@link SIDEBAR_SECTION_ACTION_ATTRIBUTE}).
+   * Before that it was stamped `tabIndex={-1}` with every other focusable in the
+   * section and reachable by nothing: New channel, New group message, New agent
+   * and New section had a pointer door and no keyboard one. `focus-within` on
+   * the section is what makes it visible once arrowing lands on it.
    *
    * @param item - The New-menu item this section's `+` stands for.
    * @param label - What a screen reader hears.
    */
   const deepLinkAction = (item: NewMenuItemId, label: string): ReactNode => (
     <SidebarGroupAction
+      {...{ [SIDEBAR_SECTION_ACTION_ATTRIBUTE]: '' }}
       className={cn(
-        'transition-opacity',
-        'group-hover/section:opacity-100 focus-visible:opacity-100',
+        SIDEBAR_HOVER_REVEAL,
         // A thumb's target on a 44px header, sitting at its outer edge, with
         // the "⋮" parked inboard of it — the pair the header's own `pr-22`
         // gutter is paying for (P4 AC-4). The primitive's `after:-inset-*`
@@ -219,7 +216,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
         // `h-11 w-11` rather than `size-11`: the primitive already declares
         // `w-5`, and tailwind-merge drops a `size-*` that a later `w-*`
         // conflicts with — leaving a control with a width and no height.
-        isMobile ? 'top-0 right-0 h-11 w-11 opacity-100 after:hidden' : 'right-2 opacity-0'
+        isMobile ? 'top-0 right-0 h-11 w-11 opacity-100 after:hidden' : 'top-1.5 right-2'
       )}
       aria-label={label}
       onClick={() => openNewMenu(item)}
@@ -239,7 +236,6 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     menuNodes: [],
     hasSectionAction: false,
     toggleCollapsed,
-    ...(SECTION_ICON[section.id] === undefined ? {} : { icon: SECTION_ICON[section.id] }),
   };
 
   if (section.id === 'pins') {

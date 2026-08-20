@@ -70,7 +70,7 @@ describe('IdentityAvatar', () => {
     // Pinned as literal class names, because these ARE the contract: three
     // components size themselves off this table, and a silent change to any
     // row moves marks that are meant to line up in the same row.
-    const diameters = { xs: 'size-5', sm: 'size-7', md: 'size-9', lg: 'size-12' } as const;
+    const diameters = { xs: 'size-[18px]', sm: 'size-7', md: 'size-9', lg: 'size-12' } as const;
 
     for (const [size, diameter] of Object.entries(diameters)) {
       const { container } = render(

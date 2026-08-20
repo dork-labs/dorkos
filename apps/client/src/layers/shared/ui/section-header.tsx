@@ -6,10 +6,16 @@
  * two hover treatments, two menu wirings and two ideas about where the "…"
  * sits. A group IS a section, so it gets the section header.
  *
+ * **And it is now the only header in the panel.** Heads up, Today, Getting
+ * started, Pins, Channels, Direct messages, Agents and every section the
+ * operator makes are all this component: 11px, medium, `--sidebar-header-x`,
+ * no icon. The zone `<h2>` above it is gone (`specs/sidebar-simplification`
+ * D1) — three levels in a 272px panel was one more than anybody could read.
+ *
  * @module shared/ui/section-header
  */
 import type { ReactNode } from 'react';
-import { ChevronDown, ChevronRight, type LucideIcon } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 import { SIDEBAR_SECTION_TOGGLE_ATTRIBUTE } from '@/layers/shared/model/use-roving-focus';
@@ -18,13 +24,23 @@ import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from '.
 /**
  * How tall a section header is, by pointer.
  *
- * 32px under a mouse. 44px under a thumb, matching the rows underneath it: a
+ * 28px under a mouse — one step down from the 32px it used to be, because the
+ * header lost its icon and gained a smaller type size, and a header taller than
+ * the rows under it reads as a gap. 44px under a thumb, matching those rows: a
  * header is a control — it folds the section, and it is the door to rename,
- * sort, mute and delete-group — so it is a touch target like any other, and a
- * list where the headers are shorter than the rows reads as a mistake before
- * anyone measures it (P4 AC-4).
+ * sort, mute and delete — so it is a touch target like any other (P4 AC-4).
  */
-const SECTION_HEADER_HEIGHT = { fine: 'h-8', coarse: 'h-11' } as const;
+const SECTION_HEADER_HEIGHT = { fine: 'h-7', coarse: 'h-11' } as const;
+
+/**
+ * The header's left inset, derived from `--sidebar-header-x`.
+ *
+ * The token says where the label starts measured from the PANEL's left edge
+ * (12px); the panel already paid 8 of it with its own `px-2`, so the header pays
+ * the remainder. Same arithmetic, same `0.5rem` literal and same browser
+ * assertion as `SIDEBAR_ROW_INSET` — see its docblock.
+ */
+const SECTION_HEADER_INSET = 'pl-[calc(var(--sidebar-header-x)_-_0.5rem)]';
 
 /**
  * The header's right padding, holding its satellites off the label.
@@ -38,6 +54,17 @@ const SECTION_HEADER_GUTTER = {
   coarse: { one: SIDEBAR_MENU_GUTTER.coarse, two: 'pr-22' },
 } as const;
 
+/**
+ * Chrome that is drawn only when somebody is reaching for it.
+ *
+ * Opacity only, 120 ms, and nothing at rest — the calm-panel rule (R2). Under a
+ * reduced-motion preference the transition is never applied, so the reveal is
+ * instant rather than a shorter animation. Touch has no hover and overrides this
+ * to `opacity-100`; `focus-within` is what makes it reachable from a keyboard.
+ */
+export const SIDEBAR_HOVER_REVEAL =
+  'opacity-0 group-hover/section:opacity-100 group-focus-within/section:opacity-100 motion-safe:transition-opacity motion-safe:duration-[120ms]';
+
 /** Props for {@link SectionHeader}. */
 export interface SectionHeaderProps {
   /**
@@ -47,15 +74,6 @@ export interface SectionHeaderProps {
    */
   label: string;
   /**
-   * The section's identity icon. On a collapsible header it MORPHS into the
-   * collapse chevron on hover and on `focus-visible`: at rest the header says
-   * what the section is, and the moment you reach for it, it says what pressing
-   * it will do. One slot, two jobs, nothing extra drawn at rest
-   * (design-decisions §11). On a header that cannot collapse there is nothing
-   * to morph into, so it simply stays put.
-   */
-  icon?: LucideIcon;
-  /**
    * Current collapse state. Omit — along with {@link onToggle} — for a section
    * that cannot collapse; the header then renders as a plain label carrying the
    * same menus.
@@ -63,7 +81,7 @@ export interface SectionHeaderProps {
   collapsed?: boolean;
   /** Flip the collapse state. Receives `{ all: true }` for an Alt/Option-click. */
   onToggle?: (options: { all: boolean }) => void;
-  /** Collapse or expand EVERY section — Alt/Option-click on any header (BC-30). */
+  /** Collapse or expand EVERY header in the panel — Alt/Option-click on any one (BC-30). */
   onToggleAll?: () => void;
   /** The section's menu, as data. Empty means no right-click menu and no "⋮". */
   nodes?: SidebarMenuNode[];
@@ -84,8 +102,12 @@ export interface SectionHeaderProps {
    */
   emphasized?: boolean;
   /**
-   * Rendered at the right of the header — a collapsed section's rollup, an
-   * activity dot. Sits left of the "⋮" gutter, never under it.
+   * What a folded header says about what it is hiding — "12 · 3 unread".
+   *
+   * Sits at the right of the label, inboard of the chevron, and is the whole of
+   * BC-31 now that headers fold everywhere: folding Heads up must not be a way
+   * to make a permission prompt disappear quietly, so its roll-up carries the
+   * needs-you count.
    */
   trailing?: ReactNode;
   /** Rendered immediately after the label — a smart group's rule glyph. */
@@ -119,24 +141,26 @@ export interface SectionHeaderProps {
  * **The whole row is the toggle.** Destinations in this sidebar are always leaf
  * rows, so pressing a header can only ever mean one thing and there is no
  * select-versus-expand ambiguity to resolve with a separate chevron hit target
- * (BC-29). `Alt`/`Option`-click folds or unfolds every section at once (BC-30).
+ * (BC-29). `Alt`/`Option`-click folds or unfolds every header in the panel at
+ * once (BC-30, widened from Library to the whole panel in D1).
  *
- * The chevron is decorative; `aria-expanded` on the header button carries the
- * collapse state and `aria-controls` names what it opens. The "⋮" is a real
- * focusable button that `focus-visible` reveals, so a keyboard reaches every
- * section action without a pointer.
+ * **Nothing is drawn at rest but the label.** The icon that used to sit before
+ * it is gone — the rows underneath carry the glyph, and a `#` above a list of
+ * `#` rows said the same thing twice. The chevron replaces it at the RIGHT, and
+ * only while the header is hovered or holds focus; `aria-expanded` on the button
+ * carries the collapse state for anyone who cannot see it, and `aria-controls`
+ * names what it opens.
  *
- * **On touch that "⋮" is drawn at rest, and a long press opens the same menu as
- * a sheet.** Neither used to be true here: rows passed `alwaysShowActions` and
- * headers did not, so on a phone the header's kebab sat at `opacity-0` and
- * rename, sort, mute and delete-group had no door at all (DOR-1083). Both
- * behaviours now come from {@link SidebarMenuSurface}, which reads the device
- * once for every surface that draws a menu — the fix is that the question is no
- * longer a prop a caller can forget to pass.
+ * **On touch the "⋮" and the `+` are drawn at rest, and a long press opens the
+ * same menu as a sheet.** Neither used to be true here: rows passed
+ * `alwaysShowActions` and headers did not, so on a phone the header's kebab sat
+ * at `opacity-0` and rename, sort, mute and delete-group had no door at all
+ * (DOR-1083). Both behaviours now come from {@link SidebarMenuSurface}, which
+ * reads the device once for every surface that draws a menu — the fix is that
+ * the question is no longer a prop a caller can forget to pass.
  */
 export function SectionHeader({
   label,
-  icon: Icon,
   collapsed,
   onToggle,
   onToggleAll,
@@ -153,14 +177,60 @@ export function SectionHeader({
   className,
 }: SectionHeaderProps) {
   const heading = level === 4 ? 'h4' : 'h3';
-  const Chevron = collapsed ? ChevronRight : ChevronDown;
   const isMobile = useIsMobile();
   const pointer = isMobile ? 'coarse' : 'fine';
   const height = SECTION_HEADER_HEIGHT[pointer];
+  // One line, whether it comes from the label button or the plain span: 11px
+  // medium at `--sidebar-header-x`, and nothing else. Spelled once so a section
+  // that cannot fold cannot end up looking like a different kind of thing.
+  const line = cn(
+    'text-sidebar-foreground/70 flex min-w-0 flex-1 items-center gap-1.5 text-[11px] font-medium',
+    SECTION_HEADER_INSET,
+    height,
+    emphasized && 'text-sidebar-foreground font-semibold'
+  );
+  // The right cluster inside the label line: what the fold is hiding, then the
+  // chevron that unhides it. `ml-auto` on the group rather than on either piece,
+  // so a header with no roll-up still parks its chevron at the right edge.
+  const rightCluster = (
+    // **Capped at half the line, and the cap is the priority rule.** `flex-none`
+    // here put every pixel of shortfall on the label, so a 272px panel folded
+    // "Channels" into "Chann…" to make room for "12 · 3 unread · 1 working". The
+    // section's NAME is what a person navigates by; the roll-up is what they
+    // read once they are looking, and it truncates from its own half. Same
+    // budget-in-CSS idiom the row uses for `who › title` (`row-grammar.ts`).
+    <span className="ml-auto flex max-w-[50%] min-w-0 items-center gap-1.5 pl-1.5">
+      {trailing !== undefined && (
+        // `/70` rather than `/50`: this is 11px text and owes 4.5:1 like every
+        // other label in the panel, and `/50` measures 3.2:1 on the light
+        // theme's zone tint. It reads as secondary because it is not `medium`
+        // and the label is.
+        <span className="text-sidebar-foreground/70 truncate text-[11px] font-normal tabular-nums">
+          {trailing}
+        </span>
+      )}
+      {onToggle !== undefined && (
+        <ChevronDown
+          aria-hidden
+          className={cn(
+            'size-3.5 shrink-0',
+            SIDEBAR_HOVER_REVEAL,
+            // The fold state, as a rotation rather than as a second icon: one
+            // element, so the label beside it never shifts by a pixel when the
+            // section opens.
+            'motion-safe:transition-transform motion-safe:duration-[120ms]',
+            collapsed && '-rotate-90'
+          )}
+        />
+      )}
+    </span>
+  );
 
   const labelLine =
     editor !== undefined ? (
-      <span className={cn('flex min-w-0 flex-1 items-center px-2', height)}>{editor}</span>
+      <span className={cn('flex min-w-0 flex-1 items-center', SECTION_HEADER_INSET, height)}>
+        {editor}
+      </span>
     ) : onToggle ? (
       <button
         type="button"
@@ -180,45 +250,19 @@ export function SectionHeader({
         aria-controls={collapsed ? undefined : controlsId}
         {...{ [SIDEBAR_SECTION_TOGGLE_ATTRIBUTE]: '' }}
         className={cn(
-          'text-sidebar-foreground/70 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring',
-          'group/section-toggle flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-xs font-medium outline-hidden focus-visible:ring-2',
-          height,
-          emphasized && 'text-sidebar-foreground font-semibold'
+          line,
+          'hover:text-sidebar-foreground focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2'
         )}
       >
-        {Icon ? (
-          // The morph. Both marks occupy the same 14px box and cross-fade, so
-          // the label never shifts by a pixel when the pointer arrives.
-          <span className="relative flex size-3.5 shrink-0 items-center justify-center">
-            <Icon
-              aria-hidden
-              className="absolute size-3.5 transition-opacity group-hover/section-toggle:opacity-0 group-focus-visible/section-toggle:opacity-0"
-            />
-            <Chevron
-              aria-hidden
-              className="absolute size-3.5 opacity-0 transition-opacity group-hover/section-toggle:opacity-100 group-focus-visible/section-toggle:opacity-100"
-            />
-          </span>
-        ) : (
-          <Chevron aria-hidden className="size-3.5 shrink-0" />
-        )}
         <span className="truncate">{label}</span>
         {adornment}
+        {rightCluster}
       </button>
     ) : (
-      <span
-        className={cn(
-          'text-sidebar-foreground/70 flex min-w-0 flex-1 items-center gap-1.5 px-2 text-xs font-medium',
-          height,
-          emphasized && 'text-sidebar-foreground font-semibold'
-        )}
-      >
-        {/* The icon draws here too. A section that cannot collapse has no
-            chevron to morph into, so the mark simply stays put — but it still
-            has to be DRAWN, or `Pinned` asks for a pin and gets a bare word. */}
-        {Icon && <Icon aria-hidden className="size-3.5 shrink-0" />}
+      <span className={line}>
         <span className="truncate">{label}</span>
         {adornment}
+        {rightCluster}
       </span>
     );
 
@@ -238,9 +282,6 @@ export function SectionHeader({
       )}
     >
       {labelLine}
-      {trailing !== undefined && (
-        <span className="flex flex-none items-center gap-1.5 pr-1">{trailing}</span>
-      )}
     </SidebarMenuSurface>
   );
 }

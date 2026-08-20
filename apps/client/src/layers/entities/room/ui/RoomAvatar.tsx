@@ -41,14 +41,24 @@ const roomAvatarIconVariants = cva('text-muted-foreground shrink-0', {
 });
 
 /**
- * How many faces a group conversation's mark draws before it stops.
+ * How many faces a group conversation's mark draws, and how far they overlap,
+ * per size.
  *
- * Fewer than {@link MemberList}'s five, and deliberately: this mark stands in
- * one 20px slot at the head of a sidebar row, where three overlapping discs are
- * already as much as reads. The count is not shown, because the room's title
- * beside it already names everyone in it.
+ * **`xs` is the sidebar, and the sidebar's slot is 18px wide.** Three faces at
+ * `-space-x-1.5` measure 48px there: they used to run 7px UNDER the room's own
+ * title, and two measured 34px, which spilled past the gutter every other row's
+ * glyph starts on. Two faces at −14px measure 18 + 18 − 14 = 22px — the room
+ * between the slot and the label column, exactly (design-decisions §1).
+ *
+ * `sm` and `md` are drawn in roomier places (the masthead, the picker), so they
+ * keep three and the roster's own overlap, which is what makes a group's mark
+ * and the room header's roster read as one idea.
  */
-const MAX_STACKED_FACES = 3;
+const FACE_STACK = {
+  xs: { maxFaces: 2, overlap: '-space-x-3.5' },
+  sm: { maxFaces: 3, overlap: '-space-x-1.5' },
+  md: { maxFaces: 3, overlap: '-space-x-1.5' },
+} as const satisfies Record<RoomAvatarSize, { maxFaces: number; overlap: string }>;
 
 export interface RoomAvatarProps {
   /** The room to draw a mark for. */
@@ -77,6 +87,16 @@ export interface RoomAvatarProps {
   visuals?: readonly AgentVisual[] | null;
   /** How large to draw the mark. Defaults to `xs`, the sidebar's size. */
   size?: RoomAvatarSize;
+  /**
+   * How many faces a group conversation's stack draws before it stops.
+   * Defaults to {@link FACE_STACK}'s entry for {@link RoomAvatarProps.size}.
+   */
+  maxFaces?: number;
+  /**
+   * How far the faces in that stack overlap, as a Tailwind `-space-x-*` class.
+   * Defaults to {@link FACE_STACK}'s entry for {@link RoomAvatarProps.size}.
+   */
+  overlap?: string;
   className?: string;
 }
 
@@ -104,6 +124,8 @@ export function RoomAvatar({
   participants,
   visuals,
   size = DEFAULT_SIZE,
+  maxFaces = FACE_STACK[size].maxFaces,
+  overlap = FACE_STACK[size].overlap,
   className,
 }: RoomAvatarProps) {
   // Everything that is not a direct message is a place, and a place is drawn
@@ -121,7 +143,7 @@ export function RoomAvatar({
     );
   }
 
-  const faces = (visuals ?? []).slice(0, MAX_STACKED_FACES);
+  const faces = (visuals ?? []).slice(0, maxFaces);
 
   if (faces.length === 1) {
     return (
@@ -142,13 +164,11 @@ export function RoomAvatar({
   }
 
   if (faces.length > 1) {
-    // `-space-x-1.5` is the same overlap MemberList draws its roster with, so a
-    // group's mark and the room header's roster read as one idea.
     return (
       <span
         aria-hidden
         data-slot="room-avatar"
-        className={cn('flex shrink-0 items-center -space-x-1.5', className)}
+        className={cn('flex shrink-0 items-center', overlap, className)}
       >
         {faces.map((face, i) => (
           <IdentityAvatar

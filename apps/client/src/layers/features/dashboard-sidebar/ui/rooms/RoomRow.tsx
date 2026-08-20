@@ -356,6 +356,12 @@ export function RoomRow({
   const { update: updateSidebarPrefs } = useUpdateSidebarPrefs();
   const roomRef: SidebarItemRef = { kind: 'room', roomId: room.id };
   const isMuted = sidebarPrefs.muted.some((m) => sameSidebarItem(m, roomRef));
+  // **What mute removes is what was asking** (DOR-1098). A muted row keeps its
+  // name at full contrast — that is the part still worth reading — and loses the
+  // bold, the unread badge and the working dot. It used to keep all three and
+  // dim the lot, which made the name hard to read and left the signals shouting
+  // through the dimming.
+  const quiet = isMuted || !isMember;
   const currentGroupId =
     sidebarPrefs.groups.find((g) => g.items.some((m) => sameSidebarItem(m, roomRef)))?.id ?? null;
   const moveTargetGroups = sidebarPrefs.groups
@@ -395,10 +401,8 @@ export function RoomRow({
         title={<RoomTitle room={room} />}
         titleText={title}
         isActive={isActive}
-        emphasized={unread}
-        // Dimmed for either reason: the reader silenced it on purpose, or
-        // they left it and it is no longer theirs to post in.
-        muted={isMuted || !isMember}
+        emphasized={unread && !quiet}
+        muted={quiet}
         onSelect={onSelect}
         buttonRef={rowRef}
         menuNodes={buildRoomRowMenuNodes(menuModel)}
@@ -447,7 +451,7 @@ export function RoomRow({
             {isMuted && (
               <BellOff className="text-sidebar-foreground/50 size-3" aria-label="Muted" />
             )}
-            {working > 0 && (
+            {working > 0 && !quiet && (
               <span
                 // `img` because the dot has no text of its own: a bare
                 // `aria-label` on a generic element is not reliably read out,
@@ -473,7 +477,7 @@ export function RoomRow({
                 aria-label={working === 1 ? '1 agent working' : `${working} agents working`}
               />
             )}
-            {unread && (
+            {unread && !quiet && (
               <span
                 className="bg-brand/15 text-brand rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
                 // The room is NOT named again here. This label joins the row's own

@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { Hash, Pencil } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { SectionHeader } from '../section-header';
 import type { SidebarMenuNode } from '../sidebar-menu-node';
 
@@ -117,21 +117,57 @@ describe('SectionHeader', () => {
     expect(onToggle).toHaveBeenCalledWith({ all: false });
   });
 
-  it('morphs the section’s icon into the collapse chevron on hover and on focus', () => {
-    // One slot, two jobs: at rest the header says what the section IS; the
-    // moment you reach for it, it says what pressing it will DO. Both marks sit
-    // in the same box so nothing shifts (design-decisions §11). jsdom computes
-    // no hover, so the declaration is the assertion.
+  it('draws nothing but its label at rest, and reveals the chevron on hover or focus (D1)', () => {
+    // The header lost its identity icon: the rows underneath carry the glyph,
+    // and a `#` above a list of `#` rows said the same thing twice. What is left
+    // is one mark, the fold chevron, hidden until somebody reaches for the
+    // header. jsdom computes no hover, so the declaration is the assertion —
+    // the browser gutter spec is what proves the reveal really fires.
     const { container } = render(
-      <SectionHeader label="Channels" icon={Hash} collapsed={false} onToggle={vi.fn()} />
+      <SectionHeader label="Channels" collapsed={false} onToggle={vi.fn()} />
     );
     const marks = container.querySelectorAll('svg');
-    expect(marks).toHaveLength(2);
-    expect(marks[0]?.getAttribute('class')).toContain('group-hover/section-toggle:opacity-0');
-    expect(marks[1]?.getAttribute('class')).toContain('group-hover/section-toggle:opacity-100');
-    expect(marks[1]?.getAttribute('class')).toContain(
-      'group-focus-visible/section-toggle:opacity-100'
+    expect(marks).toHaveLength(1);
+    const chevron = marks[0]?.getAttribute('class') ?? '';
+    expect(chevron).toContain('opacity-0');
+    expect(chevron).toContain('group-hover/section:opacity-100');
+    expect(chevron).toContain('group-focus-within/section:opacity-100');
+    // Folded is a rotation of the same element, not a second icon: swapping
+    // icons shifts the label by a pixel every time a section opens.
+    expect(chevron).not.toContain('-rotate-90');
+  });
+
+  it('rotates that one chevron rather than swapping it when the section folds', () => {
+    const { container } = render(<SectionHeader label="Channels" collapsed onToggle={vi.fn()} />);
+    expect(container.querySelectorAll('svg')).toHaveLength(1);
+    expect(container.querySelector('svg')?.getAttribute('class')).toContain('-rotate-90');
+  });
+
+  it('draws no chevron at all on a header that cannot fold', () => {
+    // A mark that says "press me to fold" on something that does not fold is
+    // the kind of lie D7 spent a wave removing.
+    const { container } = render(<SectionHeader label="Pinned" />);
+    expect(container.querySelectorAll('svg')).toHaveLength(0);
+  });
+
+  it('starts its label at --sidebar-header-x, and says so as one class (D1)', () => {
+    // The panel pays 8px and the header pays the rest. Written as a `calc` off
+    // the token so retuning the token moves headers, rows, nested rows and the
+    // glyph overlay together; the browser spec measures the sum.
+    render(<SectionHeader label="Channels" collapsed={false} onToggle={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Channels' }).className).toContain(
+      'pl-[calc(var(--sidebar-header-x)_-_0.5rem)]'
     );
+  });
+
+  it('writes its label at 11px, the one size every header in the panel uses', () => {
+    render(<SectionHeader label="Channels" collapsed={false} onToggle={vi.fn()} />);
+    const toggle = screen.getByRole('button', { name: 'Channels' });
+    expect(toggle.className).toContain('text-[11px]');
+    expect(toggle.className).toContain('font-medium');
+    // 12px was the section header's old size and the zone label's was 11 — two
+    // levels, two sizes. There is one level now.
+    expect(toggle.className).not.toContain('text-xs');
   });
 
   it('renders a section label in sentence case, with no ALL-CAPS transform', () => {
@@ -239,10 +275,12 @@ describe('SectionHeader', () => {
       expect(screen.getByRole('button', { name: 'Channels' }).className).toContain('h-11');
     });
 
-    it('keeps 32px under a pointer, which is the density the panel is cut for', () => {
+    it('keeps 28px under a pointer, which is the density the panel is cut for', () => {
+      // Down from 32 with the icon: a header taller than the rows under it
+      // reads as a gap, and the rows are 28 (D1).
       render(<SectionHeader label="Channels" collapsed={false} onToggle={vi.fn()} nodes={menu} />);
-      expect(screen.getByRole('heading', { level: 3 }).className).toContain('h-8');
-      expect(screen.getByRole('button', { name: 'Channels' }).className).toContain('h-8');
+      expect(screen.getByRole('heading', { level: 3 }).className).toContain('h-7');
+      expect(screen.getByRole('button', { name: 'Channels' }).className).toContain('h-7');
     });
 
     it('widens its gutter to match, so the "⋮" never lands on the label', () => {

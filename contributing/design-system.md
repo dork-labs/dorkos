@@ -393,19 +393,35 @@ Dimming is the wrong mechanism and it is not a tuning problem. `SidebarRow` dims
 
 ### Zones and Sections
 
-A nav panel has two levels of grouping, and they behave differently:
+A nav panel has **two levels and one header style** (`specs/sidebar-simplification` D1, 2026-08-19). It used to have three — a zone label, a section header and rows, each starting on its own x — and a 272px panel cannot teach three.
 
-- **Zone** — a landmark heading (Heads up, Getting started, Today, Library). It orients; it is **not** a collapse control. The first zone's label became **Heads up** on 2026-08-11 (DOR-1155, `specs/sidebar-now-today-library/02-specification.md` §B) — label only; its id is still `now` in the model, the DOM and config.
-- **Section** — a collapsible group inside a zone (Channels, Agents, DMs). Only sections collapse.
+- **Zone** — a landmark with no chrome of its own (Heads up, Getting started, Today, Library). It draws no heading; it groups, tints and names itself for assistive tech through `aria-label`. `ZONE_LABEL.library` is an accessible name that is never painted. The first zone's label became **Heads up** on 2026-08-11 (DOR-1155) — label only; its id is still `now` in the model, the DOM and config.
+- **Section** — a header and its rows. Heads up, Today, Getting started, Pins, Channels, Direct messages, Agents and every section a person makes are all the same header, and all but Getting started fold.
 
-Never nest accordions, and keep nav trees to **one indent level** — depth past two stops helping wayfinding. Section labels are sentence case, 12px medium, muted; ALL-CAPS with letterspacing reads dated at small sizes.
+**Every header folds.** Click anywhere on it, or press Enter/Space; `Alt`/`Option`-click folds or unfolds every header in the panel. A folded header keeps its roll-up as trailing text — "12 · 3 unread · 1 working" — so folding never loses signal, and Heads up's roll-up counts what NEEDS answering rather than its rows, so folding it can never quietly hide a permission prompt.
+
+Never nest accordions, and keep nav trees to **one indent level** — depth past two stops helping wayfinding. Section labels are sentence case, **11px medium**, `text-sidebar-foreground/70`, with **no icon**: the rows underneath carry the glyph, and a `#` above a list of `#` rows says the same thing twice. ALL-CAPS with letterspacing reads dated at small sizes.
+
+#### The three geometry tokens
+
+Every horizontal inset in the sidebar comes off three custom properties, declared on `:root` in `apps/client/src/index.css`. They are measured **from the panel's left edge**, not from the element that pays them — the panel already pays 8px (`px-2` on `SidebarContent`), so each consumer applies `calc(var(--token) - 0.5rem)`.
+
+| Token                | Value | What it fixes                                                                    |
+| -------------------- | ----- | -------------------------------------------------------------------------------- |
+| `--sidebar-header-x` | 12px  | Where every section header's label starts.                                       |
+| `--sidebar-row-x`    | 20px  | Where a row's 18px glyph slot starts. The label follows at 20 + 18 + 8 = **46**. |
+| `--sidebar-nested-x` | 12px  | What a section's members add to both: header 24, glyph 32, label **58**.         |
+
+Never write a sidebar inset as a literal. `apps/e2e/tests/dashboard-sidebar/sidebar-row-gutter.spec.ts` reads these tokens out of the live document and measures the computed padding against them, so retuning a token moves headers, rows, nested rows and the glyph-action overlay together — and changing one half alone goes red with the number it actually got.
+
+**Muted is fewer signals, not less contrast** (DOR-1098). A muted row keeps its label at full contrast and loses the bold, the unread badge and the working dot. The `opacity-60` it used to wear took the label to roughly 3:1 — under the 4.5:1 every label owes — so silencing a conversation made the one thing still worth reading hard to read.
 
 #### Accessibility contract
 
 This is the whole contract a zoned nav panel must meet, and it is what shipped: `SidebarZone.tsx`, `SidebarSection.tsx` and `use-live-region-text.ts` implement it, and `DashboardSidebar.tsx` composes them. Treat it as the spec those components are checked against, not a future one.
 
-- **Landmarks.** The panel root is `<nav aria-label="Sidebar">`. Each zone is `<section aria-labelledby="sidebar-zone-{id}">` with a visible `<h2>` label. **Collapsible** sections are `<h3>` containing a `<button aria-expanded aria-controls>`; group sub-headers are `<h4>`. A headerless body — the single section in Heads up and in Today — has no header element at all and therefore no button. Zone labels are headings, never buttons.
-- **Roving tabindex, per section.** Each section exposes exactly one tab stop — the active row if the section holds it, otherwise the section's first stop, which is its header where it has one and its first row where it does not. `ArrowDown`/`ArrowUp` move within the section, `Home`/`End` jump to the **first and last row** (never to the header — that is one `ArrowUp` off the top, and it is where you go to fold a section rather than to start reading it), and `ArrowLeft`/`ArrowRight` on a section header collapse or expand it. `Tab` moves between sections and zones, so a 60-agent Library is four tab stops rather than sixty.
+- **Landmarks.** The panel root is `<nav aria-label="Sidebar">`. Each zone is `<section aria-label="{label}">` with **no visible heading** — the section header inside it is what a person reads. Sections are `<h3>` containing a `<button aria-expanded aria-controls>`; group sub-headers are `<h4>`.
+- **Roving tabindex, per section.** Each section exposes exactly one tab stop — the active row if the section holds it, otherwise the section's first stop, which is its header. `ArrowDown`/`ArrowUp` move within the section (header → its `+` → the rows), `Home`/`End` jump to the **first and last row** (never to the header or the `+` — the header is one `ArrowUp` off the top, and it is where you go to fold a section rather than to start reading it), and `ArrowLeft`/`ArrowRight` on a section header collapse or expand it. `Tab` moves between sections and zones, so a 60-agent Library is four tab stops rather than sixty. A **mounted inline editor keeps its own tab stop**: a rename field is up because somebody is typing in it, and stamping it `-1` with everything else is what made it impossible to Tab out of and back into.
 - **One live region, counts only.** A single visually-hidden `aria-live="polite" aria-atomic="true"` element inside the Heads up zone announces how many things need you ("2 agents need you"), debounced 1s. Verbs, activity and unread changes are never announced — a fleet of agents would otherwise turn a screen reader into a siren.
 - **Only "working" animates.** The status dot uses `STATUS_DOT_PULSE` (`shared/ui/status-dot.ts`), which is `motion-safe:animate-pulse`; its ping halo carries `motion-reduce:hidden`. Scroll-to-active uses `behavior: 'auto'` under `prefers-reduced-motion`, and the celebratory moments (the welcome-back glow, the all-clear beat) do not render at all under it.
 - **Hover-revealed chrome always has two other paths.** `focus-visible` reveals it on the keyboard, and on touch it is either always visible or reachable by long-press (see [Hover Pattern Mobile Alternatives](#hover-pattern-mobile-alternatives)). Nothing may be reachable by hover alone.

@@ -1,10 +1,12 @@
 /**
  * One zone — Heads up, Getting started, Today or Library.
  *
- * A zone is a **landmark, never an accordion** (BC-2): its label is a heading,
- * it has no collapse state in the model and no toggle in the DOM, and a zone
- * with nothing to say is absent from `model.zones` entirely rather than
- * rendering an empty box (BC-1).
+ * A zone is a **landmark with no chrome of its own** (D1, superseding BC-2's
+ * "never an accordion"): it draws no heading, holds no collapse state and has no
+ * toggle in the DOM — its name reaches assistive tech through `aria-label`, and
+ * what an operator SEES is the section header inside it, which is the same
+ * header every section in the panel wears. A zone with nothing to say is absent
+ * from `model.zones` entirely rather than rendering an empty box (BC-1).
  *
  * @module features/dashboard-sidebar/ui/SidebarZone
  */
@@ -75,11 +77,16 @@ export function SidebarZone({
   lead,
   silenceLiveRegion = false,
 }: SidebarZoneProps) {
-  const headingId = `sidebar-zone-${zone.id}`;
   const liveRegionText = useLiveRegionText(zone.liveRegionText);
   return (
     <section
-      aria-labelledby={headingId}
+      // **Named, not headed.** The visible `<h2>` is gone (D1): three levels in
+      // a 272px panel put zone labels, section headers and rows on three
+      // different x, and "Library" named nothing an operator recognised. The
+      // region keeps its name for assistive tech — `ZONE_LABEL.library` is now
+      // an accessible name that is never painted, the same pattern DOR-1155
+      // used for `now` (label only, never the id).
+      aria-label={zone.label}
       data-sidebar-zone={zone.id}
       className={cn(
         // **No horizontal padding.** The sidebar pays its 16px left inset in
@@ -93,19 +100,6 @@ export function SidebarZone({
         zone.id === 'now' || zone.id === 'getting-started' ? 'bg-sidebar-accent/40' : undefined
       )}
     >
-      {/* **`/70`, not `/50`, and the number is a measurement.** On the zone
-          tint in the light theme a 50% label composites to #7d7d7d on #e3e3e3 —
-          3.2:1, under the 4.5:1 the design system requires of every label
-          (spec R1, design-system §Accessibility). 70% lands at #545454, which
-          clears it, and the dark theme was never the tight side. Caught by the
-          showcase's axe gate once this component was drawn there; the previous
-          gate measured a hand-rolled heading instead of this one. */}
-      <h2
-        id={headingId}
-        className="text-sidebar-foreground/70 px-2 pt-1 pb-0.5 text-[11px] font-medium"
-      >
-        {zone.label}
-      </h2>
       {/* Count changes only, held for a second before it is published: a verb or
           an unread change reaching a screen reader from here would turn a fleet
           of thirty agents into a siren (BC-11, R2). */}

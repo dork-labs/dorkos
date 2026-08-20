@@ -16,7 +16,9 @@ import { EmbedSessionListShowcase } from './EmbedSessionListShowcase';
 import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
 import { configKeys } from '@/layers/entities/config';
 import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
+import { RoomAvatar } from '@/layers/entities/room';
 import {
+  SectionHeader,
   SidebarGroup,
   SidebarMenu,
   SidebarMenuItem,
@@ -152,6 +154,83 @@ function SidebarRowShowcase() {
         </RowFrame>
       </ShowcaseDemo>
 
+      <ShowcaseLabel>
+        The two levels together — header at --sidebar-header-x (12), glyph at --sidebar-row-x (20),
+        label at 46; a section&rsquo;s members one --sidebar-nested-x (12) deeper
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        {/* The whole geometry, in one frame a browser can measure. `px-2` is the
+            panel's own padding, exactly as `DashboardSidebar` pays it, so the
+            numbers here are the numbers the product has. */}
+        <div
+          data-slot="sidebar-geometry-frame"
+          className="bg-sidebar group/section rounded-md px-2 py-1"
+          style={{ width: COCKPIT_SIDEBAR_WIDTH }}
+        >
+          <SectionHeader label="Channels" collapsed={false} onToggle={() => {}} />
+          <SidebarMenu className="gap-0">
+            <SidebarRow
+              glyph={<Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
+              title="general"
+              dataSlot="sidebar-geometry-row"
+            />
+            {/* The widest mark the slot ever holds, beside the narrowest one.
+                A two-face stack measures 22px in an 18px slot, so a slot that
+                CENTRED its glyph would start this row's first face 2px left of
+                the `#` above it — which is exactly how a group conversation
+                came to hang outside the gutter every other row starts on.
+                `justify-start` is what puts them on one line, and the browser
+                spec measures the two against each other. */}
+            <SidebarRow
+              glyph={
+                <RoomAvatar
+                  room={{ id: 'dm-demo', kind: 'dm', title: 'Ana and Kai' }}
+                  visuals={[
+                    { color: '#7c3aed', emoji: '🐙' },
+                    { color: '#3ca078', emoji: '🔔' },
+                  ]}
+                />
+              }
+              title="Ana, Kai"
+              dataSlot="sidebar-geometry-stack-row"
+            />
+          </SidebarMenu>
+          <div className="pl-[var(--sidebar-nested-x)]">
+            <SectionHeader label="Clients" level={4} collapsed={false} onToggle={() => {}} />
+            <SidebarMenu className="gap-0">
+              <SidebarRow
+                glyph={<Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
+                title="acme"
+                dataSlot="sidebar-geometry-nested-row"
+              />
+            </SidebarMenu>
+          </div>
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Folded headers, with the roll-ups that survive the fold</ShowcaseLabel>
+      <ShowcaseDemo>
+        {/* Every header folds now, Heads up and Today included — so the state
+            worth looking at is the one where a fold has to say what it hid.
+            Heads up counts what NEEDS answering rather than its rows. */}
+        <div
+          data-slot="sidebar-folded-frame"
+          className="bg-sidebar group/section space-y-1 rounded-md px-2 py-1"
+          style={{ width: COCKPIT_SIDEBAR_WIDTH }}
+        >
+          <SectionHeader label="Heads up" collapsed onToggle={() => {}} trailing="2 need you" />
+          <SectionHeader label="Today" collapsed onToggle={() => {}} trailing="6 · 1 unread" />
+          <SectionHeader
+            label="Channels"
+            collapsed
+            onToggle={() => {}}
+            emphasized
+            trailing="12 · 3 unread · 1 working"
+          />
+          <SectionHeader label="Agents" collapsed onToggle={() => {}} trailing="31" />
+        </div>
+      </ShowcaseDemo>
+
       <ShowcaseLabel>The same row in a narrowed sidebar (200px)</ShowcaseLabel>
       <ShowcaseDemo>
         <RowFrame width={NARROWED_SIDEBAR_WIDTH} testId="narrow">
@@ -279,7 +358,12 @@ function RowFrame({
     <div
       data-slot="sidebar-row-frame"
       data-frame={testId}
-      className="bg-sidebar rounded-md py-1"
+      // **`px-2` is the real panel's own padding**, and the frame pays it for the
+      // same reason the panel does: the row's inset is `--sidebar-row-x` MINUS
+      // that 8px, so a frame without it would draw the glyph at 12 instead of 20
+      // and `sidebar-row-gutter.spec.ts` would be measuring a geometry the
+      // product does not have.
+      className="bg-sidebar rounded-md px-2 py-1"
       style={{ width }}
       {...roving}
     >

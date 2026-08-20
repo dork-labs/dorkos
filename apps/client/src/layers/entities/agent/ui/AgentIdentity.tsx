@@ -24,7 +24,11 @@ const identityVariants = cva('inline-flex items-center min-w-0', {
 const nameVariants = cva('truncate', {
   variants: {
     size: {
-      xs: 'text-xs font-medium',
+      // 13px, not 12: `xs` is the sidebar's size, and every other row in that
+      // panel writes its name at 13px. One point of difference on one row type
+      // is not a distinction anybody reads — it is just a list that looks
+      // slightly wrong (`specs/sidebar-simplification` D1).
+      xs: 'text-[13px] font-medium',
       sm: 'text-sm font-medium',
       md: 'text-sm font-semibold',
       lg: 'text-base font-semibold',

@@ -65,14 +65,19 @@ async function assertChipGeometry(page: Page, width: number): Promise<void> {
         const reservation = item.querySelector<HTMLElement>(
           '[data-slot="sidebar-row-trailing-reservation"]'
         );
-        const identity = item.querySelector<HTMLElement>('[data-slot="agent-identity"]');
-        // The row's own title cell — the element that clips the name.
-        const clip = identity?.parentElement ?? null;
+        // **The row's own title cell — the element that clips the name.** Found
+        // by its own mark rather than through `[data-slot="agent-identity"]`'s
+        // parent: that located the clip box through one row type's internals,
+        // so it went red the moment the agent row stopped drawing the identity
+        // lockup and put the face in the glyph slot instead
+        // (`specs/sidebar-simplification` D1). `SidebarRow` stamps this on every
+        // row it draws, whatever the row points at.
+        const clip = item.querySelector<HTMLElement>('[data-slot="sidebar-row-title"]');
         const chipBox = button.getBoundingClientRect();
         return {
-          name: identity?.textContent?.trim() ?? null,
+          name: clip?.textContent?.trim() ?? null,
           foundReservation: reservation !== null,
-          foundTitle: identity !== null,
+          foundTitle: clip !== null,
           // Proof the clip box is the right node, not just some ancestor.
           clipTruncates: clip === null ? null : clip.classList.contains('truncate'),
           chipLeft: chipBox.left,

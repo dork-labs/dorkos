@@ -7,7 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSidebarModel,
-  librarySectionId,
+  persistedSectionId,
+  SIDEBAR_FOLDING_SECTION_IDS,
   SIDEBAR_LIBRARY_SECTION_IDS,
   type SidebarSectionModel,
 } from '../build-sidebar-model';
@@ -148,8 +149,15 @@ describe('BC-31 — a folded section keeps its signal', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('says nothing at all when there is nothing to say', () => {
-    expect(rollUpCollapsedSection([], () => false)).toBeUndefined();
+  it('still reports a size when there is no signal, because the size IS the signal', () => {
+    // It used to answer `undefined` for a quiet section, so a folded header said
+    // nothing about what was behind it. Now that every header in the panel folds
+    // (D1), "12" is the minimum a fold owes the person who made it.
+    expect(rollUpCollapsedSection([], () => false)).toEqual({
+      count: 0,
+      unread: { tier: 'none' },
+      workingCount: 0,
+    });
   });
 
   describe('a member that starts working while the section is folded', () => {
@@ -237,7 +245,9 @@ describe('BC-31 — a folded section keeps its signal', () => {
       // a header, which §18's table renders as nothing at all.
       const TANGERINE = '/Users/dev/code/tangerine';
       const state = folded({ workingSessionIds: ['ses-auto-1'] });
-      expect(library(state).find((section) => section.id === 'agents')?.rollup).toBeUndefined();
+      expect(library(state).find((section) => section.id === 'agents')?.rollup?.workingCount).toBe(
+        0
+      );
 
       // And a human session in the very same directory does produce one, so the
       // `undefined` above is the origin filter rather than a dead path.
@@ -501,13 +511,15 @@ describe('SIDEBAR_LIBRARY_SECTION_IDS is the order', () => {
     }
   });
 
-  it('narrows only the four ids that have somewhere to store a fold', () => {
-    for (const id of SIDEBAR_LIBRARY_SECTION_IDS) expect(librarySectionId(id)).toBe(id);
-    // Heads up, Today and Getting started cannot fold; a group\u2019s fold lives on the
-    // group. None of them has a slot in `prefs.sections`.
-    expect(librarySectionId('now')).toBeNull();
-    expect(librarySectionId('today')).toBeNull();
-    expect(librarySectionId('getting-started')).toBeNull();
-    expect(librarySectionId('group:anything')).toBeNull();
+  it('narrows every id that has somewhere to store a fold, computed zones included', () => {
+    // Catches the half-landed widening: if `now`/`today` gained a header and a
+    // toggle but not a persisted key, `useSectionChrome.toggleCollapsed` would
+    // return early and the fold would look like a dead control.
+    for (const id of SIDEBAR_FOLDING_SECTION_IDS) expect(persistedSectionId(id)).toBe(id);
+    for (const id of ['now', 'today', 'getting-started'] as const) {
+      expect(persistedSectionId(id), `"${id}" has nowhere to store its fold`).toBe(id);
+    }
+    // A group\u2019s fold lives on the group itself, not in `prefs.sections`.
+    expect(persistedSectionId('group:anything')).toBeNull();
   });
 });

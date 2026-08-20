@@ -45,6 +45,7 @@ import { capNowItems } from './rules/cap-now-items';
 import { orderToday } from './rules/order-today';
 import { pinActiveAnchor } from './rules/pin-active-anchor';
 import { rankNowItems } from './rules/rank-now-items';
+import { rollUpCollapsedSection } from './rules/roll-up-collapsed-section';
 import { selectNowItems } from './rules/select-now-items';
 import { revealAutomated, selectTodayItems } from './rules/select-today-items';
 import { anchorKey } from './rules/targets';
@@ -103,17 +104,37 @@ export const SIDEBAR_LIBRARY_SECTION_IDS = [
 export type LibrarySectionId = (typeof SIDEBAR_LIBRARY_SECTION_IDS)[number];
 
 /**
+ * Every section whose fold is remembered, Library's four plus the two computed
+ * zones.
+ *
+ * **The computed zones are in here now, and that is the whole of D1's "every
+ * header folds".** BC-2 used to say a zone is a landmark and never an
+ * accordion; the exception cost more to learn than the fold was worth, so the
+ * rule is one rule and Heads up, Today and Getting started carry a persisted
+ * key like any other section.
+ *
+ * The `satisfies` keeps this and the persisted vocabulary honest: retiring an id
+ * from the schema turns an entry here into a compile error rather than a fold
+ * nothing can store.
+ */
+export const SIDEBAR_FOLDING_SECTION_IDS = [
+  'now',
+  'today',
+  'getting-started',
+  ...SIDEBAR_LIBRARY_SECTION_IDS,
+] as const satisfies readonly PersistedSectionId[];
+
+/**
  * Narrow a section id to one that has a place to store its collapse state.
  *
- * Only a Library section does. Heads up, Today, Getting started and a group
- * sub-header all answer `null`: the first three cannot fold at all (BC-2), and
- * a group's fold already lives on the group. Reading the tuple rather than
- * repeating the four ids, so it stays the one place Library's shape is edited.
+ * A group sub-header answers `null`, because a group's fold already lives on the
+ * group. Reading the tuple rather than repeating the ids, so it stays the one
+ * place the folding set is edited.
  *
  * @param id - Any section id the model emits.
  */
-export function librarySectionId(id: SidebarSectionId): LibrarySectionId | null {
-  return SIDEBAR_LIBRARY_SECTION_IDS.find((entry) => entry === id) ?? null;
+export function persistedSectionId(id: SidebarSectionId): PersistedSectionId | null {
+  return SIDEBAR_FOLDING_SECTION_IDS.find((entry) => entry === id) ?? null;
 }
 
 /**
@@ -122,8 +143,9 @@ export function librarySectionId(id: SidebarSectionId): LibrarySectionId | null 
  * The persisted Library sections are a closed set; a group sub-header is
  * `group:<groupId>`, which cannot collide with them and needs no schema of its
  * own because a group's own collapse state already lives on the group.
- * `now`, `today` and `getting-started` name the headerless bodies of their
- * zones.
+ * `now`, `today` and `getting-started` name the single section each of their
+ * zones holds — the one that wears the zone's name now that the zone `<h2>` is
+ * gone (D1).
  */
 export type SidebarSectionId =
   | LibrarySectionId
@@ -292,18 +314,54 @@ export interface SidebarRowModel {
   reason: string;
 }
 
+/** What a folded section still says about what it is hiding (BC-31). */
+export interface SidebarRollup {
+  /**
+   * How many rows are behind the fold — the "12" in "12 · 3 unread".
+   *
+   * Always present, so a folded section is never a bare word: the operator can
+   * see the size of what they put away without unfolding it.
+   */
+  count: number;
+  /** Its rolled-up unread state, by the same two-tier rule a row follows. */
+  unread: SidebarUnread;
+  /** How many of its members are streaming right now. */
+  workingCount: number;
+  /**
+   * How many things inside NEED the operator — Heads up only.
+   *
+   * **This is why folding Heads up is safe.** Every other section's roll-up
+   * counts rows; Heads up's rows include the "N working" report, which needs
+   * nobody. Folding it must never be a way to make a permission prompt
+   * disappear quietly, so the number the header keeps is the one that means
+   * "answer something" (D1, BC-11). Absent on every other section.
+   */
+  needsYouCount?: number;
+}
+
 /** One section: a header (or none) and its rows. */
 export interface SidebarSectionModel {
   /** Which section this is. */
   id: SidebarSectionId;
-  /** `null` = headerless body (Heads up and Today each have exactly one). */
+  /**
+   * `null` = headerless body.
+   *
+   * Rare now: with the zone `<h2>` gone, Heads up, Today and Getting started
+   * carry their zone's name on their own section header (D1). Only a section
+   * whose zone draws it some other way leaves this null.
+   */
   label: string | null;
-  /** Whether it can fold at all. Only Library sections can (BC-2). */
+  /**
+   * Whether it can fold at all.
+   *
+   * Every header folds (D1) except Getting started's, which has no persisted
+   * key to fold into — see {@link SIDEBAR_FOLDING_SECTION_IDS}.
+   */
   collapsible: boolean;
   /** Whether it is folded right now. */
   collapsed: boolean;
   /** Signal that survives folding (BC-31). */
-  rollup?: { unread: SidebarUnread; workingCount: number };
+  rollup?: SidebarRollup;
   /** The sort and filter this section is currently under. */
   options?: { sortMode?: 'manual' | 'name' | 'recent'; displayFilter?: SidebarDisplayFilter };
   /** The rows it holds. */
@@ -380,30 +438,45 @@ function liveRegionText(count: number): string | undefined {
 }
 
 /**
- * A zone holding one headerless body, or `undefined` when the body is empty.
+ * A zone holding one section, or `undefined` when that section is empty.
  *
  * The `undefined` is BC-1 in one place: a caller cannot accidentally push an
- * empty box into `zones`, because there is nothing to push.
+ * empty box into `zones`, because there is nothing to push. Folded still counts
+ * as present — a fold is a thing the operator did, and a zone that vanished when
+ * you folded it would take its own unfold control with it.
+ *
+ * **The section wears the zone's name.** The zone `<h2>` above it is gone (D1),
+ * so Heads up, Today and Getting started say what they are on the one header
+ * style the whole panel uses.
  *
  * @param id - Which zone.
  * @param rows - Its rows.
  * @param reason - The zone's provenance.
+ * @param state - The snapshot, for the stored fold.
  */
 function bodyZone(
   id: Exclude<SidebarZoneId, 'library'>,
   rows: SidebarRowModel[],
-  reason: string
+  reason: string,
+  state: SidebarState
 ): SidebarZoneModel | undefined {
   if (rows.length === 0) return undefined;
+  const stored = persistedSectionId(id);
+  const collapsible = stored !== null;
+  const collapsed = collapsible && (state.prefs.sections[stored]?.collapsed ?? false);
   return {
     id,
     label: ZONE_LABEL[id],
     sections: [
       {
         id,
-        label: null,
-        collapsible: false,
-        collapsed: false,
+        label: ZONE_LABEL[id],
+        collapsible,
+        collapsed,
+        // Computed rows: nothing in Heads up, Today or Getting started is a
+        // session this panel is streaming, so there is no "N working" to count
+        // here — Heads up's own rollup ROW is where that lives.
+        ...(collapsed ? { rollup: rollUpCollapsedSection(rows, () => false) } : {}),
         rows,
         reason: `${id}:body`,
       },
@@ -452,7 +525,7 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
   const nowRows = [...capNowItems(attentionRows), ...(workingRollup ? [workingRollup] : [])];
 
   if (nowRows.length > 0) {
-    const zone = bodyZone('now', nowRows, 'zone:now');
+    const zone = bodyZone('now', nowRows, 'zone:now', state);
     if (zone) {
       // Counts what NEEDS the operator, never what is merely busy (BC-11): a
       // rollup appearing must not announce "1 agent needs you". Published as a
@@ -460,11 +533,16 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
       // region are one fact rather than two (P4 AC-2).
       zone.needsYouCount = attentionRows.length;
       zone.liveRegionText = liveRegionText(zone.needsYouCount);
+      // …and the same number rides the fold. Heads up's roll-up counts what
+      // needs answering rather than what is in the list, so folding it can
+      // never be a quiet way to put a permission prompt out of sight (D1).
+      const body = zone.sections[0];
+      if (body?.rollup) body.rollup.needsYouCount = zone.needsYouCount;
       zones.push(zone);
     }
   } else {
     const suggestions = buildGettingStarted(state);
-    const zone = bodyZone('getting-started', suggestions, 'zone:getting-started');
+    const zone = bodyZone('getting-started', suggestions, 'zone:getting-started', state);
     if (zone) zones.push(zone);
   }
 
@@ -490,7 +568,7 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
   if (digestRow) today.splice(today[0]?.reason === 'anchor:active-session' ? 1 : 0, 0, digestRow);
   // Last of all, because the reveal's contents hang off the bottom of the
   // finished list and must not be sorted, capped or archived with it (BC-19).
-  const todayZone = bodyZone('today', revealAutomated(today, state), 'zone:today');
+  const todayZone = bodyZone('today', revealAutomated(today, state), 'zone:today', state);
   if (todayZone) zones.push(todayZone);
 
   const librarySections = buildLibrarySections(state);

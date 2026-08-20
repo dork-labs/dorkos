@@ -32,8 +32,31 @@ import { SidebarMenuItem } from './sidebar';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 import { TOUCH_TARGET_MIN_H } from './touch-target';
 
-/** The horizontal inset every sidebar row pays, and the only place it is paid. */
-export const SIDEBAR_ROW_INSET = 'px-2';
+/**
+ * The horizontal inset every sidebar row pays, and the only place it is paid.
+ *
+ * **Derived from `--sidebar-row-x`, not from a number.** The token says where a
+ * row's glyph slot starts measured from the PANEL's left edge (20px); the panel
+ * already paid 8 of that with its own `px-2`, so the row pays the remainder.
+ * Writing it as a `calc` rather than as `pl-3` is what makes the geometry one
+ * decision in one place — retune the token and headers, rows, nested rows and
+ * the glyph overlay all move together (`specs/sidebar-simplification` D1).
+ *
+ * The `0.5rem` is the panel's own padding. It is a literal here because
+ * `SidebarContent`'s `px-2` is one too, and `sidebar-row-gutter.spec.ts`
+ * measures the SUM against the token — so the day either half changes alone,
+ * the browser says so.
+ *
+ * Left only: the right side is the gutter, which {@link SIDEBAR_ROW_GUTTER}
+ * owns and must apply last.
+ */
+export const SIDEBAR_ROW_INSET = 'pl-[calc(var(--sidebar-row-x)_-_0.5rem)] pr-2';
+
+/**
+ * The glyph-action overlay's left edge — {@link SIDEBAR_ROW_INSET} spelled as a
+ * position, so the control that sits on the glyph cannot drift off it.
+ */
+export const SIDEBAR_GLYPH_ACTION_LEFT = 'left-[calc(var(--sidebar-row-x)_-_0.5rem)]';
 
 /**
  * The right gutter a row keeps clear for its satellites — the "⋮" and any
@@ -361,7 +384,16 @@ export interface SidebarRowProps {
   isActive?: boolean;
   /** The row is asking to be read — unread, in the two-tier sense (bold, no badge). */
   emphasized?: boolean;
-  /** Muted: dimmed, still there, still clickable, no longer asking for anything. */
+  /**
+   * Muted: still there, still readable, no longer asking for anything.
+   *
+   * **Fewer signals, not less contrast** (DOR-1098). The row used to wear
+   * `opacity-60`, which took its label to roughly 3:1 against the panel — under
+   * the 4.5:1 every label in this product owes — so silencing a channel made its
+   * NAME hard to read, which is the one thing about it that still matters. What
+   * mute removes is what was asking: the bold label, the unread badge, the
+   * working dot. The label itself keeps full contrast.
+   */
   muted?: boolean;
   /** Open whatever the row points at. */
   onSelect?: () => void;
@@ -531,7 +563,13 @@ export function SidebarRow({
           // centred on the FIRST line rather than on a two-line block.
           <span
             className={cn(
-              'flex size-[18px] shrink-0 items-center justify-center',
+              // `justify-start`, not `justify-center`: a mark wider than the
+              // slot — a two-face stack on a group conversation — used to be
+              // centred on it, so it spilled equally in both directions and
+              // sat 8px LEFT of the gutter every other row's glyph starts on.
+              // Anchored at the start, the first face lands exactly where a
+              // `#` and a single face do (design-decisions §1).
+              'flex size-[18px] shrink-0 items-center justify-start',
               showSecondLine && 'mt-px'
             )}
           >
@@ -548,7 +586,15 @@ export function SidebarRow({
                 </span>
               </>
             ) : null}
-            <span className={ROW_TITLE_CLASS}>{title}</span>
+            {/* The cell that CLIPS the name, marked so a browser test can find
+                it without knowing what kind of row it is. It used to be located
+                through `[data-slot="agent-identity"]`'s parent, which tied the
+                chip-clearance measurement to one row type's internals — and
+                broke the moment the agent row stopped drawing that lockup (D1).
+                A row's title is a row-grammar fact; the mark belongs here. */}
+            <span data-slot="sidebar-row-title" className={ROW_TITLE_CLASS}>
+              {title}
+            </span>
             {(trailing !== undefined || (trailingAction !== undefined && !isMobile)) && (
               <span className={cn('flex items-center gap-1.5', ROW_TRAILING_CLASS)}>
                 {trailing}
@@ -591,10 +637,7 @@ export function SidebarRow({
           drag !== undefined &&
             'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
           drag?.isDragging && 'opacity-40',
-          drag?.isOver && 'ring-sidebar-ring ring-2',
-          // Muted dims the whole row and drops the unread emphasis above: still
-          // there, still clickable, just no longer asking for anything (DOR-339).
-          muted && 'opacity-60'
+          drag?.isOver && 'ring-sidebar-ring ring-2'
         )}
       >
         <SidebarMenuSurface
@@ -615,11 +658,13 @@ export function SidebarRow({
                 glyphAction.onClick();
               }}
               {...{ [SIDEBAR_GLYPH_ACTION_ATTRIBUTE]: '' }}
-              // Exactly the glyph's square: `left-2` is {@link SIDEBAR_ROW_INSET}
-              // spelled as a position, so the two cannot drift apart.
+              // Exactly the glyph's square. See {@link SIDEBAR_GLYPH_ACTION_LEFT}
+              // — the same token the row's own inset is derived from, so the
+              // two cannot drift apart.
               className={cn(
                 IDENTITY_MARK_GROUP,
-                'focus-ring absolute left-2 size-[18px] cursor-pointer rounded-md transition-[scale] active:scale-[0.94]',
+                'focus-ring absolute size-[18px] cursor-pointer rounded-md transition-[scale] active:scale-[0.94]',
+                SIDEBAR_GLYPH_ACTION_LEFT,
                 showSecondLine ? 'top-1.5' : 'top-1/2 -translate-y-1/2'
               )}
             />

@@ -272,31 +272,34 @@ function ModelRow({
 }
 
 /**
- * The part of a folded section's signal that is a MARK: how much is running in
- * it, and how many messages are addressed to you.
+ * What a folded section says about what it is hiding, as one line of text
+ * (BC-31, `specs/sidebar-simplification` D1).
  *
- * **The `activity` tier is deliberately absent here.** It is a bold label and
- * nothing else — no badge, no dot (design-decisions §18) — so it cannot be a
- * mark in this slot without inventing the third weight the system does not
- * have. It rides `SectionHeader`'s own `emphasized` instead, which
- * {@link ModelSection} sets. Between the two, BC-31 holds: folding a section
- * loses none of its signal.
+ * **Words, not marks.** It used to be a dot and a numbered pill — two shapes
+ * borrowed from the row vocabulary, drawn on a header where no row was, which is
+ * a third weight the two-tier system deliberately does not have. Now that every
+ * header in the panel folds, folding is an ordinary act and its receipt is an
+ * ordinary sentence.
+ *
+ * Kept in step with `features/dashboard-sidebar/ui/SidebarSection.tsx`, which is
+ * what the cockpit really draws.
  *
  * @param rollup - The section's rolled-up signal.
  */
-function SectionRollup({ rollup }: { rollup: NonNullable<SidebarSectionModel['rollup']> }) {
-  return (
-    <>
-      {rollup.workingCount > 0 && (
-        <span
-          role="img"
-          aria-label={`${rollup.workingCount} agents working`}
-          className={cn('size-1.5 rounded-full', statusDotClass('working'))}
-        />
-      )}
-      {rollup.unread.tier === 'directed' && <DirectedBadge count={rollup.unread.count} />}
-    </>
+function sectionRollupText(rollup: NonNullable<SidebarSectionModel['rollup']>): string {
+  const parts: string[] = [];
+  parts.push(
+    rollup.needsYouCount !== undefined && rollup.needsYouCount > 0
+      ? `${rollup.needsYouCount} need you`
+      : `${rollup.count}`
   );
+  if (rollup.unread.tier === 'directed' && (rollup.unread.count ?? 0) > 0) {
+    parts.push(`${rollup.unread.count} unread`);
+  } else if (rollup.unread.tier === 'activity') {
+    parts.push('unread');
+  }
+  if (rollup.workingCount > 0) parts.push(`${rollup.workingCount} working`);
+  return parts.join(' · ');
 }
 
 /**
@@ -343,9 +346,9 @@ function ModelSection({
               // earns it — `directed` also draws its badge in `trailing`, but
               // `activity` has nowhere else to go (BC-31, §18).
               emphasized={collapsed && (section.rollup?.unread.tier ?? 'none') !== 'none'}
-              trailing={
-                collapsed && section.rollup ? <SectionRollup rollup={section.rollup} /> : undefined
-              }
+              {...(collapsed && section.rollup
+                ? { trailing: sectionRollupText(section.rollup) }
+                : {})}
             />
           </div>
           <ReasonChip reason={section.reason} show={showReasons} className="mr-1 shrink-0" />
@@ -373,7 +376,12 @@ function ModelSection({
       )}
       {!collapsed &&
         section.subsections?.map((subsection) => (
-          <div key={subsection.id} className="pl-3">
+          // `--sidebar-nested-x`, the same token `SidebarSection` indents a
+          // real subsection by (D1). It was a literal `pl-3`, which is 12px by
+          // coincidence rather than by derivation — this page's whole job is to
+          // show what the cockpit draws, and a copy that happens to agree today
+          // is what let a contrast defect hide from its own gate once already.
+          <div key={subsection.id} className="pl-[var(--sidebar-nested-x)]">
             <ModelSection
               section={subsection}
               state={state}
@@ -388,12 +396,13 @@ function ModelSection({
 }
 
 /**
- * One zone: a landmark heading and the sections under it.
+ * One zone: a named landmark and the sections under it.
  *
- * The heading is an `<h2>` and never a button — a zone orients, it does not
- * fold (BC-2, design-system §Zones and Sections). The card is one step up the
- * `--sidebar-accent` ramp and carries no border, which is the separation rule
- * this page exists to let somebody check in both themes.
+ * **It draws no heading of its own** (`specs/sidebar-simplification` D1). The
+ * panel is two levels now — the section header inside is what a person reads,
+ * and the zone's name reaches assistive tech through `aria-label`. The card is
+ * one step up the `--sidebar-accent` ramp and carries no border, which is the
+ * separation rule this page exists to let somebody check in both themes.
  *
  * @param zone - The zone to draw.
  * @param state - The snapshot it came from.
@@ -417,35 +426,21 @@ function ModelZone({
   fixtureName: string;
   panelLabelId: string;
 }) {
-  const headingId = `sidebar-zone-${fixtureName}-${zone.id}`;
   return (
     <section
       data-slot="sidebar-model-zone"
       data-zone={zone.id}
       data-reason={zone.reason}
-      // In the app a zone is `aria-labelledby` its own heading and nothing else
-      // (R2). Four panels on one page put four "Library" regions in one
-      // document, which axe rejects as indistinguishable — correctly, since a
-      // screen-reader user would hear the same name four times. The journey's
-      // name is prepended so each region is "busy Library", "power Library".
-      // The extra id is an artefact of showing four panels at once, not a
-      // change to the contract.
-      aria-labelledby={`${panelLabelId} ${headingId}`}
+      // In the app a zone is named by `aria-label` and draws nothing (D1). Four
+      // panels on one page put four "Library" regions in one document, which axe
+      // rejects as indistinguishable — correctly, since a screen-reader user
+      // would hear the same name four times. The journey's name is prepended so
+      // each region is "busy Library", "power Library". The prefix is an
+      // artefact of showing four panels at once, not a change to the contract.
+      aria-label={`${fixtureName} ${zone.label}`}
       className="bg-sidebar-accent/40 rounded-lg p-1"
     >
-      {/* **The real zone's own heading treatment, class for class.** Rows are
-          the real `SidebarRow` and section headers the real `SectionHeader`;
-          the zone heading was the one thing on this page drawn by hand, and it
-          was drawn at full opacity and a heavier weight than the shipped one.
-          That divergence is exactly what let `SidebarZone`'s heading sit at
-          3.2:1 in the light theme while this page's axe gate reported clean —
-          the gate was measuring a copy. Keep these in step with
-          `features/dashboard-sidebar/ui/SidebarZone.tsx`, or render that
-          component instead when it no longer needs row chrome to do it. */}
-      <div className="flex items-center gap-1.5 px-2 pt-1 pb-1">
-        <h2 id={headingId} className="text-sidebar-foreground/70 text-[11px] font-medium">
-          {zone.label}
-        </h2>
+      <div className="flex px-2">
         <ReasonChip reason={zone.reason} show={showReasons} />
       </div>
       {zone.liveRegionText !== undefined && (
