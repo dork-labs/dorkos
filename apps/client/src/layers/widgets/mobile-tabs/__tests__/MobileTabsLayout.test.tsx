@@ -17,6 +17,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 
 // ── The global event stream ────────────────────────────────────────────────
 // The Home tab now reads the approval queue (P4 AC-5), and that query keeps
@@ -44,6 +45,7 @@ import {
 } from '@/layers/features/dashboard-sidebar/model/fixtures';
 import { SIDEBAR_ZONE_IDS } from '@/layers/features/dashboard-sidebar';
 import { LIVE_REGION_DEBOUNCE_MS } from '@/layers/features/dashboard-sidebar/model/use-live-region-text';
+import { clearAskReceipts } from '@/layers/entities/attention';
 
 // ── Router ──────────────────────────────────────────────────────────────────
 // **The subscription is the seam under test, so the mock is a real one.**
@@ -158,6 +160,24 @@ function anApproval(): PendingApproval {
   };
 }
 
+/** One question an agent is parked on, shaped as the fleet-wide stream sends it. */
+function aQuestion(): InteractionPendingEvent {
+  return {
+    sessionId: 'session-question-1',
+    cwd: '/projects/meeting-notes',
+    interaction: {
+      type: 'question',
+      id: 'q-1',
+      startedAt: Date.now(),
+      remainingMs: 600_000,
+      timeoutMs: 600_000,
+      questions: [
+        { header: 'Ambiguous target', question: 'Which file?', options: [], multiSelect: false },
+      ],
+    },
+  };
+}
+
 function renderLayout(
   takeover: React.ReactNode = null,
   transport: ReturnType<typeof createMockTransport> = createMockTransport()
@@ -193,6 +213,11 @@ beforeEach(() => {
   mockAsk.mockClear();
   beforeLoadListeners.clear();
   useMobilePanelStore.setState({ panelUp: false });
+  // The Ask receipt store is module-level, shared by every card `AskList`
+  // draws anywhere in the app — a "You said no" from one test's answered
+  // question would otherwise still be showing when the next test's fixture
+  // reuses its interaction id.
+  clearAskReceipts();
 });
 afterEach(cleanup);
 
@@ -670,6 +695,83 @@ describe('MobileTabsLayout', () => {
       expect(screen.getByTestId('mobile-tab-panels').className).not.toContain('invisible');
     });
 
+    it('puts a question in Home as a full card, matching an approval rather than a smaller row', async () => {
+      const user = userEvent.setup();
+      mockState = quietFixture;
+      const transport = createMockTransport();
+      transport.listPendingInteractions = vi
+        .fn()
+        .mockResolvedValue({ interactions: [aQuestion()] });
+      renderLayout(null, transport);
+      await user.click(screen.getByTestId('mobile-tab-home'));
+
+      // The same headline `AskList`/`InteractionAsk` draw everywhere else —
+      // reused components, not a mobile-only rendering of the question.
+      const card = await screen.findByText('meeting-notes has a question');
+      const now = panel('home').querySelector('[data-sidebar-zone="now"]');
+      expect(now).not.toBeNull();
+      expect((now as HTMLElement).contains(card)).toBe(true);
+
+      // Answering rides the shared `useAnswerAsk` flow: a question has no
+      // yes/no, so "Skip" submits an empty answer, exactly as it does on every
+      // other surface that draws this card.
+      await user.click(screen.getByRole('button', { name: 'Skip' }));
+      await waitFor(() =>
+        expect(transport.submitAnswers).toHaveBeenCalledWith('session-question-1', 'q-1', {})
+      );
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    it('opens the session from a mobile Ask card, the one action a Now row already offers', async () => {
+      const user = userEvent.setup();
+      mockState = quietFixture;
+      const transport = createMockTransport();
+      transport.listPendingInteractions = vi
+        .fn()
+        .mockResolvedValue({ interactions: [aQuestion()] });
+      renderLayout(null, transport);
+      await user.click(screen.getByTestId('mobile-tab-home'));
+      await screen.findByText('meeting-notes has a question');
+
+      await user.click(screen.getByRole('button', { name: 'Open session' }));
+
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/session',
+        search: { session: 'session-question-1' },
+      });
+    });
+
+    it('holds the slot open long enough to show the receipt after the last Ask is answered', async () => {
+      // Adversarial regression probe: answering the only pending Ask used to
+      // unmount this whole slot the instant the refetch came back empty,
+      // tearing the "You said no" receipt away in the same frame it appeared.
+      // `useSettlingAsks()` is what the two sibling surfaces
+      // (`ApprovalsIndicator`, `PinnedTriageHeaderView`) already guard with —
+      // this seeds the exact race and would fail without it.
+      const user = userEvent.setup();
+      mockState = quietFixture;
+      const transport = createMockTransport();
+      transport.listPendingInteractions = vi
+        .fn()
+        .mockResolvedValueOnce({ interactions: [aQuestion()] })
+        .mockResolvedValue({ interactions: [] });
+      renderLayout(null, transport);
+      await user.click(screen.getByTestId('mobile-tab-home'));
+      await screen.findByText('meeting-notes has a question');
+
+      await user.click(screen.getByRole('button', { name: 'Skip' }));
+      await waitFor(() =>
+        expect(transport.submitAnswers).toHaveBeenCalledWith('session-question-1', 'q-1', {})
+      );
+
+      // `useAnswerAsk`'s `finally` re-invalidates the query, which now comes
+      // back with an empty list — exactly the moment the slot used to vanish.
+      await waitFor(() => expect(transport.listPendingInteractions).toHaveBeenCalledTimes(2));
+
+      expect(screen.getByTestId('mobile-now-attention')).toBeInTheDocument();
+      expect(screen.getByText('You said no')).toBeInTheDocument();
+    });
+
     it('says so loudly when the approval list cannot be read — even with no Now zone to say it in', async () => {
       mockState = quietFixture;
       const transport = createMockTransport();
@@ -693,7 +795,7 @@ describe('MobileTabsLayout', () => {
     it('draws nothing about approvals when there are none and nothing failed', async () => {
       mockState = quietFixture;
       renderLayout();
-      await waitFor(() => expect(screen.queryByTestId('mobile-now-approvals')).toBeNull());
+      await waitFor(() => expect(screen.queryByTestId('mobile-now-attention')).toBeNull());
       expect(screen.queryByText(/could not check whether anything is waiting/i)).toBeNull();
     });
 

@@ -57,7 +57,7 @@ import {
   useSidebarModel,
   useSidebarState,
 } from '@/layers/features/dashboard-sidebar';
-import { useNowApprovalsSlot } from './MobileNowApprovals';
+import { useNowAttentionSlot } from './MobileNowAttention';
 import {
   HOME_ZONE_IDS,
   LIBRARY_ZONE_IDS,
@@ -199,10 +199,10 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   // both of them saying the same number.
   const liveRegionText = useLiveRegionText(nowZone?.liveRegionText);
 
-  // Approve from anywhere (P4 AC-5). `null` when there is nothing waiting AND
+  // Answer from anywhere (P4 AC-5). `null` when there is nothing waiting AND
   // nothing has failed — which is also what tells `SidebarZones` not to draw a
   // Now zone for it.
-  const nowApprovals = useNowApprovalsSlot();
+  const nowAttention = useNowAttentionSlot();
 
   return (
     <SidebarChrome activeTarget={state.activeTarget}>
@@ -244,7 +244,7 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
             <SidebarZones
               model={model}
               zoneIds={HOME_ZONE_IDS}
-              nowSlot={nowApprovals}
+              nowSlot={nowAttention}
               silenceLiveRegion
             />
             {/* A phone never mounted the bottom slot at all, so the one card

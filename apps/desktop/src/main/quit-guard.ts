@@ -220,7 +220,11 @@ async function confirmQuit(
   const options: Electron.MessageBoxOptions = {
     type: 'question',
     title: copy.title,
-    message: `${subject} still working. ${copy.verb} anyway?`,
+    // `activeAgents` is streaming AND blocked combined (see agent-activity.ts)
+    // — a session paused on an approval is not "working" in the sense a
+    // reader hears that word, so the dialog says both rather than the one
+    // that happens to be true for some of the count and not the rest.
+    message: `${subject} still working or waiting on your answer. ${copy.verb} anyway?`,
     detail: detailFor(intent, hasWindow),
     buttons: ['Keep Working', copy.confirm],
     defaultId: PRIMARY_BUTTON,

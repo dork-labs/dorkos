@@ -4,7 +4,8 @@ import log from 'electron-log';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 
 /**
- * How many of your agents are mid-run, right now.
+ * How many of your agents are mid-run, right now — and which of them are
+ * producing versus waiting on you.
  *
  * The shell needs this in two places a renderer cannot help with: the tray has
  * to say something true while the window is closed, and the quit guard has to
@@ -24,17 +25,22 @@ import type { SessionLifecycle } from '@dorkos/shared/session-stream';
  */
 
 /**
- * The lifecycles that mean "do not quit out from under this".
+ * Which of the two "still going" lifecycles a session is in, or `null` once it
+ * has finished.
  *
  * `streaming` is an agent producing right now. `blocked` is one paused on you —
- * an approval, a question, an elicitation. It is not producing, but it is
- * mid-turn and it is precisely the session a person would hate to lose, so it
- * counts. `idle`, `error` and `interrupted` are all finished, one way or another.
+ * an approval, a question, an elicitation. Neither is a `SessionLifecycle` the
+ * quit guard should let you walk away from, so {@link getActiveAgentCount}
+ * still counts both together; but they are not the same thing to a person
+ * glancing at the tray, so the two are tracked apart and reported apart.
+ * `idle`, `error` and `interrupted` are all finished, one way or another, and
+ * this returns `null` for all three.
+ *
+ * @param lifecycle - The lifecycle reported on a `session_status` event.
  */
-const ACTIVE_LIFECYCLES: ReadonlySet<SessionLifecycle> = new Set<SessionLifecycle>([
-  'streaming',
-  'blocked',
-]);
+function activeLifecycleOf(lifecycle: SessionLifecycle): 'streaming' | 'blocked' | null {
+  return lifecycle === 'streaming' || lifecycle === 'blocked' ? lifecycle : null;
+}
 
 /** First reconnect delay after the stream drops. */
 const RECONNECT_BASE_MS = 1_000;
@@ -45,12 +51,15 @@ const RECONNECT_MAX_MS = 15_000;
 /** The server's own SSE heartbeat is every 15s; a stream silent for much longer than that is gone. */
 const STREAM_IDLE_TIMEOUT_MS = 45_000;
 
-/** Sessions currently mid-run, by id. */
-const activeSessions = new Set<string>();
+/** Sessions currently mid-run, by id, holding which of the two active lifecycles they're in. */
+const sessionLifecycles = new Map<string, 'streaming' | 'blocked'>();
 
-/** How many agents are mid-run right now. `0` whenever the stream is not connected. */
+/**
+ * How many agents are mid-run right now, streaming and blocked combined.
+ * `0` whenever the stream is not connected.
+ */
 export function getActiveAgentCount(): number {
-  return activeSessions.size;
+  return sessionLifecycles.size;
 }
 
 /** A running subscription to the server's event stream. */
@@ -59,12 +68,24 @@ export interface AgentActivityWatch {
   stop(): void;
 }
 
+/**
+ * How many agents are producing right now, and how many are paused waiting on
+ * you. The two numbers a person actually wants from a glance at the tray —
+ * "is anything happening" is not the same question as "does anything need me".
+ */
+export interface AgentActivityCounts {
+  /** Agents actively producing output right now. */
+  streaming: number;
+  /** Agents paused mid-turn on an approval, a question, or an elicitation. */
+  blocked: number;
+}
+
 /** Options for {@link watchAgentActivity}. */
 export interface AgentActivityOptions {
   /** Point-in-time accessor for the server's port; `null` while no server is running. */
   getPort: () => number | null;
-  /** Called whenever the count changes, never with the same number twice in a row. */
-  onChange: (activeCount: number) => void;
+  /** Called whenever either count changes, never with the same pair twice in a row. */
+  onChange: (counts: AgentActivityCounts) => void;
 }
 
 /**
@@ -91,19 +112,33 @@ export function watchAgentActivity(options: AgentActivityOptions): AgentActivity
   let request: ReturnType<typeof http.get> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let retryDelayMs = RECONNECT_BASE_MS;
-  let lastReported = 0;
+  let lastReported: AgentActivityCounts = { streaming: 0, blocked: 0 };
   /** Whether the last connection attempt already logged its failure — one line per outage, not per retry. */
   let outageLogged = false;
 
+  const countsNow = (): AgentActivityCounts => {
+    let streaming = 0;
+    let blocked = 0;
+    for (const lifecycle of sessionLifecycles.values()) {
+      if (lifecycle === 'streaming') streaming += 1;
+      else blocked += 1;
+    }
+    return { streaming, blocked };
+  };
+
   const report = (): void => {
-    if (stopped || activeSessions.size === lastReported) return;
-    lastReported = activeSessions.size;
+    if (stopped) return;
+    const counts = countsNow();
+    if (counts.streaming === lastReported.streaming && counts.blocked === lastReported.blocked) {
+      return;
+    }
+    lastReported = counts;
     onChange(lastReported);
   };
 
   const clear = (): void => {
-    if (activeSessions.size === 0) return;
-    activeSessions.clear();
+    if (sessionLifecycles.size === 0) return;
+    sessionLifecycles.clear();
     report();
   };
 
@@ -208,32 +243,36 @@ export function watchAgentActivity(options: AgentActivityOptions): AgentActivity
       retryTimer = null;
       request?.destroy();
       request = null;
-      activeSessions.clear();
+      sessionLifecycles.clear();
     },
   };
 }
 
 /**
- * Apply one SSE frame to the active-session set.
+ * Apply one SSE frame to the active-session map.
  *
  * @param frame - One frame's raw text, without its trailing blank line.
- * @returns Whether the set changed.
+ * @returns Whether the map changed.
  */
 function applyEvent(frame: string): boolean {
   const { name, data } = parseFrame(frame);
   if (name === 'session_removed') {
     const sessionId = readSessionId(data);
-    return sessionId !== null && activeSessions.delete(sessionId);
+    return sessionId !== null && sessionLifecycles.delete(sessionId);
   }
   if (name !== 'session_status') return false;
 
   const parsed = parseSessionStatus(data);
   if (!parsed) return false;
-  const wasActive = activeSessions.has(parsed.sessionId);
-  const isActive = ACTIVE_LIFECYCLES.has(parsed.lifecycle);
-  if (isActive === wasActive) return false;
-  if (isActive) activeSessions.add(parsed.sessionId);
-  else activeSessions.delete(parsed.sessionId);
+  const wasLifecycle = sessionLifecycles.get(parsed.sessionId);
+  const nextLifecycle = activeLifecycleOf(parsed.lifecycle);
+  if (nextLifecycle === null) {
+    if (wasLifecycle === undefined) return false;
+    sessionLifecycles.delete(parsed.sessionId);
+    return true;
+  }
+  if (wasLifecycle === nextLifecycle) return false;
+  sessionLifecycles.set(parsed.sessionId, nextLifecycle);
   return true;
 }
 

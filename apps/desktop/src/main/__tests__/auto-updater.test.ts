@@ -525,7 +525,7 @@ describe('restarting to install an update (DOR-538)', () => {
     // and on the native branch there is no window to close.
     expect(options).toMatchObject({
       title: 'Restart to Update?',
-      message: '3 agents are still working. Restart anyway?',
+      message: '3 agents are still working or waiting on your answer. Restart anyway?',
       buttons: ['Keep Working', 'Restart Anyway'],
     });
     expect(options.detail).not.toContain('close the window');
@@ -608,7 +608,9 @@ describe('restarting to install an update (DOR-538)', () => {
     const [options] = vi.mocked(dialog.showMessageBox).mock.calls[0] as [
       Electron.MessageBoxOptions,
     ];
-    expect(options.message).toBe('2 agents are still working. Quit anyway?');
+    expect(options.message).toBe(
+      '2 agents are still working or waiting on your answer. Quit anyway?'
+    );
     expect(app.quit).not.toHaveBeenCalled();
   });
 
@@ -663,7 +665,9 @@ describe('restarting to install an update (DOR-538)', () => {
     const [agentPrompt] = vi.mocked(dialog.showMessageBox).mock.calls[1] as [
       Electron.MessageBoxOptions,
     ];
-    expect(agentPrompt.message).toBe('1 agent is still working. Restart anyway?');
+    expect(agentPrompt.message).toBe(
+      '1 agent is still working or waiting on your answer. Restart anyway?'
+    );
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 });

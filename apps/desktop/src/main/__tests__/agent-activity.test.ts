@@ -111,15 +111,28 @@ describe('watchAgentActivity', () => {
     stream.sendStatus('session-a', 'streaming');
 
     await eventually(() => expect(getActiveAgentCount()).toBe(1));
-    expect(onChange).toHaveBeenLastCalledWith(1);
+    expect(onChange).toHaveBeenLastCalledWith({ streaming: 1, blocked: 0 });
   });
 
-  it('counts a session blocked on you — mid-turn is mid-turn', async () => {
-    await start();
+  it('counts a session blocked on you — mid-turn is mid-turn, but apart from streaming', async () => {
+    const onChange = await start();
 
     stream.sendStatus('session-a', 'blocked');
 
     await eventually(() => expect(getActiveAgentCount()).toBe(1));
+    expect(onChange).toHaveBeenLastCalledWith({ streaming: 0, blocked: 1 });
+  });
+
+  it('moves a session between the streaming and blocked counts as its lifecycle changes', async () => {
+    const onChange = await start();
+    stream.sendStatus('session-a', 'streaming');
+    await eventually(() => expect(onChange).toHaveBeenLastCalledWith({ streaming: 1, blocked: 0 }));
+
+    stream.sendStatus('session-a', 'blocked');
+
+    await eventually(() => expect(onChange).toHaveBeenLastCalledWith({ streaming: 0, blocked: 1 }));
+    // Still exactly one agent mid-run — it just changed which count it's in.
+    expect(getActiveAgentCount()).toBe(1);
   });
 
   it.each(['idle', 'error', 'interrupted'])(
@@ -157,18 +170,22 @@ describe('watchAgentActivity', () => {
     await eventually(() => expect(getActiveAgentCount()).toBe(0));
   });
 
-  it('only reports a change when the number actually changed', async () => {
+  it('only reports a change when either count actually changed', async () => {
     const onChange = await start();
 
     stream.sendStatus('session-a', 'streaming');
     await eventually(() => expect(onChange).toHaveBeenCalledTimes(1));
-    // Same session, still active: no new number to report.
-    stream.sendStatus('session-a', 'blocked');
+    // Re-announcing the same lifecycle for the same session is a no-op, and so
+    // is a session going idle that was never counted in the first place.
+    stream.sendStatus('session-a', 'streaming');
     stream.sendStatus('session-b', 'idle');
     stream.sendStatus('session-b', 'streaming');
 
     await eventually(() => expect(onChange).toHaveBeenCalledTimes(2));
-    expect(onChange.mock.calls).toEqual([[1], [2]]);
+    expect(onChange.mock.calls).toEqual([
+      [{ streaming: 1, blocked: 0 }],
+      [{ streaming: 2, blocked: 0 }],
+    ]);
   });
 
   it('ignores heartbeats, connect frames and anything else on the stream', async () => {
@@ -209,7 +226,7 @@ describe('watchAgentActivity', () => {
     // A stale count that never clears would nag about agents that finished
     // long ago and block quitting forever, so a lost stream resets to zero.
     await eventually(() => expect(getActiveAgentCount()).toBe(0));
-    expect(onChange).toHaveBeenLastCalledWith(0);
+    expect(onChange).toHaveBeenLastCalledWith({ streaming: 0, blocked: 0 });
     await eventually(() => expect(stream.connections).toBeGreaterThan(1));
   });
 

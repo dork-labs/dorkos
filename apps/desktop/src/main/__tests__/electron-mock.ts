@@ -197,7 +197,10 @@ export const app = {
   getVersion: vi.fn((): string => '0.1.0'),
   setAboutPanelOptions: vi.fn<(options: unknown) => void>(),
   setAsDefaultProtocolClient: vi.fn((): boolean => true),
-  dock: { setMenu: vi.fn<(menu: unknown) => void>() },
+  dock: {
+    setMenu: vi.fn<(menu: unknown) => void>(),
+    setBadge: vi.fn<(text: string) => void>(),
+  },
   on: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
     appBus.on(event, listener);
     return app;
@@ -366,7 +369,7 @@ export function resetElectronMock(): void {
   app.getVersion = vi.fn(() => '0.1.0');
   app.setAboutPanelOptions = vi.fn();
   app.setAsDefaultProtocolClient = vi.fn(() => true);
-  app.dock = { setMenu: vi.fn() };
+  app.dock = { setMenu: vi.fn(), setBadge: vi.fn() };
 
   ipcMain.on = vi.fn();
   ipcMain.handle = vi.fn();
