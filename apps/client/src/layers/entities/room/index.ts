@@ -69,8 +69,16 @@ export type { OpenThread } from './model/open-thread';
 export { useComposerFocusRequest, useComposerFocusStore } from './model/composer-focus';
 export { useRoomListStream } from './model/use-room-list-stream';
 export { useMarkRoomRead, useMarkRoomReadNow } from './model/use-mark-room-read';
-export { useCreateChannel, useStartDirectMessage } from './model/use-create-room';
-export type { CreateChannelInput, StartDirectMessageInput } from './model/use-create-room';
+export {
+  useCreateChannel,
+  useStartDirectMessage,
+  isChannelNameConflict,
+} from './model/use-create-room';
+export type {
+  CreateChannelInput,
+  StartDirectMessageInput,
+  UseCreateChannelOptions,
+} from './model/use-create-room';
 export {
   useRenameRoom,
   useSetRoomTopic,

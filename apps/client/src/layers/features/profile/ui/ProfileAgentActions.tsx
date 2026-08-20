@@ -134,7 +134,9 @@ export function ProfileAgentActions({
     if (agentId === null) return;
     deleteAgentData.mutate(agentId, {
       onSuccess: () => {
-        toast.error(`Deleted ${name} and all its data`);
+        // A completed delete, not a failure — bare like its unregister
+        // sibling above, minus the Undo action this one cannot honestly offer.
+        toast(`Deleted ${name} and all its data`);
         close();
       },
     });

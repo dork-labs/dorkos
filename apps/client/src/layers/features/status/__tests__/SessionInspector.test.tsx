@@ -383,11 +383,14 @@ describe('SessionInspector — a readout, not a control panel', () => {
     expect(screen.queryByRole('switch')).toBeNull();
   });
 
-  it('copies the same diagnostics blob the panel copies', () => {
+  it('copies the same diagnostics blob the panel copies, and says so inline', async () => {
     render(<SessionInspector />);
     fireEvent.click(screen.getByRole('button', { name: /Copy diagnostics/ }));
     const parsed: Record<string, unknown> = JSON.parse(writeText.mock.calls[0][0] as string);
     expect(parsed).toMatchObject({ sessionId: 'session-42', lastEventSeq: 412, queueDepth: 2 });
-    expect(toastSuccess).toHaveBeenCalledWith('Diagnostics copied to your clipboard');
+    // The button morphs itself — CopyDiagnosticsButton's own useCopyFeedback
+    // state — instead of a toast beside it.
+    expect(await screen.findByRole('button', { name: /Copied/ })).toBeInTheDocument();
+    expect(toastSuccess).not.toHaveBeenCalled();
   });
 });

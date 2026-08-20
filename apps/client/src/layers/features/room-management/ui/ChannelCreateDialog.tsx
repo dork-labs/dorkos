@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import {
   Button,
@@ -12,7 +12,7 @@ import {
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
-import { useCreateChannel } from '@/layers/entities/room';
+import { isChannelNameConflict, useCreateChannel } from '@/layers/entities/room';
 import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
 import { AgentRosterPicker } from './AgentRosterPicker';
 
@@ -54,6 +54,12 @@ interface ChannelCreateDialogProps {
  * its roster in one transaction, so a channel either exists with its agents in
  * it or does not exist at all. A failure leaves the dialog open with the name
  * and the chips still in it, because the retry is the same request.
+ *
+ * **A name conflict renders inline, at the field it is about.** The dialog is
+ * still open and still showing the name that collided, so that is where the
+ * answer belongs — a toast for a validation error the reader can fix in the
+ * next second is theater. Every other failure (a dropped connection, a 500)
+ * still toasts, via `useCreateChannel`'s own fallback.
  */
 export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCreateDialogProps) {
   // The fleet is read here rather than handed down, so the sidebar that mounts
@@ -62,7 +68,21 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
   const [name, setName] = useState('');
   const nameRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const createChannel = useCreateChannel();
+  // `useCreateChannel`'s own onError can still run after this dialog unmounts
+  // — the parent mounts it only `channelDialogOpen && <ChannelCreateDialog />`,
+  // and TanStack keeps a `useMutation`-level callback alive past its observer
+  // — so "can a conflict still be shown inline" is read from a live ref, not a
+  // value closed over at render time.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const createChannel = useCreateChannel({ isInlineErrorVisible: () => mountedRef.current });
+  const nameConflict = isChannelNameConflict(createChannel.error)
+    ? createChannel.error.message
+    : null;
 
   const trimmed = name.trim();
   const nameIsValid = trimmed.length > 0 && trimmed.length <= MAX_NAME;
@@ -76,10 +96,11 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
           onOpenChange(false);
           onCreated(room);
         },
-        // No local onError: the shared mutation toast (`useCreateChannel`'s
-        // `meta.errorLabel`) reports it, and the dialog stays open on its own
-        // — `onOpenChange(false)` above only ever runs on success — so the name
-        // and the chips are still on screen for the retry regardless.
+        // No local onError here either: `useCreateChannel` reports every
+        // failure itself now (inline for a name conflict, a toast for
+        // everything else) — see its own TSDoc. The dialog stays open on its
+        // own regardless, since `onOpenChange(false)` above only ever runs on
+        // success, so the name and the chips are still on screen for the retry.
       }
     );
   };
@@ -127,9 +148,21 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
               maxLength={MAX_NAME}
               placeholder="Backend"
               autoComplete="off"
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                setName(event.target.value);
+                // Editing the name is what fixes the conflict, so the stale
+                // refusal about the OLD name should not still be sitting here.
+                if (createChannel.error) createChannel.reset();
+              }}
               onKeyDown={handleNameKeyDown}
+              aria-invalid={nameConflict ? true : undefined}
+              aria-describedby={nameConflict ? 'channel-name-error' : undefined}
             />
+            {nameConflict && (
+              <p id="channel-name-error" role="alert" className="text-destructive text-xs">
+                {nameConflict}
+              </p>
+            )}
           </div>
 
           <section aria-label="Agents in this channel" className="space-y-2 border-t pt-4">

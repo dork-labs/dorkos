@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import type { FileEntry } from '@dorkos/shared/types';
 import { useTransport } from '@/layers/shared/model';
-import { composerFileReference, requestComposerInsert } from '@/layers/shared/lib';
+import { composerFileReference, requestComposerInsert, useCopyFeedback } from '@/layers/shared/lib';
 import { useConfig } from '@/layers/entities/config';
 import { toastCrudError } from '../lib/crud-errors';
 import { revealActionLabel, toAbsolutePath } from '../lib/paths';
@@ -69,19 +69,19 @@ export function useFileActions(cwd: string | null): FileActionsApi {
     [transport, cwd]
   );
 
+  const { copy } = useCopyFeedback();
   const copyPath = useCallback(
     async (entry: FileEntry, kind: CopyPathKind): Promise<void> => {
       const text = kind === 'absolute' && cwd ? toAbsolutePath(cwd, entry.path) : entry.path;
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch {
-        // Clipboard writes are denied outside a secure context or when the
-        // browser withholds permission; there is nothing to retry, so say so
-        // once rather than failing silently.
-        toast.error("Couldn't copy to the clipboard");
-      }
+      const ok = await copy(text);
+      // Clipboard writes are denied outside a secure context or when the
+      // browser withholds permission; there is nothing to retry, so say so
+      // once rather than failing silently. Success stays silent — the menu
+      // closing is the acknowledgement, per the copy-path convention every
+      // editor shares.
+      if (!ok) toast.error("Couldn't copy to the clipboard");
     },
-    [cwd]
+    [cwd, copy]
   );
 
   const addToChat = useCallback((entry: FileEntry): void => {

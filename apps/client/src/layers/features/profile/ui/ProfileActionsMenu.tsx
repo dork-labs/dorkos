@@ -59,7 +59,10 @@ function hasProfileActions(member: TeamMember, relationship: ProfileRelationship
  * unconditionally.
  */
 export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuProps) {
-  const [, copy] = useCopyFeedback();
+  // The menu closes the instant an item is chosen, so there is no chrome left
+  // on screen to morph — the toast fallback (`useCopyFeedback`'s TSDoc) is the
+  // one exception to "copy feedback lives inline".
+  const { copy } = useCopyFeedback({ toastOnSettle: true });
   const [step, setStep] = useState<ProfileAgentStep>(null);
   const transport = useTransport();
   const queryClient = useQueryClient();
@@ -119,12 +122,7 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
           )}
 
           {member.handle !== null && (
-            <ResponsiveDropdownMenuItem
-              onSelect={() => {
-                copy(`@${member.handle}`);
-                toast.success('Copied');
-              }}
-            >
+            <ResponsiveDropdownMenuItem onSelect={() => void copy(`@${member.handle}`)}>
               Copy @handle
             </ResponsiveDropdownMenuItem>
           )}

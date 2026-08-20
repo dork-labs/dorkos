@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { BookOpen, Sparkles, User, Users } from 'lucide-react';
-import { toast } from 'sonner';
-import { cn, truncateMiddle } from '@/layers/shared/lib';
+import { cn, truncateMiddle, useCopyFeedback } from '@/layers/shared/lib';
 import { CollapsibleCard } from '../primitives';
 
 interface MemoryEntry {
@@ -112,15 +111,13 @@ function MemoryRecallRow({ memory }: { memory: MemoryEntry }) {
   const isSynthesis = memory.path.startsWith('<synthesis:');
   const ScopeIcon = memory.scope === 'team' ? Users : User;
   const scopeWord = memory.scope === 'team' ? 'team' : 'personal';
+  // The row's own icon carries the scope, not a copy state, so there is
+  // nothing here to morph — the toast fallback (`useCopyFeedback`'s TSDoc).
+  const { copy } = useCopyFeedback({ toastOnSettle: true });
 
-  const handleCopy = async () => {
+  const handleCopy = () => {
     const payload = isSynthesis && memory.content ? memory.content : memory.path;
-    try {
-      await navigator.clipboard.writeText(payload);
-      toast.success('Copied to clipboard');
-    } catch {
-      toast.error('Failed to copy');
-    }
+    void copy(payload);
   };
 
   if (isSynthesis && memory.content) {

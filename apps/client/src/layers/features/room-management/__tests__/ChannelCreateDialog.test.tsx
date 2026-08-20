@@ -267,13 +267,11 @@ describe('ChannelCreateDialog', () => {
     expect(screen.getByRole('button', { name: 'Create it without agents' })).toBeEnabled();
   });
 
-  it('keeps the name and the selection when the server refuses', async () => {
+  it('keeps the name and the selection when the server refuses (non-conflict error)', async () => {
     const onOpenChange = vi.fn();
     renderDialog({
       transport: {
-        createRoom: vi
-          .fn()
-          .mockRejectedValue(new Error('A channel called #backend already exists')),
+        createRoom: vi.fn().mockRejectedValue(new Error('Something went wrong')),
       },
       onOpenChange,
     });
@@ -282,18 +280,65 @@ describe('ChannelCreateDialog', () => {
     pick('Ana');
     fireEvent.click(screen.getByRole('button', { name: 'Create channel with 1 agent' }));
 
-    // The dialog no longer toasts this itself — `useCreateChannel`'s
-    // `meta.errorLabel` routes it through the shared mutation toast, composed
-    // with the server's own sentence.
+    // `useCreateChannel` reports every failure itself now: it opts out of the
+    // shared mutation toast entirely (`meta.suppressErrorToast`) because a
+    // name conflict needs to render inline and there is no per-error way to
+    // suppress just that one. Anything that is NOT a name conflict still
+    // toasts, in the same voice the shared handler used.
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith(
-        "Couldn't create that channel — A channel called #backend already exists",
-        expect.anything()
-      )
+      expect(toastError).toHaveBeenCalledWith("Couldn't create that channel — Something went wrong")
     );
     // The retry is the same request, so nothing typed is thrown away.
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
     expect(screen.getByLabelText('Channel name')).toHaveValue('Backend');
     expect(screen.getByRole('button', { name: 'Remove Ana' })).toBeInTheDocument();
+  });
+
+  /** A `SLUG_TAKEN` refusal, shaped the way `HttpTransport` throws it. */
+  function slugTakenError(message: string): Error & { code: string } {
+    return Object.assign(new Error(message), { code: 'SLUG_TAKEN' });
+  }
+
+  it('renders a name conflict inline at the field, with no toast', async () => {
+    const onOpenChange = vi.fn();
+    renderDialog({
+      transport: {
+        createRoom: vi
+          .fn()
+          .mockRejectedValue(slugTakenError('A channel called #backend already exists')),
+      },
+      onOpenChange,
+    });
+
+    nameIt('Backend');
+    pick('Ana');
+    fireEvent.click(screen.getByRole('button', { name: 'Create channel with 1 agent' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A channel called #backend already exists'
+    );
+    expect(toastError).not.toHaveBeenCalled();
+    // Same "nothing typed is thrown away" contract as any other refusal.
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(screen.getByLabelText('Channel name')).toHaveValue('Backend');
+  });
+
+  it('clears the inline conflict once you start editing the name', async () => {
+    renderDialog({
+      transport: {
+        createRoom: vi
+          .fn()
+          .mockRejectedValue(slugTakenError('A channel called #backend already exists')),
+      },
+    });
+
+    nameIt('Backend');
+    pick('Ana');
+    fireEvent.click(screen.getByRole('button', { name: 'Create channel with 1 agent' }));
+    await screen.findByRole('alert');
+
+    nameIt('Backend Team');
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

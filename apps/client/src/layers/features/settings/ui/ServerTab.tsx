@@ -214,16 +214,18 @@ function ConfigRow({
   truncate?: boolean;
   muted?: boolean;
 }) {
-  const [copied, copy] = useCopyFeedback();
+  const { copied, failed, copy } = useCopyFeedback();
   return (
     <button
       type="button"
-      onClick={() => copy(value)}
+      onClick={() => void copy(value)}
       className="hover:bg-muted/50 active:bg-muted/70 -mx-1 flex w-full items-center justify-between gap-4 rounded px-1 py-1 transition-colors duration-100"
     >
       <span className="text-muted-foreground shrink-0 text-sm">{label}</span>
       {copied ? (
         <span className="text-muted-foreground text-xs">Copied</span>
+      ) : failed ? (
+        <span className="text-destructive text-xs">Couldn&apos;t copy</span>
       ) : (
         <span
           className={cn(

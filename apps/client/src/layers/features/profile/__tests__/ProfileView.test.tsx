@@ -188,12 +188,13 @@ describe('the portrait, in one fixed order', () => {
     expect(screen.queryByRole('button', { name: 'Copy @handle' })).toBeNull();
   });
 
-  it('copies the handle when you tap it', async () => {
+  it('copies the handle when you tap it, inline — no toast beside it', async () => {
     await renderProfile(MANAGED);
 
     await userEvent.click(screen.getByRole('button', { name: 'Copy @handle' }));
 
-    expect(toasts.success).toHaveBeenCalledWith('Copied');
+    expect(await screen.findByRole('button', { name: 'Copy @handle' })).toHaveTextContent('Copied');
+    expect(toasts.success).not.toHaveBeenCalled();
   });
 });
 
@@ -410,12 +411,14 @@ describe('the rows', () => {
     expect(kind('runs-on')).toBe('pick');
   });
 
-  it('copies the real folder, not the shortened one', async () => {
+  it('copies the real folder, not the shortened one, inline — no toast beside it', async () => {
     await renderProfile(MANAGED);
+    const row = document.querySelector('[data-profile-row="folder"]')!;
 
-    await userEvent.click(document.querySelector('[data-profile-row="folder"]')!);
+    await userEvent.click(row);
 
-    expect(toasts.success).toHaveBeenCalledWith('Copied');
+    await waitFor(() => expect(row.querySelector('.lucide-check')).toBeInTheDocument());
+    expect(toasts.success).not.toHaveBeenCalled();
   });
 
   it('draws the identity’s own colour as the rule above them', async () => {

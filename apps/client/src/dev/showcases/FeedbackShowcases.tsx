@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronsUpDown } from 'lucide-react';
+import { Check, ChevronsUpDown, Copy, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -11,6 +11,7 @@ import {
   TooltipTrigger,
   TooltipContent,
   Button,
+  CopyButton,
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
@@ -18,7 +19,111 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from '@/layers/shared/ui';
+import { useCopyFeedback } from '@/layers/shared/lib';
 import { FeedbackDialog } from '@/layers/features/feedback';
+
+/**
+ * Breaks `navigator.clipboard.writeText` for exactly one call, so the
+ * showcase can put `useCopyFeedback`'s failure state on screen without
+ * relying on a browser permission that is rarely denied in practice.
+ */
+async function copyThatFails(copy: (text: string) => Promise<boolean>) {
+  const clipboard = navigator.clipboard;
+  const original = clipboard.writeText.bind(clipboard);
+  clipboard.writeText = () => Promise.reject(new Error('denied'));
+  try {
+    await copy('this will fail');
+  } finally {
+    clipboard.writeText = original;
+  }
+}
+
+/** The icon-button pair: a real copy next to a forced failure. */
+function CopyButtonDemo() {
+  const { copy } = useCopyFeedback();
+  return (
+    <div className="flex flex-wrap items-center gap-6">
+      <div className="flex items-center gap-2">
+        <CopyButton value="dorkos.ai" label="Copy site URL" />
+        <span className="text-muted-foreground text-xs">Click to copy</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void copyThatFails(copy)}
+          className="text-muted-foreground hover:text-foreground focus-ring rounded-sm p-1 transition-colors"
+          aria-label="Copy (forced failure demo)"
+        >
+          <Copy className="size-3.5" />
+        </button>
+        <span className="text-muted-foreground text-xs">Click to force a failure</span>
+      </div>
+    </div>
+  );
+}
+
+/** The inline text-morph shape `ServerTab`/`AdvancedTab` use around the same hook. */
+function CopyTextRowDemo() {
+  const { copied, failed, copy } = useCopyFeedback();
+  return (
+    <button
+      type="button"
+      onClick={() => void copy('~/.dork/logs')}
+      className="hover:bg-muted/50 flex w-56 items-center justify-between gap-2 rounded px-2 py-1.5 text-left transition-colors"
+    >
+      <span className="text-muted-foreground text-sm">Log location</span>
+      {copied ? (
+        <span className="text-xs">Copied</span>
+      ) : failed ? (
+        <span className="text-destructive text-xs">Couldn&apos;t copy</span>
+      ) : (
+        <span className="font-mono text-xs">~/.dork/logs</span>
+      )}
+    </button>
+  );
+}
+
+/** The row-glyph shape `ProfileRow` uses: the value stays put, only the trailing icon morphs. */
+function CopyGlyphRowDemo() {
+  const { copied, failed, copy } = useCopyFeedback();
+  return (
+    <button
+      type="button"
+      onClick={() => void copy('/Users/you/projects/dorkos')}
+      className="hover:bg-muted/50 flex w-72 items-center justify-between gap-2 rounded px-2 py-1.5 text-left transition-colors"
+    >
+      <span className="text-muted-foreground text-sm">Folder</span>
+      <span className="flex items-center gap-1.5">
+        <span className="truncate font-mono text-xs">/Users/you/projects/dorkos</span>
+        {copied ? (
+          <Check className="text-status-success size-3.5 shrink-0" />
+        ) : failed ? (
+          <X className="text-status-error size-3.5 shrink-0" />
+        ) : (
+          <Copy className="text-muted-foreground/70 size-3.5 shrink-0" />
+        )}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The toast fallback — `toastOnSettle: true` — for a control with no chrome
+ * left to morph once it is clicked (a menu item that closes its menu).
+ */
+function CopyToastFallbackDemo() {
+  const { copy } = useCopyFeedback({ toastOnSettle: true });
+  return (
+    <div className="flex items-center gap-2">
+      <Button variant="outline" size="sm" onClick={() => void copy('@warden')}>
+        Copy @handle
+      </Button>
+      <span className="text-muted-foreground text-xs">
+        Menu item chrome — settles as one neutral toast instead
+      </span>
+    </div>
+  );
+}
 
 /** Feedback component showcases: Skeleton, Separator, Tooltip, HoverCard, Collapsible, Toaster. */
 export function FeedbackShowcases() {
@@ -152,6 +257,31 @@ export function FeedbackShowcases() {
               <div className="rounded-md border px-3 py-2 text-sm">Temperature: 0.7</div>
             </CollapsibleContent>
           </Collapsible>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Copy feedback"
+        description="The one copy-to-clipboard mechanism app-wide (useCopyFeedback + CopyButton): idle, copied (~1.2s, then reverts), or failed — inline in the control that was clicked, never a toast on top of it. The toast fallback is opt-in, for a control with no chrome left to morph once it closes."
+      >
+        <ShowcaseLabel>Icon button (idle / copied / failed)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <CopyButtonDemo />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Text morph — ServerTab, AdvancedTab</ShowcaseLabel>
+        <ShowcaseDemo>
+          <CopyTextRowDemo />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Trailing glyph — ProfileRow</ShowcaseLabel>
+        <ShowcaseDemo>
+          <CopyGlyphRowDemo />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Toast fallback — ProfileActionsMenu, AgentNode, entry-actions</ShowcaseLabel>
+        <ShowcaseDemo>
+          <CopyToastFallbackDemo />
         </ShowcaseDemo>
       </PlaygroundSection>
 

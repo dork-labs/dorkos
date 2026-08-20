@@ -1,8 +1,7 @@
 import { useRouter } from '@tanstack/react-router';
 import type { ErrorComponentProps } from '@tanstack/react-router';
-import { AlertTriangle, Check, Copy } from 'lucide-react';
-import { useState } from 'react';
-import { isDynamicImportError } from '@/layers/shared/lib';
+import { AlertTriangle, Check, Copy, X } from 'lucide-react';
+import { cn, isDynamicImportError, useCopyFeedback } from '@/layers/shared/lib';
 import { Button } from './button';
 
 /**
@@ -19,14 +18,12 @@ import { Button } from './button';
  */
 export function RouteErrorFallback({ error }: ErrorComponentProps) {
   const router = useRouter();
-  const [copied, setCopied] = useState(false);
+  const { copied, failed, copy } = useCopyFeedback();
   const staleChunk = isDynamicImportError(error);
 
-  async function copyStack() {
+  function copyStack() {
     if (!error.stack) return;
-    await navigator.clipboard.writeText(error.stack);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    void copy(error.stack);
   }
 
   return (
@@ -52,8 +49,16 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
               title="Copy stack trace"
               className="text-muted-foreground hover:text-foreground hover:bg-muted absolute top-0 right-0 flex items-center gap-1 rounded px-2 py-1 text-xs transition-all"
             >
-              {copied ? <Check className="size-3 text-green-500" /> : <Copy className="size-3" />}
-              <span className={copied ? 'text-green-500' : ''}>{copied ? 'Copied!' : 'Copy'}</span>
+              {copied ? (
+                <Check className="size-3 text-green-500" />
+              ) : failed ? (
+                <X className="text-destructive size-3" />
+              ) : (
+                <Copy className="size-3" />
+              )}
+              <span className={cn(copied && 'text-green-500', failed && 'text-destructive')}>
+                {copied ? 'Copied!' : failed ? "Couldn't copy" : 'Copy'}
+              </span>
             </button>
             <pre className="text-muted-foreground overflow-x-auto pr-16 text-xs whitespace-pre-wrap">
               {error.stack}

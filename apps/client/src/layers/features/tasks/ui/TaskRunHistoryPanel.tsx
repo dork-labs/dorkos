@@ -344,6 +344,9 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
           onNavigate={handleNavigateToRun}
           onCancel={(id) =>
             cancelTaskRun.mutate(id, {
+              // Bare, not `.success` — both outcomes are a neutral status
+              // report ("already done" / "in progress"), not a confirmation
+              // that the click itself succeeded.
               onSuccess: (result) =>
                 toast(
                   result.state === 'already_finished'

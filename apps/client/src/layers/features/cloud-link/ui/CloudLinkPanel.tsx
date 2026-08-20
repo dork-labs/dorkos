@@ -7,6 +7,7 @@ import {
   RefreshCw,
   TriangleAlert,
   Unplug,
+  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useId, useState } from 'react';
 import {
@@ -207,7 +208,7 @@ function IdleState({
 
 /** A device flow is in progress — show the code and the activation link. */
 function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending' }> }) {
-  const [copied, copy] = useCopyFeedback();
+  const { copied, failed, copy } = useCopyFeedback();
 
   return (
     <div className="space-y-4">
@@ -219,10 +220,16 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
           </code>
           <button
             className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-2 transition-colors"
-            onClick={() => copy(view.userCode)}
-            aria-label="Copy code"
+            onClick={() => void copy(view.userCode)}
+            aria-label={failed ? "Couldn't copy code — try again" : 'Copy code'}
           >
-            {copied ? <Check className="size-4 text-green-500" /> : <Copy className="size-4" />}
+            {copied ? (
+              <Check className="size-4 text-green-500" />
+            ) : failed ? (
+              <X className="text-destructive size-4" />
+            ) : (
+              <Copy className="size-4" />
+            )}
           </button>
         </div>
       </div>

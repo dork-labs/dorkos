@@ -1,4 +1,4 @@
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, X } from 'lucide-react';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
 
 interface CopyButtonProps {
@@ -13,10 +13,11 @@ interface CopyButtonProps {
 }
 
 /**
- * Icon button that copies a string to the clipboard with timed check-mark feedback.
+ * Icon button that copies a string to the clipboard with timed inline feedback.
  *
- * Uses {@link useCopyFeedback} to manage the success state. Defaults match the
- * compact form used inside Settings dialogs (size-3.5 icon, muted-foreground hover).
+ * Uses {@link useCopyFeedback} to manage the success/failure state. Defaults
+ * match the compact form used inside Settings dialogs (size-3.5 icon,
+ * muted-foreground hover).
  */
 export function CopyButton({
   value,
@@ -24,7 +25,7 @@ export function CopyButton({
   className,
   size = 'sm',
 }: CopyButtonProps) {
-  const [copied, copy] = useCopyFeedback();
+  const { copied, failed, copy } = useCopyFeedback();
   const iconSize = size === 'md' ? 'size-4' : 'size-3.5';
   return (
     <button
@@ -34,11 +35,13 @@ export function CopyButton({
         'text-muted-foreground hover:text-foreground focus-ring rounded-sm p-1 transition-colors',
         className
       )}
-      onClick={() => copy(value)}
-      aria-label={label}
+      onClick={() => void copy(value)}
+      aria-label={failed ? "Couldn't copy — try again" : label}
     >
       {copied ? (
         <Check className={cn(iconSize, 'text-green-500')} />
+      ) : failed ? (
+        <X className={cn(iconSize, 'text-destructive')} />
       ) : (
         <Copy className={iconSize} />
       )}

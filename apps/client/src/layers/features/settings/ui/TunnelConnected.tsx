@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import QRCode from 'react-qr-code';
-import { Check, Copy, Link, QrCode } from 'lucide-react';
+import { Check, Copy, Link, QrCode, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Button } from '@/layers/shared/ui';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
@@ -43,8 +43,8 @@ const qrExpandTransition = { duration: 0.2, ease: [0, 0, 0.2, 1] } as const;
 
 /** Connected view — URL is the hero, QR behind a toggle, three action buttons. */
 export function TunnelConnected({ url, activeSessionId, latencyMs }: TunnelConnectedProps) {
-  const [urlCopied, copyUrl] = useCopyFeedback();
-  const [sessionCopied, copySession] = useCopyFeedback();
+  const { copied: urlCopied, failed: urlFailed, copy: copyUrl } = useCopyFeedback();
+  const { copied: sessionCopied, failed: sessionFailed, copy: copySession } = useCopyFeedback();
   const [showQr, setShowQr] = useState(false);
 
   const sessionUrl = activeSessionId ? `${url}?session=${activeSessionId}` : null;
@@ -89,10 +89,16 @@ export function TunnelConnected({ url, activeSessionId, latencyMs }: TunnelConne
             variant="outline"
             size="sm"
             className="flex-1 gap-1.5"
-            onClick={() => copyUrl(url)}
+            onClick={() => void copyUrl(url)}
           >
-            {urlCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-            {urlCopied ? 'Copied' : 'Copy URL'}
+            {urlCopied ? (
+              <Check className="size-3" />
+            ) : urlFailed ? (
+              <X className="text-destructive size-3" />
+            ) : (
+              <Copy className="size-3" />
+            )}
+            {urlCopied ? 'Copied' : urlFailed ? "Couldn't copy" : 'Copy URL'}
           </Button>
 
           {sessionUrl && (
@@ -100,10 +106,16 @@ export function TunnelConnected({ url, activeSessionId, latencyMs }: TunnelConne
               variant="outline"
               size="sm"
               className="flex-1 gap-1.5"
-              onClick={() => copySession(sessionUrl)}
+              onClick={() => void copySession(sessionUrl)}
             >
-              {sessionCopied ? <Check className="size-3" /> : <Link className="size-3" />}
-              {sessionCopied ? 'Copied' : 'Session link'}
+              {sessionCopied ? (
+                <Check className="size-3" />
+              ) : sessionFailed ? (
+                <X className="text-destructive size-3" />
+              ) : (
+                <Link className="size-3" />
+              )}
+              {sessionCopied ? 'Copied' : sessionFailed ? "Couldn't copy" : 'Session link'}
             </Button>
           )}
 

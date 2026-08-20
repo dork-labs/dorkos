@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { Check, Copy, KeyRound, Trash2 } from 'lucide-react';
+import { Check, Copy, KeyRound, Trash2, X } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -138,7 +138,7 @@ export function ApiKeysSection() {
 
 /** One-time plaintext reveal for a freshly created key. */
 function CreatedKeyReveal({ created, onDone }: { created: CreatedApiKey; onDone: () => void }) {
-  const [copied, copy] = useCopyFeedback();
+  const { copied, failed, copy } = useCopyFeedback();
   return (
     <div className="border-primary/40 bg-primary/5 space-y-3 rounded-lg border p-3">
       <p className="text-sm font-medium">Copy your key now — it won&apos;t be shown again</p>
@@ -148,10 +148,16 @@ function CreatedKeyReveal({ created, onDone }: { created: CreatedApiKey; onDone:
         </code>
         <button
           className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-1.5 transition-colors"
-          onClick={() => copy(created.key)}
-          aria-label="Copy API key"
+          onClick={() => void copy(created.key)}
+          aria-label={failed ? "Couldn't copy API key — try again" : 'Copy API key'}
         >
-          {copied ? <Check className="size-4 text-green-500" /> : <Copy className="size-4" />}
+          {copied ? (
+            <Check className="size-4 text-green-500" />
+          ) : failed ? (
+            <X className="text-destructive size-4" />
+          ) : (
+            <Copy className="size-4" />
+          )}
         </button>
       </div>
       <Button variant="outline" size="sm" onClick={onDone}>

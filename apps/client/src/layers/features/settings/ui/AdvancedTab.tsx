@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Copy, TriangleAlert } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { TIMING } from '@/layers/shared/lib';
+import { useCopyFeedback } from '@/layers/shared/lib';
 import {
   Button,
   FieldCard,
@@ -219,25 +219,20 @@ export function AdvancedTab() {
 
 /** Read-only row showing the log file location with click-to-copy. */
 function LogLocationRow({ dorkHome }: { dorkHome: string }) {
-  const [copied, setCopied] = useState(false);
+  const { copied, failed, copy } = useCopyFeedback();
   const logPath = `${dorkHome}/logs`;
-
-  function handleCopy() {
-    navigator.clipboard.writeText(logPath).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), TIMING.COPY_FEEDBACK_MS);
-    });
-  }
 
   return (
     <SettingRow label="Log location" description="Directory where server log files are stored">
       <button
         type="button"
-        onClick={handleCopy}
+        onClick={() => void copy(logPath)}
         className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
       >
         {copied ? (
           <span className="text-xs">Copied</span>
+        ) : failed ? (
+          <span className="text-destructive text-xs">Couldn&apos;t copy</span>
         ) : (
           <>
             <span className="max-w-40 truncate font-mono text-xs" dir="rtl" title={logPath}>

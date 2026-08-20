@@ -165,8 +165,9 @@ describe('useEntryActions — the action set', () => {
 
     expect(writeText).toHaveBeenCalledWith('the cache is cold');
     // Two of the three ways to reach this close on the click, so the surface
-    // itself has nowhere to show the answer.
-    await vi.waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Copied to clipboard'));
+    // itself has nowhere to show the answer — `useCopyFeedback`'s toast
+    // fallback, the one pattern every such site uses.
+    await vi.waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Copied'));
   });
 
   it('says so when the clipboard refuses', async () => {
@@ -177,7 +178,9 @@ describe('useEntryActions — the action set', () => {
 
     actionsFor(entry()).current[1]!.run();
 
-    await vi.waitFor(() => expect(toastError).toHaveBeenCalledWith('Failed to copy'));
+    await vi.waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("Couldn't copy to the clipboard")
+    );
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 

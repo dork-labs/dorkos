@@ -5,7 +5,6 @@
  */
 import { useMemo } from 'react';
 import { AtSign, Copy, Reply, User } from 'lucide-react';
-import { toast } from 'sonner';
 import {
   replyRootFor,
   threadDraftKey,
@@ -15,6 +14,7 @@ import {
   type AuthorRef,
   type RoomEntry,
 } from '@/layers/entities/room';
+import { useCopyFeedback } from '@/layers/shared/lib';
 import { ENTRY_ACTION_ORDER, type EntryAction, type EntryActionSlot } from '../lib/entry-actions';
 
 /** The message an action set is being built for. */
@@ -103,6 +103,7 @@ export function useEntryActions({
   const text = entry.body.text;
   const handle = author?.id === viewerAuthorId ? undefined : (author?.handle ?? undefined);
   const authorName = author?.displayName;
+  const { copy } = useCopyFeedback({ toastOnSettle: true });
 
   return useMemo(() => {
     const available: Partial<Record<EntryActionSlot, EntryAction>> = {
@@ -130,13 +131,9 @@ export function useEntryActions({
         // close on the click — the menu and the drawer are gone before the copy
         // resolves — so there is nowhere on the surface itself to put the
         // answer, and a clipboard write can be refused outright by permissions.
-        // The same shape `MemoryRecallBlock` uses.
-        run: () => {
-          void navigator.clipboard
-            ?.writeText(text)
-            .then(() => toast.success('Copied to clipboard'))
-            .catch(() => toast.error('Failed to copy'));
-        },
+        // `useCopyFeedback`'s toast fallback is the one pattern every such site
+        // uses — the same shape `MemoryRecallBlock` uses.
+        run: () => void copy(text),
       },
     };
 
@@ -168,5 +165,5 @@ export function useEntryActions({
     return ENTRY_ACTION_ORDER.map((slot) => available[slot]).filter(
       (action): action is EntryAction => action !== undefined
     );
-  }, [roomId, rootEntryId, text, handle, authorName, onViewProfile]);
+  }, [roomId, rootEntryId, text, handle, authorName, onViewProfile, copy]);
 }

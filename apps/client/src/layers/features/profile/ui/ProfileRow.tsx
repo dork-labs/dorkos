@@ -6,7 +6,7 @@
  */
 import { useId, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { Check, ChevronDown, ChevronRight, Copy, Lock } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, Lock, X } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
 import {
@@ -26,17 +26,23 @@ import type { ProfileRowModel } from '../lib/profile-rows';
 const MAX_FACES = 3;
 
 /** The trailing glyph, which is also the row's promise about what a tap does. */
-function RowGlyph({ kind, copied }: { kind: ProfileRowModel['kind']; copied: boolean }) {
+function RowGlyph({
+  kind,
+  copied,
+  failed,
+}: {
+  kind: ProfileRowModel['kind'];
+  copied: boolean;
+  failed: boolean;
+}) {
   const className = 'text-muted-foreground/70 size-3.5 shrink-0';
   if (kind === 'nav') return <ChevronRight aria-hidden className={className} />;
   if (kind === 'pick') return <ChevronDown aria-hidden className={className} />;
   if (kind === 'locked') return <Lock aria-hidden className={className} />;
   if (kind === 'copy') {
-    return copied ? (
-      <Check aria-hidden className="text-status-success size-3.5 shrink-0" />
-    ) : (
-      <Copy aria-hidden className={className} />
-    );
+    if (copied) return <Check aria-hidden className="text-status-success size-3.5 shrink-0" />;
+    if (failed) return <X aria-hidden className="text-status-error size-3.5 shrink-0" />;
+    return <Copy aria-hidden className={className} />;
   }
   return null;
 }
@@ -98,7 +104,7 @@ export interface ProfileRowProps {
  * scanning for, and a path or a room list is what has to give way.
  */
 export function ProfileRow({ row, onNavigate, pickContent }: ProfileRowProps) {
-  const [copied, copy] = useCopyFeedback();
+  const { copied, failed, copy } = useCopyFeedback();
   const reasonId = useId();
   const [pickOpen, setPickOpen] = useState(false);
   const isStatic = row.kind === 'text';
@@ -110,7 +116,7 @@ export function ProfileRow({ row, onNavigate, pickContent }: ProfileRowProps) {
         {row.faces && <FaceStack members={row.faces} />}
         {row.value !== null && <span className="truncate text-sm">{row.value}</span>}
         {row.meta && <span className="text-muted-foreground text-2xs shrink-0">{row.meta}</span>}
-        <RowGlyph kind={row.kind} copied={copied} />
+        <RowGlyph kind={row.kind} copied={copied} failed={failed} />
       </span>
     </>
   );
@@ -140,9 +146,10 @@ export function ProfileRow({ row, onNavigate, pickContent }: ProfileRowProps) {
     // not from here — Radix needs the open state to come from the element it
     // will position against.
     if (row.kind === 'pick') return;
+    // The trailing glyph already morphs to a check (or an X on failure) —
+    // `RowGlyph` above — so a toast here would say the same thing twice.
     if (row.kind === 'copy' && row.copyValue) {
-      copy(row.copyValue);
-      toast.success('Copied');
+      void copy(row.copyValue);
       return;
     }
     // `locked`. The tooltip answers a pointer; a tap has no hover to give, and
