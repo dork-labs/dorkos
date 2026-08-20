@@ -260,7 +260,9 @@ export function InboxBell() {
     !open;
 
   // The beat plays when the pinned section empties, receipts and all, while
-  // somebody is looking at it.
+  // somebody is looking at it. The all-clear CHIME is not here: it belongs to
+  // the moment the queue drains, whether or not this panel is open, so it hangs
+  // off `NotificationCenter` instead (see `usePinnedDrainBeat`).
   const beating = usePinnedDrainBeat(waitingCount + settling.length, open);
   const showsPinned = waitingCount > 0 || settling.length > 0 || isError;
 

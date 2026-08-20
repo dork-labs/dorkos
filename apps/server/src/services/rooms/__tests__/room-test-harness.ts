@@ -17,7 +17,7 @@ import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import { ReadCursorService } from '../../core/read-cursor-service.js';
 import { ReadCursorStore } from '../../core/read-cursor-store.js';
 import { roomsSource, searchMessages, SearchIndexer } from '../../search/index.js';
-import { AuthorRegistry } from '../author-registry.js';
+import { AuthorRegistry, isOwnerRecord } from '../author-registry.js';
 import type { EngagedWindow } from '../engagement.js';
 import type { CollectWindow } from '../room-collect.js';
 import { ReactionBudget } from '../reactions/reaction-budget.js';
@@ -441,6 +441,13 @@ export function createRoomHarness(opts: {
   maxAttachmentsPerEntry?: number;
   ownerUserId?: string;
   budgetNow?: () => number;
+  /**
+   * Which rooms the operator has muted, as a live predicate (spec
+   * `notification-system` task T11) — defaults to "nothing is muted", the same
+   * default the live config reader degrades to. A test about mute passes its
+   * own, over a `Set` it can mutate mid-test the way a real toggle would.
+   */
+  isRoomMuted?: (roomId: string) => boolean;
 }): RoomHarness {
   const db = createTestDb();
   const agentLookup = typeof opts.agents === 'function' ? opts.agents(db) : opts.agents;
@@ -453,6 +460,7 @@ export function createRoomHarness(opts: {
   const collect = opts.collect ?? { debounceMs: 0, maxEntries: 20 };
   const holdCeilingMs = opts.holdCeilingMs ?? 60 * 60_000;
   const maxAttachmentsPerEntry = opts.maxAttachmentsPerEntry ?? 10;
+  const isRoomMuted = opts.isRoomMuted ?? (() => false);
   // Mutable so `setOwner` can drive the transition, and read per check the way
   // the live wiring reads it — an install becomes owned partway through its life.
   let ownerUserId = opts.ownerUserId ?? null;
@@ -502,7 +510,9 @@ export function createRoomHarness(opts: {
     holdCeilingMs: () => holdCeilingMs,
     maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
+    isOwnerRecord: (record) => isOwnerRecord(record, ownerUserId),
     readCursors,
+    isRoomMuted,
   });
   const human = ownerUserId === null ? authors.localHuman() : authors.bindOwner(ownerUserId);
   return {

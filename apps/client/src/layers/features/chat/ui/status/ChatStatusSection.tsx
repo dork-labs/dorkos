@@ -101,8 +101,6 @@ export function ChatStatusSection({
 
   // Per-field selectors, never a bare `useAppStore()`: the status bar and its
   // ~11 children would otherwise re-render on every unrelated store write.
-  const enableNotificationSound = useAppStore((s) => s.enableNotificationSound);
-  const setEnableNotificationSound = useAppStore((s) => s.setEnableNotificationSound);
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
   const setEnableMessagePolling = useAppStore((s) => s.setEnableMessagePolling);
   const { pins } = useStatusBarPins();
@@ -514,8 +512,6 @@ export function ChatStatusSection({
             onOpenChange={setSessionOpen}
             diagnostics={diagnostics}
             controls={{
-              sound: enableNotificationSound,
-              onToggleSound: () => setEnableNotificationSound(!enableNotificationSound),
               refresh: enableMessagePolling,
               onToggleRefresh: () => setEnableMessagePolling(!enableMessagePolling),
               // The same switch the line's chip carries, so a bar too narrow to

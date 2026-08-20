@@ -18,6 +18,7 @@ import {
   SHAPE_USER_PREFS_DEFAULTS,
   STATUS_BAR_PREFS_DEFAULTS,
   COMPOSER_PREFS_DEFAULTS,
+  NOTIFICATION_PREFS_DEFAULTS,
   USER_CONFIG_DEFAULTS,
   USER_PROFILE_DEFAULTS,
 } from '@dorkos/shared/config-schema';
@@ -117,6 +118,10 @@ router.get('/', async (_req, res) => {
     dismissedPromoIds:
       (configManager.get('ui') as { promos?: { dismissedIds?: string[] } } | undefined)?.promos
         ?.dismissedIds ?? [],
+    // Sent whole, not flattened like the two dismissal lists above: a settings
+    // screen reads all four of these together, and the cockpit's sound and
+    // browser-notification code reads three of them on the same render.
+    notifications: configManager.get('notifications') ?? NOTIFICATION_PREFS_DEFAULTS,
     port: env.DORKOS_PORT,
     uptime: process.uptime(),
     // The resolved default working directory (lib/resolve-root.js) — the same

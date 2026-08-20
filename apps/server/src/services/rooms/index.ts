@@ -10,7 +10,11 @@
  */
 import { agents, eq, type Db } from '@dorkos/db';
 import { AgentBehaviorSchema } from '@dorkos/shared/mesh-schemas';
-import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
+import {
+  USER_CONFIG_DEFAULTS,
+  sameSidebarItem,
+  type UserConfig,
+} from '@dorkos/shared/config-schema';
 import { TEAM_ROOM_WELL_KNOWN } from '@dorkos/shared/room-schemas';
 import { configManager } from '../core/config-manager.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
@@ -19,7 +23,7 @@ import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
 import { roomsSource, searchMessages } from '../search/index.js';
 import { BridgeStore } from '../relay/chat-bridge/bridge-store.js';
-import { AuthorRegistry } from './author-registry.js';
+import { AuthorRegistry, isOwnerRecord } from './author-registry.js';
 import { ensureHandles } from './handles/ensure-handles.js';
 import type { EngagedWindow } from './engagement.js';
 import type { CollectWindow } from './room-collect.js';
@@ -218,6 +222,35 @@ function readMaxAttachmentsPerEntry(): number {
 }
 
 /**
+ * Whether the operator has muted one room, read live from `ui.sidebar.muted`
+ * and degrading to "not muted" the same way {@link readMaxAgentDepth} degrades
+ * to its own default (spec `notification-system` task T11).
+ *
+ * "Not muted" is the safe failure direction here, the mirror image of every
+ * other reader in this file: those bound what an agent may DO, so an
+ * unreadable config has to fail toward the tighter limit. This one only
+ * decides whether a `dm.received` row reaches the operator, so failing toward
+ * SILENCE would be the config manager quietly deciding a real message never
+ * happened — the config-read equivalent of the one thing `NotificationService`
+ * itself promises never to do.
+ *
+ * `sameSidebarItem` is the exact equality the sidebar mutes and unmutes a room
+ * with (`packages/shared/src/config-schema.ts`) — reused rather than
+ * reimplemented, so there is no second "is this the same room" rule to drift
+ * from the one the mute switch itself uses.
+ *
+ * @param roomId - The room to check.
+ */
+function readRoomMuted(roomId: string): boolean {
+  try {
+    const muted = configManager.get('ui').sidebar.muted;
+    return muted.some((ref) => sameSidebarItem(ref, { kind: 'room', roomId }));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The live `welcomeBack` block, degrading to the shipped defaults the same way
  * {@link readMaxAgentDepth} does — and for one extra reason of its own.
  *
@@ -323,7 +356,14 @@ export function createRoomSubsystem(opts: {
     // captured at boot would leave the rooms domain believing forever that the
     // unbound `'local'` author is still the operator.
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+    // The record-based twin, for a caller that already fetched a batch of
+    // rows and would otherwise pay `isOwnerAuthor`'s re-query per member.
+    isOwnerRecord: (record) => isOwnerRecord(record, readOwnerAccount()?.id ?? null),
     readCursors,
+    // Read per post, for the same reason as every reader above: muting a room
+    // in the sidebar has to silence the very next `dm.received`, not the next
+    // server start.
+    isRoomMuted: readRoomMuted,
   });
   // **Here, not at a boot-time hook, and the difference is the ordering bug the
   // reservation exists to prevent.** `dorkos` has to be held before ANY author

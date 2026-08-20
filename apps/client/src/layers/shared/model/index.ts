@@ -75,6 +75,12 @@ export type {
   MessageAuthor,
 } from './chat-message-types';
 export { useTabVisibility } from './use-tab-visibility';
+export {
+  useBrowserNotificationPermission,
+  refreshNotificationPermissionForTests,
+  type BrowserNotificationPermission,
+  type BrowserNotificationPermissionState,
+} from './use-notification-permission';
 export { useFilterState, type UseFilterStateReturn } from './use-filter-state';
 export { useDebouncedInput } from './use-debounced-input';
 export {

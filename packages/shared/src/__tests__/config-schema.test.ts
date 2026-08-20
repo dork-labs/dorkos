@@ -52,6 +52,14 @@ describe('UserConfigSchema', () => {
         composer: { richText: true },
         autonomyAcknowledgedAt: null,
       },
+      // How loud DorkOS may be. The knock and the all-clear ship ON; the
+      // every-turn chime ships OFF, which is the one that changed (DOR-1385).
+      notifications: {
+        escalation: { phoneAfterMinutes: 2 },
+        sounds: { knock: true, allClear: true, turnEnd: false },
+        notifyOnTurnCompleteWhileAway: true,
+        browserPermissionPrimerDismissed: false,
+      },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
       relay: { enabled: true, dataDir: null },
       // Ships closed: nothing outside DorkOS reaches these agents over A2A
@@ -396,6 +404,14 @@ describe('USER_CONFIG_DEFAULTS', () => {
         statusBar: { pins: [] },
         composer: { richText: true },
         autonomyAcknowledgedAt: null,
+      },
+      // How loud DorkOS may be. The knock and the all-clear ship ON; the
+      // every-turn chime ships OFF, which is the one that changed (DOR-1385).
+      notifications: {
+        escalation: { phoneAfterMinutes: 2 },
+        sounds: { knock: true, allClear: true, turnEnd: false },
+        notifyOnTurnCompleteWhileAway: true,
+        browserPermissionPrimerDismissed: false,
       },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
       relay: { enabled: true, dataDir: null },

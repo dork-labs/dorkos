@@ -15,8 +15,8 @@ import { AnimatePresence } from 'motion/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
-import { useAppStore, useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
-import { playNotificationSound } from '@/layers/shared/lib';
+import { useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
+import { PermissionPrimer, useNotificationCues } from '@/layers/features/notifications';
 import { PromptSuggestionChips } from '@/layers/shared/ui';
 import { useCommands } from '@/layers/entities/command';
 import {
@@ -118,7 +118,9 @@ export function ChatPanel({
   // never name two different tools for one session.
   const activity = useSessionToolActivity(sessionId ?? '');
   const celebrations = useCelebrations();
-  const enableNotificationSound = useAppStore((s) => s.enableNotificationSound);
+  // The turn-finished chime. Off unless somebody asked for it — the cue hook
+  // owns that question, so this call site simply says when a turn ended.
+  const { play: playCue } = useNotificationCues();
   const [cwd] = useDirectoryState();
 
   const fileUpload = useFileUpload();
@@ -263,13 +265,11 @@ export function ChatPanel({
     launchRuntime,
     takeSeedContext,
     onStreamingDone: useCallback(() => {
-      if (enableNotificationSound) {
-        playNotificationSound();
-      }
+      playCue('turn-end');
       // After first SDK query completes, commands cache is populated on server.
       // Invalidate the client query so built-ins/skills/user-level commands appear.
       void queryClient.invalidateQueries({ queryKey: ['commands'] });
-    }, [enableNotificationSound, queryClient]),
+    }, [playCue, queryClient]),
   });
   /**
    * Start a turn with the composer's words, and empty the box once they are
@@ -551,6 +551,12 @@ export function ChatPanel({
             />
           </div>
         )}
+
+        {/* Asked once, and only after a turn has run long enough to walk away
+            from — never at launch. Sits here because this is where a person is
+            when the question first makes sense. Draws nothing until then, and
+            takes no space either. */}
+        <PermissionPrimer streaming={status === 'streaming'} />
 
         <SessionComposer
           chatInputRef={chatInputRef}

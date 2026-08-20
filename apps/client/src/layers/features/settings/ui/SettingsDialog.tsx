@@ -11,12 +11,14 @@ import {
   Link2,
   UserRound,
   FlaskConical,
+  Bell,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
 import { ProfileTab } from './ProfileTab';
 import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
+import { NotificationsTab } from './tabs/NotificationsTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsResetAction, ToolsTab } from './ToolsTab';
@@ -42,6 +44,10 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     actions: <AppearanceResetAction />,
   },
   { id: 'preferences', label: 'Preferences', icon: Settings2, component: PreferencesTab },
+  // Ungrouped, beside Preferences: "how loud may this be?" is a personal
+  // preference, not a system or access question, and every setting in it was
+  // reachable from Preferences before this tab existed.
+  { id: 'notifications', label: 'Notifications', icon: Bell, component: NotificationsTab },
   {
     id: 'tools',
     label: 'Tools',

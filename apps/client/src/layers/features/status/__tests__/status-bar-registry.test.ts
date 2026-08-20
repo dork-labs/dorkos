@@ -47,9 +47,9 @@ describe('STATUS_BAR_REGISTRY — quiet by default', () => {
     expect(promotedKeys(restingContext())).toEqual(['agent', 'cwd', 'model']);
   });
 
-  it('never lets cache, sound, or refresh into the line', () => {
+  it('never lets cache or refresh into the line', () => {
     const neverInLine = STATUS_BAR_REGISTRY.filter((item) => item.neverInLine).map((i) => i.key);
-    expect(neverInLine).toEqual(['cache', 'sound', 'polling']);
+    expect(neverInLine).toEqual(['cache', 'polling']);
   });
 
   it('has a unique key per item', () => {
@@ -301,7 +301,6 @@ describe('isPinnable', () => {
   });
 
   it('refuses to pin controls or anything excluded from the line', () => {
-    expect(isPinnable(getStatusBarItem('sound')!)).toBe(false);
     expect(isPinnable(getStatusBarItem('polling')!)).toBe(false);
     expect(isPinnable(getStatusBarItem('cache')!)).toBe(false);
   });

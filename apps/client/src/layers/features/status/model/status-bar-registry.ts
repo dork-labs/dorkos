@@ -21,7 +21,6 @@ import {
   Gauge,
   Shield,
   ClipboardList,
-  Volume2,
   RefreshCw,
   Wifi,
   Users,
@@ -50,7 +49,6 @@ export type StatusBarItemKey =
   | 'plan'
   | 'subagents'
   | 'connection'
-  | 'sound'
   | 'polling';
 
 /**
@@ -425,17 +423,12 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     severity: (ctx) =>
       ctx.connectionState === 'connected' ? SEVERITY.QUIET : SEVERITY.CONNECTION_LOST,
   },
-  {
-    key: 'sound',
-    label: 'Sound',
-    description: 'Play a sound when a turn finishes',
-    cluster: 'right',
-    group: 'controls',
-    icon: Volume2,
-    promote: () => false,
-    severity: () => SEVERITY.QUIET,
-    neverInLine: true,
-  },
+  // `sound` used to live here as a switch. It is gone (DOR-1385): it read as a
+  // per-session control and was not one — it flipped a preference for every
+  // session on the machine — and there are three sounds now, of which the
+  // every-turn chime is the least important and the only one it could reach.
+  // They are set together in Settings → Notifications, which is also where the
+  // browser-notification and escalation settings live.
   {
     key: 'polling',
     label: 'Background refresh',

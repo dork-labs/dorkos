@@ -82,8 +82,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setPendingRuntime: vi.fn(),
       // A healthy cost and a 20%-full window are quiet by design; pin them so this
       // suite still asserts what it is about — snapshot hydration on cold mount.
-      enableNotificationSound: false,
-      setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
     };

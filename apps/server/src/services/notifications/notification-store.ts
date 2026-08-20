@@ -353,6 +353,48 @@ export class NotificationStore {
   }
 
   /**
+   * Mark every `dm.received` / `mention.received` row in one room read, up to
+   * (and including) the entry a read cursor just passed (read-cursor auto-read,
+   * spec `notification-system` task T11).
+   *
+   * `roomId` has no index (see the module doc — the table's 1000-row cap makes
+   * a filtered scan cheaper than a fifth index on the hot write path), and
+   * `entrySeq` lives inside `dataJson` rather than as its own column, so the
+   * threshold is applied in application code over the small unread slice this
+   * query already narrows to one room and two kinds.
+   *
+   * @param roomId - The room whose cursor moved.
+   * @param uptoSeq - The entry `seq` the cursor now stands at — every row whose
+   *   payload names an entry at or below this is read.
+   * @returns The ids marked read, oldest first.
+   */
+  markRoomEntriesRead(roomId: string, uptoSeq: number): string[] {
+    const candidates = this.db
+      .select({ id: notifications.id, dataJson: notifications.dataJson })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.roomId, roomId),
+          inArray(notifications.kind, ['dm.received', 'mention.received']),
+          isNull(notifications.readAt)
+        )
+      )
+      .all();
+
+    const ids = candidates
+      .filter((row) => entrySeqOf(row.dataJson) <= uptoSeq)
+      .map((row) => row.id);
+    if (ids.length === 0) return [];
+
+    this.db
+      .update(notifications)
+      .set({ readAt: new Date().toISOString() })
+      .where(inArray(notifications.id, ids))
+      .run();
+    return ids;
+  }
+
+  /**
    * Bring the table back under both caps, in two passes.
    *
    * Runs on every write. **In practice the ROW cap is the one that bites**: a
@@ -524,5 +566,30 @@ function buildActions(
   } catch (err) {
     logger.debug('[Notifications] Could not rebuild actions for a stored row', { err, kind });
     return undefined;
+  }
+}
+
+/**
+ * The room-local `seq` a `dm.received` / `mention.received` row's payload
+ * names, or `Number.POSITIVE_INFINITY` when it carries none.
+ *
+ * **Infinity, not `-1`.** {@link NotificationStore.markRoomEntriesRead} marks
+ * a row read on `entrySeqOf(row) <= uptoSeq` — so a sentinel has to sort
+ * AFTER every real `seq` to mean "not yet passed". A `-1` sentinel sorts
+ * BEFORE every real `seq` (they start at 1) and would satisfy that
+ * comparison against any cursor position at all, marking a row read on the
+ * very first cursor move in the room — backwards from the intent, and the
+ * opposite of the safe failure direction: absence of information must never
+ * assert a row was read. Infinity is never `<=` a finite `uptoSeq`, so a row
+ * this cannot parse simply never auto-reads through this path; the operator
+ * can still clear it with "Mark all read".
+ */
+function entrySeqOf(dataJson: string | null): number {
+  if (!dataJson) return Number.POSITIVE_INFINITY;
+  try {
+    const payload = JSON.parse(dataJson) as { entrySeq?: unknown };
+    return typeof payload.entrySeq === 'number' ? payload.entrySeq : Number.POSITIVE_INFINITY;
+  } catch {
+    return Number.POSITIVE_INFINITY;
   }
 }

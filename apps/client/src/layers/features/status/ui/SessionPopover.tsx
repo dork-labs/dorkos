@@ -28,10 +28,6 @@ import { CopyDiagnosticsButton } from './CopyDiagnosticsButton';
 
 /** The settings the panel operates rather than merely reports. */
 export interface SessionControls {
-  /** Whether a sound plays when a turn finishes. */
-  sound: boolean;
-  /** Flip the sound setting. */
-  onToggleSound: () => void;
   /** Whether background refresh is on. */
   refresh: boolean;
   /** Flip the background-refresh setting. */
@@ -254,15 +250,6 @@ function visibleRows(
 
 /** The rows that operate something rather than report it. */
 function renderControl(key: StatusBarItemKey, controls: SessionControls): ReactNode {
-  if (key === 'sound') {
-    return (
-      <Switch
-        checked={controls.sound}
-        onCheckedChange={controls.onToggleSound}
-        aria-label="Play a sound when a turn finishes"
-      />
-    );
-  }
   if (key === 'polling') {
     return (
       <Switch

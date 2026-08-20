@@ -128,8 +128,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       selectedCwd: '/test/dir',
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
-      enableNotificationSound: false,
-      setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
     };

@@ -250,6 +250,24 @@ export const CONFIG_WRITE_POLICY = {
   // open the same door once. What this stops is the durable, silent version.
   'ui.autonomyAcknowledgedAt': 'operator-only',
 
+  // Every way the operator finds out that something is waiting on them. An agent
+  // that could write these could turn off the knock, stop the phone ever ringing
+  // (`'never'`), and silence the news that a turn finished — and then park on a
+  // question nobody is ever told about. That is not a loud preference being made
+  // quiet; it is the alarm being disconnected by the thing it watches, which is
+  // exactly the line this table draws.
+  //
+  // `browserPermissionPrimerDismissed` is refused for the sibling reason
+  // `ui.autonomyAcknowledgedAt` above is: it records that a PERSON answered a
+  // question, and an agent writing it would be answering on their behalf —
+  // permanently, since the card is asked once.
+  'notifications.escalation.phoneAfterMinutes': 'operator-only',
+  'notifications.sounds.knock': 'operator-only',
+  'notifications.sounds.allClear': 'operator-only',
+  'notifications.sounds.turnEnd': 'operator-only',
+  'notifications.notifyOnTurnCompleteWhileAway': 'operator-only',
+  'notifications.browserPermissionPrimerDismissed': 'operator-only',
+
   'logging.level': 'agent-writable',
   'logging.maxLogSizeKb': 'agent-writable',
   'logging.maxLogFiles': 'agent-writable',
@@ -558,6 +576,7 @@ export const OPERATOR_ONLY_CONFIG_ERROR = 'Only a person can change those settin
  * - `disclosure` — what leaves this machine.
  * - `approvals` — whether a person is asked before something happens.
  * - `initiative` — when agents speak on their own, and what that spends.
+ * - `attention` — whether the person finds out that something needs them.
  */
 export type OperatorOnlyStake =
   | 'reach'
@@ -565,7 +584,8 @@ export type OperatorOnlyStake =
   | 'code'
   | 'disclosure'
   | 'approvals'
-  | 'initiative';
+  | 'initiative'
+  | 'attention';
 
 /** One stake, the sentence an agent reads for it, and the paths it covers. */
 interface OperatorOnlyStakeGroup {
@@ -692,6 +712,18 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // The most literal member of this group: it is the one welcome-back
       // setting that decides whether a model turn runs at all (DOR-1046).
       'welcomeBack.offersEnabled',
+    ],
+  },
+  {
+    stake: 'attention',
+    description: 'Whether you are told that something is waiting on you',
+    paths: [
+      'notifications.escalation.phoneAfterMinutes',
+      'notifications.sounds.knock',
+      'notifications.sounds.allClear',
+      'notifications.sounds.turnEnd',
+      'notifications.notifyOnTurnCompleteWhileAway',
+      'notifications.browserPermissionPrimerDismissed',
     ],
   },
 ];

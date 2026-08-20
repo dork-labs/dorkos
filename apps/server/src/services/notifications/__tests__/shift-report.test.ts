@@ -40,6 +40,23 @@ function run(id: string, status: 'completed' | 'failed' = 'completed') {
   };
 }
 
+/** A DM payload, varied per call so nothing dedupes by accident. */
+function dm(roomId: string, entrySeq: number) {
+  return { roomId, entryId: `${roomId}-${entrySeq}`, entrySeq, fromName: 'Ana', preview: 'hi' };
+}
+
+/** A mention payload, varied per call so nothing dedupes by accident. */
+function mention(roomId: string, entrySeq: number) {
+  return {
+    roomId,
+    entryId: `${roomId}-${entrySeq}`,
+    entrySeq,
+    roomName: 'general',
+    fromName: 'Ana',
+    preview: 'hi',
+  };
+}
+
 describe('shiftReportBoundary', () => {
   it('is the most recent 04:00 local that has passed', () => {
     const morning = new Date(2026, 7, 20, 9, 15).getTime();
@@ -103,19 +120,8 @@ describe('composeShiftReport', () => {
       { sessionId: 's2', interactionId: 'i2', sessionLabel: 'acme', summary: 'q' },
       { outcome: 'expired' }
     );
-    await service.notify('dm.received', {
-      roomId: 'room-1',
-      entryId: 'e1',
-      fromName: 'Ana',
-      preview: 'hi',
-    });
-    await service.notify('mention.received', {
-      roomId: 'room-1',
-      entryId: 'e2',
-      roomName: 'general',
-      fromName: 'Ana',
-      preview: 'hi',
-    });
+    await service.notify('dm.received', dm('room-1', 1));
+    await service.notify('mention.received', mention('room-2', 1));
 
     expect(composeShiftReport(store, Date.now())).toEqual({
       turnsCompleted: 2,
@@ -155,12 +161,7 @@ describe('composeShiftReport', () => {
       title: 'While you were away: 2 turns finished',
       summary: '2 turns finished in the last day.',
     });
-    await service.notify('dm.received', {
-      roomId: 'room-1',
-      entryId: 'e1',
-      fromName: 'Ana',
-      preview: 'hi',
-    });
+    await service.notify('dm.received', dm('room-1', 1));
 
     vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
     expect(composeShiftReport(store, Date.now())).toEqual({

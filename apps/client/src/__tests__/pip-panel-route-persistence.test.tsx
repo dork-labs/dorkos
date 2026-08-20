@@ -94,6 +94,12 @@ vi.mock('@/layers/widgets/inbox-bell', () => ({
   InboxBell: () => null,
 }));
 
+// Same reason: the notification center watches the global stream for arrivals
+// worth a knock. Its placement is covered by app-shell-slots.test.tsx.
+vi.mock('@/layers/features/notifications', () => ({
+  NotificationCenter: () => null,
+}));
+
 vi.mock('@/layers/features/command-palette', () => ({
   CommandPaletteDialog: () => null,
 }));

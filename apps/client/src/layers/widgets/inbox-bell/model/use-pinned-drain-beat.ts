@@ -34,6 +34,17 @@ export const ALL_CLEAR_BEAT_MS = 2_500;
  * about something that already happened, not information anybody would otherwise
  * be missing, so suppressing it costs nothing.
  *
+ * ## This is the VISIBLE beat only, and it has no sound in it
+ *
+ * The all-clear chime deliberately does not hang off this hook, and the reason
+ * is the open-gate above. A check mark nobody can see is worth skipping; a sound
+ * is not, because the whole point of a sound is that the person is not looking.
+ * Answering the last thing from a keyboard shortcut, a phone banner, or the home
+ * surface with this popover shut are exactly the moments the chime is for. So
+ * the audio hangs off the queue draining app-wide, in
+ * `features/notifications`'s `NotificationCenter`, and this stays what it always
+ * was: one line of chrome inside one popover.
+ *
  * @param count - How many things are pinned this frame.
  * @param open - Whether the popover is on screen.
  */

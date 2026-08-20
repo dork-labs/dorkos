@@ -24,6 +24,7 @@ import {
   AppearanceTab,
 } from '@/layers/features/settings/ui/tabs/AppearanceTab';
 import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTab';
+import { NotificationsTab } from '@/layers/features/settings/ui/tabs/NotificationsTab';
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
 import { ToolsResetAction, ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
 import { AdvancedTab } from '@/layers/features/settings/ui/AdvancedTab';
@@ -255,6 +256,15 @@ function IndividualTabsSection() {
         <TabShell value="preferences" title="Preferences">
           <PreferencesTab />
         </TabShell>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Notifications Tab</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider>
+          <TabShell value="notifications" title="Notifications">
+            <NotificationsTab />
+          </TabShell>
+        </MockedQueryProvider>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Server Tab</ShowcaseLabel>

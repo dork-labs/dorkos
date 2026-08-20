@@ -17,6 +17,7 @@
  *
  * @module dev/showcases/settings-mock-data
  */
+import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { EffortLevel, ModelOption, ServerConfig } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type {
@@ -45,6 +46,9 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   isDevMode: false,
   dismissedUpgradeVersions: [],
   dismissedPromoIds: [],
+  // The shipped defaults, so the Notifications tab renders its out-of-the-box
+  // state: the knock and the all-clear on, the every-turn chime off.
+  notifications: NOTIFICATION_PREFS_DEFAULTS,
   port: 4242,
   uptime: 12_345,
   workingDirectory: '/Users/dev/dorkos',

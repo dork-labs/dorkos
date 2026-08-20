@@ -55,6 +55,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
   'dm.received': {
     roomId: 'room-1',
     entryId: 'entry-1',
+    entrySeq: 12,
     agentId: 'agent-1',
     fromName: 'Ana',
     preview: 'the deploy is green',
@@ -62,6 +63,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
   'mention.received': {
     roomId: 'room-1',
     entryId: 'entry-1',
+    entrySeq: 13,
     roomName: 'general',
     agentId: 'agent-1',
     fromName: 'Ana',
@@ -154,14 +156,18 @@ describe('notification registry', () => {
 
   it('names exactly the kinds something actually raises today', () => {
     // The registry declares the whole vocabulary on purpose, but a declared kind
-    // nobody emits is a promise rather than a feature. This pins the gap as a
-    // listed fact: the two absentees are W4 task T11 (messages into the
-    // pipeline), and each carries a comment at its entry saying so.
+    // nobody emits is a promise rather than a feature. Every kind now has a
+    // real emitter — `dm.received` / `mention.received` from
+    // `services/rooms/room-service.ts` (DOR-1388), `report.daily` from
+    // `emitters/shift-report.ts` (DOR-1389) — and each carries a comment at
+    // its entry saying so.
     expect([...WIRED_NOTIFICATION_KINDS].sort()).toEqual([
       'agent.note',
       'agent.unreachable',
       'ask.pending',
       'dead-letter.created',
+      'dm.received',
+      'mention.received',
       'report.daily',
       'run.completed',
       'schedule.parked',
@@ -171,7 +177,7 @@ describe('notification registry', () => {
     ]);
 
     const reserved = NOTIFICATION_KINDS.filter((k) => !WIRED_NOTIFICATION_KINDS.includes(k));
-    expect([...reserved].sort()).toEqual(['dm.received', 'mention.received']);
+    expect(reserved).toEqual([]);
   });
 
   it('stores exactly the three standing kinds only on resolution', () => {
@@ -223,6 +229,24 @@ describe('notification registry', () => {
       completedAt: '2026-08-20T00:05:00.000Z',
     });
     expect(second).not.toBe(first);
+  });
+
+  it('coalesces a DM burst by room, but gives every mention its own row', () => {
+    // dm.received dedupes on the ROOM, deliberately coarser than every other
+    // kind: two messages in one DM within the window are one notification.
+    const dm = notificationEntry('dm.received');
+    expect(dm.dedupeKey({ ...PAYLOADS['dm.received'], entryId: 'entry-2' })).toBe(
+      dm.dedupeKey(PAYLOADS['dm.received'])
+    );
+    expect(dm.dedupeKey({ ...PAYLOADS['dm.received'], roomId: 'room-2' })).not.toBe(
+      dm.dedupeKey(PAYLOADS['dm.received'])
+    );
+
+    // mention.received still dedupes per entry — each mention is its own event.
+    const mention = notificationEntry('mention.received');
+    expect(mention.dedupeKey({ ...PAYLOADS['mention.received'], entryId: 'entry-2' })).not.toBe(
+      mention.dedupeKey(PAYLOADS['mention.received'])
+    );
   });
 
   it('never puts a tool input in a title or a body', () => {
