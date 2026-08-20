@@ -28,8 +28,18 @@
  * with the chat filter left empty (the cockpit's default) covers every chat that
  * has messaged the adapter. What the auto-allow removed is the per-call card an
  * operator watching a DIRECT session could have denied — not the scope, and not
- * the switch. A note the budget refuses now leaves no inbox row either, so the
- * ceiling bounds every surface rather than just the chat one.
+ * the switch.
+ *
+ * **Two things about that ceiling changed when notes started leaving inbox rows
+ * behind** (DOR-1383), and both make it a real bound rather than a chat-only
+ * one. A note the budget refuses now writes no row either — otherwise a looping
+ * agent simply interrupts by a quieter route. And a note that reaches no
+ * transport at all now COSTS the hour, where it used to be refunded: on a stock
+ * install nothing external resolves, so every note took the refunded path and
+ * the ceiling could never be reached. The two refusals that are the operator's
+ * own decision are still free — `INITIATE_NOT_ALLOWED`, which also writes no
+ * row, and the per-binding task opt-in — because charging for a switch somebody
+ * set would be billing them for their own preference.
  *
  * @module services/runtimes/claude-code/mcp-tools/relay-notify-tools
  */
@@ -215,7 +225,6 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
           });
           return false;
         },
-        refund: () => budget.refund(agentId),
       },
       {
         relayCore: deps.relayCore,

@@ -21,9 +21,13 @@ covers:
   way, so a machine with no chat integration connected is no longer told nothing at all
   (DOR-1383)
 - A note an agent sends you with "notify user" now also lands in your history, so a message you
-  glanced at on your phone is still there tomorrow. The tool works exactly as before, including
-  the limit on how many notes an agent can send you in an hour — and a note that hits that limit
-  now leaves nothing behind at all, instead of quietly filling your history (DOR-1383)
+  glanced at on your phone is still there tomorrow. The tool works the same way it always did:
+  same answers, same limit on how many notes an agent can send you in an hour (DOR-1383)
+- That hourly limit now actually holds. It counts every note an agent tries to send you, not
+  only the ones that reached a chat app — before, on a machine with no Telegram or Slack
+  connected, nothing ever counted and an agent stuck in a loop could talk to you forever. A note
+  that hits the limit, or that you have switched off with "Agent can start conversations", now
+  leaves nothing behind anywhere, instead of quietly filling your history (DOR-1383)
 
 ### Security
 

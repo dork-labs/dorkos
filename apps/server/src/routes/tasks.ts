@@ -316,6 +316,11 @@ export function createTasksRouter(
     // after the fact — the same two-step `tasks_create` uses on the MCP servers.
     // It has to happen BEFORE the register below, or the task fires while it is
     // still waiting to be approved.
+    // W3 escalation (DOR-1387) arms its timer here — parked schedules have no
+    // observer seam, so the escalation hook lands at this write. Nothing is
+    // raised at this edge today: `schedule.parked` is a STANDING kind, which
+    // stores nothing while it stands (ADR 260819-234828), and its two
+    // resolutions are recorded where the operator decides them.
     if (parksOnCreate(trusted)) {
       store.updateTask(schedule.id, { status: 'pending_approval' });
       schedule = store.getTask(schedule.id)!;
@@ -434,8 +439,8 @@ export function createTasksRouter(
     return res.json(updated);
   });
 
-  router.delete('/:id', async (_req, res) => {
-    const { id } = _req.params;
+  router.delete('/:id', async (req, res) => {
+    const { id } = req.params;
     const schedule = store.getTask(id);
     if (!schedule) {
       return res.status(404).json({ error: 'Task not found' });
@@ -473,7 +478,7 @@ export function createTasksRouter(
     if (schedule.status === 'pending_approval') {
       void resolveStanding('schedule.parked', scheduleParkPayload(schedule), {
         outcome: 'rejected',
-        actorPrincipal: readCallerPrincipal(_req, res),
+        actorPrincipal: readCallerPrincipal(req, res),
       });
     }
 

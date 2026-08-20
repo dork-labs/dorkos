@@ -57,7 +57,9 @@ export function notificationEntitlement(principal: CallerPrincipal): Notificatio
  *
  * Passed as the third argument to `eventFanOut.broadcast`, which is what keeps
  * an agent principal's connection from receiving detail the routes would refuse
- * it anyway. The two have to agree, and a conformance test pins that they do.
+ * it anyway. The stream and the routes cannot drift apart, because this is not a
+ * second copy of the rule — it is {@link notificationEntitlement} itself, asked
+ * a yes/no question.
  */
 export const operatorAudience: BroadcastAudience = (principal) =>
   notificationEntitlement(principal) !== 'none';

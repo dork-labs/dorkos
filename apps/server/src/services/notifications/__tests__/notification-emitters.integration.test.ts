@@ -9,6 +9,8 @@ import { NotificationService, setNotificationService } from '../notification-ser
 import { notifyRunCompleted } from '../emitters/run-completed.js';
 import { watchAskResolution } from '../emitters/ask-resolution.js';
 import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
+import { NotifyBudget } from '../../relay/notify-budget.js';
+import { createRelayNotifyUserHandler } from '../../runtimes/claude-code/mcp-tools/relay-notify-tools.js';
 
 /** One captured SSE broadcast. */
 type Broadcast = [string, unknown];
@@ -102,6 +104,87 @@ describe('a finished run', () => {
 
     expect(announced()).toHaveLength(0);
     expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(0);
+  });
+});
+
+describe('an agent that will not stop talking', () => {
+  /** The tool, wired so nothing external resolves — the stock-install shape. */
+  function notifyUserHandler(limit: number) {
+    const budget = new NotifyBudget({ limit: () => limit, now: () => 0 });
+    const deps = {
+      notifyBudget: budget,
+      relayCore: { publish: vi.fn() },
+      bindingStore: { getAll: () => [] },
+      bindingRouter: { getSessionsByBinding: () => [] },
+      meshCore: { get: () => ({ name: 'ana', displayName: 'Ana' }) },
+      // No `notifyDm`: rooms are not wired, so there is no DM to fall back to
+      // and every note reaches nothing at all.
+    } as unknown as Parameters<typeof createRelayNotifyUserHandler>[0];
+    return createRelayNotifyUserHandler(deps, {
+      subject: 'relay.agent.ns.agent-1',
+      agentId: 'agent-1',
+    });
+  }
+
+  it('cannot write more inbox rows than its hourly allowance, however varied the notes', async () => {
+    // The hole this closes: every one of these fails to reach any transport, so
+    // before DOR-1383 each was refunded and none was ever rate-limited. Varying
+    // the text defeats dedupe, which leaves the allowance as the only thing
+    // standing between a looping agent and an unbounded inbox.
+    const limit = 10;
+    const handler = notifyUserHandler(limit);
+
+    const codes: string[] = [];
+    for (let i = 0; i < 200; i += 1) {
+      const result = await handler({ message: `note number ${i}` });
+      codes.push(JSON.parse(result.content[0].text).code as string);
+    }
+
+    expect(codes.filter((c) => c === 'NO_BINDING')).toHaveLength(limit);
+    expect(codes.filter((c) => c === 'NOTIFY_RATE_LIMITED')).toHaveLength(200 - limit);
+    expect(service.list({ limit: 100, unread: false }).notifications).toHaveLength(limit);
+  });
+
+  it('writes no row at all when the operator switched initiating off', async () => {
+    const budget = new NotifyBudget({ limit: () => 10, now: () => 0 });
+    const deps = {
+      notifyBudget: budget,
+      relayCore: { publish: vi.fn() },
+      bindingStore: {
+        getAll: () => [
+          {
+            id: 'b-1',
+            agentId: 'agent-1',
+            adapterId: 'telegram-main',
+            enabled: true,
+            canInitiate: false,
+            chatId: 'chat-1',
+          },
+        ],
+      },
+      bindingRouter: {
+        getSessionsByBinding: () => [
+          { scope: 'chat' as const, chatId: 'chat-1', sessionId: 's', lastActivityAt: 10 },
+        ],
+      },
+      adapterManager: {
+        listAdapters: () => [{ config: { id: 'telegram-main', type: 'telegram' } }],
+      },
+      meshCore: { get: () => ({ name: 'ana', displayName: 'Ana' }) },
+    } as unknown as Parameters<typeof createRelayNotifyUserHandler>[0];
+    const handler = createRelayNotifyUserHandler(deps, {
+      subject: 'relay.agent.ns.agent-1',
+      agentId: 'agent-1',
+    });
+
+    const result = await handler({ message: 'let me in' });
+
+    expect(JSON.parse(result.content[0].text).code).toBe('INITIATE_NOT_ALLOWED');
+    expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(0);
+    expect(announced()).toHaveLength(0);
+    // A switch the operator set costs the agent nothing — it is a decision, not
+    // a missing integration.
+    expect(budget.tryReserve('agent-1')).toBe(true);
   });
 });
 

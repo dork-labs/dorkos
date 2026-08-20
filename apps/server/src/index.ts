@@ -64,6 +64,7 @@ import { notifyRunCompleted } from './services/notifications/emitters/run-comple
 import { agentLivenessObserver } from './services/notifications/emitters/agent-liveness.js';
 import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
 import type { NotifyDmDeps } from './services/relay/notify-dm.js';
+import type { RelayChannelDeps } from './services/notifications/channels/relay.js';
 import { broadcastRunTerminal } from './services/tasks/run-terminal-broadcaster.js';
 import {
   TaskSchedulerService,
@@ -600,6 +601,30 @@ async function start() {
   } catch (err) {
     logger.warn('[Activity] Startup prune failed', logError(err));
   }
+
+  // The notification pipeline (spec `notification-system`), built EARLY and
+  // deliberately: the dead-letter hook and the mesh liveness observer both
+  // subscribe further down, and a notification raised between their
+  // subscription and this line would be lost. The only thing it needs now is
+  // the database; its out-of-app leg is read per send from `relayChannelDeps`,
+  // which the relay wiring assigns once the adapters exist.
+  //
+  // Every seam that RAISES a notification calls the module-level `notify`
+  // rather than holding this, so a projector, an MCP tool and a route do not
+  // each grow a dependency on the inbox in order to say one sentence.
+  // eslint-disable-next-line prefer-const -- assigned once, but far below, and read from a closure defined here
+  let relayChannelDeps: RelayChannelDeps | undefined;
+  const notificationService = new NotificationService(new NotificationStore(db), {
+    relay: () => relayChannelDeps,
+  });
+  setNotificationService(notificationService);
+
+  // A finished turn, and the history row an error leaves when it clears.
+  watchSessionLifecycle();
+  // How every Ask ended — including the ones nobody answered.
+  watchAskResolution();
+  // Nothing tells the server it was updated, so it compares versions on boot.
+  void announceInstalledVersion(dorkHome);
 
   // Sweep crash-left marketplace install backups (`<target>.dorkos-bak-<ts>-<uuid>`,
   // see transaction.ts + ADR-0304). A hard crash mid-install can leave one of
@@ -1484,33 +1509,23 @@ async function start() {
       }
     : undefined;
 
-  // The notification pipeline (spec `notification-system`). Constructed here,
-  // after the relay and adapter wiring above, because its out-of-app leg needs
-  // them; every seam that RAISES a notification calls the module-level `notify`
-  // instead of holding this, so a projector, an MCP tool and a route do not each
-  // grow a dependency on the inbox to say one sentence.
-  const notificationService = new NotificationService(new NotificationStore(db), {
-    relay: {
-      relayCore,
-      ...(adapterManager
-        ? {
-            adapterManager,
-            bindingStore: adapterManager.getBindingStore(),
-            bindingRouter: adapterManager.getBindingRouter(),
-          }
-        : {}),
-      bridgeStore: roomBridges,
-      notifyDm,
-    },
-  });
-  setNotificationService(notificationService);
-
-  // A finished turn, and the history row an error leaves when it clears.
-  watchSessionLifecycle();
-  // How every Ask ended — including the ones nobody answered.
-  watchAskResolution();
-  // Nothing tells the server it was updated, so it compares versions on boot.
-  void announceInstalledVersion(dorkHome);
+  // The notification pipeline's out-of-app leg, now that the relay and the
+  // adapters it publishes through exist. The service itself was built long
+  // before this (search `relayChannelDeps`) and reads this binding per send, so
+  // a notification raised during boot is recorded either way — it simply has no
+  // chat leg until this line runs.
+  relayChannelDeps = {
+    relayCore,
+    ...(adapterManager
+      ? {
+          adapterManager,
+          bindingStore: adapterManager.getBindingStore(),
+          bindingRouter: adapterManager.getBindingRouter(),
+        }
+      : {}),
+    bridgeStore: roomBridges,
+    notifyDm,
+  };
 
   // Store-level run-terminal hook (DOR-240): the single seam that fires exactly
   // once per non-terminal → terminal transition, for BOTH scheduler-side

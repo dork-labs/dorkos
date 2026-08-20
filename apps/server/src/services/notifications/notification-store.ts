@@ -11,6 +11,7 @@
 import { monotonicFactory } from 'ulidx';
 import {
   and,
+  asc,
   desc,
   eq,
   gt,
@@ -53,6 +54,22 @@ export const NOTIFICATION_RETENTION_DAYS = 30;
 /** How many rows history is kept to, whichever limit bites first. */
 export const NOTIFICATION_MAX_ROWS = 1000;
 
+/**
+ * The kinds a working day produces by the dozen, and the first ones dropped
+ * when the table is over its cap.
+ *
+ * Both are the routine texture of agents working — a row per finished turn, a
+ * row per Ask that ended — and both are worth keeping for an afternoon rather
+ * than for a month. They are named here so that the rows a person goes looking
+ * for later (a dead letter, an agent that went unreachable, a version update)
+ * outlive the ones they scroll past.
+ *
+ * `ask.pending` rows are always RESOLVED history: a standing kind writes nothing
+ * while it stands, so a row with that kind is by construction an Ask that has
+ * already ended.
+ */
+export const HIGH_CHURN_KINDS: readonly NotificationKind[] = ['turn.completed', 'ask.pending'];
+
 /** Everything a row needs that the registry did not already decide. */
 export interface NotificationInsert {
   kind: NotificationKind;
@@ -83,28 +100,49 @@ export interface DeliveryInsert {
   detail?: Record<string, unknown>;
 }
 
+/** Retention limits, overridable so a test can reach a cap without 1000 writes. */
+export interface NotificationStoreLimits {
+  /** How many rows to keep. Defaults to {@link NOTIFICATION_MAX_ROWS}. */
+  maxRows?: number;
+  /** How many days to keep. Defaults to {@link NOTIFICATION_RETENTION_DAYS}. */
+  retentionDays?: number;
+}
+
 /** The `notifications` table, and the ledger that hangs off it. */
 export class NotificationStore {
-  constructor(private readonly db: Db) {}
+  private readonly maxRows: number;
+  private readonly retentionDays: number;
+
+  constructor(
+    private readonly db: Db,
+    limits: NotificationStoreLimits = {}
+  ) {
+    this.maxRows = limits.maxRows ?? NOTIFICATION_MAX_ROWS;
+    this.retentionDays = limits.retentionDays ?? NOTIFICATION_RETENTION_DAYS;
+  }
 
   /**
-   * Whether the same notification was already raised inside the window.
+   * The most recent notification with this dedupe key inside the window, if any.
    *
    * The one question asked on every `notify()`, which is why `dedupe_key` is the
-   * one column with a hot index.
+   * one column with a hot index. It answers with the row's ID rather than a
+   * boolean because a suppressed duplicate is not always the end of the story:
+   * a note that was DELIVERED again still has a delivery to record against the
+   * row that already exists.
    *
    * @param dedupeKey - What makes two of these the same.
    * @param windowMs - How far back to look.
    */
-  hasRecent(dedupeKey: string, windowMs: number): boolean {
+  findRecent(dedupeKey: string, windowMs: number): string | null {
     const since = new Date(Date.now() - windowMs).toISOString();
-    const rows = this.db
+    const [row] = this.db
       .select({ id: notifications.id })
       .from(notifications)
       .where(and(eq(notifications.dedupeKey, dedupeKey), gt(notifications.createdAt, since)))
+      .orderBy(desc(notifications.id))
       .limit(1)
       .all();
-    return rows.length > 0;
+    return row?.id ?? null;
   }
 
   /**
@@ -265,40 +303,88 @@ export class NotificationStore {
   }
 
   /**
-   * Bring the table back under both caps: 30 days and 1000 rows.
+   * Bring the table back under both caps, in two passes.
    *
-   * Runs on every write. The row cap is applied by keeping the newest
-   * {@link NOTIFICATION_MAX_ROWS} ids and deleting the rest, rather than by
-   * counting and offsetting, so a burst that overshoots by any amount is trimmed
-   * in one pass. Ledger rows follow through the cascading foreign key.
+   * Runs on every write. **In practice the ROW cap is the one that bites**: a
+   * busy machine reaches 1000 notifications long before its oldest one turns 30
+   * days old, so the age pass usually deletes nothing and the retention window
+   * is a floor rather than the working limit.
+   *
+   * That is what makes the second pass kind-aware. Two kinds are produced by the
+   * dozen per working session — a row per finished turn, a row per Ask that
+   * ended — and against a flat "keep the newest 1000" they evict everything
+   * else. A single afternoon of agent work would silently push out the four
+   * dead letters and the "DorkOS updated to 0.61.0" row, which are the rows
+   * somebody actually goes looking for a week later. So the overflow is taken
+   * from {@link HIGH_CHURN_KINDS} first, oldest of those first, and only what is
+   * still over the cap after that comes off the oldest rows of any kind.
+   *
+   * Ledger rows follow through the cascading foreign key.
    *
    * @returns How many notifications were deleted.
    */
   prune(): number {
-    const cutoff = new Date(
-      Date.now() - NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000
-    ).toISOString();
+    const cutoff = new Date(Date.now() - this.retentionDays * 24 * 60 * 60 * 1000).toISOString();
     let deleted = this.db
       .delete(notifications)
       .where(lt(notifications.createdAt, cutoff))
       .run().changes;
 
-    const survivors = this.db
+    let excess = this.count() - this.maxRows;
+    if (excess <= 0) return deleted;
+
+    // Pass 2a: the cheap, repetitive history, oldest first.
+    const churn = this.db
       .select({ id: notifications.id })
       .from(notifications)
-      .orderBy(desc(notifications.id))
-      .limit(NOTIFICATION_MAX_ROWS + 1)
+      .where(inArray(notifications.kind, [...HIGH_CHURN_KINDS]))
+      .orderBy(asc(notifications.id))
+      .limit(excess)
       .all();
 
-    if (survivors.length > NOTIFICATION_MAX_ROWS) {
-      const oldestKept = survivors[NOTIFICATION_MAX_ROWS - 1].id;
+    if (churn.length > 0) {
       deleted += this.db
         .delete(notifications)
-        .where(lt(notifications.id, oldestKept))
+        .where(
+          inArray(
+            notifications.id,
+            churn.map((row) => row.id)
+          )
+        )
         .run().changes;
+      excess -= churn.length;
+    }
+
+    // Pass 2b: still over, so the cap wins over the preference — oldest of
+    // anything. Reached only when high-churn history is not what filled the
+    // table, which means nothing here is cheap and age is the only fair rule.
+    if (excess > 0) {
+      const oldest = this.db
+        .select({ id: notifications.id })
+        .from(notifications)
+        .orderBy(asc(notifications.id))
+        .limit(excess)
+        .all();
+      if (oldest.length > 0) {
+        deleted += this.db
+          .delete(notifications)
+          .where(
+            inArray(
+              notifications.id,
+              oldest.map((row) => row.id)
+            )
+          )
+          .run().changes;
+      }
     }
 
     return deleted;
+  }
+
+  /** How many notifications are stored, of any kind. */
+  private count(): number {
+    const [row] = this.db.select({ value: count() }).from(notifications).all();
+    return row?.value ?? 0;
   }
 
   /** @internal Exported for tests: read the ledger for one notification. */

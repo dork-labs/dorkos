@@ -156,6 +156,11 @@ export function createCreateScheduleHandler(deps: McpToolDeps) {
       maxRuntime: null,
       filePath: '',
     });
+    // W3 escalation (DOR-1387) arms its timer here — parked schedules have no
+    // observer seam, so the escalation hook lands at this write. Nothing is
+    // raised at this edge today: `schedule.parked` is a STANDING kind, which
+    // stores nothing while it stands (ADR 260819-234828), and its two
+    // resolutions are recorded where the operator decides them.
     // Agent-created schedules always require user approval
     deps.taskStore!.updateTask(schedule.id, { status: 'pending_approval' });
     const updated = deps.taskStore!.getTask(schedule.id);

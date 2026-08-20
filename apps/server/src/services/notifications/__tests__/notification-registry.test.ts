@@ -7,6 +7,7 @@ import {
 import {
   notificationEntry,
   resolvePerKind,
+  WIRED_NOTIFICATION_KINDS,
   type NotificationPayloads,
 } from '../notification-registry.js';
 
@@ -145,6 +146,27 @@ describe('notification registry', () => {
     expect(resolvePerKind(entry.tier, { ...PAYLOADS['run.completed'], status: 'completed' })).toBe(
       'quiet'
     );
+  });
+
+  it('names exactly the kinds something actually raises today', () => {
+    // The registry declares the whole vocabulary on purpose, but a declared kind
+    // nobody emits is a promise rather than a feature. This pins the gap as a
+    // listed fact: the three absentees are W4 work (T11 messages, T12 the daily
+    // report), and each carries a comment at its entry saying so.
+    expect([...WIRED_NOTIFICATION_KINDS].sort()).toEqual([
+      'agent.note',
+      'agent.unreachable',
+      'ask.pending',
+      'dead-letter.created',
+      'run.completed',
+      'schedule.parked',
+      'session.error',
+      'turn.completed',
+      'update.installed',
+    ]);
+
+    const reserved = NOTIFICATION_KINDS.filter((k) => !WIRED_NOTIFICATION_KINDS.includes(k));
+    expect([...reserved].sort()).toEqual(['dm.received', 'mention.received', 'report.daily']);
   });
 
   it('stores exactly the three standing kinds only on resolution', () => {

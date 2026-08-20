@@ -14,8 +14,16 @@
  * be enabled, have a live chat, and have "Agent can start conversations"
  * switched on. A bridged chat still publishes under the bridge principal so it
  * is gated as an INITIATE rather than slipping past under a system exemption.
- * The per-agent hourly budget is still spent after the resolve and given back
- * only where a refund is provably exact.
+ *
+ * **The per-agent hourly budget changed, and deliberately.** It is spent once a
+ * send is a real attempt to reach somebody — after the two refusals that are the
+ * operator's own decision, and before any transport is tried — and there is no
+ * refund. It used to be charged only for a note that LANDED, which sounded
+ * fairer and was: on a stock install nothing external resolves, so every note
+ * was refunded, the ceiling could never be reached, and once notes started
+ * leaving inbox rows behind (DOR-1383) a looping agent could fill a person's
+ * inbox without ever appearing to have spent anything. The allowance bounds how
+ * often an agent may interrupt somebody, not how often it succeeds.
  *
  * @module services/notifications/channels/relay
  */
@@ -77,14 +85,17 @@ export interface RelayDeliveryRequest {
   /**
    * Take one off the sender's hourly allowance, or report that it has none left.
    *
-   * Called immediately before a message is handed to a transport, so anything
-   * refused earlier costs nothing. Omitted where the sender is the system rather
-   * than an agent — a scheduled run reporting its own result is not an agent
-   * choosing to interrupt somebody, and DOR-240 never counted it.
+   * Called once a send is a real attempt to reach somebody — after the two
+   * refusals that are the operator's own decision (`INITIATE_NOT_ALLOWED` and
+   * `NOT_OPTED_IN`) and before any transport is tried, so a note that reaches
+   * nobody still costs the hour and a note the operator switched off costs
+   * nothing. There is no refund; see {@link tryDm}.
+   *
+   * Omitted where the sender is the system rather than an agent — a scheduled
+   * run reporting its own result is not an agent choosing to interrupt
+   * somebody, and DOR-240 never counted it.
    */
   reserve?: () => boolean;
-  /** Give back a reservation whose message provably did not land. */
-  refund?: () => void;
 }
 
 /** Where a notification went, or why it could not go anywhere. */
@@ -163,27 +174,38 @@ export async function deliverOverRelay(
   });
 
   if (!target.ok) {
+    // Somebody turned "Agent can start conversations" OFF. That is a decision,
+    // not a missing integration: it costs the sender nothing, and — because the
+    // pipeline drops the row too — it silences the note on every surface rather
+    // than only on the chat one. Returned before the allowance is touched.
+    if (target.reason === 'INITIATE_NOT_ALLOWED') {
+      return {
+        ok: false,
+        reason: 'INITIATE_NOT_ALLOWED',
+        bindingId: target.bindingId,
+        adapterId: target.adapterId,
+      };
+    }
+
+    // Everything below here is a REAL attempt to reach somebody, so it costs one
+    // off the hour whether or not it lands.
+    //
+    // This is the opposite of what DOR-1265 originally did, and the reason is a
+    // hole that only appeared once notes started leaving rows behind: on a stock
+    // install nothing external resolves, so every note took this branch, and
+    // refunding each one made the ceiling unreachable. An agent in a loop could
+    // then write unbounded rows into a person's inbox while never appearing to
+    // have said anything at all. The allowance bounds the SAYING, not the
+    // arriving.
+    if (request.reserve && !request.reserve()) return { ok: false, reason: 'RATE_LIMITED' };
+
     if (shouldFallBackToDm(target.reason, request) && deps.notifyDm) {
       const viaDm = tryDm(deps.notifyDm, request);
       if (viaDm) return viaDm;
     }
-    switch (target.reason) {
-      case 'NO_BINDING':
-        return { ok: false, reason: 'NO_BINDING', availableChannels: target.availableChannels };
-      case 'NO_ACTIVE_SESSIONS':
-        return {
-          ok: false,
-          reason: 'NO_ACTIVE_SESSIONS',
-          availableAdapters: target.availableAdapters,
-        };
-      case 'INITIATE_NOT_ALLOWED':
-        return {
-          ok: false,
-          reason: 'INITIATE_NOT_ALLOWED',
-          bindingId: target.bindingId,
-          adapterId: target.adapterId,
-        };
-    }
+    return target.reason === 'NO_BINDING'
+      ? { ok: false, reason: 'NO_BINDING', availableChannels: target.availableChannels }
+      : { ok: false, reason: 'NO_ACTIVE_SESSIONS', availableAdapters: target.availableAdapters };
   }
 
   // The opt-in gate, asked before anything is spent: a success the operator did
@@ -239,19 +261,15 @@ export async function deliverOverRelay(
  * Deliver into the agent's DM with the operator, or answer `null` when the DM
  * refused the write (already logged by `deliverNotifyDm`).
  *
- * **Charges the hour only for a note that LANDED.** The reservation is taken
- * first, so two notes decided in the same tick cannot both take the last one,
- * and it is given back when the write did not happen. The refund is exact here
- * and nowhere else: `deliverNotifyDm` is local, synchronous and returns a
- * structured outcome, and there is nothing awaited between the two calls — so
- * the timestamp given back is provably the one this call reserved.
+ * The allowance is already spent by the time this runs, and there is no refund:
+ * a note the mesh could not place still occupied the hour, because what the
+ * ceiling bounds is how often an agent may INTERRUPT a person, not how often it
+ * succeeds at it. A refund here is exactly what let a stock install — where
+ * nothing external resolves and every note takes this path — produce unbounded
+ * inbox rows while never appearing to have spent anything.
  */
 function tryDm(notifyDm: NotifyDmDeps, request: RelayDeliveryRequest): RelayDeliveryOutcome | null {
-  if (request.reserve && !request.reserve()) return { ok: false, reason: 'RATE_LIMITED' };
   const outcome = deliverNotifyDm({ agentId: request.agentId, message: request.message }, notifyDm);
-  if (!outcome.ok) {
-    request.refund?.();
-    return null;
-  }
+  if (!outcome.ok) return null;
   return { ok: true, surface: 'dorkos-dm', roomId: outcome.roomId, entryId: outcome.entryId };
 }

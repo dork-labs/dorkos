@@ -104,10 +104,44 @@ export interface NotifyResult {
   relay?: RelayDeliveryOutcome;
 }
 
+/**
+ * Channel refusals that mean the notification does not happen AT ALL, rather
+ * than happening in the app and not reaching a phone.
+ *
+ * Both are about an agent's own note, and both would otherwise leave a row that
+ * the thing refusing was supposed to prevent:
+ *
+ * - `RATE_LIMITED` — the agent has said as much as it may this hour. A ceiling
+ *   that bounded only the chat leg would let a looping agent fill the inbox
+ *   instead, which is the same interruption by a quieter route.
+ * - `INITIATE_NOT_ALLOWED` — the operator switched "Agent can start
+ *   conversations" OFF on the binding this resolved to. That is a person saying
+ *   "do not start conversations with me", and honouring it on Telegram while
+ *   still writing an inbox row would be reading the switch as being about
+ *   Telegram. It is about being interrupted.
+ *
+ * Every other refusal is a delivery problem, not a decision: the news still
+ * happened, so the row is still written and the inbox is where it is found.
+ */
+const SILENCES_EVERY_SURFACE = new Set<string>(['RATE_LIMITED', 'INITIATE_NOT_ALLOWED']);
+
 /** What the service needs wired at boot. */
 export interface NotificationServiceDeps {
-  /** The relay seams. Absent on an install with relay off — the leg is then skipped. */
-  relay?: RelayChannelDeps;
+  /**
+   * The relay seams, read at send time rather than held.
+   *
+   * A function because of BOOT ORDER. Several things that raise notifications —
+   * the dead-letter hook, the mesh liveness observer — subscribe early, while
+   * the relay core and adapter manager they would send through are built much
+   * later in `start()`. Taking the seams as a value would mean either
+   * constructing the service after those subscribers (leaving a window where a
+   * dead letter goes unrecorded) or handing it a half-built bag. Asking for them
+   * per send costs nothing and removes the ordering constraint entirely.
+   *
+   * Answering `undefined` is normal and means "no out-of-app leg" — an install
+   * with relay off, or a boot that has not reached the relay yet.
+   */
+  relay?: () => RelayChannelDeps | undefined;
 }
 
 /** The notification pipeline. */
@@ -236,8 +270,30 @@ export class NotificationService {
   ): Promise<NotifyResult> {
     const entry = notificationEntry(kind);
     const dedupeKey = entry.dedupeKey(payload);
-    if (this.store.hasRecent(dedupeKey, entry.dedupeWindowMs ?? DEFAULT_DEDUPE_WINDOW_MS)) {
-      return { notification: null, deduped: true };
+    const alreadySaid = this.store.findRecent(
+      dedupeKey,
+      entry.dedupeWindowMs ?? DEFAULT_DEDUPE_WINDOW_MS
+    );
+    if (alreadySaid) {
+      // Saying the same thing twice is suppressed, but SENDING it twice is not
+      // the same event. A caller that delivered the note itself (the
+      // `relay_notify_user` path) really did reach somebody a second time, and
+      // the ledger is the record of what reached them — so the delivery is
+      // written against the row that already exists. Without this, "seen on
+      // Telegram at 4pm and again at 4.02" is unanswerable, which is precisely
+      // the question the ledger is for.
+      if (opts.delivered?.ok) {
+        this.store.recordDelivery({
+          notificationId: alreadySaid,
+          channel: ledgerChannel(opts.delivered),
+          detail: deliveryDetail(opts.delivered),
+        });
+      }
+      return {
+        notification: null,
+        deduped: true,
+        ...(opts.delivered ? { relay: opts.delivered } : {}),
+      };
     }
 
     const ownAction = opts.actorPrincipal?.kind === 'operator';
@@ -248,7 +304,7 @@ export class NotificationService {
     const relay =
       opts.delivered ??
       (await this.dispatchRelay(kind, payload, opts, location.agentId, ownAction, { title, body }));
-    if (relay?.ok === false && relay.reason === 'RATE_LIMITED') {
+    if (relay?.ok === false && SILENCES_EVERY_SURFACE.has(relay.reason)) {
       return { notification: null, deduped: false, relay };
     }
 
@@ -301,10 +357,11 @@ export class NotificationService {
     if (policy === 'never' || ownAction) return undefined;
 
     const relayOpts = opts.relay;
-    if (!relayOpts || !agentId || !this.deps.relay) return undefined;
+    const relayDeps = this.deps.relay?.();
+    if (!relayOpts || !agentId || !relayDeps) return undefined;
 
     const message = entry.channelMessage?.(payload) ?? messageFrom(text);
-    return deliverOverRelay({ ...relayOpts, agentId, message, policy }, this.deps.relay);
+    return deliverOverRelay({ ...relayOpts, agentId, message, policy }, relayDeps);
   }
 }
 

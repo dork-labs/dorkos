@@ -480,7 +480,7 @@
       "lastVerified": "2026-08-06",
       "affects": [
         "apps/server/src/services/tasks/task-store.ts",
-        "apps/server/src/services/tasks/task-completion-notifier.ts"
+        "apps/server/src/services/notifications/emitters/run-completed.ts"
       ]
     },
     {

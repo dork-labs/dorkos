@@ -314,6 +314,10 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   'schedule.parked': {
+    // The RAISE edge is reserved for W3 escalation: a standing kind stores
+    // nothing while it stands, so there is nothing for a raise-time call to do
+    // until a timer needs arming. Its two resolutions (approved, rejected) ARE
+    // wired, in `routes/tasks.ts`.
     kind: 'schedule.parked',
     tier: 'blocking',
     storage: 'standing',
@@ -379,6 +383,9 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   'dm.received': {
+    // Reserved: emitter lands in W4 (spec task T11, messages into the pipeline).
+    // Declared now so the vocabulary is complete and the tier is reviewable;
+    // nothing raises it yet.
     kind: 'dm.received',
     tier: 'notable',
     storage: 'event',
@@ -391,6 +398,7 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   'mention.received': {
+    // Reserved: emitter lands in W4 (spec task T11, messages into the pipeline).
     kind: 'mention.received',
     tier: 'notable',
     storage: 'event',
@@ -460,6 +468,7 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   'report.daily': {
+    // Reserved: emitter lands in W4 (spec task T12, the daily Shift Report card).
     kind: 'report.daily',
     tier: 'quiet',
     storage: 'event',
@@ -489,6 +498,31 @@ export function notificationEntry<K extends NotificationKind>(
 
 /** Every declared kind, in declaration order. @internal Exported for tests. */
 export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICATION_KINDS;
+
+/**
+ * The kinds something in the server actually raises today.
+ *
+ * The registry declares the whole vocabulary, which is deliberate — a closed
+ * enum is what makes tier and channel policy reviewable in one place — but a
+ * declared kind nobody emits is a promise, not a feature. This names the ones
+ * that are real, so the gap is a listed fact rather than something a reader has
+ * to discover by grepping for call sites.
+ *
+ * Absent, with their wave noted at each entry: `dm.received` / `mention.received`
+ * / `report.daily` (W4), and the RAISE edge of `schedule.parked` (W3 escalation
+ * — its resolutions are wired).
+ */
+export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
+  'ask.pending',
+  'schedule.parked',
+  'session.error',
+  'turn.completed',
+  'run.completed',
+  'agent.note',
+  'dead-letter.created',
+  'agent.unreachable',
+  'update.installed',
+];
 
 /**
  * Resolve a value that a kind is allowed to vary by payload.
