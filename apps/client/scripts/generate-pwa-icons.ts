@@ -97,12 +97,34 @@ const TARGETS: IconTarget[] = [
   { file: 'apple-touch-icon.png', size: 180, svg: APPLE_TOUCH_SVG },
 ];
 
+/**
+ * Runs `rsvg-convert`, turning a missing binary into a message that names
+ * the fix (`brew install librsvg`) instead of a raw `ENOENT` stack trace —
+ * the only failure mode this script can't do anything about itself.
+ *
+ * @param args - Arguments to pass to `rsvg-convert`.
+ * @param input - SVG piped over stdin, when the source isn't a file on disk.
+ */
+function runRsvgConvert(args: string[], input: string | undefined): void {
+  try {
+    execFileSync('rsvg-convert', args, { input });
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      throw new Error(
+        'rsvg-convert was not found on PATH. Install it with `brew install librsvg` ' +
+          "(macOS) or your package manager's librsvg/rsvg-convert package, then re-run " +
+          'this script.',
+        { cause: error }
+      );
+    }
+    throw error;
+  }
+}
+
 for (const target of TARGETS) {
   const outputPath = resolve(publicDir, target.file);
   const args = ['-w', String(target.size), '-h', String(target.size), '-o', outputPath];
   const isFilePath = target.svg === desktopIconSvg;
-  execFileSync('rsvg-convert', isFilePath ? [...args, target.svg] : args, {
-    input: isFilePath ? undefined : target.svg,
-  });
+  runRsvgConvert(isFilePath ? [...args, target.svg] : args, isFilePath ? undefined : target.svg);
   console.log(`Generated ${target.file}: ${outputPath} (${target.size}x${target.size})`);
 }

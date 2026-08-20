@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { describe, it, expect } from 'vitest';
 
@@ -62,8 +62,14 @@ describe('manifest.webmanifest', () => {
   });
 
   it('declares a theme_color and background_color', () => {
-    expect(manifest.theme_color).toMatch(/^#[0-9a-f]{6}$/i);
-    expect(manifest.background_color).toMatch(/^#[0-9a-f]{6}$/i);
+    // Deliberately dark, not light — the manifest spec has no media-query
+    // escape hatch (unlike index.html's two theme-color metas above), so one
+    // static value has to represent the app. Dark matches the control-panel
+    // identity and is the boot script's own fallback when no theme is
+    // stored; the tradeoff is a dark install splash for someone whose system
+    // is set to light.
+    expect(manifest.theme_color).toBe('#0a0a0a');
+    expect(manifest.background_color).toBe('#0a0a0a');
   });
 
   it('declares at least a 192x192 and a 512x512 icon, and every icon file exists', () => {
@@ -72,9 +78,16 @@ describe('manifest.webmanifest', () => {
     expect(sizes).toContain('192x192');
     expect(sizes).toContain('512x512');
 
+    // A `Set` built from `readdirSync` and a plain string comparison, not
+    // `fs.existsSync` — macOS's default APFS/HFS+ volumes resolve paths
+    // case-insensitively, so `existsSync` would pass even if the manifest's
+    // `src` and the file on disk disagreed on case (fine here, broken on
+    // Linux, where the CLI actually serves this).
+    const publicFiles = new Set(readdirSync(resolve(ROOT, 'public')));
     for (const icon of manifest.icons) {
       expect(icon.type).toBe('image/png');
-      expect(existsSync(resolve(ROOT, 'public', icon.src.replace(/^\//, '')))).toBe(true);
+      const basename = icon.src.replace(/^\//, '');
+      expect(publicFiles.has(basename)).toBe(true);
     }
   });
 

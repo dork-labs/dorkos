@@ -5,4 +5,4 @@ covers:
 
 ### Added
 
-- On your phone, you can now add DorkOS to your home screen, and it opens like an app: full screen, with its own icon, no browser bar (DOR-1390)
+- On your phone, you can now add DorkOS to your home screen, and it opens like an app: full screen, with its own icon (works when opened over your tunnel's https address) (DOR-1390)

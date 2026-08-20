@@ -33,15 +33,17 @@ describe('generated PWA icons', () => {
   });
 
   it.each([
-    { file: 'icon-192.png', minBytes: 500 },
-    { file: 'icon-512.png', minBytes: 500 },
-    { file: 'maskable-icon-512.png', minBytes: 500 },
-    { file: 'apple-touch-icon.png', minBytes: 300 },
-  ])('$file is not an empty or truncated render', ({ file, minBytes }) => {
+    // Floors sit above a MEASURED blank render at each size (a solid-color
+    // PNG this size, glyph missing entirely): 2055 / 6406 / 1897 / 513 bytes
+    // respectively. A glyph-less render is exactly the failure this test
+    // exists to catch — rsvg-convert silently drawing only the background —
+    // so the floor has to clear that number, not just "not literally empty".
+    { file: 'icon-192.png', minBytes: 2500 },
+    { file: 'icon-512.png', minBytes: 7000 },
+    { file: 'maskable-icon-512.png', minBytes: 3000 },
+    { file: 'apple-touch-icon.png', minBytes: 1000 },
+  ])('$file is not an empty, truncated, or glyph-less render', ({ file, minBytes }) => {
     const { size } = statSync(resolve(PUBLIC_DIR, file));
-    // A blank or failed render collapses to a near-empty file (a solid-color
-    // PNG this size compresses to a few hundred bytes); a real render with
-    // the glyph in it runs well past that floor.
     expect(size).toBeGreaterThan(minBytes);
   });
 });
