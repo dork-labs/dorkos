@@ -104,9 +104,7 @@ vi.mock('@/layers/features/top-nav', () => ({
   TasksHeader: () => <div data-testid="tasks-header">Tasks</div>,
   WorkspacesHeader: () => <div data-testid="workspaces-header">Workspaces</div>,
   ConnectionsHeader: () => <div data-testid="connections-header">Connections</div>,
-  FeedbackRequestsHeader: () => (
-    <div data-testid="feedback-requests-header">Feedback &amp; requests</div>
-  ),
+  FeedbackRequestsHeader: () => <div data-testid="feedback-requests-header">Product feedback</div>,
 }));
 
 vi.mock('@/layers/widgets/app-layout', () => ({
@@ -299,6 +297,16 @@ vi.mock('@/layers/entities/unattended-autonomy', async (importOriginal) => {
   return {
     ...actual,
     useUnattendedAutonomySync: () => {},
+  };
+});
+
+// The Tasks list is kept live off the same stream (DOR-1380) via useTasksSync,
+// mounted alongside the other *Sync hooks above.
+vi.mock('@/layers/entities/tasks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/tasks')>();
+  return {
+    ...actual,
+    useTasksSync: () => {},
   };
 });
 

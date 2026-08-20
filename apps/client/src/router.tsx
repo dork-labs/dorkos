@@ -504,7 +504,7 @@ const activityRoute = createRoute({
   component: ActivityPage,
 });
 
-// ── Feedback & requests at /feedback-requests ────────────────
+// ── Product feedback at /feedback-requests ────────────────
 const feedbackRequestsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/feedback-requests',

@@ -2,7 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import type { CreateTaskInput, UpdateTaskRequest } from '@dorkos/shared/types';
 
-const TASKS_KEY = ['tasks'] as const;
+/** Query key for the Tasks list — shared with {@link useTasksSync} for invalidation. */
+export const TASKS_KEY = ['tasks'] as const;
 
 /**
  * Fetch all Tasks.

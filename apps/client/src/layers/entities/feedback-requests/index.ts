@@ -1,5 +1,5 @@
 /**
- * Feedback-requests entity — domain hook for the "Feedback & requests"
+ * Feedback-requests entity — domain hook for the "Product feedback"
  * tracking view's data fetching.
  *
  * @module entities/feedback-requests

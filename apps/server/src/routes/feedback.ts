@@ -14,7 +14,7 @@
  * switches — pressing Send IS the consent (see the feedback-reporter and
  * `@dorkos/shared/telemetry-events` for the reasoning).
  *
- * `GET /api/feedback/mine` — thin proxy for the "Feedback & requests"
+ * `GET /api/feedback/mine` — thin proxy for the "Product feedback"
  * tracking view (feedback-pipeline Part 4, decision 260803-205035). Resolves
  * this install's own anonymous `instanceId` and forwards to the site's
  * `GET /api/feedback/mine` via {@link listMyFeedback}, so the client never

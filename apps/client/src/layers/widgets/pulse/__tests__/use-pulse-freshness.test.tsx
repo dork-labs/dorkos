@@ -122,6 +122,24 @@ describe('usePulseFreshness', () => {
     });
   });
 
+  it('tasks_changed refreshes both activity caches (DOR-1380)', () => {
+    // A schedule an agent proposes writes an activity_events row the moment it
+    // parks at pending_approval, so the Activity tab and the Pulse teaser need
+    // to hear about it the same way any other activity-generating broadcast does.
+    const { queryClient, wrapper } = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    renderHook(() => usePulseFreshness(COALESCE_MS), { wrapper });
+
+    handlers.get('tasks_changed')!(undefined);
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(COALESCE_MS);
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['dashboard-activity'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['activity'] });
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('coalesces a burst of events into a single flush of the union of caches', () => {
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
