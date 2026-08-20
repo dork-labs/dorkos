@@ -1,7 +1,7 @@
 ---
 id: 260819-234828
 title: Activity notifications are SQLite rows with a per-channel delivery ledger; standing attention stays derived and is stored only on resolution
-status: draft
+status: proposed
 created: 2026-08-19
 spec: notification-system
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: notification-system)
+Proposed. Implemented across DOR-1383..DOR-1391 (2026-08-20); accept via /adr:review.
 
 ## Context
 
