@@ -66,7 +66,7 @@
     {
       "id": "260816-070451",
       "slug": "profile-unification",
-      "title": "One Profile \u2014 fold the Agent Hub and the profile drawer into a single identity surface",
+      "title": "One Profile — fold the Agent Hub and the profile drawer into a single identity surface",
       "created": "2026-08-16",
       "status": "implemented",
       "project": "Team, Identity & Profiles"
@@ -74,7 +74,7 @@
     {
       "id": "260814-025025",
       "slug": "community-remote-trigger",
-      "title": "The remote trigger path \u2014 turning a mention in someone else's community into a turn on my machine",
+      "title": "The remote trigger path — turning a mention in someone else's community into a turn on my machine",
       "created": "2026-08-14",
       "status": "ideation"
     },
@@ -140,7 +140,7 @@
     {
       "id": "260807-231651",
       "slug": "runtime-interrupt-receipts",
-      "title": "Runtime Interrupt Receipts \u2014 Stop That Actually Stops",
+      "title": "Runtime Interrupt Receipts — Stop That Actually Stops",
       "created": "2026-08-07",
       "status": "ideation"
     },
@@ -196,7 +196,7 @@
     {
       "id": "260806-214542",
       "slug": "identity-consistency",
-      "title": "Agent & Human Identity Consistency \u2014 people directory, profiles, one identity language",
+      "title": "Agent & Human Identity Consistency — people directory, profiles, one identity language",
       "created": "2026-08-06",
       "status": "implemented"
     },
@@ -211,28 +211,28 @@
     {
       "id": "260803-232451",
       "slug": "mcp-server-management",
-      "title": "MCP server management for agents \u2014 cross-runtime add/remove/status with a uniform approval gate",
+      "title": "MCP server management for agents — cross-runtime add/remove/status with a uniform approval gate",
       "created": "2026-08-03",
       "status": "specified"
     },
     {
       "id": "260803-181550",
       "slug": "runtimes-settings-redesign",
-      "title": "Runtimes settings redesign \u2014 per-runtime cards, default as a state, runtime-declared settings",
+      "title": "Runtimes settings redesign — per-runtime cards, default as a state, runtime-declared settings",
       "created": "2026-08-03",
       "status": "implemented"
     },
     {
       "id": "260803-204801",
       "slug": "feedback-pipeline",
-      "title": "Feedback pipeline \u2014 diagnostics, Linear intake, tracking",
+      "title": "Feedback pipeline — diagnostics, Linear intake, tracking",
       "created": "2026-08-03",
       "status": "implemented"
     },
     {
       "id": "260803-171937",
       "slug": "connection-scoping",
-      "title": "Connection Scoping Backend \u2014 agent-level attachment, one-chat-one-agent, claim feed",
+      "title": "Connection Scoping Backend — agent-level attachment, one-chat-one-agent, claim feed",
       "created": "2026-08-03",
       "status": "implemented",
       "project": "Language & IA"
@@ -240,14 +240,14 @@
     {
       "id": "260803-133357",
       "slug": "chats-as-channels",
-      "title": "Chats as Channels \u2014 a bound external chat becomes a DorkOS channel",
+      "title": "Chats as Channels — a bound external chat becomes a DorkOS channel",
       "created": "2026-08-03",
       "status": "specified"
     },
     {
       "id": "260801-135340",
       "slug": "chat-touch-chips",
-      "title": "Chat touch chips \u2014 files & URLs the agent handled, with a verb motion language",
+      "title": "Chat touch chips — files & URLs the agent handled, with a verb motion language",
       "created": "2026-08-01",
       "status": "implemented"
     },
@@ -261,21 +261,21 @@
     {
       "id": "260801-002836",
       "slug": "mesh-identity-integrity",
-      "title": "Mesh identity integrity \u2014 a duplicated checkout cannot steal an agent, ghosts release their handles, a reused directory starts fresh",
+      "title": "Mesh identity integrity — a duplicated checkout cannot steal an agent, ghosts release their handles, a reused directory starts fresh",
       "created": "2026-08-01",
       "status": "implemented"
     },
     {
       "id": "260730-213143",
       "slug": "execution-defaults",
-      "title": "Execution defaults \u2014 runtime, model and effort, server-wide and per agent",
+      "title": "Execution defaults — runtime, model and effort, server-wide and per agent",
       "created": "2026-07-30",
       "status": "specified"
     },
     {
       "id": "260730-154240",
       "slug": "room-messaging-design",
-      "title": "Room messaging design \u2014 capsule, reactions, and the thread panel",
+      "title": "Room messaging design — capsule, reactions, and the thread panel",
       "created": "2026-07-30",
       "status": "specified"
     },
@@ -289,30 +289,30 @@
     {
       "id": "260729-224559",
       "slug": "claude-code-accounts",
-      "title": "Claude Code accounts \u2014 choose which account runs your work",
+      "title": "Claude Code accounts — choose which account runs your work",
       "created": "2026-07-29",
       "status": "implemented"
     },
     {
       "id": "260730-001217",
       "slug": "direct-connect",
-      "title": "Direct connect \u2014 OAuth 2.1 multi-account vendor MCP, the front door",
+      "title": "Direct connect — OAuth 2.1 multi-account vendor MCP, the front door",
       "created": "2026-07-30",
       "status": "specified",
-      "project": "Connections Redesign \u2014 Direct First"
+      "project": "Connections Redesign — Direct First"
     },
     {
       "id": "260730-001216",
       "slug": "connections-redesign",
-      "title": "Connections redesign \u2014 catalog-first, honest custody, chat front door, try-it-now",
+      "title": "Connections redesign — catalog-first, honest custody, chat front door, try-it-now",
       "created": "2026-07-30",
       "status": "specified",
-      "project": "Connections Redesign \u2014 Direct First"
+      "project": "Connections Redesign — Direct First"
     },
     {
       "id": "260729-145341",
       "slug": "room-presence",
-      "title": "Room presence \u2014 an honest working indicator, from claim to release",
+      "title": "Room presence — an honest working indicator, from claim to release",
       "created": "2026-07-29",
       "status": "specified"
     },
@@ -327,7 +327,7 @@
     {
       "id": "260729-134839",
       "slug": "connector-completion",
-      "title": "Connector completion \u2014 the user-facing half of the connector gateway",
+      "title": "Connector completion — the user-facing half of the connector gateway",
       "created": "2026-07-29",
       "status": "implemented",
       "project": "Connector Gateway Completion"
@@ -335,7 +335,7 @@
     {
       "id": "260728-225135",
       "slug": "handles",
-      "title": "Handles \u2014 one addressable name for every author in a room",
+      "title": "Handles — one addressable name for every author in a room",
       "created": "2026-07-28",
       "status": "specified"
     },
@@ -356,21 +356,21 @@
     {
       "id": "260727-221432",
       "slug": "community-adapter",
-      "title": "CommunityAdapter \u2014 one port for local rooms, Buzz, and apps/community",
+      "title": "CommunityAdapter — one port for local rooms, Buzz, and apps/community",
       "created": "2026-07-27",
       "status": "specified"
     },
     {
       "id": "260727-161438",
       "slug": "invites",
-      "title": "Invites \u2014 a second person on one install",
+      "title": "Invites — a second person on one install",
       "created": "2026-07-27",
       "status": "specified"
     },
     {
       "id": "260727-155419",
       "slug": "community-server",
-      "title": "The community server \u2014 multi-user DorkOS",
+      "title": "The community server — multi-user DorkOS",
       "created": "2026-07-27",
       "status": "ideation"
     },
@@ -384,21 +384,21 @@
     {
       "id": "260726-170533",
       "slug": "rooms",
-      "title": "Rooms \u2014 channels, DMs and threads",
+      "title": "Rooms — channels, DMs and threads",
       "created": "2026-07-26",
       "status": "specified"
     },
     {
       "id": "260726-162747",
       "slug": "channel-workspace",
-      "title": "Channel workspaces \u2014 a room's shared working context, distributed by git, layered by harness sync",
+      "title": "Channel workspaces — a room's shared working context, distributed by git, layered by harness sync",
       "created": "2026-07-26",
       "status": "specified"
     },
     {
       "id": "260726-162520",
       "slug": "agent-workspace-binding",
-      "title": "Agent workspace binding \u2014 every agent knows where it works",
+      "title": "Agent workspace binding — every agent knows where it works",
       "created": "2026-07-26",
       "status": "specified",
       "project": "Agents as First-Class Operators"
@@ -429,21 +429,21 @@
     {
       "id": "260725-014841",
       "slug": "multi-participant-message-list",
-      "title": "Multi-participant message list \u2014 Slack-style identity, reactions, threads",
+      "title": "Multi-participant message list — Slack-style identity, reactions, threads",
       "created": "2026-07-25",
       "status": "specified"
     },
     {
       "id": "260724-225642",
       "slug": "composer-status-redesign",
-      "title": "Composer + status bar redesign \u2014 quiet by default, one line, measured mobile budget",
+      "title": "Composer + status bar redesign — quiet by default, one line, measured mobile budget",
       "created": "2026-07-24",
       "status": "implemented"
     },
     {
       "id": "260723-050355",
       "slug": "agent-trust",
-      "title": "Agent trust \u2014 identity, capability tiers, approvals, isolated evals",
+      "title": "Agent trust — identity, capability tiers, approvals, isolated evals",
       "created": "2026-07-23",
       "status": "implemented",
       "project": "Agents as First-Class Operators"
@@ -451,7 +451,7 @@
     {
       "id": "260723-013455",
       "slug": "capability-registry",
-      "title": "Capability Registry \u2014 one source of truth, projected everywhere",
+      "title": "Capability Registry — one source of truth, projected everywhere",
       "created": "2026-07-23",
       "status": "implemented",
       "project": "Agents as First-Class Operators"
@@ -467,21 +467,21 @@
     {
       "id": "260722-184734",
       "slug": "opencode-connect-overhaul",
-      "title": "OpenCode connect overhaul \u2014 readiness root fix + power-source picker + tiered model menu",
+      "title": "OpenCode connect overhaul — readiness root fix + power-source picker + tiered model menu",
       "created": "2026-07-22",
       "status": "implemented"
     },
     {
       "id": "260722-172319",
       "slug": "canvas-file-viewing-overhaul",
-      "title": "Canvas file viewing overhaul \u2014 per-tab error isolation, markdown editing, light-theme fix, expanded file/3D formats",
+      "title": "Canvas file viewing overhaul — per-tab error isolation, markdown editing, light-theme fix, expanded file/3D formats",
       "created": "2026-07-22",
       "status": "implemented"
     },
     {
       "id": "260722-120926",
       "slug": "dorkbot-living-tour",
-      "title": "DorkBot living tour \u2014 guided first-run walkthrough of real surfaces",
+      "title": "DorkBot living tour — guided first-run walkthrough of real surfaces",
       "created": "2026-07-22",
       "status": "implemented",
       "project": "DorkBot Is the Onboarding"
@@ -489,7 +489,7 @@
     {
       "id": "260722-120505",
       "slug": "dashboard-with-hands",
-      "title": "Dashboard with hands \u2014 composer, messageable agents, human status language",
+      "title": "Dashboard with hands — composer, messageable agents, human status language",
       "created": "2026-07-22",
       "status": "implemented",
       "project": "DorkBot Is the Onboarding"
@@ -497,7 +497,7 @@
     {
       "id": "260722-110751",
       "slug": "dorkbot-is-the-onboarding",
-      "title": "DorkBot is the onboarding \u2014 conversation-first first-run experience",
+      "title": "DorkBot is the onboarding — conversation-first first-run experience",
       "created": "2026-07-22",
       "status": "implemented",
       "project": "DorkBot Is the Onboarding"
@@ -513,7 +513,7 @@
     {
       "id": "260721-153518",
       "slug": "session-origin-legibility",
-      "title": "Session origin legibility \u2014 distinguish your conversations from automated sessions",
+      "title": "Session origin legibility — distinguish your conversations from automated sessions",
       "created": "2026-07-21",
       "status": "implemented",
       "project": "Chat Session Reliability"
@@ -542,21 +542,21 @@
     {
       "id": "260718-050609",
       "slug": "connector-gateway",
-      "title": "ConnectorProvider gateway \u2014 one port for many connector backends",
+      "title": "ConnectorProvider gateway — one port for many connector backends",
       "created": "2026-07-18",
       "status": "implemented"
     },
     {
       "id": "260718-043822",
       "slug": "shapes",
-      "title": "The Shape primitive \u2014 the fifth marketplace package type",
+      "title": "The Shape primitive — the fifth marketplace package type",
       "created": "2026-07-18",
       "status": "specified"
     },
     {
       "id": "260718-044329",
       "slug": "eval-harness",
-      "title": "Eval harness v1 (packages/evals) \u2014 outcome-oracle evals + D5 CI cadence",
+      "title": "Eval harness v1 (packages/evals) — outcome-oracle evals + D5 CI cadence",
       "created": "2026-07-17",
       "status": "specified"
     },
@@ -634,7 +634,7 @@
     {
       "id": "260713-014129",
       "slug": "desktop-windows-support",
-      "title": "Windows desktop support \u2014 unsigned NSIS alpha on the unified release train",
+      "title": "Windows desktop support — unsigned NSIS alpha on the unified release train",
       "created": "2026-07-12",
       "status": "specified"
     },
@@ -648,7 +648,7 @@
     {
       "id": "260711-175135",
       "slug": "gen-ui-pip",
-      "title": "Live gen-UI widgets in PIP \u2014 play tic-tac-toe while you work",
+      "title": "Live gen-UI widgets in PIP — play tic-tac-toe while you work",
       "created": "2026-07-11",
       "status": "implemented"
     },
@@ -662,7 +662,7 @@
     {
       "id": "260711-142048",
       "slug": "diff-viewer",
-      "title": "Diff viewer \u2014 per-hunk review surface (fast-follow)",
+      "title": "Diff viewer — per-hunk review surface (fast-follow)",
       "created": "2026-07-11",
       "status": "specified",
       "linearIssue": "DOR-212"
@@ -670,7 +670,7 @@
     {
       "id": "260711-142034",
       "slug": "devtools-bridge",
-      "title": "DevTools Bridge \u2014 expose browser console/network/screenshots to the agent (v2)",
+      "title": "DevTools Bridge — expose browser console/network/screenshots to the agent (v2)",
       "created": "2026-07-11",
       "status": "specified",
       "linearIssue": "DOR-213"
@@ -696,15 +696,15 @@
     {
       "id": "260709-205811",
       "slug": "desktop-macos-polish",
-      "title": "Desktop app \u2014 native macOS polish & platform basics",
+      "title": "Desktop app — native macOS polish & platform basics",
       "created": "2026-07-09",
       "status": "implemented",
-      "project": "Desktop app \u2014 native macOS polish"
+      "project": "Desktop app — native macOS polish"
     },
     {
       "id": "260708-144354",
       "slug": "right-panel-workbench",
-      "title": "Right-Panel Workbench \u2014 File Explorer, Viewers, Browser, Terminal",
+      "title": "Right-Panel Workbench — File Explorer, Viewers, Browser, Terminal",
       "created": "2026-07-08",
       "status": "implemented"
     },
@@ -770,7 +770,7 @@
     {
       "number": 267,
       "slug": "harness-sync",
-      "title": "Harness Sync \u2014 project one canonical agent source to every harness",
+      "title": "Harness Sync — project one canonical agent source to every harness",
       "created": "2026-06-29",
       "status": "specified",
       "project": "Harness Sync"
@@ -824,14 +824,14 @@
     {
       "number": 260,
       "slug": "connect-claude-code-account",
-      "title": "Connect Your Claude Code Account \u2014 runtime credential authentication",
+      "title": "Connect Your Claude Code Account — runtime credential authentication",
       "created": "2026-06-25",
       "status": "ideation"
     },
     {
       "number": 259,
       "slug": "workspace-manager",
-      "title": "WorkspaceManager \u2014 server-managed isolated workspaces bound to sessions via cwd",
+      "title": "WorkspaceManager — server-managed isolated workspaces bound to sessions via cwd",
       "created": "2026-06-16",
       "status": "implemented",
       "linearIssue": "DOR-84"
@@ -847,7 +847,7 @@
     {
       "number": 257,
       "slug": "unified-workflow-system",
-      "title": "Unified Workflow System \u2014 the /flow engine (PM-agnostic, dual-mode)",
+      "title": "Unified Workflow System — the /flow engine (PM-agnostic, dual-mode)",
       "created": "2026-06-13",
       "status": "implemented"
     },
@@ -968,7 +968,7 @@
     {
       "number": 240,
       "slug": "agent-hub-ux-redesign",
-      "title": "Agent Hub UX Redesign \u2014 Personality Theater",
+      "title": "Agent Hub UX Redesign — Personality Theater",
       "created": "2026-04-12",
       "status": "implemented"
     },
@@ -982,7 +982,7 @@
     {
       "number": 238,
       "slug": "unified-agent-hub",
-      "title": "Unified Agent Hub \u2014 Agent Profile Panel",
+      "title": "Unified Agent Hub — Agent Profile Panel",
       "created": "2026-04-12",
       "status": "implemented"
     },
@@ -996,7 +996,7 @@
     {
       "number": 236,
       "slug": "settings-ui-ux-disambiguation",
-      "title": "Settings UI/UX and Disambiguation \u2014 Unified Agent Hub",
+      "title": "Settings UI/UX and Disambiguation — Unified Agent Hub",
       "created": "2026-04-12",
       "status": "ideation"
     },
@@ -1094,7 +1094,7 @@
     {
       "number": 222,
       "slug": "agent-channels-tab-03-functionality",
-      "title": "Agent Dialog \u2192 Channels Tab \u2014 New Functionality (Pause, Test, Activity)",
+      "title": "Agent Dialog → Channels Tab — New Functionality (Pause, Test, Activity)",
       "created": "2026-04-06",
       "status": "implemented"
     },
@@ -1108,7 +1108,7 @@
     {
       "number": 220,
       "slug": "agent-channels-tab-02-polish",
-      "title": "Agent Dialog \u2192 Channels Tab \u2014 Visual Polish & Information Architecture",
+      "title": "Agent Dialog → Channels Tab — Visual Polish & Information Architecture",
       "created": "2026-04-06",
       "status": "implemented"
     },
@@ -1129,7 +1129,7 @@
     {
       "number": 217,
       "slug": "agent-channels-tab-01-correctness",
-      "title": "Agent Dialog \u2192 Channels Tab \u2014 Correctness & Architecture Cleanup",
+      "title": "Agent Dialog → Channels Tab — Correctness & Architecture Cleanup",
       "created": "2026-04-06",
       "status": "implemented"
     },
@@ -1150,7 +1150,7 @@
     {
       "number": 214,
       "slug": "channels-and-agent-adapters",
-      "title": "Channels & Agent Adapters \u2014 Connectivity UX Redesign",
+      "title": "Channels & Agent Adapters — Connectivity UX Redesign",
       "created": "2026-04-04",
       "status": "implemented"
     },
@@ -1164,7 +1164,7 @@
     {
       "number": 212,
       "slug": "skills-package",
-      "title": "Skills Package \u2014 SKILL.md Format Foundation",
+      "title": "Skills Package — SKILL.md Format Foundation",
       "created": "2026-04-01",
       "status": "implemented"
     },
@@ -1193,7 +1193,7 @@
     {
       "number": 207,
       "slug": "tool-progress-streaming",
-      "title": "Tool Progress Streaming \u2014 Specification",
+      "title": "Tool Progress Streaming — Specification",
       "created": "2026-03-29",
       "status": "implemented"
     },
@@ -1277,7 +1277,7 @@
     {
       "number": 195,
       "slug": "electron-desktop-app",
-      "title": "Electron Desktop App \u2014 Native macOS Distribution for DorkOS",
+      "title": "Electron Desktop App — Native macOS Distribution for DorkOS",
       "created": "2026-03-29",
       "status": "specified"
     },
@@ -1326,7 +1326,7 @@
     {
       "number": 188,
       "slug": "sse-connection-optimization-02-fetch-transport",
-      "title": "SSE Connection Optimization Phase 2 \u2014 Fetch-Based SSE Transport",
+      "title": "SSE Connection Optimization Phase 2 — Fetch-Based SSE Transport",
       "created": "2026-03-27",
       "status": "implemented",
       "project": "sse-connection-optimization"
@@ -1334,7 +1334,7 @@
     {
       "number": 187,
       "slug": "sse-connection-optimization-01-consolidate",
-      "title": "SSE Connection Optimization Phase 1 \u2014 Consolidate SSE Connections",
+      "title": "SSE Connection Optimization Phase 1 — Consolidate SSE Connections",
       "created": "2026-03-27",
       "status": "implemented",
       "project": "sse-connection-optimization"
@@ -1356,7 +1356,7 @@
     {
       "number": 184,
       "slug": "ext-platform-04-agent-extensions",
-      "title": "Extensibility Platform Phase 4 \u2014 Agent-Built Extensions",
+      "title": "Extensibility Platform Phase 4 — Agent-Built Extensions",
       "created": "2026-03-26",
       "status": "implemented",
       "project": "extensibility-platform"
@@ -1364,7 +1364,7 @@
     {
       "number": 183,
       "slug": "ext-platform-03-extension-system",
-      "title": "Extensibility Platform Phase 3 \u2014 Extension System Core",
+      "title": "Extensibility Platform Phase 3 — Extension System Core",
       "created": "2026-03-26",
       "status": "implemented",
       "project": "extensibility-platform"
@@ -1372,7 +1372,7 @@
     {
       "number": 182,
       "slug": "ext-platform-02-extension-registry",
-      "title": "Extensibility Platform Phase 2 \u2014 Extension Point Registry",
+      "title": "Extensibility Platform Phase 2 — Extension Point Registry",
       "created": "2026-03-26",
       "status": "implemented",
       "project": "extensibility-platform"
@@ -1380,7 +1380,7 @@
     {
       "number": 181,
       "slug": "ext-platform-01-agent-ui-control",
-      "title": "Extensibility Platform Phase 1 \u2014 Agent UI Control & Canvas",
+      "title": "Extensibility Platform Phase 1 — Agent UI Control & Canvas",
       "created": "2026-03-26",
       "status": "implemented",
       "project": "extensibility-platform"
@@ -1388,28 +1388,28 @@
     {
       "number": 180,
       "slug": "composable-filter-system",
-      "title": "Composable Filter System \u2014 Shared Filtering Infrastructure for List Views",
+      "title": "Composable Filter System — Shared Filtering Infrastructure for List Views",
       "created": "2026-03-26",
       "status": "specified"
     },
     {
       "number": 179,
       "slug": "sidebar-upgrade-notification",
-      "title": "Sidebar Upgrade Notification \u2014 Move Version Display to Sidebar Footer",
+      "title": "Sidebar Upgrade Notification — Move Version Display to Sidebar Footer",
       "created": "2026-03-24",
       "status": "specified"
     },
     {
       "number": 178,
       "slug": "feature-promo-system",
-      "title": "Feature Promo System \u2014 Declarative Feature Discovery Framework",
+      "title": "Feature Promo System — Declarative Feature Discovery Framework",
       "created": "2026-03-24",
       "status": "implemented"
     },
     {
       "number": 177,
       "slug": "background-task-visibility",
-      "title": "Background Task Visibility \u2014 Unified Indicator for Agents and Bash",
+      "title": "Background Task Visibility — Unified Indicator for Agents and Bash",
       "created": "2026-03-24",
       "status": "implemented"
     },
@@ -1423,7 +1423,7 @@
     {
       "number": 175,
       "slug": "relay-outbound-awareness",
-      "title": "Relay Outbound Awareness \u2014 Agent-Initiated Messaging",
+      "title": "Relay Outbound Awareness — Agent-Initiated Messaging",
       "created": "2026-03-24",
       "status": "implemented"
     },
@@ -1549,7 +1549,7 @@
     {
       "number": 157,
       "slug": "agents-page",
-      "title": "Agents Page \u2014 Dedicated Fleet Management",
+      "title": "Agents Page — Dedicated Fleet Management",
       "created": "2026-03-20",
       "status": "implemented"
     },
@@ -1577,14 +1577,14 @@
     {
       "number": 153,
       "slug": "unified-status-strip",
-      "title": "Unified Status Strip \u2014 Consolidate InferenceIndicator & SystemStatusZone",
+      "title": "Unified Status Strip — Consolidate InferenceIndicator & SystemStatusZone",
       "created": "2026-03-20",
       "status": "implemented"
     },
     {
       "number": 152,
       "slug": "chat-streaming-motion",
-      "title": "Chat Streaming Motion \u2014 Premium Text & Scroll Animation",
+      "title": "Chat Streaming Motion — Premium Text & Scroll Animation",
       "created": "2026-03-20",
       "status": "implemented"
     },
@@ -1598,7 +1598,7 @@
     {
       "number": 150,
       "slug": "streaming-message-integrity",
-      "title": "Streaming Message Integrity \u2014 Eliminate Post-Stream Replace",
+      "title": "Streaming Message Integrity — Eliminate Post-Stream Replace",
       "created": "2026-03-19",
       "status": "implemented"
     },
@@ -1612,7 +1612,7 @@
     {
       "number": 148,
       "slug": "sdk-error-observability",
-      "title": "SDK Error Observability \u2014 Break Infinite Retry Loop, Surface Errors to Adapters",
+      "title": "SDK Error Observability — Break Infinite Retry Loop, Surface Errors to Adapters",
       "created": "2026-03-18",
       "status": "specified"
     },
@@ -1710,7 +1710,7 @@
     {
       "number": 134,
       "slug": "relay-panel-ux-fixes",
-      "title": "Relay Panel UX Fixes \u2014 Binding CRUD, Health Bar, Activity Feed",
+      "title": "Relay Panel UX Fixes — Binding CRUD, Health Bar, Activity Feed",
       "created": "2026-03-15",
       "status": "implemented"
     },
@@ -1724,14 +1724,14 @@
     {
       "number": 132,
       "slug": "relay-panel-redesign",
-      "title": "Relay Panel Redesign \u2014 Jobs/Ive Design Overhaul",
+      "title": "Relay Panel Redesign — Jobs/Ive Design Overhaul",
       "created": "2026-03-15",
       "status": "implemented"
     },
     {
       "number": 131,
       "slug": "remove-binding-projectpath",
-      "title": "Remove projectPath from AdapterBinding \u2014 Derive CWD from Agent Registry",
+      "title": "Remove projectPath from AdapterBinding — Derive CWD from Agent Registry",
       "created": "2026-03-14",
       "status": "specified"
     },
@@ -1766,14 +1766,14 @@
     {
       "number": 126,
       "slug": "fix-chat-stream-remap-bugs",
-      "title": "Fix Chat UI Streaming Bugs \u2014 Duplicate Messages & Stale Model Display",
+      "title": "Fix Chat UI Streaming Bugs — Duplicate Messages & Stale Model Display",
       "created": "2026-03-12",
       "status": "implemented"
     },
     {
       "number": 125,
       "slug": "client-direct-sse",
-      "title": "Client Direct SSE \u2014 Remove Relay Message Path from Web Client",
+      "title": "Client Direct SSE — Remove Relay Message Path from Web Client",
       "created": "2026-03-12",
       "status": "implemented"
     },
@@ -1830,7 +1830,7 @@
     {
       "number": 117,
       "slug": "sidebar-tabbed-views",
-      "title": "Sidebar Tabbed Views \u2014 Sessions, Schedules, Connections",
+      "title": "Sidebar Tabbed Views — Sessions, Schedules, Connections",
       "created": "2026-03-10",
       "status": "implemented"
     },
@@ -1865,7 +1865,7 @@
     {
       "number": 112,
       "slug": "update-top-nav",
-      "title": "Update Top Nav \u2014 Agent Identity, Command Palette Trigger, 10x Elevation",
+      "title": "Update Top Nav — Agent Identity, Command Palette Trigger, 10x Elevation",
       "created": "2026-03-10",
       "status": "implemented"
     },
@@ -1900,7 +1900,7 @@
     {
       "number": 107,
       "slug": "mcp-server",
-      "title": "MCP Server \u2014 Expose DorkOS Tools to External Agents",
+      "title": "MCP Server — Expose DorkOS Tools to External Agents",
       "created": "2026-03-09",
       "status": "implemented"
     },
@@ -1956,7 +1956,7 @@
     {
       "number": 99,
       "slug": "agent-runtime-review-remediation",
-      "title": "Agent Runtime Abstraction \u2014 Review Remediation",
+      "title": "Agent Runtime Abstraction — Review Remediation",
       "created": "2026-03-06",
       "status": "implemented"
     },
@@ -2005,7 +2005,7 @@
     {
       "number": 92,
       "slug": "relay-inbox-lifecycle",
-      "title": "Relay Inbox Lifecycle \u2014 Endpoint Types, Dispatch TTL, relay_send_and_wait Streaming",
+      "title": "Relay Inbox Lifecycle — Endpoint Types, Dispatch TTL, relay_send_and_wait Streaming",
       "created": "2026-03-05",
       "status": "implemented"
     },
@@ -2047,21 +2047,21 @@
     {
       "number": 86,
       "slug": "shadcn-sidebar-redesign",
-      "title": "Shadcn Sidebar Redesign \u2014 Agent-Centric Sidebar with Glanceable Status",
+      "title": "Shadcn Sidebar Redesign — Agent-Centric Sidebar with Glanceable Status",
       "created": "2026-03-03",
       "status": "implemented"
     },
     {
       "number": 85,
       "slug": "agent-centric-ux",
-      "title": "Agent-Centric UX \u2014 Command Palette, Sidebar Redesign, Mesh Always-On",
+      "title": "Agent-Centric UX — Command Palette, Sidebar Redesign, Mesh Always-On",
       "created": "2026-03-03",
       "status": "implemented"
     },
     {
       "number": 84,
       "slug": "cli-install-smoke-testing",
-      "title": "CLI Install Smoke Testing \u2014 Docker & GitHub Actions",
+      "title": "CLI Install Smoke Testing — Docker & GitHub Actions",
       "created": "2026-03-02",
       "status": "ideation"
     },
@@ -2110,14 +2110,14 @@
     {
       "number": 77,
       "slug": "relay-mesh-review-remediation-r3",
-      "title": "Relay, Mesh & Telegram Adapter \u2014 Code Review Remediation Round 3",
+      "title": "Relay, Mesh & Telegram Adapter — Code Review Remediation Round 3",
       "created": "2026-03-01",
       "status": "implemented"
     },
     {
       "number": 76,
       "slug": "server-review-remediation-r3",
-      "title": "Server Code Review Remediation \u2014 Round 3",
+      "title": "Server Code Review Remediation — Round 3",
       "created": "2026-02-28",
       "status": "implemented"
     },
@@ -2131,14 +2131,14 @@
     {
       "number": 74,
       "slug": "relay-mesh-telegram-review-fixes-r2",
-      "title": "Relay, Mesh & Telegram Adapter \u2014 Code Review Remediation Round 2",
+      "title": "Relay, Mesh & Telegram Adapter — Code Review Remediation Round 2",
       "created": "2026-02-28",
       "status": "implemented"
     },
     {
       "number": 73,
       "slug": "relay-mesh-telegram-review-fixes",
-      "title": "Relay, Mesh & Telegram Adapter \u2014 Code Review Remediation",
+      "title": "Relay, Mesh & Telegram Adapter — Code Review Remediation",
       "created": "2026-02-28",
       "status": "implemented"
     },
@@ -2173,7 +2173,7 @@
     {
       "number": 68,
       "slug": "relay-ux-elevation",
-      "title": "Relay UX Elevation \u2014 World-Class Relay Panel Experience",
+      "title": "Relay UX Elevation — World-Class Relay Panel Experience",
       "created": "2026-02-27",
       "status": "superseded",
       "supersededBy": 132
@@ -2209,7 +2209,7 @@
     {
       "number": 63,
       "slug": "db-drizzle-consolidation",
-      "title": "Database Consolidation \u2014 Single DB, packages/db, Drizzle ORM",
+      "title": "Database Consolidation — Single DB, packages/db, Drizzle ORM",
       "created": "2026-02-25",
       "status": "implemented"
     },
@@ -2265,7 +2265,7 @@
     {
       "number": 55,
       "slug": "relay-convergence",
-      "title": "Relay Convergence \u2014 Migrate Pulse & Console to Relay Transport",
+      "title": "Relay Convergence — Migrate Pulse & Console to Relay Transport",
       "created": "2026-02-25",
       "status": "implemented"
     },
@@ -2314,14 +2314,14 @@
     {
       "number": 48,
       "slug": "pulse-v2-enhancements",
-      "title": "Pulse V2 Enhancements \u2014 Visual Cron Builder, DirectoryPicker, Calm Notifications",
+      "title": "Pulse V2 Enhancements — Visual Cron Builder, DirectoryPicker, Calm Notifications",
       "created": "2026-02-21",
       "status": "implemented"
     },
     {
       "number": 47,
       "slug": "pulse-ui-overhaul",
-      "title": "Pulse UI/UX Overhaul \u2014 World-Class Scheduler Experience",
+      "title": "Pulse UI/UX Overhaul — World-Class Scheduler Experience",
       "created": "2026-02-21",
       "status": "implemented"
     },
@@ -2650,28 +2650,28 @@
     {
       "id": "260708-111226",
       "slug": "gen-ui-tier1",
-      "title": "Generative UI Tier 1 \u2014 declarative widget catalog",
+      "title": "Generative UI Tier 1 — declarative widget catalog",
       "status": "specified",
       "created": "2026-07-08"
     },
     {
       "id": "260708-141017",
       "slug": "mcp-apps-host",
-      "title": "MCP Apps (SEP-1865) host support \u2014 Tier 2 generative UI",
+      "title": "MCP Apps (SEP-1865) host support — Tier 2 generative UI",
       "status": "specified",
       "created": "2026-07-08"
     },
     {
       "id": "260720-025421",
       "slug": "agent-creation-redesign",
-      "title": "Agent creation, reborn \u2014 four moments from fork to first hello",
+      "title": "Agent creation, reborn — four moments from fork to first hello",
       "status": "specified",
       "created": "2026-07-20"
     },
     {
       "id": "260731-191225",
       "slug": "messaging-observability",
-      "title": "Messaging observability & DX \u2014 one id across the dispatch chain, and the surfaces to read it",
+      "title": "Messaging observability & DX — one id across the dispatch chain, and the surfaces to read it",
       "status": "specified",
       "created": "2026-07-31"
     },
@@ -2694,7 +2694,7 @@
       "slug": "notification-system",
       "title": "Unified notification system",
       "created": "2026-08-19",
-      "status": "specified"
+      "status": "implemented"
     }
   ]
 }
