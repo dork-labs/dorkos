@@ -287,6 +287,61 @@ describe('PATCH /api/config', () => {
     expect(configManager.getDot('server.boundary')).not.toBe('/');
   });
 
+  describe('notification settings (DOR-1385)', () => {
+    // Every one of these is `operator-only`, because an agent that could write
+    // them could turn off the knock, tell DorkOS never to try another way of
+    // reaching you, and then park on a question nobody is ever told about.
+    //
+    // That verdict has a cost the tables cannot see: the Settings screen writes
+    // through THIS route, so a policy that refused it here would leave the
+    // person unable to change their own sound settings at all. These two cases
+    // pin both halves — the door open for a person, shut for an agent.
+
+    it('lets a PERSON turn the knock off through the settings door', async () => {
+      const response = await request(server)
+        .patch('/api/config')
+        .send({ notifications: { sounds: { knock: false } } })
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('notifications.sounds.knock')).toBe(false);
+      // The sibling switches are untouched: `PATCH` deep-merges, so a
+      // one-switch write must not reset the other two to their defaults.
+      expect(configManager.getDot('notifications.sounds.allClear')).toBe(true);
+      expect(configManager.getDot('notifications.notifyOnTurnCompleteWhileAway')).toBe(true);
+    });
+
+    it('refuses an AGENT the same write', async () => {
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ notifications: { sounds: { knock: false } } })
+        .expect(403);
+
+      expect(refused.body.code).toBe('operator_only_config');
+      expect(refused.body.paths).toContain('notifications.sounds.knock');
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('notifications.sounds.knock')).toBe(true);
+    });
+
+    it('refuses an agent switching the escalation ladder off', async () => {
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ notifications: { escalation: { phoneAfterMinutes: 'never' } } })
+        .expect(403);
+
+      expect(refused.body.paths).toContain('notifications.escalation.phoneAfterMinutes');
+    });
+  });
+
   describe('settings that live inside a list (DOR-1113)', () => {
     // Until DOR-1113 the path matcher stopped at the array, so a patch replacing
     // `connectors.rawMcpServers` or `runtimes.claudeCode.accounts` matched no

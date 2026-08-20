@@ -109,15 +109,27 @@ export function useAttentionSignals(): readonly AttentionSignal[] {
  * A companion rather than a second return value, because the sidebar assigns
  * that array straight into its own snapshot and an object would not fit.
  *
- * Only the two QUERIES can be mid-first-load. The lifecycle map comes from the
+ * Only the three QUERIES can be mid-first-load. The lifecycle map comes from the
  * session-list store, which is fed by the stream and is simply empty until it
  * is not — there is no "still loading" to report about a store. So a surface
- * gating an all-clear on this waits for the session listing and the approval
- * queue, which are the two reads that make an empty list a lie rather than an
- * answer.
+ * gating an all-clear on this waits for the session listing, the approval queue
+ * and the prompt queue, which are the three reads that make an empty list a lie
+ * rather than an answer.
+ *
+ * **The prompt queue is not optional here, and leaving it out was a real bug.**
+ * `deriveAttentionSignals` reads a blocked session's PROMPT to decide both the
+ * signal's kind and its id: with the prompt in hand the id is
+ * `blocked:<interactionId>`, and without one it falls back to
+ * `blocked:<sessionId>`. So during the window where sessions had resolved and
+ * `usePendingInteractions` had not, this reported "believable" for a list in
+ * which every blocked session carried a placeholder id — and the moment the
+ * prompts landed, each of those ids CHANGED. Anything watching for arrivals saw
+ * a departure and an arrival for an Ask that had been sitting there the whole
+ * time, which is a knock and an OS banner for nothing (DOR-1385 review).
  */
 export function useAttentionSignalsLoading(): boolean {
   const { isLoading: sessionsLoading } = useRecentSessions();
   const { isLoading: approvalsLoading } = usePendingApprovals();
-  return sessionsLoading || approvalsLoading;
+  const { isLoading: interactionsLoading } = usePendingInteractions();
+  return sessionsLoading || approvalsLoading || interactionsLoading;
 }

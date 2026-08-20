@@ -163,8 +163,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setIsTextStreaming: vi.fn(),
       setIsWaitingForUser: vi.fn(),
       setActiveForm: vi.fn(),
-      enableNotificationSound: false,
-      setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
     };

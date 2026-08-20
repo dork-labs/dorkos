@@ -55,6 +55,8 @@ interface ShownNotification {
   title: string;
   body: string;
   tag: string;
+  /** Whether the OS was told not to add a sound of its own. */
+  silent: boolean;
   close: ReturnType<typeof vi.fn>;
   /** The object itself, for the handlers the hook hangs on it. */
   instance: FakeNotification;
@@ -71,12 +73,13 @@ class FakeNotification {
   close = vi.fn();
   constructor(
     public title: string,
-    public options: { body?: string; tag?: string } = {}
+    public options: { body?: string; tag?: string; silent?: boolean } = {}
   ) {
     shown.push({
       title,
       body: options.body ?? '',
       tag: options.tag ?? '',
+      silent: options.silent === true,
       close: this.close,
       instance: this,
     });
@@ -142,6 +145,16 @@ describe('useBrowserNotifications', () => {
 
     expect(shown).toHaveLength(1);
     expect(shown[0]!.title).toBe('Meeting Notes needs you');
+  });
+
+  it('asks the OS not to add a sound — DorkOS already knocked', () => {
+    // The knock plays for the same arrival that raises this banner. Leaving the
+    // OS free to add its default alert is two noises for one event.
+    const { rerender } = harness();
+    world.signals = [ask('a')];
+    rerender();
+
+    expect(shown[0]!.silent).toBe(true);
   });
 
   it('never puts a tool input in the banner', () => {

@@ -38,7 +38,18 @@ export interface BlockingItem {
   deepLink: string;
 }
 
-/** Which attention kinds count as "blocked on a person". */
+/**
+ * Which attention kinds count as "blocked on a person".
+ *
+ * Two, and the two left out are left out deliberately. An idle nudge is a
+ * heuristic, not a blockage. And `error` — a session that fell over — is not
+ * waiting on an answer: nothing unblocks when you look at it, so a knock and an
+ * OS banner would be noise that cannot be acted on. It is in the Inbox, which is
+ * where news about something that already happened belongs. `use-browser-
+ * notifications` states the same rule from the other side: `session.error` is
+ * `blocking` on the wire and still reaches no banner, because neither source
+ * carries it.
+ */
 const BLOCKING_KINDS: ReadonlySet<AttentionSignal['kind']> = new Set([
   'permission-prompt',
   'question',
@@ -60,8 +71,17 @@ const BLOCKING_SUMMARIES: Record<'permission-prompt' | 'question' | 'schedule', 
 export interface BlockingArrivalHandlers {
   /** Called once per newly-arrived item, never on the first settled read. */
   onArrive?: (items: readonly BlockingItem[]) => void;
-  /** Called with the ids of items that are no longer waiting. */
-  onDepart?: (ids: readonly string[]) => void;
+  /**
+   * Called with the ids of items that are no longer waiting.
+   *
+   * @param ids - What just stopped waiting.
+   * @param remaining - How many things are still waiting afterwards. `0` is the
+   * all-clear — the queue just drained — and it is reported here rather than
+   * left for the caller to recompute, because a caller holding its own count
+   * would be a second answer to "how many are waiting" that could disagree with
+   * this one.
+   */
+  onDepart?: (ids: readonly string[], remaining: number) => void;
 }
 
 /**
@@ -132,6 +152,6 @@ export function useBlockingArrivals(handlers: BlockingArrivalHandlers): void {
     const departed = [...known].filter((id) => !current.has(id));
 
     if (arrived.length > 0) handlersRef.current.onArrive?.(arrived);
-    if (departed.length > 0) handlersRef.current.onDepart?.(departed);
+    if (departed.length > 0) handlersRef.current.onDepart?.(departed, current.size);
   }, [loading, signals, schedules]);
 }

@@ -59,6 +59,15 @@ interface OpenNotification {
  * raise no notification row. Notable comes off the `notification` stream, which
  * is where a finished turn or a message addressed to you lands. Reading blocking
  * off BOTH would show two banners for one Ask.
+ *
+ * **`session.error` reaches neither, and that is on purpose.** It is `blocking`
+ * on the wire, so the tier filter above drops it; and `useBlockingArrivals`
+ * counts only a prompt, an approval or a parked schedule, so its `error` signal
+ * is not in that set either. A session that fell over is not waiting on an
+ * answer — nothing unblocks when you look at it — and a banner that cannot be
+ * acted on is the kind of noise that teaches people to ignore the ones that can.
+ * It is in the Inbox, where it belongs. Widening either source to include it is a
+ * product decision, not a bug fix.
  */
 export function useBrowserNotifications(): void {
   const { permission } = useBrowserNotificationPermission();
@@ -87,7 +96,12 @@ export function useBrowserNotifications(): void {
     try {
       // `tag` makes the OS replace rather than stack when the same thing is
       // announced twice — a re-arrival after an answer, say.
-      notification = new Notification(title, { body, tag: key });
+      //
+      // `silent` because DorkOS has already made the sound. The knock plays for
+      // the same arrival that raises this banner, so leaving the OS free to add
+      // its own default alert is two noises for one event — the same rule the
+      // desktop shell's wrapper follows for its native notifications.
+      notification = new Notification(title, { body, tag: key, silent: true });
     } catch {
       // Some browsers throw here rather than rejecting: Chrome on Android
       // refuses the constructor outright and insists on a service worker. There

@@ -30,34 +30,33 @@ export const ALL_CLEAR_BEAT_MS = 2_500;
  * popover is a beat nobody saw. Opening the popover later must not replay it,
  * which is why the count is only compared while `open` is true.
  *
- * **Under `prefers-reduced-motion` the VISIBLE beat never fires.** It is a
- * flourish about something that already happened, not information anybody would
- * otherwise be missing, so suppressing it costs nothing.
+ * **Under `prefers-reduced-motion` it never fires at all.** It is a flourish
+ * about something that already happened, not information anybody would otherwise
+ * be missing, so suppressing it costs nothing.
  *
- * `onDrain` is not suppressed with it, and that separation is deliberate:
- * reduced motion is a request about MOTION. Somebody who asked for less of it —
- * or who cannot see the check mark at all — should still hear the queue empty.
+ * ## This is the VISIBLE beat only, and it has no sound in it
+ *
+ * The all-clear chime deliberately does not hang off this hook, and the reason
+ * is the open-gate above. A check mark nobody can see is worth skipping; a sound
+ * is not, because the whole point of a sound is that the person is not looking.
+ * Answering the last thing from a keyboard shortcut, a phone banner, or the home
+ * surface with this popover shut are exactly the moments the chime is for. So
+ * the audio hangs off the queue draining app-wide, in
+ * `features/notifications`'s `NotificationCenter`, and this stays what it always
+ * was: one line of chrome inside one popover.
  *
  * @param count - How many things are pinned this frame.
  * @param open - Whether the popover is on screen.
- * @param onDrain - Called once each time the queue empties, motion or not. Read
- * through a ref, so a caller may pass a fresh closure without restarting the
- * watch.
  */
-export function usePinnedDrainBeat(count: number, open: boolean, onDrain?: () => void): boolean {
+export function usePinnedDrainBeat(count: number, open: boolean): boolean {
   const reducedMotion = useReducedMotion();
   const [beating, setBeating] = useState(false);
   const previousCount = useRef(count);
-  const onDrainRef = useRef(onDrain);
-  onDrainRef.current = onDrain;
 
   useEffect(() => {
     const before = previousCount.current;
     previousCount.current = count;
-    const drained = open && before > 0 && count === 0;
-    const shouldBeat = reducedMotion !== true && drained;
-
-    if (drained) onDrainRef.current?.();
+    const shouldBeat = reducedMotion !== true && open && before > 0 && count === 0;
 
     // Every path that is not a beat puts the flag down. React runs this effect's
     // cleanup before re-running it, so an early return would have cancelled the

@@ -89,7 +89,34 @@ describe('useBlockingArrivals', () => {
     expect(onArrive).not.toHaveBeenCalled();
   });
 
-  it('reports the ids that stopped waiting', () => {
+  it('stays silent through the staggered settle of a page load (DOR-1385 review)', () => {
+    // The regression this pins, end to end. Sessions and approvals answer
+    // first, prompts a beat later — and a blocked session's signal id CHANGES
+    // when the prompt lands (`blocked:<sessionId>` becomes
+    // `blocked:<interactionId>`). If loading is reported as settled during that
+    // window, the id change reads as a departure and an arrival, and an Ask that
+    // had been waiting all along knocks and raises an OS banner.
+    world.signalsLoading = true;
+    world.signals = [ask('blocked:ses-1')];
+    const onArrive = vi.fn();
+    const { rerender } = renderHook(() => useBlockingArrivals({ onArrive }));
+
+    // Prompts land: same Ask, new id.
+    world.signalsLoading = false;
+    world.signals = [ask('blocked:int-9')];
+    rerender();
+
+    expect(onArrive).not.toHaveBeenCalled();
+
+    // …and the settled snapshot is what later arrivals are measured against, so
+    // the next genuine one still speaks.
+    world.signals = [ask('blocked:int-9'), ask('blocked:int-10')];
+    rerender();
+    expect(onArrive).toHaveBeenCalledTimes(1);
+    expect(onArrive.mock.calls[0]![0]).toEqual([expect.objectContaining({ id: 'blocked:int-10' })]);
+  });
+
+  it('reports the ids that stopped waiting, and how many are left', () => {
     world.signals = [ask('a'), ask('b')];
     const onDepart = vi.fn();
     const { rerender } = renderHook(() => useBlockingArrivals({ onDepart }));
@@ -97,7 +124,21 @@ describe('useBlockingArrivals', () => {
     world.signals = [ask('b')];
     rerender();
 
-    expect(onDepart).toHaveBeenCalledWith(['a']);
+    expect(onDepart).toHaveBeenCalledWith(['a'], 1);
+  });
+
+  it('reports zero remaining when the queue drains — the all-clear', () => {
+    // The number is what the all-clear chime hangs off. Reporting it here rather
+    // than letting callers recount is what keeps one answer to "how many are
+    // waiting".
+    world.signals = [ask('a'), ask('b')];
+    const onDepart = vi.fn();
+    const { rerender } = renderHook(() => useBlockingArrivals({ onDepart }));
+
+    world.signals = [];
+    rerender();
+
+    expect(onDepart).toHaveBeenCalledWith(['a', 'b'], 0);
   });
 
   it('treats an ask answered and re-asked as a new arrival', () => {
