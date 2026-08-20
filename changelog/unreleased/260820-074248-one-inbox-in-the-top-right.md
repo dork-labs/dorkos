@@ -2,6 +2,7 @@
 covers:
   - 'feat(client,shared): one Inbox in the top right — what waits stays pinned, what happened sits below with read marks (DOR-1384)'
   - 'test(client): the Inbox bell suite says where "go there" goes (DOR-1384)'
+  - "fix(client,server,shared): home's activity group gets its own lens, and the Inbox's quiet edges get tested (DOR-1384 review round 1)"
 ---
 
 ### Added
