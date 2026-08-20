@@ -93,6 +93,16 @@ export function NotificationsTab() {
           notifications feature: the delay is meaningless without somewhere to
           escalate to, and the push flow is that feature's model. */}
       <ReachMeSection />
+
+      {/* Last, and deliberately after the device list: this is the how-to for
+          getting a phone INTO that list, so it only makes sense once you have
+          seen the list it feeds. */}
+      <p className="text-muted-foreground text-xs">
+        On a phone, open DorkOS using your tunnel address (see Tunnel Setup), then choose &ldquo;Add
+        to Home Screen&rdquo; to install it like an app: full screen, with its own icon. On iPhone
+        that step is required before notifications work at all — once it is installed, open Settings
+        there and add it as a device above.
+      </p>
     </div>
   );
 }

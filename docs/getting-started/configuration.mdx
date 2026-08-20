@@ -316,6 +316,8 @@ DorkOS only does this for things that are actually blocked on you: an agent wait
 
 Two things have to be true for it to reach you. You need at least one device added, a chat app connected, or both. And a phone only works if its browser can receive notifications, which means opening DorkOS there over a secure connection.
 
+On a phone, open DorkOS using your tunnel address (see [Tunnel Setup](/docs/self-hosting/tunnel-setup)), then choose "Add to Home Screen." It installs like an app: full screen, with its own icon, no browser bar. On iPhone this step is not optional — it only shows notifications from an app installed this way, never from a browser tab. Once it is installed, open Settings there and add the phone under Notifications, and it joins the list above.
+
 ### Connectors
 
 Connectors let your agents reach outside services (Gmail, Slack, and so on). Most of that is set up in the app, not here. The one piece that lives in the config file is the list of remote MCP servers you want DorkOS to offer as connectable services.

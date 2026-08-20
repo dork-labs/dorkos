@@ -47,6 +47,8 @@ const config: KnipConfig = {
         'src/env.ts',
         // One-shot generator for the committed notification.mp3 asset; run manually.
         'scripts/generate-notification-sound.ts',
+        // One-shot generator for the committed PWA icon PNGs; run manually.
+        'scripts/generate-pwa-icons.ts',
       ],
     },
     'apps/server': {
