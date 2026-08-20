@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import { useTransport, useEventSubscription } from '@/layers/shared/model';
 import type { AdapterListItem } from '@dorkos/shared/transport';
 import type { CatalogEntry } from '@dorkos/shared/relay-schemas';
@@ -61,12 +60,14 @@ export function useToggleAdapter() {
       if (context?.previousCatalog) {
         queryClient.setQueryData([...CATALOG_KEY], context.previousCatalog);
       }
-      toast.error('Failed to toggle adapter');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [...ADAPTERS_KEY] });
       queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY] });
     },
+    // The shared mutation toast (`query-client.ts`) reports the failure now
+    // — this used to show its own on top of it.
+    meta: { errorLabel: "Couldn't turn that connection on or off" },
   });
 }
 

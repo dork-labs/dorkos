@@ -69,6 +69,10 @@ vi.mock('@/layers/features/dashboard-sidebar', async () => {
     // BC-47).
     SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
     SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
+    // The panel's one bottom card. Stubbed at the same seam as the strip: this
+    // suite is about WHICH cockpit the shell mounts, and the slot's own
+    // arbitration is `shared/ui/__tests__/bottom-slot.test.tsx`.
+    SidebarBottomSlot: () => <div data-slot="sidebar-bottom-slot">Bottom slot</div>,
     // What the mobile tabs compose. Stubbed at the feature seam so this suite
     // stays about the SHELL — which cockpit it mounts and where a takeover
     // lands — while `MobileTabsLayout.test.tsx` drives the real model through
@@ -100,9 +104,7 @@ vi.mock('@/layers/features/top-nav', () => ({
   TasksHeader: () => <div data-testid="tasks-header">Tasks</div>,
   WorkspacesHeader: () => <div data-testid="workspaces-header">Workspaces</div>,
   ConnectionsHeader: () => <div data-testid="connections-header">Connections</div>,
-  FeedbackRequestsHeader: () => (
-    <div data-testid="feedback-requests-header">Feedback &amp; requests</div>
-  ),
+  FeedbackRequestsHeader: () => <div data-testid="feedback-requests-header">Product feedback</div>,
 }));
 
 vi.mock('@/layers/widgets/app-layout', () => ({
@@ -295,6 +297,16 @@ vi.mock('@/layers/entities/unattended-autonomy', async (importOriginal) => {
   return {
     ...actual,
     useUnattendedAutonomySync: () => {},
+  };
+});
+
+// The Tasks list is kept live off the same stream (DOR-1380) via useTasksSync,
+// mounted alongside the other *Sync hooks above.
+vi.mock('@/layers/entities/tasks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/tasks')>();
+  return {
+    ...actual,
+    useTasksSync: () => {},
   };
 });
 

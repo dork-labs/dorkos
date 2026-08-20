@@ -365,7 +365,7 @@ export interface ListMyFeedbackOptions {
 }
 
 /**
- * List this install's own feedback submissions for the "Feedback & requests"
+ * List this install's own feedback submissions for the "Product feedback"
  * tracking view (feedback-pipeline Part 4, decision 260803-205035).
  *
  * A thin, read-only forward to the site's `GET /api/feedback/mine`,

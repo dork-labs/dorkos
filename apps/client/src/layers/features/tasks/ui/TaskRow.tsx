@@ -96,34 +96,35 @@ export function TaskRow({
 
   const handleRunNow = (e: React.MouseEvent) => {
     e.stopPropagation();
+    // No local onError: the shared mutation toast (`useTriggerTask`'s
+    // `meta.errorLabel`) reports a failure.
     triggerTask.mutate(task.id, {
       onSuccess: () => toast('Run triggered'),
-      onError: (err) => toast.error(`Failed to trigger run: ${err.message}`),
     });
   };
 
   const handleApprove = (e: React.MouseEvent) => {
     e.stopPropagation();
+    // No local onError: the shared mutation toast (`useUpdateTask`'s
+    // `meta.errorLabel`) reports a failure.
     updateTask.mutate(
       { id: task.id, status: 'active', enabled: true },
-      {
-        onSuccess: () => toast('Schedule approved'),
-        onError: (err) => toast.error(`Failed to approve: ${err.message}`),
-      }
+      { onSuccess: () => toast('Schedule approved') }
     );
   };
 
   const handleReject = (e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteTask.mutate(task.id, {
-      onError: (err) => toast.error(`Failed to reject: ${err.message}`),
-    });
+    // No local onError: the shared mutation toast (`useDeleteTask`'s
+    // `meta.errorLabel`) reports a failure.
+    deleteTask.mutate(task.id);
   };
 
   const confirmDelete = () => {
+    // No local onError: the shared mutation toast (`useDeleteTask`'s
+    // `meta.errorLabel`) reports a failure.
     deleteTask.mutate(task.id, {
       onSuccess: () => setDeleteConfirmOpen(false),
-      onError: (err) => toast.error(`Failed to delete: ${err.message}`),
     });
   };
 

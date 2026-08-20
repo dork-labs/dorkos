@@ -46,8 +46,11 @@ vi.mock('../ui/EmbedSessionList', () => ({
     <div data-testid="sessions-view">{groupedSessions.length} groups</div>
   ),
 }));
+// The embed's bottom slot has one candidate: a promo. Stubbed as
+// non-qualifying, so this suite stays about the roster chrome — the slot's own
+// behaviour is `shared/ui/__tests__/bottom-slot.test.tsx`.
 vi.mock('@/layers/features/feature-promos', () => ({
-  PromoSlot: () => null,
+  usePromoCandidate: () => ({ id: 'promo', show: false, render: () => null }),
 }));
 
 import { EmbedSidebar } from '../ui/EmbedSidebar';

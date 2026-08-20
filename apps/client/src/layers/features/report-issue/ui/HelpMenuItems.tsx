@@ -57,7 +57,7 @@ export function HelpMenuItems() {
       </DropdownMenuItem>
       <DropdownMenuItem onSelect={goToFeedbackRequests}>
         <Inbox className="size-(--size-icon-sm)" />
-        Feedback &amp; requests
+        Product feedback
       </DropdownMenuItem>
       <DropdownMenuSub>
         <DropdownMenuSubTrigger className="text-muted-foreground">

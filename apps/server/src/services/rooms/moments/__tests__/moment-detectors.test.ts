@@ -353,6 +353,41 @@ describe('moment detectors', () => {
       });
     });
 
+    it('says nothing about a schedule an agent proposed and nobody has approved yet, and does not burn the marker', () => {
+      // tasks_create always parks at pending_approval (DOR-504) and writes this
+      // same eventType to say so (DOR-1380) — a proposal is not a milestone, and
+      // the near-miss that matters here is the durable marker: if this silently
+      // marked itself, the schedule a person actually approves next would never
+      // get its "first schedule" line at all.
+      detectors.activityObserved(
+        event({
+          eventType: 'tasks.task_created',
+          category: 'tasks',
+          resourceId: 'sched_pending',
+          resourceLabel: 'agent-proposed digest',
+          metadata: { status: 'pending_approval' },
+        })
+      );
+      expect(moments()).toEqual([]);
+
+      detectors.activityObserved(
+        event({
+          eventType: 'tasks.task_created',
+          category: 'tasks',
+          resourceId: 'sched_approved',
+          resourceLabel: 'nightly digest',
+        })
+      );
+
+      const marked = onlyMoment();
+      expect(marked.body.text).toBe('Your first schedule is set up: nightly digest.');
+      expect(marked.body.moment?.source).toEqual({
+        kind: 'schedule',
+        ref: 'sched_approved',
+        observedAt: expect.any(String) as unknown as string,
+      });
+    });
+
     it('marks the first connection', () => {
       detectors.activityObserved(
         event({

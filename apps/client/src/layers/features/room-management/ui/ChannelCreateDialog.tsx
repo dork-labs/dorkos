@@ -1,5 +1,4 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
-import { toast } from 'sonner';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import {
   Button,
@@ -77,11 +76,10 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
           onOpenChange(false);
           onCreated(room);
         },
-        // Reported here rather than through the shared mutation toast, because
-        // this dialog stays open on a failure and the message has to name the
-        // thing still on screen. The server's own sentence says why — a name
-        // with no letters in it, or a `#slug` somebody already has.
-        onError: (err) => toast.error(err.message || 'Could not create that channel'),
+        // No local onError: the shared mutation toast (`useCreateChannel`'s
+        // `meta.errorLabel`) reports it, and the dialog stays open on its own
+        // — `onOpenChange(false)` above only ever runs on success — so the name
+        // and the chips are still on screen for the retry regardless.
       }
     );
   };

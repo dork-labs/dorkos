@@ -88,8 +88,19 @@ export function ClaimFeed({ enabled }: { enabled: boolean }) {
                   toast.success(`${name} will answer this chat.`);
                 },
                 onError: (error) => {
+                  // A chat already claimed by someone else is a question, not
+                  // a failure — offer the move instead of apologising for it.
+                  // The shared mutation toast is suppressed
+                  // (`useClaimUnclaimedChat`'s `meta.suppressErrorToast`), so
+                  // a genuine failure needs its own report here.
                   const found = readChatConflict(error, { id: agentId, name });
-                  if (found) setConflict(found);
+                  if (found) {
+                    setConflict(found);
+                    return;
+                  }
+                  toast.error(
+                    error instanceof Error ? error.message : "Couldn't set an agent to answer"
+                  );
                 },
               }
             );

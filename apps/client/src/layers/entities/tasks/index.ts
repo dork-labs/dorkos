@@ -11,6 +11,7 @@ export {
   useDeleteTask,
   useTriggerTask,
 } from './model/use-tasks';
+export { useTasksSync } from './model/use-tasks-sync';
 export {
   useTaskRuns,
   useTaskRun,
@@ -18,7 +19,6 @@ export {
   useActiveTaskRunCount,
   TASK_RUNS_KEY,
 } from './model/use-task-runs';
-export { useCompletedTaskRunBadge } from './model/use-completed-task-run-badge';
 export { useTaskTemplates } from './model/use-task-templates';
 export type { TaskTemplate } from './model/use-task-templates';
 export { useTaskTemplateDialog } from './model/use-task-template-dialog';

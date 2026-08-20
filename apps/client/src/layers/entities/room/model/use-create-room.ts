@@ -82,6 +82,10 @@ export function useCreateChannel(): UseMutationResult<RoomWithRoster, Error, Cre
     mutationFn: ({ title, agentPaths }: CreateChannelInput) =>
       transport.createRoom({ kind: 'channel', title, members: [], agentPaths }),
     onSuccess: () => invalidateRoomReads(queryClient),
+    // The shared mutation toast (`query-client.ts`) reads this with the
+    // server's own sentence after it — the dialog's own onError used to
+    // duplicate the same message in a second toast.
+    meta: { errorLabel: "Couldn't create that channel" },
   });
 }
 
@@ -113,5 +117,15 @@ export function useStartDirectMessage(): UseMutationResult<
     mutationFn: ({ agentPaths, title }: StartDirectMessageInput) =>
       transport.createRoom({ kind: 'dm', title, members: [], agentPaths }),
     onSettled: () => invalidateRoomReads(queryClient),
+    // Its one caller (`NewMenu.tsx`, outside this task's remit) names who the
+    // conversation was with in its own onError — richer than a static label —
+    // so this opts the shared mutation toast out rather than duplicating it.
+    // Known risk: that onError is a per-call `mutate(vars, { onError })`
+    // callback, which TanStack drops if the component unmounts before the
+    // mutation settles — closing the sidebar sheet mid-flight on mobile could
+    // leave a failure entirely unreported. Sidebar-owned, so not this task's
+    // to fix; tracked as a follow-up on DOR-1391 (the sidebar-integration
+    // task), which already inherits this mutation's shape.
+    meta: { suppressErrorToast: true },
   });
 }

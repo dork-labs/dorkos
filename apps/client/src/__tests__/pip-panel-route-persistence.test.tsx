@@ -204,6 +204,14 @@ vi.mock('@/layers/entities/unattended-autonomy', async (importOriginal) => {
   };
 });
 
+vi.mock('@/layers/entities/tasks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/tasks')>();
+  return {
+    ...actual,
+    useTasksSync: () => {},
+  };
+});
+
 vi.mock('react-resizable-panels', () => ({
   Panel: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   PanelGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,

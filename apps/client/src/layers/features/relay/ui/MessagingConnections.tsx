@@ -60,8 +60,12 @@ export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
   const { data: agentsData } = useRegisteredAgents();
   const { mutate: toggleAdapter } = useToggleAdapter();
   const { mutate: removeAdapter } = useRemoveAdapter();
-  const createBinding = useCreateBinding();
-  const updateBinding = useUpdateBinding();
+  // A chat conflict is a question, not a failure — `handleBindingConfirm`
+  // below tells the two apart and shows a dialog for the former, so the
+  // shared mutation toast has to stay out of it entirely rather than firing
+  // underneath that dialog.
+  const createBinding = useCreateBinding({ suppressErrorToast: true });
+  const updateBinding = useUpdateBinding({ suppressErrorToast: true });
   const deleteBinding = useDeleteBinding();
   const [wizardState, setWizardState] = useState<WizardState>({ open: false });
   const [conflict, setConflict] = useState<ChatConflict | null>(null);
@@ -116,8 +120,9 @@ export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
       await deleteBinding.mutateAsync(bindingId);
       toast.success('Removed');
       dialogs.closeBinding();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't remove that");
+    } catch {
+      // Reported by the shared mutation toast (`useDeleteBinding`'s
+      // `meta.errorLabel`).
     }
   }
 

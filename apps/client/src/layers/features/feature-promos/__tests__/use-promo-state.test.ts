@@ -59,53 +59,14 @@ describe('promo state in app store', () => {
   beforeEach(() => {
     localStorageMock.clear();
     vi.clearAllMocks();
-    // Reset store state
-    useAppStore.setState({
-      dismissedPromoIds: [],
-      promoEnabled: true,
-    });
+    useAppStore.setState({ promoEnabled: true });
   });
 
-  describe('dismissPromo', () => {
-    it('adds ID to dismissedPromoIds', () => {
-      const { result } = renderHook(() => useAppStore());
-      act(() => {
-        result.current.dismissPromo('test-promo');
-      });
-      expect(result.current.dismissedPromoIds).toContain('test-promo');
-    });
-
-    it('is idempotent - dismissing twice does not duplicate', () => {
-      const { result } = renderHook(() => useAppStore());
-      act(() => {
-        result.current.dismissPromo('test-promo');
-        result.current.dismissPromo('test-promo');
-      });
-      expect(result.current.dismissedPromoIds.filter((id) => id === 'test-promo')).toHaveLength(1);
-    });
-
-    it('persists to localStorage', () => {
-      const { result } = renderHook(() => useAppStore());
-      act(() => {
-        result.current.dismissPromo('test-promo');
-      });
-      expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        'dorkos-dismissed-promo-ids',
-        JSON.stringify(['test-promo'])
-      );
-    });
-
-    it('accumulates multiple dismissed IDs', () => {
-      const { result } = renderHook(() => useAppStore());
-      act(() => {
-        result.current.dismissPromo('promo-a');
-      });
-      act(() => {
-        result.current.dismissPromo('promo-b');
-      });
-      expect(result.current.dismissedPromoIds).toEqual(['promo-a', 'promo-b']);
-    });
-  });
+  // `dismissedPromoIds` / `dismissPromo` used to live here, backed by
+  // localStorage. They are `usePromoDismissals` (entities/config) now, so a
+  // dismissal follows the person between devices instead of the browser — see
+  // `use-promo-dismissals.test.tsx`. What is left in the store is the global
+  // display toggle, which is genuinely a per-browser preference.
 
   describe('setPromoEnabled', () => {
     it('toggles the global flag', () => {
@@ -127,17 +88,6 @@ describe('promo state in app store', () => {
   });
 
   describe('resetPreferences', () => {
-    it('resets dismissedPromoIds to empty array', () => {
-      const { result } = renderHook(() => useAppStore());
-      act(() => {
-        result.current.dismissPromo('test-promo');
-      });
-      act(() => {
-        result.current.resetPreferences();
-      });
-      expect(result.current.dismissedPromoIds).toEqual([]);
-    });
-
     it('resets promoEnabled to true', () => {
       const { result } = renderHook(() => useAppStore());
       act(() => {
@@ -149,11 +99,12 @@ describe('promo state in app store', () => {
       expect(result.current.promoEnabled).toBe(true);
     });
 
-    it('removes dismissed promo IDs from localStorage', () => {
+    it('still sweeps the retired dismissal key out of localStorage', () => {
+      // What this catches: dropping the sweep along with the store slice. An
+      // install that has not yet run the one-time import still carries that
+      // key, and a reset that left it behind would let it be imported into
+      // config later — resurrecting dismissals the person had just cleared.
       const { result } = renderHook(() => useAppStore());
-      act(() => {
-        result.current.dismissPromo('test-promo');
-      });
       act(() => {
         result.current.resetPreferences();
       });

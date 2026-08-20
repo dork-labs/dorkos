@@ -74,7 +74,13 @@ export function useClaimUnclaimedChat() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: ClaimUnclaimedChatRequest }) =>
       transport.claimUnclaimedChat(id, input),
-    meta: { errorLabel: "Couldn't set an agent to answer" },
+    // A chat already claimed by someone else is a question, not a failure —
+    // `ClaimFeed.tsx`'s own onError tells the two apart and opens
+    // `MoveChatDialog` for the former, so the shared mutation toast has to
+    // stay out of it entirely rather than firing underneath that dialog. A
+    // genuine failure still gets exactly one report: `ClaimFeed`'s own
+    // fallback toast, same words this used to hand the shared one.
+    meta: { suppressErrorToast: true },
     onSuccess: () => {
       invalidateFeed(queryClient);
       void queryClient.invalidateQueries({ queryKey: [...BINDINGS_QUERY_KEY] });

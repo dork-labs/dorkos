@@ -2177,8 +2177,8 @@ export interface Transport extends RoomTransport {
   sendFeedback(submission: FeedbackSubmission): Promise<{ ok: boolean }>;
 
   /**
-   * List this install's own feedback submissions for the "Feedback &
-   * requests" tracking view (feedback-pipeline Part 4, decision
+   * List this install's own feedback submissions for the "Product
+   * feedback" tracking view (feedback-pipeline Part 4, decision
    * 260803-205035) — kept newest first, scoped to this install's own
    * pseudonymous `instanceId` so no login is required.
    *

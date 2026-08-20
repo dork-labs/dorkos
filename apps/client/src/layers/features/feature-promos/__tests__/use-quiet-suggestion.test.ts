@@ -32,19 +32,23 @@ let mockContext: PromoContext = {
   agentCount: 0,
   taskCount: 0,
   daysSinceFirstUse: 0,
+  isDesktopApp: false,
+  remoteAccessConfigured: false,
 };
 vi.mock('../model/use-promo-context', () => ({
   usePromoContext: () => mockContext,
 }));
 
-let mockDismissedIds: string[] = [];
 let mockPromoEnabled = true;
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      dismissedPromoIds: mockDismissedIds,
-      promoEnabled: mockPromoEnabled,
-    }),
+    selector({ promoEnabled: mockPromoEnabled }),
+}));
+
+// Dismissals moved to config (spec `sidebar-simplification` D4).
+let mockDismissedIds: string[] = [];
+vi.mock('@/layers/entities/config', () => ({
+  usePromoDismissals: () => ({ dismissedIds: mockDismissedIds, dismissPromo: () => {} }),
 }));
 
 import { useQuietSuggestion } from '../model/use-quiet-suggestion';
@@ -87,6 +91,8 @@ describe('useQuietSuggestion', () => {
       agentCount: 0,
       taskCount: 0,
       daysSinceFirstUse: 0,
+      isDesktopApp: false,
+      remoteAccessConfigured: false,
     };
   });
 

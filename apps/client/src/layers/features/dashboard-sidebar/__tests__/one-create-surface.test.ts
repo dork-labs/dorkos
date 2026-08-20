@@ -296,8 +296,11 @@ describe('BC-44 — the version number leaves the chrome', () => {
    * render at all:
    *
    * - the header block's menu — the version's one home in the chrome;
-   * - the footer strip's transient "Update ready — v…" pill, which BC-44 names
-   *   itself and which exists only while an update is waiting;
+   * - the transient "Update ready — v…" pill, which BC-44 names itself and
+   *   which exists only while an update is waiting. It has a file of its own
+   *   now: it moved out of the footer strip and into the sidebar's bottom slot,
+   *   where it takes its turn against the other cards (spec
+   *   `sidebar-simplification` D4);
    * - "Copy Debug Info", which puts the version on the CLIPBOARD. Nothing is
    *   drawn. The pattern below cannot tell a rendered string from a copied one,
    *   so the exception is recorded here rather than papered over by narrowing
@@ -309,7 +312,7 @@ describe('BC-44 — the version number leaves the chrome', () => {
   const ALLOWED = [
     'dashboard-sidebar/ui/header-block-menu.ts',
     'dashboard-sidebar/ui/SidebarFooterMenu.tsx',
-    'dashboard-sidebar/ui/SidebarFooterStrip.tsx',
+    'dashboard-sidebar/ui/bottom-slot/UpdatePill.tsx',
   ];
 
   it('scans every sidebar implementation, not just the one this task owns', () => {
@@ -320,6 +323,7 @@ describe('BC-44 — the version number leaves the chrome', () => {
     const scanned = [...SIDEBAR_SOURCE.keys()];
     expect(scanned).toContain('dashboard-sidebar/ui/header-block-menu.ts');
     expect(scanned).toContain('dashboard-sidebar/ui/SidebarFooterStrip.tsx');
+    expect(scanned).toContain('dashboard-sidebar/ui/bottom-slot/UpdatePill.tsx');
     expect(scanned).toContain('session-list/ui/EmbedSidebar.tsx');
     // Pins the third SIDEBAR_DIRS entry: deleting it must red this line, not
     // silently shrink the scan (the review proved the entry was unobservable).

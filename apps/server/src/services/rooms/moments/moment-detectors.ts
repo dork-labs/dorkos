@@ -436,11 +436,19 @@ export class MomentDetectors {
   /**
    * The first schedule this install ever made.
    *
+   * An agent's own `tasks_create` always parks its schedule at
+   * `pending_approval` (DOR-504) and writes this same `tasks.task_created`
+   * event to say so (DOR-1380) — a proposal nobody has approved yet is not a
+   * milestone, and marking it here would both post a false "set up" line to
+   * #team and durably burn the one-time marker before a schedule anyone
+   * actually made ever gets to.
+   *
    * @param ctx - The pass.
    * @param event - The activity event being observed.
    */
   private firstSchedule(ctx: PassContext, event: ActivityItem): MomentCandidate | null {
     if (event.eventType !== SCHEDULE_CREATED || !event.resourceId) return null;
+    if (event.metadata?.status === 'pending_approval') return null;
     if (ctx.marked({ kind: 'first_schedule' })) return null;
     return {
       text: firstScheduleText(event.resourceLabel ?? event.resourceId),

@@ -385,6 +385,32 @@ describe('MobileTabsLayout', () => {
       renderLayout();
       expect(within(panel('you')).getByTestId('sidebar-footer-strip')).toBeInTheDocument();
     });
+
+    it('mounts the bottom slot at the foot of Home, and nowhere else', () => {
+      // A phone never mounted it at all, so the one card the cockpit offers —
+      // getting started, an update, the profile prompt, a promo — was
+      // desktop-only (spec `sidebar-simplification` D4). Home is this
+      // cockpit's first screen, so it goes there; Library and You are not
+      // where you land.
+      renderLayout();
+
+      expect(panel('home').querySelectorAll('[data-slot="sidebar-bottom-slot"]').length).toBe(1);
+      expect(panel('library').querySelectorAll('[data-slot="sidebar-bottom-slot"]').length).toBe(0);
+      expect(panel('you').querySelectorAll('[data-slot="sidebar-bottom-slot"]').length).toBe(0);
+    });
+
+    it('puts the bottom slot after the zones, not among them', () => {
+      // It is the panel's foot, not a row in the list.
+      renderLayout();
+      const zones = panel('home').querySelectorAll('[data-sidebar-zone]');
+      const slot = panel('home').querySelector('[data-slot="sidebar-bottom-slot"]');
+      const last = zones[zones.length - 1]!;
+      // Excluding CONTAINED_BY: a descendant reports as FOLLOWING too, so the
+      // bare flag would pass with the slot rendered INSIDE the last zone.
+      const position = last.compareDocumentPosition(slot!);
+      expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(position & Node.DOCUMENT_POSITION_CONTAINED_BY).toBeFalsy();
+    });
   });
 
   describe('a contributed sidebar.body takeover', () => {

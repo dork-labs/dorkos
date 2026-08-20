@@ -26,6 +26,7 @@ import { useCommandsSync } from '@/layers/entities/command';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
+import { useTasksSync } from '@/layers/entities/tasks';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
@@ -41,8 +42,6 @@ import {
   useOnboardingOverlayVisible,
   useClearOnboardingStageWhenDone,
   OnboardingFlow,
-  ProgressCard,
-  ProfilePromptCard,
 } from '@/layers/features/onboarding';
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import {
@@ -184,7 +183,7 @@ function useSidebarSlot(): SidebarSlot {
  * All routes use a page-specific header with consistent `PageHeader` layout.
  * The session route includes a breadcrumb with the agent name; the channels
  * route names the open room rather than falling through to the dashboard's
- * (DOR-587). Workspaces, Connections, and Feedback & requests had the same gap
+ * (DOR-587). Workspaces, Connections, and Product feedback had the same gap
  * and are fixed the same way (DOR-919).
  */
 function useHeaderSlot({
@@ -358,6 +357,9 @@ export function AppShell() {
   // a task changes: dialling one up to Full autonomy has to raise the banner as
   // the form closes, not on the next reload.
   useUnattendedAutonomySync();
+  // Live task list (DOR-1380): a schedule an agent proposes via MCP parks at
+  // pending_approval and otherwise sits invisible until the next reload.
+  useTasksSync();
   // Make the Pulse Activity teaser live off `/api/events`: invalidate the
   // activity caches when an activity-generating broadcast (relay traffic/topology,
   // extension reloads) fires, coalescing bursts. Attention's live source
@@ -370,13 +372,14 @@ export function AppShell() {
 
   // First-run onboarding — gate rendering until config is loaded to prevent
   // a flash of the chat UI before the onboarding screen appears.
+  // `shouldShowGettingStarted` and `dismiss` were read here for the
+  // `ProgressCard` this footer used to stack; the bottom slot owns that card and
+  // its dismissal now (spec `sidebar-simplification` D4).
   const {
     shouldShowOnboarding,
-    shouldShowGettingStarted,
     isLoading: isOnboardingLoading,
     isOnboardingComplete,
     isOnboardingDismissed,
-    dismiss: dismissOnboarding,
   } = useOnboarding();
 
   // The session flag hides the overlay immediately on finish/skip, ahead of the
@@ -553,18 +556,12 @@ export function AppShell() {
                       {/* No hairline above the footer either — the footer is one
                         slim tinted strip, and the scroll-edge shadow on the body
                         above is what says content continues under it (spec R1). */}
+                      {/* The getting-started card, the profile prompt and the
+                          update pill were all here, stacked. They are candidates
+                          in the sidebar's bottom slot now — one card at a time,
+                          pinned just above this footer — so the footer is only
+                          the thing it is named for (spec D4). */}
                       <SidebarFooter className="px-2 py-3">
-                        {shouldShowGettingStarted && (
-                          <div className="mb-2">
-                            <ProgressCard onDismiss={dismissOnboarding} />
-                          </div>
-                        )}
-                        {/* One-time role prompt for users who onboarded before the
-                          profile beat existed. Self-gating (renders null unless
-                          its whole show condition holds, including "ProgressCard
-                          is not visible"), so mounting it unconditionally is
-                          safe — never two cards. */}
-                        <ProfilePromptCard />
                         <SidebarFooterStrip />
                       </SidebarFooter>
                       <SidebarRail />

@@ -8,6 +8,23 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { TransportProvider } from '@/layers/shared/model';
 import { ProfilePromptCard } from '../ui/ProfilePromptCard';
+import { useProfilePrompt } from '../model/use-profile-prompt';
+
+/**
+ * The card mounted exactly as the sidebar's bottom slot mounts it: the gate is
+ * `useProfilePrompt`, and the card draws only when it says so.
+ *
+ * The show condition used to live inside the card, which self-gated to `null`.
+ * Driving it through this host rather than asserting on the hook keeps every
+ * case below testing the same thing it always did — whether a person in this
+ * config state sees the card — across the split (spec `sidebar-simplification`
+ * D4).
+ */
+function PromptHost() {
+  const prompt = useProfilePrompt();
+  if (!prompt.visible) return null;
+  return <ProfilePromptCard prompt={prompt} />;
+}
 
 vi.mock('motion/react', () => ({
   motion: { div: 'div' },
@@ -70,7 +87,7 @@ async function renderCard(overrides: CardConfigOverrides = {}) {
   render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={mockTransport}>
-        <ProfilePromptCard />
+        <PromptHost />
       </TransportProvider>
     </QueryClientProvider>
   );

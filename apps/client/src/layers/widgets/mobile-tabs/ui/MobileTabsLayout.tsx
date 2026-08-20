@@ -46,6 +46,7 @@ import { useRouter } from '@tanstack/react-router';
 import { cn } from '@/layers/shared/lib';
 import { PageContainer } from '@/layers/shared/ui';
 import {
+  SidebarBottomSlot,
   SidebarChrome,
   SidebarFooterStrip,
   SidebarHeaderBlock,
@@ -246,6 +247,11 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
               nowSlot={nowApprovals}
               silenceLiveRegion
             />
+            {/* A phone never mounted the bottom slot at all, so the one card
+                the cockpit offers — getting started, an update, the profile
+                prompt, a promo — was desktop-only (spec D4). Home is where it
+                belongs: it is this cockpit's first screen. */}
+            <SidebarBottomSlot />
           </PageContainer>
         </MobileTabPanel>
 

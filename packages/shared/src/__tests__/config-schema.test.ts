@@ -42,6 +42,7 @@ describe('UserConfigSchema', () => {
           gettingStarted: { retired: [] },
           digest: {},
         },
+        promos: { dismissedIds: [] },
         shapes: {
           active: null,
           agentDefaults: {},
@@ -386,6 +387,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
           gettingStarted: { retired: [] },
           digest: {},
         },
+        promos: { dismissedIds: [] },
         shapes: {
           active: null,
           agentDefaults: {},

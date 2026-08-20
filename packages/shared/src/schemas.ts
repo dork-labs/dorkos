@@ -3228,6 +3228,10 @@ export const ServerConfigSchema = z
     dismissedUpgradeVersions: z
       .array(z.string())
       .openapi({ description: 'Versions the user has dismissed upgrade notifications for' }),
+    dismissedPromoIds: z.array(z.string()).openapi({
+      description:
+        'Feature-promo ids the user has waved away. Server-held rather than per-browser, so dismissing a card on one device settles it on all of them',
+    }),
     port: z.number().int(),
     uptime: z.number(),
     workingDirectory: z.string(),

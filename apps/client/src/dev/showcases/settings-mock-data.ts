@@ -44,6 +44,7 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   latestVersion: '0.30.0',
   isDevMode: false,
   dismissedUpgradeVersions: [],
+  dismissedPromoIds: [],
   port: 4242,
   uptime: 12_345,
   workingDirectory: '/Users/dev/dorkos',

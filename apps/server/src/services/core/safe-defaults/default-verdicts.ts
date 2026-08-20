@@ -110,6 +110,7 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.sidebar.muted[].roomId',
   'ui.sidebar.gettingStarted.retired',
   'ui.sidebar.digest.lastShownDate',
+  'ui.promos.dismissedIds',
   'ui.shapes.active',
   'ui.shapes.agentDefaults',
   'ui.shapes.autoFollowAgent',

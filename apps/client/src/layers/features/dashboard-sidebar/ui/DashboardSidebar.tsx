@@ -20,7 +20,7 @@
  * @module features/dashboard-sidebar/ui/DashboardSidebar
  */
 import { SidebarContent } from '@/layers/shared/ui';
-import { PromoSlot } from '@/layers/features/feature-promos';
+import { SidebarBottomSlot } from './bottom-slot/SidebarBottomSlot';
 import { useLegacyPinMigration } from '../model/use-legacy-pin-migration';
 import { useSidebarModel } from '../model/use-sidebar-model';
 import { useSidebarState } from '../model/use-sidebar-state';
@@ -57,9 +57,14 @@ export function DashboardSidebar() {
             <SidebarZones model={model} />
           </SidebarDnd>
         </SidebarChrome>
-
-        <PromoSlot placement="dashboard-sidebar" maxUnits={3} />
       </SidebarContent>
+
+      {/* **Outside the scroller, on purpose.** The promo card used to be the
+          last child INSIDE `SidebarContent`, so anyone with more than a screen
+          of rows never saw it again — and the three cards it competes with
+          stacked in the footer instead. One slot, pinned here between the
+          scroller and the footer, one card at a time (spec D4). */}
+      <SidebarBottomSlot />
     </nav>
   );
 }

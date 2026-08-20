@@ -3,7 +3,7 @@
  * one install's own feedback submissions (feedback-pipeline Part 4, decision
  * 260803-205035).
  *
- * The cockpit's "Feedback & requests" tracking view reads this through the
+ * The cockpit's "Product feedback" tracking view reads this through the
  * local server's `GET /api/feedback/mine` proxy (`apps/server`), which
  * resolves this install's own anonymous `instanceId` and forwards it here —
  * this route never sees a request straight from a browser. No login: the

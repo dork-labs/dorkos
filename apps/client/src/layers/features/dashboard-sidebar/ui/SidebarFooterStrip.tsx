@@ -12,38 +12,26 @@
  * R1). There is no `border-t` in this subtree, deliberately.
  *
  * **The version number is gone from the chrome** (BC-44). It lives in the header
- * block's menu and in what DorkBot is told when you ask it something. What is
- * left is the one version fact that is actionable: a transient pill, present
- * only while an update genuinely is ready. Updates never enter Heads up — Heads up means
- * your agents need you.
+ * block's menu and in what DorkBot is told when you ask it something. The one
+ * version fact that is actionable — a transient pill, present only while an
+ * update genuinely is ready — used to be stacked on top of this strip; it is a
+ * candidate in the sidebar's bottom slot now (`UpdatePill.tsx`, spec
+ * `sidebar-simplification` D4), so it takes its turn against the other cards
+ * rather than adding a fourth thing to the bottom of the panel. Updates never
+ * enter Heads up — Heads up means your agents need you.
  *
  * @module features/dashboard-sidebar/ui/SidebarFooterStrip
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import {
-  Cable,
-  Check,
-  Copy,
-  LayoutDashboard,
-  RotateCw,
-  Sparkles,
-  Store,
-  Users,
-  X,
-} from 'lucide-react';
-import { useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { Cable, LayoutDashboard, Sparkles, Store, Users } from 'lucide-react';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useStartNewSession } from '@/layers/entities/session';
 import { isHomeSurfacePath, TOUR_ANCHORS } from '@/layers/shared/config';
-import { cn, isNewer, openLink, setAskDorkBotOrigin, TIMING } from '@/layers/shared/lib';
+import { cn, openLink, setAskDorkBotOrigin } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
-import { useDesktopUpdater } from '@/layers/features/session-list';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
 import { FOOTER_LABELLED_ROW, SidebarFooterMenu } from './SidebarFooterMenu';
-
-/** The command that updates a web/CLI install, offered by the pill. */
-const UPDATE_COMMAND = 'npm update -g dorkos';
 
 /** The system agent's fixed name on disk — how the roster is asked for DorkBot. */
 const DORKBOT_AGENT_NAME = 'dorkbot';
@@ -97,8 +85,7 @@ const DESTINATIONS: readonly Destination[] = [
 ];
 
 /**
- * The footer strip: four destinations, the Ask DorkBot affordance, and an update
- * pill while one is waiting.
+ * The footer strip: four destinations and the Ask DorkBot affordance.
  */
 export function SidebarFooterStrip() {
   const navigate = useNavigate();
@@ -114,7 +101,6 @@ export function SidebarFooterStrip() {
 
   return (
     <div data-testid="sidebar-footer-strip">
-      <UpdatePill />
       {/* One row. No `border-t`: the tint IS the separation, and the scroll-edge
           shadow on the body above is what says content continues under it. */}
       <div
@@ -314,103 +300,5 @@ function AskDorkBotButton({ labelled }: { labelled: boolean }) {
       <Sparkles className={cn('shrink-0', labelled ? 'size-(--size-icon-sm)' : 'size-3')} />
       Ask DorkBot
     </button>
-  );
-}
-
-/**
- * The transient update pill (BC-44).
- *
- * Present only while an update genuinely is ready, and absent — zero DOM — the
- * rest of the time. On the desktop app that means a downloaded update waiting
- * for a restart; on a web or CLI install it means a newer published version, and
- * the pill hands over the one command that installs it.
- */
-function UpdatePill() {
-  const { data: config } = useConfig();
-  const { isDesktop, status: desktopStatus, restart } = useDesktopUpdater();
-  const updateConfig = useUpdateConfig();
-  const [copied, setCopied] = useState(false);
-
-  const version = config?.version;
-  const latestVersion = config?.latestVersion ?? null;
-  const dismissed = useMemo(
-    () => config?.dismissedUpgradeVersions ?? [],
-    [config?.dismissedUpgradeVersions]
-  );
-
-  // The "Copied" beat clears itself, and clears its own timer on unmount: the
-  // pill disappears the moment the dismissal lands, which is well inside the
-  // feedback window, and a `setCopied` firing into an unmounted component is a
-  // warning nobody can act on.
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (copyTimer.current !== null) clearTimeout(copyTimer.current);
-    },
-    []
-  );
-  const handleCopy = useCallback(() => {
-    void navigator.clipboard.writeText(UPDATE_COMMAND);
-    setCopied(true);
-    if (copyTimer.current !== null) clearTimeout(copyTimer.current);
-    copyTimer.current = setTimeout(() => setCopied(false), TIMING.COPY_FEEDBACK_MS);
-  }, []);
-
-  const handleDismiss = useCallback(
-    (dismissVersion: string) => {
-      // The mutation invalidates the config query itself, so the pill disappears
-      // as soon as the server confirms — no second invalidation here.
-      updateConfig.mutate({ ui: { dismissedUpgradeVersions: [...dismissed, dismissVersion] } });
-    },
-    [dismissed, updateConfig]
-  );
-
-  // Desktop reflects the native updater: `npm update -g dorkos` updates the CLI,
-  // not the running `.app`. Only `downloaded` is ready — a download in progress
-  // is not something anybody can act on, so it renders nothing.
-  if (isDesktop) {
-    if (desktopStatus?.state !== 'downloaded') return null;
-    return (
-      <div className="mb-1 flex items-center px-0.5">
-        <button
-          type="button"
-          onClick={restart}
-          aria-label="Restart to install the update"
-          className="focus-ring inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-500/25 dark:text-amber-300"
-        >
-          <RotateCw className="size-3" />
-          Update ready — Restart
-        </button>
-      </div>
-    );
-  }
-
-  const ready =
-    latestVersion !== null &&
-    version !== undefined &&
-    isNewer(latestVersion, version) &&
-    !dismissed.includes(latestVersion);
-  if (!ready) return null;
-
-  return (
-    <div className="mb-1 flex items-center gap-1 px-0.5">
-      <button
-        type="button"
-        onClick={handleCopy}
-        aria-label={`Copy the command that updates DorkOS to v${latestVersion}`}
-        className="focus-ring inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-500/25 dark:text-amber-300"
-      >
-        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-        {copied ? 'Command copied' : `Update ready — v${latestVersion}`}
-      </button>
-      <button
-        type="button"
-        onClick={() => handleDismiss(latestVersion)}
-        aria-label="Dismiss update notification"
-        className="text-sidebar-foreground/50 hover:text-sidebar-foreground focus-ring rounded-md p-0.5 transition-colors duration-150"
-      >
-        <X className="size-3" />
-      </button>
-    </div>
   );
 }

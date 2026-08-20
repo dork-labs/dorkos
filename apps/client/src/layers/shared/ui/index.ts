@@ -361,6 +361,11 @@ export { SidebarRow, SIDEBAR_ROW_INSET } from './sidebar-row';
 export { TOUCH_TARGET_MIN_H } from './touch-target';
 export type { RowDragBindings, SidebarRowMenu, SidebarRowProps } from './sidebar-row';
 export { SectionHeader, SIDEBAR_HOVER_REVEAL } from './section-header';
+// The one pinned card at the bottom of a sidebar. The arbiter is here rather
+// than in the panel because its candidates come from three different features
+// and, in the Obsidian embed, from a fourth surface entirely.
+export { BottomSlot } from './bottom-slot';
+export type { BottomSlotCandidate, BottomSlotProps } from './bottom-slot';
 // Three small rows the transcript and the Ask card both draw. They lived inside
 // `features/chat/ui/primitives` until `features/ask` needed them too — and a
 // feature reaching into another feature's internals is the cycle P1 already

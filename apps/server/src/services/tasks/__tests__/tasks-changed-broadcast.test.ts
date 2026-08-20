@@ -1,24 +1,27 @@
 /**
- * Every writer that can change what the unattended-autonomy banner says must
- * say so on the global stream.
+ * Every writer that can change what the unattended-autonomy banner says, or
+ * what the Tasks list shows, must say so on the global stream.
  *
  * ## Why this file exists
  *
- * The banner's freshness contract has two halves and only one of them was
- * tested. The client half — "invalidate when `tasks_changed` arrives" — is
- * pinned in `entities/unattended-autonomy`, but it MOCKS the subscription, so
- * it proves nothing about anyone emitting the event. And `eventFanOut.broadcast`
- * is stringly-typed, so deleting every `broadcastTasksChanged()` call in the
- * repo left 51 tests green: the banner would simply stop appearing when
- * somebody dialled a task up to Full autonomy, and no test would notice.
+ * `tasks_changed` has two readers with two different questions, and both
+ * freshness contracts were undertested on the server half. The client halves —
+ * "invalidate when `tasks_changed` arrives" — are pinned in
+ * `entities/unattended-autonomy` and `entities/tasks`, but they MOCK the
+ * subscription, so neither proves anyone emits the event. And
+ * `eventFanOut.broadcast` is stringly-typed, so deleting every
+ * `broadcastTasksChanged()` call in the repo left every other test green: the
+ * banner would simply stop appearing when somebody dialled a task up to Full
+ * autonomy, the Tasks list would simply stop updating when a schedule
+ * appeared, and no test would notice either.
  *
  * So each writer gets its own case, and each case fails when its own call is
  * removed.
  *
- * ## Which writers, and why these five
+ * ## Which writers, and why these six
  *
- * The rule is "every writer that can change the ANSWER". The answer depends on
- * a task's `permissionMode`, `enabled` and `status`:
+ * The unattended-autonomy banner's answer depends on a task's
+ * `permissionMode`, `enabled` and `status`:
  *
  * - The three cockpit routes (`POST`, `PATCH`, `DELETE /api/tasks`) can change
  *   all three, `permissionMode` included — they are the only path an operator
@@ -26,10 +29,15 @@
  * - MCP `tasks_update` and `tasks_delete` are refused `permissionMode` by
  *   `task-write-policy`, but NOT `enabled`: an agent can re-enable a task a
  *   person had already granted bypass to, at act tier, with no approval card.
- *   That is the most important of the five to signal, and it was missing.
- * - MCP `tasks_create` is deliberately absent. It forces `pending_approval` and
- *   is refused `permissionMode`, so nothing it can produce is a live driver;
- *   an event that could never change the answer is noise.
+ *   That is the most important of the six to signal for the banner's sake.
+ *
+ * MCP `tasks_create` cannot move the banner's answer — it forces
+ * `pending_approval` and is refused `permissionMode`, so nothing it produces
+ * is a live autonomy driver. It broadcasts anyway (DOR-1380), because the
+ * Tasks list is the other reader of this same event: an agent's proposed
+ * schedule sat invisible until the next full reload, with no signal anywhere
+ * that it was waiting on a person. A broadcast the banner's own computation
+ * ignores is not noise once a second reader depends on it.
  *
  * The two writers that CANNOT broadcast — `upsertFromFile` and the reconciler —
  * are named honestly in the collector's module doc, along with the 60-second
@@ -80,6 +88,8 @@ import { TaskStore } from '../task-store.js';
 import type { TaskSchedulerService } from '../task-scheduler-service.js';
 import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/task-tools.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import { ActivityService } from '../../activity/activity-service.js';
+import { activityEvents } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
 
 /** The `tool()` shape, narrowed to what this file drives. */
@@ -95,6 +105,13 @@ interface SessionTool {
 function broadcastTasksChangedCount(): number {
   return broadcast.mock.calls.filter((call) => call[0] === 'tasks_changed').length;
 }
+
+/**
+ * `ActivityService.emit()` is fire-and-forget (by design — callers must never
+ * block on it), so its write lands after the handler's own promise settles.
+ * One event-loop turn is enough to let it land before a test reads the table.
+ */
+const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 function createMockScheduler(): TaskSchedulerService {
   return {
@@ -112,6 +129,7 @@ describe('a task write tells the world it happened', () => {
   let app: express.Application;
   let store: TaskStore;
   let db: Db;
+  let activityService: ActivityService;
   let tools: Record<string, SessionTool>;
   let existing: Task;
 
@@ -119,11 +137,19 @@ describe('a task write tells the world it happened', () => {
     broadcast.mockClear();
     db = createTestDb();
     store = new TaskStore(db);
+    activityService = new ActivityService(db);
     app = express();
     app.use(express.json());
-    app.use('/api/tasks', createTasksRouter(store, createMockScheduler(), '/tmp/dork-test'));
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, createMockScheduler(), '/tmp/dork-test', undefined, activityService)
+    );
 
-    const deps = { taskStore: store, defaultCwd: '/tmp/test' } as unknown as McpToolDeps;
+    const deps = {
+      taskStore: store,
+      defaultCwd: '/tmp/test',
+      activityService,
+    } as unknown as McpToolDeps;
     tools = Object.fromEntries(
       (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
     );
@@ -186,6 +212,58 @@ describe('a task write tells the world it happened', () => {
 
     expect(result.isError).not.toBe(true);
     expect(broadcastTasksChangedCount()).toBe(1);
+  });
+
+  it('MCP tasks_create broadcasts tasks_changed too (DOR-1380)', async () => {
+    // Reverses the earlier "deliberately absent" call: the Tasks list needs
+    // this signal even though the autonomy banner never will.
+    const result = await tools['tasks_create']!.handler(
+      { name: 'agent-proposed', prompt: 'do a thing', cron: '0 3 * * *' },
+      undefined
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(broadcastTasksChangedCount()).toBe(1);
+  });
+
+  it('MCP tasks_create writes an activity event with the parked status attached', async () => {
+    const result = await tools['tasks_create']!.handler(
+      { name: 'agent-proposed', prompt: 'do a thing', cron: '0 3 * * *' },
+      undefined
+    );
+    expect(result.isError).not.toBe(true);
+    await flush();
+
+    const rows = db.select().from(activityEvents).all();
+    const created = rows.find((r) => r.eventType === 'tasks.task_created');
+    expect(created).toBeDefined();
+    expect(created!.actorType).toBe('agent');
+    expect(created!.category).toBe('tasks');
+    expect(JSON.parse(created!.metadata!) as Record<string, unknown>).toEqual({
+      status: 'pending_approval',
+    });
+
+    // The REST route's own creation of a TRUSTED (immediately active) task
+    // writes the same eventType with no status in its metadata — this is
+    // the distinguishing signal a consumer needs to tell the two apart
+    // without a second lookup.
+    const restRes = await request(app).post('/api/tasks').send({
+      name: 'Operator created',
+      description: 'do stuff',
+      prompt: 'do stuff',
+      cron: '0 2 * * *',
+      target: 'global',
+    });
+    expect(restRes.status).toBe(201);
+    await flush();
+    const restEvent = db
+      .select()
+      .from(activityEvents)
+      .all()
+      .find((r) => r.eventType === 'tasks.task_created' && r.resourceId === restRes.body.id);
+    expect(restEvent).toBeDefined();
+    expect(restEvent!.actorType).toBe('user');
+    expect(restEvent!.metadata).toBeNull();
   });
 
   it('stays quiet when the write did not happen', async () => {
