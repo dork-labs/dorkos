@@ -116,6 +116,19 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.shapes.autoFollowAgent',
   'ui.statusBar.pins',
   'ui.composer.richText',
+  // How loud DorkOS is, and how long before it tries a louder channel. No data
+  // moves on any of these: the sounds and the browser notification are this
+  // machine talking to the person at it, and `phoneAfterMinutes` cannot deliver
+  // anywhere until a device is separately subscribed — an explicit opt-in that
+  // does not exist yet (spec `notification-system`, W3 T10). **When it does,
+  // move `escalation.phoneAfterMinutes` out of this list**: a number that starts
+  // an outbound send is a safety verdict, not a preference.
+  'notifications.escalation.phoneAfterMinutes',
+  'notifications.sounds.knock',
+  'notifications.sounds.allClear',
+  'notifications.sounds.turnEnd',
+  'notifications.notifyOnTurnCompleteWhileAway',
+  'notifications.browserPermissionPrimerDismissed',
   'logging.level',
   'logging.maxLogSizeKb',
   'logging.maxLogFiles',

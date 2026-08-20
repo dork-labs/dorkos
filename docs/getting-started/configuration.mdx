@@ -260,6 +260,58 @@ Both switches are in the app, at Settings → Preferences → **Welcome-back not
   }}
 />
 
+### Notifications
+
+DorkOS can play a sound, or raise a notification from your browser, when an agent needs you. The idea is that an interruption should mean something. You get a knock when an agent stops and is waiting on your answer, a quiet chime when the last thing waiting on you is done, and nothing the rest of the time.
+
+You set all of this in the app, at Settings → Notifications. Your answers are saved with DorkOS rather than with one browser, so a sound you turn off on your laptop is off on your phone too. Your agents can read these settings, but only you can change them. An agent that could turn the knock off could stop you hearing that it is waiting.
+
+The first time a notification would help, DorkOS shows a small card asking your browser for permission. It asks once. Whichever button you press, the card is done.
+
+One sound changed. The chime that played every time a turn finished is now off to start with. When you have a few agents running, a chime every turn tells you nothing. If you had that chime on before, you keep it: DorkOS carries your old choice over the first time you open the app.
+
+<TypeTable
+  type={{
+    'notifications.sounds.knock': {
+      description: 'A soft knock when an agent stops and needs you. Only you can change this.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'notifications.sounds.allClear': {
+      description:
+        'A gentle chime when the last thing waiting on you is answered. Only you can change this.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'notifications.sounds.turnEnd': {
+      description:
+        'A chime every time any agent finishes a turn, whether or not it needs you. Off to start with. Only you can change this.',
+      type: 'boolean',
+      default: 'false',
+    },
+    'notifications.notifyOnTurnCompleteWhileAway': {
+      description:
+        'Whether DorkOS may raise a browser notification for news that is not blocking anything, like a turn that finished or a message meant for you. It is only used while the DorkOS window is hidden, so nothing pops up over what you are reading. Only you can change this.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'notifications.browserPermissionPrimerDismissed': {
+      description:
+        'Whether you have answered the card asking your browser for permission to send notifications. DorkOS sets this itself when you press either button. You never edit it.',
+      type: 'boolean',
+      default: 'false',
+    },
+    'notifications.escalation.phoneAfterMinutes': {
+      description:
+        'How long something may wait on you here before DorkOS tries to reach you another way. Nothing reads this yet. Set it to "never" to keep everything on this computer. Only you can change this.',
+      type: '1 | 2 | 5 | 15 | "never"',
+      default: '2',
+    },
+  }}
+/>
+
+That last setting is saved, but nothing uses it yet. Reaching you somewhere else, like on your phone or in a chat app, is still being built. Until it is, nothing tries another way of reaching you, whatever this is set to.
+
 ### Connectors
 
 Connectors let your agents reach outside services (Gmail, Slack, and so on). Most of that is set up in the app, not here. The one piece that lives in the config file is the list of remote MCP servers you want DorkOS to offer as connectable services.

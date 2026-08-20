@@ -173,6 +173,9 @@ vi.mock('@/layers/entities/attention', () => ({
     retry: vi.fn(),
   }),
   usePendingScheduleApprovals: () => ({ schedules: [], isLoading: false }),
+  // The notification center watches these for arrivals to knock about.
+  useAttentionSignals: () => [],
+  useAttentionSignalsLoading: () => false,
 }));
 vi.mock('@/layers/features/approvals', () => ({
   ApprovalList: ({ approvals }: { approvals: Array<{ approvalId: string }> }) => (

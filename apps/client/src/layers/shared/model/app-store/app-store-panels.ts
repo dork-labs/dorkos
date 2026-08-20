@@ -17,6 +17,7 @@ export type SettingsTab =
   | 'profile'
   | 'appearance'
   | 'preferences'
+  | 'notifications'
   | 'server'
   | 'tools'
   | 'security'

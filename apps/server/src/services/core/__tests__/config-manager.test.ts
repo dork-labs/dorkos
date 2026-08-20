@@ -48,6 +48,7 @@ import {
   backfillRuntimeExecutionDefaults,
   backfillDefaultTrustStops,
   backfillClaudeCodePersistentSession,
+  backfillNotificationDefaults,
   backfillPromoDismissals,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
@@ -191,6 +192,56 @@ describe('ConfigManager', () => {
     const configManager = initConfigManager(testDir);
     expect(configManager.getDot('ui.promos.dismissedIds')).toEqual(['remote-access']);
     expect(configManager.get('ui').theme).toBe('dark');
+  });
+
+  it('fills in notification preferences for a config written before they existed', () => {
+    // The upgrade path over a real file and the real conf/Ajv seam, not a mock
+    // store: this is a whole new top-level SECTION, and the failure it guards
+    // against is the file being condemned rather than the section reading empty.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        ui: { theme: 'dark' },
+        __internal__: { migrations: { version: '0.63.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('notifications')).toEqual({
+      escalation: { phoneAfterMinutes: 2 },
+      sounds: { knock: true, allClear: true, turnEnd: false },
+      notifyOnTurnCompleteWhileAway: true,
+      browserPermissionPrimerDismissed: false,
+    });
+    // Nothing else was disturbed on the way in.
+    expect(configManager.get('ui').theme).toBe('dark');
+  });
+
+  it('keeps notification preferences a person already chose across a real load', () => {
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        notifications: {
+          escalation: { phoneAfterMinutes: 'never' },
+          sounds: { knock: false, allClear: true, turnEnd: true },
+          notifyOnTurnCompleteWhileAway: false,
+          browserPermissionPrimerDismissed: true,
+        },
+        __internal__: { migrations: { version: '0.63.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('notifications')).toEqual({
+      escalation: { phoneAfterMinutes: 'never' },
+      sounds: { knock: false, allClear: true, turnEnd: true },
+      notifyOnTurnCompleteWhileAway: false,
+      browserPermissionPrimerDismissed: true,
+    });
   });
 
   it('gets top-level config section', () => {
@@ -492,6 +543,38 @@ describe('backfillPromoDismissals migration (sidebar-simplification D4)', () => 
     const store = createMockStore({ server: { port: 4242 } });
     backfillPromoDismissals(store);
     expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('backfillNotificationDefaults migration (notification-system, DOR-1385)', () => {
+  it('seeds the whole section on a config that predates it', () => {
+    // Unlike the nested backfills above, there is no partial block to merge
+    // into: `notifications` is a new top-level section, so the body writes it
+    // whole. Drop it and an upgrading install reads `undefined` until Ajv's
+    // `useDefaults` fills it in.
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    backfillNotificationDefaults(store);
+    expect(store.data.notifications).toEqual({
+      escalation: { phoneAfterMinutes: 2 },
+      sounds: { knock: true, allClear: true, turnEnd: false },
+      notifyOnTurnCompleteWhileAway: true,
+      browserPermissionPrimerDismissed: false,
+    });
+  });
+
+  it('never overwrites choices it finds (idempotent)', () => {
+    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
+    // re-seeding the defaults over a person who had turned the knock off and
+    // told DorkOS never to ring their phone.
+    const chosen = {
+      escalation: { phoneAfterMinutes: 'never' },
+      sounds: { knock: false, allClear: false, turnEnd: true },
+      notifyOnTurnCompleteWhileAway: false,
+      browserPermissionPrimerDismissed: true,
+    };
+    const store = createMockStore({ notifications: chosen });
+    backfillNotificationDefaults(store);
+    expect(store.data.notifications).toBe(chosen);
   });
 });
 

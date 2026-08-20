@@ -302,13 +302,15 @@ describe('SettingsDialog', () => {
     await screen.findByText(/version/i);
   });
 
-  it('renders "Notification sound" toggle in Preferences', () => {
+  it('puts every sound on the Notifications tab, not on Preferences (DOR-1385)', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+
     navigateTo(/preferences/i);
-    expect(screen.getByText('Notification sound')).toBeDefined();
-    expect(
-      screen.getByText('Play a sound when AI finishes responding (3s+ responses)')
-    ).toBeDefined();
+    expect(screen.queryByText('Notification sound')).toBeNull();
+
+    navigateTo(/notifications/i);
+    expect(screen.getByText('Knock when an agent needs you')).toBeDefined();
+    expect(screen.getByText('Chime every time a turn finishes')).toBeDefined();
   });
 
   // Verifies the Appearance tab still has its own "Reset to defaults" button (global reset)

@@ -61,11 +61,12 @@ test.describe('Settings — Dialog @smoke', () => {
     // `toHaveCount` retries; `count()` does not, and sampling this mid-animation
     // is what once made this read 16 for a tab that has 8.
     //
-    // Ten since DOR-1046: eight display and notification preferences this
+    // Nine since DOR-1385: seven display and notification preferences this
     // browser remembers, plus the two welcome-back switches, which the SERVER
     // keeps — and the second (Next-step offers) renders only while the first
-    // is on, which it is by default.
-    await expect(settingsPage.switches).toHaveCount(10);
+    // is on, which it is by default. It was ten until the turn-finished chime
+    // moved to the Notifications tab with the two sounds that joined it.
+    await expect(settingsPage.switches).toHaveCount(9);
 
     // Named, not just counted — a count alone passes on a tab that swapped every
     // preference for a different one. The name is the switch's `aria-label`; the
@@ -73,7 +74,6 @@ test.describe('Settings — Dialog @smoke', () => {
     const panel = settingsPage.activePanel;
     await expect(panel.getByRole('switch', { name: 'Show timestamps' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Task celebrations' })).toBeVisible();
-    await expect(panel.getByRole('switch', { name: 'Notification sound' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Welcome-back notes' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Next-step offers' })).toBeVisible();
   });

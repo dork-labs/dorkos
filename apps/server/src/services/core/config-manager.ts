@@ -103,6 +103,7 @@ import {
   SidebarItemRefSchema,
   SidebarGroupSchema,
   ComposerPrefsSchema,
+  NOTIFICATION_PREFS_DEFAULTS,
   SidebarPrefsSchema,
   toSidebarItemRef,
   normalizeSidebarPrefs,
@@ -2432,6 +2433,33 @@ export function backfillPromoDismissals(store: {
 }
 
 /**
+ * Seed `notifications` — how DorkOS gets your attention (spec
+ * `notification-system`, DOR-1385).
+ *
+ * A whole top-level section rather than a field inside one, so unlike
+ * {@link backfillPromoDismissals} next door there is nothing on disk to merge
+ * into: an install that predates this has no `notifications` key at any depth,
+ * and the section is written through whole.
+ *
+ * Seeded from {@link NOTIFICATION_PREFS_DEFAULTS} rather than a literal, so the
+ * table cannot drift from the schema it is seeding — the same reason the sidebar
+ * and profile backfills read their defaults constants.
+ *
+ * Additive + idempotent: seeds only when the section is missing, so re-running
+ * can never overwrite a choice somebody made.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillNotificationDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('notifications') != null) return;
+  store.set('notifications', NOTIFICATION_PREFS_DEFAULTS);
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -2860,6 +2888,20 @@ export const CONFIG_MIGRATIONS = {
     // has only ever existed per browser, so there is nothing on the server to
     // carry over, and the cockpit imports the old browser key on first read.
     backfillPromoDismissals(store);
+  },
+  // v0.62.0 is the newest tag and 0.63.0 has merged, so 0.64.0 is the next key
+  // that can still run for everybody. Frozen from merge, not from the release
+  // bump, for the reason `'0.60.0'` above states; anything further opens
+  // `'0.65.0'`.
+  '0.64.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `notifications` — how DorkOS gets your attention (spec
+    // `notification-system`, DOR-1385). Seeds the whole block, because conf
+    // merges top-level defaults SHALLOWLY and there is no `notifications` block
+    // on any existing install at all.
+    backfillNotificationDefaults(store);
   },
 } as const;
 

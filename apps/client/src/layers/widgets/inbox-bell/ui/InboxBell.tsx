@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { Check } from 'lucide-react';
@@ -26,6 +26,7 @@ import {
 import { AskList, useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
 import { ScheduleApprovalRow } from '@/layers/features/dashboard-attention';
 import { InboxList } from '@/layers/features/inbox';
+import { useNotificationCues } from '@/layers/features/notifications';
 import {
   ApprovalList,
   ApprovalsUnavailable,
@@ -260,8 +261,12 @@ export function InboxBell() {
     !open;
 
   // The beat plays when the pinned section empties, receipts and all, while
-  // somebody is looking at it.
-  const beating = usePinnedDrainBeat(waitingCount + settling.length, open);
+  // somebody is looking at it — and the same moment makes a sound, if this
+  // person wants one. The cue is NOT gated on the visible beat: reduced motion
+  // suppresses the check mark and leaves the sound alone (see that hook).
+  const { play } = useNotificationCues();
+  const playSettle = useCallback(() => play('settle'), [play]);
+  const beating = usePinnedDrainBeat(waitingCount + settling.length, open, playSettle);
   const showsPinned = waitingCount > 0 || settling.length > 0 || isError;
 
   const pill = resolvePill({
