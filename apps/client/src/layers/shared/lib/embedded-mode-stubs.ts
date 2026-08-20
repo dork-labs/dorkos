@@ -32,8 +32,13 @@ import type {
   StandingPermissionsResponse,
 } from '@dorkos/shared/approval-schemas';
 import type {
+  DeletePushSubscriptionResponse,
   ListNotificationsResponse,
+  ListPushSubscriptionsResponse,
   MarkNotificationsReadResponse,
+  RegisterPushSubscriptionRequest,
+  RegisterPushSubscriptionResponse,
+  VapidPublicKeyResponse,
 } from '@dorkos/shared/notification-schemas';
 import type {
   StoreCredentialResult,
@@ -528,6 +533,29 @@ export const notificationStubs = {
 
   async markAllNotificationsRead(): Promise<MarkNotificationsReadResponse> {
     throw new Error('Notifications are not supported in Obsidian plugin mode.');
+  },
+
+  // Web push, same reasoning one step further out: there is no push channel
+  // here, and Obsidian is a desktop app that is already open. `key: null` and
+  // an empty device list are what the Settings tab reads as "not available on
+  // this surface", so nothing offers a button that cannot work.
+
+  async getPushVapidPublicKey(): Promise<VapidPublicKeyResponse> {
+    return { key: null };
+  },
+
+  async listPushSubscriptions(): Promise<ListPushSubscriptionsResponse> {
+    return { subscriptions: [] };
+  },
+
+  async registerPushSubscription(
+    _subscription: RegisterPushSubscriptionRequest
+  ): Promise<RegisterPushSubscriptionResponse> {
+    throw new Error('Web push is not supported in Obsidian plugin mode.');
+  },
+
+  async deletePushSubscription(_id: string): Promise<DeletePushSubscriptionResponse> {
+    throw new Error('Web push is not supported in Obsidian plugin mode.');
   },
 };
 

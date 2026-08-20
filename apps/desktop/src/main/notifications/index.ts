@@ -283,7 +283,27 @@ function parseInteractionResolvedId(data: string): string | null {
   return typeof payload?.interactionId === 'string' ? payload.interactionId : null;
 }
 
-/** Parse a `notification` frame's payload down to the fields this module reads. */
+/**
+ * Every subject type `notificationDeepLink` has a branch for.
+ *
+ * Spelled out here rather than imported from `NOTIFICATION_SUBJECT_TYPES`, for
+ * the reason {@link parseInteractionPending} gives about the interaction
+ * contract: this file deliberately validates by hand so the main-process bundle
+ * does not have to carry zod. A member added to the shared enum without a branch
+ * in `notificationDeepLink` is a compile error there, so the two cannot silently
+ * diverge into a banner that opens nowhere.
+ */
+const KNOWN_SUBJECT_TYPES = new Set(['session', 'task', 'run', 'room', 'agent', 'system']);
+
+/**
+ * Parse a `notification` frame's payload down to the fields this module reads.
+ *
+ * `subject.type` is checked against the enum, not merely for presence, the same
+ * way {@link parseInteractionPending} checks an interaction's `type`: it is what
+ * `notificationDeepLink` switches on, and an unrecognised value falls off the end
+ * of that switch and yields `undefined` — a banner whose click goes nowhere.
+ * Failing closed here means such a frame is ignored instead.
+ */
 function parseNotificationUpsert(data: string): NotificationDTO | null {
   const payload = parseEventPayload(data);
   const notification = payload?.notification;
@@ -292,7 +312,10 @@ function parseNotificationUpsert(data: string): NotificationDTO | null {
   if (typeof dto.id !== 'string' || typeof dto.tier !== 'string' || typeof dto.title !== 'string') {
     return null;
   }
-  if (typeof dto.subject !== 'object' || dto.subject === null) return null;
+  const subject = dto.subject;
+  if (typeof subject !== 'object' || subject === null) return null;
+  const subjectType = (subject as { type?: unknown }).type;
+  if (typeof subjectType !== 'string' || !KNOWN_SUBJECT_TYPES.has(subjectType)) return null;
   return notification as unknown as NotificationDTO;
 }
 

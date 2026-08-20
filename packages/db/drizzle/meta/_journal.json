@@ -484,6 +484,13 @@
       "when": 1787200020497,
       "tag": "0068_acoustic_johnny_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "6",
+      "when": 1787228086237,
+      "tag": "0069_futuristic_boomerang",
+      "breakpoints": true
     }
   ]
 }

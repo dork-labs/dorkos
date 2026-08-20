@@ -141,10 +141,21 @@ describe('NotificationsTab', () => {
     expect(screen.queryByRole('button', { name: 'Turn on' })).not.toBeInTheDocument();
   });
 
-  it('is honest that nothing reads the escalation delay yet', () => {
-    // The ladder is later work. A knob that quietly did nothing while implying
-    // otherwise would be worse than no knob.
+  it('says so when the delay is set but nothing could carry it', async () => {
+    // A knob with no device and no chat app behind it is a timer that can never
+    // fire, and saying nothing about that is how somebody trusts one.
     renderTab();
-    expect(screen.getByText(/Nothing does that yet/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Nothing can carry that yet\./, {}, { timeout: 2000 })
+    ).toBeInTheDocument();
+  });
+
+  it('drops the warning once the delay is off, because nothing is meant to fire', async () => {
+    renderTab({ escalation: { phoneAfterMinutes: 'never' } });
+
+    // The devices row is what proves the section rendered at all, so the absence
+    // below is an absence and not an empty screen.
+    expect(await screen.findByText(/Devices DorkOS can reach/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing can carry that yet\./)).not.toBeInTheDocument();
   });
 });

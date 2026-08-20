@@ -8657,6 +8657,128 @@
           "unreadCount"
         ]
       },
+      "VapidPublicKeyResponse": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "ListPushSubscriptionsResponse": {
+        "type": "object",
+        "properties": {
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PushSubscriptionDTO"
+            }
+          }
+        },
+        "required": [
+          "subscriptions"
+        ]
+      },
+      "PushSubscriptionDTO": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "service": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "service",
+          "createdAt",
+          "lastSeenAt"
+        ]
+      },
+      "RegisterPushSubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "subscription": {
+            "$ref": "#/components/schemas/PushSubscriptionDTO"
+          }
+        },
+        "required": [
+          "ok",
+          "subscription"
+        ]
+      },
+      "RegisterPushSubscriptionRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keys": {
+            "$ref": "#/components/schemas/PushSubscriptionKeys"
+          }
+        },
+        "required": [
+          "endpoint",
+          "keys"
+        ]
+      },
+      "PushSubscriptionKeys": {
+        "type": "object",
+        "properties": {
+          "p256dh": {
+            "type": "string",
+            "minLength": 1
+          },
+          "auth": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "p256dh",
+          "auth"
+        ]
+      },
+      "DeletePushSubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "removed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ok",
+          "removed"
+        ]
+      },
       "ActorType": {
         "type": "string",
         "enum": [
@@ -19091,6 +19213,156 @@
           },
           "403": {
             "description": "Only the operator may move read state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/push/vapid-public-key": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Read the VAPID public key a browser needs to subscribe",
+        "description": "Generates this install’s keypair on the first call. Answers `key: null` when web push is unavailable here, so a client can say so instead of offering a button that fails.",
+        "responses": {
+          "200": {
+            "description": "The public key, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VapidPublicKeyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the operator may see this install’s push setup",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/push/subscriptions": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "List the browsers DorkOS may push to",
+        "description": "Never returns an endpoint — only the push service’s hostname and the dates.",
+        "responses": {
+          "200": {
+            "description": "Every subscribed browser, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListPushSubscriptionsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the operator may list push devices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Let DorkOS push to this browser",
+        "description": "Idempotent by endpoint, so a client may call it on every load to refresh keys the browser rotated without accumulating dead rows.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPushSubscriptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The subscription as it now stands",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterPushSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the operator may subscribe a device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/push/subscriptions/{id}": {
+      "delete": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Stop pushing to one browser",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many rows went away — 0 when it was already gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletePushSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the operator may remove a push device",
             "content": {
               "application/json": {
                 "schema": {

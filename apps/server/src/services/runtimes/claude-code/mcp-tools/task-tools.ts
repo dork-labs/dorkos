@@ -21,6 +21,8 @@ import {
   OPERATOR_ONLY_TASK_ERROR,
 } from '../../../tasks/task-write-policy.js';
 import { broadcastTasksChanged } from '../../../tasks/task-sse-events.js';
+import { armEscalation } from '../../../notifications/escalation-service.js';
+import { scheduleParkPayload } from '../../../notifications/emitters/schedule-park.js';
 
 /** Guard that returns an error response when Tasks is disabled. */
 function requireTasks(deps: McpToolDeps) {
@@ -156,14 +158,16 @@ export function createCreateScheduleHandler(deps: McpToolDeps) {
       maxRuntime: null,
       filePath: '',
     });
-    // W3 escalation (DOR-1387) arms its timer here — parked schedules have no
-    // observer seam, so the escalation hook lands at this write. Nothing is
-    // raised at this edge today: `schedule.parked` is a STANDING kind, which
+    // The escalation clock starts here (DOR-1387). Parked schedules have no
+    // observer seam, so the hook lands at the write that parks one. Still
+    // nothing RAISED at this edge: `schedule.parked` is a STANDING kind, which
     // stores nothing while it stands (ADR 260819-234828), and its two
-    // resolutions are recorded where the operator decides them.
+    // resolutions are recorded where the operator decides them — which is also
+    // where the timer is disarmed, through `resolveStanding`.
     // Agent-created schedules always require user approval
     deps.taskStore!.updateTask(schedule.id, { status: 'pending_approval' });
     const updated = deps.taskStore!.getTask(schedule.id);
+    if (updated) armEscalation('schedule.parked', scheduleParkPayload(updated));
 
     // Parity with the REST route's create handler (routes/tasks.ts): without
     // this, a schedule an agent proposes is invisible until the next full

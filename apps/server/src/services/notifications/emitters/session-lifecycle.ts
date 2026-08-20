@@ -6,10 +6,14 @@
  * this session":
  *
  * - **A turn finished** — `streaming` settled to `idle`. An Activity row.
+ * - **An error started** — a session fell over. Nothing is WRITTEN here: while it
+ *   stands, the session's own lifecycle is the truth and the attention surfaces
+ *   derive it. What does happen is that the escalation clock starts, because
+ *   `session.error` is a Blocking condition and a machine nobody is sitting at
+ *   is exactly when one matters (DOR-1387).
  * - **An error cleared** — a session that was stopped on an error is not stopped
  *   any more. A standing condition ending, so this is where its one history row
- *   is written. Nothing is written when the error STARTS: while it stands, the
- *   session's own lifecycle is the truth and the attention surfaces derive it.
+ *   is written; the disarm rides `resolveStanding` rather than happening here.
  *
  * The projector announces a status, never a transition, so this keeps the last
  * lifecycle it saw per session. That map is the only state here, and it is
@@ -21,6 +25,7 @@ import path from 'node:path';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import { onProjectorStatusChange } from '../../session/session-state-projector.js';
 import { notify, resolveStanding } from '../notification-service.js';
+import { armEscalation } from '../escalation-service.js';
 
 /**
  * What to call a session in a sentence.
@@ -69,7 +74,12 @@ export function watchSessionLifecycle(): () => void {
       return;
     }
 
-    if (before === 'error' && status.lifecycle !== 'error') {
+    if (status.lifecycle === 'error') {
+      armEscalation('session.error', { sessionId, sessionLabel: sessionLabelFor(cwd) });
+      return;
+    }
+
+    if (before === 'error') {
       void resolveStanding(
         'session.error',
         { sessionId, sessionLabel: sessionLabelFor(cwd) },

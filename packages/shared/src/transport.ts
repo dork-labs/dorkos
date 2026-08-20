@@ -120,9 +120,14 @@ import type {
   StandingPermissionsResponse,
 } from './approval-schemas.js';
 import type {
+  DeletePushSubscriptionResponse,
   ListNotificationsQuery,
   ListNotificationsResponse,
+  ListPushSubscriptionsResponse,
   MarkNotificationsReadResponse,
+  RegisterPushSubscriptionRequest,
+  RegisterPushSubscriptionResponse,
+  VapidPublicKeyResponse,
 } from './notification-schemas.js';
 import type {
   AggregatedPackage,
@@ -2025,6 +2030,41 @@ export interface Transport extends RoomTransport {
 
   /** Mark every unread notification read, wherever it is filed. */
   markAllNotificationsRead(): Promise<MarkNotificationsReadResponse>;
+
+  // --- Web push (spec `notification-system` task 4.3, ADR 260819-234829) ---
+
+  /**
+   * The public half of this install's VAPID keypair, which a browser needs
+   * before it can subscribe.
+   *
+   * Answers `{ key: null }` when this install cannot do web push at all, so a
+   * client can show "not available here" instead of a button that fails.
+   */
+  getPushVapidPublicKey(): Promise<VapidPublicKeyResponse>;
+
+  /**
+   * Remember this browser, so a blocked agent can reach it once DorkOS is
+   * closed.
+   *
+   * Idempotent by endpoint: re-subscribing the same browser refreshes the row
+   * rather than adding a second one, which is what makes it safe to call on
+   * every load.
+   *
+   * @param subscription - Exactly what `PushManager.subscribe()` produced.
+   */
+  registerPushSubscription(
+    subscription: RegisterPushSubscriptionRequest
+  ): Promise<RegisterPushSubscriptionResponse>;
+
+  /** Every browser currently subscribed, for the device list in Settings. */
+  listPushSubscriptions(): Promise<ListPushSubscriptionsResponse>;
+
+  /**
+   * Stop pushing to one browser.
+   *
+   * @param id - The subscription's id, from {@link Transport.listPushSubscriptions}.
+   */
+  deletePushSubscription(id: string): Promise<DeletePushSubscriptionResponse>;
 
   // --- Team roster (spec `identity-consistency` §W2.2, ADR 260806-222535) ---
 

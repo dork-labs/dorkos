@@ -9,33 +9,17 @@
  *
  * @module features/settings/ui/tabs/NotificationsTab
  */
-import type { EscalationDelay } from '@dorkos/shared/config-schema';
 import { useNotificationPrefs } from '@/layers/entities/config';
+import { ReachMeSection } from '@/layers/features/notifications';
 import { isDesktopShell } from '@/layers/shared/lib';
 import { useBrowserNotificationPermission } from '@/layers/shared/model';
 import {
   Button,
   FieldCard,
   FieldCardContent,
-  SegmentedControl,
-  SegmentedControlItem,
   SettingRow,
   SwitchSettingRow,
 } from '@/layers/shared/ui';
-
-/** The escalation ladder's rungs, in the order they are shown. */
-const ESCALATION_CHOICES: { value: EscalationDelay; label: string }[] = [
-  { value: 1, label: '1 min' },
-  { value: 2, label: '2 min' },
-  { value: 5, label: '5 min' },
-  { value: 15, label: '15 min' },
-  { value: 'never', label: 'Never' },
-];
-
-/** Segmented controls speak strings; the setting is a number or the word `never`. */
-function toDelay(raw: string): EscalationDelay {
-  return raw === 'never' ? 'never' : (Number(raw) as EscalationDelay);
-}
 
 /** How DorkOS gets your attention. */
 export function NotificationsTab() {
@@ -105,32 +89,10 @@ export function NotificationsTab() {
         </FieldCardContent>
       </FieldCard>
 
-      <FieldCard>
-        <FieldCardContent>
-          <SettingRow
-            orientation="vertical"
-            label="Try to reach me somewhere else after"
-            // Honest about what it does today. The ladder that reads this — a
-            // phone or a chat app — is a later piece of work (spec
-            // `notification-system`, W3 T10), and a knob that quietly did
-            // nothing while implying otherwise would be worse than no knob.
-            description="How long something can wait here before DorkOS tries another way of reaching you. Nothing does that yet: it starts working once you connect a phone or a chat app."
-          >
-            <SegmentedControl
-              value={String(prefs.escalation.phoneAfterMinutes)}
-              onValueChange={(raw) => setPrefs({ escalation: { phoneAfterMinutes: toDelay(raw) } })}
-              disabled={isPending}
-              aria-label="How long to wait before trying another way of reaching you"
-            >
-              {ESCALATION_CHOICES.map((choice) => (
-                <SegmentedControlItem key={String(choice.value)} value={String(choice.value)}>
-                  {choice.label}
-                </SegmentedControlItem>
-              ))}
-            </SegmentedControl>
-          </SettingRow>
-        </FieldCardContent>
-      </FieldCard>
+      {/* The escalation delay and the devices it reaches, drawn by the
+          notifications feature: the delay is meaningless without somewhere to
+          escalate to, and the push flow is that feature's model. */}
+      <ReachMeSection />
     </div>
   );
 }

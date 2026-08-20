@@ -371,6 +371,43 @@ describe('watchNotifications — Activity notifications', () => {
     expect(host.shown).toHaveLength(1);
   });
 
+  it('ignores a notification whose subject type it does not know', async () => {
+    // `notificationDeepLink` switches on `subject.type`; a value outside the
+    // enum falls off the end of that switch and yields `undefined`, which is a
+    // banner whose click goes nowhere. Failing closed is the honest answer —
+    // the row is still in the Inbox.
+    unfocused = true;
+    await start();
+    sendNotification({
+      id: 'notif-alien',
+      tier: 'blocking',
+      subject: { type: 'workspace', id: 'ws-1' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(host.shown).toHaveLength(0);
+  });
+
+  it('ignores a notification whose subject carries no type at all', async () => {
+    unfocused = true;
+    await start();
+    sendNotification({ id: 'notif-typeless', tier: 'blocking', subject: { id: 'x' } });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(host.shown).toHaveLength(0);
+  });
+
+  it('still shows every subject type the deep-link builder handles', async () => {
+    // The guard above must fail closed on the unknown, not on everything.
+    unfocused = true;
+    await start();
+    for (const type of ['session', 'task', 'run', 'room', 'agent', 'system']) {
+      sendNotification({ id: `notif-${type}`, tier: 'blocking', subject: { type, id: 'x' } });
+    }
+
+    await eventually(() => expect(host.shown).toHaveLength(6));
+  });
+
   it("clicking the banner deep-links to the notification's subject", async () => {
     unfocused = true;
     await start();

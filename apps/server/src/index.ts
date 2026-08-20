@@ -52,7 +52,18 @@ import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
 import { createNotificationsRouter } from './routes/notifications.js';
+import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
+import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import { PushSubscriptionStore } from './services/notifications/push-subscription-store.js';
+import { WebPushChannel } from './services/notifications/channels/web-push.js';
+import {
+  EscalationService,
+  getEscalationService,
+  setEscalationService,
+  type StandingCondition,
+} from './services/notifications/escalation-service.js';
+import { scheduleParkPayload } from './services/notifications/emitters/schedule-park.js';
 import {
   NotificationService,
   notify,
@@ -614,10 +625,38 @@ async function start() {
   // each grow a dependency on the inbox in order to say one sentence.
   // eslint-disable-next-line prefer-const -- assigned once, but far below, and read from a closure defined here
   let relayChannelDeps: RelayChannelDeps | undefined;
-  const notificationService = new NotificationService(new NotificationStore(db), {
+  const notificationStore = new NotificationStore(db);
+  const notificationService = new NotificationService(notificationStore, {
     relay: () => relayChannelDeps,
   });
   setNotificationService(notificationService);
+
+  // The hourly allowance that bounds how often an agent may interrupt a person.
+  // Built HERE rather than beside the MCP tool deps it used to live in, because
+  // two things spend it now: `relay_notify_user` and the escalation ladder. Two
+  // budgets would be two ceilings, which is one ceiling too many.
+  const notifyBudget = new NotifyBudget();
+
+  // The escalation ladder (spec `notification-system` task 4.3,
+  // ADR 260819-234829): what happens when nobody answers. Built beside the
+  // pipeline for the same boot-order reason — a session that errors during
+  // startup arms a timer through the module-level `armEscalation`, which is a
+  // no-op until this line runs.
+  const pushSubscriptions = new PushSubscriptionStore(db);
+  const webPushChannel = new WebPushChannel({ dorkHome, subscriptions: pushSubscriptions });
+  setEscalationService(
+    new EscalationService({
+      store: notificationStore,
+      push: webPushChannel,
+      relay: () => relayChannelDeps,
+      // Read live, never cached: turning the knob to `never` has to silence a
+      // timer that is already running, not only the next one.
+      readDelay: () =>
+        configManager.get('notifications')?.escalation?.phoneAfterMinutes ??
+        NOTIFICATION_PREFS_DEFAULTS.escalation.phoneAfterMinutes,
+      reserveNote: (agentId) => notifyBudget.tryReserve(agentId),
+    })
+  );
 
   // A finished turn, and the history row an error leaves when it clears.
   watchSessionLifecycle();
@@ -1546,6 +1585,31 @@ async function start() {
     });
   }
 
+  // Catch up the escalation ladder on what was already waiting when this process
+  // started (ADR 260819-234829). Parked schedules are the only standing
+  // condition that OUTLIVES a restart — an Ask lives in a projector, which is
+  // rebuilt from a transcript on demand, so a cold boot genuinely has none to
+  // find and the live seam picks up each one as its session rehydrates. The
+  // ledger makes this idempotent, and the service's own catch-up window keeps a
+  // schedule that has been parked for a week from buzzing a phone on every
+  // restart.
+  if (taskStore) {
+    try {
+      const stillParked: StandingCondition[] = taskStore
+        .getTasks()
+        .filter((task) => task.status === 'pending_approval')
+        .map((task) => ({
+          kind: 'schedule.parked' as const,
+          payload: scheduleParkPayload(task),
+          since: Date.parse(task.updatedAt),
+        }))
+        .filter((condition) => Number.isFinite(condition.since));
+      getEscalationService()?.rearmFromStandingState(stillParked);
+    } catch (err) {
+      logger.warn('[Escalation] Could not re-arm from parked schedules', logError(err));
+    }
+  }
+
   // Subscribe to lifecycle signals for diagnostic logging
   if (meshSignalEmitter && meshCore) {
     meshSignalEmitter.subscribe('mesh.agent.lifecycle.>', (subject, signal) => {
@@ -1866,12 +1930,14 @@ async function start() {
       // destructive capability call holds inline and resumes on the operator's yes.
       approvals: approvalService,
       // What bounds `relay_notify_user` now that an identified agent is no longer
-      // asked for a card it could not get answered (DOR-1265). Constructed HERE,
-      // once, because the tool server below is rebuilt per session and a budget
-      // with that lifetime would be a ceiling an agent resets by opening a new
-      // session — the same reason `ReactionBudget` is built in the rooms
-      // composition root rather than beside a request.
-      notifyBudget: new NotifyBudget(),
+      // asked for a card it could not get answered (DOR-1265). Constructed once
+      // near the top of `start()`, because the tool server below is rebuilt per
+      // session and a budget with that lifetime would be a ceiling an agent
+      // resets by opening a new session — the same reason `ReactionBudget` is
+      // built in the rooms composition root rather than beside a request. It is
+      // the SAME instance the escalation ladder spends, so an agent's hourly
+      // allowance is one ceiling across both ways it can reach a person.
+      notifyBudget,
       ...(taskStore && { taskStore }),
       ...(relayCore && { relayCore }),
       ...(adapterManager && { adapterManager }),
@@ -2443,6 +2509,16 @@ async function start() {
   // whether or not any channel could carry it.
   app.use('/api/notifications', createNotificationsRouter(notificationService));
   mountedRouters.push('notifications');
+
+  // Web push — how the escalation ladder reaches a browser DorkOS is not open
+  // in. Always mounted: a person can subscribe a device before anything has ever
+  // needed to escalate, and the routes are what tell the Settings tab whether
+  // this install can push at all.
+  app.use(
+    '/api/push',
+    createPushRouter({ subscriptions: pushSubscriptions, channel: webPushChannel })
+  );
+  mountedRouters.push('push');
 
   // Mount Extensions routes if extension system initialized successfully.
   if (extensionManager) {

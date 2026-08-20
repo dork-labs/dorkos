@@ -303,14 +303,18 @@ One sound changed. The chime that played every time a turn finished is now off t
     },
     'notifications.escalation.phoneAfterMinutes': {
       description:
-        'How long something may wait on you here before DorkOS tries to reach you another way. Nothing reads this yet. Set it to "never" to keep everything on this computer. Only you can change this.',
+        'How long something may wait on you here before DorkOS tries to reach you another way. Set it to "never" to keep everything on this computer. Only you can change this.',
       type: '1 | 2 | 5 | 15 | "never"',
       default: '2',
     },
   }}
 />
 
-That last setting is saved, but nothing uses it yet. Reaching you somewhere else, like on your phone or in a chat app, is still being built. Until it is, nothing tries another way of reaching you, whatever this is set to.
+That last setting is the one that reaches your pocket. When an agent stops and waits on you for longer than this, DorkOS sends a notification to every browser you have added under Settings, Notifications, and a message to any chat app your agents can start conversations in. Answer in any of those places and the rest go quiet.
+
+DorkOS only does this for things that are actually blocked on you: an agent waiting for an answer, a scheduled task waiting for your approval, or a session that stopped on an error. News, like a turn finishing, never follows you around.
+
+Two things have to be true for it to reach you. You need at least one device added, a chat app connected, or both. And a phone only works if its browser can receive notifications, which means opening DorkOS there over a secure connection.
 
 ### Connectors
 

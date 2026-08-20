@@ -4693,7 +4693,7 @@
       "id": "260819-234829",
       "slug": "escalation-is-ack-based-with-one-knob",
       "title": "Blocking notifications climb an ack-based escalation ladder with exactly one knob",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-08-19",
       "extractedFrom": "notification-system",
       "specSlug": "notification-system",

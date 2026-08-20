@@ -64,6 +64,7 @@
     "node-pty": "^1.1.0",
     "semver": "^7.8.5",
     "ulidx": "^2.4.1",
+    "web-push": "^3.6.7",
     "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
@@ -80,6 +81,7 @@
     "@types/node": "^24",
     "@types/semver": "^7.7.1",
     "@types/supertest": "^7.2.0",
+    "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^29.0.2",
