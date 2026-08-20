@@ -1,0 +1,239 @@
+{
+  "spec": "specs/notification-system/02-specification.md",
+  "slug": "notification-system",
+  "generatedAt": "2026-08-20T00:05:00-05:00",
+  "mode": "full",
+  "lastDecomposeDate": "2026-08-20",
+  "constraints": {
+    "sidebar": "No task except 6.2 may edit apps/client/src/layers/features/dashboard-sidebar or features/feature-promos \u2014 another agent owns the left sidebar until it lands (operator mandate 2026-08-19).",
+    "concurrency": "wipCap.global=2 (flow config): at most two tasks in flight.",
+    "review": "Every task's branch faces an adversarial review by a separate agent following REVIEW.md before its PR opens."
+  },
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 \u2014 W0 honesty & toast diet",
+      "subject": "[notification-system] [P1] Enforce the one-error-one-toast contract across every mutation",
+      "description": "Sweep all double-toast sites (research \u00a76 item 1: create agent, create channel/DM, all binding CRUD in IntegrationsTab, adapter toggle, rename session, onboarding/tours patches): each mutation declares meta.errorLabel or meta.suppressErrorToast so the global MutationCache.onError in query-client.ts is the ONLY failure toast, carrying the real reason. Delete hand-rolled duplicate onError toasts. Add a contract test (one-create-surface.test.ts style) that scans client source and fails on any toast call inside a mutation onError whose mutation lacks meta. Acceptance: contract test red when a violation is seeded, green on the tree; the ~10 cited flows show exactly one toast on failure.",
+      "activeForm": "Enforcing the one-error-one-toast contract",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.3"
+      ],
+      "issue": "DOR-1378"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 \u2014 W0 honesty & toast diet",
+      "subject": "[notification-system] [P1] One CopyFeedback component; delete redundant and mis-styled toasts",
+      "description": "Create shared CopyFeedback (button morphs to \u2713 1.2s, clipboard failure shown inline) in layers/shared/ui; migrate the five copy implementations (research \u00a72.4-B). Fix: ProfileAgentActions.tsx:137 toast.error on successful delete \u2192 neutral success w/ Undo styling parity; normalize the 6 bare toast() successes; delete success-toasts beside self-evident controls (SettingFieldRenderers all four renderers, ManifestSettingsPanel, ExtensionsSettingsTab enable/disable); dialog-open form errors render inline not toasted (ChannelCreateDialog). Acceptance: grep shows zero raw navigator.clipboard.writeText outside CopyFeedback + entry-actions; playground showcase for CopyFeedback; all touched tests green.",
+      "activeForm": "Unifying copy feedback and fixing toast bugs",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1379"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 \u2014 W0 honesty & toast diet",
+      "subject": "[notification-system] [P1] Parked schedules stop being silent: SSE + activity event on MCP create; live task list",
+      "description": "tasks_create MCP handler (task-tools.ts createCreateScheduleHandler) emits broadcastTasksChanged() + a tasks.task_created activity event (parity with the REST route), with the activity payload distinguishing pending_approval from active. useTasks subscribes to the global tasks_changed SSE event (invalidate on event; keep no polling). Delete the dead useCompletedTaskRunBadge hook + test. Rename /feedback-requests nav/menu copy to 'Product feedback' (route unchanged). Acceptance: integration test proves an MCP-created task raises tasks_changed and the client list updates without reload; knip/grep confirm the dead hook is gone.",
+      "activeForm": "Making parked schedules visible and the task list live",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1"
+      ],
+      "issue": "DOR-1380"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 \u2014 W1 one attention engine",
+      "subject": "[notification-system] [P2] One attention engine: merge dashboard-attention into entities/attention; schedule-approval joins; idle leaves",
+      "description": "entities/attention gains kind 'schedule-approval' (new usePendingScheduleApprovals over pending_approval tasks, live via tasks_changed; approve/reject mutations reused from TaskRow) and keeps 'error'; 'idle-timeout' is REMOVED at derive-attention-signals (delete idle-nudge-store; the sidebar allowlist simply stops receiving it \u2014 DO NOT edit dashboard-sidebar files). features/dashboard-attention's use-attention-items is deleted; Home's PinnedTriageHeader renders Needs-Attention from the one engine: blocking kinds (permission-prompt, question, error, schedule-approval) with inline Approve/Reject for schedules; stalled-session rows are gone; failed-run/dead-letter/offline-agent rows KEEP rendering on Home for now from their existing entity hooks (moved into a clearly-marked 'recent activity' group) until W2's inbox absorbs them. ApprovalsIndicator count includes schedule approvals. Acceptance: parked schedule appears in Home Needs Attention + pill within one SSE tick; zero imports of dashboard-attention/model remain; all tests that rendered the old hook migrated.",
+      "activeForm": "Merging the attention engines",
+      "size": "large",
+      "priority": "urgent",
+      "dependencies": [
+        "1.3"
+      ],
+      "parallelWith": [
+        "2.2"
+      ],
+      "issue": "DOR-1381"
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "P2 \u2014 W1 one attention engine",
+      "subject": "[notification-system] [P2] The tray tells the truth; mobile asks get cards",
+      "description": "apps/desktop agent-activity.ts splits blocked from streaming; tray title 'N working \u00b7 M waiting' (omit zero halves), tooltip sentence updated, amber tint/dot when waiting>0, macOS dock badge = blocking count (app.dock.setBadge), cleared at zero. Update tray.ts doc comment honestly. Mobile: MobileNowApprovals renders Ask cards too (usePendingInteractions), matching capability approvals \u2014 closes the asymmetry (research \u00a76 item 10). Acceptance: unit tests for the activity split; existing desktop boot smoke unaffected; mobile Now tab shows a question card in the mock e2e leg.",
+      "activeForm": "Fixing tray truth and mobile ask cards",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "2.1"
+      ],
+      "issue": "DOR-1382"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 \u2014 W2 the Inbox",
+      "subject": "[notification-system] [P3] Server notification domain: registry, notify(), rows + delivery ledger, routes, SSE",
+      "description": "Per spec Detailed Design: packages/shared notification-schemas.ts (kinds, tiers, DTO, SSE events \u2014 client allowlist updated in the same PR); packages/db tables notifications/notification_deliveries/push_subscriptions with prune-on-write (30d/1000); services/notifications/{notification-registry,notification-service,channels/relay}.ts; emitters: interaction pending\u2192resolved history rows, schedule.parked, run.completed (absorb TaskCompletionNotifier as registry kind, per-binding notifyOnTaskComplete respected), dead-letter.created, agent.unreachable, update.installed, agent.note (relay_notify_user emits through the pipeline, consent gate + NotifyBudget preserved); routes GET /api/notifications (cursor+filters) PATCH :id/read POST read-all behind the operator guard; capability-approval SSE events become addressed (close research \u00a76 item 11). NO escalation, NO web-push yet (4.3). Acceptance: runtime conformance untouched; collectDurableEvents integration test sees notification SSE for a run-terminal; ask-answer-conformance-style test proves agent principals cannot read/mutate; own-action drop unit test; history-row-on-resolve unit test.",
+      "activeForm": "Building the server notification domain",
+      "size": "large",
+      "priority": "urgent",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1383"
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "P3 \u2014 W2 the Inbox",
+      "subject": "[notification-system] [P3] The Inbox: bell, popover, read state, lenses",
+      "description": "entities/notifications (useNotifications with lens filters, SSE upserts, useMarkRead/read-all, unread counts); widgets/inbox-bell grows from ApprovalsIndicator (same mount/behavior contract: hidden\u2192ghost when empty, amber+count when blocking, neutral count for unread notable; popover = pinned Needs-you [existing attention store + inline actions] above Activity [read dots, mark-all, cursor paging]); \u2318\u21e7Y retargets; 'All clear \u2713' beat on pinned drain (component-local, reduced-motion aware); agent profile Notifications section (lens by agentId); session view menu 'View notifications' (lens by sessionId); Home's temporary 'recent activity' group (from 2.1) is replaced by the inbox \u2014 failed-run/dead-letter/offline rows now arrive as Activity kinds. Dev playground showcases for bell states. Acceptance: mock-leg e2e \u2014 interaction_pending turns the bell amber, answering in the popover settles everywhere; unit tests for lens filtering + read state.",
+      "activeForm": "Building the Inbox",
+      "size": "large",
+      "priority": "urgent",
+      "dependencies": [
+        "3.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1384"
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "P4 \u2014 W3 channels & ladder",
+      "subject": "[notification-system] [P4] Notification config leaf, the sound family, browser notifications + primer",
+      "description": "UserConfigSchema.notifications {escalation.phoneAfterMinutes: 1|2|5|15|'never' default 2; sounds {knock:true, allClear:true, turnEnd:false}; notifyOnTurnCompleteWhileAway:true; browserPermissionPrimerDismissed:false} + semver conf migration + disclosure/write-policy tables (adding-config-fields skill; DO NOT touch ui.promos.*). One-time client migration of dorkos-enable-notification-sound \u2192 sounds.turnEnd. Extend the sound generator script: knock (soft double-knock) + settle assets; wire knock to Blocking arrival, settle to all-clear beat, turnEnd to the existing ChatPanel hook (now default-off, reads config). Browser leg: features/notifications PermissionPrimer (contextual card on first long-running turn; never on launch; dismissal \u2192 config) + in-page new Notification() for Blocking/Notable when document.hidden && permission granted (title=agent, click focuses + deep-links). Settings \u2192 Notifications tab (escalation knob, sound toggles, while-away boolean, permission status). Acceptance: config migration test on real ConfigManager; primer never renders pre-dismissal-flag on launch; sounds respect tiers in unit tests.",
+      "activeForm": "Adding config, sounds, and browser notifications",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.2"
+      ],
+      "parallelWith": [
+        "4.2"
+      ],
+      "issue": "DOR-1385"
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "phaseName": "P4 \u2014 W3 channels & ladder",
+      "subject": "[notification-system] [P4] Electron native notifications with Allow/Deny/Reply; promote the supersession ADR",
+      "description": "apps/desktop main/notifications.ts: consume global SSE (agent-activity.ts precedent) for notification events; native Notification for Blocking always + Notable when no window focused; actions Allow/Deny (approvals) via the answer routes over localhost, hasReply inline reply for questions (submit-answers route), click \u2192 focus + deep-link; auth fallback: when remote login is enabled and main lacks credentials, focus+deep-link instead of acting. Thin injectable wrapper for Notification (testable). Promote ADR 260819-234830 (supersedes 0009) draft\u2192proposed with implementation notes; mark 0009 superseded-by in its frontmatter + manifest. Acceptance: unit tests on the wrapper (action \u2192 route call payloads); manual smoke documented in PR (signed dev build shows actionable banner).",
+      "activeForm": "Shipping Electron native notifications",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.1"
+      ],
+      "parallelWith": [
+        "4.1"
+      ],
+      "issue": "DOR-1386"
+    },
+    {
+      "id": "4.3",
+      "phase": 4,
+      "phaseName": "P4 \u2014 W3 channels & ladder",
+      "subject": "[notification-system] [P4] Web push + the escalation ladder",
+      "description": "services/notifications/channels/web-push.ts (web-push npm; VAPID keypair generated on first use at <dorkHome>/push/vapid.json 0600; subscriptions CRUD routes + prune on 404/410; payload = title/body/deep-link only \u2014 never tool inputs); client service worker (public/sw.js: push \u2192 showNotification, click \u2192 focus/open deep link) + subscribe UI in Settings \u2192 Notifications (this browser, list/remove devices); escalation-service.ts: Blocking kinds arm phoneAfterMinutes timer, cancelled by ANY ack (interaction resolved, schedule decided, ledger seen/acted, notification read), fires web-push + relay leg (resolveNotifyTarget, canInitiate + NotifyBudget respected), re-arms from pending state on boot idempotently via ledger. Acceptance: escalation unit tests cover every cancel path + boot re-arm + 'never'; web-push mocked at module boundary; integration test: parked ask older than delay + no acks \u2192 exactly one escalation ledger row.",
+      "activeForm": "Building web push and the escalation ladder",
+      "size": "large",
+      "priority": "urgent",
+      "dependencies": [
+        "3.1",
+        "4.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1387"
+    },
+    {
+      "id": "5.1",
+      "phase": 5,
+      "phaseName": "P5 \u2014 W4 messages & the Shift Report",
+      "subject": "[notification-system] [P5] Messages join the pipeline: DM/mention notify, mute and read-cursor integration",
+      "description": "Room entry write path emits notify('dm.received'|'mention.received') (Notable) for operator-directed entries (DM room, or mention of the operator identity); muted rooms suppress (mentions pierce per existing unread rule); notification rows auto-read when the room's read cursor passes the entry (read-cursor service hook); channel chatter emits nothing (stays unread-weight only). Client: dm/mention activity rows deep-link to the room; while-hidden browser notification + desktop notable leg get agent face + first line. Acceptance: integration tests \u2014 DM while unfocused creates notification + notable delivery; reading the room marks the row read; muted room emits nothing; plain channel message emits nothing.",
+      "activeForm": "Wiring messages into the pipeline",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "3.1",
+        "3.2"
+      ],
+      "parallelWith": [
+        "5.2"
+      ],
+      "issue": "DOR-1388"
+    },
+    {
+      "id": "5.2",
+      "phase": 5,
+      "phaseName": "P5 \u2014 W4 messages & the Shift Report",
+      "subject": "[notification-system] [P5] The daily Shift Report card",
+      "description": "services/notifications/shift-report.ts composes report.daily (Quiet) once per local day on first activity after 4am (the sidebar digest's day boundary convention): sessions touched, turns completed, task runs (pass/fail), asks answered/expired, rooms with activity \u2014 from existing queries only. Client: ShiftReportCard rendered from the inbox row on Home (above Activity, dismiss=read) \u2014 NOT in the sidebar (sidebar stays untouched; its digest row is 6.2's concern). writing-for-humans copy. Weekly shareable artifact explicitly deferred (follow-up ticket). Acceptance: unit tests for the composer (empty day \u2192 no notification; boundary at 4am); card renders from a seeded row in playground + mock e2e.",
+      "activeForm": "Building the daily Shift Report",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "3.1",
+        "3.2"
+      ],
+      "parallelWith": [
+        "5.1"
+      ],
+      "issue": "DOR-1389"
+    },
+    {
+      "id": "6.1",
+      "phase": 6,
+      "phaseName": "P6 \u2014 W5 PWA readiness & sidebar integration",
+      "subject": "[notification-system] [P6] PWA readiness: manifest + installability",
+      "description": "apps/client web manifest (name, icons from @dorkos/icons, display standalone, theme colors both schemes), served by the CLI/express static path; installability verified (no iOS push claims anywhere \u2014 demo-claim gate); Settings \u2192 Notifications notes the 'Add to Home Screen' path as the future phone leg. Follow-up ticket filed for the iOS push relay decision (cloud infra \u2014 operator decision). Acceptance: Lighthouse-style installability assertions in a unit/browser test where cheap; docs guide updated.",
+      "activeForm": "Making the client installable",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "4.3"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1390"
+    },
+    {
+      "id": "6.2",
+      "phase": 6,
+      "phaseName": "P6 \u2014 W5 PWA readiness & sidebar integration",
+      "subject": "[notification-system] [P6] Sidebar integration (RUNS LAST \u2014 after the sidebar agent lands)",
+      "description": "GATE: only start after the sidebar-simplification agent's work + DOR-1369 land on main; pull latest, read the landed sidebar code and its specs first, reconcile drift. Then: (a) sidebar NOW_KINDS + glyph for schedule-approval (ShieldQuestion sibling, CalendarClock); (b) Today digest gains the idle-sessions fact ('2 sessions went quiet mid-task'); (c) update.installed / bottom-slot touchpoints registered with the landed arbiter (update pill continues as Suggestion; post-update Quiet row already ships in 3.1); (d) sidebar All-clear beat and inbox beat cannot both fire for one drain \u2014 reuse one hook; (e) fix any attention-kind drift the sidebar work introduced. Acceptance: sidebar contract tests green; a parked schedule shows a Heads up row; digest fact unit-tested.",
+      "activeForm": "Integrating with the landed sidebar",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "3.2",
+        "4.1",
+        "5.2"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1391"
+    }
+  ]
+}
