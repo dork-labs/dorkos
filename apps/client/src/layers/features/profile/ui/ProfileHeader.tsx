@@ -8,7 +8,6 @@
  * @module features/profile/ui/ProfileHeader
  */
 import type { ReactNode } from 'react';
-import { toast } from 'sonner';
 import { ChevronRight } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
@@ -63,14 +62,20 @@ export function ProfileHeader({
   onFaceActivate,
   actionsMenu,
 }: ProfileHeaderProps) {
-  const [, copy] = useCopyFeedback();
+  const { copied, failed, copy } = useCopyFeedback();
   const status = profileStatusText(member);
   const ownerFace = owner ? teamMemberFace(owner) : null;
 
   function copyHandle() {
     if (member.handle === null) return;
-    copy(`@${member.handle}`);
-    toast.success('Copied');
+    void copy(`@${member.handle}`);
+  }
+
+  /** What the button reads: the handle at rest, "Copied", or the failure. */
+  function handleButtonLabel(): string {
+    if (copied) return 'Copied';
+    if (failed) return "Couldn't copy";
+    return `@${member.handle}`;
   }
 
   return (
@@ -144,10 +149,13 @@ export function ProfileHeader({
         <button
           type="button"
           onClick={copyHandle}
-          aria-label="Copy @handle"
-          className="focus-ring text-muted-foreground hover:text-foreground max-w-full truncate rounded-sm px-1 text-xs transition-colors"
+          aria-label={failed ? "Couldn't copy @handle — try again" : 'Copy @handle'}
+          className={cn(
+            'focus-ring max-w-full truncate rounded-sm px-1 text-xs transition-colors',
+            failed ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
+          )}
         >
-          @{member.handle}
+          {handleButtonLabel()}
         </button>
       )}
 

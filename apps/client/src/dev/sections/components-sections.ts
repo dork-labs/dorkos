@@ -117,6 +117,13 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     keywords: ['collapse', 'expand', 'toggle', 'accordion', 'disclosure'],
   },
   {
+    id: 'copy-feedback',
+    title: 'Copy feedback',
+    page: 'components',
+    category: 'Feedback',
+    keywords: ['copy', 'clipboard', 'useCopyFeedback', 'CopyButton', 'copied', 'failed'],
+  },
+  {
     id: 'toaster',
     title: 'Toaster',
     page: 'components',

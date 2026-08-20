@@ -53,13 +53,10 @@ export function ExtensionsSettingsTab() {
     const mutation = enabled ? enableMutation : disableMutation;
 
     mutation.mutate(id, {
-      onSuccess: (result) => {
-        // The server broadcasts `extension_reloaded`, so the change applies live
-        // (contributions are hot-loaded/removed via the SSE handler) — no page
-        // reload needed.
-        const name = result.extension.manifest.name;
-        toast.success(`${enabled ? 'Enabled' : 'Disabled'} ${name}`);
-      },
+      // The server broadcasts `extension_reloaded`, so the change applies live
+      // (contributions are hot-loaded/removed via the SSE handler) — no page
+      // reload needed. No success toast either: the card's own Switch already
+      // reads on/off, so a toast beside it would say the same thing twice.
       onError: (err) => {
         const action = enabled ? 'enable' : 'disable';
         toast.error(`Failed to ${action} extension: ${err.message}`);

@@ -344,16 +344,18 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
           onNavigate={handleNavigateToRun}
           onCancel={(id) =>
             cancelTaskRun.mutate(id, {
+              // Bare, not `.success` — both outcomes are a neutral status
+              // report ("already done" / "in progress"), not a confirmation
+              // that the click itself succeeded.
               onSuccess: (result) =>
                 toast(
                   result.state === 'already_finished'
                     ? 'That run had already finished'
                     : 'Stopping the run'
                 ),
-              onError: (err) =>
-                toast.error(
-                  `Couldn't stop the run: ${err instanceof Error ? err.message : 'Unknown error'}`
-                ),
+              // No local onError: the shared mutation toast
+              // (`useCancelTaskRun`'s `meta.errorLabel`) reports a failure —
+              // this used to show its own on top of it.
             })
           }
           isCancelling={cancelTaskRun.isPending}

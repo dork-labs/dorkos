@@ -55,7 +55,15 @@ export function useActiveTaskRunCount(enabled = true) {
   });
 }
 
-/** Cancel a running Task. */
+/**
+ * Cancel a running Task.
+ *
+ * `TaskRunHistoryPanel` reports the outcome itself on success (a neutral
+ * status line — "already finished" vs "stopping" — not a confirmation that
+ * the click worked), but a failure has nowhere as specific to land, so this
+ * mutation names it for the shared toast (`query-client.ts`'s
+ * `MutationCache.onError`) rather than doubling up with its own.
+ */
 export function useCancelTaskRun() {
   const transport = useTransport();
   const queryClient = useQueryClient();
@@ -65,5 +73,6 @@ export function useCancelTaskRun() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...TASK_RUNS_KEY] });
     },
+    meta: { errorLabel: "Couldn't stop the run" },
   });
 }

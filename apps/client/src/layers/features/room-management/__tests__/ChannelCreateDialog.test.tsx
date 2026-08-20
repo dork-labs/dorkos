@@ -6,7 +6,7 @@
  * empty does nothing, and until this dialog there was no affordance anywhere in
  * the product to put an agent in one.
  */
-import type { ReactNode } from 'react';
+import { StrictMode, useState, type ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -267,13 +267,11 @@ describe('ChannelCreateDialog', () => {
     expect(screen.getByRole('button', { name: 'Create it without agents' })).toBeEnabled();
   });
 
-  it('keeps the name and the selection when the server refuses', async () => {
+  it('keeps the name and the selection when the server refuses (non-conflict error)', async () => {
     const onOpenChange = vi.fn();
     renderDialog({
       transport: {
-        createRoom: vi
-          .fn()
-          .mockRejectedValue(new Error('A channel called #backend already exists')),
+        createRoom: vi.fn().mockRejectedValue(new Error('Something went wrong')),
       },
       onOpenChange,
     });
@@ -282,18 +280,131 @@ describe('ChannelCreateDialog', () => {
     pick('Ana');
     fireEvent.click(screen.getByRole('button', { name: 'Create channel with 1 agent' }));
 
-    // The dialog no longer toasts this itself — `useCreateChannel`'s
-    // `meta.errorLabel` routes it through the shared mutation toast, composed
-    // with the server's own sentence.
+    // `useCreateChannel` reports every failure itself now: it opts out of the
+    // shared mutation toast entirely (`meta.suppressErrorToast`) because a
+    // name conflict needs to render inline and there is no per-error way to
+    // suppress just that one. Anything that is NOT a name conflict still
+    // toasts, in the same voice the shared handler used.
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith(
-        "Couldn't create that channel — A channel called #backend already exists",
-        expect.anything()
-      )
+      expect(toastError).toHaveBeenCalledWith("Couldn't create that channel — Something went wrong")
     );
     // The retry is the same request, so nothing typed is thrown away.
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
     expect(screen.getByLabelText('Channel name')).toHaveValue('Backend');
     expect(screen.getByRole('button', { name: 'Remove Ana' })).toBeInTheDocument();
+  });
+
+  /** A `SLUG_TAKEN` refusal, shaped the way `HttpTransport` throws it. */
+  function slugTakenError(message: string): Error & { code: string } {
+    return Object.assign(new Error(message), { code: 'SLUG_TAKEN' });
+  }
+
+  it('renders a name conflict inline at the field, with no toast', async () => {
+    const onOpenChange = vi.fn();
+    renderDialog({
+      transport: {
+        createRoom: vi
+          .fn()
+          .mockRejectedValue(slugTakenError('A channel called #backend already exists')),
+      },
+      onOpenChange,
+    });
+
+    nameIt('Backend');
+    pick('Ana');
+    fireEvent.click(screen.getByRole('button', { name: 'Create channel with 1 agent' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A channel called #backend already exists'
+    );
+    expect(toastError).not.toHaveBeenCalled();
+    // Same "nothing typed is thrown away" contract as any other refusal.
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(screen.getByLabelText('Channel name')).toHaveValue('Backend');
+  });
+
+  it('clears the inline conflict once you start editing the name', async () => {
+    renderDialog({
+      transport: {
+        createRoom: vi
+          .fn()
+          .mockRejectedValue(slugTakenError('A channel called #backend already exists')),
+      },
+    });
+
+    nameIt('Backend');
+    pick('Ana');
+    fireEvent.click(screen.getByRole('button', { name: 'Create channel with 1 agent' }));
+    await screen.findByRole('alert');
+
+    nameIt('Backend Team');
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('survives StrictMode double-invoke: still inline, still no toast', async () => {
+    // The regression this guards: the mount effect had a cleanup half but no
+    // setup half. StrictMode's dev-only setup→cleanup→setup double-invoke ran
+    // that cleanup once before the dialog ever mounted for real, and with
+    // nothing to set `mountedRef.current` back to `true`, it stayed `false`
+    // for the dialog's whole life — every conflict read as "nobody left to
+    // show this inline" and toasted on top of the alert that was on screen.
+    //
+    // Wrapping the render call's `wrapper` OPTION in StrictMode does NOT
+    // reproduce this. It takes StrictMode wrapping the `ui` argument
+    // directly, with the dialog mounted for the first time by a state change
+    // inside an already-mounted host — `NewMenu.tsx`'s own shape
+    // (`{channelDialogOpen && <ChannelCreateDialog open ... />}`) — not
+    // present from the very first render.
+    const transport = createMockTransport({
+      createRoom: vi
+        .fn()
+        .mockRejectedValue(slugTakenError('A channel called #backend already exists')),
+    });
+    const queryClient = new QueryClient({
+      ...createQueryClientConfig(),
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    mockRosterRef.current = settled();
+
+    function Host() {
+      const [dialogOpen, setDialogOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setDialogOpen(true)}>
+            New channel
+          </button>
+          {dialogOpen && (
+            <ChannelCreateDialog
+              open
+              onOpenChange={(next) => !next && setDialogOpen(false)}
+              onCreated={vi.fn()}
+            />
+          )}
+        </>
+      );
+    }
+
+    render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>
+            <TooltipProvider>
+              <Host />
+            </TooltipProvider>
+          </TransportProvider>
+        </QueryClientProvider>
+      </StrictMode>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'New channel' }));
+    nameIt('Backend');
+    pick('Ana');
+    fireEvent.click(screen.getByRole('button', { name: 'Create channel with 1 agent' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A channel called #backend already exists'
+    );
+    expect(toastError).not.toHaveBeenCalled();
   });
 });

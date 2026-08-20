@@ -181,7 +181,10 @@ describe('useRoomEntries — the stream owns this cache', () => {
     const queryClient = makeQueryClient();
 
     const { result, unmount } = renderHook(
-      () => ({ room: useOpenRoom(), create: useCreateChannel() }),
+      () => ({
+        room: useOpenRoom(),
+        create: useCreateChannel({ isInlineErrorVisible: () => false }),
+      }),
       { wrapper: wrapperFor(transport, queryClient) }
     );
 

@@ -287,13 +287,16 @@ describe('SessionPopover — planning, at any width', () => {
 });
 
 describe('SessionPopover — copy diagnostics', () => {
-  it('copies one JSON blob and confirms with a toast', () => {
+  it('copies one JSON blob and confirms inline, not with a toast', async () => {
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: /Copy diagnostics/ }));
     expect(writeText).toHaveBeenCalledTimes(1);
     const parsed: Record<string, unknown> = JSON.parse(writeText.mock.calls[0][0] as string);
     expect(parsed).toMatchObject({ sessionId: 'session-42', lastEventSeq: 412, queueDepth: 2 });
-    expect(toastSuccess).toHaveBeenCalledWith('Diagnostics copied to your clipboard');
+    // The button morphs itself — CopyDiagnosticsButton's own useCopyFeedback
+    // state — instead of a toast beside it.
+    expect(await screen.findByRole('button', { name: /Copied/ })).toBeInTheDocument();
+    expect(toastSuccess).not.toHaveBeenCalled();
   });
 });
 

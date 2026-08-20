@@ -4,8 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Zap, Clock, UserRound, Heart, Copy, MessageCircle } from 'lucide-react';
 import { usePrefersReducedMotion } from '../lib/use-reduced-motion';
 import { useLodBand } from '../lib/use-lod-band';
-import { toast } from 'sonner';
-import { cn, formatRelativeTime } from '@/layers/shared/lib';
+import { cn, formatRelativeTime, useCopyFeedback } from '@/layers/shared/lib';
 import { Badge } from '@/layers/shared/ui/badge';
 import { Button } from '@/layers/shared/ui/button';
 import { AgentAvatar } from '@/layers/entities/agent';
@@ -264,10 +263,10 @@ function AgentNodeComponent({ data, selected, id }: NodeProps) {
   const band = useLodBand();
   const prefersReducedMotion = usePrefersReducedMotion();
 
-  const handleCopyId = useCallback(() => {
-    void navigator.clipboard.writeText(id);
-    toast.success('Agent ID copied');
-  }, [id]);
+  // The toolbar's node stays mounted, but the button itself has no room to
+  // morph a check into — the toast fallback (`useCopyFeedback`'s TSDoc).
+  const { copy: copyId } = useCopyFeedback({ toastOnSettle: true });
+  const handleCopyId = useCallback(() => void copyId(id), [copyId, id]);
 
   const toolbar = (
     <NodeToolbar position={Position.Top} isVisible={selected}>

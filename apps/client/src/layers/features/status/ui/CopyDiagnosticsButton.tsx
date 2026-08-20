@@ -1,7 +1,6 @@
-import { ClipboardCopy } from 'lucide-react';
-import { toast } from 'sonner';
+import { Check, ClipboardCopy, X } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, useCopyFeedback } from '@/layers/shared/lib';
 import { formatDiagnostics, type SessionDiagnostics } from '../model/session-diagnostics';
 
 interface CopyDiagnosticsButtonProps {
@@ -9,6 +8,20 @@ interface CopyDiagnosticsButtonProps {
   diagnostics: SessionDiagnostics;
   /** Extra classes for the button. */
   className?: string;
+}
+
+/** The icon: a check on success, an X on failure, the clipboard glyph otherwise. */
+function DiagnosticsIcon({ copied, failed }: { copied: boolean; failed: boolean }) {
+  if (copied) return <Check className="size-3.5 text-green-500" aria-hidden />;
+  if (failed) return <X className="text-destructive size-3.5" aria-hidden />;
+  return <ClipboardCopy className="size-3.5" aria-hidden />;
+}
+
+/** The label paired with {@link DiagnosticsIcon} — always the same word for the same state. */
+function diagnosticsLabel(copied: boolean, failed: boolean): string {
+  if (copied) return 'Copied';
+  if (failed) return "Couldn't copy";
+  return 'Copy diagnostics';
 }
 
 /**
@@ -21,10 +34,8 @@ interface CopyDiagnosticsButtonProps {
  * @param props - The snapshot to copy and optional classes.
  */
 export function CopyDiagnosticsButton({ diagnostics, className }: CopyDiagnosticsButtonProps) {
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(formatDiagnostics(diagnostics));
-    toast.success('Diagnostics copied to your clipboard');
-  };
+  const { copied, failed, copy } = useCopyFeedback();
+  const handleCopy = () => void copy(formatDiagnostics(diagnostics));
 
   return (
     <Button
@@ -33,8 +44,8 @@ export function CopyDiagnosticsButton({ diagnostics, className }: CopyDiagnostic
       className={cn('gap-1.5 text-xs', className)}
       onClick={handleCopy}
     >
-      <ClipboardCopy className="size-3.5" aria-hidden />
-      Copy diagnostics
+      <DiagnosticsIcon copied={copied} failed={failed} />
+      {diagnosticsLabel(copied, failed)}
     </Button>
   );
 }

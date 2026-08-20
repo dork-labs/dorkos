@@ -9,6 +9,7 @@ import {
   type QueryClient,
   type UseMutationResult,
 } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
@@ -60,6 +61,35 @@ export interface StartDirectMessageInput {
   title: string;
 }
 
+/** Options for {@link useCreateChannel}. */
+export interface UseCreateChannelOptions {
+  /**
+   * Whether the dialog's name field is still on screen to render a name
+   * conflict inline.
+   *
+   * Read at failure time via a live callback rather than a snapshot, the same
+   * contract as `useForkShape`'s `isInlineErrorVisible`: the mutation can
+   * settle after its caller has unmounted, and a stale `true` closed over at
+   * render time would swallow a failure nobody is left to show.
+   */
+  isInlineErrorVisible: () => boolean;
+}
+
+/**
+ * True when `error` is the server's "that name is taken" refusal
+ * (`SLUG_TAKEN`) — exported so the dialog can tell a conflict apart from
+ * every other failure and render it inline at the field instead of leaving
+ * it to the toast this hook falls back to.
+ *
+ * A type predicate rather than a plain boolean, so a caller that has already
+ * checked it can read `error.message` without a second, redundant narrowing.
+ *
+ * @param error - The mutation's caught error, or `null`/`undefined`.
+ */
+export function isChannelNameConflict(error: unknown): error is Error & { code: string } {
+  return (error as { code?: string } | null)?.code === 'SLUG_TAKEN';
+}
+
 /**
  * Create a channel, with the agents that are to be in it.
  *
@@ -73,8 +103,22 @@ export interface StartDirectMessageInput {
  * unregistered fails the request while the channel does not exist yet, and the
  * obvious retry works — rather than leaving behind a named, empty channel
  * holding a `#slug` that a retry would then collide with.
+ *
+ * **This hook reports its own failures**, `useForkShape`-style: a name
+ * conflict is a validation error about the field the dialog is still showing,
+ * so it belongs inline next to that field rather than in a toast — but
+ * `meta.suppressErrorToast` is all-or-nothing per mutation, so there is no way
+ * to suppress the shared toast for ONE error code and keep it for the rest.
+ * The mutation opts out entirely and its own `onError` decides: stay quiet
+ * when the field can still show the conflict, otherwise toast — every other
+ * failure (a dropped connection, a 500) always toasts, matching what the
+ * shared handler would have said.
+ *
+ * @param options - Whether the caller can still render a conflict inline.
  */
-export function useCreateChannel(): UseMutationResult<RoomWithRoster, Error, CreateChannelInput> {
+export function useCreateChannel({
+  isInlineErrorVisible,
+}: UseCreateChannelOptions): UseMutationResult<RoomWithRoster, Error, CreateChannelInput> {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
@@ -82,10 +126,11 @@ export function useCreateChannel(): UseMutationResult<RoomWithRoster, Error, Cre
     mutationFn: ({ title, agentPaths }: CreateChannelInput) =>
       transport.createRoom({ kind: 'channel', title, members: [], agentPaths }),
     onSuccess: () => invalidateRoomReads(queryClient),
-    // The shared mutation toast (`query-client.ts`) reads this with the
-    // server's own sentence after it — the dialog's own onError used to
-    // duplicate the same message in a second toast.
-    meta: { errorLabel: "Couldn't create that channel" },
+    meta: { suppressErrorToast: true },
+    onError: (error) => {
+      if (isChannelNameConflict(error) && isInlineErrorVisible()) return;
+      toast.error(`Couldn't create that channel — ${error.message}`);
+    },
   });
 }
 

@@ -203,7 +203,7 @@ describe('ExtensionsSettingsTab', () => {
     });
   });
 
-  it('applies the change live and shows a success toast after enabling (no reload prompt)', async () => {
+  it('applies the change live with no success toast (the Switch already reads on)', async () => {
     const ext = makeExtension({ id: 'my-ext', status: 'disabled' });
     mockFetch({
       '/api/extensions': [ext],
@@ -223,8 +223,14 @@ describe('ExtensionsSettingsTab', () => {
     fireEvent.click(toggle);
 
     await waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith('Enabled Test Extension');
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+        expect.stringContaining('/api/extensions/my-ext/enable'),
+        expect.objectContaining({ method: 'POST' })
+      );
     });
+    // The switch itself is the confirmation — a toast saying the same thing
+    // on top of it would be redundant.
+    expect(toast.success).not.toHaveBeenCalled();
     // The change applies live via the SSE `extension_reloaded` handler, so the
     // user is never asked to reload the page.
     expect(toast.info).not.toHaveBeenCalled();

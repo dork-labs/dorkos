@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import QRCode from 'react-qr-code';
-import { Check, Copy, Link, QrCode } from 'lucide-react';
+import { Check, Copy, Link, QrCode, X, type LucideIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Button } from '@/layers/shared/ui';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
@@ -41,10 +41,48 @@ const qrExpandVariants = {
 /** Transition for QR expand. */
 const qrExpandTransition = { duration: 0.2, ease: [0, 0, 0.2, 1] } as const;
 
+/**
+ * One "Copy X" action button: an idle glyph and label, morphing to a check
+ * or an X with a matching word on settle. Shared by the URL and session-link
+ * buttons below — same shape, different idle icon and label.
+ */
+function CopyActionButton({
+  copied,
+  failed,
+  onClick,
+  idleIcon: IdleIcon,
+  idleLabel,
+}: {
+  copied: boolean;
+  failed: boolean;
+  onClick: () => void;
+  idleIcon: LucideIcon;
+  idleLabel: string;
+}) {
+  let icon: ReactNode;
+  let label: string;
+  if (copied) {
+    icon = <Check className="size-3" />;
+    label = 'Copied';
+  } else if (failed) {
+    icon = <X className="text-destructive size-3" />;
+    label = "Couldn't copy";
+  } else {
+    icon = <IdleIcon className="size-3" />;
+    label = idleLabel;
+  }
+  return (
+    <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={onClick}>
+      {icon}
+      {label}
+    </Button>
+  );
+}
+
 /** Connected view — URL is the hero, QR behind a toggle, three action buttons. */
 export function TunnelConnected({ url, activeSessionId, latencyMs }: TunnelConnectedProps) {
-  const [urlCopied, copyUrl] = useCopyFeedback();
-  const [sessionCopied, copySession] = useCopyFeedback();
+  const { copied: urlCopied, failed: urlFailed, copy: copyUrl } = useCopyFeedback();
+  const { copied: sessionCopied, failed: sessionFailed, copy: copySession } = useCopyFeedback();
   const [showQr, setShowQr] = useState(false);
 
   const sessionUrl = activeSessionId ? `${url}?session=${activeSessionId}` : null;
@@ -85,26 +123,22 @@ export function TunnelConnected({ url, activeSessionId, latencyMs }: TunnelConne
 
         {/* Three action buttons */}
         <div className="mt-3 flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1 gap-1.5"
-            onClick={() => copyUrl(url)}
-          >
-            {urlCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-            {urlCopied ? 'Copied' : 'Copy URL'}
-          </Button>
+          <CopyActionButton
+            copied={urlCopied}
+            failed={urlFailed}
+            onClick={() => void copyUrl(url)}
+            idleIcon={Copy}
+            idleLabel="Copy URL"
+          />
 
           {sessionUrl && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 gap-1.5"
-              onClick={() => copySession(sessionUrl)}
-            >
-              {sessionCopied ? <Check className="size-3" /> : <Link className="size-3" />}
-              {sessionCopied ? 'Copied' : 'Session link'}
-            </Button>
+            <CopyActionButton
+              copied={sessionCopied}
+              failed={sessionFailed}
+              onClick={() => void copySession(sessionUrl)}
+              idleIcon={Link}
+              idleLabel="Session link"
+            />
           )}
 
           <Button

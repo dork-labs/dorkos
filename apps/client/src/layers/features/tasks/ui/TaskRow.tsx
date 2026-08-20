@@ -97,7 +97,10 @@ export function TaskRow({
   const handleRunNow = (e: React.MouseEvent) => {
     e.stopPropagation();
     // No local onError: the shared mutation toast (`useTriggerTask`'s
-    // `meta.errorLabel`) reports a failure.
+    // `meta.errorLabel`) reports a failure. Bare, not `.success` — the run
+    // itself happens off-screen (the history row is what confirms it ran),
+    // so this is a neutral "it started" note, same voice as Schedule approved
+    // below.
     triggerTask.mutate(task.id, {
       onSuccess: () => toast('Run triggered'),
     });
@@ -106,7 +109,7 @@ export function TaskRow({
   const handleApprove = (e: React.MouseEvent) => {
     e.stopPropagation();
     // No local onError: the shared mutation toast (`useUpdateTask`'s
-    // `meta.errorLabel`) reports a failure.
+    // `meta.errorLabel`) reports a failure. Bare, matching Run triggered above.
     updateTask.mutate(
       { id: task.id, status: 'active', enabled: true },
       { onSuccess: () => toast('Schedule approved') }

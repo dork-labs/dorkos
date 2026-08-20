@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { ExternalLink, Copy, X } from 'lucide-react';
 import type { LinkSafetyModalProps } from 'streamdown';
+import { useCopyFeedback } from '@/layers/shared/lib';
 
 /**
  * Portal-based external-link confirmation modal — the app's single link-safety
@@ -10,6 +11,9 @@ import type { LinkSafetyModalProps } from 'streamdown';
  * containing blocks.
  */
 export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyModalProps) {
+  // The modal closes the instant "Copy link" is pressed, so there is no
+  // chrome left to morph — the toast fallback (`useCopyFeedback`'s TSDoc).
+  const { copy } = useCopyFeedback({ toastOnSettle: true });
   if (!isOpen) return null;
 
   return createPortal(
@@ -55,7 +59,7 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
           <button
             className="hover:bg-muted flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
             onClick={() => {
-              navigator.clipboard.writeText(url);
+              void copy(url);
               onClose();
             }}
             type="button"

@@ -9,11 +9,12 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockRun } from '@dorkos/test-utils';
+import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TaskRunHistoryPanel } from '../ui/TaskRunHistoryPanel';
 import { toast } from 'sonner';
 
 vi.mock('sonner', () => {
-  const toast = Object.assign(vi.fn(), { error: vi.fn() });
+  const toast = Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() });
   return { toast };
 });
 
@@ -26,7 +27,12 @@ vi.mock('@/layers/entities/session', () => ({
 }));
 
 function createWrapper(transport: Transport) {
+  // The real error policy (`createQueryClientConfig`), not a hand-rolled one —
+  // a failed cancel is reported by the shared mutation cache now
+  // (`useCancelTaskRun`'s `meta.errorLabel`), not the panel's own `onError`,
+  // and a re-declared config would quietly stop asserting that.
   const queryClient = new QueryClient({
+    ...createQueryClientConfig(),
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
       mutations: { retry: false },
@@ -159,9 +165,13 @@ describe('TaskRunHistoryPanel', () => {
       // lie (DOR-808).
       await pressStop(vi.fn().mockRejectedValue(new Error('Nothing picked up the stop request')));
 
+      // The panel no longer reports this itself — the shared mutation toast
+      // (`useCancelTaskRun`'s `meta.errorLabel`) does, composed with the
+      // server's own sentence, same as every other failed mutation.
       await waitFor(() => {
         expect(toast.error).toHaveBeenCalledWith(
-          expect.stringContaining('Nothing picked up the stop request')
+          "Couldn't stop the run — Nothing picked up the stop request",
+          expect.anything()
         );
       });
       expect(toast).not.toHaveBeenCalled();

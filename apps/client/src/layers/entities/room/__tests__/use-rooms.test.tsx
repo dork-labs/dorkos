@@ -230,7 +230,9 @@ describe('useCreateChannel', () => {
   it('creates a channel from a plain name', async () => {
     const created = { ...room(), members: [] };
     const transport = createMockTransport({ createRoom: vi.fn().mockResolvedValue(created) });
-    const { result } = renderHook(() => useCreateChannel(), { wrapper: wrapperFor(transport) });
+    const { result } = renderHook(() => useCreateChannel({ isInlineErrorVisible: () => false }), {
+      wrapper: wrapperFor(transport),
+    });
     await result.current.mutateAsync({ title: 'General', agentPaths: [] });
     expect(transport.createRoom).toHaveBeenCalledWith({
       kind: 'channel',
@@ -250,7 +252,9 @@ describe('useCreateChannel', () => {
       createRoom: vi.fn().mockResolvedValue(created),
       addRoomMember: vi.fn().mockResolvedValue({}),
     });
-    const { result } = renderHook(() => useCreateChannel(), { wrapper: wrapperFor(transport) });
+    const { result } = renderHook(() => useCreateChannel({ isInlineErrorVisible: () => false }), {
+      wrapper: wrapperFor(transport),
+    });
     await result.current.mutateAsync({ title: 'General', agentPaths: ['/w/ana', '/w/kai'] });
 
     expect(transport.createRoom).toHaveBeenCalledTimes(1);
