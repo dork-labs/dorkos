@@ -22,6 +22,10 @@ import {
 import type { Transport } from '@dorkos/shared/transport';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { Session, Task } from '@dorkos/shared/types';
+import type {
+  ListNotificationsResponse,
+  NotificationDTO,
+} from '@dorkos/shared/notification-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 
 /**
@@ -143,6 +147,47 @@ function offlineAgents(...names: string[]) {
     nextCursor: null,
     unreadCount: names.length,
   };
+}
+
+/** The one unread `report.daily` row this file seeds, overriding only what a test cares about. */
+function shiftReportRow(overrides: Partial<NotificationDTO> = {}): NotificationDTO {
+  return {
+    id: '01JZR000000000000000000S1',
+    kind: 'report.daily',
+    tier: 'quiet',
+    subject: { type: 'system', id: '2026-08-19' },
+    title: 'While you were away: 3 runs finished, 1 run needs a look',
+    body: '3 runs finished. 1 run needs a look.',
+    createdAt: new Date(LOADED_AT - MINUTE_MS).toISOString(),
+    ...overrides,
+  };
+}
+
+/**
+ * `listNotifications`, split by which lens is asking.
+ *
+ * `useActivityNotifications` and `useShiftReport` share the same transport
+ * method but read different kinds through different lenses, so a flat
+ * `mockResolvedValue` cannot answer both truthfully — whatever it returns
+ * would land in BOTH caches (a bare-agent-unreachable fixture handed to the
+ * `report.daily` lens renders as a fabricated Shift Report). This inspects
+ * the query the way the real server route does: `activity` for anything else,
+ * `report` rows only for a `report.daily` lens.
+ */
+function notificationsByLens(
+  options: { activity?: ListNotificationsResponse; report?: NotificationDTO[] } = {}
+) {
+  const empty: ListNotificationsResponse = { notifications: [], nextCursor: null, unreadCount: 0 };
+  return vi.fn().mockImplementation(
+    (query?: { kind?: string[] }): Promise<ListNotificationsResponse> =>
+      query?.kind?.includes('report.daily')
+        ? Promise.resolve({
+            notifications: options.report ?? [],
+            nextCursor: null,
+            unreadCount: options.report?.length ?? 0,
+          })
+        : Promise.resolve(options.activity ?? empty)
+  );
 }
 
 /** A schedule an agent proposed and parked, waiting on a yes or a no. */
@@ -329,7 +374,7 @@ describe('PinnedTriageHeader while the composer has the caret', () => {
             buildApproval({ approvalId: '01JZ0000000000000000000002' }),
           ],
         }),
-        listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')),
+        listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
       },
       { composerFocused: true }
     );
@@ -618,7 +663,7 @@ describe('PinnedTriageHeader', () => {
           buildApproval({ approvalId: '01JZ0000000000000000000002' }),
         ],
       }),
-      listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')),
+      listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
     });
 
     await waitFor(() =>
@@ -707,7 +752,9 @@ describe('PinnedTriageHeader', () => {
     // Agents nobody can reach is not a thing WAITING on a person — nothing is
     // blocked on an answer — so it draws under Recent Activity rather than
     // spending the header's amber on it.
-    renderHeader({ listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')) });
+    renderHeader({
+      listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
+    });
 
     expect(await screen.findByText('Recent Activity')).toBeInTheDocument();
     expect(screen.getByText('tangerines stopped answering')).toBeInTheDocument();
@@ -716,7 +763,7 @@ describe('PinnedTriageHeader', () => {
 
   it('keeps the activity row deep link, and opens the sheet it addresses', async () => {
     const { router } = renderHeader({
-      listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')),
+      listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
     });
 
     // The row IS the button now — clicking it marks the notification read and
@@ -734,7 +781,7 @@ describe('PinnedTriageHeader', () => {
   it('draws both groups at once when both have something to say', async () => {
     renderHeader({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
-      listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')),
+      listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
     });
 
     expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
@@ -861,5 +908,66 @@ describe('PinnedTriageHeader', () => {
     );
 
     expect(screen.getByText('Waiting On You')).toBeInTheDocument();
+  });
+
+  describe('the daily Shift Report card', () => {
+    it('renders above Recent Activity from a seeded unread row', async () => {
+      renderHeader({
+        listNotifications: notificationsByLens({
+          report: [shiftReportRow()],
+        }),
+      });
+
+      const card = await screen.findByText(/While you were away/);
+      expect(card).toBeInTheDocument();
+      expect(header()).not.toBeNull();
+    });
+
+    it('keeps the header on screen for the card alone, with no other group drawn', async () => {
+      // Nothing is waiting and nothing broke — the one thing this header has to
+      // say is what agents did overnight, and it must not need a second reason
+      // to stay on screen.
+      renderHeader({
+        listNotifications: notificationsByLens({ report: [shiftReportRow()] }),
+      });
+
+      await screen.findByText(/While you were away/);
+      expect(header()).not.toBeNull();
+      expect(screen.queryByText('Waiting On You')).not.toBeInTheDocument();
+      expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
+      expect(screen.queryByText('Recent Activity')).not.toBeInTheDocument();
+    });
+
+    it('is absent when there is nothing unread to report', async () => {
+      const { transport } = renderHeader({
+        listNotifications: notificationsByLens({ report: [] }),
+      });
+
+      await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
+      expect(screen.queryByText(/While you were away/)).not.toBeInTheDocument();
+      expect(header()).toBeNull();
+    });
+
+    it('dismissing the card marks it read, and it disappears', async () => {
+      const markNotificationRead = vi
+        .fn()
+        .mockResolvedValue({ ok: true, marked: 1, unreadCount: 0 });
+      renderHeader({
+        listNotifications: notificationsByLens({ report: [shiftReportRow()] }),
+        markNotificationRead,
+      });
+
+      await screen.findByText(/While you were away/);
+      await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+      expect(markNotificationRead).toHaveBeenCalledWith(shiftReportRow().id);
+      // The optimistic cache write is what makes it vanish — the mock above
+      // still answers the same unread row if re-fetched, so a card that
+      // survives this proves the dismiss reads it rather than merely calling
+      // the mutation.
+      await waitFor(() =>
+        expect(screen.queryByText(/While you were away/)).not.toBeInTheDocument()
+      );
+    });
   });
 });

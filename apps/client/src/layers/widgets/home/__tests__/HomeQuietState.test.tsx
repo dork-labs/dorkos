@@ -19,6 +19,10 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { Task } from '@dorkos/shared/types';
+import type {
+  ListNotificationsResponse,
+  NotificationDTO,
+} from '@dorkos/shared/notification-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 
 // The attention rows navigate, and the session list reads `?session=`. Neither
@@ -150,6 +154,46 @@ function offlineAgents(...names: string[]) {
     nextCursor: null,
     unreadCount: names.length,
   };
+}
+
+/** The one unread `report.daily` row this file seeds. */
+function shiftReportRow(): NotificationDTO {
+  return {
+    id: '01JZR000000000000000000S1',
+    kind: 'report.daily',
+    tier: 'quiet',
+    subject: { type: 'system', id: '2026-08-19' },
+    title: 'While you were away: 2 turns finished',
+    body: '2 turns finished in the last day.',
+    createdAt: new Date(LOADED_AT - MINUTE_MS).toISOString(),
+  };
+}
+
+/**
+ * `listNotifications`, split by which lens is asking.
+ *
+ * `useAttentionRows` (via `useActivityNotifications`) and `useShiftReport`
+ * share the transport method but read different kinds through different
+ * lenses, so a flat `mockResolvedValue` cannot answer both truthfully —
+ * whatever it returns lands in BOTH caches, and an activity fixture handed to
+ * the `report.daily` lens would draw a fabricated Shift Report. This inspects
+ * the query the way the real server route does: `activity` for anything else,
+ * `report` rows only for a `report.daily` lens.
+ */
+function notificationsByLens(
+  options: { activity?: ListNotificationsResponse; report?: NotificationDTO[] } = {}
+) {
+  const empty: ListNotificationsResponse = { notifications: [], nextCursor: null, unreadCount: 0 };
+  return vi.fn().mockImplementation(
+    (query?: { kind?: string[] }): Promise<ListNotificationsResponse> =>
+      query?.kind?.includes('report.daily')
+        ? Promise.resolve({
+            notifications: options.report ?? [],
+            nextCursor: null,
+            unreadCount: options.report?.length ?? 0,
+          })
+        : Promise.resolve(options.activity ?? empty)
+  );
 }
 
 /**
@@ -339,11 +383,37 @@ describe('HomeQuietState — when it stands down', () => {
 
   it('draws nothing when something needs attention', async () => {
     const { transport } = renderQuiet({
-      transport: { listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')) },
+      transport: {
+        listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
+      },
     });
 
     await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
     await waitFor(() => expect(quietLine()).toBeNull());
+  });
+
+  it('draws nothing when there is a Shift Report to show — it is the header saying something too', async () => {
+    // Nothing is waiting and nothing broke, but the Shift Report card is on
+    // screen above the feed, and "All quiet." directly under a card listing
+    // what happened overnight is the contradiction this gate exists to catch.
+    const { transport } = renderQuiet({
+      transport: { listNotifications: notificationsByLens({ report: [shiftReportRow()] }) },
+    });
+
+    // Both lenses have to have been asked — `useAttentionRows`'s activity
+    // read and `useShiftReport`'s own — before the answer means anything.
+    // `waitFor(() => expect(quietLine()).toBeNull())` alone would pass on the
+    // FIRST poll, on the frame before any of this has resolved (the room's
+    // cursor is not frozen yet either, so `quiet` starts false regardless of
+    // what the Shift Report says) — which proves nothing about whether the
+    // report was ever consulted. Settling first, then reading the DOM with a
+    // plain assertion, is what makes this a claim about the steady state.
+    await waitFor(() => expect(transport.listNotifications).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(transport.getRoom).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(quietLine()).toBeNull();
   });
 
   it('draws nothing while somebody is working — that is not quiet', async () => {
