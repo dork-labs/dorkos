@@ -10,7 +10,7 @@ export function FeedbackRequestsPage() {
   return (
     <PageContainer width="wide" scroll={false}>
       <header className="mb-6 shrink-0">
-        <h1 className="text-xl font-semibold">Feedback &amp; requests</h1>
+        <h1 className="text-xl font-semibold">Product feedback</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           What you&apos;ve sent the DorkOS team, and where it stands.
         </p>

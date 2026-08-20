@@ -26,6 +26,7 @@ import { useCommandsSync } from '@/layers/entities/command';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
+import { useTasksSync } from '@/layers/entities/tasks';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
@@ -358,6 +359,9 @@ export function AppShell() {
   // a task changes: dialling one up to Full autonomy has to raise the banner as
   // the form closes, not on the next reload.
   useUnattendedAutonomySync();
+  // Live task list (DOR-1380): a schedule an agent proposes via MCP parks at
+  // pending_approval and otherwise sits invisible until the next reload.
+  useTasksSync();
   // Make the Pulse Activity teaser live off `/api/events`: invalidate the
   // activity caches when an activity-generating broadcast (relay traffic/topology,
   // extension reloads) fires, coalescing bursts. Attention's live source

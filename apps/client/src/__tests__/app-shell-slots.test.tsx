@@ -298,6 +298,16 @@ vi.mock('@/layers/entities/unattended-autonomy', async (importOriginal) => {
   };
 });
 
+// The Tasks list is kept live off the same stream (DOR-1380) via useTasksSync,
+// mounted alongside the other *Sync hooks above.
+vi.mock('@/layers/entities/tasks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/tasks')>();
+  return {
+    ...actual,
+    useTasksSync: () => {},
+  };
+});
+
 // ── Mock shared model hooks ──
 
 vi.mock('@/layers/shared/model/app-store', () => ({

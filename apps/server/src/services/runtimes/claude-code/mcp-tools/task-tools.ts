@@ -159,6 +159,29 @@ export function createCreateScheduleHandler(deps: McpToolDeps) {
     // Agent-created schedules always require user approval
     deps.taskStore!.updateTask(schedule.id, { status: 'pending_approval' });
     const updated = deps.taskStore!.getTask(schedule.id);
+
+    // Parity with the REST route's create handler (routes/tasks.ts): without
+    // this, a schedule an agent proposes is invisible until the next full
+    // list refetch, with no SSE and no activity entry to tell the person it
+    // is waiting on them. `metadata.status` carries the parked state into the
+    // feed so a consumer can tell this apart from an operator's own
+    // (immediately active) creation without a second lookup.
+    if (updated) {
+      deps.activityService?.emit({
+        actorType: 'agent',
+        actorLabel: 'An agent',
+        category: 'tasks',
+        eventType: 'tasks.task_created',
+        resourceType: 'schedule',
+        resourceId: updated.id,
+        resourceLabel: updated.displayName ?? updated.name,
+        summary: `Proposed task ${updated.displayName ?? updated.name}, which needs your approval before it runs`,
+        linkPath: '/',
+        metadata: { status: updated.status },
+      });
+      broadcastTasksChanged();
+    }
+
     return jsonContent({
       schedule: updated,
       note: 'Schedule created with pending_approval status. User must approve before it runs.',
