@@ -24,6 +24,12 @@
   legible on both the light and dark Windows taskbar.
 - `entitlements.mac.plist` — hardened-runtime entitlements for signing.
 
+`icon.svg` has a consumer outside this directory too: the web cockpit's PWA
+icons (`apps/client/public/icon-192.png`, `icon-512.png`,
+`maskable-icon-512.png`, `apple-touch-icon.png`) are rendered from the same
+glyph, so the "Add to Home Screen" mark on a phone matches the desktop app
+icon. See "Regenerating the cockpit PWA icons" below.
+
 **The tray PNGs are read at runtime, unlike everything else here.** This
 directory is electron-builder's `buildResources`, which is _not_ packaged into
 the app, so `electron.vite.config.ts` copies the four PNGs into `dist/main/`
@@ -108,3 +114,12 @@ rsvg-convert -w 32 -h 32 icon.svg -o trayIcon@2x.png
 Check the 16px renders by eye afterwards: the counter of the "D" has to stay
 open. If the glyph in `icon.svg` changes, update `trayTemplate.svg`'s `<path>`
 to match — it is the same path data with a different fill and viewBox.
+
+## Regenerating the cockpit PWA icons
+
+Not a bash recipe here — the logic lives in
+`apps/client/scripts/generate-pwa-icons.ts` (same `rsvg-convert` dependency
+as above), which reads this directory's `icon.svg` directly so the two can
+never drift apart by hand. Run it with
+`npx tsx apps/client/scripts/generate-pwa-icons.ts` whenever the glyph
+changes, and commit the four regenerated PNGs under `apps/client/public/`.
