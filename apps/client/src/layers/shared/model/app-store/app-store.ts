@@ -188,6 +188,11 @@ export const useAppStore = create<AppState>()(
             localStorage.removeItem(STORAGE_KEYS.FONT_SIZE);
             localStorage.removeItem(STORAGE_KEYS.FONT_FAMILY);
             localStorage.removeItem('dorkos-sidebar-active-tab');
+            // The retired promo-dismissal key. Still swept, because an install
+            // that has not yet had its one-time import run may still carry it, and
+            // a reset should not leave a stale key behind to be imported later.
+            // The dismissals themselves are config now, and resetting LOCAL
+            // preferences deliberately does not reach them.
             localStorage.removeItem('dorkos-dismissed-promo-ids');
             localStorage.removeItem(STORAGE_KEYS.CANVAS_SESSIONS);
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
@@ -205,7 +210,6 @@ export const useAppStore = create<AppState>()(
             fontSize: 'medium' as const,
             fontFamily: DEFAULT_FONT as FontFamilyKey,
             sidebarActiveTab: 'overview' as const,
-            dismissedPromoIds: [],
             rightPanelOpen: false,
             activeRightPanelTab: null,
             rightPanelLayoutKey: null,

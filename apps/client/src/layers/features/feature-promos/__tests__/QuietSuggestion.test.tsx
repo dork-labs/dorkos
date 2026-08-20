@@ -10,6 +10,7 @@
  * claim about the store's persistence, not about a mock's return value.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useSyncExternalStore } from 'react';
 import { render, renderHook, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { forwardRef } from 'react';
@@ -85,7 +86,35 @@ const mockContext: PromoContext = {
   agentCount: 0,
   taskCount: 0,
   daysSinceFirstUse: 0,
+  isDesktopApp: false,
+  remoteAccessConfigured: false,
 };
+// Dismissals are config now (spec `sidebar-simplification` D4). The fake keeps
+// the ONE list both surfaces read, which is the property the cross-surface case
+// below is about — mocking two independent lists would make it vacuous. It is
+// REACTIVE for the same reason the real hook is: the real one reads a query, so
+// dismissing re-renders every reader. A plain mutable array would leave the
+// card on screen after the press and the "goes away when dismissed" case would
+// be asserting against a stale render rather than the behaviour.
+let mockDismissedIds: string[] = [];
+const dismissalListeners = new Set<() => void>();
+vi.mock('@/layers/entities/config', () => ({
+  usePromoDismissals: () => ({
+    dismissedIds: useSyncExternalStore(
+      (onChange: () => void) => {
+        dismissalListeners.add(onChange);
+        return () => dismissalListeners.delete(onChange);
+      },
+      () => mockDismissedIds
+    ),
+    dismissPromo: (id: string) => {
+      if (mockDismissedIds.includes(id)) return;
+      mockDismissedIds = [...mockDismissedIds, id];
+      for (const listener of dismissalListeners) listener();
+    },
+  }),
+}));
+
 vi.mock('../model/use-promo-context', () => ({
   usePromoContext: () => mockContext,
 }));
@@ -129,7 +158,8 @@ function suggestionLine(): HTMLElement | null {
 beforeEach(() => {
   mockRegistry.length = 0;
   localStorageMock.clear();
-  useAppStore.setState({ dismissedPromoIds: [], promoEnabled: true });
+  mockDismissedIds = [];
+  useAppStore.setState({ promoEnabled: true });
 });
 
 afterEach(() => {
@@ -213,11 +243,11 @@ describe('QuietSuggestion', () => {
     render(<QuietSuggestion />);
     expect(suggestionLine()).toBeNull();
 
-    // And the answer outlived the tab, not just the mount.
-    expect(localStorageMock.setItem).toHaveBeenCalledWith(
-      'dorkos-dismissed-promo-ids',
-      JSON.stringify(['schedules'])
-    );
+    // And it is recorded, not merely hidden — the same one list every promo
+    // surface reads. Where that list is DURABLE is a different unit's job now:
+    // it used to be this browser's localStorage, and it is the person's config,
+    // proven in `entities/config/__tests__/use-promo-dismissals.test.tsx`.
+    expect(mockDismissedIds).toEqual(['schedules']);
   });
 
   it('dismissing is one press, exactly like accepting', () => {
@@ -227,13 +257,13 @@ describe('QuietSuggestion', () => {
     // No confirmation step, no "are you sure", no menu to open first.
     const dismiss = screen.getByRole('button', { name: /^Dismiss suggestion/ });
     fireEvent.click(dismiss);
-    expect(useAppStore.getState().dismissedPromoIds).toEqual(['schedules']);
+    expect(mockDismissedIds).toEqual(['schedules']);
   });
 
   it('takes the matching card out of the sidebar too — no means no everywhere', () => {
     mockRegistry.push(makePromo({ id: 'schedules', placements: ['dashboard-sidebar'] }));
     // The card slot agrees the promo qualifies, before anybody says anything.
-    const before = renderHook(() => usePromoSlot('dashboard-sidebar', 3));
+    const before = renderHook(() => usePromoSlot('dashboard-sidebar', 1));
     expect(before.result.current.map((p) => p.id)).toEqual(['schedules']);
     before.unmount();
 
@@ -242,7 +272,7 @@ describe('QuietSuggestion', () => {
 
     // Saying no to the sentence is saying no to the card: one dismissal list,
     // one answer, both surfaces.
-    const after = renderHook(() => usePromoSlot('dashboard-sidebar', 3));
+    const after = renderHook(() => usePromoSlot('dashboard-sidebar', 1));
     expect(after.result.current).toEqual([]);
   });
 });

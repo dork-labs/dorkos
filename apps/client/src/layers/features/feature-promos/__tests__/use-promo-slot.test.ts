@@ -25,20 +25,25 @@ let mockContext: PromoContext = {
   agentCount: 0,
   taskCount: 0,
   daysSinceFirstUse: 0,
+  isDesktopApp: false,
+  remoteAccessConfigured: false,
 };
 vi.mock('../model/use-promo-context', () => ({
   usePromoContext: () => mockContext,
 }));
 
-// Mock app store
-let mockDismissedIds: string[] = [];
+// The global display toggle is still a browser preference in the store.
 let mockPromoEnabled = true;
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      dismissedPromoIds: mockDismissedIds,
-      promoEnabled: mockPromoEnabled,
-    }),
+    selector({ promoEnabled: mockPromoEnabled }),
+}));
+
+// Dismissals moved to config (spec `sidebar-simplification` D4), so they arrive
+// through the entity hook rather than the store.
+let mockDismissedIds: string[] = [];
+vi.mock('@/layers/entities/config', () => ({
+  usePromoDismissals: () => ({ dismissedIds: mockDismissedIds, dismissPromo: () => {} }),
 }));
 
 import { usePromoSlot } from '../model/use-promo-slot';
@@ -73,6 +78,8 @@ describe('usePromoSlot', () => {
       agentCount: 0,
       taskCount: 0,
       daysSinceFirstUse: 0,
+      isDesktopApp: false,
+      remoteAccessConfigured: false,
     };
   });
 

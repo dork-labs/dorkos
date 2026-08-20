@@ -4,8 +4,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { cn, getAgentDisplayName, groupSessionsByTime } from '@/layers/shared/lib';
-import { Button } from '@/layers/shared/ui';
+import { BottomSlot, Button } from '@/layers/shared/ui';
 import { useCurrentAgent } from '@/layers/entities/agent';
+import { useConfig } from '@/layers/entities/config';
 import {
   useSessions,
   useAgentSessions,
@@ -13,7 +14,7 @@ import {
   useRenameSession,
   sessionKeys,
 } from '@/layers/entities/session';
-import { PromoSlot } from '@/layers/features/feature-promos';
+import { usePromoCandidate } from '@/layers/features/feature-promos';
 import { EmbedSessionList } from './EmbedSessionList';
 
 /**
@@ -83,6 +84,9 @@ export function EmbedSidebar() {
   // useAgentSessions returns newest-first, so grouping consumes it directly.
   const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);
 
+  const promo = usePromoCandidate('agent-sidebar');
+  const { isLoading: configLoading } = useConfig();
+
   return (
     <div className="flex h-full flex-col">
       {/* No hairline under the header, and none above the promos below: the
@@ -109,13 +113,16 @@ export function EmbedSidebar() {
         />
       </div>
 
-      {/* Feature promos targeted at the agent sidebar surface — self-hiding when
-          there is nothing to show, so the slim chrome stays quiet by default.
-          `PromoCard` already paints itself from the `--sidebar-accent` ramp, so
-          the panel around it is padding and nothing more. */}
-      <div className="p-2 empty:p-0">
-        <PromoSlot placement="agent-sidebar" maxUnits={3} />
-      </div>
+      {/* The same one-card slot the cockpit's panel has, with the one
+          candidate this surface has: a promo. The cockpit's other three —
+          getting started, the update pill, the profile prompt — are cockpit
+          chrome and have no meaning in a pane inside somebody else's app.
+
+          What the embed gets for free here is the honest entrance: the promo
+          used to animate up on every load (review Appendix C #14), and the
+          slot's boot latch means a card that qualifies at load is simply
+          there. */}
+      <BottomSlot candidates={[promo]} ready={!configLoading} className="px-2 pb-2" />
     </div>
   );
 }

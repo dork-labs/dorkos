@@ -72,6 +72,21 @@ export interface PromoContext {
    */
   taskCount: number;
   daysSinceFirstUse: number;
+  /**
+   * Whether this is the desktop app rather than a browser.
+   *
+   * Offering to set up remote access inside the desktop app is offering
+   * somebody a way to reach the machine they are sitting at.
+   */
+  isDesktopApp: boolean;
+  /**
+   * Whether remote access is already set up — the tunnel is on, or an auth
+   * token for it is configured.
+   *
+   * Configured rather than connected: a tunnel somebody set up and switched off
+   * is still a question they have answered.
+   */
+  remoteAccessConfigured: boolean;
 }
 
 /** Full promo definition */

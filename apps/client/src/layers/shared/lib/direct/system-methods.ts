@@ -675,8 +675,10 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
         dismissedUpgradeVersions: [],
         // Always empty here, and it is not an oversight: `updateConfig` is a
         // no-op on this transport (embedded-mode-stubs.ts), so the embed has
-        // nowhere to persist a dismissal and nothing to read one back from. The
-        // bottom slot still hides a card for the session it is dismissed in.
+        // nowhere to persist a dismissal and nothing to read one back from.
+        // `usePromoDismissals` unions this with the ids dismissed in the current
+        // session, so pressing x still takes the card away and keeps it away for
+        // as long as the pane is open — it just cannot outlive a restart here.
         dismissedPromoIds: [],
         port: 0,
         uptime: 0,

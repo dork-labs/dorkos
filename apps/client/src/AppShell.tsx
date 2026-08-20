@@ -41,8 +41,6 @@ import {
   useOnboardingOverlayVisible,
   useClearOnboardingStageWhenDone,
   OnboardingFlow,
-  ProgressCard,
-  ProfilePromptCard,
 } from '@/layers/features/onboarding';
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import {
@@ -370,13 +368,14 @@ export function AppShell() {
 
   // First-run onboarding — gate rendering until config is loaded to prevent
   // a flash of the chat UI before the onboarding screen appears.
+  // `shouldShowGettingStarted` and `dismiss` were read here for the
+  // `ProgressCard` this footer used to stack; the bottom slot owns that card and
+  // its dismissal now (spec `sidebar-simplification` D4).
   const {
     shouldShowOnboarding,
-    shouldShowGettingStarted,
     isLoading: isOnboardingLoading,
     isOnboardingComplete,
     isOnboardingDismissed,
-    dismiss: dismissOnboarding,
   } = useOnboarding();
 
   // The session flag hides the overlay immediately on finish/skip, ahead of the
@@ -553,18 +552,12 @@ export function AppShell() {
                       {/* No hairline above the footer either — the footer is one
                         slim tinted strip, and the scroll-edge shadow on the body
                         above is what says content continues under it (spec R1). */}
+                      {/* The getting-started card, the profile prompt and the
+                          update pill were all here, stacked. They are candidates
+                          in the sidebar's bottom slot now — one card at a time,
+                          pinned just above this footer — so the footer is only
+                          the thing it is named for (spec D4). */}
                       <SidebarFooter className="px-2 py-3">
-                        {shouldShowGettingStarted && (
-                          <div className="mb-2">
-                            <ProgressCard onDismiss={dismissOnboarding} />
-                          </div>
-                        )}
-                        {/* One-time role prompt for users who onboarded before the
-                          profile beat existed. Self-gating (renders null unless
-                          its whole show condition holds, including "ProgressCard
-                          is not visible"), so mounting it unconditionally is
-                          safe — never two cards. */}
-                        <ProfilePromptCard />
                         <SidebarFooterStrip />
                       </SidebarFooter>
                       <SidebarRail />

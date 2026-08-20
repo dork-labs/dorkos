@@ -437,94 +437,28 @@ describe('SidebarFooterStrip', () => {
   });
 
   // ── BC-44: the update pill ───────────────────────────────────────────────
+  //
+  // The pill's own cases live in `UpdatePill.test.tsx` now: it moved out of this
+  // component and into the sidebar's bottom slot, where it takes its turn
+  // against the other cards (spec `sidebar-simplification` D4). What stays here
+  // is the property about THIS component — that it no longer draws one.
 
-  it('renders zero DOM for the pill when no update is ready', () => {
+  it('draws no update pill of its own — the strip is one row and nothing else', () => {
+    // What this catches: the pill being put back on top of the strip, which is
+    // the arrangement D4 replaced. It would stack a second thing at the bottom
+    // of the panel beside whatever the slot is already showing.
+    mockConfigData = {
+      version: '1.2.3',
+      latestVersion: '1.4.0',
+      isDevMode: false,
+      dismissedUpgradeVersions: [],
+    };
     const { container } = renderStrip();
 
     expect(screen.queryByText(/Update ready/)).toBeNull();
-    // The strip's only child is the row — nothing is reserved for the pill.
     expect(container.querySelector('[data-testid="sidebar-footer-strip"]')?.children).toHaveLength(
       1
     );
-  });
-
-  it('announces a newer published version and hands over the command', () => {
-    mockConfigData = {
-      version: '1.2.3',
-      latestVersion: '1.4.0',
-      isDevMode: false,
-      dismissedUpgradeVersions: [],
-    };
-    renderStrip();
-
-    expect(screen.getByText('Update ready — v1.4.0')).toBeInTheDocument();
-  });
-
-  it('stays quiet about a version the operator already dismissed', () => {
-    mockConfigData = {
-      version: '1.2.3',
-      latestVersion: '1.4.0',
-      isDevMode: false,
-      dismissedUpgradeVersions: ['1.4.0'],
-    };
-    renderStrip();
-
-    expect(screen.queryByText(/Update ready/)).toBeNull();
-  });
-
-  it('remembers a dismissal', () => {
-    mockConfigData = {
-      version: '1.2.3',
-      latestVersion: '1.4.0',
-      isDevMode: false,
-      dismissedUpgradeVersions: ['1.0.0'],
-    };
-    renderStrip();
-
-    fireEvent.click(screen.getByLabelText('Dismiss update notification'));
-    expect(mockUpdateConfigMutate).toHaveBeenCalledWith({
-      ui: { dismissedUpgradeVersions: ['1.0.0', '1.4.0'] },
-    });
-  });
-
-  it('offers a restart on the desktop app, and only once the download has landed', () => {
-    mockDesktop = { isDesktop: true, status: { state: 'downloading' } };
-    const { unmount } = renderStrip();
-    expect(screen.queryByText(/Update ready/)).toBeNull();
-    unmount();
-
-    mockDesktop = { isDesktop: true, status: { state: 'downloaded', version: '2.0.0' } };
-    renderStrip();
-    fireEvent.click(screen.getByText('Update ready — Restart'));
-    expect(mockRestart).toHaveBeenCalled();
-  });
-
-  it('never puts an update in Heads up', () => {
-    mockConfigData = {
-      version: '1.2.3',
-      latestVersion: '1.4.0',
-      isDevMode: false,
-      dismissedUpgradeVersions: [],
-    };
-    renderStrip();
-
-    // Observable: the pill IS on screen for this state.
-    expect(screen.getByText('Update ready — v1.4.0')).toBeInTheDocument();
-
-    // And the zone model built from the same moment — a fleet that genuinely
-    // has things waiting, so the Heads up zone is populated and the query below can
-    // fail — carries nothing about it.
-    const model = buildSidebarModel(busyFixture);
-    const now = model.zones.find((zone) => zone.id === 'now');
-    const nowRows = now?.sections.flatMap((section) => section.rows) ?? [];
-    expect(nowRows.length).toBeGreaterThan(0);
-    const nowText = nowRows.map((r) => `${r.primary} ${r.secondary ?? ''} ${r.reason}`);
-    expect(nowText).not.toContain('Update ready — v1.4.0');
-    expect(nowText.filter((text) => /update|version|restart/i.test(text))).toEqual([]);
-    // Every Heads up row is an agent that needs you or a rollup of them, and nothing
-    // else can be (BC-5) — these are the only provenances the model can emit
-    // into this zone, so an update could not join them without a new rule.
-    expect(nowRows.every((r) => /^(now:|rollup:)/.test(r.reason))).toBe(true);
   });
 
   describe('the You tab, at 390 wide (P4.2)', () => {
