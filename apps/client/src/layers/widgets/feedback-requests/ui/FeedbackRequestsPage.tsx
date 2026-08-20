@@ -2,7 +2,7 @@ import { PageContainer } from '@/layers/shared/ui';
 import { FeedbackRequestsPanel } from '@/layers/features/feedback-requests';
 
 /**
- * "Feedback & requests" page at `/feedback-requests` (feedback-pipeline
+ * "Product feedback" page at `/feedback-requests` (feedback-pipeline
  * Part 4, design-decisions.md §7). Opens from the help menu — a parallel PR
  * (C) wires that entry point; this page owns the route and the view itself.
  */

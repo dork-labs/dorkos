@@ -5,7 +5,7 @@ covers:
 
 ### Fixed
 
-- When an agent proposes a scheduled task, the Scheduled list now updates immediately — you no
+- When an agent proposes a scheduled task, the Scheduled list now updates immediately. You no
   longer have to reload to see it waiting for your approval. It also shows up in Activity, so
   there's a record that it happened (DOR-1380).
 

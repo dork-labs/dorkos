@@ -185,7 +185,7 @@ function useSidebarSlot(): SidebarSlot {
  * All routes use a page-specific header with consistent `PageHeader` layout.
  * The session route includes a breadcrumb with the agent name; the channels
  * route names the open room rather than falling through to the dashboard's
- * (DOR-587). Workspaces, Connections, and Feedback & requests had the same gap
+ * (DOR-587). Workspaces, Connections, and Product feedback had the same gap
  * and are fixed the same way (DOR-919).
  */
 function useHeaderSlot({

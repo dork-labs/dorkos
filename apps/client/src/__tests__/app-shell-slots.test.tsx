@@ -100,9 +100,7 @@ vi.mock('@/layers/features/top-nav', () => ({
   TasksHeader: () => <div data-testid="tasks-header">Tasks</div>,
   WorkspacesHeader: () => <div data-testid="workspaces-header">Workspaces</div>,
   ConnectionsHeader: () => <div data-testid="connections-header">Connections</div>,
-  FeedbackRequestsHeader: () => (
-    <div data-testid="feedback-requests-header">Feedback &amp; requests</div>
-  ),
+  FeedbackRequestsHeader: () => <div data-testid="feedback-requests-header">Product feedback</div>,
 }));
 
 vi.mock('@/layers/widgets/app-layout', () => ({

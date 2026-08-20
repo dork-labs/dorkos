@@ -167,6 +167,12 @@ export function createCreateScheduleHandler(deps: McpToolDeps) {
     // feed so a consumer can tell this apart from an operator's own
     // (immediately active) creation without a second lookup.
     if (updated) {
+      // No `actorId`, unlike `capability-gate-audit.ts`'s agent-actor events:
+      // that observer is handed a resolved `identity` (an agent path) by the
+      // capability gate it audits. `getTasksTools` carries no such identity —
+      // it is built once from `McpToolDeps`, which the sessionless external
+      // `/mcp` server shares too — so there is no agent path to attribute this
+      // call to, only the generic fact that an agent (not the operator) made it.
       deps.activityService?.emit({
         actorType: 'agent',
         actorLabel: 'An agent',

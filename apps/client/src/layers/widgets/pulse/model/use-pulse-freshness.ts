@@ -77,6 +77,10 @@ const ACTIVITY_KEYS = [DASHBOARD_ACTIVITY_QUERY_KEY, ACTIVITY_QUERY_KEY] as cons
  *    dead-letters attention cache.
  *  - `mesh_liveness_changed` (DOR-403) — the reconciler flipped an agent
  *    offline/online → refresh the mesh-status attention cache.
+ *  - `tasks_changed` (DOR-1380) — a schedule was created, updated, or deleted,
+ *    including an agent's own `tasks_create`, which writes an
+ *    `activity_events` row the moment it parks a schedule at
+ *    `pending_approval` → refresh the activity caches.
  *
  * NOT included, deliberately: session-list events (attention's stalled-session
  * and activity are both handled elsewhere — the list stream and no activity row),
@@ -93,6 +97,7 @@ const EVENT_CACHE_INVALIDATIONS = {
   task_run_failed: [...ACTIVITY_KEYS, TASK_RUNS_KEY],
   relay_dead_letter: [DEAD_LETTERS_KEY],
   mesh_liveness_changed: [MESH_STATUS_KEY],
+  tasks_changed: ACTIVITY_KEYS,
 } as const satisfies Record<string, readonly QueryKey[]>;
 
 /** The subscribed event names. @internal Exported for the unit test. */
@@ -175,6 +180,7 @@ export function usePulseFreshness(coalesceMs: number = COALESCE_MS): void {
   useEventSubscription('mesh_liveness_changed', () =>
     schedule(EVENT_CACHE_INVALIDATIONS.mesh_liveness_changed)
   );
+  useEventSubscription('tasks_changed', () => schedule(EVENT_CACHE_INVALIDATIONS.tasks_changed));
 }
 
 export { EVENT_CACHE_INVALIDATIONS, PULSE_FRESHNESS_EVENTS };

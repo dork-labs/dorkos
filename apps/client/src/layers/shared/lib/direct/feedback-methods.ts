@@ -74,7 +74,7 @@ export function createDirectFeedbackMethods() {
     /**
      * Embedded (Obsidian) has no local server and no site-backed tracking
      * store to read — there is nothing to list. Resolves `[]` rather than
-     * rejecting, matching the empty state the "Feedback & requests" view
+     * rejecting, matching the empty state the "Product feedback" view
      * already has to handle for a fresh install with nothing sent yet.
      */
     async listMyFeedback(): Promise<FeedbackListItem[]> {
