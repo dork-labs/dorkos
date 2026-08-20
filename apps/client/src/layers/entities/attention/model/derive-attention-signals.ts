@@ -18,9 +18,11 @@ import { describeInteraction } from './describe-interaction';
 /**
  * How long a session must sit untouched before the product says anything.
  *
- * Thirty minutes, matching the stalled-session heuristic the home surface has
- * used since it shipped (`features/dashboard-attention`). Shorter would nudge
- * about a coffee break.
+ * Thirty minutes, because a shorter window nudges about a coffee break. This is
+ * now the only idle rule in the client — the home surface's own, which used the
+ * same threshold, went with the second attention engine (DOR-1381) — and the
+ * one row it still raises is the sidebar's, which DOR-1391 retires in favour of
+ * a Today digest fact.
  */
 export const IDLE_NUDGE_AFTER_MS = 30 * 60 * 1000;
 

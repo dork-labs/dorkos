@@ -14,13 +14,12 @@
  * makes the quiet state stand down. A branch for those here could never be
  * reached.
  *
- * That leaves one real gap, stated rather than hidden. `useAttentionItems` looks
- * back 24 hours and caps itself at 8 rows, so a stalled session from three days
- * ago is waiting on somebody and is in neither the header nor this sentence.
- * Closing it means a definition of "still waiting on you" that outlives the
- * attention lookback, which is a feature of its own rather than a branch in this
- * file — and until it exists, saying nothing about that item is honest where
- * inventing a horizon for it would not be.
+ * The gap this note used to describe — a session quiet for three days, older
+ * than the attention lookback and so in neither the header nor this sentence —
+ * closed by deletion rather than by a branch: a quiet session is no longer
+ * something the product says needs you at all (DOR-1381). What the header can
+ * see, it draws; what it draws makes this line stand down; and there is nothing
+ * left in between for this file to apologise for.
  *
  * @module widgets/home/lib/forward-look
  */

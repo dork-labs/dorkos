@@ -16,8 +16,18 @@ interface MockActivityItem {
   id: string;
   summary: string;
 }
+interface MockSignal {
+  id: string;
+  primary: string;
+}
+interface MockSchedule {
+  id: string;
+  displayName: string;
+}
 
 let mockAttentionItems: MockAttentionItem[] = [];
+let mockSchedules: MockSchedule[] = [];
+let mockErrors: MockSignal[] = [];
 let mockAttentionLoading = false;
 let mockActivity: { groups: { label: string; items: MockActivityItem[] }[]; isLoading: boolean } = {
   groups: [],
@@ -37,17 +47,31 @@ vi.mock('@tanstack/react-router', () => ({
     select({ location: { pathname: mockPathname } }),
 }));
 
-// dashboard-attention: stub the model + a faithful row that surfaces the item's
-// action (proving Pulse wires each item's deep-link through).
+// dashboard-attention: stub the composed model + faithful rows that surface
+// each item's action (proving Pulse wires the deep-links and the two answers
+// through). The model is one hook now — the second attention engine that used
+// to live behind `useAttentionItems` is gone (DOR-1381).
 vi.mock('@/layers/features/dashboard-attention', () => ({
-  useAttentionItems: () => ({ items: mockAttentionItems, isLoading: mockAttentionLoading }),
-  AttentionItemRow: ({ item }: { item: MockAttentionItem }) => (
+  useAttentionRows: () => ({
+    schedules: mockSchedules,
+    errors: mockErrors,
+    activity: mockAttentionItems,
+    isLoading: mockAttentionLoading,
+    total: mockSchedules.length + mockErrors.length + mockAttentionItems.length,
+  }),
+  RecentActivityRow: ({ item }: { item: MockAttentionItem }) => (
     <div data-testid="attention-row">
       <span>{item.description}</span>
       <button type="button" onClick={item.action.onClick}>
         {item.action.label}
       </button>
     </div>
+  ),
+  AttentionSignalRow: ({ signal }: { signal: MockSignal }) => (
+    <div data-testid="signal-row">{signal.primary}</div>
+  ),
+  ScheduleApprovalRow: ({ task }: { task: MockSchedule }) => (
+    <div data-testid="schedule-row">{task.displayName}</div>
   ),
 }));
 
@@ -94,6 +118,8 @@ afterEach(() => {
 
 beforeEach(() => {
   mockAttentionItems = [];
+  mockSchedules = [];
+  mockErrors = [];
   mockAttentionLoading = false;
   mockActivity = { groups: [], isLoading: false };
   mockPathname = '/team';
@@ -129,6 +155,22 @@ describe('PulsePanel', () => {
 
     expect(screen.getAllByTestId('attention-row')).toHaveLength(5);
     expect(screen.getByRole('button', { name: 'View all →' })).toBeInTheDocument();
+  });
+
+  it('spends the cap on what is blocking before what merely happened', () => {
+    // Five rows is all a teaser gets, and a parked schedule and a wedged
+    // session are the two a person can act on. Seeded defect: concatenate the
+    // three lists the other way round and the schedule falls off the end.
+    mockSchedules = [{ id: 'task-1', displayName: 'Nightly sweep' }];
+    mockErrors = [{ id: 'error:ses-1', primary: 'tangerines' }];
+    mockAttentionItems = makeAttention(8);
+
+    render(<PulsePanel />);
+
+    expect(screen.getByTestId('schedule-row')).toHaveTextContent('Nightly sweep');
+    expect(screen.getByTestId('signal-row')).toHaveTextContent('tangerines');
+    // Two of the five went to the blocking rows, so three activity rows remain.
+    expect(screen.getAllByTestId('attention-row')).toHaveLength(3);
   });
 
   it('caps the activity teaser at 5 rows and shows the overflow link', () => {

@@ -54,7 +54,7 @@ describe('usePulseFreshness', () => {
 
     expect([...handlers.keys()].sort()).toEqual([...PULSE_FRESHNESS_EVENTS].sort());
     // Session lifecycle and unrelated broadcasts are deliberately NOT subscribed
-    // (attention's stalled sessions ride the list stream; tunnel/commands have
+    // (attention's stopped sessions ride the list stream; tunnel/commands have
     // their own hooks).
     expect(handlers.has('session_upserted')).toBe(false);
     expect(handlers.has('session_removed')).toBe(false);

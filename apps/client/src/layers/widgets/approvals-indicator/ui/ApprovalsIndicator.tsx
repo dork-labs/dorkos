@@ -14,9 +14,11 @@ import {
   useAskAgentNames,
   usePendingApprovals,
   usePendingInteractions,
+  usePendingScheduleApprovals,
   useSettlingAsks,
 } from '@/layers/entities/attention';
 import { AskList, useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
+import { ScheduleApprovalRow } from '@/layers/features/dashboard-attention';
 import {
   ApprovalList,
   ApprovalsUnavailable,
@@ -31,6 +33,11 @@ import {
  */
 const DISPLAY_CAP = 9;
 
+/** The stagger the schedule rows inherit — the row declares the child half. */
+const staggerContainer = {
+  animate: { transition: { staggerChildren: 0.04 } },
+} as const;
+
 /**
  * The pill's accessible name.
  *
@@ -42,7 +49,8 @@ const DISPLAY_CAP = 9;
  * — and a question is not a permission request. When the queue is only prompts
  * the sentence says so; when it is mixed it names the neutral thing both are.
  *
- * @param approvals - Capability approvals waiting on a decision.
+ * @param approvals - Capability approvals and parked schedules, both of which
+ * are requests needing approval and read as one in this sentence.
  * @param asks - Prompts agents are parked on.
  */
 function waitingLabel(approvals: number, asks: number): string {
@@ -63,7 +71,7 @@ function waitingLabel(approvals: number, asks: number): string {
 /**
  * The one-line summary inside the panel, under the same rule.
  *
- * @param approvals - Capability approvals waiting on a decision.
+ * @param approvals - Capability approvals and parked schedules together.
  * @param asks - Prompts agents are parked on.
  */
 function waitingSummary(approvals: number, asks: number): string {
@@ -125,6 +133,15 @@ function trustedLabel(count: number): string {
  * status line's connection item is the signal for an outage and a second amber
  * marker would only dilute what this one means.
  *
+ * ## It carries parked schedules too
+ *
+ * An agent that proposes a scheduled run cannot arm it; the schedule parks
+ * until a person decides. That is the same shape as everything else here —
+ * something stopped, waiting on you — so it is counted by the same number and
+ * answered in the same panel, with Approve and Reject on the row. Before this
+ * it had no marker anywhere: the only way to find one was to wander into the
+ * Tasks page.
+ *
  * ## It also carries standing permissions, quietly
  *
  * A permission a person cannot find is a dark pattern, so live trust shows here
@@ -145,6 +162,11 @@ export function ApprovalsIndicator() {
   // The other half of "waiting on you": the prompts agents are parked on. Both
   // are counted by the one pill, because a person does not hold two queues.
   const { interactions: asks } = usePendingInteractions();
+  // And the third: a schedule an agent proposed and parked. It never arms
+  // itself (DOR-504), so until somebody says yes or no it is a request sitting
+  // in exactly the same queue as the other two — and before this it appeared
+  // nowhere at all outside the Tasks page.
+  const { schedules } = usePendingScheduleApprovals();
   // Answered prompts, still on screen saying how they ended. They are NOT
   // counted — nothing is waiting on them — but the pill has to stay mounted
   // while one is being said, or the receipt is torn away in the frame it
@@ -181,7 +203,11 @@ export function ApprovalsIndicator() {
     setOpen(true);
   }
 
-  const count = approvals.length + asks.length;
+  // A parked schedule counts as an approval, both in the number and in the
+  // sentence: "3 requests need your approval" is true of two capability holds
+  // and one proposed schedule, and it is what the panel below then shows.
+  const approvalCount = approvals.length + schedules.length;
+  const count = approvalCount + asks.length;
   const trustedCount = permissions.length;
   // A failed read while the whole link is down is not news about approvals — it is
   // the same outage the connection item already reports. Staying quiet keeps one
@@ -205,7 +231,7 @@ export function ApprovalsIndicator() {
       ? 'DorkOS could not check which standing permissions are live. Open for details.'
       : trustedOnly
         ? trustedLabel(trustedCount)
-        : waitingLabel(approvals.length, asks.length);
+        : waitingLabel(approvalCount, asks.length);
 
   return (
     <>
@@ -317,7 +343,7 @@ export function ApprovalsIndicator() {
                   </h2>
                   {!unreadable && (
                     <p className="text-muted-foreground text-xs md:mt-1">
-                      {waitingSummary(approvals.length, asks.length)}
+                      {waitingSummary(approvalCount, asks.length)}
                     </p>
                   )}
                 </div>
@@ -345,6 +371,43 @@ export function ApprovalsIndicator() {
                 />
               )}
               {approvals.length > 0 && <ApprovalList approvals={approvals} />}
+
+              {/* Parked schedules, last of the three waiting groups: nothing is
+                  on a clock here — a proposal keeps until it is decided, while a
+                  prompt expires in ten minutes and a capability hold in two
+                  hours — so it goes under the two that do. Compact rows rather
+                  than cards, because the whole decision is a name, a when, and
+                  two buttons. */}
+              {schedules.length > 0 && (
+                <div>
+                  <h2 className="text-status-warning-fg hidden text-xs font-medium tracking-widest uppercase md:block">
+                    Scheduled Runs
+                  </h2>
+                  <p className="text-muted-foreground text-xs md:mt-1">
+                    An agent wants to run something on a timer. Nothing runs until you approve it.
+                  </p>
+                  {/* The rows declare entrance `variants` but no `animate` of
+                      their own, so the parent must carry the label or they
+                      render stuck at their initial (invisible) variant — the
+                      same contract the home header and Pulse honour. */}
+                  <motion.div
+                    variants={staggerContainer}
+                    initial="initial"
+                    animate="animate"
+                    className="mt-2"
+                  >
+                    {/* Answered in place, with no `onDecided` closing the
+                        panel: an approval card allowed here retires where it
+                        stands and the panel shrinks around it, and a schedule
+                        that instead shut the whole panel would be one surface
+                        behaving two ways. Deciding the last one empties the
+                        queue, which unmounts the pill on its own terms. */}
+                    {schedules.map((task) => (
+                      <ScheduleApprovalRow key={task.id} task={task} />
+                    ))}
+                  </motion.div>
+                </div>
+              )}
 
               {/* A permission list that cannot be read is NOT the same as no
                   permissions, and the difference is an agent still acting without

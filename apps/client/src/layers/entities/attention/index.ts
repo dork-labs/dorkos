@@ -12,16 +12,20 @@
  * `deepLink`), never an icon, a colour or a relative time.
  *
  * The barrel is deliberately narrow — values with a caller, and nothing else.
- * `deriveAttentionSignals`, its input shape and the signal type itself are how
- * the hook is built rather than what a consumer needs: the two callers read
- * `useAttentionSignals()`'s return type through inference, and the slice's own
- * tests import the pieces they exercise by path. An export with no importer is
- * a promise nobody asked for.
+ * `deriveAttentionSignals` and its input shape are how the hook is built rather
+ * than what a consumer needs, and the slice's own tests import the pieces they
+ * exercise by path. An export with no importer is a promise nobody asked for.
  *
  * @module entities/attention
  */
 export { dismissIdleNudge, useIdleNudgeStore } from './model/idle-nudge-store';
-export { useAttentionSignals } from './model/use-attention-signals';
+export { useAttentionSignals, useAttentionSignalsLoading } from './model/use-attention-signals';
+// The signal shape, which two layers now name in their own types:
+// `features/dashboard-attention` picks the `error` kind out of the list and
+// draws it, and `widgets/home` declares that subset as a prop. Both need the
+// noun; neither needs the union of kinds, so that stays unexported.
+export type { AttentionSignal } from './model/attention-signal';
+export { usePendingScheduleApprovals } from './model/use-pending-schedule-approvals';
 export { usePendingApprovals, PENDING_APPROVALS_QUERY_KEY } from './model/use-pending-approvals';
 export {
   usePendingInteractions,

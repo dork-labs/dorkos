@@ -168,6 +168,7 @@ vi.mock('@/layers/entities/attention', () => ({
     isError: mockApprovalsError,
     retry: vi.fn(),
   }),
+  usePendingScheduleApprovals: () => ({ schedules: [], isLoading: false }),
 }));
 vi.mock('@/layers/features/approvals', () => ({
   ApprovalList: ({ approvals }: { approvals: Array<{ approvalId: string }> }) => (

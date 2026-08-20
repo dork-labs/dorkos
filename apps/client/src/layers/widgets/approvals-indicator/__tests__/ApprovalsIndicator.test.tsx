@@ -12,7 +12,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import type { ConnectionState } from '@dorkos/shared/types';
+import type { ConnectionState, Task } from '@dorkos/shared/types';
 import type { PendingApproval, StandingPermission } from '@dorkos/shared/approval-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 
@@ -71,6 +71,28 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     hasAgentPath: true,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90 * 60_000).toISOString(),
+    ...overrides,
+  };
+}
+
+/** Build a schedule an agent proposed and parked. */
+function parkedSchedule(overrides: Partial<Task> = {}): Task {
+  return {
+    id: 'task-1',
+    name: 'nightly-sweep',
+    displayName: 'Nightly sweep',
+    description: null,
+    prompt: 'Sweep the backlog.',
+    cron: '0 3 * * *',
+    timezone: 'UTC',
+    agentId: null,
+    enabled: false,
+    maxRuntime: null,
+    permissionMode: 'default',
+    status: 'pending_approval',
+    filePath: '/tmp/nightly-sweep/SKILL.md',
+    createdAt: new Date(Date.now() - 20 * 60_000).toISOString(),
+    updatedAt: new Date(Date.now() - 20 * 60_000).toISOString(),
     ...overrides,
   };
 }
@@ -496,5 +518,64 @@ describe('ApprovalsIndicator', () => {
     expect(screen.getByText('/projects/meeting-notes/standup.md')).toBeInTheDocument();
     // The tray is never the session, so it owes a way into it.
     expect(screen.getByRole('button', { name: 'Open session' })).toBeInTheDocument();
+  });
+
+  it('counts a schedule an agent parked, and answers it in the panel without closing it', async () => {
+    // The one event with no marker anywhere before this: an agent proposes a
+    // scheduled run, it parks because nothing arms itself, and the only way to
+    // find it was the Tasks page.
+    //
+    // Answering leaves the panel where it is, exactly as allowing an approval
+    // card does. Seeded defect: hand the row an `onDecided` that calls
+    // `setOpen(false)` and the second schedule's buttons are gone from under
+    // the cursor the moment the first is decided.
+    const updateTask = vi.fn().mockResolvedValue(parkedSchedule({ status: 'active' }));
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listTasks: vi
+        .fn()
+        .mockResolvedValue([
+          parkedSchedule(),
+          parkedSchedule({ id: 'task-2', displayName: 'Weekly digest' }),
+        ]),
+      updateTask,
+    });
+
+    const marker = await screen.findByTestId('approvals-indicator');
+    await waitFor(() => expect(marker).toHaveTextContent('2'));
+    expect(marker).toHaveAccessibleName(/2 requests need your approval/i);
+
+    await userEvent.click(marker);
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+    // Still open, and the schedule that was NOT decided is still answerable.
+    expect(screen.getByRole('button', { name: 'Approve Weekly digest' })).toBeInTheDocument();
+  });
+
+  it('adds the parked schedule to the approvals already waiting', async () => {
+    // The discriminating half: one capability approval plus one parked
+    // schedule is two, not one. A count that forgot the schedules would still
+    // read "1" here.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      listTasks: vi.fn().mockResolvedValue([parkedSchedule()]),
+    });
+
+    const marker = await screen.findByTestId('approvals-indicator');
+    await waitFor(() => expect(marker).toHaveTextContent('2'));
+    expect(marker).toHaveAccessibleName(/2 requests need your approval/i);
+  });
+
+  it('says nothing at all about a schedule that is already running', async () => {
+    // An armed schedule is not waiting on anybody, and a pill that appeared for
+    // one would be permanent decoration on every cockpit with a cron in it.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listTasks: vi.fn().mockResolvedValue([parkedSchedule({ status: 'active', enabled: true })]),
+    });
+
+    await screen.findByText(/cfg:loaded/);
+    expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument();
   });
 });

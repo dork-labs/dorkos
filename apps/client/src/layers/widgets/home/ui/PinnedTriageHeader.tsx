@@ -8,7 +8,7 @@ import {
   useSettlingAsks,
 } from '@/layers/entities/attention';
 import {
-  useAttentionItems,
+  useAttentionRows,
   DeadLetterDetailSheet,
   FailedRunDetailSheet,
   OfflineAgentDetailSheet,
@@ -50,12 +50,14 @@ export interface PinnedTriageHeaderProps {
 /**
  * The pinned triage header, wired to the cockpit.
  *
- * Composes the two feature slices that earned a place above the feed rather
- * than reimplementing either: approvals keep their own live queue
+ * Composes the slices that earned a place above the feed rather than
+ * reimplementing any of them: approvals keep their own live queue
  * (`usePendingApprovals`, kept in step by the global approval events) and their
  * own cards, so a decision answered here is the same decision answered in the
- * app header; attention keeps its own heuristics (`useAttentionItems`) and its
- * own rows.
+ * app header; what needs attention comes from `entities/attention` — the one
+ * engine, shared with the sidebar's Heads up zone — through
+ * `useAttentionRows`, which also carries the parked schedules and the
+ * after-the-fact activity rows.
  *
  * Answers happen in place. Allowing or refusing an approval retires its card
  * where it stands and the header shrinks around it — nothing navigates, and the
@@ -85,7 +87,7 @@ export function PinnedTriageHeader({
   const { interactions } = usePendingInteractions();
   const settlingAsks = useSettlingAsks();
   const askAgentNames = useAskAgentNames(interactions);
-  const { items } = useAttentionItems();
+  const { schedules, errors, activity } = useAttentionRows();
   const search = useSearch({ strict: false }) as Partial<HomeSearch>;
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -108,7 +110,9 @@ export function PinnedTriageHeader({
         // stale cards still on screen are better evidence than an error card.
         approvalsUnavailable={isError && approvals.length === 0}
         onRetryApprovals={retry}
-        attentionItems={items}
+        scheduleApprovals={schedules}
+        errorSignals={errors}
+        activityItems={activity}
         presence={presence}
         condensed={isMobile && composerFocused === true}
         onExpand={onExpand}

@@ -3,16 +3,16 @@
  * after it became the #team room (team-room-home spec D3.2/D3.5).
  *
  * Two of these params predate the room and one arrived with it, and all three
- * are addresses somebody may already be holding: an attention row's deep link
- * is pasted into chat, and a thread opened on Home is refreshed or shared.
+ * are addresses somebody may already be holding: a Recent-Activity row's deep
+ * link is pasted into chat, and a thread opened on Home is refreshed or shared.
  */
 import { describe, it, expect } from 'vitest';
 import { homeSearchSchema } from '../router';
 
 describe('the home route search schema', () => {
   it('keeps the attention deep links working', () => {
-    // Exactly what `useAttentionItems` navigates to, and what a pasted link
-    // carries. The pinned triage header opens the sheet off these two.
+    // Exactly what `useRecentActivityItems` navigates to, and what a pasted
+    // link carries. The pinned triage header opens the sheet off these two.
     expect(homeSearchSchema.parse({ detail: 'failed-run', itemId: 'run-9' })).toMatchObject({
       detail: 'failed-run',
       itemId: 'run-9',
