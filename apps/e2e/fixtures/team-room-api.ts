@@ -412,6 +412,25 @@ export class TeamRoomApi {
   }
 
   /**
+   * Mark every Inbox notification read, on this shared server.
+   *
+   * A fixture reset, not a product action under test. This file runs its specs
+   * SERIAL against one long-lived server (the class doc explains why #team
+   * cannot be reseeded per test), so a turn an earlier spec drove for real —
+   * "typing here reaches your default agent", for one — earns a genuine,
+   * correct `report.daily` Inbox row the moment the day's Shift Report
+   * composer next runs. That row is real activity, not a bug, and a later spec
+   * asserting a genuinely quiet header has to start from an operator who has
+   * already seen it, exactly as they would have on a real morning with more
+   * than one thing to glance at. `POST /api/notifications/read-all` is the
+   * same route the bell's "Mark all read" button calls.
+   */
+  async markAllNotificationsRead(): Promise<void> {
+    const res = await this.request.post('/api/notifications/read-all');
+    if (!res.ok()) throw new Error(`Could not mark notifications read: ${await res.text()}`);
+  }
+
+  /**
    * The display names of every #team member set to answer EVERYTHING (`always`).
    *
    * A precondition, not an assertion target. "Typing here reaches your default

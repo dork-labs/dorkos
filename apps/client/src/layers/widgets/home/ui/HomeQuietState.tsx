@@ -6,6 +6,7 @@ import { useAttentionRows } from '@/layers/features/dashboard-attention';
 import { QuietSuggestion } from '@/layers/features/feature-promos';
 import { useNow } from '@/layers/shared/model';
 import { useFrozenRoomCursor } from '../model/use-frozen-room-cursor';
+import { useShiftReport } from '../model/use-shift-report';
 import { forwardLookSentence, nextScheduledRun } from '../lib/forward-look';
 import { QuietStateLine } from './QuietStateLine';
 
@@ -47,9 +48,11 @@ export interface HomeQuietStateProps {
  *   the gate that makes the whole state honest. Without it "All quiet." sits
  *   over a conversation seconds old and stays there, which is worse than saying
  *   nothing: it is the room asserting something the feed underneath disproves.
- * - **Something waiting or something wrong** is the header's line, and it is
- *   already on screen saying it. Two statements about the same morning, three
- *   lines apart, is one too many.
+ * - **Something waiting, something wrong, or something to report** is the
+ *   header's line, and it is already on screen saying it — the Shift Report
+ *   card included, once a day. Two statements about the same morning, three
+ *   lines apart, is one too many, and "All quiet." directly under a card
+ *   listing what happened overnight is the sharpest version of that.
  * - **Somebody working** is not quiet.
  *
  * **Recency is measured against a FROZEN cursor** ({@link useFrozenRoomCursor}),
@@ -68,11 +71,11 @@ export interface HomeQuietStateProps {
  * one is a fresh arrival on a fresh page. The fade in {@link QuietStateLine}
  * therefore plays exactly once, on the mount it belongs to.
  *
- * **The reads are the header's own reads.** `usePendingApprovals` and
- * `useAttentionRows` are the same cached queries the header holds, so asking
- * them here costs no request — and asking them, rather than being told, is what
- * keeps this component's rule in one place instead of split across a prop the
- * host would have to compute.
+ * **The reads are the header's own reads.** `usePendingApprovals`,
+ * `useAttentionRows`, and `useShiftReport` are the same cached queries the
+ * header holds, so asking them here costs no request — and asking them,
+ * rather than being told, is what keeps this component's rule in one place
+ * instead of split across a prop the host would have to compute.
  *
  * **DorkBot's one suggestion rides inside this state** (spec D5.3), on a second
  * line under the first, which is how it inherits every gate above without
@@ -89,6 +92,7 @@ export function HomeQuietState({ roomId, presenceOccupied }: HomeQuietStateProps
   const frozenSeq = useFrozenRoomCursor(roomId);
   const { approvals, isError: approvalsUnavailable } = usePendingApprovals();
   const { total: headerRows } = useAttentionRows();
+  const shiftReport = useShiftReport();
 
   const hasHistory = entries !== undefined && entries.length > 0;
   // `null` is "cannot say", and cannot say is not caught up. Compared on `seq`
@@ -98,7 +102,11 @@ export function HomeQuietState({ roomId, presenceOccupied }: HomeQuietStateProps
   const caughtUp =
     frozenSeq !== null && entries !== undefined && entries.every((entry) => entry.seq <= frozenSeq);
   const headerSpeaks =
-    approvals.length > 0 || approvalsUnavailable || headerRows > 0 || presenceOccupied;
+    approvals.length > 0 ||
+    approvalsUnavailable ||
+    headerRows > 0 ||
+    shiftReport !== undefined ||
+    presenceOccupied;
   const quiet = hasHistory && caughtUp && !headerSpeaks;
 
   const [phase, setPhase] = useState<QuietPhase>('waiting');

@@ -180,9 +180,13 @@ export interface NotificationPayloads {
   };
   /** The daily digest. */
   'report.daily': {
-    /** The day it covers, `YYYY-MM-DD`. */
+    /** The day it covers, `YYYY-MM-DD` (the boundary's own date — see
+     * `shift-report.ts`). Also what makes two of these the same day. */
     date: string;
-    /** The digest itself, already written for a person. */
+    /** The headline, already written for a person, e.g. "While you were
+     * away: 3 runs finished, 1 needs a look". */
+    title: string;
+    /** The full rundown, already written for a person. */
     summary: string;
   };
 }
@@ -292,6 +296,21 @@ export const DEFAULT_DEDUPE_WINDOW_MS = 5 * 60 * 1000;
 
 /** How long an unreachable agent stays quiet before it is worth saying again. */
 const UNREACHABLE_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * How long a day's Shift Report stays deduped once raised.
+ *
+ * A local day is exactly 24 hours (4am to 4am; see `shift-report.ts`), and
+ * this window has to OUTLAST the whole of it — not trim to it — so a restart
+ * late in the day still finds today's row via `findRecent`, however early in
+ * the day it was first raised. An hour past the day's own length is the
+ * margin: 24h flush against the day length leaves zero room for a report
+ * raised right at the boundary, where a restart minutes later could miss the
+ * window and insert a duplicate. The date key already scopes the dedupe to
+ * ONE calendar day on its own, so a wider window here can never suppress the
+ * NEXT day's report, which carries a different key regardless.
+ */
+const REPORT_DAILY_DEDUPE_WINDOW_MS = 25 * 60 * 60 * 1000;
 
 /** Longest slice of an agent's note that is used to tell two notes apart. */
 const NOTE_DEDUPE_PREFIX = 120;
@@ -518,15 +537,24 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   'report.daily': {
-    // Reserved: emitter lands in W4 (spec task T12, the daily Shift Report card).
+    // The one kind whose title AND body are already fully written when they
+    // arrive — `shift-report.ts` composes both from the day's actual counts,
+    // and re-deriving a headline here from a payload that only carries the
+    // prose would be a second author for the same sentence.
     kind: 'report.daily',
     tier: 'quiet',
     storage: 'event',
     subjectType: 'system',
     locate: (p) => ({ subjectId: p.date }),
-    title: () => 'Your day, in short',
+    title: (p) => p.title,
     body: (p) => p.summary,
     dedupeKey: (p) => `report-daily:${p.date}`,
+    // Held open for most of a day: the dedupe key already scopes to ONE
+    // calendar day, so a wide window here only guards against the composer
+    // being asked twice for the SAME day (a restart mid-day re-checking) —
+    // it can never suppress the next day's report, which carries a different
+    // key. See `REPORT_DAILY_DEDUPE_WINDOW_MS`.
+    dedupeWindowMs: REPORT_DAILY_DEDUPE_WINDOW_MS,
     relay: 'never',
   },
 };
@@ -558,11 +586,15 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * that are real, so the gap is a listed fact rather than something a reader has
  * to discover by grepping for call sites.
  *
- * Absent, with its wave noted at the entry: `report.daily` (W4 task T12).
+ * **Every kind is wired now.** `dm.received` and `mention.received` in
+ * `services/rooms/room-service.ts` (W4 task T11, DOR-1388); `report.daily` via
+ * `emitters/shift-report.ts` (W4 task T12, DOR-1389).
  *
- * The three STANDING kinds are listed here on their resolution edge, which is
- * the only edge that writes a row. Their raise edge starts an escalation clock
- * instead of storing anything (DOR-1387) — see `escalation-service.ts`.
+ * The three STANDING kinds are listed here on their RESOLUTION edge, which is
+ * the only edge that writes a row. Their raise edge is wired too — it starts an
+ * escalation clock instead of storing anything (W3 task T10, DOR-1387), so a
+ * blocking condition nobody answers reaches a phone. See
+ * `escalation-service.ts`.
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',
@@ -576,6 +608,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'dead-letter.created',
   'agent.unreachable',
   'update.installed',
+  'report.daily',
 ];
 
 /**

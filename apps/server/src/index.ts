@@ -74,6 +74,7 @@ import { watchAskResolution } from './services/notifications/emitters/ask-resolu
 import { notifyRunCompleted } from './services/notifications/emitters/run-completed.js';
 import { agentLivenessObserver } from './services/notifications/emitters/agent-liveness.js';
 import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
+import { watchShiftReport } from './services/notifications/emitters/shift-report.js';
 import type { NotifyDmDeps } from './services/relay/notify-dm.js';
 import type { RelayChannelDeps } from './services/notifications/channels/relay.js';
 import { broadcastRunTerminal } from './services/tasks/run-terminal-broadcaster.js';
@@ -664,6 +665,8 @@ async function start() {
   watchAskResolution();
   // Nothing tells the server it was updated, so it compares versions on boot.
   void announceInstalledVersion(dorkHome);
+  // "While you were away" — composed once the day's first activity arrives.
+  watchShiftReport(notificationStore);
 
   // Sweep crash-left marketplace install backups (`<target>.dorkos-bak-<ts>-<uuid>`,
   // see transaction.ts + ADR-0304). A hard crash mid-install can leave one of

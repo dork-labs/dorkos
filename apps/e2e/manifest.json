@@ -545,11 +545,11 @@
       "specFile": "tests/home-surface/team-room.spec.ts",
       "feature": "home-surface",
       "description": "`/` opens the room: its masthead, its feed, its composer, typing here reaches your default agent, and nobody else piles on, naming an agent stands the default agent down, nothing waiting draws nothing — no empty box, no border, an approval can be answered from home, and the card resolves where it stands, an attention deep link still opens its sheet on /, somebody working elsewhere shows up, and clicking follows them, home offers to bring it back, and does not do it behind your back",
-      "lastRun": "2026-08-09T00:06:19.907Z",
+      "lastRun": "2026-08-20T13:57:21.295Z",
       "lastStatus": "passed",
-      "runCount": 7,
-      "passCount": 2,
-      "failCount": 5,
+      "runCount": 9,
+      "passCount": 3,
+      "failCount": 6,
       "relatedCode": [],
       "lastModified": ""
     },
@@ -1018,24 +1018,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-07T02-11-50",
-      "timestamp": "2026-08-07T02:11:50.634Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 50779
-    },
-    {
-      "id": "2026-08-07T02-12-24",
-      "timestamp": "2026-08-07T02:12:24.182Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 21139
-    },
     {
       "id": "2026-08-07T02-12-57",
       "timestamp": "2026-08-07T02:12:57.019Z",
@@ -1917,6 +1899,24 @@
       "failed": 0,
       "skipped": 0,
       "duration": 25654
+    },
+    {
+      "id": "2026-08-20T13-53-08",
+      "timestamp": "2026-08-20T13:53:08.349Z",
+      "total": 11,
+      "passed": 5,
+      "failed": 1,
+      "skipped": 5,
+      "duration": 112820
+    },
+    {
+      "id": "2026-08-20T13-57-21",
+      "timestamp": "2026-08-20T13:57:21.295Z",
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 40760
     }
   ]
 }

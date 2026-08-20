@@ -14,7 +14,9 @@ import {
   OfflineAgentDetailSheet,
 } from '@/layers/features/dashboard-attention';
 import { useOpenNotification } from '@/layers/features/inbox';
+import { useMarkRead } from '@/layers/entities/notifications';
 import type { HomeSearch } from '@/router';
+import { useShiftReport } from '../model/use-shift-report';
 import { PinnedTriageHeaderView, type TriagePresenceSlot } from './PinnedTriageHeaderView';
 
 export interface PinnedTriageHeaderProps {
@@ -58,7 +60,10 @@ export interface PinnedTriageHeaderProps {
  * app header; what needs attention comes from `entities/attention` — the one
  * engine, shared with the sidebar's Heads up zone — through
  * `useAttentionRows`, which also carries the parked schedules and the
- * after-the-fact activity rows.
+ * after-the-fact activity rows. The Shift Report card reads its own lens the
+ * same way (`useShiftReport`), and dismissing it is a plain
+ * `useMarkRead` — the card is just another Inbox row that happens to render
+ * differently.
  *
  * Answers happen in place. Allowing or refusing an approval retires its card
  * where it stands and the header shrinks around it — nothing navigates, and the
@@ -90,6 +95,8 @@ export function PinnedTriageHeader({
   const askAgentNames = useAskAgentNames(interactions);
   const { schedules, errors, activity } = useAttentionRows();
   const openActivity = useOpenNotification();
+  const shiftReport = useShiftReport();
+  const { mutate: markRead } = useMarkRead();
   const search = useSearch({ strict: false }) as Partial<HomeSearch>;
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -116,6 +123,11 @@ export function PinnedTriageHeader({
         errorSignals={errors}
         activityItems={activity}
         onOpenActivity={openActivity}
+        shiftReport={
+          shiftReport === undefined
+            ? undefined
+            : { notification: shiftReport, onDismiss: () => markRead(shiftReport.id) }
+        }
         presence={presence}
         condensed={isMobile && composerFocused === true}
         onExpand={onExpand}

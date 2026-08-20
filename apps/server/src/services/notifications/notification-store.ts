@@ -15,6 +15,7 @@ import {
   desc,
   eq,
   gt,
+  gte,
   isNull,
   lt,
   inArray,
@@ -90,6 +91,18 @@ export interface NotificationInsert {
   resolvedAt?: string;
   /** How it ended. Set exactly when {@link resolvedAt} is. */
   outcome?: NotificationOutcome;
+}
+
+/**
+ * One (kind, tier, outcome) group and how many notifications matched it —
+ * what {@link NotificationStore.countActivitySince} answers with.
+ */
+export interface NotificationActivityCount {
+  kind: NotificationKind;
+  tier: NotificationTier;
+  /** `null` for an Activity kind, which never carries one. */
+  outcome: NotificationOutcome | null;
+  count: number;
 }
 
 /** One ledger entry: a notification handed to one channel. */
@@ -345,6 +358,39 @@ export class NotificationStore {
       notifications: page.map((row) => this.toDto(row)),
       nextCursor: hasMore && page.length > 0 ? page[page.length - 1].id : null,
     };
+  }
+
+  /**
+   * How many notifications of each (kind, tier, outcome) were raised at or
+   * after `since` — the one read the daily Shift Report composes from.
+   *
+   * Grouped rather than pre-summed into report fields: this store does not
+   * know that a `quiet` `run.completed` row means a run succeeded, only that
+   * the table can answer "how many, split which ways" cheaply. What each
+   * split MEANS is `shift-report.ts`'s business, next to the registry
+   * knowledge it already leans on — a second place mapping tier/outcome to
+   * meaning would be a second place it could drift from the registry.
+   *
+   * @param since - The instant to count from (inclusive), ISO 8601.
+   */
+  countActivitySince(since: string): NotificationActivityCount[] {
+    return this.db
+      .select({
+        kind: notifications.kind,
+        tier: notifications.tier,
+        outcome: notifications.outcome,
+        count: count(),
+      })
+      .from(notifications)
+      .where(gte(notifications.createdAt, since))
+      .groupBy(notifications.kind, notifications.tier, notifications.outcome)
+      .all()
+      .map((row) => ({
+        kind: row.kind as NotificationKind,
+        tier: row.tier as NotificationTier,
+        outcome: row.outcome as NotificationOutcome | null,
+        count: row.count,
+      }));
   }
 
   /** How many stored notifications are unread. What the bell draws. */
