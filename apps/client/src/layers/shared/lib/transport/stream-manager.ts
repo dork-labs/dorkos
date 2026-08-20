@@ -271,6 +271,15 @@ export const GENERIC_EVENTS = [
   // removes the ones it stopped watching, so without this a sidebar keeps
   // showing the union of the old and new account sets until a reload.
   'session_list_invalidated',
+  // The Inbox (spec `notification-system`). One upsert event carrying a whole
+  // notification, and one saying which ones were marked read so a badge cleared
+  // on the laptop clears on the phone. Both are ADDRESSED: they carry what an
+  // agent is doing and what is waiting on a person, so an agent principal
+  // receives neither.
+  // (No apostrophes here, for the reason the rooms block above gives: the guard
+  // test parses this block with a single-quote regex.)
+  'notification',
+  'notification_read',
 ] as const;
 
 /** A member of {@link GENERIC_EVENTS}. */

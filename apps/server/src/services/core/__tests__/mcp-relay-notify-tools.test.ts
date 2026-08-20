@@ -623,12 +623,16 @@ describe('relay_notify_user', () => {
       expect(budget.tryReserve('agent-1')).toBe(true);
     });
 
-    it('charges nothing for a note the DM could not deliver', async () => {
-      // The stock-install failure: the mesh cannot place the sending agent, so
-      // `deliverNotifyDm` refuses and nobody is written to. Charging for those
-      // would spend the whole hour on notes that reached no one and then report
-      // it back as "you have been too chatty" — the honest diagnosis replaced by
-      // a wrong one.
+    it('charges the hour for a note that reached nobody at all (DOR-1383)', async () => {
+      // This REVERSED with DOR-1383, and the reason is the hole the refund left
+      // once notes started leaving inbox rows behind. On a stock install nothing
+      // external resolves and the mesh cannot always place the sender, so every
+      // note took the refunded path — which meant the ceiling could never be
+      // reached, and an agent in a loop could write unbounded rows into a
+      // person's inbox while never appearing to have said anything.
+      //
+      // What the allowance bounds is how often an agent may INTERRUPT somebody,
+      // not how often it succeeds at it.
       const notifyDm = makeMockNotifyDm({
         mesh: {
           getProjectPath: vi.fn().mockReturnValue(undefined),
@@ -647,13 +651,15 @@ describe('relay_notify_user', () => {
 
       for (const message of ['one', 'two', 'three']) {
         const result = await handler({ message });
-        // The old non-delivery, unchanged — never the rate-limit sentence.
+        // The non-delivery answer is unchanged for as long as there is allowance.
         expect(JSON.parse(result.content[0].text).code).toBe('NO_BINDING');
       }
 
-      // Nothing landed, so nothing was spent: the full allowance is intact for
-      // the moment the mesh can place this agent again.
-      expect([1, 2, 3].map(() => budget.tryReserve('agent-1'))).toEqual([true, true, true]);
+      // The fourth is refused as rate-limited rather than answered NO_BINDING
+      // again, which is what makes the ceiling a real bound on row creation.
+      const spent = await handler({ message: 'four' });
+      expect(JSON.parse(spent.content[0].text).code).toBe('NOTIFY_RATE_LIMITED');
+      expect(budget.tryReserve('agent-1')).toBe(false);
     });
 
     it('is one allowance per install, not one per session', async () => {
@@ -815,6 +821,8 @@ describe('relay_notify_user', () => {
           getSubjectByPath: vi
             .fn()
             .mockReturnValue({ subject: 'relay.agent.ns.agent-1', agentId: 'agent-1' }),
+          // Read for the inbox row's "who is talking" line (DOR-1383).
+          get: vi.fn().mockReturnValue({ name: 'ana', displayName: 'Ana' }),
         } as unknown as McpToolDeps['meshCore'],
       });
       const identity = resolveSenderIdentity(deps, '/agents/ana');
@@ -893,7 +901,7 @@ describe('relay_notify_user', () => {
   // A bridged binding vacates sessionMap (chats-as-channels spec §7.2), so
   // this tool must resolve through a live bridge row too, and publish under
   // the bridge delivery principal rather than the caller's own agent
-  // identity (DOR-876, spec §7.5) — matching TaskCompletionNotifier's other
+  // identity (DOR-876, spec §7.5) — matching the run-completion path's other
   // proactive path so both honor identical binding/consent rules.
   describe('bridged bindings (§7.5)', () => {
     it('resolves and publishes under relay.bridge.initiate.* when the chat is bridged', async () => {

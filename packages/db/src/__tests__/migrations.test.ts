@@ -140,12 +140,22 @@ describe('Database Migrations', () => {
       'messages_fts_data',
       'messages_fts_docsize',
       'messages_fts_idx',
+      // The Inbox and its per-channel delivery ledger. Activity notifications
+      // are rows here; standing "needs you" conditions stay derived and write
+      // one row only when they RESOLVE, carrying the outcome
+      // (ADR 260819-234828, migration 0068).
+      'notification_deliveries',
+      'notifications',
       // Durable DorkOS-id <-> OpenCode-session-id bindings so OpenCode
       // session ids survive a server restart (DOR-251, migration 0027).
       'opencode_sessions',
       'pulse_dispatch_log',
       'pulse_runs',
       'pulse_schedules',
+      // Browsers that asked to be pushed to when DorkOS is not open. Declared
+      // with the rest of the notification storage so the domain landed as one
+      // migration; its writer arrives with web push (migration 0068).
+      'push_subscriptions',
       // How far each PERSON has read in each thread — the one user-side
       // read-state store, keyed `(user_id, thread_kind, thread_id)`. The
       // agent-side cursor stays on `room_members.last_read_seq`

@@ -257,8 +257,9 @@ describe('resolveNotifyTarget', () => {
       expect(result.bindingId).toBe('b-1');
       // The caller's cue to publish under `relay.bridge.initiate.*` instead
       // of its own principal — the actual gate/principal assertion lives in
-      // the two callers' own test suites (task-completion-notifier,
-      // relay_notify_user), since `subject` alone never carries this.
+      // the two callers' own test suites (the notification pipeline's relay
+      // channel, and relay_notify_user), since `subject` alone never carries
+      // this.
       expect(result.bridged).toBe(true);
     });
 

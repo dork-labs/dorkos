@@ -477,6 +477,13 @@
       "when": 1786703278605,
       "tag": "0067_spooky_jazinda",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1787200020497,
+      "tag": "0068_acoustic_johnny_storm",
+      "breakpoints": true
     }
   ]
 }

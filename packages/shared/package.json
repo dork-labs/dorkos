@@ -13,6 +13,10 @@
       "types": "./src/approval-schemas.ts",
       "default": "./dist/approval-schemas.js"
     },
+    "./notification-schemas": {
+      "types": "./src/notification-schemas.ts",
+      "default": "./dist/notification-schemas.js"
+    },
     "./schemas": {
       "types": "./src/schemas.ts",
       "default": "./dist/schemas.js"

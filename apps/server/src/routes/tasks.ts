@@ -30,6 +30,9 @@ import { parseBody } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
+import { readCallerPrincipal } from '../lib/caller-principal.js';
+import { resolveStanding } from '../services/notifications/notification-service.js';
+import type { NotificationPayload } from '../services/notifications/notification-registry.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -155,6 +158,24 @@ function refusedOperatorOnlyTaskWrite(req: Request, res: Response, trusted: bool
  */
 function parksOnCreate(trusted: boolean): boolean {
   return !trusted;
+}
+
+/**
+ * Describe a parked schedule for its history row.
+ *
+ * `proposedBy` says "An agent" rather than naming one: a schedule parks because
+ * its creator did not clear the agent bar, and the row records the fact rather
+ * than an identity nothing on this path resolved.
+ *
+ * @param task - The schedule that was waiting.
+ */
+function scheduleParkPayload(task: Task): NotificationPayload<'schedule.parked'> {
+  return {
+    taskId: task.id,
+    taskName: task.displayName ?? task.name,
+    ...(task.agentId ? { agentId: task.agentId } : {}),
+    proposedBy: 'An agent',
+  };
 }
 
 /**
@@ -295,6 +316,11 @@ export function createTasksRouter(
     // after the fact — the same two-step `tasks_create` uses on the MCP servers.
     // It has to happen BEFORE the register below, or the task fires while it is
     // still waiting to be approved.
+    // W3 escalation (DOR-1387) arms its timer here — parked schedules have no
+    // observer seam, so the escalation hook lands at this write. Nothing is
+    // raised at this edge today: `schedule.parked` is a STANDING kind, which
+    // stores nothing while it stands (ADR 260819-234828), and its two
+    // resolutions are recorded where the operator decides them.
     if (parksOnCreate(trusted)) {
       store.updateTask(schedule.id, { status: 'pending_approval' });
       schedule = store.getTask(schedule.id)!;
@@ -398,13 +424,23 @@ export function createTasksRouter(
       });
     }
 
+    // A schedule leaving `pending_approval` for `active` IS the approval — there
+    // is no separate endpoint for it, so this transition is where the parked
+    // condition ends and its history row is written.
+    if (existing.status === 'pending_approval' && updated.status === 'active') {
+      void resolveStanding('schedule.parked', scheduleParkPayload(updated), {
+        outcome: 'approved',
+        actorPrincipal: readCallerPrincipal(req, res),
+      });
+    }
+
     broadcastTasksChanged();
 
     return res.json(updated);
   });
 
-  router.delete('/:id', async (_req, res) => {
-    const { id } = _req.params;
+  router.delete('/:id', async (req, res) => {
+    const { id } = req.params;
     const schedule = store.getTask(id);
     if (!schedule) {
       return res.status(404).json({ error: 'Task not found' });
@@ -435,6 +471,16 @@ export function createTasksRouter(
       resourceLabel: schedule.displayName ?? schedule.name,
       summary: `Deleted task ${schedule.displayName ?? schedule.name}`,
     });
+
+    // Rejecting a proposed schedule is deleting it — the cockpit's Reject button
+    // is this endpoint. Only a schedule that was actually waiting counts: a
+    // person tidying up a task they never had to approve is not a rejection.
+    if (schedule.status === 'pending_approval') {
+      void resolveStanding('schedule.parked', scheduleParkPayload(schedule), {
+        outcome: 'rejected',
+        actorPrincipal: readCallerPrincipal(req, res),
+      });
+    }
 
     broadcastTasksChanged();
 

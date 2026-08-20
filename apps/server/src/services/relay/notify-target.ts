@@ -4,10 +4,12 @@
  * Resolves the best bound integration an agent may INITIATE a message on: filter the
  * agent's non-paused bindings (optionally by channel), pick the most-recently
  * active chat session, enforce the `canInitiate` consent gate (DOR-239), and
- * build the `relay.human.*` publish subject. Both the `relay_notify_user` MCP
- * tool and the system-level {@link TaskCompletionNotifier} (DOR-240) resolve
- * through this one function so the two paths honor identical binding, session,
- * and consent rules.
+ * build the `relay.human.*` publish subject. Every proactive send resolves
+ * through this one function, so the `relay_notify_user` MCP tool and the
+ * system's own task-completion message honor identical binding, session and
+ * consent rules. Both now reach it through the notification pipeline's relay
+ * channel (`services/notifications/channels/relay.ts`, DOR-1383), which is the
+ * single implementation of the publish those two used to keep two copies of.
  *
  * A bridged binding (`bridge: 'room'`) vacates `sessionMap` (chats-as-channels
  * spec §7.2), so `pickMostRecentChat` also considers live bridge rows as
