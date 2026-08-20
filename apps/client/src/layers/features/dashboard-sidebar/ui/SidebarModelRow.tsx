@@ -14,6 +14,7 @@
  */
 import {
   Bot,
+  CalendarClock,
   CircleHelp,
   Clock,
   Hash,
@@ -23,13 +24,11 @@ import {
   Sparkles,
   TriangleAlert,
   Users,
-  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
-import { SidebarRow, type SidebarRowMenu } from '@/layers/shared/ui';
+import { SidebarRow } from '@/layers/shared/ui';
 import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
-import { dismissIdleNudge } from '@/layers/entities/attention';
 import { SessionVerbLine } from '@/layers/entities/session';
 import type { SidebarIconId, SidebarRowModel, SidebarTarget } from '../model/build-sidebar-model';
 import type { UngroupedSectionId } from '../model/use-sidebar-dnd';
@@ -75,7 +74,7 @@ const ICON: Record<SidebarIconId, LucideIcon> = {
   permission: ShieldQuestion,
   question: CircleHelp,
   error: TriangleAlert,
-  idle: Clock,
+  schedule: CalendarClock,
   overflow: MoreHorizontal,
   working: Sparkles,
   automated: Clock,
@@ -240,29 +239,11 @@ function GenericRowFromModel({
     agentPath ?? row.key
   );
   const Icon = row.glyph.kind === 'icon' ? ICON[row.glyph.icon] : null;
-  // The only menu a Heads up row ever has, and only the row that earns it: an idle
-  // nudge is the product being helpful, so it is the one thing in Heads up the
-  // operator may wave away (BC-10). Everything else clears by being resolved —
-  // there is no snooze anywhere in this zone (BC-42).
-  const signalId =
-    row.target.kind === 'attention' && row.attention?.dismissible === true
-      ? row.target.signalId
-      : null;
-  const menu: SidebarRowMenu =
-    signalId === null
-      ? {}
-      : {
-          menuNodes: [
-            {
-              kind: 'action',
-              id: 'dismiss',
-              label: 'Dismiss',
-              icon: X,
-              run: () => dismissIdleNudge(signalId),
-            },
-          ],
-          actionsLabel: `${row.primary} actions`,
-        };
+  // **No menu on a Heads up row, and there is no longer a row that could earn
+  // one.** The idle nudge was the single thing in this zone the operator could
+  // wave away (BC-10), and DOR-1391 retired the nudge; everything left here
+  // clears by being answered, allowed, refused or fixed. There is no dismiss and
+  // no snooze anywhere in Heads up (BC-42).
   const glyph =
     row.glyph.kind === 'agent-avatar' ? (
       <AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />
@@ -302,7 +283,6 @@ function GenericRowFromModel({
       {...(row.preview === undefined ? {} : { preview: row.preview })}
       onSelect={() => chrome.openTarget(row.target)}
       {...(drag ? { drag } : {})}
-      {...menu}
       trailing={
         row.unread.tier === 'directed' && row.unread.count !== undefined && !row.muted ? (
           <span

@@ -13,7 +13,6 @@ import { useEffect, useRef } from 'react';
 import {
   useAttentionSignals,
   useAttentionSignalsLoading,
-  usePendingScheduleApprovals,
   type AttentionSignal,
 } from '@/layers/entities/attention';
 
@@ -41,30 +40,36 @@ export interface BlockingItem {
 /**
  * Which attention kinds count as "blocked on a person".
  *
- * Two, and the two left out are left out deliberately. An idle nudge is a
- * heuristic, not a blockage. And `error` — a session that fell over — is not
- * waiting on an answer: nothing unblocks when you look at it, so a knock and an
- * OS banner would be noise that cannot be acted on. It is in the Inbox, which is
- * where news about something that already happened belongs. `use-browser-
- * notifications` states the same rule from the other side: `session.error` is
- * `blocking` on the wire and still reaches no banner, because neither source
- * carries it.
+ * Three, and the one left out is left out deliberately: `error` — a session
+ * that fell over — is not waiting on an answer. Nothing unblocks when you look
+ * at it, so a knock and an OS banner would be noise that cannot be acted on. It
+ * is in the Inbox, which is where news about something that already happened
+ * belongs. `use-browser-notifications` states the same rule from the other
+ * side: `session.error` is `blocking` on the wire and still reaches no banner,
+ * because neither source carries it.
+ *
+ * A fourth kind used to be excluded here — `idle-timeout` — and it is gone from
+ * the engine entirely (DOR-1391). Schedules moved the other way in the same
+ * change: they were fetched separately and merged into `current` below, and are
+ * now a signal like any other.
  */
 const BLOCKING_KINDS: ReadonlySet<AttentionSignal['kind']> = new Set([
   'permission-prompt',
   'question',
+  'schedule-approval',
 ]);
 
 /**
  * The fixed sentence for each blocking kind.
  *
  * A lookup rather than a function so it is obvious at a glance that no branch
- * can reach for the interaction's own words.
+ * can reach for the interaction's own words — or for the signal's `secondary`,
+ * which is where `describeInteraction`'s transcript-derived phrasing lives.
  */
-const BLOCKING_SUMMARIES: Record<'permission-prompt' | 'question' | 'schedule', string> = {
+const BLOCKING_SUMMARIES: Record<'permission-prompt' | 'question' | 'schedule-approval', string> = {
   'permission-prompt': 'Waiting for your OK before it goes on.',
   question: 'Has a question for you.',
-  schedule: 'Wants to run something on a timer.',
+  'schedule-approval': 'Wants to run something on a timer.',
 };
 
 /** What a caller is told about arrivals and departures. */
@@ -108,15 +113,12 @@ export interface BlockingArrivalHandlers {
  */
 export function useBlockingArrivals(handlers: BlockingArrivalHandlers): void {
   const signals = useAttentionSignals();
-  const signalsLoading = useAttentionSignalsLoading();
-  const { schedules, isLoading: schedulesLoading } = usePendingScheduleApprovals();
+  const loading = useAttentionSignalsLoading();
 
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
 
   const knownRef = useRef<Set<string> | null>(null);
-
-  const loading = signalsLoading || schedulesLoading;
 
   useEffect(() => {
     if (loading) return;
@@ -127,17 +129,9 @@ export function useBlockingArrivals(handlers: BlockingArrivalHandlers): void {
       current.set(signal.id, {
         id: signal.id,
         who: signal.primary,
-        summary: BLOCKING_SUMMARIES[signal.kind as 'permission-prompt' | 'question'],
+        summary:
+          BLOCKING_SUMMARIES[signal.kind as 'permission-prompt' | 'question' | 'schedule-approval'],
         deepLink: signal.deepLink,
-      });
-    }
-    for (const task of schedules) {
-      const id = `schedule:${task.id}`;
-      current.set(id, {
-        id,
-        who: task.displayName ?? task.name,
-        summary: BLOCKING_SUMMARIES.schedule,
-        deepLink: '/tasks',
       });
     }
 
@@ -153,5 +147,5 @@ export function useBlockingArrivals(handlers: BlockingArrivalHandlers): void {
 
     if (arrived.length > 0) handlersRef.current.onArrive?.(arrived);
     if (departed.length > 0) handlersRef.current.onDepart?.(departed, current.size);
-  }, [loading, signals, schedules]);
+  }, [loading, signals]);
 }

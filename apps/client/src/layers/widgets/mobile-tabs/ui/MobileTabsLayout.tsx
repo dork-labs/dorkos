@@ -118,7 +118,13 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   // `DashboardSidebar` is never mounted at this width, so the one-time pin
   // migration has to run from here or a phone-only operator never gets it.
   useLegacyPinMigration();
-  const state = useSidebarState();
+  // Answer from anywhere (P4 AC-5). `slot` is `null` when there is nothing
+  // waiting AND nothing has failed — which is also what tells `SidebarZones`
+  // not to draw a Now zone for it. Read BEFORE the sidebar's state because the
+  // model needs to know which blockages these cards already cover, so it can
+  // leave those rows out rather than drawing each of them twice (DOR-1391).
+  const nowAttention = useNowAttentionSlot();
+  const state = useSidebarState({ coveredSignalIds: nowAttention.coveredSignalIds });
   const model = useSidebarModel(state);
   const { ask: askDorkBot, ready: dorkBotReady } = useAskDorkBot();
 
@@ -199,11 +205,6 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   // both of them saying the same number.
   const liveRegionText = useLiveRegionText(nowZone?.liveRegionText);
 
-  // Answer from anywhere (P4 AC-5). `null` when there is nothing waiting AND
-  // nothing has failed — which is also what tells `SidebarZones` not to draw a
-  // Now zone for it.
-  const nowAttention = useNowAttentionSlot();
-
   return (
     <SidebarChrome activeTarget={state.activeTarget}>
       <div
@@ -244,7 +245,7 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
             <SidebarZones
               model={model}
               zoneIds={HOME_ZONE_IDS}
-              nowSlot={nowAttention}
+              nowSlot={nowAttention.slot}
               silenceLiveRegion
             />
             {/* A phone never mounted the bottom slot at all, so the one card

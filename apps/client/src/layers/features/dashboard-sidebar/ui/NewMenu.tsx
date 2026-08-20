@@ -19,7 +19,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { AtSign, Bot, CornerDownLeft, Hash, MessageSquarePlus, Plus, Users } from 'lucide-react';
-import { toast } from 'sonner';
 import type { SmartGroupRules } from '@dorkos/shared/config-schema';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { cn, formatShortcutKey, isDesktopShell, SHORTCUTS } from '@/layers/shared/lib';
@@ -293,13 +292,17 @@ export function NewMenu() {
   const startDirectMessageWith = useCallback(
     (chosen: AgentPickerCandidate[]) => {
       const title = directMessageTitle(chosen.map((candidate) => candidate.displayName));
+      // **No `onError` here, and that is the fix rather than an omission**
+      // (DOR-1391). A per-call callback is dispatched only while this component
+      // still has listeners, so closing the sidebar sheet on a phone while the
+      // request was in flight meant nobody was ever told it failed. The
+      // mutation reports its own failures now (`useStartDirectMessage`'s
+      // `meta.errorLabel`), which runs on the mutation itself and always
+      // arrives. `onSuccess` stays: opening the room is this surface's job and
+      // there is nothing to open if the caller has gone.
       startDirectMessage.mutate(
         { agentPaths: chosen.map((candidate) => candidate.agentPath), title },
-        {
-          onSuccess: openRoom,
-          onError: (error) =>
-            toast.error(error.message || `Could not start a conversation with ${title}`),
-        }
+        { onSuccess: openRoom }
       );
     },
     [openRoom, startDirectMessage]

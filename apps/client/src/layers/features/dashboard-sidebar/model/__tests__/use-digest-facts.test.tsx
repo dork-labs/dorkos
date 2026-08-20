@@ -56,6 +56,7 @@ function input(overrides: Partial<UseDigestFactsInput> = {}): UseDigestFactsInpu
     now: NOW,
     sessions: [session('s1', hoursAgo(2)), session('s2', hoursAgo(3))],
     workingSessionIds: [],
+    sessionStatuses: {},
     interactions: { 'session:s0': hoursAgo(14) },
     storedLastShownDate: '2026-08-08',
     ...overrides,
@@ -110,6 +111,66 @@ describe('useDigestFacts — what counts as news (BC-22)', () => {
     welcomeBack.isAvailable = false;
     const { result } = renderHook(() => useDigestFacts(input()));
     expect(result.current.digest.finishedWhileAwayCount).toBe(0);
+  });
+});
+
+describe('useDigestFacts — the sessions that went quiet (DOR-1391)', () => {
+  beforeEach(() => {
+    update.mockClear();
+    welcomeBack.enabled = true;
+    welcomeBack.isAvailable = true;
+    welcomeBack.absenceThresholdMinutes = 240;
+  });
+  afterEach(() => cleanup());
+
+  it('counts the sessions that moved during the absence and then went still', () => {
+    // What Heads up's retired "Went quiet" row became: both default sessions
+    // stopped hours ago, inside an absence of fourteen.
+    const { result } = renderHook(() => useDigestFacts(input()));
+    expect(result.current.digest.quietWhileAwayCount).toBe(2);
+  });
+
+  it('does not count a session touched within the last half hour', () => {
+    // The threshold, at its boundary: still moving twenty minutes ago is not
+    // quiet, it is recent.
+    const { result } = renderHook(() =>
+      useDigestFacts(input({ sessions: [session('s1', hoursAgo(1 / 3))] }))
+    );
+    expect(result.current.digest.quietWhileAwayCount).toBe(0);
+    // …and the same session an hour later does count, so the zero above is the
+    // threshold rather than an inert path.
+    const { result: later } = renderHook(() =>
+      useDigestFacts(input({ sessions: [session('s1', hoursAgo(1))] }))
+    );
+    expect(later.current.digest.quietWhileAwayCount).toBe(1);
+  });
+
+  it('does not count a session that is still streaming', () => {
+    const { result } = renderHook(() => useDigestFacts(input({ workingSessionIds: ['s1'] })));
+    expect(result.current.digest.quietWhileAwayCount).toBe(1);
+  });
+
+  it('does not count a session that is parked on you or wedged', () => {
+    // Those are Heads up rows in their own right. Counting them here would say
+    // the same thing twice, in two different tenses.
+    const { result } = renderHook(() =>
+      useDigestFacts(input({ sessionStatuses: { s1: 'blocked', s2: 'error' } }))
+    );
+    expect(result.current.digest.quietWhileAwayCount).toBe(0);
+    expect(result.current.digest.finishedWhileAwayCount).toBe(2);
+  });
+
+  it('does not count a session that went quiet BEFORE the operator left', () => {
+    const { result } = renderHook(() =>
+      useDigestFacts(input({ sessions: [session('s1', hoursAgo(20))] }))
+    );
+    expect(result.current.digest.quietWhileAwayCount).toBe(0);
+  });
+
+  it('says nothing when the digest itself is switched off', () => {
+    welcomeBack.enabled = false;
+    const { result } = renderHook(() => useDigestFacts(input()));
+    expect(result.current.digest.quietWhileAwayCount).toBe(0);
   });
 });
 

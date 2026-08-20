@@ -10,11 +10,28 @@
  * @module features/dashboard-sidebar/model/use-digest-facts
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
 import { markDigestShown, useUpdateSidebarPrefs, useWelcomeBack } from '@/layers/entities/config';
 import type { InteractionTimestamps } from '@/layers/entities/interactions';
 import { localDateKey } from './rules/build-digest-row';
 import type { DigestState } from './sidebar-state';
+
+/**
+ * How long a session has to have sat still before the digest calls it quiet.
+ *
+ * Thirty minutes, inherited from the idle nudge this replaced: a shorter window
+ * reports a coffee break. The threshold is the only thing kept — the nudge
+ * itself was a row in Heads up asking for attention on a guess, and this is a
+ * line in a once-a-day summary about what already happened (DOR-1391).
+ */
+export const QUIET_SESSION_AFTER_MS = 30 * 60 * 1000;
+
+/**
+ * The digest with nothing in it — one shared object, so a gate that says no
+ * never mints a fresh identity and rebuilds the model with it.
+ */
+const NO_DIGEST: DigestState = { finishedWhileAwayCount: 0, quietWhileAwayCount: 0 };
 
 /** What {@link useDigestFacts} reads. */
 export interface UseDigestFactsInput {
@@ -24,6 +41,13 @@ export interface UseDigestFactsInput {
   sessions: readonly Session[];
   /** The sessions streaming a turn right now — still working, so not news. */
   workingSessionIds: readonly string[];
+  /**
+   * Session id → coarse lifecycle, for the one thing the quiet count needs to
+   * know: whether a still session is still because it stopped, or because it is
+   * parked on a person. A blocked or wedged session is already a Heads up row
+   * and must not be counted as quiet on top of it.
+   */
+  sessionStatuses: Readonly<Record<string, SessionLifecycle>>;
   /** When the operator last opened anything, from `entities/interactions`. */
   interactions: InteractionTimestamps;
   /** The stored `lastShownDate`, as prefs currently report it. */
@@ -105,6 +129,55 @@ function countFinishedWhileAway(
 }
 
 /**
+ * How many sessions moved during the absence and then went quiet.
+ *
+ * **This is what became of the "Went quiet" row** (DOR-1391). Heads up used to
+ * carry one dismissible nudge about the most recently touched idle session,
+ * which asked for attention on a heuristic; the observation was worth keeping
+ * and the interruption was not. Here it is one clause in a summary a person
+ * reads once a day, in the past tense, about a stretch of time they were not
+ * watching.
+ *
+ * Same three conditions the nudge applied, minus its limit of one: the session
+ * is not streaming, it is not parked on a person or wedged — those are Heads up
+ * rows in their own right and would be counted twice — and it has been still
+ * for at least {@link QUIET_SESSION_AFTER_MS}.
+ *
+ * **The window is the absence, not the 4am boundary**, matching the fact beside
+ * it. The boundary is what decides which local DAY the digest has already been
+ * shown for (`localDateKey`, and Today's own `archiveOvernight`); the absence is
+ * what the digest is ABOUT, and a person who was away from 20:00 to 09:00 was
+ * away for all of it, not just for the hours after four in the morning.
+ *
+ * @param sessions - Every session the cockpit can see.
+ * @param workingSessionIds - The ones still streaming.
+ * @param statuses - Session id → coarse lifecycle.
+ * @param since - When the absence began, epoch ms.
+ * @param until - The model's clock, epoch ms.
+ */
+function countQuietWhileAway(
+  sessions: readonly Session[],
+  workingSessionIds: readonly string[],
+  statuses: Readonly<Record<string, SessionLifecycle>>,
+  since: number,
+  until: number
+): number {
+  const working = new Set(workingSessionIds);
+  let count = 0;
+  for (const session of sessions) {
+    if (working.has(session.id)) continue;
+    const lifecycle = statuses[session.id];
+    if (lifecycle === 'streaming' || lifecycle === 'blocked' || lifecycle === 'error') continue;
+    const at = Date.parse(session.updatedAt);
+    if (Number.isNaN(at)) continue;
+    if (at <= since || at > until) continue;
+    if (until - at < QUIET_SESSION_AFTER_MS) continue;
+    count += 1;
+  }
+  return count;
+}
+
+/**
  * The digest's content and the date the rule judges it against.
  *
  * **Five gates, and every one of them can say no.**
@@ -160,7 +233,8 @@ function countFinishedWhileAway(
  * @param input - The clock, the sessions, the interactions and stored prefs.
  */
 export function useDigestFacts(input: UseDigestFactsInput): DigestFacts {
-  const { now, sessions, workingSessionIds, interactions, storedLastShownDate } = input;
+  const { now, sessions, workingSessionIds, sessionStatuses, interactions, storedLastShownDate } =
+    input;
   const welcomeBack = useWelcomeBack();
   const { update } = useUpdateSidebarPrefs();
 
@@ -179,15 +253,20 @@ export function useDigestFacts(input: UseDigestFactsInput): DigestFacts {
   const dissolved = seen !== null && (baseline === null || seen > baseline);
 
   const digest = useMemo<DigestState>(() => {
-    if (dissolved) return { finishedWhileAwayCount: 0 };
-    if (!welcomeBack.isAvailable || !welcomeBack.enabled) return { finishedWhileAwayCount: 0 };
-    if (welcomeBack.maxPosts <= 0) return { finishedWhileAwayCount: 0 };
-    if (seen === null) return { finishedWhileAwayCount: 0 };
-    if (now - seen < welcomeBack.absenceThresholdMinutes * 60_000) {
-      return { finishedWhileAwayCount: 0 };
-    }
+    if (dissolved) return NO_DIGEST;
+    if (!welcomeBack.isAvailable || !welcomeBack.enabled) return NO_DIGEST;
+    if (welcomeBack.maxPosts <= 0) return NO_DIGEST;
+    if (seen === null) return NO_DIGEST;
+    if (now - seen < welcomeBack.absenceThresholdMinutes * 60_000) return NO_DIGEST;
     return {
       finishedWhileAwayCount: countFinishedWhileAway(sessions, workingSessionIds, seen, now),
+      quietWhileAwayCount: countQuietWhileAway(
+        sessions,
+        workingSessionIds,
+        sessionStatuses,
+        seen,
+        now
+      ),
     };
   }, [
     dissolved,
@@ -199,6 +278,7 @@ export function useDigestFacts(input: UseDigestFactsInput): DigestFacts {
     now,
     sessions,
     workingSessionIds,
+    sessionStatuses,
   ]);
 
   // The row is about to render iff both halves of BC-22 hold — the same two

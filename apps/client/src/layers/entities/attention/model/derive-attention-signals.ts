@@ -1,58 +1,31 @@
 /**
  * Every source of "something needs you", folded into one ordered list. Pure
- * (BC-5, BC-6, BC-10, BC-39).
+ * (BC-5, BC-6, BC-39).
  *
- * Pure and clock-injected so the two rules with a threshold in them — the idle
- * window and its 24-hour cutoff — are table tests rather than timer mocks. The
- * hook beside this one gathers the sources; this decides what they mean.
+ * Pure so every rule in it is a table test rather than a timer mock. The hook
+ * beside this one gathers the sources; this decides what they mean.
  *
  * @module entities/attention/model/derive-attention-signals
  */
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import type { PendingInteractionDTO, Session } from '@dorkos/shared/types';
+import type { PendingInteractionDTO, Session, Task } from '@dorkos/shared/types';
 import type { AttentionSignal } from './attention-signal';
 import { describeInteraction } from './describe-interaction';
 
-/**
- * How long a session must sit untouched before the product says anything.
- *
- * Thirty minutes, because a shorter window nudges about a coffee break. This is
- * now the only idle rule in the client — the home surface's own, which used the
- * same threshold, went with the second attention engine (DOR-1381) — and the
- * one row it still raises is the sidebar's, which DOR-1391 retires in favour of
- * a Today digest fact.
- */
-export const IDLE_NUDGE_AFTER_MS = 30 * 60 * 1000;
-
-/**
- * How stale is too stale to be worth mentioning.
- *
- * Past a day it is not a nudge, it is archaeology — and Today's overnight
- * boundary has already taken the row out of the operator's way (BC-18).
- */
-export const IDLE_NUDGE_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-/**
- * How many idle nudges may exist at once.
- *
- * Module-private: it is a property of this rule, not a knob a caller sets.
- *
- * **One.** BC-10 states the restart cost as "a restart may re-surface at most
- * one nudge", which only reads as a bound if at most one exists to begin with.
- * It is also the etiquette rule (`meta/agent-etiquette.md`): over-participation
- * is the failure mode people complain about, and a fleet of thirty agents with
- * a nudge each is the loudest possible way to say nothing.
- */
-const IDLE_NUDGE_LIMIT = 1;
-
 /** Everything {@link deriveAttentionSignals} reads. */
 export interface AttentionSources {
-  /** The instant to reason from, epoch ms. The only clock this module has. */
-  now: number;
   /** Capability approvals waiting on a person. */
   approvals: readonly PendingApproval[];
+  /**
+   * Schedules an agent proposed and parked, oldest first.
+   *
+   * A first-class blockage since DOR-1391, not a list every surface joined on
+   * beside this one: `tasks_create` never arms a schedule (DOR-504), so it runs
+   * only when a person says yes.
+   */
+  schedules: readonly Task[];
   /** Every session the cockpit can see. */
   sessions: readonly Session[];
   /** Session id → coarse lifecycle, from the global session-list stream. */
@@ -69,8 +42,6 @@ export interface AttentionSources {
   interactions: readonly InteractionPendingEvent[];
   /** Agent directory → the disambiguated name to print. */
   agentNames: Readonly<Record<string, string>>;
-  /** Idle nudges the operator waved away in this window (BC-10). */
-  dismissed: ReadonlySet<string>;
 }
 
 /**
@@ -81,6 +52,19 @@ export interface AttentionSources {
  * that does not exist (`widgets/home/ui/PinnedTriageHeader.tsx`).
  */
 const APPROVAL_HREF = '/';
+
+/**
+ * Where a parked schedule leads.
+ *
+ * The Tasks page, which is the one surface that shows a schedule whole — what
+ * it runs, how often, and since when it has been waiting. The same destination
+ * the OS banner for one already used (`features/notifications`), so a person
+ * who taps the banner and a person who clicks the row land in the same place.
+ */
+const SCHEDULE_HREF = '/tasks';
+
+/** What a parked schedule is asking for, in fixed words. */
+const SCHEDULE_SECONDARY = 'Wants to run on a timer';
 
 /**
  * The `/session` deep link for one session.
@@ -125,7 +109,7 @@ function whoOf(session: Session, agentNames: Readonly<Record<string, string>>): 
 function sessionSignal(
   session: Session,
   sources: AttentionSources,
-  rest: Pick<AttentionSignal, 'id' | 'kind' | 'secondary' | 'since' | 'dismissible'>
+  rest: Pick<AttentionSignal, 'id' | 'kind' | 'secondary' | 'since'>
 ): AttentionSignal {
   const who = whoOf(session, sources.agentNames);
   return {
@@ -174,12 +158,24 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
       ...(approval.requestedBy === undefined ? {} : { secondary: approval.capabilityTitle }),
       since: approval.requestedAt,
       deepLink: APPROVAL_HREF,
-      dismissible: false,
     });
   }
 
-  // ── Sessions: blocked, wedged, or gone quiet ──
-  const idleCandidates: { session: Session; updatedAt: number }[] = [];
+  // ── Parked schedules: the other blockage that is not a session ──
+  // The name a person gave it, never what it runs: a schedule's command is the
+  // kind of detail the Tasks page shows and a one-line row does not.
+  for (const task of sources.schedules) {
+    signals.push({
+      id: `schedule:${task.id}`,
+      kind: 'schedule-approval',
+      primary: task.displayName ?? task.name,
+      secondary: SCHEDULE_SECONDARY,
+      since: task.createdAt,
+      deepLink: SCHEDULE_HREF,
+    });
+  }
+
+  // ── Sessions: blocked or wedged ──
   for (const session of sources.sessions) {
     const lifecycle = sources.lifecycles[session.id];
 
@@ -206,7 +202,6 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
             interaction === undefined
               ? session.updatedAt
               : new Date(interaction.startedAt).toISOString(),
-          dismissible: false,
         })
       );
       continue;
@@ -219,41 +214,20 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
           kind: 'error',
           secondary: 'Stopped with an error',
           since: session.updatedAt,
-          dismissible: false,
         })
       );
-      continue;
     }
 
-    // Only a session that is doing nothing can be idle. A streaming turn is
-    // working, and a blocked or wedged one has already said its piece above.
-    if (lifecycle === 'streaming') continue;
-    const updatedAt = Date.parse(session.updatedAt);
-    if (Number.isNaN(updatedAt)) continue;
-    const quietFor = sources.now - updatedAt;
-    if (quietFor < IDLE_NUDGE_AFTER_MS || quietFor > IDLE_NUDGE_WINDOW_MS) continue;
-    idleCandidates.push({ session, updatedAt });
+    // **A session that has merely gone quiet raises nothing here** (DOR-1391).
+    // It used to raise one dismissible `idle-timeout` nudge, and the nudge was
+    // the only thing in this list a person could wave away — which is why
+    // nothing in it is dismissible any more. Going quiet is a guess about
+    // somebody's afternoon rather than a blockage: nothing is stopped, nobody
+    // is waiting, and a zone that asks for attention on a guess is a zone
+    // people learn to skim. What it observed is still reported, once a day and
+    // in the past tense, by the Today digest
+    // (`features/dashboard-sidebar/model/use-digest-facts`).
   }
 
-  // The most recently touched one, because the operator's attention is likeliest
-  // to still be attached to it — and only that one (see IDLE_NUDGE_LIMIT).
-  idleCandidates.sort((a, b) => b.updatedAt - a.updatedAt);
-  for (const candidate of idleCandidates.slice(0, IDLE_NUDGE_LIMIT)) {
-    signals.push(
-      sessionSignal(candidate.session, sources, {
-        id: `idle:${candidate.session.id}`,
-        kind: 'idle-timeout',
-        secondary: 'Went quiet',
-        since: candidate.session.updatedAt,
-        dismissible: true,
-      })
-    );
-  }
-
-  // Dismissal is applied HERE, not by whoever renders the list, so no rule
-  // downstream ever has to ask whether something was waved away (BC-10). It can
-  // only reach something DISMISSIBLE: a dismissed id that later belonged to a
-  // permission prompt would otherwise hide a blockage nobody chose to hide, and
-  // BC-42 is explicit that nothing else in Heads up can be waved away at all.
-  return signals.filter((signal) => !(signal.dismissible && sources.dismissed.has(signal.id)));
+  return signals;
 }

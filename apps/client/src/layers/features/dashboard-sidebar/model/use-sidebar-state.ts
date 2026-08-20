@@ -139,6 +139,19 @@ function useActiveTarget(
   }, [sessionId, cwd, roomId, roomKind, rootEntryId]);
 }
 
+/** What a caller may tell {@link useSidebarState} about its own surface. */
+export interface UseSidebarStateOptions {
+  /**
+   * Signal ids this surface is already drawing as cards above Heads up.
+   *
+   * The phone's Home tab and nothing else — see
+   * {@link SidebarState.coveredSignalIds}. Must be referentially stable across
+   * renders that do not change it, like every other list in this hook: a fresh
+   * array each render would rebuild the whole model.
+   */
+  coveredSignalIds?: readonly string[];
+}
+
 /**
  * Everything the sidebar is a function of, as one memoized snapshot.
  *
@@ -146,8 +159,12 @@ function useActiveTarget(
  * `mentions`, which no client source can count above a read cursor. Its absence
  * is the specified behaviour rather than a gap — omission, never a guess
  * (BC-40).
+ *
+ * @param options - What the calling surface draws for itself. Desktop passes
+ * nothing.
  */
-export function useSidebarState(): SidebarState {
+export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarState {
+  const { coveredSignalIds } = options;
   const now = useNow(SIDEBAR_CLOCK_TICK_MS);
 
   // ── Sessions and their coarse lifecycle ──
@@ -260,6 +277,7 @@ export function useSidebarState(): SidebarState {
     now,
     sessions,
     workingSessionIds,
+    sessionStatuses,
     interactions,
     storedLastShownDate: storedModelPrefs.digest.lastShownDate,
   });
@@ -337,12 +355,14 @@ export function useSidebarState(): SidebarState {
       // No client source counts @mentions above a read cursor. A source that
       // cannot say has no entry — omission, never a guess (BC-40).
       mentions: {},
+      ...(coveredSignalIds === undefined ? {} : { coveredSignalIds }),
       todayAutomatedExpanded,
       activeTarget,
       journey: journey.facts,
       digest: digestFacts.digest,
     }),
     [
+      coveredSignalIds,
       now,
       sessions,
       workingSessionIds,

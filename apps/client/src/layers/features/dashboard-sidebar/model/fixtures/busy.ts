@@ -89,7 +89,6 @@ export const busyFixture: SidebarState = emptyState({
       secondary: 'Audit the config migration',
       since: hoursAgo(0.75),
       deepLink: '/session?sessionId=ses-7',
-      dismissible: false,
       agentPath: JUNIPER,
     },
     {
@@ -99,7 +98,6 @@ export const busyFixture: SidebarState = emptyState({
       secondary: 'Which account should I use?',
       since: hoursAgo(0.5),
       deepLink: '/session?sessionId=ses-3',
-      dismissible: false,
       agentPath: SAFFRON,
     },
     {
@@ -109,7 +107,6 @@ export const busyFixture: SidebarState = emptyState({
       secondary: 'Run pnpm test',
       since: hoursAgo(0.2),
       deepLink: '/session?sessionId=ses-5',
-      dismissible: false,
       agentPath: CARDAMOM,
     },
   ],
@@ -152,5 +149,5 @@ export const busyFixture: SidebarState = emptyState({
     hasPostedInTeam: true,
     hasDorkBotSession: true,
   },
-  digest: { finishedWhileAwayCount: 0 },
+  digest: { finishedWhileAwayCount: 0, quietWhileAwayCount: 0 },
 });

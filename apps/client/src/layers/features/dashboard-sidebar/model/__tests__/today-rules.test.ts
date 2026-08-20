@@ -347,7 +347,40 @@ describe('BC-22 — the morning digest', () => {
   });
 
   it('is absent when nothing finished while they were away', () => {
-    expect(buildDigestRow({ ...quietFixture, digest: { finishedWhileAwayCount: 0 } })).toBeNull();
+    expect(
+      buildDigestRow({
+        ...quietFixture,
+        digest: { finishedWhileAwayCount: 0, quietWhileAwayCount: 0 },
+      })
+    ).toBeNull();
+  });
+
+  it('says how many sessions went quiet, which is where the nudge went (DOR-1391)', () => {
+    // Heads up no longer carries a "Went quiet" row. The digest is the one
+    // place that mentions it now, so the row has to actually say it.
+    expect(buildDigestRow(quietFixture)?.secondary).toBe('2 sessions went quiet');
+  });
+
+  it('says it in the singular for one', () => {
+    const one = { ...quietFixture, digest: { finishedWhileAwayCount: 3, quietWhileAwayCount: 1 } };
+    expect(buildDigestRow(one)?.secondary).toBe('1 session went quiet');
+  });
+
+  it('says nothing about quiet sessions when there were none', () => {
+    // The door still opens — something finished — it just has nothing to add.
+    const none = { ...quietFixture, digest: { finishedWhileAwayCount: 3, quietWhileAwayCount: 0 } };
+    expect(buildDigestRow(none)?.primary).toBe('While you were away…');
+    expect(buildDigestRow(none)?.secondary).toBeUndefined();
+  });
+
+  it('does not appear for quiet sessions alone', () => {
+    // A quiet session is not news by itself — that was the nudge's mistake.
+    // The digest is about an absence in which something HAPPENED.
+    const quietOnly = {
+      ...quietFixture,
+      digest: { finishedWhileAwayCount: 0, quietWhileAwayCount: 4 },
+    };
+    expect(buildDigestRow(quietOnly)).toBeNull();
   });
 
   it('sits below the anchor, never above it', () => {

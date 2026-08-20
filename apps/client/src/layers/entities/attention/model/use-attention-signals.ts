@@ -18,24 +18,14 @@ import { useShallow } from 'zustand/shallow';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
-import { useNow } from '@/layers/shared/model';
 import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useRecentSessions, useSessionListStore } from '@/layers/entities/session';
 import type { AttentionSignal } from './attention-signal';
 import { deriveAttentionSignals } from './derive-attention-signals';
-import { useIdleNudgeStore } from './idle-nudge-store';
 import { usePendingApprovals } from './use-pending-approvals';
 import { usePendingInteractions } from './use-pending-interactions';
-
-/**
- * How often the idle threshold is re-evaluated.
- *
- * One minute, matching the sidebar's own clock: the only rule that reads the
- * clock here is a thirty-minute boundary, and a finer tick would rebuild the
- * list for an answer that did not change.
- */
-const ATTENTION_CLOCK_TICK_MS = 60_000;
+import { usePendingScheduleApprovals } from './use-pending-schedule-approvals';
 
 /** Shared empties, so an unanswered query never mints a fresh array identity. */
 const NO_SESSIONS: readonly Session[] = [];
@@ -50,9 +40,13 @@ const NO_APPROVALS: readonly PendingApproval[] = [];
  * disagreeing about what is in the list.
  */
 export function useAttentionSignals(): readonly AttentionSignal[] {
-  const now = useNow(ATTENTION_CLOCK_TICK_MS);
-
   const { approvals } = usePendingApprovals();
+  // The schedules an agent parked. A first-class signal since DOR-1391 rather
+  // than a list each surface joined on afterwards — `useAttentionRows`, the
+  // arrival watch behind the knock and the banner, and the sidebar's Heads up
+  // zone each used to compose it separately, and three compositions of one
+  // question are three chances to answer it differently.
+  const { schedules } = usePendingScheduleApprovals();
   const recent = useRecentSessions();
   const sessions = recent.data?.sessions ?? NO_SESSIONS;
 
@@ -86,20 +80,17 @@ export function useAttentionSignals(): readonly AttentionSignal[] {
     [rawPaths, manifests]
   );
 
-  const dismissed = useIdleNudgeStore((state) => state.dismissed);
-
   return useMemo(
     () =>
       deriveAttentionSignals({
-        now,
         approvals: approvals.length === 0 ? NO_APPROVALS : approvals,
+        schedules,
         sessions,
         lifecycles,
         interactions,
         agentNames,
-        dismissed,
       }),
-    [now, approvals, sessions, lifecycles, interactions, agentNames, dismissed]
+    [approvals, schedules, sessions, lifecycles, interactions, agentNames]
   );
 }
 
@@ -109,12 +100,12 @@ export function useAttentionSignals(): readonly AttentionSignal[] {
  * A companion rather than a second return value, because the sidebar assigns
  * that array straight into its own snapshot and an object would not fit.
  *
- * Only the three QUERIES can be mid-first-load. The lifecycle map comes from the
+ * Only the four QUERIES can be mid-first-load. The lifecycle map comes from the
  * session-list store, which is fed by the stream and is simply empty until it
  * is not — there is no "still loading" to report about a store. So a surface
- * gating an all-clear on this waits for the session listing, the approval queue
- * and the prompt queue, which are the three reads that make an empty list a lie
- * rather than an answer.
+ * gating an all-clear on this waits for the session listing, the approval
+ * queue, the prompt queue and the schedule queue, which are the four reads that
+ * make an empty list a lie rather than an answer.
  *
  * **The prompt queue is not optional here, and leaving it out was a real bug.**
  * `deriveAttentionSignals` reads a blocked session's PROMPT to decide both the
@@ -131,5 +122,6 @@ export function useAttentionSignalsLoading(): boolean {
   const { isLoading: sessionsLoading } = useRecentSessions();
   const { isLoading: approvalsLoading } = usePendingApprovals();
   const { isLoading: interactionsLoading } = usePendingInteractions();
-  return sessionsLoading || approvalsLoading || interactionsLoading;
+  const { isLoading: schedulesLoading } = usePendingScheduleApprovals();
+  return sessionsLoading || approvalsLoading || interactionsLoading || schedulesLoading;
 }

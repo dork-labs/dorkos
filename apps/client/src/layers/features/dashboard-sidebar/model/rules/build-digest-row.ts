@@ -34,8 +34,13 @@ export function localDateKey(now: number): string {
  * the absence — because a "while you were away" that reports nothing is a
  * product inventing an event to have a moment about.
  *
- * The row carries no counts and no timestamps in the words it prints: it is a
- * door into the digest, and what is behind the door is the digest's problem.
+ * The row prints no timestamp, and it counts exactly one thing: the sessions
+ * that went quiet. Everything else is behind the door — how much finished, and
+ * what each one did, is the digest's problem. The quiet count is the exception
+ * because nothing else in the panel says it any more: it is what Heads up's
+ * "Went quiet" row became when DOR-1391 retired that row, and a fact moved into
+ * a summary that then declines to state it has not been moved, it has been
+ * deleted.
  *
  * @param state - The snapshot.
  */
@@ -43,11 +48,13 @@ export function buildDigestRow(state: SidebarState): SidebarRowModel | null {
   if (state.digest.finishedWhileAwayCount <= 0) return null;
   if (state.prefs.digest.lastShownDate === localDateKey(state.now)) return null;
   const target = { kind: 'digest' } as const;
+  const quiet = state.digest.quietWhileAwayCount;
   return {
     key: rowKey(target),
     target,
     glyph: { kind: 'icon', icon: 'digest' },
     primary: 'While you were away…',
+    ...(quiet > 0 ? { secondary: `${quiet} session${quiet === 1 ? '' : 's'} went quiet` } : {}),
     reservesVerbLine: false,
     unread: { tier: 'none' },
     muted: false,

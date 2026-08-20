@@ -42,7 +42,7 @@ export const SIDEBAR_MODEL_SECTIONS: PlaygroundSection[] = [
       'permission',
       'question',
       'error',
-      'idle',
+      'schedule',
       'overflow',
       'all clear',
       'getting started',

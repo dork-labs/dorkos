@@ -177,7 +177,7 @@ export function emptyState(overrides: Partial<SidebarState> = {}): SidebarState 
       hasPostedInTeam: true,
       hasDorkBotSession: true,
     },
-    digest: { finishedWhileAwayCount: 0 },
+    digest: { finishedWhileAwayCount: 0, quietWhileAwayCount: 0 },
     ...overrides,
   };
 }

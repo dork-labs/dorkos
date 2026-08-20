@@ -89,7 +89,7 @@ const ICON: Record<SidebarIconId, typeof Bot> = {
   permission: ShieldQuestion,
   question: CircleHelp,
   error: AlertTriangle,
-  idle: Clock,
+  schedule: CalendarClock,
   overflow: ChevronRight,
   working: Loader,
   automated: CalendarClock,
@@ -785,7 +785,7 @@ export function SidebarTodayStatesShowcase() {
   // one beside it.
   const withDigest: SidebarState = {
     ...busy,
-    digest: { finishedWhileAwayCount: 4 },
+    digest: { finishedWhileAwayCount: 4, quietWhileAwayCount: 2 },
     prefs: { ...busy.prefs, digest: { lastShownDate: '2026-08-08' } },
   };
   // The reveal, open. The runs hang off the bottom of the finished list,

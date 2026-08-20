@@ -48,6 +48,7 @@ import { rankNowItems } from './rules/rank-now-items';
 import { rollUpCollapsedSection } from './rules/roll-up-collapsed-section';
 import { selectNowItems } from './rules/select-now-items';
 import { revealAutomated, selectTodayItems } from './rules/select-today-items';
+import { suppressCoveredNowItems } from './rules/suppress-covered-now-items';
 import { anchorKey } from './rules/targets';
 import type { SidebarState } from './sidebar-state';
 
@@ -155,7 +156,7 @@ export type SidebarSectionId =
   | `group:${string}`;
 
 /** What kind of blockage put an item in Heads up. The only four that may (BC-5). */
-export type NowKind = 'permission-prompt' | 'question' | 'error' | 'idle-timeout';
+export type NowKind = 'permission-prompt' | 'question' | 'error' | 'schedule-approval';
 
 /**
  * A Getting-started suggestion's id.
@@ -195,7 +196,8 @@ export type SidebarIconId =
   | 'permission'
   | 'question'
   | 'error'
-  | 'idle'
+  /** A schedule an agent proposed and parked, waiting for a yes or a no. */
+  | 'schedule'
   | 'overflow'
   | 'working'
   | 'automated'
@@ -304,8 +306,15 @@ export interface SidebarRowModel {
    * chip's condition and the row has no threshold of its own to disagree with.
    */
   liveCount?: number;
-  /** Heads up-only. Drives priority and the dismiss affordance. */
-  attention?: { kind: NowKind; since: string; dismissible: boolean };
+  /**
+   * Heads up-only. Drives priority (BC-6).
+   *
+   * **Nothing in Heads up can be waved away, so there is no dismissible bit
+   * here** (BC-42). One thing ever could — the idle nudge — and DOR-1391
+   * retired the nudge itself; a flag that is false on every row is a flag whose
+   * only remaining job is to invite a fifth kind that reads it.
+   */
+  attention?: { kind: NowKind; since: string };
   /** Whether the operator muted this target (BC-40). */
   muted: boolean;
   /** False for every row outside Library (R3). */
@@ -522,7 +531,11 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
   // prompt already produces, and it is the direction the design record points.
   const attentionRows = rankNowItems(selectNowItems(state));
   const workingRollup = buildWorkingRollup(state);
-  const nowRows = [...capNowItems(attentionRows), ...(workingRollup ? [workingRollup] : [])];
+  // Whatever a lead slot above the zone is already drawing as a card leaves the
+  // rows — the phone only, and before the cap so a fold can never summarize
+  // things the reader can already see. `attentionRows` above stays the count.
+  const drawnRows = suppressCoveredNowItems(attentionRows, state.coveredSignalIds);
+  const nowRows = [...capNowItems(drawnRows), ...(workingRollup ? [workingRollup] : [])];
 
   if (nowRows.length > 0) {
     const zone = bodyZone('now', nowRows, 'zone:now', state);
