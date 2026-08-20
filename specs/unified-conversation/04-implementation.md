@@ -1075,5 +1075,8 @@ Specs `ask-parks-on-timeout`, `presence-verb-glimpse`, `room-per-agent-stop` and
 `260819-022912`, `260819-023317`) and the relay hold's (`260819-034718`) are
 `accepted`. Two things the night surfaced are filed, not fixed here: the CI
 durations and runner-mirror hangs that cost several hours of queue time
-(DOR-1363; #1129 and #1130 carry the workflow fixes), and the room-thread scroll
-restore that flakes about half the time on main as well (DOR-1364).
+(DOR-1363; #1129 and #1130 carry the workflow fixes), and the room-thread scroll-restore
+_test_ that flaked about half the time on main as well (DOR-1364 — filed as a
+product race, disproved during the fix: the restore anchors to a row index and
+does not drift; the test was moving the room after recording its expectation.
+Fixed e2e-only in #1136).
