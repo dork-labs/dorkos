@@ -339,6 +339,48 @@ export const shell = {
 };
 
 /**
+ * Test double for `Notification`. `new Notification(options)` is captured in
+ * {@link MockNotificationImpl.instances}, with `options` preserved verbatim so
+ * a test can assert exactly what `notifications/wrapper.ts` built. `on(...)`
+ * records listeners on a per-instance bus; `emitAction`/`emitReply`/`emitClick`
+ * drive them the way the real Notification would fire `action`/`reply`/`click`.
+ */
+class MockNotificationImpl {
+  static instances: MockNotificationImpl[] = [];
+  static isSupported = vi.fn((): boolean => true);
+
+  private readonly bus = createEventBus();
+
+  constructor(public readonly options: Record<string, unknown>) {
+    MockNotificationImpl.instances.push(this);
+  }
+
+  show = vi.fn<() => void>();
+  close = vi.fn<() => void>();
+  on = vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
+    this.bus.on(event, listener);
+    return this;
+  });
+
+  /** Test helper — fire the `action` event with Electron's `(event, index)` shape. */
+  emitAction(index: number): Promise<void> {
+    return this.bus.emit('action', {}, index);
+  }
+  /** Test helper — fire the `reply` event with Electron's `(event, text)` shape. */
+  emitReply(text: string): Promise<void> {
+    return this.bus.emit('reply', {}, text);
+  }
+  /** Test helper — fire the `click` event. */
+  emitClick(): Promise<void> {
+    return this.bus.emit('click', {});
+  }
+}
+
+export const Notification = MockNotificationImpl;
+/** Alias for tests that want to inspect notifications without the electron type name. */
+export type MockNotification = MockNotificationImpl;
+
+/**
  * Every child `utilityProcess.fork()` has returned, in spawn order — the
  * production counterpart to `child-process-mock`'s `forkedChildren`.
  */
@@ -356,6 +398,8 @@ export const utilityProcess = {
 export function resetElectronMock(): void {
   MockBrowserWindowImpl.instances.length = 0;
   MockTrayImpl.instances.length = 0;
+  MockNotificationImpl.instances.length = 0;
+  MockNotificationImpl.isSupported = vi.fn(() => true);
   appBus.clear();
   screenBus.clear();
   unreadableImageFiles.clear();

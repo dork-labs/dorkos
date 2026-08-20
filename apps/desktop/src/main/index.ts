@@ -14,6 +14,7 @@ import {
 } from './auto-updater';
 import { hasTray, setTrayActivity, setupTray } from './tray';
 import { getActiveAgentCount, watchAgentActivity } from './agent-activity';
+import { watchNotifications } from './notifications';
 import { announceBackgroundRunning } from './background-notice';
 import { armQuitGuard } from './quit-guard';
 import { setupCloseTab } from './close-tab';
@@ -307,6 +308,15 @@ if (!gotTheLock) {
     // confirmation — know how many agents are mid-run, with no window open and
     // no polling.
     watchAgentActivity({ getPort: getServerPort, onChange: setTrayActivity });
+
+    // 5.5. Native OS notifications for Blocking Asks (always) and Notable
+    // activity (while no DorkOS window has focus) — the same shared stream
+    // `watchAgentActivity` just subscribed to (see `event-stream.ts`).
+    watchNotifications({
+      getPort: getServerPort,
+      isWindowUnfocused: () => BrowserWindow.getFocusedWindow() === null,
+      focusAndNavigate: (path) => requestNavigate(getMainWindow, showMainWindow, path),
+    });
 
     // 6. Rescue windows stranded by a monitor being unplugged while we run.
     watchDisplayChanges(() => BrowserWindow.getAllWindows());
