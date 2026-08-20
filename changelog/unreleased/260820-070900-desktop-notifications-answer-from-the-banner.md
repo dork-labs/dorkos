@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'feat(desktop): Electron native notifications with Allow/Deny/Reply, superseding the ADR 0009 ban (DOR-1386)'
+  - 'feat(desktop): Electron native notifications with Allow/Deny/Reply; promote the supersession ADR'
 ---
 
 ### Added
