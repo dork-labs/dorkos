@@ -102,3 +102,22 @@ export function useAttentionSignals(): readonly AttentionSignal[] {
     [now, approvals, sessions, lifecycles, interactions, agentNames, dismissed]
   );
 }
+
+/**
+ * Whether {@link useAttentionSignals} has enough to be believed yet.
+ *
+ * A companion rather than a second return value, because the sidebar assigns
+ * that array straight into its own snapshot and an object would not fit.
+ *
+ * Only the two QUERIES can be mid-first-load. The lifecycle map comes from the
+ * session-list store, which is fed by the stream and is simply empty until it
+ * is not — there is no "still loading" to report about a store. So a surface
+ * gating an all-clear on this waits for the session listing and the approval
+ * queue, which are the two reads that make an empty list a lie rather than an
+ * answer.
+ */
+export function useAttentionSignalsLoading(): boolean {
+  const { isLoading: sessionsLoading } = useRecentSessions();
+  const { isLoading: approvalsLoading } = usePendingApprovals();
+  return sessionsLoading || approvalsLoading;
+}

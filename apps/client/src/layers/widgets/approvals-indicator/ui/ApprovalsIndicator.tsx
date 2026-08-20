@@ -396,15 +396,14 @@ export function ApprovalsIndicator() {
                     animate="animate"
                     className="mt-2"
                   >
+                    {/* Answered in place, with no `onDecided` closing the
+                        panel: an approval card allowed here retires where it
+                        stands and the panel shrinks around it, and a schedule
+                        that instead shut the whole panel would be one surface
+                        behaving two ways. Deciding the last one empties the
+                        queue, which unmounts the pill on its own terms. */}
                     {schedules.map((task) => (
-                      <ScheduleApprovalRow
-                        key={task.id}
-                        task={task}
-                        // Deciding the last thing waiting closes the panel with
-                        // it, and a popover left hanging over an empty list is
-                        // the disappearance the pill's whole design avoids.
-                        onDecided={() => setOpen(false)}
-                      />
+                      <ScheduleApprovalRow key={task.id} task={task} />
                     ))}
                   </motion.div>
                 </div>

@@ -31,11 +31,16 @@ function toggleAriaLabel(open: boolean, count: number): string {
  * same spring animation and tooltip pattern as CanvasToggle.
  *
  * It also carries the ambient {@link AttentionCountBadge}: riding the same
- * {@link useAttentionRows} composition Pulse reads (shared cache keys — no double
+ * `useAttentionRows` composition Pulse reads (shared cache keys — no double
  * fetch), the badge ticks up while the panel is CLOSED, so the operator sees "3
  * things need you" without opening anything. Zero rows → no badge, no
- * decoration. It counts exactly what the panel behind it will draw, which is
- * why both read the one hook rather than each counting for itself.
+ * decoration.
+ *
+ * The badge counts the same SET the panel draws from, which is why both read
+ * the one hook rather than each counting for itself. It is not a count of rows
+ * on screen: the Pulse teaser caps itself at five and offers "View all →" for
+ * the rest, so a badge reading 8 over a panel showing 5 is the cap doing its
+ * job, not the two disagreeing.
  */
 export function RightPanelToggle() {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);

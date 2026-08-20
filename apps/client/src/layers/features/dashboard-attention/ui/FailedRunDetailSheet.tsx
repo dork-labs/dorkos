@@ -44,9 +44,9 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
 
   const handleViewSession = () => {
     if (!run?.sessionId) return;
-    // The other half of the attention section's door (DOR-1156) — see
-    // `use-attention-items`. No directory to record an agent against: a run's
-    // detail carries the session and nothing else.
+    // The other half of the Recent-Activity rows' door (DOR-1156) — see
+    // `use-recent-activity-items`. No directory to record an agent against: a
+    // run's detail carries the session and nothing else.
     useInteractionStore.getState().recordOpened('session', run.sessionId);
     void navigate({
       to: '/session',

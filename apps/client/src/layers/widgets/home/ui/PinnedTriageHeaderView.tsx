@@ -368,7 +368,10 @@ export function PinnedTriageHeaderView({
               // exactly where it is pressed.
               className="text-muted-foreground hover:text-foreground flex min-h-11 w-full min-w-0 items-center gap-2 px-[var(--msg-padding-x)] text-left text-xs"
             >
-              <span className="bg-status-warning size-1.5 shrink-0 rounded-full" aria-hidden />
+              {/* `-dot`, not the fill token: the condensed line's only colour
+                  is this circle, and the fill value is 2.15:1 on a light
+                  surface (see `shared/ui/status-dot.ts`). */}
+              <span className="bg-status-warning-dot size-1.5 shrink-0 rounded-full" aria-hidden />
               <span className="min-w-0 flex-1 truncate">{summary.compact}</span>
               <ChevronDown className="size-3.5 shrink-0" aria-hidden />
             </button>

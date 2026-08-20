@@ -12,6 +12,7 @@ import { useMemo } from 'react';
 import type { Task } from '@dorkos/shared/types';
 import {
   useAttentionSignals,
+  useAttentionSignalsLoading,
   usePendingScheduleApprovals,
   type AttentionSignal,
 } from '@/layers/entities/attention';
@@ -39,7 +40,13 @@ export interface AttentionRows {
   errors: readonly AttentionSignal[];
   /** What recently went wrong. Not blocking anything; kept until the Inbox lands. */
   activity: readonly RecentActivityItem[];
-  /** True while any backing query is still on its first load. */
+  /**
+   * True while ANY of the three sources is still on its first load.
+   *
+   * All three, deliberately — a surface that draws "All quiet" the moment two
+   * of them answer is claiming something it has not checked, and the session
+   * listing behind the error rows is the slowest of the three.
+   */
   isLoading: boolean;
   /** How many rows all three groups come to — the number the badge shows. */
   total: number;
@@ -54,6 +61,7 @@ export interface AttentionRows {
 export function useAttentionRows(): AttentionRows {
   const { schedules, isLoading: schedulesLoading } = usePendingScheduleApprovals();
   const signals = useAttentionSignals();
+  const signalsLoading = useAttentionSignalsLoading();
   const { items: activity, isLoading: activityLoading } = useRecentActivityItems();
 
   const errors = useMemo(() => {
@@ -65,7 +73,7 @@ export function useAttentionRows(): AttentionRows {
     schedules,
     errors,
     activity,
-    isLoading: schedulesLoading || activityLoading,
+    isLoading: schedulesLoading || signalsLoading || activityLoading,
     total: schedules.length + errors.length + activity.length,
   };
 }

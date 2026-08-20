@@ -19,15 +19,13 @@
  * @module entities/attention
  */
 export { dismissIdleNudge, useIdleNudgeStore } from './model/idle-nudge-store';
-export { useAttentionSignals } from './model/use-attention-signals';
-// The signal type itself, exported now that the home surface picks kinds out of
-// the list by hand (`features/dashboard-attention`) rather than handing the
-// whole list to one renderer.
-export type { AttentionSignal, AttentionSignalKind } from './model/attention-signal';
-export {
-  usePendingScheduleApprovals,
-  type PendingScheduleApprovals,
-} from './model/use-pending-schedule-approvals';
+export { useAttentionSignals, useAttentionSignalsLoading } from './model/use-attention-signals';
+// The signal shape, which two layers now name in their own types:
+// `features/dashboard-attention` picks the `error` kind out of the list and
+// draws it, and `widgets/home` declares that subset as a prop. Both need the
+// noun; neither needs the union of kinds, so that stays unexported.
+export type { AttentionSignal } from './model/attention-signal';
+export { usePendingScheduleApprovals } from './model/use-pending-schedule-approvals';
 export { usePendingApprovals, PENDING_APPROVALS_QUERY_KEY } from './model/use-pending-approvals';
 export {
   usePendingInteractions,

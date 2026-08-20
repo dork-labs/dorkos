@@ -9,12 +9,13 @@
  * existing models. Their liveness is NOT uniform, because the server's event
  * topology is not uniform:
  *
- *  • **Attention → stalled sessions** already updates live: `useAttentionItems`
- *    reads the session-list cache, which `useGlobalSessionStream` keeps in
- *    lockstep with the `session_upserted`/`session_removed` list events (ADR-0265).
- *    The stalled-vs-idle threshold is time-based and re-derives on the `useNow`
- *    tick. So this bridge deliberately does NOT touch sessions — that would be a
- *    redundant refetch of a cache the list stream already patched.
+ *  • **Attention → sessions that stopped** already updates live:
+ *    `useAttentionSignals` reads the session-list store, which
+ *    `useGlobalSessionStream` keeps in lockstep with the
+ *    `session_upserted`/`session_removed`/`session_status` list events
+ *    (ADR-0265), and a session's lifecycle flipping to `error` is one of those
+ *    events. So this bridge deliberately does NOT touch sessions — that would
+ *    be a redundant refetch of a store the list stream already patched.
  *
  *  • **Attention → failed runs, dead letters, offline agents** NOW broadcast on
  *    `/api/events` at their transition points (DOR-403): the TaskStore
@@ -82,8 +83,8 @@ const ACTIVITY_KEYS = [DASHBOARD_ACTIVITY_QUERY_KEY, ACTIVITY_QUERY_KEY] as cons
  *    `activity_events` row the moment it parks a schedule at
  *    `pending_approval` → refresh the activity caches.
  *
- * NOT included, deliberately: session-list events (attention's stalled-session
- * and activity are both handled elsewhere — the list stream and no activity row),
+ * NOT included, deliberately: session-list events (attention's stopped-session
+ * rows and activity are both handled elsewhere — the list store and no activity row),
  * `tunnel_status`/`commands_changed` (own dedicated sync hooks, no cache here).
  *
  * @internal Exported only so the unit test can assert the subscribed set matches.

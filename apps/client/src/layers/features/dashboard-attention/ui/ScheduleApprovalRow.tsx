@@ -31,8 +31,6 @@ function whenItRuns(cron: string | null): string {
 export interface ScheduleApprovalRowProps {
   /** The parked schedule. */
   task: Task;
-  /** Called after Approve or Reject is pressed, e.g. to close a popover. */
-  onDecided?: () => void;
 }
 
 /**
@@ -53,10 +51,15 @@ export interface ScheduleApprovalRowProps {
  * and the app's one failure toast (`query-client.ts`) already speaks for both
  * mutations when they fail.
  *
- * @param props - The {@link ScheduleApprovalRowProps.task} and an optional
- * {@link ScheduleApprovalRowProps.onDecided} callback.
+ * **It answers in place and tells nobody.** There is deliberately no "decided"
+ * callback for a host to close a panel on: an approval card allowed inside the
+ * header pill retires where it stands, and a schedule that instead shut the
+ * whole popover would make one surface behave two ways for two things a person
+ * reads as the same.
+ *
+ * @param props - The {@link ScheduleApprovalRowProps.task} to decide.
  */
-export function ScheduleApprovalRow({ task, onDecided }: ScheduleApprovalRowProps) {
+export function ScheduleApprovalRow({ task }: ScheduleApprovalRowProps) {
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
   const busy = updateTask.isPending || deleteTask.isPending;
@@ -68,7 +71,10 @@ export function ScheduleApprovalRow({ task, onDecided }: ScheduleApprovalRowProp
       data-slot="schedule-approval-row"
       className="hover:bg-accent/50 flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1 transition-colors"
     >
-      <span className="bg-status-warning size-1.5 shrink-0 rounded-full" aria-hidden />
+      {/* `-dot`, not the fill token: a 6px amber circle carries its meaning by
+          colour alone, and the fill value is 2.15:1 on a light surface (see
+          `shared/ui/status-dot.ts`). */}
+      <span className="bg-status-warning-dot size-1.5 shrink-0 rounded-full" aria-hidden />
       <CalendarClock className="text-status-warning/70 size-3.5 shrink-0" aria-hidden />
       <span className="text-foreground/90 min-w-0 flex-1 truncate text-xs">
         {name} <span className="text-muted-foreground">· {whenItRuns(task.cron)}</span>
@@ -79,10 +85,7 @@ export function ScheduleApprovalRow({ task, onDecided }: ScheduleApprovalRowProp
         disabled={busy}
         className="h-6 shrink-0 px-2 text-xs"
         aria-label={`Approve ${name}`}
-        onClick={() => {
-          updateTask.mutate({ id: task.id, status: 'active', enabled: true });
-          onDecided?.();
-        }}
+        onClick={() => updateTask.mutate({ id: task.id, status: 'active', enabled: true })}
       >
         Approve
       </Button>
@@ -92,10 +95,7 @@ export function ScheduleApprovalRow({ task, onDecided }: ScheduleApprovalRowProp
         disabled={busy}
         className="h-6 shrink-0 px-2 text-xs"
         aria-label={`Reject ${name}`}
-        onClick={() => {
-          deleteTask.mutate(task.id);
-          onDecided?.();
-        }}
+        onClick={() => deleteTask.mutate(task.id)}
       >
         Reject
       </Button>

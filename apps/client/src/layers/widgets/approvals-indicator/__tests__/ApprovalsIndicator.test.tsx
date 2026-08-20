@@ -520,25 +520,37 @@ describe('ApprovalsIndicator', () => {
     expect(screen.getByRole('button', { name: 'Open session' })).toBeInTheDocument();
   });
 
-  it('counts a schedule an agent parked, and answers it in the panel', async () => {
+  it('counts a schedule an agent parked, and answers it in the panel without closing it', async () => {
     // The one event with no marker anywhere before this: an agent proposes a
     // scheduled run, it parks because nothing arms itself, and the only way to
     // find it was the Tasks page.
+    //
+    // Answering leaves the panel where it is, exactly as allowing an approval
+    // card does. Seeded defect: hand the row an `onDecided` that calls
+    // `setOpen(false)` and the second schedule's buttons are gone from under
+    // the cursor the moment the first is decided.
     const updateTask = vi.fn().mockResolvedValue(parkedSchedule({ status: 'active' }));
     renderIndicator({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
-      listTasks: vi.fn().mockResolvedValue([parkedSchedule()]),
+      listTasks: vi
+        .fn()
+        .mockResolvedValue([
+          parkedSchedule(),
+          parkedSchedule({ id: 'task-2', displayName: 'Weekly digest' }),
+        ]),
       updateTask,
     });
 
     const marker = await screen.findByTestId('approvals-indicator');
-    expect(marker).toHaveTextContent('1');
-    expect(marker).toHaveAccessibleName(/1 request needs your approval/i);
+    await waitFor(() => expect(marker).toHaveTextContent('2'));
+    expect(marker).toHaveAccessibleName(/2 requests need your approval/i);
 
     await userEvent.click(marker);
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
     expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+    // Still open, and the schedule that was NOT decided is still answerable.
+    expect(screen.getByRole('button', { name: 'Approve Weekly digest' })).toBeInTheDocument();
   });
 
   it('adds the parked schedule to the approvals already waiting', async () => {

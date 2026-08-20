@@ -14,8 +14,6 @@ const staggerItem = {
 export interface AttentionSignalRowProps {
   /** The signal, straight from `entities/attention`. */
   signal: AttentionSignal;
-  /** Called after the row is opened, e.g. to close a popover. */
-  onOpened?: () => void;
 }
 
 /**
@@ -29,12 +27,15 @@ export interface AttentionSignalRowProps {
  *
  * Navigation goes through the router's `href` form rather than a typed route,
  * because a signal's deep link is a string the engine built and this row has no
- * business taking it apart again.
+ * business taking it apart again. It does NOT `recordOpened` on the way, which
+ * is the same choice the sidebar's attention rows make: DOR-1156's rule is that
+ * reaching a conversation by hand keeps it in Today, and a wedged session is
+ * something you clear, not something you were working on. The Recent-Activity
+ * rows beside this one do record, because those really are doors into work.
  *
- * @param props - The {@link AttentionSignalRowProps.signal} and an optional
- * {@link AttentionSignalRowProps.onOpened} callback.
+ * @param props - The {@link AttentionSignalRowProps.signal} to draw.
  */
-export function AttentionSignalRow({ signal, onOpened }: AttentionSignalRowProps) {
+export function AttentionSignalRow({ signal }: AttentionSignalRowProps) {
   const router = useRouter();
   const relativeTime = formatRelativeTime(signal.since);
 
@@ -58,10 +59,7 @@ export function AttentionSignalRow({ signal, onOpened }: AttentionSignalRowProps
         size="sm"
         className="relative h-6 shrink-0 px-2 text-xs after:absolute after:-inset-3 md:after:hidden"
         aria-label={`Open ${signal.primary}`}
-        onClick={() => {
-          void router.navigate({ href: signal.deepLink });
-          onOpened?.();
-        }}
+        onClick={() => void router.navigate({ href: signal.deepLink })}
       >
         Open →
       </Button>
