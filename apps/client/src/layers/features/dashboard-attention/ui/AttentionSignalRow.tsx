@@ -3,7 +3,7 @@ import { AlertTriangle } from 'lucide-react';
 import { useRouter } from '@tanstack/react-router';
 import type { AttentionSignal } from '@/layers/entities/attention';
 import { Button } from '@/layers/shared/ui';
-import { formatRelativeTime } from '../lib/format-relative-time';
+import { formatCompactAge } from '@/layers/shared/lib';
 
 const staggerItem = {
   initial: { opacity: 0, y: 8 },
@@ -37,7 +37,7 @@ export interface AttentionSignalRowProps {
  */
 export function AttentionSignalRow({ signal }: AttentionSignalRowProps) {
   const router = useRouter();
-  const relativeTime = formatRelativeTime(signal.since);
+  const relativeTime = formatCompactAge(signal.since);
 
   return (
     <motion.div

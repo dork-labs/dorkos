@@ -50,8 +50,9 @@ vi.mock('@/layers/shared/ui', () => ({
 }));
 
 // Mock formatRelativeTime so timestamp output is deterministic in tests.
-vi.mock('../lib/format-relative-time', () => ({
-  formatRelativeTime: (iso: string) => {
+vi.mock('@/layers/shared/lib', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/lib')>()),
+  formatCompactAge: (iso: string) => {
     const diff = Date.now() - new Date(iso).getTime();
     const minutes = Math.floor(diff / 60000);
     if (minutes < 60) return `${minutes}m`;

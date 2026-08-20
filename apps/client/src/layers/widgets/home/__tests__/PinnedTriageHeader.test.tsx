@@ -107,19 +107,26 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
 }
 
 /**
- * A mesh report with agents nobody can reach — the cheapest way to put one real
- * Recent-Activity row on screen, because it needs a single transport answer and
- * the row it produces owns the `?detail=offline-agent` deep link.
+ * An Inbox page holding one "agent stopped answering" row per name.
+ *
+ * The cheapest way to put one real Recent-Activity row on screen: those rows are
+ * Inbox notifications now (DOR-1384), not a derivation over mesh liveness, so
+ * one transport answer still does it and the row still owns the
+ * `?detail=offline-agent` deep link.
  */
-function unreachable(count: number) {
+function offlineAgents(...names: string[]) {
   return {
-    totalAgents: count,
-    activeCount: 0,
-    inactiveCount: 0,
-    staleCount: 0,
-    unreachableCount: count,
-    byRuntime: {},
-    byProject: {},
+    notifications: names.map((name, i) => ({
+      id: `01JZH000000000000000000${i}`,
+      kind: 'agent.unreachable' as const,
+      tier: 'quiet' as const,
+      subject: { type: 'agent' as const, id: name },
+      agentId: name,
+      title: `${name} stopped answering`,
+      createdAt: '2026-08-19T09:00:00.000Z',
+    })),
+    nextCursor: null,
+    unreadCount: names.length,
   };
 }
 
@@ -307,7 +314,7 @@ describe('PinnedTriageHeader while the composer has the caret', () => {
             buildApproval({ approvalId: '01JZ0000000000000000000002' }),
           ],
         }),
-        getMeshStatus: vi.fn().mockResolvedValue(unreachable(1)),
+        listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')),
       },
       { composerFocused: true }
     );
@@ -489,6 +496,7 @@ describe('PinnedTriageHeader at its height cap', () => {
             scheduleApprovals={[]}
             errorSignals={[]}
             activityItems={[]}
+            onOpenActivity={() => {}}
           />
         </>
       );
@@ -550,7 +558,7 @@ describe('PinnedTriageHeader', () => {
     // Wait for the reads to land: asserting absence before they resolve would
     // pass against a header that simply had not been told anything yet.
     await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
-    await waitFor(() => expect(transport.getMeshStatus).toHaveBeenCalled());
+    await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
 
     expect(header()).toBeNull();
     expect(screen.queryByText('Waiting On You')).not.toBeInTheDocument();
@@ -581,7 +589,7 @@ describe('PinnedTriageHeader', () => {
     );
 
     await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
-    await waitFor(() => expect(transport.getMeshStatus).toHaveBeenCalled());
+    await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
 
     expect(header()).toBeNull();
     expect(screen.queryByTestId('presence-strip')).not.toBeInTheDocument();
@@ -595,7 +603,7 @@ describe('PinnedTriageHeader', () => {
           buildApproval({ approvalId: '01JZ0000000000000000000002' }),
         ],
       }),
-      getMeshStatus: vi.fn().mockResolvedValue(unreachable(1)),
+      listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')),
     });
 
     await waitFor(() =>
@@ -684,22 +692,25 @@ describe('PinnedTriageHeader', () => {
     // Agents nobody can reach is not a thing WAITING on a person — nothing is
     // blocked on an answer — so it draws under Recent Activity rather than
     // spending the header's amber on it.
-    renderHeader({ getMeshStatus: vi.fn().mockResolvedValue(unreachable(2)) });
+    renderHeader({ listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')) });
 
     expect(await screen.findByText('Recent Activity')).toBeInTheDocument();
-    expect(screen.getByText('2 mesh agents unreachable')).toBeInTheDocument();
+    expect(screen.getByText('tangerines stopped answering')).toBeInTheDocument();
     expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
   });
 
   it('keeps the activity row deep link, and opens the sheet it addresses', async () => {
-    const { router } = renderHeader({ getMeshStatus: vi.fn().mockResolvedValue(unreachable(2)) });
+    const { router } = renderHeader({
+      listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')),
+    });
 
-    await screen.findByText('2 mesh agents unreachable');
-    await userEvent.click(screen.getByRole('button', { name: 'View →' }));
+    // The row IS the button now — clicking it marks the notification read and
+    // travels, where the old row carried a separate "View →".
+    await userEvent.click(await screen.findByText('tangerines stopped answering'));
 
     await waitFor(() =>
       expect(router.state.location.search).toEqual(
-        expect.objectContaining({ detail: 'offline-agent', itemId: 'offline' })
+        expect.objectContaining({ detail: 'offline-agent', itemId: 'tangerines' })
       )
     );
     expect(await screen.findByText('Offline Agents')).toBeInTheDocument();
@@ -708,7 +719,7 @@ describe('PinnedTriageHeader', () => {
   it('draws both groups at once when both have something to say', async () => {
     renderHeader({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
-      getMeshStatus: vi.fn().mockResolvedValue(unreachable(1)),
+      listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')),
     });
 
     expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
@@ -736,7 +747,7 @@ describe('PinnedTriageHeader', () => {
     });
 
     await waitFor(() => expect(transport.listTasks).toHaveBeenCalled());
-    await waitFor(() => expect(transport.getMeshStatus).toHaveBeenCalled());
+    await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
     expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
   });
 
@@ -828,6 +839,7 @@ describe('PinnedTriageHeader', () => {
             scheduleApprovals={[]}
             errorSignals={[]}
             activityItems={[]}
+            onOpenActivity={() => {}}
           />
         </TransportProvider>
       </QueryClientProvider>

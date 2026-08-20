@@ -4,17 +4,14 @@ import { ChevronDown } from 'lucide-react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { Task } from '@dorkos/shared/types';
+import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import type { AttentionSignal } from '@/layers/entities/attention';
 import { cn } from '@/layers/shared/lib';
 import { useScrollOverflow } from '@/layers/shared/model';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
 import { AskList } from '@/layers/features/ask';
-import {
-  AttentionSignalRow,
-  RecentActivityRow,
-  ScheduleApprovalRow,
-  type RecentActivityItem,
-} from '@/layers/features/dashboard-attention';
+import { InboxRow } from '@/layers/features/inbox';
+import { AttentionSignalRow, ScheduleApprovalRow } from '@/layers/features/dashboard-attention';
 import { triageSummary } from '../lib/triage-summary';
 
 /**
@@ -200,8 +197,16 @@ export interface PinnedTriageHeaderViewProps {
    * why the other blockages the engine raises stay out of this group.
    */
   errorSignals: readonly AttentionSignal[];
-  /** What recently went wrong — failed runs, dead letters, offline agents. */
-  activityItems: readonly RecentActivityItem[];
+  /**
+   * What recently went wrong — failed runs, dead letters, offline agents.
+   *
+   * Inbox rows now, not a derivation of this widget's own: the same
+   * notifications the bell shows, narrowed to the kinds that mean something
+   * broke (see `useActivityNotifications`).
+   */
+  activityItems: readonly NotificationDTO[];
+  /** Open one activity row — mark it read, and go where it points. */
+  onOpenActivity: (notification: NotificationDTO) => void;
   /**
    * The presence strip slot, empty until the strip lands.
    *
@@ -294,6 +299,7 @@ export function PinnedTriageHeaderView({
   scheduleApprovals,
   errorSignals,
   activityItems,
+  onOpenActivity,
   presence,
   condensed,
   onExpand,
@@ -459,7 +465,11 @@ export function PinnedTriageHeaderView({
                   <div className="border-border/60 bg-background/60 rounded-lg border p-2">
                     <motion.div variants={staggerContainer} initial="initial" animate="animate">
                       {activityItems.map((item) => (
-                        <RecentActivityRow key={item.id} item={item} />
+                        <InboxRow
+                          key={item.id}
+                          notification={item}
+                          onOpen={() => onOpenActivity(item)}
+                        />
                       ))}
                     </motion.div>
                   </div>

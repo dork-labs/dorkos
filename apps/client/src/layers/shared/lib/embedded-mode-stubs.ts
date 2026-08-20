@@ -32,6 +32,10 @@ import type {
   StandingPermissionsResponse,
 } from '@dorkos/shared/approval-schemas';
 import type {
+  ListNotificationsResponse,
+  MarkNotificationsReadResponse,
+} from '@dorkos/shared/notification-schemas';
+import type {
   StoreCredentialResult,
   DelegatedLoginResult,
   OpenRouterKeyResult,
@@ -495,6 +499,35 @@ export const approvalStubs = {
 
   async revokeStandingPermission(_grantId: string): Promise<RevokeStandingPermissionResponse> {
     throw new Error('Approvals are not supported in Obsidian plugin mode.');
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Inbox stubs (spec `notification-system`)
+// ---------------------------------------------------------------------------
+
+/**
+ * The Inbox in the embed: an empty history, and read state that refuses.
+ *
+ * The notification pipeline is a server domain — a table, a registry and the
+ * emitters wired into services the embed does not run — so there is nothing here
+ * to list. An empty list is the honest answer and keeps the bell quiet rather
+ * than making it draw a permanent error; marking something read is a claim about
+ * a store that does not exist, so it refuses out loud instead.
+ *
+ * @internal
+ */
+export const notificationStubs = {
+  async listNotifications(): Promise<ListNotificationsResponse> {
+    return { notifications: [], nextCursor: null, unreadCount: 0 };
+  },
+
+  async markNotificationRead(_id: string): Promise<MarkNotificationsReadResponse> {
+    throw new Error('Notifications are not supported in Obsidian plugin mode.');
+  },
+
+  async markAllNotificationsRead(): Promise<MarkNotificationsReadResponse> {
+    throw new Error('Notifications are not supported in Obsidian plugin mode.');
   },
 };
 

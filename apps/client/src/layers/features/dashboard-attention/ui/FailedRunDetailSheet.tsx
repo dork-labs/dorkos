@@ -13,7 +13,7 @@ import {
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useTaskRun, useCancelTaskRun } from '@/layers/entities/tasks';
 import { useNavigate } from '@tanstack/react-router';
-import { formatRelativeTime } from '../lib/format-relative-time';
+import { formatCompactAge } from '@/layers/shared/lib';
 
 interface FailedRunDetailSheetProps {
   open: boolean;
@@ -44,9 +44,10 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
 
   const handleViewSession = () => {
     if (!run?.sessionId) return;
-    // The other half of the Recent-Activity rows' door (DOR-1156) — see
-    // `use-recent-activity-items`. No directory to record an agent against: a
-    // run's detail carries the session and nothing else.
+    // The other half of the Recent-Activity rows' door (DOR-1156) — those
+    // rows are Inbox notifications now, so the door is opened by
+    // `notificationLink` in `entities/notifications`. No directory to record an
+    // agent against: a run's detail carries the session and nothing else.
     useInteractionStore.getState().recordOpened('session', run.sessionId);
     void navigate({
       to: '/session',
@@ -100,12 +101,12 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
               <div className="space-y-1 text-sm">
                 {run.startedAt && (
                   <p className="text-muted-foreground">
-                    Started: {formatRelativeTime(run.startedAt)} ago
+                    Started: {formatCompactAge(run.startedAt)} ago
                   </p>
                 )}
                 {run.finishedAt && (
                   <p className="text-muted-foreground">
-                    Finished: {formatRelativeTime(run.finishedAt)} ago
+                    Finished: {formatCompactAge(run.finishedAt)} ago
                   </p>
                 )}
                 {run.durationMs != null && (

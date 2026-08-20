@@ -28,9 +28,10 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-// Mock format-relative-time to return deterministic values
-vi.mock('../lib/format-relative-time', () => ({
-  formatRelativeTime: (_iso: string) => '1h',
+// Pin the age formatter so the sheet's copy is deterministic
+vi.mock('@/layers/shared/lib', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/lib')>()),
+  formatCompactAge: (_iso: string) => '1h',
 }));
 
 // Mock Sheet components — they use portals which don't work in jsdom.

@@ -113,15 +113,27 @@ function buildApproval(): PendingApproval {
 }
 
 /** A mesh report with agents nobody can reach — one real attention row. */
-function unreachable(count: number) {
+/**
+ * An Inbox page holding one "agent stopped answering" row per name.
+ *
+ * The cheapest way to put one real Recent-Activity row on screen: those rows are
+ * Inbox notifications now (DOR-1384), not a derivation over mesh liveness, so
+ * one transport answer still does it and the row still owns the
+ * `?detail=offline-agent` deep link.
+ */
+function offlineAgents(...names: string[]) {
   return {
-    totalAgents: count,
-    activeCount: 0,
-    inactiveCount: 0,
-    staleCount: 0,
-    unreachableCount: count,
-    byRuntime: {},
-    byProject: {},
+    notifications: names.map((name, i) => ({
+      id: `01JZH000000000000000000${i}`,
+      kind: 'agent.unreachable' as const,
+      tier: 'quiet' as const,
+      subject: { type: 'agent' as const, id: name },
+      agentId: name,
+      title: `${name} stopped answering`,
+      createdAt: '2026-08-19T09:00:00.000Z',
+    })),
+    nextCursor: null,
+    unreadCount: names.length,
   };
 }
 
@@ -312,10 +324,10 @@ describe('HomeQuietState — when it stands down', () => {
 
   it('draws nothing when something needs attention', async () => {
     const { transport } = renderQuiet({
-      transport: { getMeshStatus: vi.fn().mockResolvedValue(unreachable(1)) },
+      transport: { listNotifications: vi.fn().mockResolvedValue(offlineAgents('tangerines')) },
     });
 
-    await waitFor(() => expect(transport.getMeshStatus).toHaveBeenCalled());
+    await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
     await waitFor(() => expect(quietLine()).toBeNull());
   });
 

@@ -10,13 +10,14 @@
  */
 import { useMemo } from 'react';
 import type { Task } from '@dorkos/shared/types';
+import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import {
   useAttentionSignals,
   useAttentionSignalsLoading,
   usePendingScheduleApprovals,
   type AttentionSignal,
 } from '@/layers/entities/attention';
-import { useRecentActivityItems, type RecentActivityItem } from './use-recent-activity-items';
+import { useActivityNotifications } from './use-activity-notifications';
 
 /** Shared empty, so a quiet cockpit never mints a fresh array identity. */
 const NO_SIGNALS: readonly AttentionSignal[] = [];
@@ -38,8 +39,8 @@ export interface AttentionRows {
    * header, three lines apart.
    */
   errors: readonly AttentionSignal[];
-  /** What recently went wrong. Not blocking anything; kept until the Inbox lands. */
-  activity: readonly RecentActivityItem[];
+  /** What recently went wrong, from the Inbox. Not blocking anything. */
+  activity: readonly NotificationDTO[];
   /**
    * True while ANY of the three sources is still on its first load.
    *
@@ -62,7 +63,7 @@ export function useAttentionRows(): AttentionRows {
   const { schedules, isLoading: schedulesLoading } = usePendingScheduleApprovals();
   const signals = useAttentionSignals();
   const signalsLoading = useAttentionSignalsLoading();
-  const { items: activity, isLoading: activityLoading } = useRecentActivityItems();
+  const { items: activity, isLoading: activityLoading } = useActivityNotifications();
 
   const errors = useMemo(() => {
     const wedged = signals.filter((signal) => signal.kind === 'error');

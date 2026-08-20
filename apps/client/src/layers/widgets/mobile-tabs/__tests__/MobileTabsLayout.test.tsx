@@ -760,7 +760,7 @@ describe('MobileTabsLayout', () => {
       // unmount this whole slot the instant the refetch came back empty,
       // tearing the "You said no" receipt away in the same frame it appeared.
       // `useSettlingAsks()` is what the two sibling surfaces
-      // (`ApprovalsIndicator`, `PinnedTriageHeaderView`) already guard with —
+      // (`InboxBell`, `PinnedTriageHeaderView`) already guard with —
       // this seeds the exact race and would fail without it.
       const user = userEvent.setup();
       mockState = quietFixture;

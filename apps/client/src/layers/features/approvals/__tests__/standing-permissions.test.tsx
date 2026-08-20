@@ -42,7 +42,7 @@ import { useStandingGrantPolicy } from '../model/use-standing-grant-policy';
  * for the cards, `ApprovalList` for the DOM. The home tab's pinned triage
  * header and the app header's panel each compose exactly this pair, so a card
  * rendered here is the card a person answers (`widgets/home`,
- * `widgets/approvals-indicator`).
+ * `widgets/inbox-bell`).
  */
 function LiveApprovals() {
   const { approvals } = usePendingApprovals();

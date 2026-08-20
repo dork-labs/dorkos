@@ -747,6 +747,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listMarketplaceSources: vi.fn().mockResolvedValue([]),
     addMarketplaceSource: vi.fn(),
     removeMarketplaceSource: vi.fn().mockResolvedValue(undefined),
+    // The Inbox (spec `notification-system`)
+    listNotifications: vi
+      .fn()
+      .mockResolvedValue({ notifications: [], nextCursor: null, unreadCount: 0 }),
+    markNotificationRead: vi.fn().mockResolvedValue({ ok: true, marked: 1, unreadCount: 0 }),
+    markAllNotificationsRead: vi.fn().mockResolvedValue({ ok: true, marked: 0, unreadCount: 0 }),
     // Approvals (spec `agent-trust` §3.3)
     listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
     grantApproval: vi

@@ -12,6 +12,7 @@ import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowca
 import { PipPanelShowcases } from '../showcases/PipPanelShowcases';
 import { ApprovalsShowcases } from '../showcases/ApprovalsShowcases';
 import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
+import { InboxShowcases } from '../showcases/InboxShowcases';
 import { PresenceStripShowcases } from '../showcases/PresenceStripShowcases';
 import { HomeStatesShowcases } from '../showcases/HomeStatesShowcases';
 import { ConnectionsShowcases } from '../showcases/ConnectionsShowcases';
@@ -37,6 +38,7 @@ export function FeaturesPage() {
       <PipPanelShowcases />
       <ApprovalsShowcases />
       <TriageHeaderShowcases />
+      <InboxShowcases />
       <PresenceStripShowcases />
       <HomeStatesShowcases />
       <ConnectionsShowcases />

@@ -25,6 +25,7 @@ import { createCloudMethods } from './cloud-methods';
 import { createTerminalMethods } from './terminal-methods';
 import { createFeedbackMethods } from './feedback-methods';
 import { createApprovalMethods } from './approval-methods';
+import { createNotificationMethods } from './notification-methods';
 import { createConnectorMethods } from './connector-methods';
 import { createMcpMethods } from './mcp-methods';
 import { createTeamMethods } from './team-methods';
@@ -57,6 +58,7 @@ export interface HttpTransport
     ReturnType<typeof createTerminalMethods>,
     ReturnType<typeof createFeedbackMethods>,
     ReturnType<typeof createApprovalMethods>,
+    ReturnType<typeof createNotificationMethods>,
     ReturnType<typeof createConnectorMethods>,
     ReturnType<typeof createMcpMethods>,
     ReturnType<typeof createTeamMethods>,
@@ -92,6 +94,7 @@ export class HttpTransport implements Transport {
       createTerminalMethods(baseUrl),
       createFeedbackMethods(baseUrl),
       createApprovalMethods(baseUrl),
+      createNotificationMethods(baseUrl),
       createConnectorMethods(baseUrl),
       createMcpMethods(baseUrl),
       createTeamMethods(baseUrl),

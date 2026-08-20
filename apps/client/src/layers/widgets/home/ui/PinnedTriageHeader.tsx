@@ -13,6 +13,7 @@ import {
   FailedRunDetailSheet,
   OfflineAgentDetailSheet,
 } from '@/layers/features/dashboard-attention';
+import { useOpenNotification } from '@/layers/features/inbox';
 import type { HomeSearch } from '@/router';
 import { PinnedTriageHeaderView, type TriagePresenceSlot } from './PinnedTriageHeaderView';
 
@@ -88,6 +89,7 @@ export function PinnedTriageHeader({
   const settlingAsks = useSettlingAsks();
   const askAgentNames = useAskAgentNames(interactions);
   const { schedules, errors, activity } = useAttentionRows();
+  const openActivity = useOpenNotification();
   const search = useSearch({ strict: false }) as Partial<HomeSearch>;
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -113,6 +115,7 @@ export function PinnedTriageHeader({
         scheduleApprovals={schedules}
         errorSignals={errors}
         activityItems={activity}
+        onOpenActivity={openActivity}
         presence={presence}
         condensed={isMobile && composerFocused === true}
         onExpand={onExpand}

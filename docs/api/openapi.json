@@ -18989,7 +18989,7 @@
           },
           {
             "schema": {
-              "$ref": "#/components/schemas/NotificationKind"
+              "type": "string"
             },
             "required": false,
             "name": "kind",

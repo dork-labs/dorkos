@@ -53,7 +53,7 @@ export function registerAskAnywhereTests(deps: AskAnywhereDeps): void {
   const { apiUrl, agentDir } = deps;
 
   /** The header's standing marker for "an agent is waiting on you". */
-  const pill = (page: Page) => page.getByTestId('approvals-indicator');
+  const pill = (page: Page) => page.getByTestId('inbox-bell');
 
   /** One Ask card, wherever it is drawn. */
   const askCard = (page: Page) => page.getByTestId('interaction-ask');
@@ -120,8 +120,15 @@ export function registerAskAnywhereTests(deps: AskAnywhereDeps): void {
       await expect(page.getByText(/You allowed this/)).toBeVisible({
         timeout: SERVER_ROUND_TRIP_MS,
       });
-      // And the marker goes quiet, because nothing is waiting any more.
-      await expect(pill(page)).toBeHidden({ timeout: SERVER_ROUND_TRIP_MS });
+      // And the marker stops sounding the alarm, because nothing is waiting any
+      // more. It does NOT have to disappear: the marker is the Inbox bell now
+      // (DOR-1384), and the Inbox still holds what happened — so what has to be
+      // true is that the amber is gone, not that the button is. `data-tone` is
+      // the one thing amber means: something is stopped and waiting on you.
+      await expect(pill(page)).toHaveAttribute('data-tone', 'neutral', {
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+      await expect(pill(page)).not.toContainText('waiting on you');
 
       // The assertion that cannot be faked by a card disappearing: the agent
       // said the thing only an approval could have produced.

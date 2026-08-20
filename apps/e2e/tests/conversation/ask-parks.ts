@@ -50,7 +50,7 @@ export function registerAskParksTests(deps: AskParksDeps): void {
   const { apiUrl, agentDir } = deps;
 
   /** The header's standing marker for "an agent is waiting on you". */
-  const pill = (page: Page) => page.getByTestId('approvals-indicator');
+  const pill = (page: Page) => page.getByTestId('inbox-bell');
 
   /** One Ask card, wherever it is drawn. */
   const askCard = (page: Page) => page.getByTestId('interaction-ask');

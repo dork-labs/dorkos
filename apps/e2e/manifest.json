@@ -985,7 +985,7 @@
         "apps/client/src/layers/features/ask/ui/InteractionAsk.tsx",
         "apps/client/src/layers/features/ask/ui/AskList.tsx",
         "apps/client/src/layers/entities/attention/model/use-pending-interactions.ts",
-        "apps/client/src/layers/widgets/approvals-indicator/ui/ApprovalsIndicator.tsx",
+        "apps/client/src/layers/widgets/inbox-bell/ui/InboxBell.tsx",
         "apps/server/src/routes/sessions.ts",
         "apps/server/src/services/session/session-list-broadcaster.ts"
       ],

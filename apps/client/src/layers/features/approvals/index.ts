@@ -4,7 +4,7 @@
  *
  * Two surfaces show the same queue: the home tab's pinned triage header, and
  * the app header, which carries it on every route through the
- * approvals-indicator widget. Both compose the pieces below and render the same
+ * inbox-bell widget. Both compose the pieces below and render the same
  * {@link ApprovalList}, so the card a person answers is identical wherever they
  * happen to be standing.
  *
