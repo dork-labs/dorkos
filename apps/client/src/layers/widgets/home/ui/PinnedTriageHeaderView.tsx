@@ -13,6 +13,7 @@ import { AskList } from '@/layers/features/ask';
 import { InboxRow } from '@/layers/features/inbox';
 import { AttentionSignalRow, ScheduleApprovalRow } from '@/layers/features/dashboard-attention';
 import { triageSummary } from '../lib/triage-summary';
+import { ShiftReportCard } from './ShiftReportCard';
 
 /**
  * How tall the header may grow before it scrolls inside itself.
@@ -208,6 +209,14 @@ export interface PinnedTriageHeaderViewProps {
   /** Open one activity row — mark it read, and go where it points. */
   onOpenActivity: (notification: NotificationDTO) => void;
   /**
+   * The unread daily Shift Report, if any — "what agents did while you were
+   * away," in one quiet card above Recent Activity. `undefined` once it has
+   * been dismissed or there is nothing to report yet.
+   */
+  shiftReport?: NotificationDTO;
+  /** Dismiss the Shift Report card — marks it read. */
+  onDismissShiftReport?: () => void;
+  /**
    * The presence strip slot, empty until the strip lands.
    *
    * See {@link TriagePresenceSlot} for why it carries its own occupancy rather
@@ -251,12 +260,16 @@ export interface PinnedTriageHeaderViewProps {
  * header saying the same thing twice is how a person learns to read neither.
  * "Recent activity" is the honest bottom group: nothing there is waiting on
  * anybody, it is just what went wrong lately, and the Inbox takes it over
- * (DOR-1384).
+ * (DOR-1384). Between the two, a quiet Shift Report card appears once a day —
+ * see {@link PinnedTriageHeaderViewProps.shiftReport} — and it is the one
+ * thing here that is never about something wrong.
  *
- * **Nothing waiting and nothing wrong draws nothing.** No "all clear" card, no
- * empty box, no border. A header that is always there is chrome, and chrome
- * this close to the top of the screen is the most expensive kind. It comes back
- * on its own, animating open, the moment something needs answering.
+ * **Nothing waiting, nothing wrong, and nothing to report draws nothing.** No
+ * "all clear" card, no empty box, no border. A header that is always there is
+ * chrome, and chrome this close to the top of the screen is the most
+ * expensive kind. It comes back on its own, animating open, the moment
+ * something needs answering — or once a day, the moment there is something to
+ * say about the day that just ended.
  *
  * The one thing that stays behind is an empty screen-reader live region, and it
  * has to: a live region added to the page at the same moment as its words is
@@ -300,6 +313,8 @@ export function PinnedTriageHeaderView({
   errorSignals,
   activityItems,
   onOpenActivity,
+  shiftReport,
+  onDismissShiftReport,
   presence,
   condensed,
   onExpand,
@@ -320,7 +335,13 @@ export function PinnedTriageHeaderView({
     approvals.length > 0 || asks.length > 0 || settlingAsks.length > 0 || approvalsUnavailable;
   const showsAttention = scheduleApprovals.length > 0 || errorSignals.length > 0;
   const showsActivity = activityItems.length > 0;
-  const occupied = showsWaiting || showsAttention || showsActivity || presence?.occupied === true;
+  const showsShiftReport = shiftReport !== undefined;
+  const occupied =
+    showsWaiting ||
+    showsAttention ||
+    showsActivity ||
+    showsShiftReport ||
+    presence?.occupied === true;
   const summary = triageSummary({
     // One count for both, because they are one thing to whoever is being asked:
     // something is waiting on a person, and the card says which kind.
@@ -458,6 +479,10 @@ export function PinnedTriageHeaderView({
                     </motion.div>
                   </div>
                 </TriageGroup>
+              )}
+
+              {showsShiftReport && onDismissShiftReport && (
+                <ShiftReportCard notification={shiftReport} onDismiss={onDismissShiftReport} />
               )}
 
               {showsActivity && (

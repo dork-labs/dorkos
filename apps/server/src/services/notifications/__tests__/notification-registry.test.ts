@@ -80,7 +80,11 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
   },
   'agent.unreachable': { agentId: 'agent-1', agentName: 'Ana' },
   'update.installed': { version: '0.61.0', previousVersion: '0.60.0' },
-  'report.daily': { date: '2026-08-20', summary: 'Two sessions, one run.' },
+  'report.daily': {
+    date: '2026-08-20',
+    title: 'While you were away: 2 turns finished',
+    summary: '2 turns finished. 1 run finished.',
+  },
 };
 
 /** The tier every kind is declared at, from the spec's own table. */
@@ -151,13 +155,14 @@ describe('notification registry', () => {
   it('names exactly the kinds something actually raises today', () => {
     // The registry declares the whole vocabulary on purpose, but a declared kind
     // nobody emits is a promise rather than a feature. This pins the gap as a
-    // listed fact: the three absentees are W4 work (T11 messages, T12 the daily
-    // report), and each carries a comment at its entry saying so.
+    // listed fact: the two absentees are W4 task T11 (messages into the
+    // pipeline), and each carries a comment at its entry saying so.
     expect([...WIRED_NOTIFICATION_KINDS].sort()).toEqual([
       'agent.note',
       'agent.unreachable',
       'ask.pending',
       'dead-letter.created',
+      'report.daily',
       'run.completed',
       'schedule.parked',
       'session.error',
@@ -166,7 +171,7 @@ describe('notification registry', () => {
     ]);
 
     const reserved = NOTIFICATION_KINDS.filter((k) => !WIRED_NOTIFICATION_KINDS.includes(k));
-    expect([...reserved].sort()).toEqual(['dm.received', 'mention.received', 'report.daily']);
+    expect([...reserved].sort()).toEqual(['dm.received', 'mention.received']);
   });
 
   it('stores exactly the three standing kinds only on resolution', () => {

@@ -159,9 +159,13 @@ export interface NotificationPayloads {
   };
   /** The daily digest. */
   'report.daily': {
-    /** The day it covers, `YYYY-MM-DD`. */
+    /** The day it covers, `YYYY-MM-DD` (the boundary's own date — see
+     * `shift-report.ts`). Also what makes two of these the same day. */
     date: string;
-    /** The digest itself, already written for a person. */
+    /** The headline, already written for a person, e.g. "While you were
+     * away: 3 runs finished, 1 needs a look". */
+    title: string;
+    /** The full rundown, already written for a person. */
     summary: string;
   };
 }
@@ -271,6 +275,15 @@ export const DEFAULT_DEDUPE_WINDOW_MS = 5 * 60 * 1000;
 
 /** How long an unreachable agent stays quiet before it is worth saying again. */
 const UNREACHABLE_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * How long a day's Shift Report stays deduped once raised.
+ *
+ * Just under 24 hours — comfortably spanning a local day (4am to 4am; see
+ * `shift-report.ts`) without ever reaching into the NEXT one, which carries
+ * its own `date` and therefore its own dedupe key regardless.
+ */
+const REPORT_DAILY_DEDUPE_WINDOW_MS = 23 * 60 * 60 * 1000;
 
 /** Longest slice of an agent's note that is used to tell two notes apart. */
 const NOTE_DEDUPE_PREFIX = 120;
@@ -468,15 +481,24 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   'report.daily': {
-    // Reserved: emitter lands in W4 (spec task T12, the daily Shift Report card).
+    // The one kind whose title AND body are already fully written when they
+    // arrive — `shift-report.ts` composes both from the day's actual counts,
+    // and re-deriving a headline here from a payload that only carries the
+    // prose would be a second author for the same sentence.
     kind: 'report.daily',
     tier: 'quiet',
     storage: 'event',
     subjectType: 'system',
     locate: (p) => ({ subjectId: p.date }),
-    title: () => 'Your day, in short',
+    title: (p) => p.title,
     body: (p) => p.summary,
     dedupeKey: (p) => `report-daily:${p.date}`,
+    // Held open for most of a day: the dedupe key already scopes to ONE
+    // calendar day, so a wide window here only guards against the composer
+    // being asked twice for the SAME day (a restart mid-day re-checking) —
+    // it can never suppress the next day's report, which carries a different
+    // key. See `REPORT_DAILY_DEDUPE_WINDOW_MS`.
+    dedupeWindowMs: REPORT_DAILY_DEDUPE_WINDOW_MS,
     relay: 'never',
   },
 };
@@ -509,8 +531,8 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * to discover by grepping for call sites.
  *
  * Absent, with their wave noted at each entry: `dm.received` / `mention.received`
- * / `report.daily` (W4), and the RAISE edge of `schedule.parked` (W3 escalation
- * — its resolutions are wired).
+ * (W4 task T11, messages into the pipeline), and the RAISE edge of
+ * `schedule.parked` (W3 escalation — its resolutions are wired).
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',
@@ -522,6 +544,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'dead-letter.created',
   'agent.unreachable',
   'update.installed',
+  'report.daily',
 ];
 
 /**
