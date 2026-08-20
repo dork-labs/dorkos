@@ -16,6 +16,7 @@ import { EmbedSessionListShowcase } from './EmbedSessionListShowcase';
 import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
 import { configKeys } from '@/layers/entities/config';
 import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
+import { RoomAvatar } from '@/layers/entities/room';
 import {
   SectionHeader,
   SidebarGroup,
@@ -172,6 +173,26 @@ function SidebarRowShowcase() {
               glyph={<Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
               title="general"
               dataSlot="sidebar-geometry-row"
+            />
+            {/* The widest mark the slot ever holds, beside the narrowest one.
+                A two-face stack measures 22px in an 18px slot, so a slot that
+                CENTRED its glyph would start this row's first face 2px left of
+                the `#` above it — which is exactly how a group conversation
+                came to hang outside the gutter every other row starts on.
+                `justify-start` is what puts them on one line, and the browser
+                spec measures the two against each other. */}
+            <SidebarRow
+              glyph={
+                <RoomAvatar
+                  room={{ id: 'dm-demo', kind: 'dm', title: 'Ana and Kai' }}
+                  visuals={[
+                    { color: '#7c3aed', emoji: '🐙' },
+                    { color: '#3ca078', emoji: '🔔' },
+                  ]}
+                />
+              }
+              title="Ana, Kai"
+              dataSlot="sidebar-geometry-stack-row"
             />
           </SidebarMenu>
           <div className="pl-[var(--sidebar-nested-x)]">

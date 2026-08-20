@@ -234,11 +234,15 @@ function SectionRollup({ section }: { section: SidebarSectionModel }) {
   const rollup = section.rollup;
   if (!section.collapsed || rollup === undefined) return null;
   const parts: string[] = [];
+  const working = rollup.workingCount > 0 ? `${rollup.workingCount} working` : null;
   if (rollup.needsYouCount !== undefined) {
-    // Only when there IS something to answer. A folded Heads up holding nothing
-    // but "3 working" says "3" like anything else — claiming "0 need you" would
-    // be an alarm about an absence.
-    parts.push(rollup.needsYouCount > 0 ? `${rollup.needsYouCount} need you` : `${rollup.count}`);
+    // **Heads up counts what needs answering, and never a bare item count.**
+    // Its rows include the "N working" report, which needs nobody — so a Heads
+    // up holding only that report folded to "1", which reads as one thing
+    // waiting on you when nothing is. With nothing to answer, the fold says
+    // what is actually in there: the work.
+    if (rollup.needsYouCount > 0) parts.push(`${rollup.needsYouCount} need you`);
+    else if (working !== null) parts.push(working);
   } else {
     parts.push(`${rollup.count}`);
   }
@@ -246,10 +250,13 @@ function SectionRollup({ section }: { section: SidebarSectionModel }) {
     parts.push(`${rollup.unread.count} unread`);
   } else if (rollup.unread.tier === 'activity') {
     // Tier one is a bold label and nothing else (design-decisions §18) — which
-    // the header wears through `emphasized`. The word is here so a reader who
-    // cannot see the weight is told the same thing.
-    parts.push('unread');
+    // the header wears through `emphasized`. "new" is here so a reader who
+    // cannot see the weight is told the same thing, and it is deliberately not
+    // the word "unread": beside "3 unread" on the same line, a bare "unread"
+    // read as a truncated count rather than as a different tier.
+    parts.push('new');
   }
-  if (rollup.workingCount > 0) parts.push(`${rollup.workingCount} working`);
+  // Already spent above when Heads up had nothing to answer.
+  if (working !== null && !parts.includes(working)) parts.push(working);
   return <>{parts.join(' · ')}</>;
 }

@@ -729,6 +729,49 @@ describe('DashboardSidebar', () => {
       expect(next.groups[0]?.collapsed).toBe(true);
     });
 
+    it('folds Heads up and Today too, from a header in a different zone (D1)', async () => {
+      // **The widening, asserted by NAME.** Alt-click used to enumerate the
+      // Library zone's sections and nothing else, so Heads up and Today stayed
+      // open while everything under them shut — a whole-panel gesture that did
+      // three-quarters of a job. Now every header folds, so "fold everything"
+      // has to mean everything, and the press has to work from any header
+      // rather than only from one inside Library.
+      //
+      // Counting the write would pass on a build that folded six of the wrong
+      // sections. Each id is named.
+      mockApprovals.mockReturnValue([pendingApproval()]);
+      mockSidebarPrefs.mockReturnValue(
+        makePrefs({
+          pinned: [agent('/projects/alpha')],
+          groups: [group({ items: [agent('/projects/beta')] })],
+        })
+      );
+      mockRooms.mockReturnValue([
+        { ...channel('r1', 'general'), unreadCount: 2 },
+        dmWith('r2', '/projects/beta', 'beta'),
+      ]);
+      // Today is recency-driven, so a room has to have been OPENED to be in it.
+      useInteractionStore.getState().recordOpened('room', 'r1', Date.now() - 5_000);
+      renderWithProviders(<DashboardSidebar />);
+      await waitFor(() => expect(todayZone()).not.toBeNull());
+      await waitFor(() => expect(libraryHeadings()).toContain('Channels'));
+
+      // Pressed on TODAY's header — a zone that could not fold at all before —
+      // so this proves the gesture is no longer Library's private affordance.
+      const todayToggle = todayZone()!.querySelector(
+        '[data-sidebar-section-toggle]'
+      ) as HTMLElement;
+      fireEvent.click(todayToggle, { altKey: true });
+
+      const next = lastPrefsWrite();
+      for (const id of ['now', 'today', 'pins', 'channels', 'dms', 'agents'] as const) {
+        expect(next.sections?.[id]?.collapsed, `Alt-click left "${id}" open`).toBe(true);
+      }
+      // …and a user's own section goes with them, which is where the fold lives
+      // for a group rather than in `sections`.
+      expect(next.groups[0]?.collapsed, 'Alt-click left the user’s own section open').toBe(true);
+    });
+
     it('unfolds everything when everything is already folded', async () => {
       mockSidebarPrefs.mockReturnValue(
         makePrefs({ sections: { channels: { collapsed: true }, agents: { collapsed: true } } })

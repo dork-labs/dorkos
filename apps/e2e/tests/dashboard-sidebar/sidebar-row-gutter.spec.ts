@@ -196,6 +196,32 @@ test.describe('SidebarRow — the reserved right gutter @smoke', () => {
     expect(nestedHeaderBox.x - headerBox.x).toBeCloseTo(nestedX, 1);
   });
 
+  test('starts the widest glyph on the same x as the narrowest one', async ({ page }) => {
+    await openShowcase(page);
+
+    // **`justify-start`, measured rather than declared.** The glyph slot is
+    // 18px and a two-face stack is 22, so a slot that CENTRED its mark pushed
+    // that stack 2px left of the `#` above it — and a three-face stack 15px
+    // left, out past the gutter entirely and under the row's own title. The
+    // defect is invisible on every row whose mark fits, which is most of them,
+    // so the assertion has to be the wide mark against the narrow one.
+    const geometry = page.locator('[data-slot="sidebar-geometry-frame"]');
+    const hash = await box(geometry.locator('[data-slot="sidebar-geometry-row"] svg').first());
+    const stack = await box(
+      geometry
+        .locator('[data-slot="sidebar-geometry-stack-row"] [data-slot="identity-avatar"]')
+        .first()
+    );
+    expect(
+      stack.width,
+      'the stack is not wider than the slot, so it proves nothing'
+    ).toBeGreaterThan(18);
+    expect(
+      stack.x,
+      'a group conversation’s faces start left of every other row’s glyph'
+    ).toBeCloseTo(hash.x, 0);
+  });
+
   test('keeps the gutter even when a caller passes padding of its own', async ({ page }) => {
     await openShowcase(page);
 

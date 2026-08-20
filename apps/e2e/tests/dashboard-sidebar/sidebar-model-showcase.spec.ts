@@ -77,32 +77,6 @@ const EXPECTED_NOW: Record<string, { attention: number; overflow: string | null 
 const FIXTURES = ['first-run', 'quiet', 'busy', 'power'] as const;
 
 /**
- * The dimmed rows whose labels do not meet 4.5:1, quarantined by the MECHANISM
- * that breaks them rather than by a marker this page paints on.
- *
- * `SidebarRow` dims a `muted` row with `opacity-60` (`shared/ui/sidebar-row.tsx`)
- * over a label that is already only 5.9:1, so the name measures **2.6:1 in light
- * and 3.6:1 in dark**. No opacity clears 4.5:1 from that start, so it is a design
- * decision and not a tuning one: muted has to mean fewer signals rather than
- * less legibility. Tracked as **DOR-1098**.
- *
- * **Two rows, and only one of them is inherited.** One is fixture-driven —
- * `busy` mutes `#noise`, so any honest drawing of that journey has it. The other
- * is the `archive` row this page's own unread-tier showcase adds to demonstrate
- * that mute kills bold and badge (§18). That one is this branch's, and it stays:
- * removing it would hide a rule the page exists to show, and it fails for
- * exactly the same reason DOR-1098 fixes.
- *
- * **Matched on computed opacity, deliberately.** Asking "does an ancestor of the
- * failing text have `opacity < 1`?" names the defect itself, so the quarantine
- * cannot be widened by relabelling a row, and it collapses to zero the moment
- * the dim goes. The count is an **equality** assertion, not a filter: a new
- * failure anywhere reds the clean-set assertion, and fixing DOR-1098 reds this
- * one, which is the instruction to delete it.
- */
-const QUARANTINED_DIMMED_ROWS = 2;
-
-/**
  * How long the first navigation to `/dev` may take, cold.
  *
  * A **ceiling, not a delay**: against a warm dev server the panels resolve in
@@ -234,31 +208,6 @@ async function expectEveryReasonChipEvaluated(page: Page, results: AxeResults): 
     missed.slice(0, 8),
     `axe did not evaluate ${missed.length} of the page's reason chips — it stopped looking before the page ended, so a contrast failure down there would not be reported`
   ).toEqual([]);
-}
-
-/**
- * How many of these failing nodes sit under something that dims them.
- *
- * Walks to the document root looking for a computed `opacity` below 1, which is
- * the defect DOR-1098 removes. Naming the mechanism rather than a marker
- * attribute is what stops the quarantine being widened by relabelling a row.
- *
- * @param page - The page under test.
- * @param targets - The failing nodes' selectors, as axe reported them.
- */
-async function countUnderDimming(page: Page, targets: string[]): Promise<number> {
-  return page.evaluate(
-    (selectors) =>
-      selectors.filter((selector) => {
-        let node: Element | null = document.querySelector(selector);
-        while (node !== null) {
-          if (Number.parseFloat(getComputedStyle(node).opacity) < 1) return true;
-          node = node.parentElement;
-        }
-        return false;
-      }).length,
-    targets
-  );
 }
 
 /** One violation, flattened into something an assertion failure can be read from. */
@@ -534,7 +483,10 @@ test.describe('Sidebar model showcase @smoke', () => {
     await expect(header, 'a folded section holding unread activity reads as quiet').toHaveClass(
       /font-semibold/
     );
-    await expect(channels.getByLabel('3 agents working')).toBeVisible();
+    // The roll-up is TEXT now, not a dot and a pill (`sidebar-simplification`
+    // D1): every header in the panel folds, so a fold's receipt is an ordinary
+    // sentence rather than two marks borrowed from the row vocabulary.
+    await expect(header).toContainText('3 working');
 
     // And the tier really is `activity`, so the absence of a badge is the
     // decision rather than an oversight.
@@ -573,22 +525,19 @@ test.describe('Sidebar model showcase @smoke', () => {
       const results = await runAxe(page);
       await expectEveryReasonChipEvaluated(page, results);
 
+      // **No quarantine any more, and that is the news.** Two muted rows used to
+      // be excused here: `SidebarRow` dimmed them with `opacity-60` over a label
+      // already at 5.9:1, which measured 2.6:1 in light and 3.6:1 in dark — a
+      // number no opacity clears from that start. DOR-1098 is the decision that
+      // muted means fewer signals rather than less legibility, and it ships with
+      // `sidebar-simplification` D1: the dim is gone, a muted row keeps its
+      // label at full contrast and loses its bold, badge and dot instead. So the
+      // bar is simply the bar, for every label on the page.
       const contrast = results.violations.filter((violation) => violation.id === 'color-contrast');
-      const contrastNodes = contrast.flatMap((violation) => violation.nodes);
-      const dimmed = await countUnderDimming(
-        page,
-        contrastNodes.map((node) => node.target.join(' '))
-      );
-
-      // Everything that is NOT the quarantined dimming must be clean.
       expect(
-        contrastNodes.length - dimmed === 0 ? [] : contrast.map(describeViolation),
+        contrast.map(describeViolation),
         `label-on-zone-tint must meet 4.5:1 in the ${theme} theme (design-system §Accessibility)`
       ).toEqual([]);
-      expect(
-        dimmed,
-        'the dimmed-row contrast defect changed shape — either DOR-1098 landed, in which case delete QUARANTINED_DIMMED_ROWS and this assertion, or something new is dimming text'
-      ).toBe(QUARANTINED_DIMMED_ROWS);
 
       // Every other rule, held to the same bar. The zone landmarks, the heading
       // order and the list semantics are as much a part of what this page shows

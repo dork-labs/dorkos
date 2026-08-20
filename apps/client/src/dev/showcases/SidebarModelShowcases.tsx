@@ -376,7 +376,12 @@ function ModelSection({
       )}
       {!collapsed &&
         section.subsections?.map((subsection) => (
-          <div key={subsection.id} className="pl-3">
+          // `--sidebar-nested-x`, the same token `SidebarSection` indents a
+          // real subsection by (D1). It was a literal `pl-3`, which is 12px by
+          // coincidence rather than by derivation — this page's whole job is to
+          // show what the cockpit draws, and a copy that happens to agree today
+          // is what let a contrast defect hide from its own gate once already.
+          <div key={subsection.id} className="pl-[var(--sidebar-nested-x)]">
             <ModelSection
               section={subsection}
               state={state}

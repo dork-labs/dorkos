@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 
 /**
@@ -15,6 +16,26 @@ import { test, expect } from '../../fixtures';
  * one section allowed to render with no rows, because the operator made it.
  */
 const EMPTY_GROUP_PLACEHOLDER = /Drag .*here/;
+
+/**
+ * What one of the sidebar's geometry tokens resolves to, in pixels.
+ *
+ * The same reader `sidebar-row-gutter.spec.ts` uses, and for the same reason:
+ * `--sidebar-header-x` / `--sidebar-row-x` / `--sidebar-nested-x` are the one
+ * place the panel's indents are decided (`specs/sidebar-simplification` D1), so
+ * a spec that restated their values would be pinning a copy.
+ *
+ * @param page - The page under test.
+ * @param name - The custom property, e.g. `--sidebar-row-x`.
+ */
+async function token(page: Page, name: string): Promise<number> {
+  const value = await page.evaluate(
+    (property) => getComputedStyle(document.documentElement).getPropertyValue(property).trim(),
+    name
+  );
+  expect(value, `${name} is not declared`).not.toBe('');
+  return parseFloat(value);
+}
 
 /**
  * DOR-329's sidebar-organization spec deferred a committed browser test — its
@@ -126,14 +147,22 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
     await expect(groupAfterReload).toContainText(agentName);
   });
 
-  test('measures 272px wide, insets every row by 16px, and draws no hairlines', async ({
+  test('measures 272px wide, puts every row on its geometry token, and draws no hairlines', async ({
     page,
     dashboardSidebar,
   }) => {
-    // **P1 AC-5, measured in a real browser rather than asserted from classes.**
-    // The density is the visible half of this redesign: 272px of panel, one
-    // 16px inset paid in two places instead of 30px stacked up in three, and
-    // separation by tint rather than by a 1px line (spec R1).
+    // **D1's geometry, measured in a real browser rather than asserted from
+    // classes.** The density is the visible half of this redesign: 272px of
+    // panel, every row's glyph slot on `--sidebar-row-x` and a section's
+    // members exactly one `--sidebar-nested-x` deeper, and separation by tint
+    // rather than by a 1px line (spec R1).
+    //
+    // **Read out of the live document, never restated here.** This used to
+    // assert a bare `16`, the number design-decisions §11 fixed before
+    // `specs/sidebar-simplification` D1 replaced the three stacked literals
+    // with three tokens. A hard-coded number goes green on a build where the
+    // token says something else and every row has moved — which is the one
+    // failure this test exists to catch.
     const panel = dashboardSidebar.panel;
     await expect(panel).toBeVisible();
 
@@ -167,10 +196,39 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
     expect(await dashboardSidebar.optedOutRowControls()).toEqual([]);
     expect(await dashboardSidebar.rows.count()).toBe(controlCount);
 
-    // …and every one of them starts exactly 16px from the panel's edge.
+    // …and every one of them starts on the token its level owes: `row-x` for a
+    // top-level row, `row-x + nested-x` for a section's member. Asserted per
+    // row against its OWN nesting depth rather than as a set of allowed
+    // numbers, so a top-level row that drifted into the nested inset (or the
+    // reverse) is still a failure.
+    const rowX = await token(page, '--sidebar-row-x');
+    const nestedX = await token(page, '--sidebar-nested-x');
+    let nestedRows = 0;
     for (let i = 0; i < controlCount; i++) {
-      expect(await dashboardSidebar.rowInset(rowControls.nth(i))).toBe(16);
+      const row = rowControls.nth(i);
+      const nested = await row.evaluate(
+        (element) =>
+          element.closest('[data-sidebar-section]')?.getAttribute('data-sidebar-section') ?? ''
+      );
+      const isNested = nested.startsWith('group:');
+      if (isNested) nestedRows += 1;
+      expect(
+        await dashboardSidebar.rowInset(row),
+        `a row in "${nested || 'the panel'}" is off its geometry token`
+      ).toBe(isNested ? rowX + nestedX : rowX);
     }
+
+    // **The nested half of that loop is not allowed to be vacuous.** The test
+    // above this one drags an agent into a group, and `mode: 'serial'` is what
+    // guarantees it has already run — so there IS a real `SidebarSection`
+    // rendered with `isSubsection` on screen. Without this floor, a build that
+    // stopped nesting rows entirely would pass the loop by never entering the
+    // nested branch, which is precisely the regression `--sidebar-nested-x`
+    // exists to prevent.
+    expect(
+      nestedRows,
+      'no nested row was measured — the loop proved nothing about nesting'
+    ).toBeGreaterThanOrEqual(1);
 
     // No `border-b` / `border-t` anywhere in the sidebar tree. The header's
     // underline and the footer's overline are the two that went; the assertion

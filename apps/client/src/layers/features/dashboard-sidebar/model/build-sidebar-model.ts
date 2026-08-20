@@ -107,11 +107,11 @@ export type LibrarySectionId = (typeof SIDEBAR_LIBRARY_SECTION_IDS)[number];
  * Every section whose fold is remembered, Library's four plus the two computed
  * zones.
  *
- * **Heads up and Today are in here now, and that is the whole of D1's "every
+ * **The computed zones are in here now, and that is the whole of D1's "every
  * header folds".** BC-2 used to say a zone is a landmark and never an
  * accordion; the exception cost more to learn than the fold was worth, so the
- * rule is now one rule and these two carry a persisted key like any other
- * section. Getting started is deliberately absent — see `SidebarSectionIdSchema`.
+ * rule is one rule and Heads up, Today and Getting started carry a persisted
+ * key like any other section.
  *
  * The `satisfies` keeps this and the persisted vocabulary honest: retiring an id
  * from the schema turns an entry here into a compile error rather than a fold
@@ -120,16 +120,16 @@ export type LibrarySectionId = (typeof SIDEBAR_LIBRARY_SECTION_IDS)[number];
 export const SIDEBAR_FOLDING_SECTION_IDS = [
   'now',
   'today',
+  'getting-started',
   ...SIDEBAR_LIBRARY_SECTION_IDS,
 ] as const satisfies readonly PersistedSectionId[];
 
 /**
  * Narrow a section id to one that has a place to store its collapse state.
  *
- * Getting started and a group sub-header answer `null`: the first has no
- * persisted key by design, and a group's fold already lives on the group.
- * Reading the tuple rather than repeating the ids, so it stays the one place the
- * folding set is edited.
+ * A group sub-header answers `null`, because a group's fold already lives on the
+ * group. Reading the tuple rather than repeating the ids, so it stays the one
+ * place the folding set is edited.
  *
  * @param id - Any section id the model emits.
  */

@@ -1356,20 +1356,42 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
     expect(prefs.sections).toEqual({ channels: { collapsed: true } });
   });
 
-  it('remembers a fold for Heads up and Today, the two computed zones', () => {
+  it('remembers a fold for all three computed zones', () => {
     // Every header in the sidebar folds now (`specs/sidebar-simplification` D1),
-    // so the two zones that could not before need somewhere to store it. Red if
-    // the enum narrows back: `useSectionChrome.toggleCollapsed` returns early
+    // so the three zones that could not before need somewhere to store it. Red
+    // if the enum narrows back: `useSectionChrome.toggleCollapsed` returns early
     // when the id has no persisted home, so the chevron would silently do
     // nothing rather than fail loudly.
     const prefs = SidebarPrefsSchema.parse({
-      sections: { now: { collapsed: true }, today: { collapsed: false } },
+      sections: {
+        now: { collapsed: true },
+        today: { collapsed: false },
+        'getting-started': { collapsed: true },
+      },
     });
     expect(prefs.sections.now).toEqual({ collapsed: true });
     expect(prefs.sections.today).toEqual({ collapsed: false });
-    // And the widening is safe to reverse: the sanitizer above already drops a
-    // section id this build has never heard of, so a downgrade loses two fold
-    // flags rather than producing a config that loads and refuses every write.
+    expect(prefs.sections['getting-started']).toEqual({ collapsed: true });
+  });
+
+  it('needs no migration to accept them, in either direction', () => {
+    // **Why this widening ships without a conf migration.** Nothing on disk
+    // changes shape: a config written before D1 simply has no key for these
+    // three, and an absent section is already "not folded". Forward, the record
+    // now accepts them; backward, `dropUnknownSectionIds` strips a key an older
+    // build has never heard of, so a downgrade loses a fold flag rather than
+    // producing a config that loads and then refuses every subsequent write.
+    //
+    // Both halves asserted, because it is the PAIR that makes a migration
+    // unnecessary — one alone would leave the other direction to chance.
+    const untouched = SidebarPrefsSchema.parse({ sections: { channels: { collapsed: true } } });
+    expect(untouched.sections.channels).toEqual({ collapsed: true });
+    expect(untouched.sections.now).toBeUndefined();
+
+    const fromNewerBuild = SidebarPrefsSchema.parse({
+      sections: { 'getting-started': { collapsed: true }, aZoneFromTheFuture: { collapsed: true } },
+    });
+    expect(fromNewerBuild.sections).toEqual({ 'getting-started': { collapsed: true } });
   });
 
   it('keeps what it was given when there is nothing to drop', () => {
