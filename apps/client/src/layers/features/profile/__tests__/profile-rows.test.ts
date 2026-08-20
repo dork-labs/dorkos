@@ -136,6 +136,7 @@ describe('an agent you manage', () => {
       'Sessions nav',
       'Tasks nav',
       'Rooms nav',
+      'Notifications nav',
       'Skills nav',
       'Tools & MCP nav',
       'Connections nav',
@@ -184,6 +185,7 @@ describe('DorkBot', () => {
       'Sessions nav',
       'Tasks nav',
       'Rooms nav',
+      'Notifications nav',
       'Skills nav',
       'Tools & MCP nav',
     ]);

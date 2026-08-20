@@ -13,7 +13,7 @@
  * different objects on the wire, but they are the same thing to the person
  * being asked, so this widget draws both. The prompts go first — their window
  * is ten minutes against a capability approval's two hours, so drawing them
- * first IS time-left order, the same reasoning `ApprovalsIndicator` (the
+ * first IS time-left order, the same reasoning `InboxBell` (the
  * header's tray) already settled on.
  *
  * **Composed, never copied.** `AskList` and `ApprovalList` are the exact stacks
@@ -47,7 +47,7 @@ import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals'
  * **The failure is loud even while stale cards are on screen.** A refetch that
  * fails while yesterday's list is still cached would otherwise show cards that
  * may already be answered with nothing saying so; the notice sits above them,
- * which is the arrangement `ApprovalsIndicator` settled on for the same reason.
+ * which is the arrangement `InboxBell` settled on for the same reason.
  * The pending-Ask read carries no such failure state of its own today — no
  * surface in the cockpit shows one yet — so this stays silent about it rather
  * than inventing an error state the rest of the product does not have.
@@ -58,7 +58,7 @@ export function useNowAttentionSlot(): ReactNode | null {
   // Answered Asks, still on screen saying how they ended. Without this,
   // answering the LAST pending Ask unmounts this whole slot in the same frame
   // its receipt would draw — the disappearance the header pill's own
-  // `ApprovalsIndicator` and the home triage header's `PinnedTriageHeaderView`
+  // `InboxBell` and the home triage header's `PinnedTriageHeaderView`
   // both guard against the same way: hold the slot, and the AskList render,
   // open for as long as anything is settling.
   const settling = useSettlingAsks();

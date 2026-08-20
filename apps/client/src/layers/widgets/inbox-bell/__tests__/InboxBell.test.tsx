@@ -1,7 +1,14 @@
 /**
- * The header approvals marker: it appears the moment an agent asks, from any
- * route; it retires when the request is decided or its window closes; it reads a
- * count for a queue; and it can be reached and opened from the keyboard alone.
+ * The Inbox bell: it appears the moment an agent asks, from any route; it
+ * retires when the request is decided or its window closes; it reads a count for
+ * a queue and a different, neutral one for unread history; and it can be reached
+ * and opened from the keyboard alone.
+ *
+ * Everything above the "the Inbox half" block is the marker's ORIGINAL contract,
+ * ported unchanged from `ApprovalsIndicator` — the amber pill still means exactly
+ * one thing, and the settling rule that keeps a receipt on screen still holds.
+ * The evolution had to leave those true, so they are asserted here in the same
+ * words.
  *
  * @vitest-environment jsdom
  */
@@ -14,6 +21,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectionState, Task } from '@dorkos/shared/types';
 import type { PendingApproval, StandingPermission } from '@dorkos/shared/approval-schemas';
+import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 
 /** Global stream state the widget reads; mutable so a test can drop the link. */
@@ -34,9 +42,11 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
 import { usePendingApprovals } from '@/layers/entities/attention';
+import { useNotifications } from '@/layers/entities/notifications';
 import { useStandingPermissions } from '@/layers/features/approvals';
 import { useConfig } from '@/layers/entities/config';
-import { ApprovalsIndicator } from '../ui/ApprovalsIndicator';
+import { clearInboxRequest, requestInbox } from '@/layers/entities/notifications';
+import { InboxBell } from '../ui/InboxBell';
 
 /**
  * Renders the state the marker is derived from, so a test can wait for the reads
@@ -52,9 +62,12 @@ function SettledProbe() {
   const { data: config } = useConfig();
   const { isLoading } = usePendingApprovals();
   const { permissions } = useStandingPermissions();
+  const { isLoading: inboxLoading } = useNotifications();
   return (
     <span data-testid="settled">
-      {`${config ? 'cfg' : 'nocfg'}:${isLoading ? 'loading' : 'loaded'}:${permissions.length}`}
+      {`${config ? 'cfg' : 'nocfg'}:${isLoading ? 'loading' : 'loaded'}:${permissions.length}:${
+        inboxLoading ? 'inbox-loading' : 'inbox-loaded'
+      }`}
     </span>
   );
 }
@@ -157,14 +170,14 @@ function renderIndicator(overrides: Partial<Transport> = {}) {
     ...render(
       <>
         <SettledProbe />
-        <ApprovalsIndicator />
+        <InboxBell />
       </>,
       { wrapper: Wrapper }
     ),
   };
 }
 
-describe('ApprovalsIndicator', () => {
+describe('InboxBell', () => {
   /** Handlers the hook registered, keyed by event name. */
   let handlers: Map<string, (raw: unknown) => void>;
 
@@ -189,6 +202,7 @@ describe('ApprovalsIndicator', () => {
   beforeEach(() => {
     handlers = new Map();
     mockConnectionState = 'connected';
+    clearInboxRequest();
     vi.mocked(useEventSubscription).mockImplementation((event, handler) => {
       handlers.set(event, handler as (raw: unknown) => void);
     });
@@ -206,19 +220,17 @@ describe('ApprovalsIndicator', () => {
     // Wait for both reads to land FIRST. `waitFor` around the absence alone
     // resolves on its first synchronous check, before either query settles, so it
     // would pass against a component that always renders the marker.
-    await screen.findByText('cfg:loaded:0');
-    expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument();
+    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
   });
 
   it('appears the moment approval_pending arrives', async () => {
     renderIndicator({ listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }) });
-    await waitFor(() =>
-      expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument());
 
     act(() => handlers.get('approval_pending')?.(buildApproval()));
 
-    const marker = await screen.findByTestId('approvals-indicator');
+    const marker = await screen.findByTestId('inbox-bell');
     expect(marker).toHaveAccessibleName('1 request needs your approval. Open to answer it.');
   });
 
@@ -248,7 +260,7 @@ describe('ApprovalsIndicator', () => {
       }),
     });
 
-    const marker = await screen.findByTestId('approvals-indicator');
+    const marker = await screen.findByTestId('inbox-bell');
     expect(marker).toHaveAccessibleName('3 requests need your approval. Open to answer them.');
     expect(marker).toHaveTextContent('3');
   });
@@ -256,15 +268,13 @@ describe('ApprovalsIndicator', () => {
   it('retires when the request is decided elsewhere', async () => {
     const listPendingApprovals = vi.fn().mockResolvedValue({ approvals: [buildApproval()] });
     renderIndicator({ listPendingApprovals });
-    await screen.findByTestId('approvals-indicator');
+    await screen.findByTestId('inbox-bell');
 
     // Somebody answered — in this window, another tab, or from the CLI.
     listPendingApprovals.mockResolvedValue({ approvals: [] });
     act(() => handlers.get('approval_resolved')?.({ approvalId: '01JZ0000000000000000000001' }));
 
-    await waitFor(() =>
-      expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument());
   });
 
   it('never shows a request whose window has already closed', async () => {
@@ -276,9 +286,7 @@ describe('ApprovalsIndicator', () => {
       }),
     });
 
-    await waitFor(() =>
-      expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument());
   });
 
   it('retires the marker when the window closes while you are looking at it', async () => {
@@ -293,21 +301,21 @@ describe('ApprovalsIndicator', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(screen.getByTestId('approvals-indicator')).toBeInTheDocument();
+    expect(screen.getByTestId('inbox-bell')).toBeInTheDocument();
 
     // Sit past the deadline with nobody deciding and no agent retrying: the
     // server emits no event here, so the marker has to time itself out.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(61_000);
     });
-    expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
   });
 
   it('is reachable from the keyboard and opens the cards in place', async () => {
     renderIndicator({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
     });
-    const marker = await screen.findByTestId('approvals-indicator');
+    const marker = await screen.findByTestId('inbox-bell');
 
     await userEvent.tab();
     expect(marker).toHaveFocus();
@@ -323,7 +331,7 @@ describe('ApprovalsIndicator', () => {
   it('says so when the list cannot be read, rather than looking like silence', async () => {
     renderIndicator({ listPendingApprovals: vi.fn().mockRejectedValue(new Error('offline')) });
 
-    const marker = await screen.findByTestId('approvals-indicator');
+    const marker = await screen.findByTestId('inbox-bell');
     expect(marker).toHaveAccessibleName('DorkOS could not check for approvals. Open for details.');
 
     await userEvent.click(marker);
@@ -340,9 +348,7 @@ describe('ApprovalsIndicator', () => {
     mockConnectionState = 'reconnecting';
     renderIndicator({ listPendingApprovals: vi.fn().mockRejectedValue(new Error('offline')) });
 
-    await waitFor(() =>
-      expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument());
   });
 
   it('shows a quiet marker, not the amber one, when only standing permissions are live', async () => {
@@ -355,7 +361,7 @@ describe('ApprovalsIndicator', () => {
       listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
     });
 
-    const marker = await screen.findByTestId('approvals-indicator');
+    const marker = await screen.findByTestId('inbox-bell');
     expect(marker).toHaveAccessibleName('1 standing permission is live. Open to see it or end it.');
     expect(marker.className).not.toContain('bg-status-warning-bg');
     // The check-mark shield belongs to this state and only this one: live trust
@@ -373,7 +379,7 @@ describe('ApprovalsIndicator', () => {
       listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
     });
 
-    await userEvent.click(await screen.findByTestId('approvals-indicator'));
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
 
     expect(await screen.findByText('Uninstall a marketplace package')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Stop trusting dorkbot/ })).toBeInTheDocument();
@@ -386,7 +392,7 @@ describe('ApprovalsIndicator', () => {
       listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
     });
 
-    const marker = await screen.findByTestId('approvals-indicator');
+    const marker = await screen.findByTestId('inbox-bell');
     expect(marker).toHaveAccessibleName('1 request needs your approval. Open to answer it.');
 
     await userEvent.click(marker);
@@ -411,8 +417,8 @@ describe('ApprovalsIndicator', () => {
 
     // The probe proves the config landed and the permission list resolved to
     // nothing, which is what makes the marker's absence mean something.
-    await screen.findByText('cfg:loaded:0');
-    expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument();
+    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
   });
 
   it('says so when the permission list cannot be read, rather than looking untrusted', async () => {
@@ -425,7 +431,7 @@ describe('ApprovalsIndicator', () => {
       listStandingPermissions: vi.fn().mockRejectedValue(new Error('offline')),
     });
 
-    const marker = await screen.findByTestId('approvals-indicator');
+    const marker = await screen.findByTestId('inbox-bell');
     expect(marker).toHaveAccessibleName(
       'DorkOS could not check which standing permissions are live. Open for details.'
     );
@@ -451,7 +457,7 @@ describe('ApprovalsIndicator', () => {
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
     });
 
-    expect(await screen.findByTestId('approvals-indicator')).toBeInTheDocument();
+    expect(await screen.findByTestId('inbox-bell')).toBeInTheDocument();
   });
 
   it('names an agent’s prompt as a question, never as an approval request', async () => {
@@ -478,7 +484,7 @@ describe('ApprovalsIndicator', () => {
       }),
     });
 
-    const marker = await screen.findByTestId('approvals-indicator');
+    const marker = await screen.findByTestId('inbox-bell');
     expect(marker).toHaveAccessibleName(/1 agent is waiting on your answer/i);
     expect(marker).not.toHaveAccessibleName(/approval/i);
   });
@@ -508,7 +514,7 @@ describe('ApprovalsIndicator', () => {
       }),
     });
 
-    const marker = await screen.findByTestId('approvals-indicator');
+    const marker = await screen.findByTestId('inbox-bell');
     expect(marker).toHaveTextContent('1');
     await userEvent.click(marker);
 
@@ -541,7 +547,7 @@ describe('ApprovalsIndicator', () => {
       updateTask,
     });
 
-    const marker = await screen.findByTestId('approvals-indicator');
+    const marker = await screen.findByTestId('inbox-bell');
     await waitFor(() => expect(marker).toHaveTextContent('2'));
     expect(marker).toHaveAccessibleName(/2 requests need your approval/i);
 
@@ -562,7 +568,7 @@ describe('ApprovalsIndicator', () => {
       listTasks: vi.fn().mockResolvedValue([parkedSchedule()]),
     });
 
-    const marker = await screen.findByTestId('approvals-indicator');
+    const marker = await screen.findByTestId('inbox-bell');
     await waitFor(() => expect(marker).toHaveTextContent('2'));
     expect(marker).toHaveAccessibleName(/2 requests need your approval/i);
   });
@@ -575,7 +581,241 @@ describe('ApprovalsIndicator', () => {
       listTasks: vi.fn().mockResolvedValue([parkedSchedule({ status: 'active', enabled: true })]),
     });
 
-    await screen.findByText(/cfg:loaded/);
-    expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument();
+    await screen.findByText(/^cfg:loaded/);
+    expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The Inbox half — what the marker gained when it became the bell
+// ---------------------------------------------------------------------------
+
+/** Build a notification, overriding only what a test cares about. */
+function buildNotification(overrides: Partial<NotificationDTO> = {}): NotificationDTO {
+  return {
+    id: '01JZE0000000000000000001',
+    kind: 'turn.completed',
+    tier: 'notable',
+    subject: { type: 'session', id: 'ses-1' },
+    sessionId: 'ses-1',
+    agentId: 'alpha',
+    title: 'meeting-notes finished',
+    createdAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+/** A quiet approvals leg, so a test about the Inbox is only about the Inbox. */
+const NOTHING_WAITING = {
+  listPendingApprovals: () => Promise.resolve({ approvals: [] }),
+};
+
+describe('InboxBell — history and read state', () => {
+  /** Handlers the hook registered, keyed by event name. */
+  let handlers: Map<string, (raw: unknown) => void>;
+
+  beforeEach(() => {
+    handlers = new Map();
+    mockConnectionState = 'connected';
+    clearInboxRequest();
+    vi.mocked(useEventSubscription).mockImplementation((event, handler) => {
+      handlers.set(event, handler as (raw: unknown) => void);
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('stays invisible when nothing waits AND nothing is unread', async () => {
+    renderIndicator({
+      ...NOTHING_WAITING,
+      listNotifications: vi
+        .fn()
+        .mockResolvedValue({ notifications: [], nextCursor: null, unreadCount: 0 }),
+    });
+
+    // Both legs settled first: an absence assertion that fires before the reads
+    // land would pass against a component that always renders the pill.
+    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
+  });
+
+  it('draws a neutral count, never the amber one, when the only news is unread', async () => {
+    // The whole discrimination of the evolution: unread history is news, not an
+    // alarm. Seeded defect — give the unread branch `tone="waiting"` and this
+    // reads amber over a cockpit where nothing is blocked.
+    renderIndicator({
+      ...NOTHING_WAITING,
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [buildNotification()],
+        nextCursor: null,
+        unreadCount: 4,
+      }),
+    });
+
+    const bell = await screen.findByTestId('inbox-bell');
+    expect(bell).toHaveAttribute('data-tone', 'neutral');
+    expect(bell).toHaveTextContent('4');
+    expect(bell).toHaveAccessibleName('4 unread notifications. Open your Inbox.');
+    expect(bell.className).not.toContain('bg-status-warning-bg');
+  });
+
+  it('reports the blocking queue, not the unread count, when both are true', async () => {
+    // One slot, and the half with a clock on it wins it.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [buildNotification()],
+        nextCursor: null,
+        unreadCount: 9,
+      }),
+    });
+
+    const bell = await screen.findByTestId('inbox-bell');
+    expect(bell).toHaveAttribute('data-tone', 'waiting');
+    expect(bell).toHaveAccessibleName('1 request needs your approval. Open to answer it.');
+  });
+
+  it('puts what needs you above what merely happened', async () => {
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [buildNotification({ title: 'meeting-notes finished' })],
+        nextCursor: null,
+        unreadCount: 1,
+      }),
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+
+    const card = await screen.findByText('Uninstall a marketplace package');
+    const row = await screen.findByText('meeting-notes finished');
+    // Something waiting on a person outranks something already over.
+    expect(card.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('marks everything read from the panel header', async () => {
+    const markAllNotificationsRead = vi
+      .fn()
+      .mockResolvedValue({ ok: true, marked: 2, unreadCount: 0 });
+    renderIndicator({
+      ...NOTHING_WAITING,
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [buildNotification({ id: 'n1' }), buildNotification({ id: 'n2' })],
+        nextCursor: null,
+        unreadCount: 2,
+      }),
+      markAllNotificationsRead,
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Mark all read' }));
+
+    expect(markAllNotificationsRead).toHaveBeenCalledTimes(1);
+    // Optimistic: the dots go in the same frame, and the header action goes with
+    // them because there is nothing left to mark. The panel does NOT close —
+    // reading your Inbox should not throw you out of it.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Mark all read' })).not.toBeInTheDocument()
+    );
+    expect(document.querySelectorAll('[data-slot="inbox-row"][data-unread="true"]')).toHaveLength(
+      0
+    );
+  });
+
+  it('offers no mark-all when nothing is unread', async () => {
+    renderIndicator({
+      ...NOTHING_WAITING,
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [buildNotification({ readAt: new Date().toISOString() })],
+        nextCursor: null,
+        unreadCount: 0,
+      }),
+      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
+      getConfig: configWithStandingGrants(),
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    await screen.findByText('meeting-notes finished');
+    expect(screen.queryByRole('button', { name: 'Mark all read' })).not.toBeInTheDocument();
+  });
+
+  it('marks a row read when it is opened', async () => {
+    const markNotificationRead = vi.fn().mockResolvedValue({ ok: true, marked: 1, unreadCount: 0 });
+    renderIndicator({
+      ...NOTHING_WAITING,
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [buildNotification({ id: 'n1' })],
+        nextCursor: null,
+        unreadCount: 1,
+      }),
+      markNotificationRead,
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    await userEvent.click(await screen.findByText('meeting-notes finished'));
+
+    expect(markNotificationRead).toHaveBeenCalledWith('n1');
+  });
+
+  it('takes a live notification without being reopened', async () => {
+    renderIndicator({
+      ...NOTHING_WAITING,
+      listNotifications: vi
+        .fn()
+        .mockResolvedValue({ notifications: [], nextCursor: null, unreadCount: 0 }),
+    });
+    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
+
+    act(() =>
+      handlers.get('notification')?.({ notification: buildNotification({ id: 'live-1' }) })
+    );
+
+    // The pill has to appear from the stream alone — the count comes off the
+    // same cached page the event was written into.
+    const bell = await screen.findByTestId('inbox-bell');
+    expect(bell).toHaveAttribute('data-tone', 'neutral');
+  });
+
+  it('opens filtered when a session asks for its own notifications', async () => {
+    const listNotifications = vi
+      .fn()
+      .mockResolvedValue({ notifications: [], nextCursor: null, unreadCount: 3 });
+    renderIndicator({ ...NOTHING_WAITING, listNotifications });
+
+    await screen.findByTestId('inbox-bell');
+    act(() => requestInbox({ sessionId: 'ses-42' }));
+
+    await waitFor(() =>
+      expect(listNotifications).toHaveBeenCalledWith({ limit: 25, sessionId: 'ses-42' })
+    );
+    // And it says which slice it is showing, so the empty list is not read as a
+    // broken Inbox.
+    expect(await screen.findByText('Activity · this session')).toBeInTheDocument();
+  });
+
+  it('drops the session filter once the panel is closed again', async () => {
+    // Something unread, so the bell is on screen on its own terms and closing
+    // the panel does not simply unmount it.
+    renderIndicator({
+      ...NOTHING_WAITING,
+      listNotifications: vi
+        .fn()
+        .mockResolvedValue({ notifications: [], nextCursor: null, unreadCount: 2 }),
+    });
+
+    await screen.findByTestId('inbox-bell');
+    act(() => requestInbox({ sessionId: 'ses-42' }));
+    await screen.findByText('Activity · this session');
+
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+
+    // A filter nobody can see is a filter that makes the next open look broken.
+    expect(await screen.findByText('Activity')).toBeInTheDocument();
   });
 });

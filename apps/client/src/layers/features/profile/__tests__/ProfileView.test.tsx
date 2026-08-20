@@ -362,6 +362,7 @@ describe('the rows', () => {
       'sessions',
       'tasks',
       'rooms',
+      'notifications',
       'skills',
       'tools',
       'connections',
@@ -397,6 +398,7 @@ describe('the rows', () => {
       'sessions',
       'tasks',
       'rooms',
+      'notifications',
       'skills',
       'tools',
     ]);

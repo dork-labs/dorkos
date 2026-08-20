@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Pin, PinOff, RotateCcw, MoreHorizontal } from 'lucide-react';
+import { Pin, PinOff, RotateCcw, MoreHorizontal, Bell } from 'lucide-react';
 import {
   ResponsivePopover,
   ResponsivePopoverTrigger,
@@ -14,6 +14,7 @@ import {
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
+import { requestInbox } from '@/layers/entities/notifications';
 import {
   getGroupedRegistryItems,
   isPinnable,
@@ -183,6 +184,26 @@ export function SessionPopover({
             </section>
           ))}
         </div>
+
+        {/* The session's own lens on the Inbox. It opens the header bell rather
+            than drawing a second list here: the Inbox has one home, and a
+            320px panel under the composer is not it. The panel closes on the
+            way so the two are never both on screen fighting for the same
+            attention. */}
+        {diagnostics.sessionId !== '' && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground mt-3 h-7 w-full justify-start gap-1.5 text-xs"
+            onClick={() => {
+              onOpenChange(false);
+              requestInbox({ sessionId: diagnostics.sessionId });
+            }}
+          >
+            <Bell className="size-3.5" aria-hidden />
+            View notifications
+          </Button>
+        )}
 
         <div className="mt-4 flex items-center justify-between gap-2">
           <CopyDiagnosticsButton diagnostics={diagnostics} />

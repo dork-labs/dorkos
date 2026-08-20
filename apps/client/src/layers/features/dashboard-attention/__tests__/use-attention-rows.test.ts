@@ -29,8 +29,8 @@ const mockActivity = vi.fn<() => { items: { id: string }[]; isLoading: boolean }
   items: [],
   isLoading: false,
 }));
-vi.mock('../model/use-recent-activity-items', () => ({
-  useRecentActivityItems: () => mockActivity(),
+vi.mock('../model/use-activity-notifications', () => ({
+  useActivityNotifications: () => mockActivity(),
 }));
 
 import { useAttentionRows } from '../model/use-attention-rows';

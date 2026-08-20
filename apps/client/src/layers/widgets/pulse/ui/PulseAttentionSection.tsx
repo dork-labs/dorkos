@@ -6,9 +6,9 @@ import { Button } from '@/layers/shared/ui';
 import {
   useAttentionRows,
   AttentionSignalRow,
-  RecentActivityRow,
   ScheduleApprovalRow,
 } from '@/layers/features/dashboard-attention';
+import { InboxRow, useOpenNotification } from '@/layers/features/inbox';
 import { PulseSection } from './PulseSection';
 
 /** Max rows shown in the Pulse teaser (overflow lives on the home surface). */
@@ -46,6 +46,7 @@ export function PulseAttentionSection() {
   const pathname = useSafePathname();
   const showViewAll = !getPlatform().isEmbedded && pathname !== '/';
   const { schedules, errors, activity, isLoading, total } = useAttentionRows();
+  const openActivity = useOpenNotification();
 
   // One cap across all three groups, spent in draw order.
   const shownSchedules = schedules.slice(0, PULSE_ATTENTION_CAP);
@@ -84,7 +85,7 @@ export function PulseAttentionSection() {
           <AttentionSignalRow key={signal.id} signal={signal} />
         ))}
         {shownActivity.map((item) => (
-          <RecentActivityRow key={item.id} item={item} />
+          <InboxRow key={item.id} notification={item} onOpen={() => openActivity(item)} />
         ))}
       </motion.div>
     </PulseSection>

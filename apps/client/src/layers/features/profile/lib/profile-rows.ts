@@ -307,6 +307,16 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
     });
   }
   rows.push(roomsRow(ctx));
+  // No count on this one, deliberately. Everything above answers "how much of
+  // this exists"; this answers "what has it told me", and the number that would
+  // fit here — unread — is a fleet-wide number the header bell already draws.
+  rows.push({
+    id: 'notifications',
+    kind: 'nav',
+    label: 'Notifications',
+    value: null,
+    page: 'notifications',
+  });
   return rows;
 }
 

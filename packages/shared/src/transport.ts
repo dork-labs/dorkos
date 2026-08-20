@@ -120,6 +120,11 @@ import type {
   StandingPermissionsResponse,
 } from './approval-schemas.js';
 import type {
+  ListNotificationsQuery,
+  ListNotificationsResponse,
+  MarkNotificationsReadResponse,
+} from './notification-schemas.js';
+import type {
   AggregatedPackage,
   PackageFilter,
   MarketplacePackageDetail,
@@ -1987,6 +1992,39 @@ export interface Transport extends RoomTransport {
    * @param grantId - The permission's id, from {@link listStandingPermissions}.
    */
   revokeStandingPermission(grantId: string): Promise<RevokeStandingPermissionResponse>;
+
+  // --- The Inbox (spec `notification-system`) ---
+
+  /**
+   * One page of the operator's notification history, newest first.
+   *
+   * The filters are LENSES rather than a search: the bell reads it unfiltered,
+   * an agent's profile with `agentId`, a session's menu with `sessionId`. Every
+   * page carries `unreadCount` for the WHOLE store regardless of the filter,
+   * because that is the number the bell draws and a bell that counted only the
+   * open lens would go quiet the moment somebody opened one agent.
+   *
+   * Paging is by `before`, the ULID id of the last row on the previous page —
+   * ULIDs already sort by creation time, so two notifications raised in the same
+   * millisecond can be neither skipped nor repeated.
+   *
+   * @param query - The lens and the cursor. Omit for the newest page of everything.
+   */
+  listNotifications(query?: Partial<ListNotificationsQuery>): Promise<ListNotificationsResponse>;
+
+  /**
+   * Mark one notification read.
+   *
+   * Read state is server-side and shared, so clearing it on the laptop clears it
+   * on the phone: the server answers the new unread count and broadcasts
+   * `notification_read` to every other window.
+   *
+   * @param id - The notification's id.
+   */
+  markNotificationRead(id: string): Promise<MarkNotificationsReadResponse>;
+
+  /** Mark every unread notification read, wherever it is filed. */
+  markAllNotificationsRead(): Promise<MarkNotificationsReadResponse>;
 
   // --- Team roster (spec `identity-consistency` §W2.2, ADR 260806-222535) ---
 

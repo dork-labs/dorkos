@@ -127,7 +127,7 @@ vi.mock('@/layers/widgets/app-banner', async (importOriginal) => {
   return { ...actual, useAppBanners: () => mockBanners };
 });
 
-// Keep the real ApprovalsIndicator so this suite can prove the approvals marker
+// Keep the real InboxBell so this suite can prove the marker
 // reaches EVERY route — the defect it fixes was a pending approval that only
 // appeared on the dashboard. Only the feature slice is faked (the real hook needs
 // an EventStreamProvider this shell-level suite does not mount), so the widget,
@@ -148,6 +148,10 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
       connectionState: 'connected' as const,
       failedAttempts: 0,
     }),
+    // The Inbox half of the bell subscribes to the same stream for its live
+    // rows. Same reason, same stub: this suite is about where the marker is
+    // mounted, not about what arrives over the wire.
+    useEventSubscription: () => {},
     useIsMobile: () => mockIsMobile,
   };
 });
@@ -995,7 +999,7 @@ describe('AppShell slot integration', () => {
       mockPathname = '/session';
       renderAppShell();
 
-      const marker = screen.getByTestId('approvals-indicator');
+      const marker = screen.getByTestId('inbox-bell');
       const header = document.querySelector('[data-slot="sidebar-inset"] header');
       expect(header).not.toBeNull();
       expect(header).toContainElement(marker);
@@ -1006,14 +1010,14 @@ describe('AppShell slot integration', () => {
       mockPathname = '/';
       renderAppShell();
 
-      expect(screen.getByTestId('approvals-indicator')).toBeInTheDocument();
+      expect(screen.getByTestId('inbox-bell')).toBeInTheDocument();
     });
 
     it('renders no marker when nothing is waiting', () => {
       mockPathname = '/session';
       renderAppShell();
 
-      expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
     });
   });
 

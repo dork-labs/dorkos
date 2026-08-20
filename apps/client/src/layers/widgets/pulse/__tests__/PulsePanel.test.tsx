@@ -9,8 +9,7 @@ import '@testing-library/jest-dom/vitest';
 
 interface MockAttentionItem {
   id: string;
-  description: string;
-  action: { label: string; onClick: () => void };
+  title: string;
 }
 interface MockActivityItem {
   id: string;
@@ -26,6 +25,7 @@ interface MockSchedule {
 }
 
 let mockAttentionItems: MockAttentionItem[] = [];
+const mockOpenNotification = vi.fn();
 let mockSchedules: MockSchedule[] = [];
 let mockErrors: MockSignal[] = [];
 let mockAttentionLoading = false;
@@ -59,20 +59,27 @@ vi.mock('@/layers/features/dashboard-attention', () => ({
     isLoading: mockAttentionLoading,
     total: mockSchedules.length + mockErrors.length + mockAttentionItems.length,
   }),
-  RecentActivityRow: ({ item }: { item: MockAttentionItem }) => (
-    <div data-testid="attention-row">
-      <span>{item.description}</span>
-      <button type="button" onClick={item.action.onClick}>
-        {item.action.label}
-      </button>
-    </div>
-  ),
   AttentionSignalRow: ({ signal }: { signal: MockSignal }) => (
     <div data-testid="signal-row">{signal.primary}</div>
   ),
   ScheduleApprovalRow: ({ task }: { task: MockSchedule }) => (
     <div data-testid="schedule-row">{task.displayName}</div>
   ),
+}));
+
+// The Inbox rows the activity teaser now draws. Stubbed for the same reason as
+// everything else in this suite: the panel's job is composition and caps, and
+// the real row would drag in the transport and the read-state mutation.
+vi.mock('@/layers/features/inbox', () => ({
+  InboxRow: ({ notification, onOpen }: { notification: MockAttentionItem; onOpen: () => void }) => (
+    <div data-testid="attention-row">
+      <span>{notification.title}</span>
+      <button type="button" onClick={onOpen}>
+        Open →
+      </button>
+    </div>
+  ),
+  useOpenNotification: () => mockOpenNotification,
 }));
 
 // dashboard-activity: stub the model.
@@ -92,11 +99,7 @@ vi.mock('@/layers/features/activity-feed-page', () => ({
 import { PulsePanel } from '../ui/PulsePanel';
 
 function makeAttention(n: number): MockAttentionItem[] {
-  return Array.from({ length: n }, (_, i) => ({
-    id: `att-${i}`,
-    description: `Attention ${i}`,
-    action: { label: 'View →', onClick: vi.fn() },
-  }));
+  return Array.from({ length: n }, (_, i) => ({ id: `att-${i}`, title: `Attention ${i}` }));
 }
 
 function makeActivityGroup(n: number) {
@@ -118,6 +121,7 @@ afterEach(() => {
 
 beforeEach(() => {
   mockAttentionItems = [];
+  mockOpenNotification.mockClear();
   mockSchedules = [];
   mockErrors = [];
   mockAttentionLoading = false;
@@ -223,18 +227,17 @@ describe('PulsePanel', () => {
     expect(screen.queryByText('All quiet — nothing needs you.')).not.toBeInTheDocument();
   });
 
-  it('deep-links each attention item through its action', async () => {
+  it('deep-links each attention item through the one open-a-notification rule', async () => {
     const { default: userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
-    const onClick = vi.fn();
-    mockAttentionItems = [
-      { id: 'a', description: 'Session idle', action: { label: 'Open →', onClick } },
-    ];
+    mockAttentionItems = [{ id: 'a', title: 'A message could not be delivered' }];
 
     render(<PulsePanel />);
 
     await user.click(screen.getByRole('button', { name: 'Open →' }));
-    expect(onClick).toHaveBeenCalledTimes(1);
+    // The same callback the bell and home use, so a row opened here reads and
+    // travels exactly as it does there.
+    expect(mockOpenNotification).toHaveBeenCalledWith(mockAttentionItems[0]);
   });
 
   it('routes the overflow links to the dashboard and the activity page', async () => {

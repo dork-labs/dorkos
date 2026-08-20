@@ -13,12 +13,11 @@
  * @module features/dashboard-attention
  */
 export { AttentionSignalRow } from './ui/AttentionSignalRow';
-export { RecentActivityRow } from './ui/RecentActivityRow';
 export { ScheduleApprovalRow } from './ui/ScheduleApprovalRow';
 export { useAttentionRows } from './model/use-attention-rows';
 export type { AttentionRows } from './model/use-attention-rows';
-export { useRecentActivityItems } from './model/use-recent-activity-items';
-export type { RecentActivityItem, RecentActivityState } from './model/use-recent-activity-items';
+export { useActivityNotifications } from './model/use-activity-notifications';
+export type { ActivityNotificationsState } from './model/use-activity-notifications';
 export { DeadLetterDetailSheet } from './ui/DeadLetterDetailSheet';
 export { FailedRunDetailSheet } from './ui/FailedRunDetailSheet';
 export { OfflineAgentDetailSheet } from './ui/OfflineAgentDetailSheet';

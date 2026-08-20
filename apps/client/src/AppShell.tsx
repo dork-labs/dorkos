@@ -30,7 +30,7 @@ import { useTasksSync } from '@/layers/entities/tasks';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
-import { ApprovalsIndicator } from '@/layers/widgets/approvals-indicator';
+import { InboxBell } from '@/layers/widgets/inbox-bell';
 import { usePulseFreshness } from '@/layers/widgets/pulse';
 import {
   DashboardSidebar,
@@ -635,11 +635,13 @@ export function AppShell() {
                           {headerSlot.content}
                         </motion.div>
                       </AnimatePresence>
-                      {/* ── Approvals marker — far right, every route. An agent
-                            blocked on a person must be visible from wherever that
-                            person is standing, not only from the dashboard. Renders
-                            nothing when nothing is waiting. ── */}
-                      <ApprovalsIndicator />
+                      {/* ── The Inbox — far right, every route. An agent blocked
+                            on a person must be visible from wherever that person
+                            is standing, not only from the dashboard; everything
+                            that already happened sits under it with read marks.
+                            Renders nothing when nothing waits and nothing is
+                            unread. ── */}
+                      <InboxBell />
                       {/* ── Right panel toggle — far right, always present on every route ── */}
                       <RightPanelToggle />
                     </header>

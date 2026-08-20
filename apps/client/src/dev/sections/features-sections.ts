@@ -10,7 +10,7 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: PersonalityPickerShowcases, AgentSidebarShowcases, AgentFleetShowcases,
  * RelayShowcases, AdapterWizardShowcases, MeshShowcases, TasksShowcases,
- * PipPanelShowcases, ApprovalsShowcases, TriageHeaderShowcases, PresenceStripShowcases,
+ * PipPanelShowcases, ApprovalsShowcases, InboxShowcases, TriageHeaderShowcases, PresenceStripShowcases,
  * ConnectionsShowcases, McpServerCardShowcases.
  */
 export const FEATURES_SECTIONS: PlaygroundSection[] = [
@@ -350,6 +350,31 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     page: 'features',
     category: 'Approvals',
     keywords: ['approval', 'error', 'offline', 'retry', 'unavailable', 'failed read'],
+  },
+  // InboxShowcases
+  {
+    id: 'inbox-bell',
+    title: 'Inbox bell',
+    page: 'features',
+    category: 'Inbox',
+    keywords: [
+      'inbox',
+      'bell',
+      'notification',
+      'unread',
+      'badge',
+      'amber',
+      'waiting on you',
+      'header',
+      'marker',
+    ],
+  },
+  {
+    id: 'inbox-rows',
+    title: 'Inbox rows',
+    page: 'features',
+    category: 'Inbox',
+    keywords: ['inbox', 'notification', 'row', 'unread', 'read', 'activity', 'history'],
   },
   // TriageHeaderShowcases
   {

@@ -215,10 +215,10 @@ export function ApprovalCardShowcase() {
  * still reads at the narrow one, with no dev server and no agent asking for
  * anything.
  *
- * The header marker itself (`ApprovalsIndicator`) is deliberately absent: it
- * subscribes to the live `/api/events` stream, which the playground does not
- * mount, and faking that here would put a replica on the page that could drift
- * from the real component. Its behavior is covered by its own tests.
+ * The header marker itself lives in the Inbox showcase next door — the wired
+ * `InboxBell` subscribes to the live `/api/events` stream, which the playground
+ * does not mount, so what is drawn there is its presentational pill in each of
+ * its states rather than a replica that could drift from it.
  */
 export function ApprovalsShowcases() {
   return (

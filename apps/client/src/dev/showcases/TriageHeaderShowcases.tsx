@@ -1,8 +1,7 @@
-import { Mail, WifiOff } from 'lucide-react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { Task } from '@dorkos/shared/types';
+import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import type { AttentionSignal } from '@/layers/entities/attention';
-import type { RecentActivityItem } from '@/layers/features/dashboard-attention';
 import { PinnedTriageHeaderView } from '@/layers/widgets/home';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -81,27 +80,41 @@ const ERRORS: AttentionSignal[] = [
   },
 ];
 
-/** What went wrong lately. Nothing here is waiting on anybody. */
-const ACTIVITY: RecentActivityItem[] = [
+/**
+ * What went wrong lately, as Inbox rows. Nothing here is waiting on anybody.
+ *
+ * These are real {@link NotificationDTO} shapes now rather than a row type this
+ * widget invented: the same three kinds the server emits, so what the playground
+ * draws is what the cockpit draws.
+ */
+const ACTIVITY: NotificationDTO[] = [
   {
-    id: 'offline-agents',
-    type: 'offline-agent',
-    icon: WifiOff,
-    title: '2 agents offline',
-    description: '2 mesh agents unreachable',
-    timestamp: minutesFromLoad(0),
-    action: { label: 'View →', onClick: () => {} },
-    severity: 'error',
+    id: '01JZA0000000000000000000A1',
+    kind: 'agent.unreachable',
+    tier: 'quiet',
+    subject: { type: 'agent', id: 'tangerines' },
+    agentId: 'tangerines',
+    title: 'tangerines stopped answering',
+    createdAt: minutesFromLoad(0),
   },
   {
-    id: 'dead-letter-relay-unroutable',
-    type: 'dead-letter',
-    icon: Mail,
-    title: '6 undeliverable Relay messages',
-    description: 'Dead letters: relay — no route to agent',
-    timestamp: minutesFromLoad(-18),
-    action: { label: 'View →', onClick: () => {} },
-    severity: 'warning',
+    id: '01JZA0000000000000000000A2',
+    kind: 'dead-letter.created',
+    tier: 'quiet',
+    subject: { type: 'system', id: 'msg-91' },
+    title: 'A message could not be delivered',
+    body: 'No route to agent',
+    createdAt: minutesFromLoad(-18),
+    readAt: minutesFromLoad(-12),
+  },
+  {
+    id: '01JZA0000000000000000000A3',
+    kind: 'run.completed',
+    tier: 'notable',
+    subject: { type: 'run', id: 'run-4412' },
+    title: 'Nightly sweep failed',
+    body: 'Failed after 2m 14s.',
+    createdAt: minutesFromLoad(-42),
   },
 ];
 
@@ -119,10 +132,10 @@ const APPROVALS_OVERFLOWING: PendingApproval[] = Array.from({ length: 6 }, (_, i
   expiresAt: minutesFromLoad(90 - i * 7),
 }));
 
-const ACTIVITY_OVERFLOWING: RecentActivityItem[] = Array.from({ length: 8 }, (_, i) => ({
+const ACTIVITY_OVERFLOWING: NotificationDTO[] = Array.from({ length: 8 }, (_, i) => ({
   ...ACTIVITY[i % ACTIVITY.length]!,
-  id: `overflow-${i}`,
-  timestamp: minutesFromLoad(-3 - i * 6),
+  id: `01JZA000000000000000000B${i}`,
+  createdAt: minutesFromLoad(-3 - i * 6),
 }));
 
 /**
@@ -162,6 +175,7 @@ export function TriageHeaderShowcases() {
             settlingAsks={[]}
             askAgentNames={{}}
             onOpenSession={() => {}}
+            onOpenActivity={() => {}}
             approvals={[]}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -181,6 +195,7 @@ export function TriageHeaderShowcases() {
             settlingAsks={[]}
             askAgentNames={{}}
             onOpenSession={() => {}}
+            onOpenActivity={() => {}}
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -199,6 +214,7 @@ export function TriageHeaderShowcases() {
             settlingAsks={[]}
             askAgentNames={{}}
             onOpenSession={() => {}}
+            onOpenActivity={() => {}}
             approvals={[]}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -217,6 +233,7 @@ export function TriageHeaderShowcases() {
             settlingAsks={[]}
             askAgentNames={{}}
             onOpenSession={() => {}}
+            onOpenActivity={() => {}}
             approvals={[]}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -235,6 +252,7 @@ export function TriageHeaderShowcases() {
             settlingAsks={[]}
             askAgentNames={{}}
             onOpenSession={() => {}}
+            onOpenActivity={() => {}}
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -256,6 +274,7 @@ export function TriageHeaderShowcases() {
             settlingAsks={[]}
             askAgentNames={{}}
             onOpenSession={() => {}}
+            onOpenActivity={() => {}}
             approvals={APPROVALS_OVERFLOWING}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -276,6 +295,7 @@ export function TriageHeaderShowcases() {
             settlingAsks={[]}
             askAgentNames={{}}
             onOpenSession={() => {}}
+            onOpenActivity={() => {}}
             approvals={APPROVALS}
             approvalsUnavailable={false}
             onRetryApprovals={() => {}}
@@ -298,6 +318,7 @@ export function TriageHeaderShowcases() {
             settlingAsks={[]}
             askAgentNames={{}}
             onOpenSession={() => {}}
+            onOpenActivity={() => {}}
             approvals={[]}
             approvalsUnavailable
             onRetryApprovals={() => {}}
