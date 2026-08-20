@@ -255,16 +255,21 @@ test.describe('Sidebar model showcase @smoke', () => {
    * It grows with the page, which is the point: `expectPageFitsViewport` reds
    * the moment a new showcase pushes the column past it, and the fix is this
    * number rather than a looser threshold. Raised for the Today states panel
-   * (P2.3), which added four more 272px panels below Heads up's four.
+   * (P2.3), which added four more 272px panels below Heads up's; and again for
+   * the parked-schedule state (DOR-1391), which made Heads up's row five panels
+   * wide — more than the content column fits, so the last one wraps onto a
+   * second line and the page grows by a panel's height.
    */
   // **The viewport is the page's height, not a round number.** axe reports
   // success for a page it never looked at, so this suite asserts coverage
   // before correctness (`expectPageFitsViewport`) — which means the viewport
   // has to grow with the page. It went from 8800 to 10400 when P4.2 added the
-  // long-press-menu and Catch-up showcases; raising it is the fix the guard's
-  // own failure message names, and lowering the threshold is the one it
-  // forbids.
-  test.use({ viewport: { width: 1600, height: 10400 } });
+  // long-press-menu and Catch-up showcases, and to 10800 when DOR-1391 added
+  // Heads up's fifth state: five 272px panels are wider than the content
+  // column, so the last one wraps and the row grows by a panel's height.
+  // Raising it is the fix the guard's own failure message names, and lowering
+  // the threshold is the one it forbids.
+  test.use({ viewport: { width: 1600, height: 10800 } });
 
   // The per-test default is 30s, which is under the cold cost of the first
   // navigation to `/dev` — see PLAYGROUND_COLD_START_MS. A locator ceiling
@@ -399,15 +404,18 @@ test.describe('Sidebar model showcase @smoke', () => {
     expect(proof).toBeGreaterThan(0);
   });
 
-  test('draws Heads up’s four states, and the beat, on the same page', async ({ page }) => {
+  test('draws Heads up’s five states, and the beat, on the same page', async ({ page }) => {
     await openShowcase(page);
 
     // The states a reviewer cannot catch in the running app: empty, one signal,
-    // capped with an overflow, and the day-one zone (spec §13).
+    // a parked schedule, capped with an overflow, and the day-one zone
+    // (spec §13). The exact list in the exact order, so a state that silently
+    // stopped rendering is a failure rather than a smaller number nobody reads.
     const states = page.locator('[data-slot="sidebar-now-state"]');
     expect(await states.evaluateAll((nodes) => nodes.map((n) => n.dataset.stateName))).toEqual([
       'now-empty',
       'now-one',
+      'now-schedule',
       'now-capped',
       'getting-started',
     ]);
@@ -423,6 +431,30 @@ test.describe('Sidebar model showcase @smoke', () => {
         '[data-slot="sidebar-now-state"][data-state-name="now-one"] [data-slot="sidebar-model-zone"]'
       )
     ).toHaveCount(1);
+
+    // **The parked schedule is here to put its GLYPH in front of the gates**
+    // (DOR-1391). Every other signal in the fixtures carries an `agentPath`, so
+    // its row draws a face and the semantic icon behind it never renders — a
+    // schedule belongs to a timer rather than to an agent, so this is the one
+    // state where the icon is actually on screen for the contrast and axe
+    // sweeps below.
+    const schedule = page.locator(
+      '[data-slot="sidebar-now-state"][data-state-name="now-schedule"]'
+    );
+    await expect(schedule.locator('[data-slot="sidebar-model-row"]')).toHaveCount(1);
+    await expect(schedule).toContainText('Wants to run on a timer');
+    await expect(schedule.locator('[data-slot="identity-avatar"]')).toHaveCount(0);
+    // Asserted through the product's own avatar handle rather than through a
+    // class name lucide happens to emit: at v1.21 every icon renders the bare
+    // class `lucide` and nothing per-icon, so there is no honest way to name
+    // CalendarClock in a selector. What IS assertable is that this row draws an
+    // icon where the others draw a face — and the panel beside it proves the
+    // selector can find one, so the zero above is a fact about this state.
+    await expect(
+      page.locator(
+        '[data-slot="sidebar-now-state"][data-state-name="now-one"] [data-slot="identity-avatar"]'
+      )
+    ).not.toHaveCount(0);
 
     await expect(page.getByText('All clear', { exact: true })).toBeVisible();
   });

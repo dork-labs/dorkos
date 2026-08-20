@@ -705,11 +705,16 @@ export function SidebarNowStatesShowcase() {
         </label>
       </div>
 
-      <ShowcaseLabel>Empty, one signal, capped with overflow, day one</ShowcaseLabel>
+      <ShowcaseLabel>
+        Empty, one signal, a parked schedule, capped with overflow, day one
+      </ShowcaseLabel>
       <div className="border-border/50 bg-muted/30 overflow-x-auto rounded-lg border border-dashed p-4">
-        {/* Wraps rather than scrolls. Four 272px panels fit the content column
-            at the width the browser suite runs at, and a panel clipped by a
-            horizontal scroller is one axe declines to measure. */}
+        {/* Wraps rather than scrolls, and since DOR-1391's fifth state it does:
+            five 272px panels are wider than the content column at the width the
+            browser suite runs at, so the last one drops to a second line. That
+            is the intended failure mode — a panel clipped by a horizontal
+            scroller is one axe declines to measure, while a wrapped one is
+            fully in the grid. The spec's viewport carries the extra height. */}
         <div className="flex flex-wrap items-start gap-4">
           {states.map(({ name, caption, state }) => (
             <div key={name} className="flex shrink-0 flex-col gap-2" style={{ width: PANEL_WIDTH }}>
