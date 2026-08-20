@@ -253,6 +253,11 @@ vi.mock('@/layers/features/profile', () => ({
 
 vi.mock('motion/react', () => ({
   motion: {
+    // `motion.create(Component)` — needed because this mock SHADOWS the complete
+    // one in `test-setup.ts`, and a partial shadow breaks the moment anything in
+    // the import graph calls it at module scope (`gen-ui/ui/nodes/TableNode.tsx`
+    // does). Identity is enough: nothing here renders the wrapped component.
+    create: (Component: unknown) => Component,
     div: ({
       children,
       ...props

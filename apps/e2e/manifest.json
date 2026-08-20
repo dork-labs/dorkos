@@ -1002,6 +1002,18 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "sidebar-bottom-slot": {
+      "specFile": "tests/dashboard-sidebar/sidebar-bottom-slot.spec.ts",
+      "feature": "dashboard-sidebar",
+      "description": "stays on screen while the list scrolls, and stays dismissed after a reload",
+      "lastRun": "2026-08-19T23:45:03.928Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
