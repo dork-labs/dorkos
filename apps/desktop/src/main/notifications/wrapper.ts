@@ -1,14 +1,14 @@
 import { Notification } from 'electron';
 
 /**
- * The thin seam between the notification pipeline (`notifications.ts`) and the
- * OS's own native notification, so a test can drive Allow/Deny/Reply and click
- * behaviour without a real Electron runtime (spec `notification-system`,
- * Desktop section).
+ * The thin seam between the notification pipeline (`notifications/index.ts`)
+ * and the OS's own native notification, so a test can drive Allow/Deny/Reply
+ * and click behaviour without a real Electron runtime (spec
+ * `notification-system`, Desktop section).
  *
- * `notifications.ts` never imports `electron`'s `Notification` directly — it
- * only knows this interface, which is what lets a unit test assert exactly
- * what an action click POSTs to the answer routes.
+ * `notifications/index.ts` never imports `electron`'s `Notification` directly
+ * — it only knows this interface, which is what lets a unit test assert
+ * exactly what an action click POSTs to the answer routes.
  *
  * @module main/notifications/wrapper
  */
@@ -21,7 +21,11 @@ export interface NativeNotificationAction {
 
 /** What to show, and what to do when someone interacts with it. */
 export interface NativeNotificationSpec {
-  /** Agent identity first — see `notifications.ts`. */
+  /**
+   * The banner's headline. Today this is the session's working-directory
+   * name, not the agent's — see `notifications/index.ts` and `copy.ts`'s
+   * `sessionLabelFor`, and ADR 260819-234830's implementation notes for why.
+   */
   title: string;
   /** The second line. Never transcript content or tool input. */
   body?: string;
@@ -70,7 +74,7 @@ export interface NotificationHost {
  */
 const SILENT = true;
 
-/** The real Electron-backed host. Used everywhere `notifications.ts` isn't under test. */
+/** The real Electron-backed host. Used everywhere `notifications/index.ts` isn't under test. */
 export const electronNotificationHost: NotificationHost = {
   isSupported: () => Notification.isSupported(),
   show(spec: NativeNotificationSpec): NativeNotificationHandle {

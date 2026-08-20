@@ -341,7 +341,7 @@ export const shell = {
 /**
  * Test double for `Notification`. `new Notification(options)` is captured in
  * {@link MockNotificationImpl.instances}, with `options` preserved verbatim so
- * a test can assert exactly what `notification-wrapper.ts` built. `on(...)`
+ * a test can assert exactly what `notifications/wrapper.ts` built. `on(...)`
  * records listeners on a per-instance bus; `emitAction`/`emitReply`/`emitClick`
  * drive them the way the real Notification would fire `action`/`reply`/`click`.
  */

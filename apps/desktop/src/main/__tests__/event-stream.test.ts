@@ -5,6 +5,7 @@ vi.mock('electron-log', () => import('./electron-log-mock'));
 
 import { watchAgentActivity, type AgentActivityWatch } from '../agent-activity';
 import { watchNotifications, type NotificationsWatch } from '../notifications';
+import { subscribeEventStream } from '../event-stream';
 import type {
   NativeNotificationHandle,
   NativeNotificationSpec,
@@ -44,8 +45,9 @@ afterEach(async () => {
 describe('event-stream sharing (DOR-1386)', () => {
   it('serves the tray watcher and the notifications watcher off one HTTP connection, not two', async () => {
     const host = new NoopNotificationHost();
+    const onChange = vi.fn();
 
-    activityWatch = watchAgentActivity({ getPort: () => stream.port, onChange: vi.fn() });
+    activityWatch = watchAgentActivity({ getPort: () => stream.port, onChange });
     notificationsWatch = watchNotifications({
       getPort: () => stream.port,
       isWindowUnfocused: () => true,
@@ -57,11 +59,13 @@ describe('event-stream sharing (DOR-1386)', () => {
 
     // Both watchers see the same frames off that one connection: a session
     // status reaches the tray watcher, and a notification reaches the
-    // notifications watcher, with no second request in between.
+    // notifications watcher, with no second request in between. Asserting on
+    // the tray's own callback (rather than a variable neither watcher ever
+    // touches) is what makes this fail if the frame never actually reached it.
     stream.sendStatus('session-a', 'streaming');
     await vi.waitFor(
       () => {
-        expect(activityWatch).not.toBeNull();
+        expect(onChange).toHaveBeenCalledWith({ streaming: 1, blocked: 0 });
       },
       { timeout: 2_000, interval: 10 }
     );
@@ -108,5 +112,78 @@ describe('event-stream sharing (DOR-1386)', () => {
     await vi.waitFor(() => expect(host.shownCount).toBe(1), { timeout: 2_000, interval: 10 });
     // No reconnect was needed for the survivor.
     expect(stream.connections).toBe(1);
+  });
+});
+
+describe('event-stream throw isolation (DOR-1386 review)', () => {
+  it('a subscriber that throws on a frame does not stop another subscriber, and the throw never escapes as an uncaught exception', async () => {
+    const uncaught = vi.fn();
+    process.on('uncaughtException', uncaught);
+
+    const throwingFrames: string[] = [];
+    const survivorFrames: string[] = [];
+    const throwing = subscribeEventStream(
+      { getPort: () => stream.port },
+      {
+        onFrame: (frame) => {
+          throwingFrames.push(frame.name);
+          throw new Error('boom — a malformed payload, or any other subscriber bug');
+        },
+      }
+    );
+    const survivor = subscribeEventStream(
+      { getPort: () => stream.port },
+      { onFrame: (frame) => survivorFrames.push(frame.name) }
+    );
+
+    try {
+      await vi.waitFor(() => expect(stream.connections).toBe(1), { timeout: 2_000, interval: 10 });
+
+      stream.sendStatus('session-a', 'streaming');
+
+      await vi.waitFor(() => expect(survivorFrames).toContain('session_status'), {
+        timeout: 2_000,
+        interval: 10,
+      });
+      // The throwing subscriber ran (and threw) too — it did not silently get
+      // skipped, it threw and was caught.
+      expect(throwingFrames).toContain('session_status');
+      expect(uncaught).not.toHaveBeenCalled();
+    } finally {
+      throwing.unsubscribe();
+      survivor.unsubscribe();
+      process.off('uncaughtException', uncaught);
+    }
+  });
+
+  it('a subscriber that throws on connection-lost does not stop another subscriber from being told', async () => {
+    const survivorNotified = vi.fn();
+    const throwing = subscribeEventStream(
+      { getPort: () => stream.port },
+      {
+        onFrame: () => {},
+        onConnectionLost: () => {
+          throw new Error('boom');
+        },
+      }
+    );
+    const survivor = subscribeEventStream(
+      { getPort: () => stream.port },
+      { onFrame: () => {}, onConnectionLost: survivorNotified }
+    );
+
+    try {
+      await vi.waitFor(() => expect(stream.connections).toBe(1), { timeout: 2_000, interval: 10 });
+
+      stream.dropClients();
+
+      await vi.waitFor(() => expect(survivorNotified).toHaveBeenCalledTimes(1), {
+        timeout: 2_000,
+        interval: 10,
+      });
+    } finally {
+      throwing.unsubscribe();
+      survivor.unsubscribe();
+    }
   });
 });

@@ -14,8 +14,9 @@ import {
  * to say something true while the window is closed, and the quit guard has to
  * know whether quitting would cut anything off. So this reads the server's own
  * global event stream (`GET /api/events`) — the same one the cockpit uses —
- * through the shared connection in `event-stream.ts` (which `notifications.ts`
- * also reads), no polling and no dependency on a window being open.
+ * through the shared connection in `event-stream.ts` (which
+ * `notifications/index.ts` also reads), no polling and no dependency on a
+ * window being open.
  *
  * The wire contract is `SessionListEventSchema` in
  * `packages/shared/src/session-stream.ts`: the SSE event name *is* the event's

@@ -135,6 +135,34 @@ describe('replyEligibility', () => {
     expect(replyEligibility(approvalInteraction())).toBeNull();
   });
 
+  it('refuses a reply for a multi-select question — the answer is a set, not a string', () => {
+    const eligible = replyEligibility(
+      questionInteraction([
+        {
+          header: 'Toppings',
+          question: 'Which toppings?',
+          options: [{ label: 'Cheese' }, { label: 'Olives' }],
+          multiSelect: true,
+        },
+      ])
+    );
+    expect(eligible).toBeNull();
+  });
+
+  it('refuses a reply for a single-select question with fixed options — typed text could match none of them', () => {
+    const eligible = replyEligibility(
+      questionInteraction([
+        {
+          header: 'Environment',
+          question: 'Which environment?',
+          options: [{ label: 'Staging' }, { label: 'Production' }],
+          multiSelect: false,
+        },
+      ])
+    );
+    expect(eligible).toBeNull();
+  });
+
   it('truncates a long question for the placeholder', () => {
     const longQuestion = 'W'.repeat(200);
     const eligible = replyEligibility(

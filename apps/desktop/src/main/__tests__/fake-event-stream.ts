@@ -6,9 +6,10 @@ import type { AddressInfo } from 'node:net';
  *
  * The wire format is the thing every consumer of `event-stream.ts` is tested
  * against, so this speaks it literally rather than through a helper the
- * implementation could share a bug with. Shared by `agent-activity.test.ts`
- * and `notifications.test.ts` — both watch the same shared connection
- * (`event-stream.ts`), so both exercise it through the same fake server.
+ * implementation could share a bug with. Shared by `agent-activity.test.ts`,
+ * `notifications/__tests__/index.test.ts` and this directory's own
+ * `event-stream.test.ts` — all three watch the same shared connection
+ * (`event-stream.ts`), so all three exercise it through the same fake server.
  */
 export class FakeEventStream {
   private server: http.Server;

@@ -12,8 +12,8 @@ import type { GetServerPort } from '../event-stream';
  * and it is the one case that needs a fallback: with remote login on, the
  * server answers `401`/`403` because the shell holds no cookie for it. Every
  * function here reports that back as `unauthorized` rather than throwing, so
- * `notifications.ts` can fall back to focus-and-deep-link instead of pretending
- * the click did nothing.
+ * `notifications/index.ts` can fall back to focus-and-deep-link instead of
+ * pretending the click did nothing.
  *
  * @module main/notifications/answer
  */
@@ -111,8 +111,8 @@ export function denyTool(
  * @param sessionId - The session the question is parked on.
  * @param toolCallId - The interaction id.
  * @param answer - The reply text, recorded as the answer to question `0` — the
- *   only question a reply-eligible Ask has. See `notifications.ts` for why a
- *   multi-question Ask never offers a reply.
+ *   only question a reply-eligible Ask has. See `notifications/index.ts` for
+ *   why a multi-question Ask never offers a reply.
  */
 export function submitReplyAnswer(
   getPort: GetServerPort,

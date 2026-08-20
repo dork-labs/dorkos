@@ -8,8 +8,9 @@ import log from 'electron-log';
  *
  * `agent-activity.ts` was the first reader — it needs `session_status` for the
  * tray — and this module is that reader's connection machinery, pulled out so
- * `notifications.ts` (DOR-1386) can watch the same stream for `notification`,
- * `notification_read`, `interaction_pending` and `interaction_resolved`
+ * `notifications/index.ts` (DOR-1386) can watch the same stream for
+ * `notification`, `notification_read`, `interaction_pending` and
+ * `interaction_resolved`
  * without opening a second TCP connection and running a second reconnect loop
  * against the same endpoint. Two independent HTTP clients polling the same SSE
  * stream would double the server's fan-out work for every event, for no
@@ -121,12 +122,32 @@ function teardown(): void {
   outageLogged = false;
 }
 
+/**
+ * Run one subscriber callback, isolating whatever it throws.
+ *
+ * Without this, one subscriber's bug takes down every other subscriber on the
+ * same frame (the loop below it never runs) AND escapes as an uncaught
+ * exception in the main process — a crash caused by, say, a malformed
+ * `notification` payload the notifications pipeline mishandled, taking the
+ * tray's activity count down with it for no reason connected to the tray at
+ * all.
+ *
+ * @param run - The subscriber call to make.
+ */
+function safelyNotify(run: () => void): void {
+  try {
+    run();
+  } catch (err) {
+    log.warn('[event-stream] A subscriber threw on a frame; the stream continues.', err);
+  }
+}
+
 function notifyConnectionLost(): void {
-  for (const handlers of [...subscribers]) handlers.onConnectionLost?.();
+  for (const handlers of [...subscribers]) safelyNotify(() => handlers.onConnectionLost?.());
 }
 
 function notifyFrame(frame: ServerEventFrame): void {
-  for (const handlers of [...subscribers]) handlers.onFrame(frame);
+  for (const handlers of [...subscribers]) safelyNotify(() => handlers.onFrame(frame));
 }
 
 function scheduleReconnect(): void {

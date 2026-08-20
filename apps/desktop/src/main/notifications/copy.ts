@@ -5,9 +5,9 @@ import type { NotificationDTO, NotificationTier } from '@dorkos/shared/notificat
 
 /**
  * What a desktop notification says, and where its click goes — kept apart
- * from the SSE plumbing in `notifications.ts` so the wording and routing rules
- * can be read (and tested) on their own (spec `notification-system`, Desktop
- * section).
+ * from the SSE plumbing in `notifications/index.ts` so the wording and
+ * routing rules can be read (and tested) on their own (spec
+ * `notification-system`, Desktop section).
  *
  * @module main/notifications/copy
  */
@@ -73,10 +73,19 @@ export function askCopy(ask: InteractionPendingEvent): NotificationCopy {
  * Whether a single-question Ask can offer a reply field, and the placeholder
  * to show in it.
  *
- * A native notification has exactly one free-text field. A question with more
- * than one item — or any multi-select — cannot be answered honestly from it,
- * so only the single-question, single-answer case gets one; everything else
- * falls back to click-to-open.
+ * A native notification has exactly one free-text field, so only a truly
+ * open-ended question is eligible. Three shapes are excluded, each for the
+ * same reason — none of them can be answered honestly from one line of typed
+ * text — and all three fall back to click-to-open, where the real form is
+ * drawn:
+ *
+ * - More than one question: a reply field is one answer, not a form.
+ * - `multiSelect`: the answer is a set, not a string.
+ * - A **single**-select question that still carries fixed `options`: typing
+ *   over a `<select>` risks an answer matching none of the choices the agent
+ *   offered, which is not the same failure as skipping the question — it
+ *   reads back as a real answer that happens to be wrong. Only a question
+ *   with `options: []` — genuinely freeform — gets a reply field.
  *
  * @param interaction - The pending interaction.
  */
@@ -85,7 +94,7 @@ export function replyEligibility(
 ): { placeholder: string } | null {
   if (interaction.type !== 'question' || interaction.questions.length !== 1) return null;
   const [question] = interaction.questions;
-  if (!question) return null;
+  if (!question || question.multiSelect || question.options.length > 0) return null;
   const text = question.question;
   const placeholder =
     text.length > REPLY_PLACEHOLDER_MAX_LENGTH

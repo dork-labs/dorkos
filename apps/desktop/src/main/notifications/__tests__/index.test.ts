@@ -256,7 +256,7 @@ describe('watchNotifications — Asks', () => {
     await eventually(() => expect(host.shown[0]?.closed).toBe(true));
   });
 
-  it('falls back to focus+deep-link when the answer route refuses the click (remote login on)', async () => {
+  it('falls back to focus+deep-link on 401 (remote login on, main holds no credential)', async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
     await start();
     sendAskPending({ sessionId: 'session-9', interaction: approval() });
@@ -267,6 +267,57 @@ describe('watchNotifications — Asks', () => {
     await eventually(() =>
       expect(focusAndNavigate).toHaveBeenCalledWith('/session?session=session-9')
     );
+  });
+
+  it('does NOT steal focus on a refused action — the server understood and said no (already resolved)', async () => {
+    // 409 INTERACTION_ALREADY_RESOLVED — someone else already answered it, or
+    // it timed out. Reopening the app over a card that no longer exists would
+    // surprise the person for nothing.
+    fetchMock.mockResolvedValue(new Response(null, { status: 409 }));
+    await start();
+    sendAskPending({ sessionId: 'session-9', interaction: approval() });
+    await eventually(() => expect(host.shown).toHaveLength(1));
+
+    host.shown[0]?.spec.onAction?.(0);
+
+    await eventually(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    // Give the (absent) fallback a chance to land before asserting it didn't.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(focusAndNavigate).not.toHaveBeenCalled();
+  });
+
+  it('does NOT steal focus on a refused reply either', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 409 }));
+    await start();
+    sendAskPending({ sessionId: 'session-9', interaction: singleQuestion() });
+    await eventually(() => expect(host.shown).toHaveLength(1));
+
+    host.shown[0]?.spec.onReply?.('Blue');
+
+    await eventually(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(focusAndNavigate).not.toHaveBeenCalled();
+  });
+
+  it('shows nothing for a question-type interaction whose questions field is not an array', async () => {
+    await start();
+    sendAskPending({
+      interaction: {
+        type: 'question',
+        id: 'question-malformed',
+        startedAt: 0,
+        remainingMs: 60_000,
+        questions: 'not-an-array',
+      },
+    });
+    // Give the (absent) banner a chance to land before asserting it didn't —
+    // and prove the malformed payload didn't crash the watcher either: a
+    // well-formed frame right after it still gets through.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(host.shown).toHaveLength(0);
+
+    sendAskPending({ interaction: approval() });
+    await eventually(() => expect(host.shown).toHaveLength(1));
   });
 });
 

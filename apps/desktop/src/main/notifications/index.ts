@@ -14,7 +14,7 @@ import {
   notificationDeepLink,
   replyEligibility,
 } from './copy';
-import { approveTool, denyTool, submitReplyAnswer } from './answer';
+import { approveTool, denyTool, submitReplyAnswer, type AnswerOutcome } from './answer';
 import {
   electronNotificationHost,
   type NativeNotificationHandle,
@@ -180,6 +180,32 @@ export function watchNotifications(options: NotificationsOptions): Notifications
     }
   }
 
+  /**
+   * What to do after an answer-route call didn't succeed.
+   *
+   * `refused` means the server understood the click and said no — the Ask was
+   * already resolved (someone else answered it, or it timed out and parked)
+   * or the id no longer exists. Stealing focus to reopen a card that isn't
+   * there any more would surprise the person for nothing; the banner already
+   * did what it could. Every other reason — no server yet, no credential, the
+   * request never landed — is one focus+deep-link can actually help with: it
+   * puts the person in front of the app to retry by hand.
+   *
+   * @param ask - The Ask the click was answering.
+   * @param outcome - What the answer route reported.
+   */
+  function handleAnswerOutcome(ask: InteractionPendingEvent, outcome: AnswerOutcome): void {
+    if (outcome.ok) return;
+    if (outcome.reason === 'refused') {
+      log.warn(
+        `[notifications] The server refused to answer the Ask on session ${ask.sessionId} ` +
+          '(already resolved, or the id no longer exists); not stealing focus for it.'
+      );
+      return;
+    }
+    options.focusAndNavigate(askDeepLink(ask));
+  }
+
   async function handleApprovalAction(ask: InteractionPendingEvent, index: number): Promise<void> {
     // Index 0 is `Allow`, index 1 is `Deny` — the same order `spec.actions`
     // above listed them in; Electron's own callback names an action only by
@@ -188,7 +214,7 @@ export function watchNotifications(options: NotificationsOptions): Notifications
       index === 0
         ? await approveTool(options.getPort, ask.sessionId, ask.interaction.id)
         : await denyTool(options.getPort, ask.sessionId, ask.interaction.id);
-    if (!outcome.ok) options.focusAndNavigate(askDeepLink(ask));
+    handleAnswerOutcome(ask, outcome);
   }
 
   async function handleReplyAction(ask: InteractionPendingEvent, reply: string): Promise<void> {
@@ -198,7 +224,7 @@ export function watchNotifications(options: NotificationsOptions): Notifications
       ask.interaction.id,
       reply
     );
-    if (!outcome.ok) options.focusAndNavigate(askDeepLink(ask));
+    handleAnswerOutcome(ask, outcome);
   }
 
   const subscription = subscribeEventStream({ getPort: options.getPort }, { onFrame });
@@ -241,6 +267,13 @@ function parseInteractionPending(data: string): InteractionPendingEvent | null {
   const id = (interaction as { id?: unknown }).id;
   if (typeof id !== 'string') return null;
   if (type !== 'approval' && type !== 'question' && type !== 'elicitation') return null;
+  // `copy.ts` destructures `.questions` for a question-type interaction; a
+  // missing or malformed array there would throw instead of failing closed
+  // here, which is what this parser's own "tolerates anything that isn't
+  // shaped like one" doc promises.
+  if (type === 'question' && !Array.isArray((interaction as { questions?: unknown }).questions)) {
+    return null;
+  }
   return payload as unknown as InteractionPendingEvent;
 }
 
