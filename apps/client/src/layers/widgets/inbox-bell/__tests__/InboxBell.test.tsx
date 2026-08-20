@@ -27,6 +27,16 @@ import { createMockTransport } from '@dorkos/test-utils';
 /** Global stream state the widget reads; mutable so a test can drop the link. */
 let mockConnectionState: ConnectionState = 'connected';
 
+/**
+ * The router this suite does not mount.
+ *
+ * `useSafeNavigate` only returns `null` in the Obsidian embed; everywhere else
+ * it hands back TanStack's navigator, which mounts happily without a provider
+ * and throws the moment it is CALLED. Opening an Inbox row calls it, so a suite
+ * that renders the bell outside a router has to say where "go there" goes.
+ */
+const mockNavigate = vi.fn();
+
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
@@ -37,6 +47,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
       connectionState: mockConnectionState,
       failedAttempts: 0,
     }),
+    useSafeNavigate: () => mockNavigate,
   };
 });
 
@@ -618,6 +629,7 @@ describe('InboxBell — history and read state', () => {
     handlers = new Map();
     mockConnectionState = 'connected';
     clearInboxRequest();
+    mockNavigate.mockClear();
     vi.mocked(useEventSubscription).mockImplementation((event, handler) => {
       handlers.set(event, handler as (raw: unknown) => void);
     });
@@ -743,12 +755,12 @@ describe('InboxBell — history and read state', () => {
     expect(screen.queryByRole('button', { name: 'Mark all read' })).not.toBeInTheDocument();
   });
 
-  it('marks a row read when it is opened', async () => {
+  it('marks a row read when it is opened, travels, and gets out of the way', async () => {
     const markNotificationRead = vi.fn().mockResolvedValue({ ok: true, marked: 1, unreadCount: 0 });
     renderIndicator({
       ...NOTHING_WAITING,
       listNotifications: vi.fn().mockResolvedValue({
-        notifications: [buildNotification({ id: 'n1' })],
+        notifications: [buildNotification({ id: 'n1', sessionId: 'ses-77' })],
         nextCursor: null,
         unreadCount: 1,
       }),
@@ -759,6 +771,13 @@ describe('InboxBell — history and read state', () => {
     await userEvent.click(await screen.findByText('meeting-notes finished'));
 
     expect(markNotificationRead).toHaveBeenCalledWith('n1');
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { session: 'ses-1' },
+    });
+    // The panel closes behind you: a popover left open over the page you just
+    // asked for is a second thing to dismiss.
+    await waitFor(() => expect(screen.queryByText('Needs You')).not.toBeInTheDocument());
   });
 
   it('takes a live notification without being reopened', async () => {
