@@ -109,6 +109,13 @@ export interface NotificationPayloads {
   'dm.received': {
     roomId: string;
     entryId: string;
+    /**
+     * The entry's room-local `seq`. Never rendered — it is what lets a room's
+     * read cursor tell the read-cursor service which rows it just passed
+     * (`markRoomRead`, `read-cursor-service.ts`), without a second query back
+     * into the room's own log.
+     */
+    entrySeq: number;
     agentId?: string;
     /** Who sent it. */
     fromName: string;
@@ -119,6 +126,8 @@ export interface NotificationPayloads {
   'mention.received': {
     roomId: string;
     entryId: string;
+    /** The entry's room-local `seq`. See `dm.received`'s field of the same name. */
+    entrySeq: number;
     roomName: string;
     agentId?: string;
     fromName: string;
@@ -383,9 +392,24 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   'dm.received': {
-    // Reserved: emitter lands in W4 (spec task T11, messages into the pipeline).
-    // Declared now so the vocabulary is complete and the tier is reviewable;
-    // nothing raises it yet.
+    // Wired in `services/rooms/room-service.ts`'s `writePost` (spec task T11,
+    // DOR-1388): raised when an agent posts in a room that is a 1:1 DM with the
+    // operator (`kind: 'dm'`, exactly one agent on the roster, the operator
+    // among its human members) and it is the sole agent there — never for an
+    // agent-to-agent DM the owner was only seeded into (the three-way rule),
+    // and never for a human author, since only an agent can BE the DM's other
+    // party (a human posting in a `dm` room is either the operator's own
+    // cockpit voice or a bridged collaborator, and neither is "an agent
+    // messaged you"). Muting the room suppresses this kind
+    // (`RoomServiceDeps.isRoomMuted`); it never suppresses `mention.received`.
+    //
+    // Dedupes per ROOM, not per entry — deliberately coarser than every other
+    // kind here. A burst of messages from the same agent in the same DM is
+    // one conversation, and the point of a notification is "you have
+    // something waiting in this DM", not a running tally of how many lines it
+    // grew by. The room's own log is still the full per-message history; this
+    // is one row/banner per room, per dedupe window — `dedupeWindowMs` is not
+    // set here, so it defaults to `DEFAULT_DEDUPE_WINDOW_MS` (five minutes).
     kind: 'dm.received',
     tier: 'notable',
     storage: 'event',
@@ -393,12 +417,24 @@ const ENTRIES: NotificationRegistryMap = {
     locate: (p) => ({ subjectId: p.roomId, roomId: p.roomId, agentId: p.agentId }),
     title: (p) => `${p.fromName} messaged you`,
     body: (p) => p.preview,
-    dedupeKey: (p) => `dm:${p.entryId}`,
+    dedupeKey: (p) => `dm:${p.roomId}`,
     relay: 'never',
   },
 
   'mention.received': {
-    // Reserved: emitter lands in W4 (spec task T11, messages into the pipeline).
+    // Wired in `services/rooms/room-service.ts`'s `writePost` (spec task T11,
+    // DOR-1388): raised whenever an entry's resolved mentions name the
+    // operator, in any room kind. Pierces mute on purpose — an @-mention is a
+    // directed call-out, not the room's ambient chatter. Dedupes per ENTRY,
+    // unlike `dm.received`: each mention is its own event worth its own row.
+    //
+    // **Inert until the operator has set their own handle.** A mention is
+    // resolved from `@handle` text against the roster (`mentions.ts`), and the
+    // local human author's handle is `null` until asked for one
+    // (`author-registry.ts`) — so nobody can spell an `@`-mention that
+    // resolves to the operator, agent or collaborator alike, until they set
+    // one in their profile. This is expected, not a bug to chase: the same
+    // gap exists for every other `@`-mention on the install.
     kind: 'mention.received',
     tier: 'notable',
     storage: 'event',
@@ -508,9 +544,9 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * that are real, so the gap is a listed fact rather than something a reader has
  * to discover by grepping for call sites.
  *
- * Absent, with their wave noted at each entry: `dm.received` / `mention.received`
- * / `report.daily` (W4), and the RAISE edge of `schedule.parked` (W3 escalation
- * — its resolutions are wired).
+ * Absent, with its wave noted at the entry: `report.daily` (W4 task T12), and
+ * the RAISE edge of `schedule.parked` (W3 escalation — its resolutions are
+ * wired).
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',
@@ -518,6 +554,8 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'session.error',
   'turn.completed',
   'run.completed',
+  'dm.received',
+  'mention.received',
   'agent.note',
   'dead-letter.created',
   'agent.unreachable',

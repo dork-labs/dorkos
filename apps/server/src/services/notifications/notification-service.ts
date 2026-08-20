@@ -246,6 +246,25 @@ export class NotificationService {
   }
 
   /**
+   * Mark every `dm.received` / `mention.received` row in one room read, up to
+   * where the room's read cursor now stands (read-cursor auto-read, spec
+   * `notification-system` task T11) — the same reasoning as {@link
+   * NotificationService.markRead}, aimed at a whole room's rows a cursor just
+   * passed rather than one id a click named.
+   *
+   * @param roomId - The room whose cursor moved.
+   * @param uptoSeq - The entry `seq` the cursor now stands at.
+   */
+  markRoomRead(roomId: string, uptoSeq: number): MarkNotificationsReadResponse {
+    const ids = this.store.markRoomEntriesRead(roomId, uptoSeq);
+    const unreadCount = this.store.unreadCount();
+    if (ids.length > 0) {
+      broadcastNotificationRead({ ids, all: false, readAt: new Date().toISOString(), unreadCount });
+    }
+    return { ok: true, marked: ids.length, unreadCount };
+  }
+
+  /**
    * The shared body of both entry points: dedupe, dispatch, store, announce.
    *
    * **The channel goes first, and that ordering is load-bearing.** An agent's
@@ -256,6 +275,21 @@ export class NotificationService {
    * the rule is inert. The relay publish is an in-process hand-off to the
    * message bus rather than a wait on a chat network, so nothing is delayed by
    * asking first.
+   *
+   * **Accepted ordering hazard: a caller's own primary write can be visible
+   * on its OWN stream a beat before this settles and broadcasts on the
+   * `notification` stream.** `notify()` is fire-and-forget by contract (its
+   * doc says so), and a seam like `RoomService.writePost` publishes the room
+   * entry synchronously and only then calls `notify()` — so a client watching
+   * both the room's SSE stream and the notification stream can, for a few
+   * milliseconds, see the new room entry before the inbox row that explains
+   * it. This is not reordered to close that gap: the RATE_LIMITED rule above
+   * requires the channel dispatch to run and settle before the row is even
+   * decided, so an insert-first order would either lose that guarantee or
+   * require a second write to retract a row the allowance then refused. The
+   * gap is eventual consistency, not a correctness bug — every reader
+   * converges once `notify()`'s promise resolves — and is deliberately left
+   * as a documented trade-off rather than a `TODO`.
    *
    * @param kind - Which registry entry.
    * @param payload - That kind's payload.
@@ -487,4 +521,22 @@ export async function resolveStanding<K extends StandingNotificationKind>(
     return { notification: null, deduped: false };
   }
   return current.resolveStanding(kind, payload, opts);
+}
+
+/**
+ * Mark a room's `dm.received` / `mention.received` rows read up to where its
+ * cursor now stands, from anywhere — the read-cursor auto-read hook
+ * (`RoomService.setReadCursor` calls this directly, the same way a route calls
+ * {@link notify}). A no-op, not a throw, before boot has wired a service: a
+ * cursor move must never fail because the inbox is not up yet.
+ *
+ * @param roomId - The room whose cursor moved.
+ * @param uptoSeq - The entry `seq` the cursor now stands at.
+ */
+export function markRoomRead(roomId: string, uptoSeq: number): MarkNotificationsReadResponse {
+  if (!current) {
+    logger.debug('[Notifications] Nothing marked: no service is wired', { roomId });
+    return { ok: true, marked: 0, unreadCount: 0 };
+  }
+  return current.markRoomRead(roomId, uptoSeq);
 }
