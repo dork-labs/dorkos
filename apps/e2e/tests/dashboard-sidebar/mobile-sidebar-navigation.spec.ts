@@ -307,7 +307,7 @@ test.describe('Mobile tabs — 390×844 @smoke', () => {
 
     const home = panelScroller(page, 'home');
     // Both halves have to have arrived before there is anything to scroll past.
-    await expect(page.getByTestId('mobile-now-approvals')).toBeVisible({
+    await expect(page.getByTestId('mobile-now-attention')).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(
@@ -389,7 +389,7 @@ test.describe('Mobile tabs — 390×844 @smoke', () => {
     await basePage.waitForAppReady();
     await goTo(page, 'home');
 
-    const slot = page.getByTestId('mobile-now-approvals');
+    const slot = page.getByTestId('mobile-now-attention');
     await expect(slot).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     const cards = slot.locator('[data-slot="approval-card"]');
     const before = await cards.count();

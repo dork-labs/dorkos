@@ -30,6 +30,7 @@ import {
   useAskAgentNames,
   usePendingApprovals,
   usePendingInteractions,
+  useSettlingAsks,
 } from '@/layers/entities/attention';
 import { AskList } from '@/layers/features/ask';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
@@ -54,15 +55,24 @@ import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals'
 export function useNowAttentionSlot(): ReactNode | null {
   const { approvals, isError, retry } = usePendingApprovals();
   const { interactions: asks } = usePendingInteractions();
+  // Answered Asks, still on screen saying how they ended. Without this,
+  // answering the LAST pending Ask unmounts this whole slot in the same frame
+  // its receipt would draw — the disappearance the header pill's own
+  // `ApprovalsIndicator` and the home triage header's `PinnedTriageHeaderView`
+  // both guard against the same way: hold the slot, and the AskList render,
+  // open for as long as anything is settling.
+  const settling = useSettlingAsks();
   const agentNames = useAskAgentNames(asks);
   const navigate = useNavigate();
 
-  if (!isError && approvals.length === 0 && asks.length === 0) return null;
+  if (!isError && approvals.length === 0 && asks.length === 0 && settling.length === 0) {
+    return null;
+  }
 
   return (
-    <div data-testid="mobile-now-approvals" className="flex flex-col gap-2 px-2 pt-0.5 pb-1">
+    <div data-testid="mobile-now-attention" className="flex flex-col gap-2 px-2 pt-0.5 pb-1">
       {isError && <ApprovalsUnavailable onRetry={retry} />}
-      {asks.length > 0 && (
+      {(asks.length > 0 || settling.length > 0) && (
         <AskList
           asks={asks}
           agentNames={agentNames}

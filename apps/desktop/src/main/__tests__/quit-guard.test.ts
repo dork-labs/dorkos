@@ -97,7 +97,7 @@ describe('confirming a quit while agents are working', () => {
 
     const [options] = vi.mocked(dialog.showMessageBox).mock.calls[0];
     expect(options).toMatchObject({
-      message: '3 agents are still working. Quit anyway?',
+      message: '3 agents are still working or waiting on your answer. Quit anyway?',
       buttons: ['Keep Working', 'Quit Anyway'],
       // Staying is both the default button and the Escape action.
       defaultId: 0,
@@ -114,7 +114,9 @@ describe('confirming a quit while agents are working', () => {
     await emitBeforeQuit();
 
     const [options] = vi.mocked(dialog.showMessageBox).mock.calls[0];
-    expect(options).toMatchObject({ message: '1 agent is still working. Quit anyway?' });
+    expect(options).toMatchObject({
+      message: '1 agent is still working or waiting on your answer. Quit anyway?',
+    });
   });
 
   it('cancels the quit — the server keeps running and the app stays reachable', async () => {

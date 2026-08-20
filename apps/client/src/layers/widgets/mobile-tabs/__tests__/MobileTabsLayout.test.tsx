@@ -715,6 +715,37 @@ describe('MobileTabsLayout', () => {
       });
     });
 
+    it('holds the slot open long enough to show the receipt after the last Ask is answered', async () => {
+      // Adversarial regression probe: answering the only pending Ask used to
+      // unmount this whole slot the instant the refetch came back empty,
+      // tearing the "You said no" receipt away in the same frame it appeared.
+      // `useSettlingAsks()` is what the two sibling surfaces
+      // (`ApprovalsIndicator`, `PinnedTriageHeaderView`) already guard with —
+      // this seeds the exact race and would fail without it.
+      const user = userEvent.setup();
+      mockState = quietFixture;
+      const transport = createMockTransport();
+      transport.listPendingInteractions = vi
+        .fn()
+        .mockResolvedValueOnce({ interactions: [aQuestion()] })
+        .mockResolvedValue({ interactions: [] });
+      renderLayout(null, transport);
+      await user.click(screen.getByTestId('mobile-tab-home'));
+      await screen.findByText('meeting-notes has a question');
+
+      await user.click(screen.getByRole('button', { name: 'Skip' }));
+      await waitFor(() =>
+        expect(transport.submitAnswers).toHaveBeenCalledWith('session-question-1', 'q-1', {})
+      );
+
+      // `useAnswerAsk`'s `finally` re-invalidates the query, which now comes
+      // back with an empty list — exactly the moment the slot used to vanish.
+      await waitFor(() => expect(transport.listPendingInteractions).toHaveBeenCalledTimes(2));
+
+      expect(screen.getByTestId('mobile-now-attention')).toBeInTheDocument();
+      expect(screen.getByText('You said no')).toBeInTheDocument();
+    });
+
     it('says so loudly when the approval list cannot be read — even with no Now zone to say it in', async () => {
       mockState = quietFixture;
       const transport = createMockTransport();
@@ -738,7 +769,7 @@ describe('MobileTabsLayout', () => {
     it('draws nothing about approvals when there are none and nothing failed', async () => {
       mockState = quietFixture;
       renderLayout();
-      await waitFor(() => expect(screen.queryByTestId('mobile-now-approvals')).toBeNull());
+      await waitFor(() => expect(screen.queryByTestId('mobile-now-attention')).toBeNull());
       expect(screen.queryByText(/could not check whether anything is waiting/i)).toBeNull();
     });
 

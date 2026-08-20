@@ -246,6 +246,19 @@ describe('setTrayActivity', () => {
     expect(Tray.instances[0].setTitle).toHaveBeenLastCalledWith('● 2');
   });
 
+  it('drops the dot the moment the last waiting agent is answered, even while others keep streaming', () => {
+    onPlatform('darwin');
+    setupTray(options);
+
+    setTrayActivity({ streaming: 3, blocked: 1 });
+    expect(Tray.instances[0].setTitle).toHaveBeenLastCalledWith('● 4');
+
+    // The waiting agent got answered; the three still working did not stop.
+    setTrayActivity({ streaming: 3, blocked: 0 });
+
+    expect(Tray.instances[0].setTitle).toHaveBeenLastCalledWith('3');
+  });
+
   it('does not set a title on Windows, where there is no text beside a tray icon', () => {
     onPlatform('win32');
     setupTray(options);
