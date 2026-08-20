@@ -59,7 +59,14 @@ export { useLiveRegionText } from './model/use-live-region-text';
 // the panel across two destinations. `SidebarModel` and `SidebarZoneModel` are
 // deliberately NOT here: nothing outside the feature names them, and knip says
 // so.
-export { SIDEBAR_ZONE_IDS, type SidebarZoneId } from './model/build-sidebar-model';
+// `needsYouLiveRegionText` travels with them: the phone announces Heads up's
+// count from beside its tab bar, and that count can outlive the zone it is
+// normally read off — see the fallback in `MobileTabsLayout` (DOR-1391).
+export {
+  needsYouLiveRegionText,
+  SIDEBAR_ZONE_IDS,
+  type SidebarZoneId,
+} from './model/build-sidebar-model';
 export { AgentListItem } from './ui/AgentListItem';
 // Where an agent's depth lives (BC-35). Exported because the command palette
 // renders it too — a sibling feature composing this one's UI, which is the one

@@ -340,8 +340,8 @@ test.describe('Sidebar model showcase @smoke', () => {
       }
 
       // Attention rows are the ones whose reason names why they blocked —
-      // `now:permission-prompt`, `now:question`, `now:error`, `now:idle-timeout`
-      // — which is exactly the set the cap applies to. The working rollup and
+      // `now:permission-prompt`, `now:question`, `now:schedule-approval`,
+      // `now:error` — which is exactly the set the cap applies to. The working rollup and
       // the overflow row carry `rollup:` reasons and are deliberately not counted.
       //
       // Scoped to `li`, and that is load-bearing: the zone's headerless section

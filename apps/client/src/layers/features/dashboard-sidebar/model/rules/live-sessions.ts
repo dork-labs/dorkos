@@ -20,7 +20,7 @@ import type { SidebarState } from '../sidebar-state';
  * Heads up's number.** `design-decisions.md` §18 is a Signal → Rendering table, and
  * its automated row reads "Automated session activity → Nothing. No bold, no
  * badge." — directly under the line naming approval / question / wedged /
- * idle-timeout as "the only things that enter Heads up". A "6 working" that quietly
+ * parked schedule as "the only things that enter Heads up". A "6 working" that quietly
  * included two nightly tasks is automated activity rendered in the one zone
  * that promises to hold nothing but what needs you.
  *

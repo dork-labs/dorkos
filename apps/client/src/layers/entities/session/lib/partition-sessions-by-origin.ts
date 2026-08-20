@@ -49,7 +49,7 @@ export function partitionSessionsByOrigin(sessions: Session[]): SessionOriginPar
  *
  * §18's Signal → Rendering table reads "Automated session activity → Nothing.
  * No bold, no badge", directly under the line naming approval / question /
- * wedged / idle-timeout as the only things that enter Heads up. So a scheduled run
+ * wedged / parked schedule as the only things that enter Heads up. So a scheduled run
  * or a room's own turn is not in any count of what is running: not the
  * sidebar's "N working", not an agent row's "N live" chip, not ⌘K's Continue.
  * Three surfaces reading one function is what stops them from disagreeing,

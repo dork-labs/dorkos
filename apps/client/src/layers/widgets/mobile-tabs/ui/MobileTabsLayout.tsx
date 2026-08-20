@@ -46,6 +46,7 @@ import { useRouter } from '@tanstack/react-router';
 import { cn } from '@/layers/shared/lib';
 import { PageContainer } from '@/layers/shared/ui';
 import {
+  needsYouLiveRegionText,
   SidebarBottomSlot,
   SidebarChrome,
   SidebarFooterStrip,
@@ -194,7 +195,16 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   // here: Now also holds the "N working" rollup, and a badge that counted rows
   // would tell a quiet morning that one agent needs it (P4 AC-2).
   const nowZone = model.zones.find((zone) => zone.id === 'now');
-  const needsYouCount = nowZone?.needsYouCount ?? 0;
+  // **The count outlives the zone, and on this cockpit it has to** (DOR-1391).
+  // The lead slot draws approvals and prompts as cards, and the model leaves
+  // those rows out — so when the cards cover everything there are no rows, no
+  // zone, and a badge read off the zone would say nothing while two agents sat
+  // blocked in cards on the screen above it. `state.attention` is the uncapped,
+  // unsuppressed list, and every kind in it is one Heads up admits (BC-5), so
+  // its length IS the number. The zone's own count still wins whenever there is
+  // a zone, because that one has already had the cap and the rollup reasoned
+  // about it.
+  const needsYouCount = nowZone?.needsYouCount ?? state.attention.length;
   // **The badge's words, said from outside the panels.** The badge itself is
   // `aria-hidden` on the grounds that the count is already announced — and it
   // is, by the region inside Now's zone, which lives inside a panel that is
@@ -203,7 +213,11 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   // announcement moved out here, beside the bar that never leaves the screen,
   // and the zone stands its own region down (`silenceLiveRegion`) rather than
   // both of them saying the same number.
-  const liveRegionText = useLiveRegionText(nowZone?.liveRegionText);
+  // Same fallback, same reason: a screen-reader user with two cards on screen
+  // must hear the same number a sighted one reads off the badge.
+  const liveRegionText = useLiveRegionText(
+    nowZone?.liveRegionText ?? needsYouLiveRegionText(needsYouCount)
+  );
 
   return (
     <SidebarChrome activeTarget={state.activeTarget}>

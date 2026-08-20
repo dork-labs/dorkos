@@ -169,5 +169,5 @@ export const powerFixture: SidebarState = emptyState({
     hasPostedInTeam: true,
     hasDorkBotSession: true,
   },
-  digest: { finishedWhileAwayCount: 0, quietWhileAwayCount: 0 },
+  digest: { finishedWhileAwayCount: 0, idleWhileAwayCount: 0 },
 });

@@ -350,35 +350,39 @@ describe('BC-22 — the morning digest', () => {
     expect(
       buildDigestRow({
         ...quietFixture,
-        digest: { finishedWhileAwayCount: 0, quietWhileAwayCount: 0 },
+        digest: { finishedWhileAwayCount: 0, idleWhileAwayCount: 0 },
       })
     ).toBeNull();
   });
 
-  it('says how many sessions went quiet, which is where the nudge went (DOR-1391)', () => {
+  it('says how many sessions are idle, which is where the nudge went (DOR-1391)', () => {
     // Heads up no longer carries a "Went quiet" row. The digest is the one
     // place that mentions it now, so the row has to actually say it.
-    expect(buildDigestRow(quietFixture)?.secondary).toBe('2 sessions went quiet');
+    //
+    // "idle", not "went quiet": a run that finished exactly as asked and one
+    // that stalled look identical from a session record, so the row claims only
+    // the stillness it can actually see (DOR-1391 review).
+    expect(buildDigestRow(quietFixture)?.secondary).toBe('2 sessions idle');
   });
 
   it('says it in the singular for one', () => {
-    const one = { ...quietFixture, digest: { finishedWhileAwayCount: 3, quietWhileAwayCount: 1 } };
-    expect(buildDigestRow(one)?.secondary).toBe('1 session went quiet');
+    const one = { ...quietFixture, digest: { finishedWhileAwayCount: 3, idleWhileAwayCount: 1 } };
+    expect(buildDigestRow(one)?.secondary).toBe('1 session idle');
   });
 
-  it('says nothing about quiet sessions when there were none', () => {
+  it('says nothing about idle sessions when there were none', () => {
     // The door still opens — something finished — it just has nothing to add.
-    const none = { ...quietFixture, digest: { finishedWhileAwayCount: 3, quietWhileAwayCount: 0 } };
+    const none = { ...quietFixture, digest: { finishedWhileAwayCount: 3, idleWhileAwayCount: 0 } };
     expect(buildDigestRow(none)?.primary).toBe('While you were away…');
     expect(buildDigestRow(none)?.secondary).toBeUndefined();
   });
 
-  it('does not appear for quiet sessions alone', () => {
-    // A quiet session is not news by itself — that was the nudge's mistake.
+  it('does not appear for idle sessions alone', () => {
+    // An idle session is not news by itself — that was the nudge's mistake.
     // The digest is about an absence in which something HAPPENED.
     const quietOnly = {
       ...quietFixture,
-      digest: { finishedWhileAwayCount: 0, quietWhileAwayCount: 4 },
+      digest: { finishedWhileAwayCount: 0, idleWhileAwayCount: 4 },
     };
     expect(buildDigestRow(quietOnly)).toBeNull();
   });

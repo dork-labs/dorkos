@@ -247,7 +247,7 @@ describe('deriveAttentionSignals — membership (BC-5)', () => {
 
   it('says nothing about a session that has merely gone quiet (DOR-1391)', () => {
     // The idle nudge is gone: quiet is not a blockage, and what it observed is
-    // a Today digest fact now (`use-digest-facts`'s `quietWhileAwayCount`).
+    // a Today digest fact now (`use-digest-facts`'s `idleWhileAwayCount`).
     // Every quietness a nudge could ever have fired on, and none of them speak.
     for (const quietFor of [45 * MINUTE, 3 * 60 * MINUTE, 20 * 60 * MINUTE]) {
       const quiet = oneSession('idle', { updatedAt: ago(quietFor) });

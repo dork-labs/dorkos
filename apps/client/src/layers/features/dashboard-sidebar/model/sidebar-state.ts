@@ -124,13 +124,15 @@ export interface DigestState {
   /**
    * How many sessions moved during the absence and then went still.
    *
-   * **What Heads up's "Went quiet" row became** (DOR-1391). It never brings the
+   * **What Heads up's "Went quiet" row became** (DOR-1391), counted and named
+   * as stillness rather than as stalling — nothing on a session record marks a
+   * clean end, so the row says "idle". It never brings the
    * digest row into existence on its own — that stays
    * {@link DigestState.finishedWhileAwayCount}'s job, so the row still means
    * "something happened while you were out" — but when there IS a digest, this
    * is the half of it worth saying out loud, and the row says it.
    */
-  quietWhileAwayCount: number;
+  idleWhileAwayCount: number;
 }
 
 /**

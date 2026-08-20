@@ -26,9 +26,10 @@ interface TodayRevealState {
  * The in-memory reveal store.
  *
  * Read by `useSidebarState` into the model's snapshot, written by the row's own
- * click through {@link toggleTodayAutomated} — the same shape the idle-nudge
- * dismissals use, and for the same reason: the row builds its handler in render
- * and fires it in an event, so it must not subscribe.
+ * click through {@link toggleTodayAutomated}: the row builds its handler in
+ * render and fires it in an event, so it must not subscribe. It is the last
+ * store of this shape in the panel — the idle-nudge dismissals used the same
+ * one until DOR-1391 retired them.
  */
 export const useTodayRevealStore = create<TodayRevealState>((set) => ({
   automatedExpanded: false,

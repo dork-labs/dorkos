@@ -12,7 +12,7 @@
  */
 import { useMemo } from 'react';
 import type { Task } from '@dorkos/shared/types';
-import { useTasks, useTasksEnabled } from '@/layers/entities/tasks';
+import { useTasks, useTasksEnabledState } from '@/layers/entities/tasks';
 
 /** Shared empty, so a cockpit with nothing parked never mints a fresh array. */
 const NO_SCHEDULES: readonly Task[] = [];
@@ -44,7 +44,16 @@ export interface PendingScheduleApprovals {
  * that cannot run is not waiting on anybody.
  */
 export function usePendingScheduleApprovals(): PendingScheduleApprovals {
-  const enabled = useTasksEnabled();
+  // **The config read's own pending state, not `!enabled`.** The task query is
+  // gated on `enabled`, and a disabled TanStack query reports `isLoading:
+  // false` — so while the config was still in flight this hook said "settled,
+  // nothing parked". Anything watching for arrivals seeded an empty known set
+  // from that, and every schedule that had been sitting there for days was
+  // announced as a new arrival the moment the config landed: a knock and an OS
+  // banner for nothing. It is reachable in the ordinary app, because `AppShell`
+  // gives up waiting on config after three seconds and renders anyway
+  // (DOR-1391).
+  const { enabled, isLoading: configLoading } = useTasksEnabledState();
   const { data, isLoading } = useTasks(enabled);
 
   const schedules = useMemo(() => {
@@ -55,5 +64,5 @@ export function usePendingScheduleApprovals(): PendingScheduleApprovals {
     return parked.length === 0 ? NO_SCHEDULES : parked;
   }, [data]);
 
-  return { schedules, isLoading };
+  return { schedules, isLoading: configLoading || isLoading };
 }

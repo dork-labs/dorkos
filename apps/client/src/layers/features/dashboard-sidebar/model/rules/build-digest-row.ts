@@ -35,12 +35,21 @@ export function localDateKey(now: number): string {
  * product inventing an event to have a moment about.
  *
  * The row prints no timestamp, and it counts exactly one thing: the sessions
- * that went quiet. Everything else is behind the door — how much finished, and
- * what each one did, is the digest's problem. The quiet count is the exception
+ * sitting idle. Everything else is behind the door — how much finished, and
+ * what each one did, is the digest's problem. The idle count is the exception
  * because nothing else in the panel says it any more: it is what Heads up's
  * "Went quiet" row became when DOR-1391 retired that row, and a fact moved into
  * a summary that then declines to state it has not been moved, it has been
  * deleted.
+ *
+ * **It says "idle", not "went quiet", and the word is the honest one.** A
+ * session's record carries no "this ended cleanly" mark — a run that finished
+ * exactly as asked and a run that stalled mid-task look identical from here, a
+ * `updatedAt` that has stopped moving. "Went quiet" implies the second; "idle"
+ * claims only what is actually known, which is that nothing is happening in
+ * them. Excluding clean completions would be the better fix and is not
+ * available from the data in hand, so the copy is what changed (DOR-1391
+ * review).
  *
  * @param state - The snapshot.
  */
@@ -48,13 +57,13 @@ export function buildDigestRow(state: SidebarState): SidebarRowModel | null {
   if (state.digest.finishedWhileAwayCount <= 0) return null;
   if (state.prefs.digest.lastShownDate === localDateKey(state.now)) return null;
   const target = { kind: 'digest' } as const;
-  const quiet = state.digest.quietWhileAwayCount;
+  const idle = state.digest.idleWhileAwayCount;
   return {
     key: rowKey(target),
     target,
     glyph: { kind: 'icon', icon: 'digest' },
     primary: 'While you were away…',
-    ...(quiet > 0 ? { secondary: `${quiet} session${quiet === 1 ? '' : 's'} went quiet` } : {}),
+    ...(idle > 0 ? { secondary: `${idle} session${idle === 1 ? '' : 's'} idle` } : {}),
     reservesVerbLine: false,
     unread: { tier: 'none' },
     muted: false,

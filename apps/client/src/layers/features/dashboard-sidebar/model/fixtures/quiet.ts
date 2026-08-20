@@ -47,5 +47,5 @@ export const quietFixture: SidebarState = emptyState({
     hasPostedInTeam: true,
     hasDorkBotSession: true,
   },
-  digest: { finishedWhileAwayCount: 3, quietWhileAwayCount: 2 },
+  digest: { finishedWhileAwayCount: 3, idleWhileAwayCount: 2 },
 });

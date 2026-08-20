@@ -141,4 +141,50 @@ describe('usePendingScheduleApprovals', () => {
     expect(result.current.schedules).toHaveLength(0);
     expect(transport.listTasks).not.toHaveBeenCalled();
   });
+
+  it('stays loading while the CONFIG read has not answered (DOR-1391)', async () => {
+    // **"Off" and "we have not looked yet" are the same value here, and that
+    // was a false knock.** The task query is gated on the config's `tasks`
+    // flag, and a disabled TanStack query reports `isLoading: false` — so a
+    // hook reading only its own query called an empty list settled while the
+    // config was still in flight. `useBlockingArrivals` seeds its known set
+    // from the first settled read, so every schedule that had been parked for
+    // days was then announced as a NEW arrival the moment config landed: a
+    // knock and an OS banner for nothing. `AppShell` gives up waiting on
+    // config after three seconds and renders anyway, so this is reachable.
+    const transport = createMockTransport({
+      listTasks: vi.fn().mockResolvedValue([task({ id: 'parked' })]),
+      getConfig: vi.fn(() => new Promise<never>(() => {})),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    function wrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      );
+    }
+
+    const { result } = renderHook(() => usePendingScheduleApprovals(), { wrapper });
+
+    // The config read is genuinely in flight — asserted, so "still loading" is
+    // not simply "nothing has run yet".
+    await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.schedules).toHaveLength(0);
+  });
+
+  it('settles once the config says yes and the schedules land', async () => {
+    // The discriminating half: with a config that answers, the same hook
+    // reports settled — so "loading" above is the config read rather than a
+    // flag stuck on.
+    const { wrapper } = setup([task({ id: 'parked' })]);
+
+    const { result } = renderHook(() => usePendingScheduleApprovals(), { wrapper });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.schedules.map((s) => s.id)).toEqual(['parked']);
+  });
 });

@@ -439,9 +439,16 @@ export const ZONE_LABEL: Record<SidebarZoneId, string> = {
  * A verb change or an unread change must never reach a screen reader from here;
  * a fleet of thirty agents would turn one into a siren.
  *
+ * **Exported for the one caller that has to say it without a zone to read it
+ * off.** On the phone, every blockage can be drawn as a card by the lead slot,
+ * which leaves Heads up with no rows and therefore no zone — and the sentence is
+ * still true, because the cards are what the person is being told about
+ * (DOR-1391). A second spelling of these words in the widget is how a rename
+ * half-lands, so the widget calls this instead.
+ *
  * @param count - How many things need the operator.
  */
-function liveRegionText(count: number): string | undefined {
+export function needsYouLiveRegionText(count: number): string | undefined {
   if (count === 0) return undefined;
   return count === 1 ? '1 agent needs you' : `${count} agents need you`;
 }
@@ -545,7 +552,7 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
       // number as well as a sentence, so the mobile Home badge and this live
       // region are one fact rather than two (P4 AC-2).
       zone.needsYouCount = attentionRows.length;
-      zone.liveRegionText = liveRegionText(zone.needsYouCount);
+      zone.liveRegionText = needsYouLiveRegionText(zone.needsYouCount);
       // …and the same number rides the fold. Heads up's roll-up counts what
       // needs answering rather than what is in the list, so folding it can
       // never be a quiet way to put a permission prompt out of sight (D1).
@@ -553,7 +560,14 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
       if (body?.rollup) body.rollup.needsYouCount = zone.needsYouCount;
       zones.push(zone);
     }
-  } else {
+  } else if (attentionRows.length === 0) {
+    // **`attentionRows`, not `nowRows` — and the difference is the phone.** The
+    // lead slot can cover every blockage there, which empties `nowRows` while
+    // things genuinely are waiting (DOR-1391). Handing Getting started the slot
+    // in that state would put day-one suggestions above an agent that is
+    // stopped, and BC-4's rule is the opposite: real signals always win. So a
+    // covered queue yields NEITHER zone, and the cards the renderer draws in
+    // Heads up's place are the whole of what that zone says.
     const suggestions = buildGettingStarted(state);
     const zone = bodyZone('getting-started', suggestions, 'zone:getting-started', state);
     if (zone) zones.push(zone);

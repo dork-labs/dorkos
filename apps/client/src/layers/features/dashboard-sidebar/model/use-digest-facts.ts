@@ -18,20 +18,26 @@ import { localDateKey } from './rules/build-digest-row';
 import type { DigestState } from './sidebar-state';
 
 /**
- * How long a session has to have sat still before the digest calls it quiet.
+ * How long a session has to have sat still before the digest calls it idle.
  *
  * Thirty minutes, inherited from the idle nudge this replaced: a shorter window
  * reports a coffee break. The threshold is the only thing kept — the nudge
  * itself was a row in Heads up asking for attention on a guess, and this is a
  * line in a once-a-day summary about what already happened (DOR-1391).
+ *
+ * **The boundary is inclusive: still for exactly thirty minutes counts.** Either
+ * side is defensible at the instant itself, and inclusive is the one that keeps
+ * the constant's own sentence true — "sat still for thirty minutes" is a
+ * description of a session that has, not of one that has sat still for thirty
+ * minutes and a millisecond. Pinned by a test at exactly this value.
  */
-export const QUIET_SESSION_AFTER_MS = 30 * 60 * 1000;
+export const IDLE_SESSION_AFTER_MS = 30 * 60 * 1000;
 
 /**
  * The digest with nothing in it — one shared object, so a gate that says no
  * never mints a fresh identity and rebuilds the model with it.
  */
-const NO_DIGEST: DigestState = { finishedWhileAwayCount: 0, quietWhileAwayCount: 0 };
+const NO_DIGEST: DigestState = { finishedWhileAwayCount: 0, idleWhileAwayCount: 0 };
 
 /** What {@link useDigestFacts} reads. */
 export interface UseDigestFactsInput {
@@ -42,10 +48,10 @@ export interface UseDigestFactsInput {
   /** The sessions streaming a turn right now — still working, so not news. */
   workingSessionIds: readonly string[];
   /**
-   * Session id → coarse lifecycle, for the one thing the quiet count needs to
+   * Session id → coarse lifecycle, for the one thing the idle count needs to
    * know: whether a still session is still because it stopped, or because it is
    * parked on a person. A blocked or wedged session is already a Heads up row
-   * and must not be counted as quiet on top of it.
+   * and must not be counted as idle on top of it.
    */
   sessionStatuses: Readonly<Record<string, SessionLifecycle>>;
   /** When the operator last opened anything, from `entities/interactions`. */
@@ -129,7 +135,7 @@ function countFinishedWhileAway(
 }
 
 /**
- * How many sessions moved during the absence and then went quiet.
+ * How many sessions moved during the absence and have been still since.
  *
  * **This is what became of the "Went quiet" row** (DOR-1391). Heads up used to
  * carry one dismissible nudge about the most recently touched idle session,
@@ -138,10 +144,16 @@ function countFinishedWhileAway(
  * reads once a day, in the past tense, about a stretch of time they were not
  * watching.
  *
+ * **It counts stillness and says exactly that.** A session that finished its
+ * work cleanly and one that stalled mid-task are the same shape here — a
+ * `updatedAt` that stopped moving — because nothing on the record marks a clean
+ * end. The row calls them "idle" rather than "gone quiet" for that reason; see
+ * `build-digest-row`.
+ *
  * Same three conditions the nudge applied, minus its limit of one: the session
  * is not streaming, it is not parked on a person or wedged — those are Heads up
  * rows in their own right and would be counted twice — and it has been still
- * for at least {@link QUIET_SESSION_AFTER_MS}.
+ * for at least {@link IDLE_SESSION_AFTER_MS}.
  *
  * **The window is the absence, not the 4am boundary**, matching the fact beside
  * it. The boundary is what decides which local DAY the digest has already been
@@ -155,7 +167,7 @@ function countFinishedWhileAway(
  * @param since - When the absence began, epoch ms.
  * @param until - The model's clock, epoch ms.
  */
-function countQuietWhileAway(
+function countIdleWhileAway(
   sessions: readonly Session[],
   workingSessionIds: readonly string[],
   statuses: Readonly<Record<string, SessionLifecycle>>,
@@ -171,7 +183,7 @@ function countQuietWhileAway(
     const at = Date.parse(session.updatedAt);
     if (Number.isNaN(at)) continue;
     if (at <= since || at > until) continue;
-    if (until - at < QUIET_SESSION_AFTER_MS) continue;
+    if (until - at < IDLE_SESSION_AFTER_MS) continue;
     count += 1;
   }
   return count;
@@ -260,7 +272,7 @@ export function useDigestFacts(input: UseDigestFactsInput): DigestFacts {
     if (now - seen < welcomeBack.absenceThresholdMinutes * 60_000) return NO_DIGEST;
     return {
       finishedWhileAwayCount: countFinishedWhileAway(sessions, workingSessionIds, seen, now),
-      quietWhileAwayCount: countQuietWhileAway(
+      idleWhileAwayCount: countIdleWhileAway(
         sessions,
         workingSessionIds,
         sessionStatuses,

@@ -125,3 +125,41 @@ describe('the damping is actually wired to the panel (BC-52)', () => {
     expect(showing()).toBe(true);
   });
 });
+
+describe('SidebarZones — the lead slot when Heads up has no zone (DOR-1391)', () => {
+  /** What the phone's lead slot hands down: cards for blockages it draws. */
+  const CARDS = <div data-testid="lead-cards">Allow or deny</div>;
+
+  it('draws the slot even while Getting started holds the zone above it', () => {
+    // The 🔴: with every blockage covered by a card, Heads up emits no zone —
+    // and a model that still had suggestions would put Getting started there.
+    // Gating the slot on "is the slot taken" made the cards render nowhere at
+    // all, which is a blocked agent invisible on the surface the phone exists
+    // for. The slot is gated on Heads up's own absence instead.
+    render(<SidebarZones model={SUGGESTIONS} nowSlot={CARDS} />);
+
+    expect(document.querySelector('[data-testid="lead-cards"]')).not.toBeNull();
+    // Drawn ABOVE, so the cards sit where Heads up would have been.
+    const zones = Array.from(document.querySelectorAll('[data-sidebar-zone]')).map((el) =>
+      el.getAttribute('data-sidebar-zone')
+    );
+    expect(zones[0]).toBe('now');
+    expect(zones).toContain('getting-started');
+  });
+
+  it('does not draw a second Heads up when the model emitted one', () => {
+    // The discriminating half: with a real Heads up zone the slot rides inside
+    // it as a lead, and there is exactly one zone carrying the cards.
+    render(<SidebarZones model={SIGNAL} nowSlot={CARDS} />);
+
+    expect(document.querySelectorAll('[data-sidebar-zone="now"]')).toHaveLength(1);
+    expect(document.querySelector('[data-testid="lead-cards"]')).not.toBeNull();
+  });
+
+  it('draws nothing extra when the slot has nothing to say', () => {
+    render(<SidebarZones model={SUGGESTIONS} nowSlot={null} />);
+
+    expect(document.querySelector('[data-sidebar-zone="now"]')).toBeNull();
+    expect(document.querySelector('[data-testid="lead-cards"]')).toBeNull();
+  });
+});

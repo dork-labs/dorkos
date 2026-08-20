@@ -38,7 +38,11 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
   };
 });
 
-import { useDigestFacts, type UseDigestFactsInput } from '../use-digest-facts';
+import {
+  IDLE_SESSION_AFTER_MS,
+  useDigestFacts,
+  type UseDigestFactsInput,
+} from '../use-digest-facts';
 
 /** 09:15 local on 9 August 2026 — the same instant the fixtures reason from. */
 const NOW = new Date(2026, 7, 9, 9, 15, 0, 0).getTime();
@@ -114,7 +118,7 @@ describe('useDigestFacts — what counts as news (BC-22)', () => {
   });
 });
 
-describe('useDigestFacts — the sessions that went quiet (DOR-1391)', () => {
+describe('useDigestFacts — the sessions sitting idle (DOR-1391)', () => {
   beforeEach(() => {
     update.mockClear();
     welcomeBack.enabled = true;
@@ -127,27 +131,43 @@ describe('useDigestFacts — the sessions that went quiet (DOR-1391)', () => {
     // What Heads up's retired "Went quiet" row became: both default sessions
     // stopped hours ago, inside an absence of fourteen.
     const { result } = renderHook(() => useDigestFacts(input()));
-    expect(result.current.digest.quietWhileAwayCount).toBe(2);
+    expect(result.current.digest.idleWhileAwayCount).toBe(2);
   });
 
   it('does not count a session touched within the last half hour', () => {
-    // The threshold, at its boundary: still moving twenty minutes ago is not
-    // quiet, it is recent.
+    // The threshold: still moving twenty minutes ago is not idle, it is recent.
     const { result } = renderHook(() =>
       useDigestFacts(input({ sessions: [session('s1', hoursAgo(1 / 3))] }))
     );
-    expect(result.current.digest.quietWhileAwayCount).toBe(0);
+    expect(result.current.digest.idleWhileAwayCount).toBe(0);
     // …and the same session an hour later does count, so the zero above is the
     // threshold rather than an inert path.
     const { result: later } = renderHook(() =>
       useDigestFacts(input({ sessions: [session('s1', hoursAgo(1))] }))
     );
-    expect(later.current.digest.quietWhileAwayCount).toBe(1);
+    expect(later.current.digest.idleWhileAwayCount).toBe(1);
+  });
+
+  it('counts a session still for EXACTLY the threshold — the boundary is inclusive', () => {
+    // Pinned deliberately (DOR-1391 review). Both sides are defensible at the
+    // instant itself; inclusive is the one that keeps the constant's own
+    // sentence true, because "sat still for thirty minutes" describes a session
+    // that has, not one that has sat still for thirty minutes and a
+    // millisecond. The three cases here straddle the line by 1ms each way, so
+    // a flipped comparison cannot pass any two of them.
+    const at = (ms: number) =>
+      renderHook(() =>
+        useDigestFacts(input({ sessions: [session('s1', new Date(NOW - ms).toISOString())] }))
+      ).result.current.digest.idleWhileAwayCount;
+
+    expect(at(IDLE_SESSION_AFTER_MS - 1)).toBe(0);
+    expect(at(IDLE_SESSION_AFTER_MS)).toBe(1);
+    expect(at(IDLE_SESSION_AFTER_MS + 1)).toBe(1);
   });
 
   it('does not count a session that is still streaming', () => {
     const { result } = renderHook(() => useDigestFacts(input({ workingSessionIds: ['s1'] })));
-    expect(result.current.digest.quietWhileAwayCount).toBe(1);
+    expect(result.current.digest.idleWhileAwayCount).toBe(1);
   });
 
   it('does not count a session that is parked on you or wedged', () => {
@@ -156,21 +176,21 @@ describe('useDigestFacts — the sessions that went quiet (DOR-1391)', () => {
     const { result } = renderHook(() =>
       useDigestFacts(input({ sessionStatuses: { s1: 'blocked', s2: 'error' } }))
     );
-    expect(result.current.digest.quietWhileAwayCount).toBe(0);
+    expect(result.current.digest.idleWhileAwayCount).toBe(0);
     expect(result.current.digest.finishedWhileAwayCount).toBe(2);
   });
 
-  it('does not count a session that went quiet BEFORE the operator left', () => {
+  it('does not count a session that went still BEFORE the operator left', () => {
     const { result } = renderHook(() =>
       useDigestFacts(input({ sessions: [session('s1', hoursAgo(20))] }))
     );
-    expect(result.current.digest.quietWhileAwayCount).toBe(0);
+    expect(result.current.digest.idleWhileAwayCount).toBe(0);
   });
 
   it('says nothing when the digest itself is switched off', () => {
     welcomeBack.enabled = false;
     const { result } = renderHook(() => useDigestFacts(input()));
-    expect(result.current.digest.quietWhileAwayCount).toBe(0);
+    expect(result.current.digest.idleWhileAwayCount).toBe(0);
   });
 });
 

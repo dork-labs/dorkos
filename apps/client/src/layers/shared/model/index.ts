@@ -32,7 +32,11 @@ export {
 export { useInteractiveShortcuts } from './use-interactive-shortcuts';
 export { useLongPress } from './use-long-press';
 export type { LongPressState } from './use-long-press';
-export { useFeatureEnabled } from './server-config/use-feature-enabled';
+export {
+  useFeatureEnabled,
+  useFeatureEnabledState,
+  type FeatureEnabledState,
+} from './server-config/use-feature-enabled';
 export { useClaudeAccounts } from './server-config/use-claude-accounts';
 export { useNow } from './use-now';
 // The WAI-ARIA feed pattern. `Feed` (in `shared/ui`) and `feedArticleProps`

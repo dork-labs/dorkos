@@ -346,6 +346,50 @@ describe('MobileTabsLayout', () => {
       expect(screen.queryByTestId('mobile-tab-badge-home')).not.toBeInTheDocument();
     });
 
+    it('still counts blockages the lead slot drew as cards (DOR-1391)', async () => {
+      // **The badge lie.** When the cards cover everything, the model emits no
+      // rows for them and therefore no Heads up zone at all — so a badge read
+      // off `zone.needsYouCount` said nothing while two agents sat blocked in
+      // cards on the screen above it. The count falls back to the attention
+      // list, which is the uncapped, unsuppressed truth.
+      const user = userEvent.setup();
+      mockState = {
+        ...quietFixture,
+        attention: [
+          {
+            id: 'blocked:q-1',
+            kind: 'question',
+            primary: 'meeting-notes',
+            secondary: 'has a question',
+            since: new Date().toISOString(),
+            deepLink: '/session?session=session-question-1',
+          },
+        ],
+      };
+      const transport = createMockTransport();
+      transport.listPendingInteractions = vi
+        .fn()
+        .mockResolvedValue({ interactions: [aQuestion()] });
+      const { container } = renderLayout(null, transport);
+      await user.click(screen.getByTestId('mobile-tab-home'));
+
+      // The premise: the card is drawn, and Heads up has no zone of its own.
+      await screen.findByText('meeting-notes has a question');
+      expect(
+        panel('home').querySelector('[data-sidebar-zone="now"] [data-sidebar-row]')
+      ).toBeNull();
+
+      expect(screen.getByTestId('mobile-tab-badge-home')).toHaveTextContent('1');
+      // And the same number reaches a screen reader, from beside the bar.
+      await waitFor(
+        () => {
+          const live = container.querySelector('[aria-live="polite"]');
+          expect(live?.textContent).toBe('1 agent needs you');
+        },
+        { timeout: LIVE_REGION_DEBOUNCE_MS * 3 }
+      );
+    });
+
     it('never badges Library, under any state the fixtures produce', () => {
       // Every journey, including the two that badge Home. Library is the calm
       // surface: it asks for nothing (§9).

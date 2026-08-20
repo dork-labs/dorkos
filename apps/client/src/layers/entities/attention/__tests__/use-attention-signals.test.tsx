@@ -21,11 +21,11 @@ const NOW = new Date('2026-08-09T09:15:00.000Z').getTime();
 const ALPHA = '/projects/alpha';
 
 /**
- * Two sessions: one touched a moment ago, one quiet for forty-five minutes.
+ * Two sessions: one touched a moment ago, one still for forty-five minutes.
  *
- * The stale one is what makes the dismissal case real — it is the only thing
- * here that can produce a dismissible nudge — and every other case parks it in
- * `streaming` so it stays silent.
+ * The stale one is what makes the "silence about a quiet session" case real —
+ * forty-five minutes is exactly what the retired idle nudge fired on — and
+ * every other case parks it in `streaming` so it cannot contribute anything.
  */
 const SESSIONS = [
   {

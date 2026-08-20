@@ -320,16 +320,45 @@ describe('DOR-1391 — one blockage, one place (the phone lead slot)', () => {
       signal(`blocked:q-${index}`, 'question', index + 1)
     );
     const covered = seven.map((s) => s.id);
-    const rows = zoneRows(
-      { ...busyFixture, attention: seven, workingSessionIds: [], coveredSignalIds: covered },
-      'now'
-    );
-    expect(rows).toEqual([]);
+    const state = {
+      ...busyFixture,
+      attention: seven,
+      workingSessionIds: [],
+      coveredSignalIds: covered,
+    };
+    // Asserted as "no Heads up zone at all", never as "the zone drew no rows":
+    // an empty row list is also what `zoneRows` returns for a zone that is
+    // simply absent, so the two are told apart by naming the zones that exist.
+    expect(buildSidebarModel(state).zones.map((zone) => zone.id)).not.toContain('now');
+    expect(zoneRows(state, 'now')).toEqual([]);
 
     // And the discriminating half: the same seven WITHOUT the cards keep their
     // three rows and the fold.
     const uncovered = zoneRows({ ...busyFixture, attention: seven, workingSessionIds: [] }, 'now');
     expect(uncovered.map((row) => row.reason).at(-1)).toBe('rollup:now-overflow');
+  });
+
+  it('never hands the slot to Getting started while blockages are merely covered', () => {
+    // **The one that hides a blocked agent.** With every blockage drawn as a
+    // card, Heads up has no rows — and a day-one cockpit still has suggestions,
+    // so Getting started took the slot. `SidebarZones` then read the slot as
+    // spoken for and drew the cards NOWHERE: an agent stopped and waiting,
+    // invisible on the phone's Home tab, behind a list of things to try. BC-4's
+    // rule is that real signals always win, and a covered blockage is still a
+    // real signal.
+    const state = {
+      ...firstRunFixture,
+      attention: [signal('approval:apr-1', 'permission-prompt', 1)],
+      coveredSignalIds: ['approval:apr-1'],
+    };
+    // First, the trap is real: the same fixture WITHOUT a blockage does offer
+    // suggestions, so the assertion below cannot pass vacuously.
+    expect(buildSidebarModel(firstRunFixture).zones.map((zone) => zone.id)).toContain(
+      'getting-started'
+    );
+
+    expect(buildSidebarModel(state).zones.map((zone) => zone.id)).not.toContain('getting-started');
+    expect(buildSidebarModel(state).zones.map((zone) => zone.id)).not.toContain('now');
   });
 
   it('leaves the working rollup standing — a card is not a turn', () => {
