@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,client): an agent-proposed schedule announces itself — SSE + activity on create, live task list (DOR-1380)'
+  - "fix(server,client): close the review's four blockers on the parked-schedule signal (DOR-1380)"
 ---
 
 ### Fixed
