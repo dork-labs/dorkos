@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,shared,db,client): one notification system — history with read state, and one pipeline that decides what reaches you where (DOR-1383)'
+  - 'fix(server): close the two holes in the notification bounds, and make retention kind-aware (DOR-1383)'
 ---
 
 ### Added
