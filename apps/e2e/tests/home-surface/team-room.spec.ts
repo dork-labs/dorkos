@@ -402,6 +402,15 @@ test.describe('The pinned triage header @smoke', () => {
     const waiting = await teamRoomApi.pendingApprovalIds();
     test.skip(waiting.length > 0, 'something else on this server is waiting on a person');
 
+    // This file drives real turns for real, earlier in this same serial run —
+    // "typing here reaches your default agent", for one — and each one earns a
+    // genuine, correct Shift Report the moment its composer next runs. This
+    // test is about approvals, asks and attention, not about the report, so it
+    // starts from an operator who has already seen today's, exactly as a real
+    // one would have by now (`markAllNotificationsRead`'s own doc explains why
+    // this is a fixture reset, not a product action under test).
+    await teamRoomApi.markAllNotificationsRead();
+
     await basePage.goto();
     await basePage.waitForAppReady();
     await expect(page.getByTestId('home-composer')).toBeVisible({
@@ -524,6 +533,14 @@ test.describe("DorkBot's one quiet suggestion @smoke", () => {
     test.skip(waiting.length > 0, 'something else on this server is waiting on a person');
     const unreachable = await teamRoomApi.meshUnreachableCount();
     test.skip(unreachable > 0, 'an agent is unreachable, so the header has something to say');
+
+    // A THIRD case where the header is correct to have something to say: a
+    // real turn earlier in this same serial run earned a genuine Shift Report
+    // (`markAllNotificationsRead`'s own doc explains why). "All quiet." and an
+    // unread report are mutually exclusive by this widget's own design
+    // (`HomeQuietState`'s `headerSpeaks`), so a suggestion test that wants the
+    // quiet line has to start from an operator who has already seen it.
+    await teamRoomApi.markAllNotificationsRead();
 
     // The suggestion has to be EARNED — the registry's own rules decide, and the
     // one that can qualify here wants more than one agent in the mesh. Seeded
