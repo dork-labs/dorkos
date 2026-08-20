@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client,server,shared): a knock when an agent needs you, and one place to set how loud DorkOS is (DOR-1385)'
+  - 'fix(client,server): the knock fires on real arrivals only, and the all-clear chimes wherever you answered (DOR-1385 review)'
 ---
 
 ### Added
