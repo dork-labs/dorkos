@@ -171,8 +171,4 @@ export const powerFixture: SidebarState = emptyState({
     hasDorkBotSession: true,
   },
   digest: { finishedWhileAwayCount: 0 },
-  projects: {
-    activeCount: AGENT_COUNT,
-    byCwd: displayNames,
-  },
 });

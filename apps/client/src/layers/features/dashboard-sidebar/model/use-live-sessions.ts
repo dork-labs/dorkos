@@ -1,26 +1,39 @@
 /**
- * What "live" means for an agent, and the one place the sidebar answers it.
+ * What "live" means for the session switcher, and the one place it is answered.
  *
- * Two surfaces ask the question and they must not answer it differently: the
- * agent row's "N live" chip counts live sessions it has never fetched, and the
- * session switcher sorts an agent's fetched sessions into Live now / Recent.
- * A chip saying "2 live" over a switcher showing one live row is the kind of
- * quiet disagreement that costs an operator their trust in the readout — and it
- * shipped once already, when the chip counted every live session by `cwd` and
- * the switcher's Live-now group counted only the human ones. Both now apply the
- * SAME two rules, in this module: live lifecycle, and human origin.
- *
- * **Neither hook subscribes to activity.** They read `lifecycle` only — the
+ * **Neither export subscribes to activity.** They read `lifecycle` only — the
  * coarse phase that changes when a turn starts and stops — so the verb churn
  * the sidebar is architected around (spec R1) never reaches them. The words
  * themselves arrive at the leaf, through `SessionVerbLine`.
  *
+ * **The agent row's "N live" chip is NOT here, and it asks a different
+ * question.** The chip reads `SidebarRowModel.liveCount`, which
+ * `rules/live-sessions.ts` counts off `state.workingSessionIds` — turns that
+ * are STREAMING. {@link isLiveLifecycle} below is wider: it also admits
+ * `blocked`, so the switcher's "Live now" group holds a turn that has stopped
+ * to ask the operator something.
+ *
+ * **They part on purpose, and the split is the honest one.** The chip is a busy
+ * signal — "this agent is producing output in more than one place, here is the
+ * door to those places" — and a turn waiting on an answer is not producing
+ * anything; counting it would say an agent is busy when what it is, is stuck.
+ * The switcher is a list of open turns, and a blocked one is open: closing it
+ * is the whole reason somebody would go there. The blocked turn is not lost
+ * either way, and that is what makes the narrower chip safe — it raises an
+ * attention item in Heads up, which is the zone that exists for exactly it, and
+ * the row's own dot goes to needs-you.
+ *
+ * So a chip reading "2 live" over a switcher listing three rows under Live now
+ * is correct, not drift. What WOULD be drift is the two disagreeing about
+ * origin, and they cannot: both exclude automated work through
+ * `partitionSessionsByOrigin` — the switcher directly, the chip through
+ * `humanOriginSessionIds`, which is built from it. A second origin rule lived
+ * in this module once and did disagree (DOR-1137).
+ *
  * @module features/dashboard-sidebar/model/use-live-sessions
  */
-import { useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import type { SessionOrigin } from '@dorkos/shared/types';
 import { useSessionListStore } from '@/layers/entities/session';
 
 /**
@@ -55,89 +68,4 @@ export function useSessionLifecycles(sessionIds: readonly string[]): (SessionLif
   return useSessionListStore(
     useShallow((s) => sessionIds.map((id) => s.statuses[id]?.lifecycle ?? null))
   );
-}
-
-/**
- * How many of an agent's sessions are live right now.
- *
- * Counted by `cwd` match against the fleet-wide status fan-out, NOT from a
- * session list — which is the whole reason a collapsed agent row can carry the
- * chip at all. The sidebar fetches session metadata for the agent you are
- * looking at and nobody else, but `session_status` carries every live session's
- * directory regardless, so the count is available for all sixty rows at the
- * cost of one store read each. (Same mechanism as `useAgentHottestStatus`,
- * which needs it for the same reason.)
- *
- * A number, so the subscription settles on a primitive: the count changes when
- * a turn starts or stops and at no other time.
- *
- * @param agentPath - The agent's project directory.
- */
-export function useLiveSessionCount(agentPath: string): number {
-  return useSessionListStore(
-    useCallback(
-      (s) => {
-        let count = 0;
-        for (const [id, cwd] of Object.entries(s.statusCwds)) {
-          if (cwd !== agentPath) continue;
-          if (!isLiveLifecycle(s.statuses[id]?.lifecycle)) continue;
-          // Presence first, THEN origin. `sessions[id]?.origin` would collapse
-          // the two things `undefined` means here — "known session, unmarked,
-          // therefore a conversation" and "no metadata, origin unknowable" —
-          // and counting the second as the first is exactly the over-count this
-          // guard exists to prevent.
-          const metadata = s.sessions[id];
-          if (metadata === undefined) continue;
-          if (!isConversation(metadata.origin)) continue;
-          count += 1;
-        }
-        return count;
-      },
-      [agentPath]
-    )
-  );
-}
-
-/**
- * Whether a session is a conversation with a person, as opposed to something
- * that started on its own.
- *
- * **The chip is an attention badge, and automated work is not allowed to fire
- * one** — `design-decisions.md` §18, the Signal → Rendering table at line 353:
- * *"Automated session activity → Nothing. No bold, no badge."* Ruled explicitly
- * for this task and for BC-9's "N working" rollup at the same time, so the chip,
- * the switcher and the rollup share one definition of live.
- *
- * **The written contract does not carry this exclusion** — BC-9's text has none
- * — which is exactly why the reasoning lives here rather than being
- * re-litigated by the next reader.
- *
- * **The blocking carve-out is NOT weakened by this.** §353 continues "Blocking
- * states go to Heads up like the rest": an automated session that blocks still
- * raises an attention item, and it does so in the Heads up zone, which is a
- * different surface with a different rule. Only the LIVENESS count excludes
- * automation.
- *
- * It is also what keeps the chip and the switcher telling the same story: the
- * switcher's "Live now" group is built from
- * `partitionSessionsByOrigin(...).conversations`, so a chip that counted a
- * scheduled run would promise a live row the switcher then refuses to draw —
- * two nightly tasks rendering a green "2 live" over a dialog whose only content
- * is a collapsed "+ 2 automated".
- *
- * **Unknown origin does not count**, and the asymmetry is deliberate. The
- * session-list store learns an origin from `session_upserted`; until it has one
- * there is no honest way to tell a conversation from a task. Under-counting
- * costs a chip that appears a beat late — the row still carries its status dot
- * — while over-counting breaks a locked rule. The cheaper mistake wins.
- *
- * Absent means `user` — the unmarked default the whole origin vocabulary is
- * built on — so this must accept it, exactly as `partitionSessionsByOrigin`
- * does. The two are the same rule read from two sides, and a test pins them
- * together.
- *
- * @param origin - The session's origin, absent for the ordinary human case.
- */
-function isConversation(origin: SessionOrigin | undefined): boolean {
-  return origin === undefined || origin === 'user';
 }

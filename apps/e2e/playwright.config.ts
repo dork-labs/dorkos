@@ -46,6 +46,56 @@ function port(name: string, fallback: string): string {
 
 const CI = !!process.env.CI;
 
+/**
+ * How many ways CI is cutting this suite, so `globalTimeout` can be sized to one
+ * shard rather than to the whole run.
+ *
+ * `.github/workflows/browser-test.yml` runs `playwright test --shard=i/N` across
+ * a matrix and sets this to the same N. Playwright gives each shard process its
+ * own `globalTimeout`, so a deadline written for the unsharded suite would be
+ * three times too generous — and a hung shard would sit there for half an hour
+ * past the point anyone could learn anything from it.
+ *
+ * Reading it rather than hard-coding a per-shard number is what keeps the
+ * deadline honest when the matrix changes size: the workflow's `shard:` list is
+ * the single place the count is written, and both the `--shard` flag and this
+ * variable come from it.
+ *
+ * Defaults to 1, which is the truth everywhere else — a local run, or any CI
+ * invocation that does not shard, really is running the whole suite. The cost of
+ * that default being wrong is a loose deadline, never a tight one: a CI run that
+ * DOES shard while forgetting this variable gets the unsharded 75-minute budget,
+ * so a hung shard sits past its job ceiling and is cancelled without a report
+ * instead of failing with one. That is the DOR-1110 failure mode, which is why
+ * the workflow sets it from the same `shard:` list the `--shard` flag comes from
+ * rather than leaving the two to be kept in step by hand.
+ */
+function shardTotal(): number {
+  const value = process.env.E2E_SHARD_TOTAL;
+  if (value === undefined || value === '') return 1;
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`E2E_SHARD_TOTAL must be a positive integer, got: ${JSON.stringify(value)}`);
+  }
+  return Number(value);
+}
+
+const SHARD_TOTAL = shardTotal();
+
+// The two measured numbers `globalTimeout` is derived from, and its multiplier.
+// The full argument — what was measured, on which runs, and why the deadline is
+// computed instead of typed in — is on `globalTimeout` below.
+const UNSHARDED_SUITE_MINUTES = 41;
+const LEG_BOOT_MINUTES = 3;
+const GLOBAL_TIMEOUT_HEADROOM = 1.75;
+
+/** A healthy shard's derived wall time: fixed boot cost plus its share of the tests. */
+const HEALTHY_SHARD_MINUTES =
+  LEG_BOOT_MINUTES + (UNSHARDED_SUITE_MINUTES - LEG_BOOT_MINUTES) / SHARD_TOTAL;
+
+/** That, with headroom, rounded up to the next five minutes so the ladder reads in round numbers. */
+const SHARD_GLOBAL_TIMEOUT_MS =
+  Math.ceil((HEALTHY_SHARD_MINUTES * GLOBAL_TIMEOUT_HEADROOM) / 5) * 5 * 60_000;
+
 // THE COCKPIT LEG'S OWN PORTS AND DATA DIRECTORY — never the operator's (DOR-1223).
 //
 // This leg used to boot with no `DORK_HOME` at all, so the server resolved its
@@ -197,10 +247,10 @@ export default defineConfig({
   // specs at once, every one of them dying on a 30s locator timeout. Serially,
   // with one retry, that is 21 × (30s + 30s) ≈ 21 minutes of a runner waiting
   // to be told the same thing 21 times — on top of a healthy suite that already
-  // takes 30 minutes (measured, see the workflow header). The attempt hit the
-  // job ceiling and was CANCELLED with zero Playwright output, so the run cost
-  // a full debug cycle and reported nothing. `globalTimeout` below fixes the
-  // "reported nothing" half; this fixes the "waited 21 minutes" half.
+  // took over half an hour (measured, see the workflow header). The attempt hit
+  // the job ceiling and was CANCELLED with zero Playwright output, so the run
+  // cost a full debug cycle and reported nothing. `globalTimeout` below fixes
+  // the "reported nothing" half; this fixes the "waited 21 minutes" half.
   //
   // WHY FIVE, and not one and not twenty.
   //
@@ -224,9 +274,18 @@ export default defineConfig({
   // was before this line, which is why it can be raised in CI without a
   // corresponding local change.
   //
+  // PER SHARD, now that CI cuts the suite three ways (DOR-1363) — so a
+  // catastrophic break can burn 3 × 5 failures instead of 5. That is the right
+  // trade rather than a regression: the three shards spend it CONCURRENTLY, so
+  // the wall-clock cost is the same ~5 minutes it always was, and each shard
+  // names five of its own specs instead of the run naming five out of one
+  // arbitrary third. Fifteen red spec names across three logs is still one
+  // diagnosis; what it buys is that a break confined to one shard's projects
+  // cannot hide behind five failures in another's.
+  //
   // Local runs keep 0 (unlimited). A developer running one spec file wants the
-  // whole picture, has no 45-minute meter running, and is watching the output
-  // live — the failure mode this guards against does not exist there.
+  // whole picture, has no job meter running, and is watching the output live —
+  // the failure mode this guards against does not exist there.
   maxFailures: CI ? 5 : 0,
 
   // PLAYWRIGHT MUST DIE BEFORE THE JOB DOES — never cancel silently (DOR-1110).
@@ -238,29 +297,52 @@ export default defineConfig({
   // proves nothing is worse than a red one, because a red one at least names a
   // spec.
   //
-  // So Playwright gets its own deadline, deliberately BELOW the job's. When
-  // this fires, Playwright stops the run itself — gracefully, through its own
-  // shutdown path — which means every reporter still flushes: the HTML report,
-  // the JSON the assert step reads, and the `github` annotations. The job then
-  // fails on a non-zero exit with output, instead of vanishing.
+  // So Playwright gets its own deadline, deliberately BELOW the job's — what
+  // happens when it fires is spelled out with the ladder further down.
   //
-  // THE NUMBERS, measured rather than guessed (run 31577200766, 2026-08-12):
-  // a green suite's `playwright test` step took 30m24s, inside a 45-minute job
-  // whose setup steps cost ~1m40s. That left barely 13 minutes of headroom —
-  // the ceiling was already close enough to touch on a healthy run, which is
-  // the other half of why the incident ended in a cancellation. The workflow
-  // now allows 60 minutes, so the ladder is: suite 30m (healthy) → Playwright
-  // gives up at 45m → the step is killed at 50m → the job at 60m. Each rung
-  // above the one below it, and the FIRST rung to fire is the one that leaves
-  // output behind.
+  // DERIVED, NOT TYPED IN (DOR-1363). This used to be a flat 45 minutes, chosen
+  // as ~48% headroom over a 30m24s green run measured on 2026-08-12. By
+  // 2026-08-19 a green run took 40m33s to 43m11s across four consecutive main
+  // runs — so the headroom had quietly fallen to under two minutes, and the rung
+  // that exists to fire FIRST was one slow runner away from firing on a
+  // perfectly healthy suite. A number that has to be re-measured by hand every
+  // time the suite grows is a number that goes stale; this one is computed from
+  // the two facts it actually depends on.
   //
-  // 45 minutes is ~48% headroom over the measured healthy run, so this is inert
-  // until the suite grows by half. If it ever fires on a genuinely healthy
-  // suite, that is the signal to split the job, not to raise the number.
+  // The two facts, both measured on 2026-08-19:
+  //
+  //   * a full unsharded suite takes ~41 minutes in the `playwright test` step
+  //     (40m33s / 41m45s / 42m43s / 43m11s on runs 32281755292, 32272418644,
+  //     32251346554, 32259784745)
+  //   * ~2m24s of that is the five webServer legs booting SEQUENTIALLY plus
+  //     `global-setup.ts` — fixed cost every shard re-pays, and the only part
+  //     that does NOT divide. (Run 32239903731: its suite step began 10:39:15
+  //     and its globalSetup blew a 180s `waitForSelector` at 10:44:39, so the
+  //     legs were up by 10:41:39. Rounded up to 3 in LEG_BOOT_MINUTES above.)
+  //
+  // So a healthy shard is `boot + (suite − boot) / shards` — about 15m40s at
+  // three shards — and the deadline is 1.75× that, rounded up to the next five
+  // minutes: 30 minutes. The 1.75 is deliberately looser than the 1.5 the flat
+  // number was originally set at, because `--shard` divides by TEST COUNT and
+  // not by duration: the split is 110/109/109 of 328, but shards 1 and 2 are
+  // pure `chromium` while shard 3 carries all six test-mode projects, and no
+  // measurement yet says those thirds take equally long.
+  //
+  // The ladder this sits in is on the job in .github/workflows/browser-test.yml:
+  // shard ~16m (healthy) → Playwright gives up at 30m → the step is killed at
+  // 35m → the job at 45m. Each rung above the one below it, and the FIRST rung
+  // to fire is the one that leaves output behind — when this one fires,
+  // Playwright stops the run itself, gracefully, through its own shutdown path,
+  // so every reporter still flushes: the HTML report, the JSON the gate job
+  // reads, and the `github` annotations. The job then fails on a non-zero exit
+  // WITH output, instead of vanishing.
+  //
+  // If this ever fires on a genuinely healthy suite, the fix is another shard,
+  // not a bigger multiplier.
   //
   // Unset locally: a developer's machine has no job ceiling to lose a report
   // to, and a debugging session paused on a breakpoint must not be shot.
-  globalTimeout: CI ? 45 * 60_000 : undefined,
+  globalTimeout: CI ? SHARD_GLOBAL_TIMEOUT_MS : undefined,
 
   reporter: [
     ['html', { open: 'never', outputFolder: 'playwright-report' }],

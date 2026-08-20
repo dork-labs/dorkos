@@ -48,12 +48,10 @@ export function buildDigestRow(state: SidebarState): SidebarRowModel | null {
     target,
     glyph: { kind: 'icon', icon: 'digest' },
     primary: 'While you were away…',
-    status: 'idle',
     reservesVerbLine: false,
     unread: { tier: 'none' },
     muted: false,
     draggable: false,
-    actions: ['open'],
     reason: 'today:digest',
   };
 }

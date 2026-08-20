@@ -130,20 +130,6 @@ export interface DigestState {
 }
 
 /**
- * The repo dimension, precomputed (BC-38, R4).
- *
- * `activeCount` gates the chip entirely: an operator running everything in one
- * repo never sees it. The word "workspace" appears nowhere here on purpose —
- * six concepts already share it (design-decisions §16).
- */
-export interface ProjectFacts {
-  /** How many distinct project directories currently have sessions. */
-  activeCount: number;
-  /** cwd → the label to print. Falls back to the cwd's basename. */
-  byCwd: Readonly<Record<string, string>>;
-}
-
-/**
  * One snapshot of everything the sidebar is a function of.
  *
  * Two fields go beyond the spec's §A2 table, and both exist because a
@@ -263,6 +249,4 @@ export interface SidebarState {
   journey: JourneyFacts;
   /** What finished while they were away (BC-22). */
   digest: DigestState;
-  /** The repo dimension (BC-38). */
-  projects: ProjectFacts;
 }

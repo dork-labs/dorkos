@@ -305,13 +305,17 @@ describe('useConversation', () => {
 
   it('answers what the host declared', () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <Conversation.Root surface="dm" capabilities={{ ...NOTHING, reactions: true }} anchor="rail">
+      <Conversation.Root
+        surface="room"
+        capabilities={{ ...NOTHING, reactions: true }}
+        anchor="rail"
+      >
         {children}
       </Conversation.Root>
     );
     const { result } = renderHook(() => useConversation(), { wrapper });
 
-    expect(result.current.surface).toBe('dm');
+    expect(result.current.surface).toBe('room');
     expect(result.current.capabilities.reactions).toBe(true);
     expect(result.current.anchor).toBe('rail');
     // Nothing has a composer yet — P4 mounts one, and until then a host says so

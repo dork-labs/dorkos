@@ -35,7 +35,6 @@ import type {
   SidebarSectionId as PersistedSectionId,
 } from '@dorkos/shared/config-schema';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import type { IdentityStatus } from '@/layers/shared/ui';
 import { applyMuteRules, muteIndex } from './rules/apply-mute-rules';
 import { archiveOvernight } from './rules/archive-overnight';
 import { buildDigestRow } from './rules/build-digest-row';
@@ -165,6 +164,10 @@ export type SidebarCommandId =
  * Semantic ids rather than component names: the model must not import React,
  * and a row that said `Bot` would have decided a rendering rather than a
  * meaning.
+ *
+ * **One id per mark.** `discovery` used to sit beside `digest` and draw the same
+ * icon — two words for one meaning, which is how a vocabulary starts drifting
+ * from its pictures.
  */
 export type SidebarIconId =
   | 'permission'
@@ -175,46 +178,12 @@ export type SidebarIconId =
   | 'working'
   | 'automated'
   | 'digest'
-  | 'discovery'
   | 'add-agent'
   | 'first-session'
   | 'team'
   | 'dorkbot'
   /** A session that belongs to no agent — no `cwd`, so no face to draw (DOR-203). */
   | 'session';
-
-/**
- * The trailing mark that says where a conversation came from (BC-26).
- *
- * Absent means the ordinary case — a human talking to an agent — which is why
- * there is no `'chat'` member: the commonest thing draws nothing.
- *
- * **Named `Sidebar…`, not `SessionOrigin…`.** `entities/session` already
- * exports a React component called `SessionOriginMark`, and a P2 row component
- * needs both it and this type in one file — where two identical names cannot
- * both be bound.
- *
- * **Integration note.** P1.2 lands the `ORIGIN_GLYPH` registry in
- * `shared/ui/identity-glyphs.ts`, and `shared/` may not import a feature. When
- * the two meet, this union moves down beside that registry and this becomes a
- * re-export, so the glyph table and the model cannot disagree about what marks
- * exist.
- */
-export type SidebarOriginMark = 'timer' | 'bridged' | 'room' | 'agent' | 'thread';
-
-/** The menu actions a row can offer, dual-rendered into kebab and context menu. */
-export type SidebarActionId =
-  | 'open'
-  | 'new-session'
-  | 'pin'
-  | 'unpin'
-  | 'mute'
-  | 'unmute'
-  | 'mark-read'
-  | 'move'
-  | 'rename'
-  | 'dismiss'
-  | 'archive';
 
 /** What clicking a row does. The only discriminated union in the model. */
 export type SidebarTarget =
@@ -266,19 +235,24 @@ export interface SidebarRowModel {
   key: string;
   /** What clicking it does. */
   target: SidebarTarget;
-  /** Fixed 18px leading slot. The glyph carries the type; row chrome never does. */
+  /**
+   * Fixed 18px leading slot. The glyph carries the type; row chrome never does.
+   *
+   * **A room's row says `hash` whatever kind of room it is**, and that is not a
+   * claim about what gets drawn: `RoomRow` owns a room's leading slot and builds
+   * it from the roster (a `#` for a channel, faces for a direct message), so the
+   * only reader of this field is the generic row, which draws the rooms `RoomRow`
+   * declines — threads. Two glyph kinds that named a person and a stack of them
+   * used to be emitted here for direct messages and rendered by nothing.
+   */
   glyph:
     | { kind: 'agent-avatar'; agentPath: string }
-    | { kind: 'person-avatar'; memberId: string }
-    | { kind: 'face-stack'; memberIds: string[] }
     | { kind: 'hash' }
     | { kind: 'icon'; icon: SidebarIconId };
   /** The "who": agent name, room name, person name. Never a title. */
   primary: string;
   /** The "what", rendered after `›`. Present iff this row is a session. */
   secondary?: string;
-  /** Avatar corner dot. Derived from lifecycle, never from a verb. */
-  status: IdentityStatus;
   /** True when the row reserves a second line for a live verb (BC-24). */
   reservesVerbLine: boolean;
   /**
@@ -299,22 +273,21 @@ export interface SidebarRowModel {
   lifecycle?: SessionLifecycle;
   /** One-line preview when there is one worth showing and no verb line. */
   preview?: string;
-  /** Trailing origin mark; absent = human↔agent chat. */
-  origin?: SidebarOriginMark;
   /** The row's unread state (design-decisions §18, BC-40). */
   unread: SidebarUnread;
-  /** "N live" chip on an agent row with concurrent sessions. */
+  /**
+   * "N live" chip on an agent row with concurrent sessions.
+   *
+   * Present only at or above {@link LIVE_CHIP_MIN}, so its presence IS the
+   * chip's condition and the row has no threshold of its own to disagree with.
+   */
   liveCount?: number;
-  /** Repo/project chip. Present only under BC-38. */
-  projectLabel?: string;
   /** Heads up-only. Drives priority and the dismiss affordance. */
   attention?: { kind: NowKind; since: string; dismissible: boolean };
   /** Whether the operator muted this target (BC-40). */
   muted: boolean;
   /** False for every row outside Library (R3). */
   draggable: boolean;
-  /** Menu node ids, dual-rendered into context menu and kebab. */
-  actions: SidebarActionId[];
   /** Provenance. Answers "why is this row here?" in devtools, always. */
   reason: string;
 }

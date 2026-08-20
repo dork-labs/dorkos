@@ -84,7 +84,7 @@ export interface SidebarItem {
    *
    * Group mute is a property of the group, not of the item — the same agent can
    * sit in a muted group and an unmuted one — so it stays a per-section input to
-   * {@link filterSidebarItems} rather than being folded in here.
+   * the section builder rather than being folded in here.
    */
   muted: boolean;
   /** The mark this row draws. */

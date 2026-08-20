@@ -446,12 +446,6 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
     }
   });
 
-  it('R2 WCAG 2.5.7 — every draggable row offers a move action', () => {
-    for (const { row } of rowsOf(state)) {
-      if (row.draggable) expect(row.actions).toContain('move');
-    }
-  });
-
   it('row keys are unique within a section', () => {
     // Per section, not per zone: a pinned agent renders in Pins AND in Agents,
     // and the anchor renders in Today AND in Library (BC-33 — dual presence is

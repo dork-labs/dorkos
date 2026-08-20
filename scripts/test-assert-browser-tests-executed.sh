@@ -102,21 +102,65 @@ make_workspace() {
                     "specs": [ { "title": "auth runs", "file": "settings/auth-login.spec.ts",
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
+  "config": { "shard": null },
   "stats": { "expected": 13, "unexpected": 0, "flaky": 0, "skipped": 1 }
 }
 JSON
 }
 
+# Cut a workspace's known-good report into N shard reports, the way
+# `playwright test --shard=i/N` would (DOR-1363).
+#
+# Round-robins the top-level suites and recomputes each shard's stats from the
+# statuses it actually holds, so the union of the shards is byte-for-byte the
+# same RUN as the single report — which is the point: every case below that
+# passes a shard set is asserting the script reaches the same verdict from N
+# reports as it does from one.
+#
+#   $1 — workspace root
+#   $2 — shard count
+# Writes apps/e2e/test-results/shard-<i>.json for i in 1..N.
+make_shards() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+root, n = sys.argv[1], int(sys.argv[2])
+d = json.load(open(f'{root}/apps/e2e/test-results/results.json'))
+
+def statuses(suite):
+    for spec in suite.get('specs', []):
+        for t in spec.get('tests', []):
+            yield t['status']
+    for sub in suite.get('suites', []):
+        yield from statuses(sub)
+
+shards = [
+    {'config': {'shard': {'current': i + 1, 'total': n}},
+     'suites': [],
+     'stats': {'expected': 0, 'unexpected': 0, 'flaky': 0, 'skipped': 0}}
+    for i in range(n)
+]
+for idx, suite in enumerate(d['suites']):
+    shard = shards[idx % n]
+    shard['suites'].append(suite)
+    for status in statuses(suite):
+        shard['stats'][status] += 1
+for i, shard in enumerate(shards):
+    json.dump(shard, open(f'{root}/apps/e2e/test-results/shard-{i + 1}.json', 'w'))
+PY
+}
+
 # Assert the script's exit status, and (when failing) that its message names the
 # thing that was bent.
-#   $1 — case name
-#   $2 — workspace root
-#   $3 — expected exit: 0 or 1
-#   $4 — substring the output must contain (may be empty)
+#   $1  — case name
+#   $2  — workspace root
+#   $3  — expected exit: 0 or 1
+#   $4  — substring the output must contain (may be empty)
+#   $5+ — report paths to pass through; none means the default single report
 check() {
   local name=$1 root=$2 want=$3 needle=${4:-}
+  shift 4 || shift $#
   local out status
-  out=$(WORKSPACE_ROOT="$root" "$subject" 2>&1)
+  out=$(WORKSPACE_ROOT="$root" "$subject" "$@" 2>&1)
   status=$?
 
   if [ "$status" -ne "$want" ]; then
@@ -300,7 +344,8 @@ check 'a non-Playwright report is refused' "$tmp/garbage" 1 'not a Playwright JS
 # times out (verified: stats all zero, exit 1). The gate must not certify it.
 make_workspace "$tmp/empty"
 cat >"$tmp/empty/apps/e2e/test-results/results.json" <<'JSON'
-{ "suites": [], "stats": { "expected": 0, "unexpected": 0, "flaky": 0, "skipped": 0 } }
+{ "suites": [], "config": { "shard": null },
+  "stats": { "expected": 0, "unexpected": 0, "flaky": 0, "skipped": 0 } }
 JSON
 check 'a run that executed nothing is refused' "$tmp/empty" 1 'exist on disk but no test'
 
@@ -315,6 +360,122 @@ jq '.stats = {}' "$tmp/healthy/apps/e2e/test-results/results.json" \
   >"$tmp/statsless/apps/e2e/test-results/results.json"
 check 'a stats block with no numbers is refused, not skipped past' \
   "$tmp/statsless" 1 'no longer carries numeric'
+
+# --- SHARDING, in both directions -------------------------------------------
+#
+# CI cuts the suite three ways, so the gate's whole strength now rests on the
+# union of N reports being a complete run. A shard that goes missing shrinks that
+# union — and a shrunken union is exactly how this gate would certify a partial
+# run while printing a healthy-looking total. These cases are what stops "the
+# reports we happened to be handed" from silently becoming "the suite".
+
+# The baseline: three shards that union to the known-good run must reach the same
+# verdict, and the same count, as the single report does.
+make_workspace "$tmp/sharded"
+make_shards "$tmp/sharded" 3
+sharded=$tmp/sharded/apps/e2e/test-results
+check 'a healthy three-shard run passes' "$tmp/sharded" 0 '13 test(s) executed' \
+  "$sharded/shard-1.json" "$sharded/shard-2.json" "$sharded/shard-3.json"
+
+# And it must still be the same ASSERTION, not just the same total: a spec absent
+# from every shard is a spec that did not run, and has to be named exactly as it
+# is in an unsharded run.
+make_workspace "$tmp/shardedGap"
+python3 - "$tmp/shardedGap/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d['suites'] = [s for s in d['suites'] if s['file'] != 'beta.spec.ts']
+json.dump(d, open(p, 'w'))
+PY
+make_shards "$tmp/shardedGap" 3
+shardedGap=$tmp/shardedGap/apps/e2e/test-results
+check 'a spec missing from every shard is still named' "$tmp/shardedGap" 1 'beta.spec.ts' \
+  "$shardedGap/shard-1.json" "$shardedGap/shard-2.json" "$shardedGap/shard-3.json"
+
+# A failure in ONE shard must fail the union. The unsharded red case above only
+# exercises a single report, so nothing there pins that the stats are SUMMED —
+# reading `.[0].stats.unexpected` instead of `map(.stats.unexpected) | add`
+# passes every other case in this file while letting a red shard 2 or 3 through.
+make_workspace "$tmp/shardedRed"
+make_shards "$tmp/shardedRed" 3
+python3 - "$tmp/shardedRed/apps/e2e/test-results/shard-2.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d['suites'][0]['specs'][0]['tests'][0]['status'] = 'unexpected'
+d['stats']['expected'] -= 1
+d['stats']['unexpected'] += 1
+json.dump(d, open(p, 'w'))
+PY
+shardedRed=$tmp/shardedRed/apps/e2e/test-results
+check 'a failure in one shard fails the union' "$tmp/shardedRed" 1 'did not pass' \
+  "$shardedRed/shard-1.json" "$shardedRed/shard-2.json" "$shardedRed/shard-3.json"
+
+# A complete set of shards where one of them ran nothing. The totals still look
+# healthy because its siblings cover the specs it should have run, so only a
+# per-shard check names it.
+make_workspace "$tmp/shardSilent"
+make_shards "$tmp/shardSilent" 3
+python3 - "$tmp/shardSilent/apps/e2e/test-results" <<'PY'
+import json, sys
+root = sys.argv[1]
+empty = json.load(open(f'{root}/shard-2.json'))
+whole = json.load(open(f'{root}/results.json'))
+# Shard 3 picks up everything shard 2 was carrying, so the union is still the
+# whole suite and every total is unchanged — the only thing wrong is that one
+# shard executed nothing.
+third = json.load(open(f'{root}/shard-3.json'))
+third['suites'] += empty['suites']
+for key in third['stats']:
+    third['stats'][key] += empty['stats'][key]
+empty['suites'] = []
+empty['stats'] = {'expected': 0, 'unexpected': 0, 'flaky': 0, 'skipped': 0}
+json.dump(third, open(f'{root}/shard-3.json', 'w'))
+json.dump(empty, open(f'{root}/shard-2.json', 'w'))
+assert whole  # the untouched whole-run report stays on disk for other cases
+PY
+shardSilent=$tmp/shardSilent/apps/e2e/test-results
+check 'a shard that executed nothing is named' "$tmp/shardSilent" 1 'shards executed no tests' \
+  "$shardSilent/shard-1.json" "$shardSilent/shard-2.json" "$shardSilent/shard-3.json"
+
+# A shard whose artifact never arrived. Without the completeness check this is
+# the dangerous case: two thirds of the suite would be certified while the
+# missing third's specs read as "on disk but never ran" — a true statement with a
+# misleading cause, on a good day, and a green gate on a bad one.
+check 'a missing shard is refused by count' "$tmp/sharded" 1 'cut into 3 shards but only 2' \
+  "$sharded/shard-1.json" "$sharded/shard-2.json"
+
+# The same shard twice. The count matches, so only checking N would wave this
+# through while a third of the suite went unchecked.
+check 'a duplicated shard is refused' "$tmp/sharded" 1 'not 1..3 exactly' \
+  "$sharded/shard-1.json" "$sharded/shard-2.json" "$sharded/shard-2.json"
+
+# Reports from runs cut different ways — a stale artifact from before the matrix
+# changed size.
+make_workspace "$tmp/mixedTotals"
+make_shards "$tmp/mixedTotals" 2
+check 'shard reports that disagree on the shard count are refused' "$tmp/sharded" 1 \
+  'disagree about how many shards' \
+  "$sharded/shard-1.json" "$tmp/mixedTotals/apps/e2e/test-results/shard-2.json"
+
+# A whole run and a shard together describe two different runs.
+check 'a whole run mixed with a shard is refused' "$tmp/sharded" 1 'do not describe one run' \
+  "$sharded/results.json" "$sharded/shard-1.json"
+
+# Two whole runs: the second is a different run, and unioning them would let one
+# run's coverage vouch for the other's.
+check 'two whole-run reports are refused' "$tmp/sharded" 1 'whole-run reports were passed' \
+  "$sharded/results.json" "$sharded/results.json"
+
+# The field the completeness check reads is gone — what a reporter shape change
+# looks like. It must fail closed, exactly as the stats guard does, rather than
+# fall back to "assume it is a whole run".
+make_workspace "$tmp/noShardField"
+jq 'del(.config)' "$tmp/healthy/apps/e2e/test-results/results.json" \
+  >"$tmp/noShardField/apps/e2e/test-results/results.json"
+check 'a report with no .config.shard is refused, not assumed whole' \
+  "$tmp/noShardField" 1 'no .config.shard field'
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

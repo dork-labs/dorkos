@@ -526,7 +526,7 @@ describe('buildSidebarAnnouncements', () => {
     expect(
       a.onDragOver({
         active: active(node).active,
-        over: over({ type: 'container', container: { kind: 'ungrouped', section: 'Channels' } }),
+        over: over({ type: 'container', container: { kind: 'ungrouped', section: 'channels' } }),
       })
     ).toBe('Over Channels.');
     // No name stored: the Agents section, which is what `ungrouped` used to be.

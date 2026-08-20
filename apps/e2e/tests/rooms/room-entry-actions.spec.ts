@@ -969,8 +969,8 @@ test.describe('Rooms — a thread on a phone', () => {
       Array.from({ length: 40 }, (_, i) => `resume line ${i + 1}`)
     );
     const ids = await roomsApi.entryIds(room.id);
-    // The thread hangs off a message in the MIDDLE, so opening it neither
-    // scrolls the room nor needs the reader to be at either end.
+    // The thread hangs off a message in the MIDDLE, so the reader is at neither
+    // end of the room when they open it.
     const middle = ids[Math.floor(ids.length / 2)]!;
     await roomsApi.postThreadReply(room.id, middle, 'answering one from the middle');
 
@@ -978,14 +978,38 @@ test.describe('Rooms — a thread on a phone', () => {
     await roomsPage.waitForHistory(40, SERVER_ROUND_TRIP_MS);
     await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
 
-    // Read back into the history and settle there.
+    // Read back into the history and settle there — and settle with the reply
+    // row the reader is about to tap ON SCREEN, which is a precondition and not
+    // tidiness. A tap scrolls its target into view first, and Chromium CENTRES a
+    // row that is not fully visible, so a reply row sitting above the window
+    // moves the room by about four messages in the gap between this test
+    // recording where the reader was and the thread taking the room away — and
+    // the room then honestly comes back to a place this test had stopped
+    // watching. Measured: with `resume line 24` at the top the tap scrolled the
+    // room from 1012px to 691px and the reader came back four messages higher
+    // (DOR-1364). The sibling test above dodges the same trap by hanging its
+    // thread off the newest message, which is already on screen.
     await roomsPage.scroller.evaluate((el) => {
       el.scrollTop = Math.round(el.scrollHeight / 2);
     });
     await expect.poll(() => roomsPage.isAtBottom()).toBe(false);
-    const topBefore = await roomsPage.topVisibleEntryText();
+    // Settled BEFORE the row is scrolled into view and again after: the first
+    // wait is what makes the second scroll land somewhere that stays put.
+    await roomsPage.settledTopVisibleEntryText();
+    const replyRow = roomsPage.replyRow(roomsPage.entry('resume line 21'));
+    await replyRow.scrollIntoViewIfNeeded();
+    // Asked AGAIN after the reposition, because centring the row is itself a
+    // scroll: a room that landed back at its newest message has a reader with no
+    // position to remember, the landing decides `end` instead of `remembered`,
+    // and this test would die at the `data-landed-on` poll with a message about
+    // an attribute rather than about its own precondition.
+    await expect.poll(() => roomsPage.isAtBottom()).toBe(false);
+    const topBefore = await roomsPage.settledTopVisibleEntryText();
+    // A null on both sides of the final comparison would be a test that passed
+    // by measuring nothing.
+    expect(topBefore).not.toBeNull();
 
-    await roomsPage.replyRow(roomsPage.entry('resume line 21')).click();
+    await replyRow.click();
     await expect(roomsPage.threadPanel).toBeVisible();
     await expect(roomsPage.entries).toHaveCount(0);
 
@@ -996,6 +1020,6 @@ test.describe('Rooms — a thread on a phone', () => {
     // to open at its newest message instead. The second assertion names the
     // mechanism: `remembered` is the landing that read the row back.
     await expect.poll(() => roomsPage.timeline.getAttribute('data-landed-on')).toBe('remembered');
-    expect(await roomsPage.topVisibleEntryText()).toBe(topBefore);
+    expect(await roomsPage.settledTopVisibleEntryText()).toBe(topBefore);
   });
 });

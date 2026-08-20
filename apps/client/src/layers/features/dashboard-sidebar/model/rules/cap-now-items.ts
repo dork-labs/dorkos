@@ -43,12 +43,10 @@ export function capNowItems(rows: readonly SidebarRowModel[]): SidebarRowModel[]
       target,
       glyph: { kind: 'icon', icon: 'overflow' },
       primary: `+ ${hidden} more`,
-      status: 'needs-you',
       reservesVerbLine: false,
       unread: { tier: 'none' },
       muted: false,
       draggable: false,
-      actions: ['open'],
       reason: 'rollup:now-overflow',
     },
   ];

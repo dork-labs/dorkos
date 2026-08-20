@@ -32,6 +32,7 @@ import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
 import { dismissIdleNudge } from '@/layers/entities/attention';
 import { SessionVerbLine } from '@/layers/entities/session';
 import type { SidebarIconId, SidebarRowModel, SidebarTarget } from '../model/build-sidebar-model';
+import type { UngroupedSectionId } from '../model/use-sidebar-dnd';
 import { sameTarget } from '../model/rules/targets';
 import { AgentListItem } from './AgentListItem';
 import { RoomRow } from './rooms/RoomRow';
@@ -79,7 +80,6 @@ const ICON: Record<SidebarIconId, LucideIcon> = {
   working: Sparkles,
   automated: Clock,
   digest: Sparkles,
-  discovery: Sparkles,
   'add-agent': Bot,
   'first-session': MessageSquare,
   team: Users,
@@ -112,8 +112,8 @@ export interface SidebarModelRowProps {
    * which is the same row twice with two different React keys.
    */
   keyPrefix: string;
-  /** The section name the drag layer announces, for the three ungrouped sections. */
-  sectionLabel?: string;
+  /** The ungrouped section the drag layer announces this row's home as. */
+  sectionId?: UngroupedSectionId;
 }
 
 /**
@@ -125,15 +125,12 @@ export interface SidebarModelRowProps {
  *
  * @param props - The row and where it sits.
  */
-export function SidebarModelRow({ row, keyPrefix, sectionLabel }: SidebarModelRowProps) {
+export function SidebarModelRow({ row, keyPrefix, sectionId }: SidebarModelRowProps) {
   const ref = dragRefOf(row.target);
   const body = <SidebarModelRowBody row={row} keyPrefix={keyPrefix} />;
   if (!row.draggable || ref === null) return body;
   return (
-    <Sortable
-      id={sidebarRowDndId(keyPrefix, ref)}
-      data={sidebarDndData(keyPrefix, ref, sectionLabel)}
-    >
+    <Sortable id={sidebarRowDndId(keyPrefix, ref)} data={sidebarDndData(keyPrefix, ref, sectionId)}>
       {(bindings) => <SidebarModelRowBody row={row} keyPrefix={keyPrefix} drag={bindings} />}
     </Sortable>
   );
@@ -207,6 +204,7 @@ function AgentRowFromModel({
       visual={visual}
       isActive={isActive}
       isMuted={row.muted}
+      {...(row.liveCount === undefined ? {} : { liveCount: row.liveCount })}
       onSelect={() => chrome.openTarget(row.target)}
       onViewProfile={chrome.viewProfileFor(path)}
       onRequestNewGroup={chrome.requestNewGroup}

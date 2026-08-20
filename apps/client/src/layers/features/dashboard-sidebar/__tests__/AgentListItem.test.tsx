@@ -46,13 +46,6 @@ vi.mock('@/layers/entities/session', async (importOriginal) => {
   };
 });
 
-const mockLiveCount = vi.fn<() => number>(() => 0);
-
-vi.mock('../model/use-live-sessions', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../model/use-live-sessions')>();
-  return { ...actual, useLiveSessionCount: () => mockLiveCount() };
-});
-
 // The switcher is `SessionSwitcher.test.tsx`'s subject. Here it is a marker, so
 // these cases assert that the chip OPENS it without standing up a transport, a
 // query client and a Radix portal to do it. `LiveSessionsChip` stays real: the
@@ -167,7 +160,6 @@ describe('AgentListItem', () => {
       pulse: false,
       label: 'Idle',
     });
-    mockLiveCount.mockReturnValue(0);
   });
 
   // --- Rendering ---
@@ -222,15 +214,21 @@ describe('AgentListItem', () => {
 
   // --- The "N live" chip (BC-35) ---
 
-  it('shows no chip while fewer than two sessions are live', () => {
-    mockLiveCount.mockReturnValue(1);
+  it('shows no chip when the model handed it no count', () => {
+    // `liveCount` is absent below `LIVE_CHIP_MIN` — the model omits it rather
+    // than sending a 1 for the row to compare against a threshold of its own
+    // (`library-rules.test.ts` pins that boundary). Absent IS "no chip".
     renderItem();
     expect(screen.queryByRole('button', { name: /session switcher/i })).not.toBeInTheDocument();
   });
 
-  it('shows the chip with its count once two sessions run concurrently', () => {
-    mockLiveCount.mockReturnValue(2);
-    renderItem();
+  it('draws the chip from the count the model handed it, counting nothing itself', () => {
+    // **Nothing seeds the session store in this file**, so the only place a "2"
+    // can come from is the prop. The row used to call `useLiveSessionCount` and
+    // count for itself — sixty rows, sixty store subscriptions, and a second
+    // answer to a question the model had already answered. Give the row that
+    // hook back and this goes red: the store is empty, so it would read 0.
+    renderItem({ liveCount: 2 });
     const chip = screen.getByRole('button', { name: /session switcher/i });
     expect(chip).toHaveAccessibleName(expect.stringContaining('2 live sessions'));
     expect(chip).toHaveTextContent('2 live');
@@ -243,15 +241,13 @@ describe('AgentListItem', () => {
       pulse: true,
       label: 'Working',
     });
-    mockLiveCount.mockReturnValue(3);
-    renderItem();
+    renderItem({ liveCount: 3 });
     expect(screen.getByRole('button', { name: /session switcher/i })).toBeInTheDocument();
     expect(screen.queryByTestId('activity-badge')).not.toBeInTheDocument();
   });
 
   it('opens the switcher from the chip, and only from the chip', () => {
-    mockLiveCount.mockReturnValue(2);
-    const { props } = renderItem();
+    const { props } = renderItem({ liveCount: 2 });
     expect(screen.queryByTestId('session-switcher')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /session switcher/i }));
@@ -262,16 +258,14 @@ describe('AgentListItem', () => {
   });
 
   it('withholds the chip from a muted agent even while its work is live', () => {
-    mockLiveCount.mockReturnValue(4);
-    renderItem({ isMuted: true });
+    renderItem({ isMuted: true, liveCount: 4 });
     expect(screen.queryByRole('button', { name: /session switcher/i })).not.toBeInTheDocument();
   });
 
   // --- Accessibility ---
 
   it('does not nest interactive role="button" elements', () => {
-    mockLiveCount.mockReturnValue(2);
-    const { container } = renderItem({ isActive: true });
+    const { container } = renderItem({ isActive: true, liveCount: 2 });
     const rowButton = container.querySelector('[data-slot="agent-list-item"]')!;
     expect(rowButton).not.toHaveAttribute('role', 'button');
     expect(rowButton.querySelector('button')).toBeNull();
@@ -326,7 +320,6 @@ describe('AgentListItem', () => {
       // live" chip, and below two live sessions it draws none at any width — so
       // the menu is the only door, and the switcher has to mount when it is
       // opened from there rather than only when the chip is on offer.
-      mockLiveCount.mockReturnValue(0);
       renderItem();
       expect(screen.queryByTestId('session-switcher')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /session switcher/ })).not.toBeInTheDocument();

@@ -217,6 +217,25 @@ any of them watched. Tests never edit source, so nothing is lost by not watching
   `http://localhost:6244` unless `SITE_BASE_URL` says otherwise — so set
   `DORKOS_SITE_PORT` and `SITE_BASE_URL` together.
 
+## CI runs this suite in three shards
+
+A whole run takes about 41 minutes, so `.github/workflows/browser-test.yml` cuts
+it three ways (`playwright test --shard=i/3`) and runs the thirds side by side.
+On a pull request you will see four checks, not one:
+
+- **`browser-shard (1/3)`, `(2/3)`, `(3/3)`** — a third of the tests each. Each
+  one boots all five webServer legs, because a shard does not know which projects
+  it drew until after the config is loaded. A failing shard uploads its Playwright
+  report as `playwright-report-shard-<n>` — traces, screenshots and videos.
+- **`browser-test`** — the one that matters. It fails unless every shard passed,
+  and it is where `scripts/assert-browser-tests-executed.sh` proves the suite
+  really executed: no single shard sees every spec file, so the script takes all
+  three shards' JSON reports and asserts against their union.
+
+Local runs are never sharded — you always get the whole suite. If you need to
+reproduce one shard exactly, pass the same flag: `pnpm --filter @dorkos/e2e e2e
+--shard=2/3`.
+
 ## Common commands
 
 ```bash

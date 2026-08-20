@@ -1,7 +1,7 @@
 /**
  * Today — the order that agent activity may not touch, the overnight boundary,
- * the anchor, the cap, the automated reveal, the digest, mute and the project
- * chip (BC-16 → BC-22, BC-38, BC-40).
+ * the anchor, the cap, the automated reveal, the digest and mute
+ * (BC-16 → BC-22, BC-40).
  *
  * @module features/dashboard-sidebar/model/__tests__/today-rules
  */
@@ -13,9 +13,8 @@ import { HOUR, busyFixture, hoursAgo, prefs, quietFixture, room, session } from 
 import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
 import { archiveOvernight } from '../rules/archive-overnight';
 import { buildDigestRow, localDateKey } from '../rules/build-digest-row';
-import { deriveProjectLabel } from '../rules/derive-project-label';
 import { TODAY_SOFT_CAP, lastInteractionAt, orderToday } from '../rules/order-today';
-import { selectTodayItems, sessionOriginMark } from '../rules/select-today-items';
+import { selectTodayItems } from '../rules/select-today-items';
 import type { SidebarState } from '../sidebar-state';
 
 /** Today's rows, as the model finally emits them. */
@@ -169,12 +168,10 @@ describe('BC-18 — the overnight boundary', () => {
           target: { kind: 'rollup', rollup: 'automated' },
           glyph: { kind: 'icon', icon: 'automated' },
           primary: '+ 1 automated',
-          status: 'idle',
           reservesVerbLine: false,
           unread: { tier: 'none' },
           muted: false,
           draggable: false,
-          actions: ['open'],
           reason: 'rollup:automated',
         },
       ],
@@ -205,9 +202,6 @@ describe('BC-19 / BC-20 — automated sessions and the soft cap', () => {
     // Underneath, never above: the reveal is the thing they hang off.
     expect(keys.indexOf('session:ses-auto-1')).toBeGreaterThan(keys.indexOf('rollup:automated'));
     expect(keys.indexOf('session:ses-auto-2')).toBeGreaterThan(keys.indexOf('rollup:automated'));
-    // Origin-marked (BC-19), which is the whole reason they are legible as runs
-    // rather than as conversations somebody had.
-    expect(rows.find((row) => row.key === 'session:ses-auto-1')?.origin).toBeDefined();
     expect(rows.find((row) => row.key === 'session:ses-auto-1')?.reason).toBe('today:automated');
   });
 
@@ -375,34 +369,6 @@ describe('BC-22 — the morning digest', () => {
   });
 });
 
-describe('BC-38 — the project chip', () => {
-  it('is absent for a single-project operator', () => {
-    expect(deriveProjectLabel('/repos/dorkos', { activeCount: 1, byCwd: {} })).toBeUndefined();
-  });
-
-  it('is the basename of the cwd once there is more than one', () => {
-    expect(deriveProjectLabel('/repos/dorkos', { activeCount: 2, byCwd: {} })).toBe('dorkos');
-    expect(deriveProjectLabel('/repos/dorkos/', { activeCount: 2, byCwd: {} })).toBe('dorkos');
-  });
-
-  it('is absent for a session with no cwd', () => {
-    expect(deriveProjectLabel(undefined, { activeCount: 3, byCwd: {} })).toBeUndefined();
-  });
-
-  it('lands on session rows only', () => {
-    for (const row of todayRows(busyFixture)) {
-      if (row.target.kind !== 'session') expect(row.projectLabel).toBeUndefined();
-    }
-    const session = todayRows(busyFixture).find((row) => row.target.kind === 'session');
-    expect(session?.projectLabel).toBe('tangerine');
-  });
-
-  it('disappears entirely when the operator drops to one project', () => {
-    const state = { ...busyFixture, projects: { activeCount: 1, byCwd: {} } };
-    expect(todayRows(state).every((row) => row.projectLabel === undefined)).toBe(true);
-  });
-});
-
 describe('BC-40 — mute, and the one thing that pierces it', () => {
   it('takes a muted room out of Today', () => {
     expect(todayKeys(busyFixture)).not.toContain('room:room-noise');
@@ -486,12 +452,11 @@ describe('BC-40 — mute, and the one thing that pierces it', () => {
         muted: [{ kind: 'agent', path: '/Users/dev/code/tangerine' }],
       }),
     };
-    // ses-1 is the anchor and stays; it renders muted, and its menu offers
-    // unmute rather than mute.
+    // ses-1 is the anchor and stays, and it renders muted. Whether its menu
+    // then reads "Unmute" is the menu builder's own test.
     const anchor = todayRows(state)[0];
     expect(anchor?.key).toBe('session:ses-1');
     expect(anchor?.muted).toBe(true);
-    expect(anchor?.actions).toContain('unmute');
     // Its non-anchor sibling on the same agent is gone.
     expect(todayKeys(state)).not.toContain('session:ses-2');
   });
@@ -505,9 +470,8 @@ describe('selectTodayItems — membership', () => {
     expect(keys.filter((key) => key !== 'rollup:automated')).toEqual(['session:ses-1']);
   });
 
-  it('renders a thread as a conversation with a thread origin mark', () => {
+  it('renders a thread as a conversation addressed at its root entry', () => {
     const thread = selectTodayItems(busyFixture).find((row) => row.key.startsWith('thread:'));
-    expect(thread?.origin).toBe('thread');
     // The root entry rides along so the row can open the thread PANEL rather
     // than only the room it lives in — `/channels?thread=` is its address.
     expect(thread?.target).toEqual({
@@ -521,7 +485,6 @@ describe('selectTodayItems — membership', () => {
   it('BC-15 — that thread actually reaches Today, not just the selection rule', () => {
     const thread = todayRows(busyFixture).find((row) => row.key.startsWith('thread:'));
     expect(thread).toBeDefined();
-    expect(thread?.origin).toBe('thread');
   });
 
   it('draws no agent face for a session that belongs to no agent (DOR-203)', () => {
@@ -553,34 +516,10 @@ describe('selectTodayItems — membership', () => {
   });
 });
 
-describe('BC-26 — origin marks', () => {
-  it('gives a bridged chat the paper plane, never the room mark', () => {
-    // `channel` is a BRIDGED chat — Telegram, Slack, a webhook — and `room` is
-    // one of this machine's own rooms. `SessionOriginSchema` says so in as many
-    // words. Drawing them alike tells the operator Telegram was a cockpit
-    // channel, which is the exact collapse the schema exists to prevent.
-    expect(sessionOriginMark('channel')).toBe('bridged');
-    expect(sessionOriginMark('external')).toBe('bridged');
-  });
-
-  it('keeps the room mark for this machine’s own rooms', () => {
-    expect(sessionOriginMark('room')).toBe('room');
-  });
-
-  it('marks the remaining origins per the table', () => {
-    expect(sessionOriginMark('task')).toBe('timer');
-    expect(sessionOriginMark('agent')).toBe('agent');
-  });
-
-  it('draws nothing for the unmarked default — a human talking to an agent', () => {
-    expect(sessionOriginMark(undefined)).toBeUndefined();
-    expect(sessionOriginMark('user')).toBeUndefined();
-  });
-
-  it('is not reachable through Today’s own session rows, and that is why it is tested here', () => {
-    // Every origin the table maps is one `partitionSessionsByOrigin` classes as
-    // automated, and BC-19 keeps those off Today's top level. If this ever
-    // stops being true, delete this test and assert through the rows instead.
+describe('BC-19 — an automated run never claims a Today row', () => {
+  it('keeps a bridged chat off the top level, and the reveal off an empty Today', () => {
+    // `partitionSessionsByOrigin` classes every non-user origin as automated,
+    // and BC-19 keeps those off Today's top level.
     const automatedOnly: SidebarState = {
       ...busyFixture,
       sessions: [session({ id: 'ses-tg', title: 'From Telegram', origin: 'channel' })],

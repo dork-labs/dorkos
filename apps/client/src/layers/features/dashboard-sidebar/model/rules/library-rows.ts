@@ -11,7 +11,6 @@ import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarRowModel } from '../build-sidebar-model';
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
 import type { MuteIndex } from './apply-mute-rules';
-import { deriveRowStatus } from './derive-row-status';
 import { deriveUnreadSignal } from './derive-unread-signal';
 import { liveSessionIdsForPath } from './live-sessions';
 import { basename, rowKey } from './targets';
@@ -21,8 +20,13 @@ import { basename, rowKey } from './targets';
  *
  * Two, because "1 live" is a chip that tells the operator what the dot beside
  * it already said.
+ *
+ * **The one place this number lives.** The row component used to keep a
+ * threshold of its own beside a count of its own, so the model and the chip
+ * could have disagreed about when to draw it; now the model decides, and the
+ * row draws whatever `liveCount` it is handed.
  */
-const LIVE_CHIP_MIN = 2;
+export const LIVE_CHIP_MIN = 2;
 
 /**
  * One agent's Library row.
@@ -57,16 +61,11 @@ export function agentRow(
     target,
     glyph: { kind: 'agent-avatar', agentPath: agent.path },
     primary: state.displayNames[agent.path] ?? basename(agent.path),
-    status: deriveRowStatus({
-      lifecycle: live > 0 ? 'streaming' : undefined,
-      needsYou: !muted && agent.attention === 'needs-attention',
-    }),
     reservesVerbLine: live > 0,
     unread: { tier: 'none' },
     ...(live >= LIVE_CHIP_MIN ? { liveCount: live } : {}),
     muted,
     draggable: true,
-    actions: ['open', 'new-session', 'pin', muted ? 'unmute' : 'mute', 'move'],
     reason,
   };
 }
@@ -90,19 +89,14 @@ export function roomLibraryRow(
     roomId: room.id,
     roomKind: room.kind === 'dm' ? 'dm' : 'channel',
   } as const;
-  const memberIds = (room.participants ?? []).map((participant) => participant.id);
   const muted = mutes.rooms.has(room.id);
   return {
     key: rowKey(target),
     target,
-    glyph:
-      room.kind === 'dm'
-        ? memberIds.length > 1
-          ? ({ kind: 'face-stack', memberIds } as const)
-          : ({ kind: 'person-avatar', memberId: memberIds[0] ?? room.id } as const)
-        : ({ kind: 'hash' } as const),
+    // Every room says `hash`; `RoomRow` draws the leading slot from the roster
+    // (faces for a direct message, `#` for a channel) and never reads this.
+    glyph: { kind: 'hash' },
     primary: room.kind === 'dm' ? room.title : (room.slug ?? room.title),
-    status: deriveRowStatus({ workingCount: room.working }),
     reservesVerbLine: (room.working ?? 0) > 0,
     unread: deriveUnreadSignal({
       unreadCount: room.unreadCount,
@@ -112,7 +106,6 @@ export function roomLibraryRow(
     }),
     muted,
     draggable: true,
-    actions: ['open', 'pin', muted ? 'unmute' : 'mute', 'mark-read', 'move'],
     reason,
   };
 }
