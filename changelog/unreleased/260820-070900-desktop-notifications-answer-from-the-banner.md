@@ -2,6 +2,7 @@
 covers:
   - 'feat(desktop): Electron native notifications with Allow/Deny/Reply; promote the supersession ADR'
   - 'refactor(desktop): share one SSE connection between the tray watcher and future consumers'
+  - "fix(desktop): isolate subscriber throws, tighten parsing, and fix the review's other findings"
 ---
 
 ### Added
