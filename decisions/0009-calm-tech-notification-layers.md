@@ -1,17 +1,21 @@
 ---
 number: 9
 title: Use Calm Tech Layered Notifications for Background Tasks
-status: accepted
+status: superseded
 created: 2026-02-21
 spec: pulse-v2-enhancements
-superseded-by: null
+superseded-by: 260819-234830
 ---
 
 # 9. Use Calm Tech Layered Notifications for Background Tasks
 
 ## Status
 
-Accepted
+Superseded by [260819-234830](260819-234830-os-notifications-join-the-periphery.md)
+(2026-08-19) on the point this ADR banned: OS-level delivery. This ADR's
+in-app layering (badge → toast → title) remains valid and is absorbed there
+as the in-app half of a now-tiered ladder; only the exclusion of the
+Notification API is reversed.
 
 ## Context
 
