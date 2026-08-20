@@ -514,7 +514,12 @@ function libraryZone(): HTMLElement | null {
 function libraryHeadings(): string[] {
   const zone = libraryZone();
   if (zone === null) return [];
-  return Array.from(zone.querySelectorAll('h3')).map((h) => h.textContent?.trim() ?? '');
+  // The LABEL, not the header's whole text: a folded header also carries its
+  // roll-up ("12 · 3 unread"), so reading `textContent` off the `<h3>` turned
+  // "Channels" into "Channels1" the moment somebody collapsed it.
+  return Array.from(zone.querySelectorAll('h3')).map(
+    (h) => h.querySelector('.truncate')?.textContent?.trim() ?? h.textContent?.trim() ?? ''
+  );
 }
 
 /** One Library section's `<h3>`, by its label. */
@@ -658,13 +663,21 @@ describe('DashboardSidebar', () => {
       expect(screen.queryByText('Marketplace')).not.toBeInTheDocument();
     });
 
-    it('labels each zone with a heading, never a button (BC-2)', async () => {
+    it('names each zone for assistive tech and paints no heading of its own (D1)', async () => {
+      // The sidebar is two levels now, and "Library" was the word for a third
+      // that named nothing an operator recognised. The REGION survives — the id,
+      // the collapse keys, the DnD containers and the accessible name are all
+      // untouched — so a screen reader still reaches "Library" and nobody sees
+      // it. Red if the `<h2>` comes back, and red if the name goes with it.
       mockRooms.mockReturnValue([channel('r1', 'general')]);
-      renderWithProviders(<DashboardSidebar />);
-      const heading = await screen.findByRole('heading', { name: 'Library', level: 2 });
-      expect(heading.tagName).toBe('H2');
-      expect(heading.querySelector('button')).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Library' })).not.toBeInTheDocument();
+      const { container } = renderWithProviders(<DashboardSidebar />);
+      await waitFor(() =>
+        expect(container.querySelector('[data-sidebar-zone="library"]')).not.toBeNull()
+      );
+      const zone = container.querySelector('[data-sidebar-zone="library"]')!;
+      expect(zone.getAttribute('aria-label')).toBe('Library');
+      expect(screen.queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
+      expect(screen.queryByText('Library')).not.toBeInTheDocument();
     });
   });
 
@@ -751,11 +764,11 @@ describe('DashboardSidebar', () => {
     const heading = await screen.findByRole('heading', { name: /Direct messages/, level: 3 });
     // The rows are gone…
     expect(screen.queryByText('Quiet chat')).not.toBeInTheDocument();
-    // …and the count and the working dot survived onto the header.
-    expect(within(heading).getByLabelText('3 unread')).toHaveTextContent('3');
-    // One MEMBER is working, not two: BC-31 counts members currently
-    // streaming, so a single conversation with two agents in it is one.
-    expect(within(heading).getByLabelText('1 agent working')).toBeInTheDocument();
+    // …and everything they were carrying is on the header, in words. It used to
+    // be a dot and a pill — two shapes borrowed from the row vocabulary, drawn
+    // where no row was. One MEMBER is working, not two: BC-31 counts members
+    // currently streaming, so one conversation with two agents in it is one.
+    expect(heading.textContent).toContain('1 · 3 unread · 1 working');
   });
 
   // ── BC-32: chrome by data volume ──
@@ -800,9 +813,31 @@ describe('DashboardSidebar', () => {
       // here rather than in a screen reader (R2).
       for (const label of ['New channel', 'New direct message', 'New agent']) {
         const plus = screen.getByRole('button', { name: label });
-        expect(plus.className).toContain('focus-visible:opacity-100');
+        // `focus-within` on the SECTION, not `focus-visible` on the control:
+        // the `+` is a roving stop now, so arrowing onto it has to reveal it —
+        // and `focus-visible` on a button that is invisible until you focus it
+        // is a race the browser does not always win.
+        expect(plus.className).toContain('group-focus-within/section:opacity-100');
         expect(plus.className).toContain('group-hover/section:opacity-100');
       }
+    });
+
+    it('makes each section "+" a keyboard stop, reachable by arrowing off the header', async () => {
+      // The defect: `useRovingFocus` stamped every focusable in the section
+      // `tabIndex={-1}` and offered stops only for the header and the rows, so
+      // "New channel" had a pointer door and no keyboard one at all. Red the
+      // moment the `+` drops out of `stopsIn`.
+      mockRooms.mockReturnValue([channel('r1', 'general')]);
+      renderWithProviders(<DashboardSidebar />);
+      await screen.findByText('#general');
+      const toggle = sectionToggle('Channels');
+      toggle.focus();
+      fireEvent.keyDown(toggle, { key: 'ArrowDown' });
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'New channel' }));
+      // …and one more step reaches the first row, so the `+` is on the way to
+      // the list rather than a dead end in it.
+      fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+      expect(document.activeElement).toBe(screen.getByText('#general').closest('button'));
     });
 
     it('points the Agents section "+" at the one New menu instead of a handler', async () => {
@@ -856,8 +891,9 @@ describe('DashboardSidebar', () => {
       await screen.findByText('#general');
       const toggle = sectionToggle('Channels');
       toggle.focus();
-      // ArrowDown walks the section: header → first row.
+      // ArrowDown walks the section: header → its "+" → first row.
       fireEvent.keyDown(toggle, { key: 'ArrowDown' });
+      fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
       const row = screen.getByText('#general').closest('button');
       expect(document.activeElement).toBe(row);
       fireEvent.click(document.activeElement as HTMLElement);
@@ -1166,12 +1202,41 @@ describe('Heads up — the zone that justifies the redesign', () => {
       mockApprovals.mockReturnValue([pendingApproval()]);
       await renderSidebarWithNow();
       await waitFor(() => expect(nowZone()).not.toBeNull());
-      const heading = nowZone()!.querySelector('h2');
+      // The name moved from a zone `<h2>` onto the section's own `<h3>` (D1) —
+      // Heads up wears the same header as every other section now, and the
+      // landmark carries the name for assistive tech.
+      expect(nowZone()!.querySelector('h2')).toBeNull();
+      expect(nowZone()!.getAttribute('aria-label')).toBe('Heads up');
+      const heading = nowZone()!.querySelector('h3');
       expect(heading).not.toBeNull();
-      expect(heading!.textContent).toBe('Heads up');
-      // And it is the zone's accessible name, not a loose bit of text: the
-      // landmark points at this heading by id.
-      expect(nowZone()!.getAttribute('aria-labelledby')).toBe(heading!.id);
+      expect(heading!.textContent).toContain('Heads up');
+    });
+
+    it('folds Heads up like any other header, and keeps the needs-you count on it', async () => {
+      // The exception D1 removed, and the safety that let it go: folding Heads
+      // up may never be a quiet way to put a permission prompt out of sight, so
+      // the folded header counts what NEEDS answering rather than its rows.
+      mockApprovals.mockReturnValue([pendingApproval()]);
+      mockSidebarPrefs.mockReturnValue(makePrefs({ sections: { now: { collapsed: true } } }));
+      await renderSidebarWithNow();
+      await waitFor(() => expect(nowZone()).not.toBeNull());
+      const heading = nowZone()!.querySelector('h3')!;
+      expect(heading.textContent).toContain('1 need you');
+      expect(heading.querySelector('[data-sidebar-section-toggle]')).toHaveAttribute(
+        'aria-expanded',
+        'false'
+      );
+    });
+
+    it('writes Heads up’s fold to its own persisted key', async () => {
+      mockApprovals.mockReturnValue([pendingApproval()]);
+      await renderSidebarWithNow();
+      await waitFor(() => expect(nowZone()).not.toBeNull());
+      const toggle = nowZone()!.querySelector('[data-sidebar-section-toggle]') as HTMLElement;
+      fireEvent.click(toggle);
+      // Without `now` in `SidebarSectionIdSchema` this write has nowhere to go
+      // and `toggleCollapsed` returns early — a chevron that does nothing.
+      expect(lastPrefsWrite().sections?.now?.collapsed).toBe(true);
     });
   });
 

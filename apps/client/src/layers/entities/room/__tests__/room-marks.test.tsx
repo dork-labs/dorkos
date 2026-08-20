@@ -262,6 +262,37 @@ describe('RoomAvatar', () => {
     expect(disc.style.backgroundColor).toBe(fill('#7c3aed'));
   });
 
+  it('stops a sidebar face stack at two, and overlaps them by 14px (D1)', () => {
+    // The measurement this exists for: an 18px slot has 22px of room before the
+    // label column starts. Three faces at the roster's own −6px overlap measure
+    // 48 and ran UNDER the room's title; two at −14 measure 18 + 18 − 14 = 22.
+    // Red if the cap or the overlap is retuned without the other.
+    const five = Array.from({ length: 5 }, (_, i) => ({ color: '#7c3aed', emoji: `${i}` }));
+    const { container } = render(
+      <RoomAvatar room={{ id: 'dm-many', kind: 'dm', title: 'Four agents' }} visuals={five} />
+    );
+    const stack = container.querySelector('[data-slot="room-avatar"]') as HTMLElement;
+    expect(stack.querySelectorAll('[data-slot="identity-avatar"]')).toHaveLength(2);
+    expect(stack.className).toContain('-space-x-3.5');
+  });
+
+  it('lets a roomier surface keep three faces and the roster’s own overlap', () => {
+    // The cap is the SIDEBAR's, not the mark's: the masthead and the picker have
+    // width to spend, and a group there still reads as a group. Without this the
+    // pair above would be indistinguishable from "two faces, everywhere".
+    const five = Array.from({ length: 5 }, (_, i) => ({ color: '#7c3aed', emoji: `${i}` }));
+    const { container } = render(
+      <RoomAvatar
+        room={{ id: 'dm-many', kind: 'dm', title: 'Four agents' }}
+        visuals={five}
+        size="md"
+      />
+    );
+    const stack = container.querySelector('[data-slot="room-avatar"]') as HTMLElement;
+    expect(stack.querySelectorAll('[data-slot="identity-avatar"]')).toHaveLength(3);
+    expect(stack.className).toContain('-space-x-1.5');
+  });
+
   it('draws a DM face as an agent, in every shape the mark takes', () => {
     // A DM's counterpart is an agent by construction, and this one component
     // is what the sidebar row, the room masthead and the command palette all
@@ -341,7 +372,7 @@ describe('RoomAvatar', () => {
     );
 
     expect(channel.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-3.5');
-    expect(dm.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-5');
+    expect(dm.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-[18px]');
   });
 
   it('scales both marks together when a size is named', () => {

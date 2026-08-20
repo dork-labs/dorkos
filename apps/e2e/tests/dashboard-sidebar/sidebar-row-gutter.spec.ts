@@ -33,8 +33,41 @@ const PLAYGROUND_COLD_START_MS = 90_000;
  */
 const GUTTER_PX = 28;
 
+/**
+ * The panel's own horizontal padding (`px-2` on `SidebarContent`, and on the
+ * showcase frame that stands in for it).
+ *
+ * Every geometry token below is measured from the PANEL's left edge, while the
+ * element that pays it only owes the remainder — so this is the constant that
+ * joins the two halves. It is the one number in this file that is a literal
+ * rather than a token read out of the document, because it is a literal in the
+ * source too; everything else is compared against what the tokens really
+ * resolve to.
+ */
+const PANEL_X = 8;
+
 /** Every frame the showcase draws, in the order it draws them. */
 const FRAMES = ['cockpit', 'narrow', 'keyboard', 'override', 'bare', 'dragged'] as const;
+
+/**
+ * What one of the sidebar's geometry tokens resolves to, in pixels.
+ *
+ * **Read out of the live document, never restated here.** The whole point of D1
+ * is that `--sidebar-header-x`, `--sidebar-row-x` and `--sidebar-nested-x` are
+ * the one place the panel's indents are decided; a spec that hard-coded `20`
+ * would go green on a build where the token said 24 and every row had moved.
+ *
+ * @param page - The page under test.
+ * @param name - The custom property, e.g. `--sidebar-row-x`.
+ */
+async function token(page: Page, name: string): Promise<number> {
+  const value = await page.evaluate(
+    (property) => getComputedStyle(document.documentElement).getPropertyValue(property).trim(),
+    name
+  );
+  expect(value, `${name} is not declared`).not.toBe('');
+  return parseFloat(value);
+}
 
 /** One of the showcase's fixed-width frames. */
 function frame(page: Page, name: string): Locator {
@@ -104,6 +137,63 @@ test.describe('SidebarRow — the reserved right gutter @smoke', () => {
       const padding = await row.evaluate((node) => getComputedStyle(node).paddingRight);
       expect(padding, `the ${name} row lost its right gutter`).toBe(`${GUTTER_PX}px`);
     }
+  });
+
+  test('starts every row’s glyph on --sidebar-row-x, measured from the panel edge', async ({
+    page,
+  }) => {
+    await openShowcase(page);
+
+    // **The token plus the panel's own padding, asserted as a SUM.** The row
+    // pays `calc(var(--sidebar-row-x) - 0.5rem)` and the panel pays the other
+    // 8px, and nothing in the type system holds those two halves together —
+    // this does. Retune the token and every row moves with it; change one half
+    // alone and this goes red with the number it actually got.
+    const rowX = await token(page, '--sidebar-row-x');
+    // Every frame but `override`, which passes `px-6` on purpose — it is the
+    // hostile-caller case the test below owns, and the row is SUPPOSED to hand
+    // its left padding over there. Including it would make this assertion mean
+    // "no caller may ever restyle a row", which is not the contract.
+    for (const name of FRAMES.filter((entry) => entry !== 'override')) {
+      const row = frame(page, name).locator('[data-slot="sidebar-row-demo"]');
+      const padding = await row.evaluate((node) => parseFloat(getComputedStyle(node).paddingLeft));
+      expect(padding + PANEL_X, `the ${name} row is not on --sidebar-row-x`).toBe(rowX);
+    }
+  });
+
+  test('puts the header, its rows and a nested section on the three tokens', async ({ page }) => {
+    await openShowcase(page);
+
+    // The two levels the whole panel is cut to, measured against each other in
+    // one frame. Headers sit inboard of the glyph column their rows start on;
+    // a section's members add exactly one `--sidebar-nested-x` to both. If any
+    // of the three drifts, the list stops reading as a hierarchy — and it drifts
+    // silently, because each half is a plausible number on its own.
+    const headerX = await token(page, '--sidebar-header-x');
+    const rowX = await token(page, '--sidebar-row-x');
+    const nestedX = await token(page, '--sidebar-nested-x');
+    expect(headerX).toBeLessThan(rowX);
+
+    const geometry = page.locator('[data-slot="sidebar-geometry-frame"]');
+    const left = (locator: Locator) =>
+      locator.evaluate((node) => parseFloat(getComputedStyle(node).paddingLeft));
+
+    const header = geometry.locator('[data-sidebar-section-toggle]').first();
+    expect(await left(header)).toBeCloseTo(headerX - PANEL_X, 1);
+
+    const row = geometry.locator('[data-slot="sidebar-geometry-row"]');
+    expect(await left(row)).toBeCloseTo(rowX - PANEL_X, 1);
+
+    // The nested pair, measured as an OFFSET from their un-nested siblings
+    // rather than as absolute numbers: that is what `--sidebar-nested-x` means,
+    // and it is the only reading that stays true if the other two are retuned.
+    const nestedRowBox = await box(geometry.locator('[data-slot="sidebar-geometry-nested-row"]'));
+    const rowBox = await box(row);
+    expect(nestedRowBox.x - rowBox.x).toBeCloseTo(nestedX, 1);
+
+    const nestedHeaderBox = await box(geometry.locator('[data-sidebar-section-toggle]').nth(1));
+    const headerBox = await box(header);
+    expect(nestedHeaderBox.x - headerBox.x).toBeCloseTo(nestedX, 1);
   });
 
   test('keeps the gutter even when a caller passes padding of its own', async ({ page }) => {

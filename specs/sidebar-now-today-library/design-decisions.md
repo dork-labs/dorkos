@@ -24,6 +24,12 @@ a step change in UI/UX, not just conventional." Relearning cost accepted;
 
 ## 2. The zone system
 
+> **Superseded in part by `specs/sidebar-simplification` D1 (2026-08-19, DOR-1368).** The panel is two levels
+> now, not three: a zone draws no heading of its own (it keeps its id, its tint
+> and an `aria-label`), and what an operator reads is the one section-header
+> style every section in the panel wears. Every header folds, Heads up and Today
+> included.
+
 - Three zones: **Heads up**, **Today**, **Library** (+ **Getting started**,
   which is the day-one life stage of Heads up — same engine, same slot).
 - **Renamed 2026-08-11 (DOR-1155): the first zone's label is "Heads up."** Label
@@ -183,6 +189,12 @@ verbs with the same ladder — one verb system everywhere.
 
 ## 8. Empty states and the user journey
 
+> **Superseded in part by `specs/sidebar-simplification` D1 (2026-08-19, DOR-1368).** A zone with nothing to
+> say is still absent, but a FOLDED zone is present — a fold is something the
+> operator did, and its header is how they undo it. A folded header states what
+> it is hiding in words ("12 · 3 unread"), so an empty-looking panel is never
+> ambiguous with a folded one.
+
 **Screen:** `session-02-c-deep-dive.html` §1, revised in
 `session-03-conversations.html` §3.
 
@@ -199,6 +211,10 @@ verbs with the same ladder — one verb system everywhere.
   carry counts ("32 · 6 working"); density scales, chrome doesn't.
 
 ## 9. Mobile
+
+> **Superseded in part by `specs/sidebar-simplification` D1 (2026-08-19, DOR-1368).** The bottom tab reads
+> **"All"**, not "Library" — the id stays `library`, and the word named a heading
+> the panel no longer draws. Panel contents are unchanged.
 
 **Screen:** `session-02-c-deep-dive.html` §4.
 
@@ -218,6 +234,16 @@ ignored), suggestions that retire, approve-from-anywhere. The "meet your new
 sidebar" tour is **cut** (decided — user count doesn't justify it).
 
 ## 11. Visual language (from the design-meta doc, applied)
+
+> **Superseded in part by `specs/sidebar-simplification` D1 (2026-08-19, DOR-1368).** The insets below are now
+> three tokens rather than three literals — `--sidebar-header-x` 12,
+> `--sidebar-row-x` 20 (label 46), `--sidebar-nested-x` 12 (header 24, glyph 32,
+> label 58) — so "16px total left inset" and "one indent level (14px)" are both
+> retuned and both read out of the document by the gutter browser test. Section
+> labels are 11px medium (not 12), and the **icon↔chevron morph is gone**: a
+> header draws no icon at all, and the chevron is revealed at the RIGHT on hover
+> or focus-within. Muted rows keep full label contrast and lose their signals
+> instead of dimming (DOR-1098).
 
 Density: 13px labels / 11px meta, 28px rows (40+ on touch), **16px total left
 inset**, one indent level (14px), sidebar ~272px. Sentence-case section labels

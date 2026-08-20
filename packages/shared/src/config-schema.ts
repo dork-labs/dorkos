@@ -377,10 +377,19 @@ export type SidebarGroup = z.infer<typeof SidebarGroupSchema>;
  * state the person set. They go when the sections that read them do; nothing new
  * should start using them.
  *
- * Zones are deliberately absent: Heads up, Today and Getting started are computed and
- * never collapse, so there is no state for them to hold (BC-2).
+ * `now` and `today` are here because every header folds now — one rule instead
+ * of an exception (`specs/sidebar-simplification` D1, superseding BC-2's "a zone
+ * never collapses"). They are the computed zones' single bodies, so folding one
+ * folds the zone; the id is the zone's own id, so nothing has to translate.
+ *
+ * Getting started is deliberately still absent. It is a life stage rather than a
+ * place: it disappears the moment there is a real signal to show and retires
+ * itself suggestion by suggestion, so a fold flag for it would outlive the thing
+ * it addressed and quietly hide the day-one guidance of the NEXT fresh install.
  */
 export const SidebarSectionIdSchema = z.enum([
+  'now',
+  'today',
   'pins',
   'channels',
   'dms',

@@ -371,6 +371,23 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
 - **BC-2 — Zones never collapse.** `SidebarZoneModel` has no `collapsed` field and
   `SidebarZone` renders no toggle. Only sections inside Library are collapsible. (§2,
   design-meta micro-convention)
+
+> **Amended 2026-08-19 (DOR-1368, `specs/sidebar-simplification` D1).** The ZONE still has no
+> collapse — `SidebarZoneModel` is unchanged — but every HEADER in the panel now folds, and Heads
+> up and Today each hold exactly one section, so folding that section folds the zone in practice.
+> They carry persisted keys (`SidebarSectionIdSchema` gained `now` and `today`). Getting started
+> is the one exception: it is a life stage that retires itself, so a fold flag for it would
+> outlive the thing it addressed. One rule ("headers fold") costs less to learn than the
+> exception did.
+>
+> BC-1 is unchanged in substance and gains one clarification: a FOLDED zone is still present.
+> A fold is something the operator did, and a zone that vanished when you folded it would take
+> its own unfold control with it.
+>
+> The zone's visible `<h2>` is removed with the same change. The `<section>` keeps
+> `data-sidebar-zone` and gains `aria-label={ZONE_LABEL[id]}`, so `library` is still named for
+> assistive tech and never painted — the DOR-1155 pattern (label only, never the id).
+
 - **BC-3 — Zone order is fixed**: `getting-started | now` (they share one slot), then `today`,
   then `library`. Order never varies with content.
 - **BC-4 — One slot for Heads up and Getting started.** If `selectNowItems` returns any row, the
@@ -511,10 +528,25 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   smart) are sub-headers **inside** Agents, one indent level (14px). No deeper nesting exists in
   the type — `SidebarSectionModel.subsections` never contains subsections of its own, asserted
   by a test.
+
+> **Amended 2026-08-19 (DOR-1368, D1).** Library has no visible heading above these sections any
+> more, so they are the first thing an operator reads in that part of the panel. The indent is
+> `--sidebar-nested-x` (12px) rather than a hard-coded 14, and it now moves the sub-header AND
+> its rows — header 24, glyph 32, label 58 — instead of the header alone. Every section header in
+> the panel is one component and one look: 11px medium, `text-sidebar-foreground/70`, no icon,
+> `h-7`; the `#`, bubble and robot that used to sit before Channels, Direct messages and Agents
+> are gone, because the rows underneath carry the glyph.
+
 - **BC-29 — Click anywhere on the section row toggles.** Destinations are always leaf rows, so
   select-vs-expand is never ambiguous. (§2, click-confirmed)
 - **BC-30 — Alt/Option-click** on a section header (or its chevron) collapses/expands **all**
   Library sections.
+
+> **Amended 2026-08-19 (DOR-1368, D1).** Widened from Library to the WHOLE PANEL: Heads up and
+> Today fold too now, so "fold everything" that left two headers standing would be a gesture that
+> means something different depending on where you pressed it. Getting started is skipped — it
+> has no persisted key to fold into.
+
 - **BC-31 — Collapsed sections keep signal.** `rollup.unread.count` = the sum of member tier-2
   counts; `rollup.unread.tier` is `'activity'` when any member is tier-1 and none is tier-2;
   `rollup.workingCount` = members currently streaming. Signal is never lost by folding.
@@ -529,6 +561,17 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
 > `needs-you`; counting dots made the rollup vanish for exactly that member — the one thing this
 > contract says folding never does. A blocked-and-working member is still working, and the folded
 > header may say both.
+
+> **Amended 2026-08-19 (DOR-1368, D1).** The rollup is now **words in the header's trailing slot**
+> — "12 · 3 unread · 1 working" — rather than a dot and a numbered pill. Two shapes borrowed from
+> the row vocabulary, drawn on a header where no row was, were a third weight the two-tier system
+> does not have. It also gained `count` (how many rows are behind the fold) and **always answers**:
+> now that every header folds, a size is the minimum a fold owes the person who made it, and a
+> quiet folded section used to say nothing at all about what was in it.
+>
+> Heads up's rollup carries `needsYouCount` instead of its row count, because its rows include the
+> "N working" report — which needs nobody. Folding Heads up may never be a quiet way to put a
+> permission prompt out of sight.
 
 - **BC-32 — Chrome appears by data volume, not settings.** No Direct messages section until a
   DM exists; no Pins section until something is pinned; group affordances (create group, the

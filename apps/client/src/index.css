@@ -44,6 +44,31 @@
   --_st: 1;
   --_si: 1;
   --_sb: 1;
+
+  /* ============================================
+     SIDEBAR GEOMETRY (specs/sidebar-simplification D1)
+
+     The sidebar is two levels: one header style, one row indent. These three
+     numbers are where each level starts, MEASURED FROM THE PANEL'S LEFT EDGE —
+     not from the element that pays them. The panel itself pays 8px (`px-2` on
+     `SidebarContent`), so a header's own padding is `header-x − 8` and a row's
+     is `row-x − 8`; `sidebar-row-gutter.spec.ts` asserts the sum against these
+     tokens rather than against either half, so the two can never drift apart
+     unnoticed.
+
+     Documented in contributing/design-system.md.
+     ============================================ */
+
+  /* Where a section header's label starts. Every header — Heads up, Today,
+     Pins, Channels, Direct messages, Agents, a user's own section — is the
+     same one. */
+  --sidebar-header-x: 12px;
+  /* Where a row's 18px glyph slot starts. The label follows at
+     20 + 18 + 8 = 46px, for every row type. */
+  --sidebar-row-x: 20px;
+  /* What a section's members add on top of both: header 24, glyph 32,
+     label 58. One level, never two. */
+  --sidebar-nested-x: 12px;
 }
 
 @media (max-width: 767px) {

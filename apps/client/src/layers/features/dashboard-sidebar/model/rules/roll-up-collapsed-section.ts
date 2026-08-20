@@ -3,7 +3,7 @@
  *
  * @module features/dashboard-sidebar/model/rules/roll-up-collapsed-section
  */
-import type { SidebarRowModel, SidebarSectionModel } from '../build-sidebar-model';
+import type { SidebarRollup, SidebarRowModel } from '../build-sidebar-model';
 
 /**
  * What a folded section still says: how many messages were aimed at the
@@ -35,8 +35,11 @@ import type { SidebarRowModel, SidebarSectionModel } from '../build-sidebar-mode
  * section's, because it is a member of nothing. That is a gap in attribution,
  * not in signal: the operator is still told something is running.
  *
- * Returns `undefined` when there is nothing to say, so a caller cannot attach
- * an empty rollup that renders as a `0`.
+ * **It always answers.** It used to return `undefined` for a quiet section, so a
+ * folded header said nothing at all about what was behind it. Now that every
+ * header in the panel folds (D1), a size is the minimum a fold owes the person
+ * who made it: "12" is what tells them the section they put away still has
+ * twelve things in it. A caller that wants "nothing to say" reads the fields.
  *
  * @param rows - The section's rows, including any subsection's.
  * @param isWorking - Whether one row's subject is streaming right now,
@@ -45,20 +48,20 @@ import type { SidebarRowModel, SidebarSectionModel } from '../build-sidebar-mode
 export function rollUpCollapsedSection(
   rows: readonly SidebarRowModel[],
   isWorking: (row: SidebarRowModel) => boolean
-): SidebarSectionModel['rollup'] {
-  let count = 0;
+): SidebarRollup {
+  let unreadCount = 0;
   let anyActivity = false;
   let workingCount = 0;
   for (const row of rows) {
-    if (row.unread.tier === 'directed') count += row.unread.count ?? 0;
+    if (row.unread.tier === 'directed') unreadCount += row.unread.count ?? 0;
     if (row.unread.tier === 'activity') anyActivity = true;
     if (isWorking(row)) workingCount += 1;
   }
-  if (count === 0 && !anyActivity && workingCount === 0) return undefined;
   return {
+    count: rows.length,
     unread:
-      count > 0
-        ? { tier: 'directed', count }
+      unreadCount > 0
+        ? { tier: 'directed', count: unreadCount }
         : anyActivity
           ? { tier: 'activity' }
           : { tier: 'none' },

@@ -52,7 +52,6 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => {
   return {
     ...actual,
     useAgentVisual: () => ({ color: '#aaaaaa', emoji: '🤖' }),
-    AgentIdentity: ({ name }: { name: string }) => <span data-testid="agent-identity">{name}</span>,
   };
 });
 
@@ -162,7 +161,9 @@ describe('SidebarModelRow hands an agent row its liveCount', () => {
     // Without this, "no chip" below could mean "no row", and the negative case
     // would pass against a component that threw on mount.
     renderRow(agentRow());
-    expect(screen.getByTestId('agent-identity')).toHaveTextContent('saffron');
+    // The name is the row's own title text now — the face moved into the glyph
+    // slot and the lockup is gone (D1).
+    expect(screen.getByText('saffron')).toBeInTheDocument();
   });
 
   it('draws the chip, with the model’s number, when the model sent one', () => {

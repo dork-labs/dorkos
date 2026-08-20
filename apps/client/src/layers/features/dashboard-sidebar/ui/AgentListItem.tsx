@@ -4,7 +4,7 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { SidebarRow } from '@/layers/shared/ui';
-import { AgentIdentity, type AgentVisual } from '@/layers/entities/agent';
+import { AgentAvatar, type AgentVisual } from '@/layers/entities/agent';
 import { useAgentHottestStatus } from '@/layers/entities/session';
 import { useAgentRowMenuNodes } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
@@ -185,13 +185,17 @@ export function AgentListItem({
         // announced as "Open Scout's profile", which is the one thing pressing the
         // row does not do.
         srLabel={`Switch to ${displayName}`}
-        // The lockup fills the TITLE slot rather than the glyph slot, and that is
-        // deliberate: `AgentIdentity` is already `[face] [name]` — the row
-        // grammar's own opening, drawn by the entity that owns how an agent
-        // looks. Splitting it would mean drawing the face here and the name
-        // there, and the two would drift the first time either moved.
-        title={<AgentIdentity {...visual} name={displayName} size="xs" />}
-        titleText={displayName}
+        // **The face is the glyph, and the name is the title** — the same two
+        // slots a channel row and a conversation row fill (D1). It used to hand
+        // the whole `AgentIdentity` lockup to the TITLE slot with no glyph at
+        // all, so an agent row reached the label column by its own arithmetic:
+        // its face landed 4px left of every other row's, its name was 12px
+        // where the rest of the panel is 13, and the profile control the row
+        // draws over the glyph square sat 8px off the face it was supposed to
+        // cover. One slot for one mark is what makes `#`, a single face and an
+        // agent's face line up.
+        glyph={<AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />}
+        title={displayName}
         // The FACE opens the profile; the row keeps its own click, which selects
         // the agent and opens its last conversation.
         glyphAction={faceControl}

@@ -682,10 +682,11 @@ describe('RoomRow leave', () => {
 
     const hint = screen.getByLabelText('You left this channel');
     expect(hint).toBeInTheDocument();
-    // The dimming rides the row's outer wrapper — the same element the drag
-    // layer binds to (mirrors `AgentListItem.test.tsx`'s "muted rendering").
-    const dimmed = hint.closest('li')!.firstElementChild!;
-    expect(dimmed.className).toContain('opacity-60');
+    // The hint is what says so, NOT a dimming (DOR-1098): the room's name stays
+    // at full contrast, because a room you left is still one you read. Red the
+    // moment the old `opacity-60` comes back to the row's outer wrapper.
+    const wrapper = hint.closest('li')!.firstElementChild!;
+    expect(wrapper.className).not.toContain('opacity-60');
 
     const menu = openDropdown();
     expect(itemLabels(menu)).not.toContain('Leave channel');

@@ -320,14 +320,13 @@ function SectionHeaderShowcase() {
   return (
     <PlaygroundSection
       title="SectionHeader"
-      description="Every sidebar section header carries its own menu — right-click the header, or use the ⋮ that appears on hover and on focus. Both render ONE node list, so they can never drift. The section's identity icon morphs into the collapse chevron the moment you reach for it. Channels collapses and can clear its unread; Agents has no collapse and exposes the section's own Show and Sort by settings. Neither makes anything: creating moved to the one New menu, and a section's hover + deep-links into it."
+      description="One header style for the whole panel: 11px medium at --sidebar-header-x, no icon, nothing drawn at rest but the label. Hover or focus reveals the fold chevron at the right, beside the ⋮ and the section's +. Every header carries its own menu — right-click it, or use the ⋮ — and both render ONE node list, so they can never drift. Channels folds and can clear its unread; Agents exposes the section's own Show and Sort by settings. Neither makes anything: creating moved to the one New menu, and a section's + deep-links into it."
     >
       <ShowcaseLabel>Channels — collapsible, with unread to clear</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-64">
           <SectionHeader
             label="Channels"
-            icon={Hash}
             collapsed={collapsed}
             onToggle={() => setCollapsed((prev) => !prev)}
             nodes={buildChannelsHeaderMenuNodes({
@@ -347,7 +346,6 @@ function SectionHeaderShowcase() {
         <div className="w-64">
           <SectionHeader
             label="Agents"
-            icon={Bot}
             nodes={buildAgentsHeaderMenuNodes({
               sortMode,
               displayFilter: 'all',

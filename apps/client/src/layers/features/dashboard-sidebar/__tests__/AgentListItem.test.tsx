@@ -15,12 +15,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 });
 
 vi.mock('@/layers/entities/agent', () => ({
-  AgentIdentity: ({ name, emoji }: { name: string; emoji: string }) => (
-    <span data-testid="agent-identity">
-      <span>{emoji}</span>
-      <span>{name}</span>
-    </span>
-  ),
+  AgentAvatar: ({ emoji }: { emoji: string }) => <span data-testid="agent-face">{emoji}</span>,
 }));
 
 interface MockAgentStatus {
@@ -144,7 +139,7 @@ function renderItem(overrides: Partial<Parameters<typeof AgentListItem>[0]> = {}
 }
 
 function row() {
-  return screen.getByTestId('agent-identity').closest('[data-slot="agent-list-item"]')!;
+  return screen.getByTestId('agent-face').closest('[data-slot="agent-list-item"]')!;
 }
 
 // ---------------------------------------------------------------------------
@@ -274,23 +269,23 @@ describe('AgentListItem', () => {
   // --- Mute (DOR-339) ---
 
   describe('muted rendering', () => {
-    it('is not dimmed and shows no mute glyph by default', () => {
-      const { container } = renderItem();
-      // The dimming rides the row's outer wrapper — the same element the drag
-      // layer binds to — so the row and its menu chrome dim together.
-      const dimmed = container
-        .querySelector('[data-slot="agent-list-item"]')!
-        .closest('li')!.firstElementChild!;
-      expect(dimmed.className).not.toContain('opacity-60');
+    it('shows no mute glyph by default', () => {
+      renderItem();
       expect(screen.queryByLabelText('Muted')).not.toBeInTheDocument();
     });
 
-    it('dims the row and shows a mute glyph when muted', () => {
+    it('shows a mute glyph when muted, and does NOT dim the row (DOR-1098)', () => {
       const { container } = renderItem({ isMuted: true });
-      const dimmed = container
+      // **Fewer signals, not less contrast.** The row used to wear `opacity-60`
+      // on its outer wrapper, which took the agent's NAME to about 3:1 — under
+      // the 4.5:1 every label in this product owes — so silencing an agent made
+      // the one thing still worth reading hard to read. What mute removes is
+      // what was asking: the bold, the badge, the dot. Red the moment a dimming
+      // class comes back.
+      const wrapper = container
         .querySelector('[data-slot="agent-list-item"]')!
         .closest('li')!.firstElementChild!;
-      expect(dimmed.className).toContain('opacity-60');
+      expect(wrapper.className).not.toContain('opacity-60');
       expect(screen.getByLabelText('Muted')).toBeInTheDocument();
     });
 

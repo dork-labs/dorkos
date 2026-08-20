@@ -9,6 +9,7 @@ import {
   SIDEBAR_ACTIONS_ATTRIBUTE,
   SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
   SIDEBAR_ROW_ATTRIBUTE,
+  SIDEBAR_SECTION_ACTION_ATTRIBUTE,
   SIDEBAR_SECTION_TOGGLE_ATTRIBUTE,
   SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
 } from '../use-roving-focus';
@@ -31,6 +32,8 @@ function Section({
   onCollapse,
   onExpand,
   withHeader = true,
+  withSectionAction = false,
+  withEditor = false,
   extra,
 }: {
   rows: string[];
@@ -38,6 +41,10 @@ function Section({
   onCollapse?: () => void;
   onExpand?: () => void;
   withHeader?: boolean;
+  /** Draw the section's `+`, the way `useSectionChrome` mounts it. */
+  withSectionAction?: boolean;
+  /** Mount an inline editor, the way a rename or a group-create field does. */
+  withEditor?: boolean;
   /** Anything else that re-renders with the section, to prove the stop survives it. */
   extra?: string;
 }) {
@@ -54,6 +61,12 @@ function Section({
           </button>
         </h3>
       )}
+      {withSectionAction && (
+        <button type="button" {...{ [SIDEBAR_SECTION_ACTION_ATTRIBUTE]: '' }}>
+          New channel
+        </button>
+      )}
+      {withEditor && <input aria-label="Group name" />}
       {rows.map((label, index) => (
         <li key={label} data-slot="sidebar-menu-item" className="relative">
           <button
@@ -107,6 +120,49 @@ describe('useRovingFocus — one Tab stop per section', () => {
     render(<Section rows={ROWS} />);
     expect(focusables()).toHaveLength(2 + ROWS.length * 2); // header + its ⋮, then each row + its ⋮
     expect(tabStops()).toEqual(['Channels']);
+  });
+
+  it('makes the section’s "+" a stop of its own, between the header and the rows', () => {
+    // The defect: every focusable in the section was stamped `-1` and only the
+    // header and rows were offered as stops, so "New channel", "New group
+    // message", "New agent" and "New section" had a pointer door and no
+    // keyboard one at all. Red the moment the `+` drops out of `stopsIn`.
+    render(<Section rows={ROWS} withSectionAction />);
+    const toggle = screen.getByText('Channels');
+    toggle.focus();
+    fireEvent.keyDown(toggle, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByText('New channel'));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByText('one'));
+  });
+
+  it('still leaves exactly one Tab stop once the "+" is a stop', () => {
+    // The pair: a stop is not a Tab stop. Making the `+` reachable by arrow must
+    // not put it back in the tab order and undo the whole point of the hook.
+    render(<Section rows={ROWS} withSectionAction />);
+    expect(tabStops()).toEqual(['Channels']);
+  });
+
+  it('sends Home past the "+" to the first ROW', () => {
+    // Home means "the top of the list", and the `+` is not in the list. Before
+    // the `+` existed this read "not the header"; that spelling would have
+    // landed Home on the `+` the day it did.
+    render(<Section rows={ROWS} withSectionAction />);
+    const toggle = screen.getByText('Channels');
+    toggle.focus();
+    fireEvent.keyDown(toggle, { key: 'Home' });
+    expect(document.activeElement).toBe(screen.getByText('one'));
+  });
+
+  it('leaves a mounted inline editor in the tab order (DOR-329-adjacent)', () => {
+    // A rename field is mounted BECAUSE the reader is typing in it, and the
+    // stamp took it out of the tab order at exactly that moment: you could not
+    // Tab out of the field, and a reader who Tabbed away could not Tab back.
+    render(<Section rows={ROWS} withEditor />);
+    expect(screen.getByLabelText('Group name').tabIndex).toBe(0);
+    // …and the section still has its own single stop beside it, so the editor
+    // is an addition for as long as it is mounted rather than a replacement.
+    expect(tabStops()).toEqual(['Channels', '']);
   });
 
   it('puts the stop on the row the reader is already on', () => {

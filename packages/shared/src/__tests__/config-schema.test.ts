@@ -1356,6 +1356,22 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
     expect(prefs.sections).toEqual({ channels: { collapsed: true } });
   });
 
+  it('remembers a fold for Heads up and Today, the two computed zones', () => {
+    // Every header in the sidebar folds now (`specs/sidebar-simplification` D1),
+    // so the two zones that could not before need somewhere to store it. Red if
+    // the enum narrows back: `useSectionChrome.toggleCollapsed` returns early
+    // when the id has no persisted home, so the chevron would silently do
+    // nothing rather than fail loudly.
+    const prefs = SidebarPrefsSchema.parse({
+      sections: { now: { collapsed: true }, today: { collapsed: false } },
+    });
+    expect(prefs.sections.now).toEqual({ collapsed: true });
+    expect(prefs.sections.today).toEqual({ collapsed: false });
+    // And the widening is safe to reverse: the sanitizer above already drops a
+    // section id this build has never heard of, so a downgrade loses two fold
+    // flags rather than producing a config that loads and refuses every write.
+  });
+
   it('keeps what it was given when there is nothing to drop', () => {
     const stored = { channels: { collapsed: true } };
     expect(SidebarPrefsSchema.parse({ sections: stored }).sections).toEqual(stored);

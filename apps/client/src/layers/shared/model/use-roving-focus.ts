@@ -36,6 +36,17 @@ export const SIDEBAR_SECTION_TOGGLE_ATTRIBUTE = 'data-sidebar-section-toggle';
 /** The mark a hover-revealed "⋮" carries — a satellite of its row, never a Tab stop of its own. */
 export const SIDEBAR_ACTIONS_ATTRIBUTE = 'data-sidebar-actions';
 
+/**
+ * The mark a section's `+` carries — a STOP, not a satellite.
+ *
+ * It belongs to the section rather than to any row, so there is no lane to reach
+ * it sideways from: it sits between the header and the first row in DOM order
+ * and `ArrowDown` from the header lands on it. That is the whole reason it is
+ * here. Stamped `-1` with everything else, "New channel", "New group message",
+ * "New agent" and "New section" were reachable by pointer only.
+ */
+export const SIDEBAR_SECTION_ACTION_ATTRIBUTE = 'data-sidebar-section-action';
+
 /** The mark an interactive glyph carries — the other satellite, on the row's other side. */
 export const SIDEBAR_GLYPH_ACTION_ATTRIBUTE = 'data-sidebar-glyph-action';
 
@@ -51,6 +62,7 @@ export const SIDEBAR_TRAILING_ACTION_ATTRIBUTE = 'data-sidebar-trailing-action';
  */
 const FOCUSABLE = [
   `[${SIDEBAR_SECTION_TOGGLE_ATTRIBUTE}]`,
+  `[${SIDEBAR_SECTION_ACTION_ATTRIBUTE}]`,
   `[${SIDEBAR_ROW_ATTRIBUTE}]`,
   `[${SIDEBAR_ACTIONS_ATTRIBUTE}]`,
   `[${SIDEBAR_GLYPH_ACTION_ATTRIBUTE}]`,
@@ -98,19 +110,30 @@ function focusablesIn(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE));
 }
 
+/** The three marks a stop can carry, as one selector. */
+const STOP_SELECTOR = `[${SIDEBAR_SECTION_TOGGLE_ATTRIBUTE}],[${SIDEBAR_SECTION_ACTION_ATTRIBUTE}],[${SIDEBAR_ROW_ATTRIBUTE}]`;
+
 /**
- * The section's own stops — the header and the rows.
+ * Form fields the roving stamp leaves alone.
+ *
+ * An inline editor — the group-create field, a rename — is mounted BECAUSE the
+ * reader is typing in it, and stamping it `-1` with everything else took it out
+ * of the tab order at exactly that moment: you could not Tab from the field to
+ * whatever came next, and a reader who Tabbed away could not Tab back. It is
+ * transient by construction, so it cannot leave a permanent extra stop behind.
+ */
+const KEEPS_ITS_OWN_TAB_STOP = 'input,select,textarea';
+
+/**
+ * The section's own stops — the header, its `+`, and the rows.
  *
  * A "⋮" is not one: it is reached sideways from the row it belongs to, so that
  * a reader walking a list of sixty agents presses ArrowDown sixty times rather
- * than a hundred and twenty.
+ * than a hundred and twenty. The section's `+` IS one, because it hangs off the
+ * section rather than off any row and there is no lane pointing at it.
  */
 function stopsIn(container: HTMLElement): HTMLElement[] {
-  return Array.from(
-    container.querySelectorAll<HTMLElement>(
-      `[${SIDEBAR_SECTION_TOGGLE_ATTRIBUTE}],[${SIDEBAR_ROW_ATTRIBUTE}]`
-    )
-  );
+  return Array.from(container.querySelectorAll<HTMLElement>(STOP_SELECTOR));
 }
 
 /**
@@ -214,8 +237,10 @@ export function useRovingFocus(options?: {
     parkedRef.current = roving;
 
     // Every focusable, not just the stops: a "⋮" left un-stamped is a Tab stop
-    // per row, which is the whole defect this hook exists to prevent.
+    // per row, which is the whole defect this hook exists to prevent. The one
+    // exception is a mounted form field — see {@link KEEPS_ITS_OWN_TAB_STOP}.
     for (const element of focusablesIn(container)) {
+      if (element.matches(KEEPS_ITS_OWN_TAB_STOP)) continue;
       element.tabIndex = element === roving ? 0 : -1;
     }
   }, []);
@@ -282,15 +307,19 @@ export function useRovingFocus(options?: {
         return;
       }
 
-      const stop = target.closest<HTMLElement>(
-        `[${SIDEBAR_SECTION_TOGGLE_ATTRIBUTE}],[${SIDEBAR_ROW_ATTRIBUTE}]`
-      );
+      const stop = target.closest<HTMLElement>(STOP_SELECTOR);
       const index = stop ? stops.indexOf(stop) : -1;
       if (index === -1 || !stop) return;
 
       const isHeader = stop.hasAttribute(SIDEBAR_SECTION_TOGGLE_ATTRIBUTE);
+      // The section's `+` has no lane and no fold: it is one control, reached
+      // up and down like a row. Left and right are simply not its keys, and
+      // walking a lane from it would find the FIRST ROW's satellites — they
+      // share a parent.
+      const isSectionAction = stop.hasAttribute(SIDEBAR_SECTION_ACTION_ATTRIBUTE);
 
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        if (isSectionAction) return;
         // The header's two keys are about the SECTION rather than about moving
         // within it: they fold and unfold it.
         if (isHeader) {
@@ -330,9 +359,7 @@ export function useRovingFocus(options?: {
           // header stays reachable — `ArrowUp` from the first row is one press,
           // and it is where a reader goes to fold the section, not where they
           // go to start reading it (R2).
-          const firstRow = stops.findIndex(
-            (stop) => !stop.hasAttribute(SIDEBAR_SECTION_TOGGLE_ATTRIBUTE)
-          );
+          const firstRow = stops.findIndex((stop) => stop.hasAttribute(SIDEBAR_ROW_ATTRIBUTE));
           // A section with a header and nothing under it has one stop, and Home
           // has to stay on it rather than move to nothing.
           next = firstRow === -1 ? 0 : firstRow;

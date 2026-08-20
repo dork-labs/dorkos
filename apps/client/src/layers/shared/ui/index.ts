@@ -360,7 +360,7 @@ export type {
 export { SidebarRow, SIDEBAR_ROW_INSET } from './sidebar-row';
 export { TOUCH_TARGET_MIN_H } from './touch-target';
 export type { RowDragBindings, SidebarRowMenu, SidebarRowProps } from './sidebar-row';
-export { SectionHeader } from './section-header';
+export { SectionHeader, SIDEBAR_HOVER_REVEAL } from './section-header';
 // Three small rows the transcript and the Ask card both draw. They lived inside
 // `features/chat/ui/primitives` until `features/ask` needed them too — and a
 // feature reaching into another feature's internals is the cycle P1 already
