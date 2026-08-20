@@ -55,6 +55,7 @@ import {
   type StandingNotificationKind,
 } from './notification-registry.js';
 import type { NotificationStore } from './notification-store.js';
+import { cancelEscalationByKey } from './escalation-service.js';
 import {
   deliverOverRelay,
   type RelayChannelDeps,
@@ -190,6 +191,14 @@ export class NotificationService {
     payload: NotificationPayload<K>,
     opts: NotifyOptions & { outcome: NotificationOutcome }
   ): Promise<NotifyResult> {
+    // A standing condition that ENDED is the strongest acknowledgement there is,
+    // whoever or whatever ended it — so every resolution disarms the escalation
+    // ladder, in one place rather than at each of the three seams that can
+    // produce one. Synchronous and before anything else here, because `raise()`
+    // below awaits a chat network and a phone ping must not slip out in that
+    // window about something a person just dealt with.
+    cancelEscalationByKey(notificationEntry(kind).dedupeKey(payload));
+
     try {
       return await this.raise(kind, payload, opts, {
         resolvedAt: new Date().toISOString(),
@@ -319,6 +328,7 @@ export class NotificationService {
       if (opts.delivered?.ok) {
         this.store.recordDelivery({
           notificationId: alreadySaid,
+          subjectKey: dedupeKey,
           channel: ledgerChannel(opts.delivered),
           detail: deliveryDetail(opts.delivered),
         });
@@ -361,6 +371,7 @@ export class NotificationService {
     if (relay?.ok) {
       this.store.recordDelivery({
         notificationId: notification.id,
+        subjectKey: dedupeKey,
         channel: ledgerChannel(relay),
         detail: deliveryDetail(relay),
       });

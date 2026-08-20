@@ -138,10 +138,14 @@ export const notifications = sqliteTable(
  * desktop but not on the phone" is unanswerable and every escalation rule
  * becomes a guess.
  *
- * Rows are only ever written for notifications that exist as rows, so a standing
- * Attention condition accrues deliveries only once it has resolved into history.
- * The escalation service that reads this arrives with web push (spec task 4.3);
- * today the ledger records what the in-app and relay legs did.
+ * **A delivery does not always have a notification row to hang off.** An
+ * Attention condition writes nothing while it stands (see {@link notifications}),
+ * and the escalation ladder's whole job is to reach somebody WHILE it stands — so
+ * an escalated push or chat message is a real delivery about a subject that has
+ * no row yet. Those rows carry {@link notificationDeliveries.subjectKey} and a
+ * null {@link notificationDeliveries.notificationId}. Every row carries the
+ * subject key, escalated or not, so "has anything about this subject reached the
+ * operator?" is one query rather than two.
  */
 export const notificationDeliveries = sqliteTable(
   'notification_deliveries',
@@ -150,16 +154,33 @@ export const notificationDeliveries = sqliteTable(
     id: text('id').primaryKey(),
 
     /**
-     * The notification this delivery was for.
+     * The notification this delivery was for, when one exists.
      *
      * A real cascading foreign key, unlike most of this schema: prune-on-write
      * deletes notifications constantly, and a ledger outliving its notification
      * would be rows nothing can interpret. `foreign_keys` is ON for every DorkOS
      * connection, so SQLite does the cascade.
+     *
+     * Null for an escalation delivery raised while its subject was still
+     * standing — {@link notificationDeliveries.subjectKey} is what interprets
+     * those, so a null here is never an uninterpretable row.
      */
-    notificationId: text('notification_id')
-      .notNull()
-      .references(() => notifications.id, { onDelete: 'cascade' }),
+    notificationId: text('notification_id').references(() => notifications.id, {
+      onDelete: 'cascade',
+    }),
+
+    /**
+     * What this delivery was ABOUT, independent of whether a row exists for it.
+     *
+     * The same string as the raising notification's `dedupe_key` (`ask:<id>`,
+     * `schedule:<id>`, …), which is what lets the escalation service ask "has
+     * this subject already been escalated, or already been acknowledged?" across
+     * a server restart — the idempotency the ack-based ladder is built on
+     * (ADR 260819-234829).
+     *
+     * Nullable only because rows written before this column existed have none.
+     */
+    subjectKey: text('subject_key'),
 
     /** Which way it went out. */
     channel: text('channel', {
@@ -178,19 +199,29 @@ export const notificationDeliveries = sqliteTable(
     /** Channel-specific detail as JSON — a target handle, a refusal reason. */
     detailJson: text('detail_json'),
   },
-  (table) => [index('idx_notification_deliveries_notification').on(table.notificationId)]
+  (table) => [
+    index('idx_notification_deliveries_notification').on(table.notificationId),
+    // The escalation service's two questions — "already escalated?" and "already
+    // acknowledged?" — are both `WHERE subject_key = ?`, asked on every arm and
+    // every fire. Unlike the notifications table's lens filters, this one is not
+    // bounded by a 1000-row cap it can scan.
+    index('idx_notification_deliveries_subject').on(table.subjectKey),
+  ]
 );
 
 /**
  * Browsers that asked to be pushed to when DorkOS is not open.
  *
- * Declared with the rest of the notification storage so the domain lands as one
- * migration. **Nothing writes here yet** — the VAPID keys, the subscribe routes
- * and the push channel are spec task 4.3; this table is the shape they will fill.
+ * Written by the push routes (`routes/push.ts`) when somebody presses "Notify
+ * this device", and read by the web-push channel when a Blocking condition has
+ * gone unanswered long enough to escalate (spec `notification-system` task 4.3,
+ * ADR 260819-234829).
  *
  * A subscription is a capability URL: anybody holding the endpoint can push to
- * that browser. It never leaves this machine, and the payloads it will carry are
- * titles and deep links, never transcript content.
+ * that browser. It never leaves this machine, is never returned by any route,
+ * and the payloads it carries are titles and deep links, never transcript
+ * content. A push service answering `404`/`410` means the browser is gone for
+ * good, and the row is deleted rather than retried.
  */
 export const pushSubscriptions = sqliteTable(
   'push_subscriptions',

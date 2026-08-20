@@ -753,6 +753,21 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .mockResolvedValue({ notifications: [], nextCursor: null, unreadCount: 0 }),
     markNotificationRead: vi.fn().mockResolvedValue({ ok: true, marked: 1, unreadCount: 0 }),
     markAllNotificationsRead: vi.fn().mockResolvedValue({ ok: true, marked: 0, unreadCount: 0 }),
+    // Web push (spec `notification-system` task 4.3). The default install has
+    // no keypair and no devices, which is the state every test that does not
+    // care about push should see.
+    getPushVapidPublicKey: vi.fn().mockResolvedValue({ key: null }),
+    registerPushSubscription: vi.fn().mockResolvedValue({
+      ok: true,
+      subscription: {
+        id: 'push-1',
+        service: 'push.example.com',
+        createdAt: '2026-08-20T09:00:00.000Z',
+        lastSeenAt: '2026-08-20T09:00:00.000Z',
+      },
+    }),
+    listPushSubscriptions: vi.fn().mockResolvedValue({ subscriptions: [] }),
+    deletePushSubscription: vi.fn().mockResolvedValue({ ok: true, removed: 1 }),
     // Approvals (spec `agent-trust` §3.3)
     listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
     grantApproval: vi

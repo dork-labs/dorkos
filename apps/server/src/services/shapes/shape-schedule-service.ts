@@ -29,6 +29,7 @@ import { slugify } from '@dorkos/skills/slug';
 import { parseDuration } from '@dorkos/skills/duration';
 import type { TaskStore } from '../tasks/task-store.js';
 import type { TaskSchedulerService } from '../tasks/task-scheduler-service.js';
+import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
 import type {
   ExistingSchedule,
   ScheduleOrigin,
@@ -263,6 +264,11 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
   private async teardownSchedule(task: Task): Promise<void> {
     this.deps.scheduler.unregisterTask(task.id);
     this.deps.taskStore.deleteTask(task.id);
+    // A Shape's schedule can be torn down while still waiting on the operator's
+    // approval. Ending the standing condition here is what stops an armed
+    // escalation buzzing a phone about a schedule that is gone (DOR-1387
+    // review). A no-op for the ordinary active schedule this usually removes.
+    resolveParkedScheduleRemoved(task);
     if (task.filePath) {
       const dirPath = path.dirname(task.filePath);
       await deleteSkillDir(path.dirname(dirPath), path.basename(dirPath)).catch(() => {

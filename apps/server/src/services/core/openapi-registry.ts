@@ -147,9 +147,14 @@ import {
   StandingPermissionsResponseSchema,
 } from '@dorkos/shared/approval-schemas';
 import {
+  DeletePushSubscriptionResponseSchema,
   ListNotificationsQuerySchema,
   ListNotificationsResponseSchema,
+  ListPushSubscriptionsResponseSchema,
   MarkNotificationsReadResponseSchema,
+  RegisterPushSubscriptionRequestSchema,
+  RegisterPushSubscriptionResponseSchema,
+  VapidPublicKeyResponseSchema,
 } from '@dorkos/shared/notification-schemas';
 import { registerCapabilitiesInOpenApi } from './capabilities/index.js';
 import { composeCapabilityRegistryForDocs } from './self-description/dorkos-registry.js';
@@ -4299,6 +4304,93 @@ registry.registerPath({
     },
     403: {
       description: 'Only the operator may move read state',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// --- Web push (spec `notification-system` task 4.3, ADR 260819-234829) ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/push/vapid-public-key',
+  tags: ['Notifications'],
+  summary: 'Read the VAPID public key a browser needs to subscribe',
+  description:
+    'Generates this install’s keypair on the first call. Answers `key: null` when web push ' +
+    'is unavailable here, so a client can say so instead of offering a button that fails.',
+  responses: {
+    200: {
+      description: 'The public key, or null',
+      content: { 'application/json': { schema: VapidPublicKeyResponseSchema } },
+    },
+    403: {
+      description: 'Only the operator may see this install’s push setup',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/push/subscriptions',
+  tags: ['Notifications'],
+  summary: 'List the browsers DorkOS may push to',
+  description: 'Never returns an endpoint — only the push service’s hostname and the dates.',
+  responses: {
+    200: {
+      description: 'Every subscribed browser, newest first',
+      content: { 'application/json': { schema: ListPushSubscriptionsResponseSchema } },
+    },
+    403: {
+      description: 'Only the operator may list push devices',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/push/subscriptions',
+  tags: ['Notifications'],
+  summary: 'Let DorkOS push to this browser',
+  description:
+    'Idempotent by endpoint, so a client may call it on every load to refresh keys the ' +
+    'browser rotated without accumulating dead rows.',
+  request: {
+    body: {
+      content: { 'application/json': { schema: RegisterPushSubscriptionRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The subscription as it now stands',
+      content: { 'application/json': { schema: RegisterPushSubscriptionResponseSchema } },
+    },
+    400: {
+      description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Only the operator may subscribe a device',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/push/subscriptions/{id}',
+  tags: ['Notifications'],
+  summary: 'Stop pushing to one browser',
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'How many rows went away — 0 when it was already gone',
+      content: { 'application/json': { schema: DeletePushSubscriptionResponseSchema } },
+    },
+    403: {
+      description: 'Only the operator may remove a push device',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

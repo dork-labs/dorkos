@@ -12,6 +12,7 @@ import type { TaskStore } from './task-store.js';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
+import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
 import { logger, logError } from '../../lib/logger.js';
 
 /** 5-minute reconciliation interval. */
@@ -333,6 +334,11 @@ export class TaskReconciler {
         const updatedAt = new Date(task.updatedAt).getTime();
         if (now - updatedAt > ORPHAN_GRACE_MS) {
           this.store.deleteTask(task.id);
+          // A schedule whose file went away can still have been waiting on the
+          // operator. Ending the standing condition here is what stops an armed
+          // escalation buzzing a phone about a schedule that no longer exists
+          // (DOR-1387 review).
+          resolveParkedScheduleRemoved(task);
           orphaned++;
         } else if (task.status !== 'paused') {
           this.store.markRemovedByFilePath(task.filePath);

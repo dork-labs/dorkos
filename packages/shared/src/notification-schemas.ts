@@ -55,7 +55,7 @@ export const NOTIFICATION_KINDS = [
   'ask.pending',
   /** An agent proposed a schedule that only a person can approve. Standing. */
   'schedule.parked',
-  /** A session hit an error and stopped. Standing. */
+  /** A session hit an error and stopped. Standing, per error episode. */
   'session.error',
   /** A turn finished. */
   'turn.completed',
@@ -402,3 +402,157 @@ export const NotificationReadEventSchema = z
 
 /** Payload of the global `notification_read` SSE event. */
 export type NotificationReadEvent = z.infer<typeof NotificationReadEventSchema>;
+
+// ---------------------------------------------------------------------------
+// Web push — the leg that reaches a browser DorkOS is not open in
+// (spec `notification-system` task 4.3, ADR 260819-234829)
+// ---------------------------------------------------------------------------
+
+/**
+ * The keys a browser hands over so DorkOS can encrypt a push to it.
+ *
+ * Produced by `PushManager.subscribe()` and meaningless anywhere else — they are
+ * the browser's half of the message encryption, not credentials for anything.
+ */
+export const PushSubscriptionKeysSchema = z
+  .object({
+    /** The browser's public key for this subscription. */
+    p256dh: z.string().min(1),
+    /** The shared auth secret for this subscription. */
+    auth: z.string().min(1),
+  })
+  .openapi('PushSubscriptionKeys');
+
+/** The keys a browser hands over so DorkOS can encrypt a push to it. */
+export type PushSubscriptionKeys = z.infer<typeof PushSubscriptionKeysSchema>;
+
+/**
+ * What a browser sends to say "push to me here".
+ *
+ * Exactly the shape `PushSubscription.toJSON()` produces, minus the fields
+ * nothing here reads, so the client can hand it over without reshaping.
+ */
+export const RegisterPushSubscriptionRequestSchema = z
+  .object({
+    /**
+     * The push service URL that reaches this browser.
+     *
+     * A capability: anybody holding it can push to that browser. It is stored on
+     * this machine, is the row's unique key, and is never returned by any route.
+     */
+    endpoint: z.string().url(),
+    keys: PushSubscriptionKeysSchema,
+  })
+  .openapi('RegisterPushSubscriptionRequest');
+
+/** What a browser sends to say "push to me here". */
+export type RegisterPushSubscriptionRequest = z.infer<typeof RegisterPushSubscriptionRequestSchema>;
+
+/**
+ * One subscribed browser, as Settings lists it.
+ *
+ * **No endpoint, deliberately.** The endpoint is a capability URL, and a device
+ * list is a screen — it needs to tell one browser from another, not to be able
+ * to push to them. `service` is the push service's own hostname, which is what
+ * actually distinguishes one browser from another for a person reading the list.
+ */
+export const PushSubscriptionDTOSchema = z
+  .object({
+    /** ULID. What "remove this device" names. */
+    id: z.string().min(1),
+    /** The push service's hostname, e.g. `web.push.apple.com`. */
+    service: z.string(),
+    /** When this browser subscribed. ISO 8601 UTC. */
+    createdAt: z.string(),
+    /** When a push to it last succeeded. ISO 8601 UTC. */
+    lastSeenAt: z.string(),
+  })
+  .openapi('PushSubscriptionDTO');
+
+/** One subscribed browser, as Settings lists it. */
+export type PushSubscriptionDTO = z.infer<typeof PushSubscriptionDTOSchema>;
+
+/** Response body of `GET /api/push/subscriptions`. */
+export const ListPushSubscriptionsResponseSchema = z
+  .object({
+    subscriptions: z.array(PushSubscriptionDTOSchema),
+  })
+  .openapi('ListPushSubscriptionsResponse');
+
+/** Response body of `GET /api/push/subscriptions`. */
+export type ListPushSubscriptionsResponse = z.infer<typeof ListPushSubscriptionsResponseSchema>;
+
+/** Response body of `POST /api/push/subscriptions`. */
+export const RegisterPushSubscriptionResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    /** The row this browser now is, new or refreshed. */
+    subscription: PushSubscriptionDTOSchema,
+  })
+  .openapi('RegisterPushSubscriptionResponse');
+
+/** Response body of `POST /api/push/subscriptions`. */
+export type RegisterPushSubscriptionResponse = z.infer<
+  typeof RegisterPushSubscriptionResponseSchema
+>;
+
+/** Response body of `DELETE /api/push/subscriptions/:id`. */
+export const DeletePushSubscriptionResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    /** How many rows went away — 0 when it was already gone. */
+    removed: z.number().int().min(0),
+  })
+  .openapi('DeletePushSubscriptionResponse');
+
+/** Response body of `DELETE /api/push/subscriptions/:id`. */
+export type DeletePushSubscriptionResponse = z.infer<typeof DeletePushSubscriptionResponseSchema>;
+
+/**
+ * Response body of `GET /api/push/vapid-public-key`.
+ *
+ * `key: null` means this install cannot do web push at all — the keypair could
+ * not be created or read. The client shows that as "not available here" rather
+ * than offering a button that would fail.
+ */
+export const VapidPublicKeyResponseSchema = z
+  .object({
+    /** URL-safe base64 VAPID public key, or `null` when push is unavailable. */
+    key: z.string().nullable(),
+  })
+  .openapi('VapidPublicKeyResponse');
+
+/** Response body of `GET /api/push/vapid-public-key`. */
+export type VapidPublicKeyResponse = z.infer<typeof VapidPublicKeyResponseSchema>;
+
+/**
+ * Exactly what a push carries to a browser — the service worker's whole input.
+ *
+ * **This is a security boundary, not a convenience type.** A push payload is
+ * decrypted by a browser DorkOS is not open in and drawn by the operating
+ * system, often on a locked screen. So it carries a title, a short body, a route
+ * to open, and the id needed to de-duplicate — never a tool input, never
+ * transcript content, never anything a model wrote (spec, Security
+ * Considerations).
+ */
+export const WebPushPayloadSchema = z
+  .object({
+    /** The one line the banner shows. */
+    title: z.string().min(1),
+    /** An optional second line. */
+    body: z.string().optional(),
+    /** Client route to open on click, e.g. `/session?session=abc`. */
+    deepLink: z.string().min(1),
+    /**
+     * What this push is about — the notification id when there is a row, or the
+     * standing subject's key when there is not. Used as the OS notification
+     * `tag`, so a re-push about the same thing replaces rather than stacks.
+     */
+    notificationId: z.string().min(1),
+    /** How loud. Only `blocking` escalates today, and only it makes a sound. */
+    tier: NotificationTierSchema,
+  })
+  .openapi('WebPushPayload');
+
+/** Exactly what a push carries to a browser. */
+export type WebPushPayload = z.infer<typeof WebPushPayloadSchema>;

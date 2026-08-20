@@ -32,7 +32,8 @@ import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
-import type { NotificationPayload } from '../services/notifications/notification-registry.js';
+import { armEscalation } from '../services/notifications/escalation-service.js';
+import { scheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -158,24 +159,6 @@ function refusedOperatorOnlyTaskWrite(req: Request, res: Response, trusted: bool
  */
 function parksOnCreate(trusted: boolean): boolean {
   return !trusted;
-}
-
-/**
- * Describe a parked schedule for its history row.
- *
- * `proposedBy` says "An agent" rather than naming one: a schedule parks because
- * its creator did not clear the agent bar, and the row records the fact rather
- * than an identity nothing on this path resolved.
- *
- * @param task - The schedule that was waiting.
- */
-function scheduleParkPayload(task: Task): NotificationPayload<'schedule.parked'> {
-  return {
-    taskId: task.id,
-    taskName: task.displayName ?? task.name,
-    ...(task.agentId ? { agentId: task.agentId } : {}),
-    proposedBy: 'An agent',
-  };
 }
 
 /**
@@ -316,14 +299,16 @@ export function createTasksRouter(
     // after the fact — the same two-step `tasks_create` uses on the MCP servers.
     // It has to happen BEFORE the register below, or the task fires while it is
     // still waiting to be approved.
-    // W3 escalation (DOR-1387) arms its timer here — parked schedules have no
-    // observer seam, so the escalation hook lands at this write. Nothing is
-    // raised at this edge today: `schedule.parked` is a STANDING kind, which
+    // The escalation clock starts here (DOR-1387). Parked schedules have no
+    // observer seam, so the hook lands at the write that parks one. Still
+    // nothing RAISED at this edge: `schedule.parked` is a STANDING kind, which
     // stores nothing while it stands (ADR 260819-234828), and its two
-    // resolutions are recorded where the operator decides them.
+    // resolutions are recorded where the operator decides them — which is also
+    // where the timer is disarmed, through `resolveStanding`.
     if (parksOnCreate(trusted)) {
       store.updateTask(schedule.id, { status: 'pending_approval' });
       schedule = store.getTask(schedule.id)!;
+      armEscalation('schedule.parked', scheduleParkPayload(schedule));
     }
 
     if (schedule.enabled && schedule.status === 'active') {
@@ -432,6 +417,15 @@ export function createTasksRouter(
         outcome: 'approved',
         actorPrincipal: readCallerPrincipal(req, res),
       });
+    }
+
+    // ...and the symmetric edge, which this route handled in only one direction
+    // until the DOR-1387 review: a schedule PATCHed INTO `pending_approval` is a
+    // condition that has just STARTED standing, so its clock starts here exactly
+    // as it does at the two create sites. Without this, a schedule parked by an
+    // update could wait indefinitely with no escalation behind it.
+    if (existing.status !== 'pending_approval' && updated.status === 'pending_approval') {
+      armEscalation('schedule.parked', scheduleParkPayload(updated));
     }
 
     broadcastTasksChanged();

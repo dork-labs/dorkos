@@ -107,7 +107,22 @@ export interface NotificationActivityCount {
 
 /** One ledger entry: a notification handed to one channel. */
 export interface DeliveryInsert {
-  notificationId: string;
+  /**
+   * The stored row this was about, when there is one.
+   *
+   * Absent for an escalation: a standing condition writes no row while it
+   * stands, and reaching somebody about one is exactly what the ladder does
+   * (ADR 260819-234829). {@link DeliveryInsert.subjectKey} is what interprets
+   * such a row.
+   */
+  notificationId?: string;
+  /**
+   * What this delivery was about — the raising kind's dedupe key.
+   *
+   * Written for every delivery, not only escalations, so "has anything about
+   * this subject reached the operator?" is one query.
+   */
+  subjectKey?: string;
   channel: NotificationChannel;
   /** Channel-specific detail — a target handle, a refusal reason. */
   detail?: Record<string, unknown>;
@@ -228,7 +243,8 @@ export class NotificationStore {
         .insert(notificationDeliveries)
         .values({
           id: nextId(),
-          notificationId: entry.notificationId,
+          notificationId: entry.notificationId ?? null,
+          subjectKey: entry.subjectKey ?? null,
           channel: entry.channel,
           sentAt: new Date().toISOString(),
           seenAt: null,
@@ -239,6 +255,70 @@ export class NotificationStore {
     } catch (err) {
       logger.warn('[Notifications] Could not record a delivery', { err, channel: entry.channel });
     }
+  }
+
+  /**
+   * Whether this subject has already been escalated.
+   *
+   * The escalation ladder's idempotency check, and the reason a server restart
+   * inside the delay window cannot buzz a phone twice about the same Ask
+   * (ADR 260819-234829). Reads the `escalated` flag rather than the mere
+   * presence of a row, because an ordinary delivery about the same subject — a
+   * resolution that went out over Telegram, say — is not an escalation and must
+   * not suppress one.
+   *
+   * @param subjectKey - The subject, as the raising kind's dedupe key spells it.
+   */
+  hasEscalated(subjectKey: string): boolean {
+    return this.deliveriesForSubject(subjectKey).some((row) => escalatedFlag(row.detailJson));
+  }
+
+  /**
+   * Whether any delivery about this subject was marked seen or acted on.
+   *
+   * The channel-side half of "acknowledged" from ADR 260819-234829: a chat
+   * button pressed, a push tapped. The escalation service asks this before it
+   * fires.
+   *
+   * **Nothing in production writes `seen_at` or `acted_at` yet**, so today this
+   * always answers `false` and the live ack is the condition resolving. It is
+   * wired rather than deferred because it is the seam a channel-side ack hook
+   * lands on: when one arrives it writes the mark and this guard starts biting,
+   * with no change here. Said plainly so the next reader does not mistake a
+   * guard that cannot yet trigger for one that is being relied on.
+   *
+   * @internal The `false` answer is currently unconditional in production; only
+   *   tests exercise the `true` branch.
+   * @param subjectKey - The subject, as the raising kind's dedupe key spells it.
+   */
+  wasAcknowledged(subjectKey: string): boolean {
+    return this.deliveriesForSubject(subjectKey).some(
+      (row) => row.seenAt !== null || row.actedAt !== null
+    );
+  }
+
+  /**
+   * Every ledger row filed under one subject — an escalation's included, which
+   * is the whole reason `subject_key` exists beside `notification_id`.
+   *
+   * @param subjectKey - The subject, as the raising kind's dedupe key spells it.
+   */
+  deliveriesForSubject(subjectKey: string): Array<{
+    channel: NotificationChannel;
+    detailJson: string | null;
+    seenAt: string | null;
+    actedAt: string | null;
+  }> {
+    return this.db
+      .select({
+        channel: notificationDeliveries.channel,
+        detailJson: notificationDeliveries.detailJson,
+        seenAt: notificationDeliveries.seenAt,
+        actedAt: notificationDeliveries.actedAt,
+      })
+      .from(notificationDeliveries)
+      .where(eq(notificationDeliveries.subjectKey, subjectKey))
+      .all();
   }
 
   /**
@@ -411,7 +491,10 @@ export class NotificationStore {
    * from {@link HIGH_CHURN_KINDS} first, oldest of those first, and only what is
    * still over the cap after that comes off the oldest rows of any kind.
    *
-   * Ledger rows follow through the cascading foreign key.
+   * Ledger rows follow through the cascading foreign key — **except an
+   * escalation's**, which has no notification to follow. Those are the one thing
+   * here that nothing else would ever delete, so the age pass takes them
+   * directly, on the same 30-day rule.
    *
    * @returns How many notifications were deleted.
    */
@@ -421,6 +504,16 @@ export class NotificationStore {
       .delete(notifications)
       .where(lt(notifications.createdAt, cutoff))
       .run().changes;
+
+    this.db
+      .delete(notificationDeliveries)
+      .where(
+        and(
+          isNull(notificationDeliveries.notificationId),
+          lt(notificationDeliveries.sentAt, cutoff)
+        )
+      )
+      .run();
 
     let excess = this.count() - this.maxRows;
     if (excess <= 0) return deleted;
@@ -545,6 +638,23 @@ export class NotificationStore {
       ...(row.resolvedAt ? { resolvedAt: row.resolvedAt } : {}),
       ...(row.outcome ? { outcome: row.outcome as NotificationOutcome } : {}),
     };
+  }
+}
+
+/**
+ * Whether a ledger row's detail marks it as an escalation.
+ *
+ * Fails CLOSED — an unreadable detail answers `false`, which means "not yet
+ * escalated". The failure direction matters: a stray `true` would suppress the
+ * one phone ping the ladder exists to send, while a stray `false` costs at worst
+ * a duplicate the ADR already accepts at the restart margin.
+ */
+function escalatedFlag(detailJson: string | null): boolean {
+  if (!detailJson) return false;
+  try {
+    return (JSON.parse(detailJson) as { escalated?: unknown }).escalated === true;
+  } catch {
+    return false;
   }
 }
 

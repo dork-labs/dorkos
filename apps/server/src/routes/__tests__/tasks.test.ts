@@ -10,6 +10,12 @@ import {
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { RelayCore } from '@dorkos/relay';
+import {
+  EscalationService,
+  setEscalationService,
+} from '../../services/notifications/escalation-service.js';
+import type { NotificationStore } from '../../services/notifications/notification-store.js';
+import type { WebPushChannel } from '../../services/notifications/channels/web-push.js';
 
 vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
@@ -80,6 +86,27 @@ function createMockScheduler(): TaskSchedulerService {
   } as unknown as TaskSchedulerService;
 }
 
+/**
+ * Install a real escalation ladder for the cases that assert one is armed.
+ *
+ * Not wired in `beforeEach`, because every OTHER case here should run with no
+ * ladder at all — `armEscalation` is a no-op then, which is exactly the
+ * boot-order posture the routes have to survive.
+ */
+function wireEscalationService(): EscalationService {
+  const service = new EscalationService({
+    store: {
+      hasEscalated: () => false,
+      wasAcknowledged: () => false,
+      recordDelivery: () => {},
+    } as unknown as NotificationStore,
+    push: { sendToAll: vi.fn() } as unknown as WebPushChannel,
+    readDelay: () => 2,
+  });
+  setEscalationService(service);
+  return service;
+}
+
 describe('Tasks routes', () => {
   let app: express.Application;
   let store: TaskStore;
@@ -103,6 +130,8 @@ describe('Tasks routes', () => {
 
   afterEach(() => {
     store.close();
+    // Whether or not a case wired one, so a ladder never leaks into the next.
+    setEscalationService(null);
   });
 
   describe('GET /api/tasks', () => {
@@ -210,6 +239,35 @@ describe('Tasks routes', () => {
       await request(app).patch(`/api/tasks/${sched.id}`).send({ enabled: false });
 
       expect(scheduler.unregisterTask).toHaveBeenCalledWith(sched.id);
+    });
+
+    /**
+     * This route handled only the way OUT of `pending_approval` until the
+     * DOR-1387 review. A schedule parked by an update is a condition that has
+     * just started standing, so it needs the same clock the two create sites
+     * start — otherwise it could wait indefinitely with no escalation behind it.
+     */
+    it('starts the escalation clock when a schedule is parked by an update', async () => {
+      const escalation = wireEscalationService();
+      const sched = store.createTask(taskInput({ name: 'Park', prompt: 'p', cron: '0 * * * *' }));
+
+      await request(app).patch(`/api/tasks/${sched.id}`).send({ status: 'pending_approval' });
+
+      expect(escalation.armedSubjects()).toEqual([`schedule:${sched.id}`]);
+    });
+
+    it('does not re-arm a schedule that was already parked', async () => {
+      const escalation = wireEscalationService();
+      const sched = store.createTask(taskInput({ name: 'Park', prompt: 'p', cron: '0 * * * *' }));
+      store.updateTask(sched.id, { status: 'pending_approval' });
+
+      await request(app).patch(`/api/tasks/${sched.id}`).send({ status: 'pending_approval' });
+
+      // Nothing armed it on the way in (this test never called the create
+      // path), and an update that does not CHANGE the status is not a new
+      // condition — so the transition guard, not the service's idempotency, is
+      // what has to keep this empty.
+      expect(escalation.armedSubjects()).toEqual([]);
     });
   });
 
