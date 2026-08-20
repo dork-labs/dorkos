@@ -15,9 +15,8 @@ import { toast } from 'sonner';
 import { resolveAgentVisual } from '@/layers/shared/lib';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useRoomOpenThreadStore } from '@/layers/entities/room';
-import { useIdleNudgeStore } from '@/layers/entities/attention';
 import { useDiscoveryStore } from '@/layers/entities/discovery';
-import { useAgentCreationStore } from '@/layers/shared/model';
+import { TransportProvider, useAgentCreationStore } from '@/layers/shared/model';
 import { useCreateFlowStore } from '../model/create-flow-store';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { ALL_CLEAR_BEAT_MS } from '../model/use-all-clear-beat';
@@ -27,6 +26,7 @@ import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
+import type { Task } from '@dorkos/shared/types';
 import { useSessionListStore } from '@/layers/entities/session';
 
 /** An agent member reference — `pinned`, `muted` and `items` all hold these. */
@@ -99,9 +99,20 @@ const mockNavigate = vi.fn((opts: { to?: string; search?: unknown }) => {
   mockPathname = mockLocation.pathname;
 });
 let mockPathname = '/';
+/**
+ * The router's own `navigate`, which takes a raw `href`.
+ *
+ * Separate from `mockNavigate` because the two are different doors: a typed
+ * route goes through `useNavigate`, and an attention row's deep link is a
+ * string the signal supplied, so `SidebarChrome` hands it to the router
+ * directly. A test that watched only the first would see a schedule row do
+ * nothing at all.
+ */
+const mockRouterNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
   useRouter: () => ({
+    navigate: mockRouterNavigate,
     state: {
       get location() {
         return mockLocation;
@@ -161,6 +172,39 @@ const mockRecent = vi.fn<() => RecentResult>(() => ({
 const mockApprovals = vi.fn<() => PendingApproval[]>(() => []);
 
 /**
+ * Whether this cockpit has the Tasks subsystem switched on.
+ *
+ * Off by default, which is what every case that predates schedules-in-Heads-up
+ * assumes: a cockpit with tasks disabled parks nothing, so those rows are the
+ * rows they always were.
+ */
+let mockTasksEnabled = false;
+
+/** The schedules `GET /api/tasks` returns. Empty unless a case says otherwise. */
+const mockTasks = vi.fn<() => Task[]>(() => []);
+
+/** A schedule an agent proposed and parked (DOR-504). */
+function parkedSchedule(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
+  return {
+    name: overrides.id,
+    displayName: null,
+    description: null,
+    prompt: 'Audit the config migration.',
+    cron: '0 3 * * *',
+    timezone: 'UTC',
+    agentId: null,
+    enabled: false,
+    maxRuntime: null,
+    permissionMode: 'default',
+    status: 'pending_approval',
+    filePath: `/tasks/${overrides.id}.json`,
+    createdAt: '2026-08-19T09:00:00.000Z',
+    updatedAt: '2026-08-19T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/**
  * Whether the operator asked for less motion.
  *
  * A `let` behind a mock rather than a redefined `matchMedia`: BC-50 turns on
@@ -176,13 +220,23 @@ vi.mock('motion/react', async (importOriginal) => ({
 const mockRooms = vi.fn<() => RoomSummary[]>(() => []);
 const mockThreads = vi.fn<() => ThreadSummary[]>(() => []);
 const mockTransport = {
-  getConfig: vi.fn().mockResolvedValue({ agents: { defaultAgent: 'dorkbot' } }),
+  // `tasks.enabled` is read live rather than pinned: `useFeatureEnabled` gates
+  // the schedule queue on it, and the queue is what puts a parked schedule in
+  // Heads up (DOR-1391).
+  getConfig: vi.fn(() =>
+    Promise.resolve({
+      agents: { defaultAgent: 'dorkbot' },
+      tasks: { enabled: mockTasksEnabled },
+    })
+  ),
   listMeshAgentPaths: vi.fn(),
   resolveAgents: vi.fn().mockResolvedValue({}),
   listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
   listRooms: vi.fn(() => Promise.resolve(mockRooms())),
   // The permission queue Heads up draws from (BC-5). Empty unless a case says otherwise.
   listPendingApprovals: vi.fn(() => Promise.resolve({ approvals: mockApprovals() })),
+  // The schedule queue behind the fourth blockage. Empty unless a case parks one.
+  listTasks: vi.fn(() => Promise.resolve(mockTasks())),
   listThreads: vi.fn(() => Promise.resolve(mockThreads())),
 };
 
@@ -443,9 +497,16 @@ function renderWithProviders(ui: React.ReactElement) {
     queryClient,
     ...render(
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <SidebarProvider>{ui}</SidebarProvider>
-        </TooltipProvider>
+        {/* The real provider, not the `useTransport` stub above: hooks reached
+            through `shared/model`'s barrel get the stub, but `useFeatureEnabled`
+            imports `TransportContext` by relative path — so the schedule queue
+            behind Heads up's fourth blockage needs a context that really
+            exists (DOR-1391). */}
+        <TransportProvider transport={mockTransport as never}>
+          <TooltipProvider>
+            <SidebarProvider>{ui}</SidebarProvider>
+          </TooltipProvider>
+        </TransportProvider>
       </QueryClientProvider>
     ),
   };
@@ -584,9 +645,11 @@ describe('DashboardSidebar', () => {
     mockSidebarPrefs.mockReturnValue(makePrefs({ gettingStarted: { retired: ALL_SUGGESTIONS } }));
     mockApprovals.mockReset();
     mockApprovals.mockReturnValue([]);
+    mockTasks.mockReset();
+    mockTasks.mockReturnValue([]);
+    mockTasksEnabled = false;
     mockReducedMotion = false;
     useSessionListStore.getState().resetStatuses();
-    useIdleNudgeStore.getState().reset();
     mockRooms.mockReset();
     mockRooms.mockReturnValue([]);
     mockThreads.mockReset();
@@ -1237,7 +1300,6 @@ describe('Heads up — the zone that justifies the redesign', () => {
     localStorage.clear();
     useInteractionStore.getState().reset();
     useSessionListStore.getState().resetStatuses();
-    useIdleNudgeStore.getState().reset();
     mockReducedMotion = false;
     mockMeshPaths.mockReset();
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
@@ -1258,6 +1320,9 @@ describe('Heads up — the zone that justifies the redesign', () => {
     mockSidebarPrefs.mockReturnValue(makePrefs({ gettingStarted: { retired: ALL_SUGGESTIONS } }));
     mockApprovals.mockReset();
     mockApprovals.mockReturnValue([]);
+    mockTasks.mockReset();
+    mockTasks.mockReturnValue([]);
+    mockTasksEnabled = false;
     mockRooms.mockReset();
     mockRooms.mockReturnValue([]);
     mockThreads.mockReset();
@@ -1381,10 +1446,12 @@ describe('Heads up — the zone that justifies the redesign', () => {
   });
 
   describe('BC-6 — priority order', () => {
-    it('answers permission prompt, question, error, idle-timeout', async () => {
+    it('answers permission prompt, then error — and says nothing about quiet', async () => {
       mockApprovals.mockReturnValue([]);
       seedSessions([
-        // Quiet for 45 minutes: past the nudge threshold, inside the day window.
+        // Quiet for 45 minutes, which is exactly what the retired idle nudge
+        // fired on (DOR-1391). Its absence from the rows is the assertion, and
+        // the two rows beside it are what keeps that absence meaningful.
         {
           session: recentSession('idle-1', {
             title: 'Idle one',
@@ -1398,11 +1465,40 @@ describe('Heads up — the zone that justifies the redesign', () => {
       await renderSidebarWithNow();
       await waitFor(() => expect(nowZone()).not.toBeNull());
 
-      expect(zoneRows(nowZone())).toEqual([
-        'alpha›Waiting on you',
-        'alpha›Stopped with an error',
-        'alpha›Went quiet',
+      expect(zoneRows(nowZone())).toEqual(['alpha›Waiting on you', 'alpha›Stopped with an error']);
+    });
+
+    it('puts a parked schedule between the prompts and the error (DOR-1391)', async () => {
+      mockTasksEnabled = true;
+      mockTasks.mockReturnValue([parkedSchedule({ id: 'tsk-1', displayName: 'Nightly audit' })]);
+      seedSessions([
+        { session: recentSession('err-1', { title: 'Wedged one' }), lifecycle: 'error' },
+        { session: recentSession('blk-1', { title: 'Blocked one' }), lifecycle: 'blocked' },
       ]);
+      await renderSidebarWithNow();
+
+      await waitFor(() =>
+        expect(zoneRows(nowZone())).toEqual([
+          'alpha›Waiting on you',
+          'Nightly audit›Wants to run on a timer',
+          'alpha›Stopped with an error',
+        ])
+      );
+    });
+
+    it('opens the Tasks page when the schedule row is pressed', async () => {
+      mockTasksEnabled = true;
+      mockTasks.mockReturnValue([parkedSchedule({ id: 'tsk-1', displayName: 'Nightly audit' })]);
+      await renderSidebarWithNow();
+      await waitFor(() =>
+        expect(zoneRows(nowZone())).toEqual(['Nightly audit›Wants to run on a timer'])
+      );
+
+      mockNavigate.mockClear();
+      fireEvent.click(nowZone()!.querySelector('[data-sidebar-row]')!);
+      // An attention row travels by raw href, which is what `SidebarChrome`
+      // hands the router for every signal's deep link.
+      expect(mockRouterNavigate).toHaveBeenCalledWith({ href: '/tasks' });
     });
   });
 
@@ -1486,8 +1582,10 @@ describe('Heads up — the zone that justifies the redesign', () => {
     });
   });
 
-  describe('BC-10 / BC-42 — dismissal, and the absence of snooze', () => {
-    it('removes an idle nudge for the session and writes NOTHING to config', async () => {
+  describe('BC-42 / DOR-1391 — nothing in Heads up can be waved away', () => {
+    it('draws no row at all for a session that has only gone quiet', async () => {
+      // The retired nudge, at the exact staleness it used to fire on. The zone
+      // does not appear, because nothing else here needs anybody.
       seedSessions([
         {
           session: recentSession('idle-1', {
@@ -1496,50 +1594,41 @@ describe('Heads up — the zone that justifies the redesign', () => {
           lifecycle: 'idle',
         },
       ]);
-      await renderSidebarWithNow();
-      await waitFor(() => expect(zoneRows(nowZone())).toEqual(['alpha›Went quiet']));
-
-      mockUpdateSidebar.mockClear();
-      act(() => {
-        useIdleNudgeStore.getState().dismiss('idle:idle-1');
-      });
-
-      // The row is gone. The zone is briefly still there, drawing the all-clear
-      // beat — which is BC-50 doing its job on the same transition.
-      await waitFor(() => expect(zoneRows(nowZone())).toEqual([]));
-      expect(document.querySelector('[data-slot="sidebar-all-clear"]')).not.toBeNull();
-      expect(mockUpdateSidebar).not.toHaveBeenCalled();
-    });
-
-    it('and the prefs writer this asserts on is one that really does fire', () => {
-      // The other half of "wrote nothing". `mockUpdateSidebar` is the same spy
-      // the folding suite above drives; a case that only ever asserted
-      // `not.toHaveBeenCalled()` would pass against a spy nothing can reach.
       renderWithProviders(<DashboardSidebar />);
-      mockUpdateSidebar.mockClear();
-      fireEvent.click(sectionToggle('Agents'));
-      expect(mockUpdateSidebar).toHaveBeenCalled();
+      await waitFor(() => expect(document.body.textContent).toContain('Agents'));
+
+      expect(nowZone()).toBeNull();
+      expect(document.body.textContent).not.toContain('Went quiet');
     });
 
-    it('offers a dismiss on the nudge and on nothing else in Heads up', async () => {
+    it('offers no row menu anywhere in Heads up', async () => {
+      // Every kind at once, including the schedule that arrived with DOR-1391:
+      // not one of them is dismissible, so not one of them has a "⋯".
       mockApprovals.mockReturnValue([pendingApproval()]);
+      mockTasksEnabled = true;
+      mockTasks.mockReturnValue([parkedSchedule({ id: 'tsk-1', displayName: 'Nightly audit' })]);
       seedSessions([
-        {
-          session: recentSession('idle-1', {
-            updatedAt: new Date(Date.now() - 45 * 60_000).toISOString(),
-          }),
-          lifecycle: 'idle',
-        },
+        { session: recentSession('err-1', { title: 'Wedged one' }), lifecycle: 'error' },
       ]);
       await renderSidebarWithNow();
-      await waitFor(() => expect(zoneRows(nowZone())).toHaveLength(2));
+      // Three rows first: an assertion about "no menus" over an empty zone
+      // would pass against a sidebar that drew nothing at all.
+      await waitFor(() => expect(zoneRows(nowZone())).toHaveLength(3));
 
-      const menus = nowZone()!.querySelectorAll('[data-sidebar-actions]');
-      expect(menus).toHaveLength(1);
-      expect(menus[0]?.getAttribute('aria-label')).toBe('alpha actions');
+      expect(nowZone()!.querySelectorAll('[data-sidebar-actions]')).toHaveLength(0);
     });
 
-    it('offers no snooze anywhere in the sidebar', () => {
+    it('and a row that DOES carry a menu still draws one, elsewhere in the panel', async () => {
+      // The discriminating half: `data-sidebar-actions` is a real handle this
+      // panel emits, so its absence above is a fact about Heads up rather than
+      // about the selector.
+      renderWithProviders(<DashboardSidebar />);
+      await waitFor(() => expect(document.body.textContent).toContain('Agents'));
+
+      expect(document.querySelectorAll('[data-sidebar-actions]').length).toBeGreaterThan(0);
+    });
+
+    it('offers no snooze and no dismiss anywhere in the sidebar', () => {
       const dir = join(__dirname, '..');
       const files = [
         'ui/SidebarModelRow.tsx',
@@ -1549,7 +1638,7 @@ describe('Heads up — the zone that justifies the redesign', () => {
         'model/rules/select-now-items.ts',
         'model/rules/cap-now-items.ts',
       ];
-      // Comments stripped: the word appears in prose SAYING there is no snooze,
+      // Comments stripped: both words appear in prose SAYING there is neither,
       // and a scan that reds on its own explanation would be satisfied by
       // deleting the explanation.
       const code = files.map((f) =>
@@ -1560,9 +1649,15 @@ describe('Heads up — the zone that justifies the redesign', () => {
       // Named files, read for real: a scan over a directory that had been
       // renamed would report the same clean answer as one that is really clean.
       expect(code).toHaveLength(files.length);
-      for (const source of code) expect(source.toLowerCase()).not.toContain('snooze');
+      for (const source of code) {
+        expect(source.toLowerCase()).not.toContain('snooze');
+        // DOR-1391 retired the one dismissible thing in the zone with the idle
+        // nudge itself, so the store, its helper and the menu that ran it are
+        // all gone from these files.
+        expect(source).not.toContain('dismiss');
+      }
       // And the read reaches real code — a spelling that IS there is found.
-      expect(code.some((source) => source.includes('dismissIdleNudge'))).toBe(true);
+      expect(code.some((source) => source.includes('selectNowItems'))).toBe(true);
     });
   });
 
@@ -1750,7 +1845,6 @@ describe('Getting started — Heads up’s first life stage (BC-4, BC-12 → BC-
     localStorage.clear();
     useInteractionStore.getState().reset();
     useSessionListStore.getState().resetStatuses();
-    useIdleNudgeStore.getState().reset();
     useDiscoveryStore.setState({ candidates: [] });
     mockReducedMotion = false;
     // A day-one install: DorkBot and nothing else, no session ever.
@@ -1771,6 +1865,9 @@ describe('Getting started — Heads up’s first life stage (BC-4, BC-12 → BC-
     });
     mockApprovals.mockReset();
     mockApprovals.mockReturnValue([]);
+    mockTasks.mockReset();
+    mockTasks.mockReturnValue([]);
+    mockTasksEnabled = false;
     mockRooms.mockReset();
     mockRooms.mockReturnValue([]);
     mockThreads.mockReset();
@@ -1943,11 +2040,13 @@ function mountSidebar() {
   const refresh = () =>
     view.rerender(
       <QueryClientProvider client={view.queryClient}>
-        <TooltipProvider>
-          <SidebarProvider>
-            <DashboardSidebar />
-          </SidebarProvider>
-        </TooltipProvider>
+        <TransportProvider transport={mockTransport as never}>
+          <TooltipProvider>
+            <SidebarProvider>
+              <DashboardSidebar />
+            </SidebarProvider>
+          </TooltipProvider>
+        </TransportProvider>
       </QueryClientProvider>
     );
   return { ...view, refresh };
@@ -1967,7 +2066,6 @@ describe('Today — what you were doing, and it holds still', () => {
     localStorage.clear();
     useInteractionStore.getState().reset();
     useSessionListStore.getState().resetStatuses();
-    useIdleNudgeStore.getState().reset();
     mockReducedMotion = false;
     mockMeshPaths.mockReset();
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
@@ -1984,6 +2082,9 @@ describe('Today — what you were doing, and it holds still', () => {
     });
     mockApprovals.mockReset();
     mockApprovals.mockReturnValue([]);
+    mockTasks.mockReset();
+    mockTasks.mockReturnValue([]);
+    mockTasksEnabled = false;
     mockRooms.mockReset();
     mockRooms.mockReturnValue([]);
     mockThreads.mockReset();

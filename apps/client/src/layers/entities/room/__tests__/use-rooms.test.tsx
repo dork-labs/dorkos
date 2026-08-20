@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomSummary } from '@dorkos/shared/room-schemas';
+import { toast } from 'sonner';
+import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 import { useRooms, useRoomsByKind } from '../model/use-rooms';
 import { useRoom, useRoomEntries } from '../model/use-room';
 import { useCreateChannel, useStartDirectMessage } from '../model/use-create-room';
@@ -315,6 +319,40 @@ describe('useStartDirectMessage', () => {
     // A group is one atomic create too — not a create followed by N joins, any
     // of which could fail and leave a half-assembled conversation.
     expect(transport.addRoomMember).not.toHaveBeenCalled();
+  });
+
+  it('reports a failure ONCE, even when the caller has already gone (DOR-1391)', async () => {
+    // The defect this closes: the failure used to be reported by `NewMenu`'s
+    // per-call `mutate(vars, { onError })`, which TanStack dispatches only
+    // while the observer still has listeners. Closing the sidebar sheet on a
+    // phone mid-request meant nobody was ever told. `meta.errorLabel` runs on
+    // the mutation itself, so it survives the unmount below.
+    //
+    // The REAL error policy, not a re-declared one: a hand-rolled cache here
+    // would be asserting the test's own handler rather than the app's.
+    const transport = createMockTransport({
+      createRoom: vi.fn().mockRejectedValue(new Error('That agent is not registered')),
+    });
+    const queryClient = new QueryClient(createQueryClientConfig());
+    const { result, unmount } = renderHook(() => useStartDirectMessage(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      ),
+    });
+
+    act(() => {
+      result.current.mutate({ agentPaths: ['/repo/ana'], title: 'Ana' });
+    });
+    unmount();
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+    // One line, naming the action in the person's terms and then the server's
+    // own sentence — never two toasts in two voices.
+    expect(vi.mocked(toast.error).mock.calls[0]?.[0]).toBe(
+      "Couldn't start that conversation — That agent is not registered"
+    );
   });
 });
 

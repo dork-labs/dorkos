@@ -48,6 +48,7 @@ import { rankNowItems } from './rules/rank-now-items';
 import { rollUpCollapsedSection } from './rules/roll-up-collapsed-section';
 import { selectNowItems } from './rules/select-now-items';
 import { revealAutomated, selectTodayItems } from './rules/select-today-items';
+import { suppressCoveredNowItems } from './rules/suppress-covered-now-items';
 import { anchorKey } from './rules/targets';
 import type { SidebarState } from './sidebar-state';
 
@@ -155,7 +156,7 @@ export type SidebarSectionId =
   | `group:${string}`;
 
 /** What kind of blockage put an item in Heads up. The only four that may (BC-5). */
-export type NowKind = 'permission-prompt' | 'question' | 'error' | 'idle-timeout';
+export type NowKind = 'permission-prompt' | 'question' | 'error' | 'schedule-approval';
 
 /**
  * A Getting-started suggestion's id.
@@ -195,7 +196,8 @@ export type SidebarIconId =
   | 'permission'
   | 'question'
   | 'error'
-  | 'idle'
+  /** A schedule an agent proposed and parked, waiting for a yes or a no. */
+  | 'schedule'
   | 'overflow'
   | 'working'
   | 'automated'
@@ -304,8 +306,15 @@ export interface SidebarRowModel {
    * chip's condition and the row has no threshold of its own to disagree with.
    */
   liveCount?: number;
-  /** Heads up-only. Drives priority and the dismiss affordance. */
-  attention?: { kind: NowKind; since: string; dismissible: boolean };
+  /**
+   * Heads up-only. Drives priority (BC-6).
+   *
+   * **Nothing in Heads up can be waved away, so there is no dismissible bit
+   * here** (BC-42). One thing ever could — the idle nudge — and DOR-1391
+   * retired the nudge itself; a flag that is false on every row is a flag whose
+   * only remaining job is to invite a fifth kind that reads it.
+   */
+  attention?: { kind: NowKind; since: string };
   /** Whether the operator muted this target (BC-40). */
   muted: boolean;
   /** False for every row outside Library (R3). */
@@ -430,9 +439,16 @@ export const ZONE_LABEL: Record<SidebarZoneId, string> = {
  * A verb change or an unread change must never reach a screen reader from here;
  * a fleet of thirty agents would turn one into a siren.
  *
+ * **Exported for the one caller that has to say it without a zone to read it
+ * off.** On the phone, every blockage can be drawn as a card by the lead slot,
+ * which leaves Heads up with no rows and therefore no zone — and the sentence is
+ * still true, because the cards are what the person is being told about
+ * (DOR-1391). A second spelling of these words in the widget is how a rename
+ * half-lands, so the widget calls this instead.
+ *
  * @param count - How many things need the operator.
  */
-function liveRegionText(count: number): string | undefined {
+export function needsYouLiveRegionText(count: number): string | undefined {
   if (count === 0) return undefined;
   return count === 1 ? '1 agent needs you' : `${count} agents need you`;
 }
@@ -522,7 +538,11 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
   // prompt already produces, and it is the direction the design record points.
   const attentionRows = rankNowItems(selectNowItems(state));
   const workingRollup = buildWorkingRollup(state);
-  const nowRows = [...capNowItems(attentionRows), ...(workingRollup ? [workingRollup] : [])];
+  // Whatever a lead slot above the zone is already drawing as a card leaves the
+  // rows — the phone only, and before the cap so a fold can never summarize
+  // things the reader can already see. `attentionRows` above stays the count.
+  const drawnRows = suppressCoveredNowItems(attentionRows, state.coveredSignalIds);
+  const nowRows = [...capNowItems(drawnRows), ...(workingRollup ? [workingRollup] : [])];
 
   if (nowRows.length > 0) {
     const zone = bodyZone('now', nowRows, 'zone:now', state);
@@ -532,7 +552,7 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
       // number as well as a sentence, so the mobile Home badge and this live
       // region are one fact rather than two (P4 AC-2).
       zone.needsYouCount = attentionRows.length;
-      zone.liveRegionText = liveRegionText(zone.needsYouCount);
+      zone.liveRegionText = needsYouLiveRegionText(zone.needsYouCount);
       // …and the same number rides the fold. Heads up's roll-up counts what
       // needs answering rather than what is in the list, so folding it can
       // never be a quiet way to put a permission prompt out of sight (D1).
@@ -540,7 +560,14 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
       if (body?.rollup) body.rollup.needsYouCount = zone.needsYouCount;
       zones.push(zone);
     }
-  } else {
+  } else if (attentionRows.length === 0) {
+    // **`attentionRows`, not `nowRows` — and the difference is the phone.** The
+    // lead slot can cover every blockage there, which empties `nowRows` while
+    // things genuinely are waiting (DOR-1391). Handing Getting started the slot
+    // in that state would put day-one suggestions above an agent that is
+    // stopped, and BC-4's rule is the opposite: real signals always win. So a
+    // covered queue yields NEITHER zone, and the cards the renderer draws in
+    // Heads up's place are the whole of what that zone says.
     const suggestions = buildGettingStarted(state);
     const zone = bodyZone('getting-started', suggestions, 'zone:getting-started', state);
     if (zone) zones.push(zone);

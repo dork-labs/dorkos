@@ -25,7 +25,6 @@ function signal(
     primary: id,
     since: hoursAgo(hours),
     deepLink: `/session?sessionId=${id}`,
-    dismissible: kind === 'idle-timeout',
   };
 }
 
@@ -43,15 +42,25 @@ describe('BC-5 — only four things enter Heads up', () => {
         signal('a', 'permission-prompt', 1),
         signal('b', 'question', 1),
         signal('c', 'error', 1),
-        signal('d', 'idle-timeout', 1),
+        signal('d', 'schedule-approval', 1),
       ],
     };
     expect(selectNowItems(state).map((row) => row.reason)).toEqual([
       'now:permission-prompt',
       'now:question',
       'now:error',
-      'now:idle-timeout',
+      'now:schedule-approval',
     ]);
+  });
+
+  it('draws a parked schedule with the calendar glyph, not an agent face', () => {
+    // A schedule belongs to nobody's face — `deriveAttentionSignals` gives it no
+    // `agentPath` — so the glyph slot carries the semantic icon instead.
+    const rows = selectNowItems({
+      ...busyFixture,
+      attention: [signal('tsk', 'schedule-approval', 0.3)],
+    });
+    expect(rows[0]?.glyph).toEqual({ kind: 'icon', icon: 'schedule' });
   });
 
   it('has no branch that admits a mention, a DM or an unread channel', () => {
@@ -83,18 +92,20 @@ describe('BC-6 — priority order', () => {
       selectNowItems({
         ...busyFixture,
         attention: [
-          signal('idle', 'idle-timeout', 1),
           signal('err', 'error', 1),
+          signal('tsk', 'schedule-approval', 1),
           signal('q', 'question', 1),
           signal('perm', 'permission-prompt', 1),
         ],
       })
     );
+    // A parked schedule sits above the error and below the two prompts: it is
+    // blocked, and it is the one blockage with no clock on it (DOR-1391).
     expect(rows.map((row) => row.attention?.kind)).toEqual([
       'permission-prompt',
       'question',
+      'schedule-approval',
       'error',
-      'idle-timeout',
     ]);
   });
 
@@ -249,6 +260,117 @@ describe('BC-9 — the working rollup', () => {
     // The automated session contributed no working row, and the blocked one it
     // raised is present — one state proving both halves at once.
     expect(rows.map((row) => row.reason)).toEqual(['now:permission-prompt']);
+  });
+});
+
+describe('DOR-1391 — one blockage, one place (the phone lead slot)', () => {
+  /** Three blockages, one of which the phone's cards would also draw. */
+  const three: SidebarAttentionSignal[] = [
+    signal('approval:apr-1', 'permission-prompt', 1),
+    signal('blocked:q-1', 'question', 0.5),
+    signal('error:ses-9', 'error', 0.2),
+  ];
+
+  it('leaves every row alone when nothing above the zone draws a card', () => {
+    // Desktop, which passes no covered ids at all. The half that proves the
+    // suppression below is the phone's and not everyone's.
+    const rows = zoneRows({ ...busyFixture, attention: three, workingSessionIds: [] }, 'now');
+    expect(rows.map((row) => row.target.kind === 'attention' && row.target.signalId)).toEqual([
+      'approval:apr-1',
+      'blocked:q-1',
+      'error:ses-9',
+    ]);
+  });
+
+  it('drops the rows whose signal the lead slot already draws', () => {
+    const rows = zoneRows(
+      {
+        ...busyFixture,
+        attention: three,
+        workingSessionIds: [],
+        coveredSignalIds: ['approval:apr-1', 'blocked:q-1'],
+      },
+      'now'
+    );
+    // The wedged session is left: no card covers it, and the row is the only
+    // thing on the phone that says so.
+    expect(rows.map((row) => row.target.kind === 'attention' && row.target.signalId)).toEqual([
+      'error:ses-9',
+    ]);
+  });
+
+  it('still counts what it stopped drawing — the badge does not lie', () => {
+    // A card on screen is still something waiting on a person, so BC-11's
+    // count and the phone's tab badge report all three.
+    const zone = buildSidebarModel({
+      ...busyFixture,
+      attention: three,
+      workingSessionIds: [],
+      coveredSignalIds: ['approval:apr-1', 'blocked:q-1'],
+    }).zones.find((entry) => entry.id === 'now');
+    expect(zone?.needsYouCount).toBe(3);
+    expect(zone?.liveRegionText).toBe('3 agents need you');
+  });
+
+  it('suppresses BEFORE the cap, so no "+ N more" survives its own rows', () => {
+    // Seven asks on a phone: the cards draw all seven, and a fold saying
+    // "+ 4 more" underneath them would be summarizing what is already on
+    // screen. Applied before the cap, there is simply nothing left to fold.
+    const seven = Array.from({ length: 7 }, (_, index) =>
+      signal(`blocked:q-${index}`, 'question', index + 1)
+    );
+    const covered = seven.map((s) => s.id);
+    const state = {
+      ...busyFixture,
+      attention: seven,
+      workingSessionIds: [],
+      coveredSignalIds: covered,
+    };
+    // Asserted as "no Heads up zone at all", never as "the zone drew no rows":
+    // an empty row list is also what `zoneRows` returns for a zone that is
+    // simply absent, so the two are told apart by naming the zones that exist.
+    expect(buildSidebarModel(state).zones.map((zone) => zone.id)).not.toContain('now');
+    expect(zoneRows(state, 'now')).toEqual([]);
+
+    // And the discriminating half: the same seven WITHOUT the cards keep their
+    // three rows and the fold.
+    const uncovered = zoneRows({ ...busyFixture, attention: seven, workingSessionIds: [] }, 'now');
+    expect(uncovered.map((row) => row.reason).at(-1)).toBe('rollup:now-overflow');
+  });
+
+  it('never hands the slot to Getting started while blockages are merely covered', () => {
+    // **The one that hides a blocked agent.** With every blockage drawn as a
+    // card, Heads up has no rows — and a day-one cockpit still has suggestions,
+    // so Getting started took the slot. `SidebarZones` then read the slot as
+    // spoken for and drew the cards NOWHERE: an agent stopped and waiting,
+    // invisible on the phone's Home tab, behind a list of things to try. BC-4's
+    // rule is that real signals always win, and a covered blockage is still a
+    // real signal.
+    const state = {
+      ...firstRunFixture,
+      attention: [signal('approval:apr-1', 'permission-prompt', 1)],
+      coveredSignalIds: ['approval:apr-1'],
+    };
+    // First, the trap is real: the same fixture WITHOUT a blockage does offer
+    // suggestions, so the assertion below cannot pass vacuously.
+    expect(buildSidebarModel(firstRunFixture).zones.map((zone) => zone.id)).toContain(
+      'getting-started'
+    );
+
+    expect(buildSidebarModel(state).zones.map((zone) => zone.id)).not.toContain('getting-started');
+    expect(buildSidebarModel(state).zones.map((zone) => zone.id)).not.toContain('now');
+  });
+
+  it('leaves the working rollup standing — a card is not a turn', () => {
+    const rows = zoneRows(
+      {
+        ...busyFixture,
+        attention: three,
+        coveredSignalIds: three.map((s) => s.id),
+      },
+      'now'
+    );
+    expect(rows.map((row) => row.reason)).toEqual(['rollup:working']);
   });
 });
 

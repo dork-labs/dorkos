@@ -18,13 +18,18 @@
  *
  * @module entities/attention
  */
-export { dismissIdleNudge, useIdleNudgeStore } from './model/idle-nudge-store';
 export { useAttentionSignals, useAttentionSignalsLoading } from './model/use-attention-signals';
 // The signal shape, which two layers now name in their own types:
 // `features/dashboard-attention` picks the `error` kind out of the list and
 // draws it, and `widgets/home` declares that subset as a prop. Both need the
 // noun; neither needs the union of kinds, so that stays unexported.
 export type { AttentionSignal } from './model/attention-signal';
+// **The payload behind a `schedule-approval` signal, never a second answer to
+// "what needs me".** Since DOR-1391 a parked schedule IS an attention signal,
+// so membership, counts and loading all come from `useAttentionSignals`; this
+// stays exported for the one thing a normalized signal cannot do — hand a
+// surface the `Task` its approve/reject card is built from. Exactly the split
+// `usePendingApprovals` already has beside `permission-prompt`.
 export { usePendingScheduleApprovals } from './model/use-pending-schedule-approvals';
 export { usePendingApprovals, PENDING_APPROVALS_QUERY_KEY } from './model/use-pending-approvals';
 export {

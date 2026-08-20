@@ -90,11 +90,10 @@ const threads: ThreadSummary[] = Array.from({ length: 4 }, (_, index) =>
 
 const attention: SidebarAttentionSignal[] = Array.from({ length: SIGNAL_COUNT }, (_, index) => ({
   id: `sig-${index}`,
-  kind: (['permission-prompt', 'question', 'error', 'idle-timeout'] as const)[index % 4],
+  kind: (['permission-prompt', 'question', 'error', 'schedule-approval'] as const)[index % 4],
   primary: displayNames[agentPath(index)] ?? `agent-${index}`,
   since: hoursAgo(index * 0.1 + 0.1),
   deepLink: `/session?sessionId=ses-${index}`,
-  dismissible: index % 4 === 3,
   agentPath: agentPath(index),
 }));
 
@@ -170,5 +169,5 @@ export const powerFixture: SidebarState = emptyState({
     hasPostedInTeam: true,
     hasDorkBotSession: true,
   },
-  digest: { finishedWhileAwayCount: 0 },
+  digest: { finishedWhileAwayCount: 0, idleWhileAwayCount: 0 },
 });

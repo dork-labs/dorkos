@@ -75,7 +75,6 @@ const ERRORS: AttentionSignal[] = [
     secondary: 'Stopped with an error',
     since: minutesFromLoad(-8),
     deepLink: '/session?session=ses-9',
-    dismissible: false,
     agentPath: '/Users/dev/agents/tangerines',
   },
 ];

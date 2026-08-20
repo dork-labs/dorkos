@@ -69,14 +69,10 @@ export interface AgentRosterEntry {
  * One thing that needs the operator, as the model reads it.
  *
  * **A view type, not the entity.** `entities/attention` and its
- * `useAttentionSignals` land in P2.2, normalizing today's two sibling-feature
- * sources; the assembly hook maps that entity into this shape in one place.
- * The model taking a narrow view of it is what lets the rules be tested with a
- * literal instead of a normalizer.
- *
- * Dismissed idle nudges (BC-10) never reach here: dismissal lives in P2.2's
- * in-memory store and is applied while this list is assembled, so a rule never
- * has to ask whether something was waved away.
+ * `useAttentionSignals` normalize every source that can raise a blockage; the
+ * assembly hook maps that entity into this shape in one place. The model
+ * taking a narrow view of it is what lets the rules be tested with a literal
+ * instead of a normalizer.
  */
 export interface SidebarAttentionSignal {
   /** Stable id of the blockage — a permission request id, an episode id. */
@@ -91,8 +87,6 @@ export interface SidebarAttentionSignal {
   since: string;
   /** Where clicking it goes — the approval, the question, the wedged session. */
   deepLink: string;
-  /** Whether the operator may wave it away. Idle nudges only (BC-10, BC-42). */
-  dismissible: boolean;
   /** The agent this is about, when there is a face to draw. */
   agentPath?: string;
 }
@@ -127,6 +121,18 @@ export interface JourneyFacts {
 export interface DigestState {
   /** How many pieces of work finished during the absence. Zero means no row. */
   finishedWhileAwayCount: number;
+  /**
+   * How many sessions moved during the absence and then went still.
+   *
+   * **What Heads up's "Went quiet" row became** (DOR-1391), counted and named
+   * as stillness rather than as stalling — nothing on a session record marks a
+   * clean end, so the row says "idle". It never brings the
+   * digest row into existence on its own — that stays
+   * {@link DigestState.finishedWhileAwayCount}'s job, so the row still means
+   * "something happened while you were out" — but when there IS a digest, this
+   * is the half of it worth saying out loud, and the row says it.
+   */
+  idleWhileAwayCount: number;
 }
 
 /**
@@ -184,6 +190,25 @@ export interface SidebarState {
   displayNames: Readonly<Record<string, string>>;
   /** What needs the operator. The only source Heads up draws from (BC-5). */
   attention: readonly SidebarAttentionSignal[];
+  /**
+   * Signal ids something ABOVE Heads up's rows is already drawing as a card.
+   *
+   * **The phone only, and empty everywhere else.** The mobile Home tab puts an
+   * answerable card at the top of Heads up for every approval and every prompt
+   * (`widgets/mobile-tabs`'s lead slot, P4 AC-5), and until DOR-1391 the same
+   * blockage then drew a second time as a row underneath it — one ask, one card
+   * and one "Heads up" line, in one viewport. The desktop panel has no lead
+   * slot at all, so it passes nothing here and is unchanged.
+   *
+   * A list of ids rather than a "mobile" flag, because the model must not learn
+   * what a viewport is: whoever draws the cards knows exactly which blockages
+   * they cover, and that is the only fact this needs.
+   *
+   * Suppression removes ROWS, never the count: `needsYouCount` and the live
+   * region still report every blockage, because a card on screen is still a
+   * thing waiting on a person.
+   */
+  coveredSignalIds?: readonly string[];
   /**
    * The shipped "Jump back in" model.
    *

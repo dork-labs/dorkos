@@ -91,7 +91,14 @@ vi.mock('@tanstack/react-router', () => ({
 // ── The snapshot the model is a function of ─────────────────────────────────
 let mockState: SidebarState = busyFixture;
 vi.mock('@/layers/features/dashboard-sidebar/model/use-sidebar-state', () => ({
-  useSidebarState: () => mockState,
+  // **The `coveredSignalIds` option is honoured, not swallowed.** It is what
+  // the phone's lead slot tells the model about the cards it is already
+  // drawing (DOR-1391), and a stub that dropped it would leave the whole
+  // one-blockage-one-place rule untested here while looking covered.
+  useSidebarState: (options?: { coveredSignalIds?: readonly string[] }) =>
+    options?.coveredSignalIds === undefined || options.coveredSignalIds.length === 0
+      ? mockState
+      : { ...mockState, coveredSignalIds: options.coveredSignalIds },
   SIDEBAR_CLOCK_TICK_MS: 60_000,
 }));
 vi.mock('@/layers/features/dashboard-sidebar/model/use-legacy-pin-migration', () => ({
@@ -337,6 +344,50 @@ describe('MobileTabsLayout', () => {
       mockState = quietFixture;
       renderLayout();
       expect(screen.queryByTestId('mobile-tab-badge-home')).not.toBeInTheDocument();
+    });
+
+    it('still counts blockages the lead slot drew as cards (DOR-1391)', async () => {
+      // **The badge lie.** When the cards cover everything, the model emits no
+      // rows for them and therefore no Heads up zone at all — so a badge read
+      // off `zone.needsYouCount` said nothing while two agents sat blocked in
+      // cards on the screen above it. The count falls back to the attention
+      // list, which is the uncapped, unsuppressed truth.
+      const user = userEvent.setup();
+      mockState = {
+        ...quietFixture,
+        attention: [
+          {
+            id: 'blocked:q-1',
+            kind: 'question',
+            primary: 'meeting-notes',
+            secondary: 'has a question',
+            since: new Date().toISOString(),
+            deepLink: '/session?session=session-question-1',
+          },
+        ],
+      };
+      const transport = createMockTransport();
+      transport.listPendingInteractions = vi
+        .fn()
+        .mockResolvedValue({ interactions: [aQuestion()] });
+      const { container } = renderLayout(null, transport);
+      await user.click(screen.getByTestId('mobile-tab-home'));
+
+      // The premise: the card is drawn, and Heads up has no zone of its own.
+      await screen.findByText('meeting-notes has a question');
+      expect(
+        panel('home').querySelector('[data-sidebar-zone="now"] [data-sidebar-row]')
+      ).toBeNull();
+
+      expect(screen.getByTestId('mobile-tab-badge-home')).toHaveTextContent('1');
+      // And the same number reaches a screen reader, from beside the bar.
+      await waitFor(
+        () => {
+          const live = container.querySelector('[aria-live="polite"]');
+          expect(live?.textContent).toBe('1 agent needs you');
+        },
+        { timeout: LIVE_REGION_DEBOUNCE_MS * 3 }
+      );
     });
 
     it('never badges Library, under any state the fixtures produce', () => {
@@ -811,6 +862,69 @@ describe('MobileTabsLayout', () => {
       renderLayout();
       await waitFor(() => expect(screen.queryByTestId('mobile-now-attention')).toBeNull());
       expect(screen.queryByText(/could not check whether anything is waiting/i)).toBeNull();
+    });
+
+    it('draws a blocked Ask ONCE — the card, not the card and a row (DOR-1391)', async () => {
+      // The double-draw: the phone answered the same question twice in one
+      // viewport, as an answerable card at the top of Heads up and as a line of
+      // text underneath it that only navigated. The card wins.
+      const user = userEvent.setup();
+      mockState = {
+        ...quietFixture,
+        attention: [
+          {
+            id: 'blocked:q-1',
+            kind: 'question',
+            primary: 'meeting-notes',
+            secondary: 'has a question',
+            since: new Date().toISOString(),
+            deepLink: '/session?session=session-question-1',
+          },
+        ],
+      };
+      const transport = createMockTransport();
+      transport.listPendingInteractions = vi
+        .fn()
+        .mockResolvedValue({ interactions: [aQuestion()] });
+      renderLayout(null, transport);
+      await user.click(screen.getByTestId('mobile-tab-home'));
+
+      // The card is there…
+      await screen.findByText('meeting-notes has a question');
+      expect(screen.getByTestId('mobile-now-attention')).toBeInTheDocument();
+      // …and the row for the same blockage is not.
+      const rows = Array.from(panel('home').querySelectorAll('[data-sidebar-row]'));
+      expect(rows.map((row) => row.textContent)).not.toContain('meeting-notes›has a question');
+    });
+
+    it('keeps the row when no card covers that blockage — the same panel, the other half', async () => {
+      // A wedged session has no answerable card, so its row is the only thing
+      // saying so. Without this, "the row is gone" above would also pass for a
+      // panel that had stopped drawing Heads up rows at all.
+      const user = userEvent.setup();
+      mockState = {
+        ...quietFixture,
+        attention: [
+          {
+            id: 'error:ses-9',
+            kind: 'error',
+            primary: 'meeting-notes',
+            secondary: 'Stopped with an error',
+            since: new Date().toISOString(),
+            deepLink: '/session?session=ses-9',
+          },
+        ],
+      };
+      const transport = createMockTransport();
+      transport.listPendingInteractions = vi
+        .fn()
+        .mockResolvedValue({ interactions: [aQuestion()] });
+      renderLayout(null, transport);
+      await user.click(screen.getByTestId('mobile-tab-home'));
+
+      await screen.findByText('meeting-notes has a question');
+      const rows = Array.from(panel('home').querySelectorAll('[data-sidebar-row]'));
+      expect(rows.map((row) => row.textContent)).toContain('meeting-notes›Stopped with an error');
     });
 
     it('reorders nothing by drag on a phone (R3)', () => {

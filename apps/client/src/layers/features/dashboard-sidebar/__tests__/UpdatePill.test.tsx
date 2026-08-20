@@ -14,7 +14,7 @@
  * the tests about the behaviour a person sees rather than about either half.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { buildSidebarModel } from '../model/build-sidebar-model';
 import { busyFixture } from '../model/fixtures';
@@ -86,6 +86,44 @@ describe('UpdatePill', () => {
     render(<PillHost />);
 
     expect(screen.queryByText(/Update ready/)).toBeNull();
+  });
+
+  it('says it copied the command only when the clipboard took it (DOR-1391)', async () => {
+    // It used to say "Command copied" without awaiting the write at all, so a
+    // browser that refused the clipboard still reported success and the person
+    // pasted whatever was there before. The shared `useCopyFeedback` awaits it.
+    mockConfigData = {
+      version: '1.2.3',
+      latestVersion: '1.4.0',
+      isDevMode: false,
+      dismissedUpgradeVersions: [],
+    };
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<PillHost />);
+
+    fireEvent.click(screen.getByText('Update ready — v1.4.0'));
+
+    expect(writeText).toHaveBeenCalledWith('npm update -g dorkos');
+    await waitFor(() => expect(screen.getByText('Command copied')).toBeInTheDocument());
+  });
+
+  it('says so when the clipboard refuses, rather than claiming success', async () => {
+    mockConfigData = {
+      version: '1.2.3',
+      latestVersion: '1.4.0',
+      isDevMode: false,
+      dismissedUpgradeVersions: [],
+    };
+    Object.assign(navigator, {
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    });
+    render(<PillHost />);
+
+    fireEvent.click(screen.getByText('Update ready — v1.4.0'));
+
+    await waitFor(() => expect(screen.getByText("Couldn't copy")).toBeInTheDocument());
+    expect(screen.queryByText('Command copied')).toBeNull();
   });
 
   it('remembers a dismissal', () => {

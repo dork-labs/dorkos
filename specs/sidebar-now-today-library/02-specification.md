@@ -406,11 +406,28 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
 > rolled-up "N working" line — and "Heads up" covers both honestly.
 
 - **BC-5 — Membership.** Only four things enter Heads up: permission prompts, agent questions,
-  wedged/error sessions, idle-timeout nudges. Mentions, DMs, unread channels, automated-session
-  activity and update-ready notices are excluded by construction — the model has no branch that
-  can put them there. (§18, §7)
-- **BC-6 — Priority.** Sorted by tier: `permission-prompt` → `question` → `error` →
-  `idle-timeout`; within a tier, oldest `since` first.
+  schedules an agent parked for approval, wedged/error sessions. Mentions, DMs, unread channels,
+  automated-session activity and update-ready notices are excluded by construction — the model
+  has no branch that can put them there. (§18, §7)
+
+  > Amended 2026-08-20 (DOR-1391, `specs/notification-system`). The fourth member was
+  > `idle-timeout` nudges and is now `schedule-approval`. **Idle nudges are retired outright:**
+  > "this session went quiet" is a heuristic about somebody's afternoon rather than something
+  > waiting on an answer, and a zone that asks for attention on a guess is a zone people learn
+  > to skim. What the nudge observed is now a Today digest fact instead — the digest row reads
+  > "N sessions idle" (`use-digest-facts`, `build-digest-row`). **Parked schedules join** because
+  > they meet every test the other three do: `tasks_create` never arms a schedule (DOR-504), so
+  > nothing runs until a person says yes. They were previously fetched separately by each surface
+  > and composed on beside this list.
+
+- **BC-6 — Priority.** Sorted by tier: `permission-prompt` → `question` → `schedule-approval` →
+  `error`; within a tier, oldest `since` first.
+
+  > Amended 2026-08-20 (DOR-1391). Was `permission-prompt` → `question` → `error` →
+  > `idle-timeout`. A parked schedule sits above the error and below the two prompts: it is
+  > genuinely blocked, and it is the only blockage with no clock on it — a prompt expires in ten
+  > minutes and a capability hold in two hours, while a proposal keeps until it is decided.
+
 - **BC-7 — Cap 3 + overflow.** At most 3 attention rows render. When more exist, a single
   `{ kind: 'rollup', rollup: 'now-overflow' }` row reads "+ N more" and navigates to the home
   surface triage header (`/`, the "Waiting on you" group from `specs/team-room-home`
@@ -431,11 +448,23 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   > survives unchanged: a _blocked_ automated session still enters Heads up as an attention item —
   > "Blocking states go to Heads up like the rest."
 
-- **BC-10 — Idle nudges are dismissible, permanently for that episode.** Dismissal is stored in
-  an in-memory Zustand store keyed by episode id, **not** persisted config: an episode id does
-  not survive a restart meaningfully, and persisting it would accumulate garbage in
-  `~/.dork/config.json` forever. A restart may re-surface at most one nudge. (Interpretation
-  of §18's "dismissal is permanent for that idle episode".)
+- **BC-10 — ~~Idle nudges are dismissible, permanently for that episode.~~ RETIRED
+  2026-08-20** (DOR-1391, `specs/notification-system`). The contract described the dismissal
+  store behind the one waveable-away row in Heads up; the row itself is gone (see BC-5's
+  amendment), so nothing in the zone can be dismissed at all and the store, its helper and the
+  row menu that ran it were deleted with it. **BC-42 now holds without an exception.** What the
+  nudge observed survives as a Today digest fact — "N sessions idle" — which is a line in a
+  once-a-day summary rather than a row asking to be answered.
+
+  <details><summary>Original text</summary>
+
+  Dismissal is stored in an in-memory Zustand store keyed by episode id, **not** persisted
+  config: an episode id does not survive a restart meaningfully, and persisting it would
+  accumulate garbage in `~/.dork/config.json` forever. A restart may re-surface at most one
+  nudge. (Interpretation of §18's "dismissal is permanent for that idle episode".)
+
+  </details>
+
 - **BC-11 — Live region.** `liveRegionText` is set only when the _count_ of needs-you rows
   changes ("2 agents need you"), never when a verb changes.
 
@@ -615,14 +644,14 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
 > model only emits the tier — so the correction is a doc and comment fix, made
 > before P2 built a renderer against the wrong contract.
 
-| Signal                                      | Model output                                                              |
-| ------------------------------------------- | ------------------------------------------------------------------------- |
-| Channel has new messages                    | `unread: { tier: 'activity' }` — bold label only. No badge, no dot.       |
-| Unread DM to you                            | `unread: { tier: 'directed', count }` — numbered amber badge.             |
-| @mention of you (any room)                  | `unread: { tier: 'directed', count }` on that row.                        |
-| Agent working                               | `status: 'working'` + verb line. `unread` untouched.                      |
-| Approval / question / wedged / idle-timeout | A Heads up row. The only things that enter Heads up.                      |
-| Automated session activity                  | Nothing. No bold, no badge. Blocking states go to Heads up like the rest. |
+| Signal                                         | Model output                                                                                                                             |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Channel has new messages                       | `unread: { tier: 'activity' }` — bold label only. No badge, no dot.                                                                      |
+| Unread DM to you                               | `unread: { tier: 'directed', count }` — numbered amber badge.                                                                            |
+| @mention of you (any room)                     | `unread: { tier: 'directed', count }` on that row.                                                                                       |
+| Agent working                                  | `status: 'working'` + verb line. `unread` untouched.                                                                                     |
+| Approval / question / parked schedule / wedged | A Heads up row. The only things that enter Heads up. (Amended 2026-08-20, DOR-1391: was idle-timeout, now schedule-approval — see BC-5.) |
+| Automated session activity                     | Nothing. No bold, no badge. Blocking states go to Heads up like the rest.                                                                |
 
 - **BC-39 — Mentions and DMs never enter Heads up.** An agent asking a question inside a DM enters
   Heads up as a _question_, with `target.kind === 'attention'`, not as a DM.
@@ -631,8 +660,9 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   `isJumpBackInRoom` rule; it carries to Today unchanged).
 - **BC-41 — Bold clears on read** through the cross-device read cursors from DOR-1030. The
   sidebar reads cursors; it never writes its own watermark.
-- **BC-42 — No snooze in v1.** Heads up items clear only by resolution or (idle nudges only) by
-  dismissal.
+- **BC-42 — No snooze in v1.** Heads up items clear only by resolution. (Amended 2026-08-20,
+  DOR-1391: the sole exception — dismissal, for idle nudges only — went with the nudge itself.
+  Nothing in Heads up can be waved away now; see BC-10.)
 
 #### Chrome
 
@@ -822,7 +852,8 @@ gettingStarted: z.object({ retired: z.array(z.string()).default([]) }).default({
 digest: z.object({ lastShownDate: z.string().optional() }).default({}),
 ```
 
-**Not persisted (deliberate):** idle-nudge dismissals (BC-10, in-memory Zustand),
+**Not persisted (deliberate):** ~~idle-nudge dismissals (BC-10, in-memory Zustand)~~ — retired
+2026-08-20 with the nudge itself (DOR-1391),
 `userLastOpenedAt` interaction timestamps (client-local store, shared with ⌘K frecency — a
 per-device notion by definition), scroll position, transient moment state.
 

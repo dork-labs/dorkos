@@ -38,8 +38,6 @@ export const FONT_SCALE_MAP: Record<'small' | 'medium' | 'large', string> = {
 export const MAX_RECENT_CWDS = 10;
 
 export const TIMING = {
-  /** Feedback delay after clipboard copy (ms). */
-  COPY_FEEDBACK_MS: 1500,
   /** Highlight duration for newly created sessions (ms). */
   NEW_SESSION_HIGHLIGHT_MS: 300,
   /** Auto-close sidebar on mobile after session create (ms). */

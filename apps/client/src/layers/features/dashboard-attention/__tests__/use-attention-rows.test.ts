@@ -46,7 +46,6 @@ function signal(kind: AttentionSignal['kind'], id: string): AttentionSignal {
     primary: 'alpha',
     since: '2026-08-19T09:00:00.000Z',
     deepLink: '/session?session=ses-1',
-    dismissible: false,
   };
 }
 
@@ -90,7 +89,7 @@ describe('useAttentionRows', () => {
     mockSignals.mockReturnValue([
       signal('permission-prompt', 'approval:apr-1'),
       signal('question', 'blocked:q-1'),
-      signal('idle-timeout', 'idle:ses-1'),
+      signal('schedule-approval', 'schedule:task-1'),
       signal('error', 'error:ses-2'),
     ]);
 
@@ -101,12 +100,33 @@ describe('useAttentionRows', () => {
 
   it('counts every group into the total the badge shows', () => {
     mockSchedules.mockReturnValue({ schedules: [task('task-1')], isLoading: false });
-    mockSignals.mockReturnValue([signal('error', 'error:ses-2')]);
+    mockSignals.mockReturnValue([
+      signal('schedule-approval', 'schedule:task-1'),
+      signal('error', 'error:ses-2'),
+    ]);
     mockActivity.mockReturnValue({ items: [{ id: 'failed-run-1' }], isLoading: false });
 
     const { result } = renderHook(() => useAttentionRows());
 
     expect(result.current.total).toBe(3);
+  });
+
+  it('draws a schedule only while the ONE list is calling it blocking (DOR-1391)', () => {
+    // The task cache and the signal list can disagree for a tick — one is a
+    // query, the other is derived from it — and the rows follow the list, so
+    // the header can never draw an approve/reject card the badge is not
+    // counting. Seeded defect: return `tasks` straight through and the count
+    // says 1 while two cards are on screen.
+    mockSchedules.mockReturnValue({
+      schedules: [task('task-1'), task('task-2')],
+      isLoading: false,
+    });
+    mockSignals.mockReturnValue([signal('schedule-approval', 'schedule:task-1')]);
+
+    const { result } = renderHook(() => useAttentionRows());
+
+    expect(result.current.schedules.map((t) => t.id)).toEqual(['task-1']);
+    expect(result.current.total).toBe(1);
   });
 
   it('keeps one array identity for the errors while nothing is wedged', () => {
@@ -133,19 +153,24 @@ describe('useAttentionRows', () => {
     expect(result.current.isLoading).toBe(true);
   });
 
-  it('is loading while the schedules or the activity sources are', () => {
-    // The other two halves, so "loading" is not satisfied by one source alone.
-    mockSchedules.mockReturnValue({ schedules: [], isLoading: true });
-    expect(renderHook(() => useAttentionRows()).result.current.isLoading).toBe(true);
-
-    mockSchedules.mockReturnValue({ schedules: [], isLoading: false });
+  it('is loading while the activity source is', () => {
+    // The other half, so "loading" is not satisfied by one source alone.
     mockActivity.mockReturnValue({ items: [], isLoading: true });
     expect(renderHook(() => useAttentionRows()).result.current.isLoading).toBe(true);
   });
 
-  it('settles only when all three have answered', () => {
-    // The discriminating half of the four cases above: with nothing loading,
-    // the composition says so — otherwise "loading" would be a constant.
+  it('does not compose the schedule queue in again (DOR-1391)', () => {
+    // The schedules ride `useAttentionSignalsLoading` now. A composition that
+    // still OR-ed this in would report loading forever on any surface whose
+    // engine had settled — and, worse, would be a second answer to a question
+    // the one list already answers.
+    mockSchedules.mockReturnValue({ schedules: [], isLoading: true });
+    expect(renderHook(() => useAttentionRows()).result.current.isLoading).toBe(false);
+  });
+
+  it('settles only when both have answered', () => {
+    // The discriminating half of the cases above: with nothing loading, the
+    // composition says so — otherwise "loading" would be a constant.
     const { result } = renderHook(() => useAttentionRows());
     expect(result.current.isLoading).toBe(false);
   });

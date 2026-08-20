@@ -89,7 +89,7 @@ const ICON: Record<SidebarIconId, typeof Bot> = {
   permission: ShieldQuestion,
   question: CircleHelp,
   error: AlertTriangle,
-  idle: Clock,
+  schedule: CalendarClock,
   overflow: ChevronRight,
   working: Loader,
   automated: CalendarClock,
@@ -652,6 +652,25 @@ export function SidebarNowStatesShowcase() {
 
   const empty: SidebarState = { ...quiet, attention: [], workingSessionIds: [] };
   const single: SidebarState = { ...busy, attention: busy.attention.slice(0, 1) };
+  // **The one blockage with no face**, and the only way its glyph reaches the
+  // both-themes and axe gates. Every other signal in the fixtures carries an
+  // `agentPath`, so the row draws an avatar and the semantic icon behind it is
+  // never rendered — a schedule belongs to a timer rather than to an agent, so
+  // this is the state where `CalendarClock` is actually on screen (DOR-1391).
+  const schedule: SidebarState = {
+    ...busy,
+    workingSessionIds: [],
+    attention: [
+      {
+        id: 'schedule:tsk-nightly',
+        kind: 'schedule-approval',
+        primary: 'Nightly audit',
+        secondary: 'Wants to run on a timer',
+        since: new Date(busy.now - 24 * 60_000).toISOString(),
+        deepLink: '/tasks',
+      },
+    ],
+  };
 
   // **One line each, and that is a constraint rather than a style.** The panel
   // label is the only text on this page axe cannot judge when it wraps: a
@@ -661,6 +680,7 @@ export function SidebarNowStatesShowcase() {
   const states: { name: string; caption: string; state: SidebarState }[] = [
     { name: 'now-empty', caption: 'Nothing waiting', state: empty },
     { name: 'now-one', caption: 'One thing needs you', state: single },
+    { name: 'now-schedule', caption: 'A schedule parked', state: schedule },
     { name: 'now-capped', caption: 'Seven waiting, capped', state: power },
     {
       name: 'getting-started',
@@ -672,7 +692,7 @@ export function SidebarNowStatesShowcase() {
   return (
     <PlaygroundSection
       title="Sidebar Heads Up States"
-      description="Heads up is the first thing on screen and the only zone allowed to interrupt. Four states: nothing waiting (the zone disappears entirely — absence is the calm signal), one thing waiting, seven things waiting (capped at three with an overflow that leads to the home surface), and the day-one Getting started zone that shares the same slot."
+      description="Heads up is the first thing on screen and the only zone allowed to interrupt. Five states: nothing waiting (the zone disappears entirely — absence is the calm signal), one thing waiting, a schedule an agent parked for approval (the one blockage drawn with a glyph rather than a face, because it belongs to a timer), seven things waiting (capped at three with an overflow that leads to the home surface), and the day-one Getting started zone that shares the same slot."
     >
       <div className="flex items-center gap-2">
         <Switch
@@ -685,11 +705,16 @@ export function SidebarNowStatesShowcase() {
         </label>
       </div>
 
-      <ShowcaseLabel>Empty, one signal, capped with overflow, day one</ShowcaseLabel>
+      <ShowcaseLabel>
+        Empty, one signal, a parked schedule, capped with overflow, day one
+      </ShowcaseLabel>
       <div className="border-border/50 bg-muted/30 overflow-x-auto rounded-lg border border-dashed p-4">
-        {/* Wraps rather than scrolls. Four 272px panels fit the content column
-            at the width the browser suite runs at, and a panel clipped by a
-            horizontal scroller is one axe declines to measure. */}
+        {/* Wraps rather than scrolls, and since DOR-1391's fifth state it does:
+            five 272px panels are wider than the content column at the width the
+            browser suite runs at, so the last one drops to a second line. That
+            is the intended failure mode — a panel clipped by a horizontal
+            scroller is one axe declines to measure, while a wrapped one is
+            fully in the grid. The spec's viewport carries the extra height. */}
         <div className="flex flex-wrap items-start gap-4">
           {states.map(({ name, caption, state }) => (
             <div key={name} className="flex shrink-0 flex-col gap-2" style={{ width: PANEL_WIDTH }}>
@@ -785,7 +810,7 @@ export function SidebarTodayStatesShowcase() {
   // one beside it.
   const withDigest: SidebarState = {
     ...busy,
-    digest: { finishedWhileAwayCount: 4 },
+    digest: { finishedWhileAwayCount: 4, idleWhileAwayCount: 2 },
     prefs: { ...busy.prefs, digest: { lastShownDate: '2026-08-08' } },
   };
   // The reveal, open. The runs hang off the bottom of the finished list,

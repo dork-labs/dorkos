@@ -3,7 +3,7 @@
  *
  * @module entities/tasks
  */
-export { useTasksEnabled } from './model/use-tasks-config';
+export { useTasksEnabled, useTasksEnabledState } from './model/use-tasks-config';
 export {
   useTasks,
   useCreateTask,

@@ -32,7 +32,7 @@ import {
   TOUCH_TARGET_MIN_H,
 } from '@/layers/shared/ui';
 import { useAppStore, useSlotContributions, useTheme, type Theme } from '@/layers/shared/model';
-import { cn, formatShortcutKey, openLink, SHORTCUTS } from '@/layers/shared/lib';
+import { cn, formatShortcutKey, openLink, SHORTCUTS, useCopyFeedback } from '@/layers/shared/lib';
 import { useConfig } from '@/layers/entities/config';
 import { AccountMenuContainer } from '@/layers/features/profile';
 import { HelpMenuItems } from '@/layers/features/report-issue';
@@ -102,6 +102,13 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
   const { devtoolsOpen, routerDevtoolsOpen, toggleDevtools, toggleRouterDevtools } = useAppStore();
   const { data: config } = useConfig();
   const version = config?.version;
+  // Pressing the item closes the menu, so there is no chrome left to morph a
+  // check mark into — the toast fallback is the pattern for exactly that
+  // (`useCopyFeedback`'s TSDoc). Before this it was a bare
+  // `navigator.clipboard.writeText` whose promise nobody awaited: a refused
+  // clipboard said nothing at all, and the person walked away believing they
+  // had their diagnostics.
+  const { copy } = useCopyFeedback({ toastOnSettle: true });
 
   const cycleTheme = useCallback(() => {
     const index = THEME_ORDER.indexOf(theme);
@@ -116,8 +123,8 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
       `User Agent: ${navigator.userAgent}`,
       `Timestamp: ${new Date().toISOString()}`,
     ].join('\n');
-    void navigator.clipboard.writeText(info);
-  }, [version]);
+    void copy(info);
+  }, [copy, version]);
 
   // `showInDevOnly` is the slot's own flag and it is honoured for EVERY
   // contribution, not only the built-in `devtools`. The footer bar this replaced

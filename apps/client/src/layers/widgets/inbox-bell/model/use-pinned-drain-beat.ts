@@ -36,6 +36,10 @@ export const ALL_CLEAR_BEAT_MS = 2_500;
  *
  * ## This is the VISIBLE beat only, and it has no sound in it
  *
+ * The whole rule — two visual beats, one chime, and why that is not a
+ * duplicate — is stated once, in the sidebar's `use-all-clear-beat`. What
+ * follows is this half of it.
+ *
  * The all-clear chime deliberately does not hang off this hook, and the reason
  * is the open-gate above. A check mark nobody can see is worth skipping; a sound
  * is not, because the whole point of a sound is that the person is not looking.

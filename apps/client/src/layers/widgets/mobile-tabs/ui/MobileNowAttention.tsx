@@ -24,7 +24,7 @@
  *
  * @module widgets/mobile-tabs/ui/MobileNowAttention
  */
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   useAskAgentNames,
@@ -35,8 +35,32 @@ import {
 import { AskList } from '@/layers/features/ask';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
 
+/** Nothing covered — one shared array, so an empty slot never rebuilds the model. */
+const NOTHING_COVERED: readonly string[] = [];
+
+/** What {@link useNowAttentionSlot} hands the phone's Home tab. */
+export interface NowAttentionSlot {
+  /** The cards, or `null` when there is nothing to say. */
+  slot: ReactNode | null;
+  /**
+   * The signal ids these cards cover, for the sidebar model's Heads up rows.
+   *
+   * **This is the whole of the "one blockage, one place" rule** (DOR-1391): the
+   * cards below and the Now rows underneath them were drawing the same
+   * approvals and the same prompts, so a single blocked agent appeared twice in
+   * one viewport. The ids are spelled exactly as `deriveAttentionSignals` mints
+   * them — `approval:<id>` and `blocked:<interactionId>` — because that is what
+   * the model matches on.
+   *
+   * A blocked session whose prompt has not arrived yet keeps its row, and
+   * correctly: its signal is `blocked:<sessionId>`, no card here covers it, and
+   * the row is the only thing telling anybody it is waiting.
+   */
+  coveredSignalIds: readonly string[];
+}
+
 /**
- * What Now should draw above its rows, or `null` for nothing.
+ * What Now should draw above its rows, and which blockages that covers.
  *
  * A hook returning a node rather than a component, because the caller has to
  * know the difference between "nothing" and "something": a non-null slot brings
@@ -52,7 +76,7 @@ import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals'
  * surface in the cockpit shows one yet — so this stays silent about it rather
  * than inventing an error state the rest of the product does not have.
  */
-export function useNowAttentionSlot(): ReactNode | null {
+export function useNowAttentionSlot(): NowAttentionSlot {
   const { approvals, isError, retry } = usePendingApprovals();
   const { interactions: asks } = usePendingInteractions();
   // Answered Asks, still on screen saying how they ended. Without this,
@@ -65,26 +89,40 @@ export function useNowAttentionSlot(): ReactNode | null {
   const agentNames = useAskAgentNames(asks);
   const navigate = useNavigate();
 
-  if (!isError && approvals.length === 0 && asks.length === 0 && settling.length === 0) {
-    return null;
-  }
-
-  return (
-    <div data-testid="mobile-now-attention" className="flex flex-col gap-2 px-2 pt-0.5 pb-1">
-      {isError && <ApprovalsUnavailable onRetry={retry} />}
-      {(asks.length > 0 || settling.length > 0) && (
-        <AskList
-          asks={asks}
-          agentNames={agentNames}
-          // Home is not a popover to escape on the way there — the panel stays
-          // up, `onBeforeLoad` lowers it, and the route lands on the same
-          // conversation a tap on any other Now row would open.
-          onOpenSession={(sessionId) => {
-            void navigate({ to: '/session', search: { session: sessionId } });
-          }}
-        />
-      )}
-      {approvals.length > 0 && <ApprovalList approvals={approvals} />}
-    </div>
+  // Memoized because it feeds the sidebar model's snapshot, where a fresh array
+  // per render would rebuild the whole panel on every activity event (spec §H).
+  // Receipts are not covered: a settled Ask has no signal left to hide.
+  const coveredSignalIds = useMemo(
+    () => [
+      ...approvals.map((approval) => `approval:${approval.approvalId}`),
+      ...asks.map((ask) => `blocked:${ask.interaction.id}`),
+    ],
+    [approvals, asks]
   );
+
+  const nothingToSay =
+    !isError && approvals.length === 0 && asks.length === 0 && settling.length === 0;
+  if (nothingToSay) return { slot: null, coveredSignalIds: NOTHING_COVERED };
+
+  return {
+    coveredSignalIds,
+    slot: (
+      <div data-testid="mobile-now-attention" className="flex flex-col gap-2 px-2 pt-0.5 pb-1">
+        {isError && <ApprovalsUnavailable onRetry={retry} />}
+        {(asks.length > 0 || settling.length > 0) && (
+          <AskList
+            asks={asks}
+            agentNames={agentNames}
+            // Home is not a popover to escape on the way there — the panel stays
+            // up, `onBeforeLoad` lowers it, and the route lands on the same
+            // conversation a tap on any other Now row would open.
+            onOpenSession={(sessionId) => {
+              void navigate({ to: '/session', search: { session: sessionId } });
+            }}
+          />
+        )}
+        {approvals.length > 0 && <ApprovalList approvals={approvals} />}
+      </div>
+    ),
+  };
 }

@@ -156,18 +156,25 @@ export function SidebarZones({
   // model is emitting always wins over an animation about one it is not.
   const beating = useAllClearBeat(model);
   // Asked of the BUILDER's model, not the damped one. Withholding Getting
-  // started for a few seconds is not an invitation for an animation — or for
-  // the orphaned slot below — to move into the space it just left: the slot is
-  // spoken for either way, and the beat stays exactly as rare as BC-50 made it.
-  const nowSlotTaken = model.zones.some(
-    (zone) => zone.id === 'now' || zone.id === 'getting-started'
-  );
-  // The slot brings its own zone when the model has none. See
-  // {@link SidebarZonesProps.nowSlot}: this is the loud-failure case, and it
-  // outranks the beat — an animation about work that finished must not be what
-  // the panel says while an approval is sitting unreachable behind a fetch that
-  // failed.
-  const orphanedSlot = nowSlot !== null && !nowSlotTaken && draws('now');
+  // started for a few seconds is not an invitation for an animation to move
+  // into the space it just left: the slot is spoken for either way, and the
+  // beat stays exactly as rare as BC-50 made it.
+  const hasNowZone = model.zones.some((zone) => zone.id === 'now');
+  const nowSlotTaken = hasNowZone || model.zones.some((zone) => zone.id === 'getting-started');
+  // The slot brings its own zone when Heads up has none — and **Getting started
+  // holding the slot is not a reason to withhold it** (DOR-1391). Two states
+  // reach here and both are ones a person must see: the loud-failure case
+  // (approvals could not be read, so none became a row, so there is no zone to
+  // say so in), and the phone's covered queue (every blockage IS drawn, as a
+  // card, so the model emitted no rows for them). Gating this on Getting
+  // started too made the second one invisible: a blocked agent behind a
+  // day-one suggestion list, on the surface the phone exists for.
+  //
+  // It draws ABOVE the zone map, so the cards sit where Heads up would have
+  // been rather than under whatever took its place. It also outranks the beat —
+  // an animation about work that finished must not be what the panel says while
+  // something is still waiting.
+  const orphanedSlot = nowSlot !== null && !hasNowZone && draws('now');
 
   return (
     // The damping's "not under a hand" half reads the pointer and focus here,

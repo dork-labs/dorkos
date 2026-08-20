@@ -1,6 +1,34 @@
 /**
  * The all-clear beat: Heads up settles before it folds away (BC-50).
  *
+ * ## One drain, one sound, two pictures — the rule, in one place
+ *
+ * Three things react to the same moment (the last thing waiting is answered),
+ * and it took DOR-1391 to say out loud why that is three and not a bug:
+ *
+ * 1. **This beat**, in the sidebar's Heads up zone.
+ * 2. **The Inbox popover's beat** (`widgets/inbox-bell`'s `usePinnedDrainBeat`),
+ *    which fires only while that popover is open.
+ * 3. **The settle chime** (`features/notifications`' `NotificationCenter`),
+ *    app-wide and gated on the sound setting.
+ *
+ * **The two VISUAL beats may both play, because they are in two places.** A
+ * check mark in the panel on the left and a check mark inside a popover in the
+ * top right are one answer told where each was asked; neither is a repeat of
+ * the other, and a person looking at one cannot see the other without moving
+ * their eyes.
+ *
+ * **The SOUND is app-wide and belongs to exactly one of them, and it is neither
+ * of the beats.** Audio is the one channel that cannot be "somewhere else": two
+ * chimes for one drain is a stutter, and a chime attached to a beat would be
+ * missing precisely when it matters most — the popover shut, the answer given
+ * from a phone banner or a keyboard shortcut. So the chime hangs off the queue
+ * draining rather than off anything being drawn.
+ *
+ * Neither this hook nor the bell's touches the sound family. If a beat ever
+ * needs to make a noise, the answer is to move the moment into
+ * `NotificationCenter`, never to add a second player here.
+ *
  * @module features/dashboard-sidebar/model/use-all-clear-beat
  */
 import { useEffect, useRef, useState } from 'react';

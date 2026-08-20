@@ -15,9 +15,9 @@
  *
  * @module features/dashboard-sidebar/ui/bottom-slot/UpdatePill
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { Check, Copy, RotateCw, X } from 'lucide-react';
-import { TIMING } from '@/layers/shared/lib';
+import { useCopyFeedback } from '@/layers/shared/lib';
 import type { UpdateReadiness } from './use-update-ready';
 
 /** The command that updates a web/CLI install, offered by the pill. */
@@ -26,6 +26,22 @@ const UPDATE_COMMAND = 'npm update -g dorkos';
 /** Shared by both shapes of the pill, so the amber reads the same either way. */
 const PILL_CLASSES =
   'focus-ring inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-500/25 dark:text-amber-300';
+
+/**
+ * What the copy button says this frame.
+ *
+ * Three states, and the failure is one of them: a clipboard the browser refused
+ * used to read as a success, because the write was never awaited.
+ *
+ * @param version - The version the command installs.
+ * @param copied - Whether the write just succeeded.
+ * @param failed - Whether the write just failed.
+ */
+function copyLabel(version: string, copied: boolean, failed: boolean): string {
+  if (copied) return 'Command copied';
+  if (failed) return "Couldn't copy";
+  return `Update ready — v${version}`;
+}
 
 /** Props for {@link UpdatePill}. */
 export interface UpdatePillProps {
@@ -39,26 +55,19 @@ export interface UpdatePillProps {
  * @param props - The readiness {@link useUpdateReady} resolved.
  */
 export function UpdatePill({ update }: UpdatePillProps) {
-  const [copied, setCopied] = useState(false);
-
-  // The "Copied" beat clears itself, and clears its own timer on unmount: the
-  // pill disappears the moment the dismissal lands, which is well inside the
-  // feedback window, and a `setCopied` firing into an unmounted component is a
-  // warning nobody can act on.
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (copyTimer.current !== null) clearTimeout(copyTimer.current);
-    },
-    []
-  );
+  // The pill is its own feedback: it morphs into "Command copied" and back, so
+  // this is the inline variant rather than the toast one. It used to hold its
+  // own `copied` flag and its own revert timer, and it never awaited the
+  // clipboard write — a refused clipboard still said "Command copied" and the
+  // person pasted whatever was there before (DOR-1391). The shared hook awaits
+  // the write, tells success and failure apart, and clears its timer on unmount
+  // for the case this component always cared about: the pill leaves the moment
+  // the dismissal lands.
+  const { copied, failed, copy } = useCopyFeedback();
 
   const handleCopy = useCallback(() => {
-    void navigator.clipboard.writeText(UPDATE_COMMAND);
-    setCopied(true);
-    if (copyTimer.current !== null) clearTimeout(copyTimer.current);
-    copyTimer.current = setTimeout(() => setCopied(false), TIMING.COPY_FEEDBACK_MS);
-  }, []);
+    void copy(UPDATE_COMMAND);
+  }, [copy]);
 
   if (update.kind === 'none') return null;
 
@@ -87,7 +96,7 @@ export function UpdatePill({ update }: UpdatePillProps) {
         className={PILL_CLASSES}
       >
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-        {copied ? 'Command copied' : `Update ready — v${update.latestVersion}`}
+        {copyLabel(update.latestVersion, copied, failed)}
       </button>
       <button
         type="button"

@@ -3,23 +3,21 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import type { Task } from '@dorkos/shared/types';
 
-/** The world the hook reads, swapped between renders. */
+/**
+ * The world the hook reads, swapped between renders.
+ *
+ * One list, because there is one list: parked schedules were a second source
+ * this hook merged in until DOR-1391 folded them into the engine.
+ */
 const world = {
   signals: [] as { id: string; kind: string; primary: string; deepLink: string }[],
   signalsLoading: false,
-  schedules: [] as Task[],
-  schedulesLoading: false,
 };
 
 vi.mock('@/layers/entities/attention', () => ({
   useAttentionSignals: () => world.signals,
   useAttentionSignalsLoading: () => world.signalsLoading,
-  usePendingScheduleApprovals: () => ({
-    schedules: world.schedules,
-    isLoading: world.schedulesLoading,
-  }),
 }));
 
 const { useBlockingArrivals } = await import('../model/use-blocking-arrivals');
@@ -29,16 +27,14 @@ function ask(id: string, who = 'Meeting Notes') {
   return { id, kind: 'permission-prompt', primary: who, deepLink: `/session?session=${id}` };
 }
 
-/** A schedule an agent proposed and parked. */
-function parkedSchedule(id: string, name = 'Nightly digest'): Task {
-  return { id, name, displayName: null } as unknown as Task;
+/** A schedule an agent proposed and parked, as the engine now normalizes it. */
+function schedule(id: string, who = 'Nightly digest') {
+  return { id: `schedule:${id}`, kind: 'schedule-approval', primary: who, deepLink: '/tasks' };
 }
 
 beforeEach(() => {
   world.signals = [];
   world.signalsLoading = false;
-  world.schedules = [];
-  world.schedulesLoading = false;
 });
 
 describe('useBlockingArrivals', () => {
@@ -156,14 +152,21 @@ describe('useBlockingArrivals', () => {
   });
 
   it('counts a parked schedule as something waiting', () => {
+    // It arrives as a SIGNAL now, not as a second list this hook merges in
+    // (DOR-1391) — the summary, the id and the destination are unchanged.
     const onArrive = vi.fn();
     const { rerender } = renderHook(() => useBlockingArrivals({ onArrive }));
 
-    world.schedules = [parkedSchedule('t1')];
+    world.signals = [schedule('t1')];
     rerender();
 
     expect(onArrive).toHaveBeenCalledWith([
-      expect.objectContaining({ id: 'schedule:t1', who: 'Nightly digest', deepLink: '/tasks' }),
+      expect.objectContaining({
+        id: 'schedule:t1',
+        who: 'Nightly digest',
+        summary: 'Wants to run something on a timer.',
+        deepLink: '/tasks',
+      }),
     ]);
   });
 
@@ -171,11 +174,11 @@ describe('useBlockingArrivals', () => {
     const onArrive = vi.fn();
     const { rerender } = renderHook(() => useBlockingArrivals({ onArrive }));
 
-    // An errored session and an idle nudge are news, not blockages. Widening
-    // this set is what turns a knock into background noise.
+    // An errored session is news, not a blockage: nothing unblocks when you
+    // look at it. Widening this set is what turns a knock into background
+    // noise.
     world.signals = [
       { id: 'error:s', kind: 'error', primary: 'Repo', deepLink: '/session?session=s' },
-      { id: 'idle:s', kind: 'idle-timeout', primary: 'Repo', deepLink: '/session?session=s' },
     ];
     rerender();
 

@@ -149,6 +149,16 @@ export function useCreateChannel({
  * on its exact member set and answers with the conversation you already have
  * rather than a second one beside it (`RoomService.createRoom`). So nothing here
  * has to know which conversations exist before offering to open one.
+ *
+ * **The failure is reported from the mutation, not from the call site**
+ * (DOR-1391). It used to suppress the shared toast so that `NewMenu` could name
+ * the people in its own `mutate(vars, { onError })` callback — richer wording,
+ * and a report that could simply not arrive: TanStack dispatches a per-call
+ * callback only while the observer still has listeners, so closing the sidebar
+ * sheet on a phone mid-flight left the failure entirely unsaid. `meta.errorLabel`
+ * runs on the mutation itself and always reaches the person; the server's own
+ * sentence follows it ("Couldn't start that conversation — …"), which is more
+ * than the name would have added.
  */
 export function useStartDirectMessage(): UseMutationResult<
   RoomWithRoster,
@@ -162,15 +172,6 @@ export function useStartDirectMessage(): UseMutationResult<
     mutationFn: ({ agentPaths, title }: StartDirectMessageInput) =>
       transport.createRoom({ kind: 'dm', title, members: [], agentPaths }),
     onSettled: () => invalidateRoomReads(queryClient),
-    // Its one caller (`NewMenu.tsx`, outside this task's remit) names who the
-    // conversation was with in its own onError — richer than a static label —
-    // so this opts the shared mutation toast out rather than duplicating it.
-    // Known risk: that onError is a per-call `mutate(vars, { onError })`
-    // callback, which TanStack drops if the component unmounts before the
-    // mutation settles — closing the sidebar sheet mid-flight on mobile could
-    // leave a failure entirely unreported. Sidebar-owned, so not this task's
-    // to fix; tracked as a follow-up on DOR-1391 (the sidebar-integration
-    // task), which already inherits this mutation's shape.
-    meta: { suppressErrorToast: true },
+    meta: { errorLabel: "Couldn't start that conversation" },
   });
 }

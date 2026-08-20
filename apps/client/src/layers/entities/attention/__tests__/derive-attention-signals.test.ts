@@ -1,6 +1,5 @@
 /**
- * What is allowed to need the operator, and what is not (BC-5, BC-6, BC-10,
- * BC-39).
+ * What is allowed to need the operator, and what is not (BC-5, BC-6, BC-39).
  *
  * @module entities/attention/__tests__/derive-attention-signals
  */
@@ -8,13 +7,8 @@ import { describe, it, expect } from 'vitest';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import type { PendingInteractionDTO, Session } from '@dorkos/shared/types';
-import {
-  deriveAttentionSignals,
-  IDLE_NUDGE_AFTER_MS,
-  IDLE_NUDGE_WINDOW_MS,
-  type AttentionSources,
-} from '../model/derive-attention-signals';
+import type { PendingInteractionDTO, Session, Task } from '@dorkos/shared/types';
+import { deriveAttentionSignals, type AttentionSources } from '../model/derive-attention-signals';
 
 const NOW = new Date('2026-08-09T09:15:00.000Z').getTime();
 const MINUTE = 60 * 1000;
@@ -82,16 +76,37 @@ function approval(overrides: Partial<PendingApproval> = {}): PendingApproval {
   };
 }
 
+/** A schedule an agent proposed and parked. */
+function schedule(overrides: Partial<Task> = {}): Task {
+  return {
+    id: 'tsk-1',
+    name: 'nightly-audit',
+    displayName: 'Nightly audit',
+    description: null,
+    prompt: 'Audit the config migration.',
+    cron: '0 3 * * *',
+    timezone: 'UTC',
+    agentId: null,
+    enabled: false,
+    maxRuntime: null,
+    permissionMode: 'default',
+    status: 'pending_approval',
+    filePath: '/tasks/nightly-audit.json',
+    createdAt: ago(20 * MINUTE),
+    updatedAt: ago(20 * MINUTE),
+    ...overrides,
+  };
+}
+
 /** The whole snapshot, with everything empty unless a case says otherwise. */
 function sources(overrides: Partial<AttentionSources> = {}): AttentionSources {
   return {
-    now: NOW,
     approvals: [],
+    schedules: [],
     sessions: [],
     lifecycles: {},
     interactions: [],
     agentNames: { [ALPHA]: 'alpha' },
-    dismissed: new Set<string>(),
     ...overrides,
   };
 }
@@ -113,7 +128,6 @@ describe('deriveAttentionSignals — membership (BC-5)', () => {
       secondary: 'Write a file',
       since: ago(9 * MINUTE),
       deepLink: '/',
-      dismissible: false,
     });
   });
 
@@ -135,7 +149,6 @@ describe('deriveAttentionSignals — membership (BC-5)', () => {
       secondary: 'Waiting on you',
       deepLink: '/session?session=ses-1&dir=%2Fprojects%2Falpha',
       agentPath: ALPHA,
-      dismissible: false,
     });
   });
 
@@ -204,16 +217,52 @@ describe('deriveAttentionSignals — membership (BC-5)', () => {
   it('turns a wedged session into an error', () => {
     const [signal, ...rest] = deriveAttentionSignals(sources(oneSession('error')));
     expect(rest).toEqual([]);
-    expect(signal).toMatchObject({ id: 'error:ses-1', kind: 'error', dismissible: false });
+    expect(signal).toMatchObject({ id: 'error:ses-1', kind: 'error' });
+  });
+
+  it('turns a parked schedule into a blockage of its own (DOR-1391)', () => {
+    const [signal, ...rest] = deriveAttentionSignals(sources({ schedules: [schedule()] }));
+    expect(rest).toEqual([]);
+    expect(signal).toEqual({
+      id: 'schedule:tsk-1',
+      kind: 'schedule-approval',
+      primary: 'Nightly audit',
+      secondary: 'Wants to run on a timer',
+      since: ago(20 * MINUTE),
+      deepLink: '/tasks',
+    });
+  });
+
+  it('falls back to the schedule name when nobody gave it a display name', () => {
+    const [signal] = deriveAttentionSignals(
+      sources({ schedules: [schedule({ displayName: null })] })
+    );
+    expect(signal?.primary).toBe('nightly-audit');
   });
 
   it('says nothing about a session that is working, however long the turn runs', () => {
-    // `updatedAt` is deliberately PAST the idle threshold. A turn that has been
-    // running for an hour is the case the lifecycle guard exists for, and a
-    // freshly-stamped session would have been kept out by the threshold instead
-    // — the assertion would then hold with the guard deleted.
-    const quiet = oneSession('streaming', { updatedAt: ago(IDLE_NUDGE_AFTER_MS + 30 * MINUTE) });
+    const quiet = oneSession('streaming', { updatedAt: ago(90 * MINUTE) });
     expect(deriveAttentionSignals(sources(quiet))).toEqual([]);
+  });
+
+  it('says nothing about a session that has merely gone quiet (DOR-1391)', () => {
+    // The idle nudge is gone: quiet is not a blockage, and what it observed is
+    // a Today digest fact now (`use-digest-facts`'s `idleWhileAwayCount`).
+    // Every quietness a nudge could ever have fired on, and none of them speak.
+    for (const quietFor of [45 * MINUTE, 3 * 60 * MINUTE, 20 * 60 * MINUTE]) {
+      const quiet = oneSession('idle', { updatedAt: ago(quietFor) });
+      expect(deriveAttentionSignals(sources(quiet))).toEqual([]);
+    }
+  });
+
+  it('still raises the blockage of a quiet session that is actually blocked', () => {
+    // The discriminating half of the case above: the SAME staleness, a
+    // different lifecycle. Without this, "quiet says nothing" would also pass
+    // for a rule that had stopped reading sessions at all.
+    const parked = oneSession('blocked', { updatedAt: ago(45 * MINUTE) });
+    expect(deriveAttentionSignals(sources(parked)).map((s) => s.kind)).toEqual([
+      'permission-prompt',
+    ]);
   });
 
   it('names the session itself when it belongs to no agent (DOR-203)', () => {
@@ -236,54 +285,33 @@ describe('deriveAttentionSignals — membership (BC-5)', () => {
   });
 });
 
-describe('deriveAttentionSignals — the idle nudge (BC-10)', () => {
-  const quietFor = (ms: number) => oneSession('idle', { updatedAt: ago(ms) });
-
-  it('nudges about a session that has been quiet past the threshold', () => {
-    const [signal, ...rest] = deriveAttentionSignals(
-      sources(quietFor(IDLE_NUDGE_AFTER_MS + MINUTE))
-    );
-    expect(rest).toEqual([]);
-    expect(signal).toMatchObject({
-      id: 'idle:ses-1',
-      kind: 'idle-timeout',
-      secondary: 'Went quiet',
-      dismissible: true,
-    });
-  });
-
-  it('says nothing about a session touched a moment ago', () => {
-    expect(deriveAttentionSignals(sources(quietFor(IDLE_NUDGE_AFTER_MS - MINUTE)))).toEqual([]);
-  });
-
-  it('says nothing about a session quiet for longer than a day', () => {
-    expect(deriveAttentionSignals(sources(quietFor(IDLE_NUDGE_WINDOW_MS + MINUTE)))).toEqual([]);
-  });
-
-  it('raises ONE nudge however many sessions have gone quiet, the most recent', () => {
-    const stale = session({ id: 'old', updatedAt: ago(5 * 60 * MINUTE) });
-    const recent = session({ id: 'new', updatedAt: ago(40 * MINUTE) });
+describe('deriveAttentionSignals — parked schedules (DOR-1391)', () => {
+  it('raises one signal per parked schedule, and never merges two', () => {
     const signals = deriveAttentionSignals(
       sources({
-        sessions: [stale, recent],
-        lifecycles: { old: 'idle', new: 'idle' },
+        schedules: [schedule({ id: 'tsk-1' }), schedule({ id: 'tsk-2', displayName: 'Deploy' })],
       })
     );
-    expect(signals.map((s) => s.id)).toEqual(['idle:new']);
+    expect(signals.map((s) => s.id)).toEqual(['schedule:tsk-1', 'schedule:tsk-2']);
   });
 
-  it('drops a nudge the operator waved away, and leaves everything else standing', () => {
-    const input = sources({
-      ...quietFor(IDLE_NUDGE_AFTER_MS + MINUTE),
-      approvals: [approval()],
-    });
-    // Both are present before the dismissal — otherwise "it is gone" says nothing.
-    expect(deriveAttentionSignals(input).map((s) => s.id)).toEqual([
-      'approval:apr-1',
-      'idle:ses-1',
-    ]);
-    const after = deriveAttentionSignals({ ...input, dismissed: new Set(['idle:ses-1']) });
-    expect(after.map((s) => s.id)).toEqual(['approval:apr-1']);
+  it('keeps the schedule namespace out of every other source', () => {
+    // The ids are what "already seen" is keyed by (`use-blocking-arrivals`), so
+    // a collision between a task id and a session id would silence a knock.
+    const signals = deriveAttentionSignals(
+      sources({
+        schedules: [schedule({ id: 'ses-1' })],
+        ...oneSession('error'),
+      })
+    );
+    expect(signals.map((s) => s.id).sort()).toEqual(['error:ses-1', 'schedule:ses-1']);
+  });
+
+  it('says nothing about a schedule nobody parked', () => {
+    // The caller filters to `pending_approval` (`usePendingScheduleApprovals`),
+    // so an empty list here is the only shape this rule ever sees for an armed
+    // schedule — and an armed schedule needs nobody.
+    expect(deriveAttentionSignals(sources({ schedules: [] }))).toEqual([]);
   });
 });
 
@@ -302,33 +330,28 @@ describe('deriveAttentionSignals — what can never get in (BC-5, BC-39, P2 AC-5
     expect(keys).toEqual([
       'agentNames',
       'approvals',
-      'dismissed',
       'interactions',
       'lifecycles',
-      'now',
+      'schedules',
       'sessions',
     ]);
   });
 
   it('treats an automated session exactly like any other — origin is not read', () => {
-    // The previous version of this case seeded `origin: 'task'` on a STREAMING
-    // session and asserted silence, which the lifecycle guard already produced:
-    // deleting the origin changed nothing, so it proved nothing about
-    // automation. This asserts the real property instead — that origin is not a
-    // dimension this rule has — by running the same two states past it and
-    // requiring identical answers.
-    const user = session({ id: 'same', updatedAt: ago(45 * MINUTE) });
-    const automated = session({ id: 'same', origin: 'task', updatedAt: ago(45 * MINUTE) });
+    // The property, not a proxy for it: run the same state past the rule twice,
+    // once tagged as automated, and require identical answers. Both are
+    // `blocked` so the output is non-empty — "identical" must not be satisfiable
+    // by two empty lists.
+    const user = session({ id: 'same' });
+    const automated = session({ id: 'same', origin: 'task' });
     const forUser = deriveAttentionSignals(
-      sources({ sessions: [user], lifecycles: { same: 'idle' } })
+      sources({ sessions: [user], lifecycles: { same: 'blocked' } })
     );
     const forAutomated = deriveAttentionSignals(
-      sources({ sessions: [automated], lifecycles: { same: 'idle' } })
+      sources({ sessions: [automated], lifecycles: { same: 'blocked' } })
     );
 
-    // Both raise the nudge — an assertion on non-empty output, so "identical"
-    // below cannot be satisfied by two empty lists.
-    expect(forUser.map((s) => s.id)).toEqual(['idle:same']);
+    expect(forUser.map((s) => s.id)).toEqual(['blocked:same']);
     expect(forAutomated).toEqual(forUser);
   });
 
@@ -344,6 +367,7 @@ describe('deriveAttentionSignals — what can never get in (BC-5, BC-39, P2 AC-5
     const signals = deriveAttentionSignals(
       sources({
         approvals: [approval()],
+        schedules: [schedule()],
         sessions: [
           session({ id: 'a' }),
           session({ id: 'b' }),
@@ -362,7 +386,7 @@ describe('deriveAttentionSignals — what can never get in (BC-5, BC-39, P2 AC-5
       })
     );
     expect(new Set(signals.map((s) => s.kind))).toEqual(
-      new Set(['permission-prompt', 'question', 'error', 'idle-timeout'])
+      new Set(['permission-prompt', 'question', 'error', 'schedule-approval'])
     );
   });
 });

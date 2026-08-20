@@ -16,14 +16,19 @@ import { rowKey } from './targets';
  * construction rather than by a rule somebody could relax: diluting Heads up with
  * social signals is how a person learns to ignore it (design-decisions §18).
  */
-const NOW_KINDS: readonly NowKind[] = ['permission-prompt', 'question', 'error', 'idle-timeout'];
+const NOW_KINDS: readonly NowKind[] = [
+  'permission-prompt',
+  'question',
+  'schedule-approval',
+  'error',
+];
 
 /** The mark each blockage draws in the glyph slot. */
 const NOW_ICON: Record<NowKind, SidebarIconId> = {
   'permission-prompt': 'permission',
   question: 'question',
+  'schedule-approval': 'schedule',
   error: 'error',
-  'idle-timeout': 'idle',
 };
 
 /**
@@ -57,7 +62,7 @@ export function selectNowItems(state: SidebarState): SidebarRowModel[] {
       ...(signal.secondary === undefined ? {} : { secondary: signal.secondary }),
       reservesVerbLine: false,
       unread: { tier: 'none' },
-      attention: { kind: signal.kind, since: signal.since, dismissible: signal.dismissible },
+      attention: { kind: signal.kind, since: signal.since },
       muted: false,
       draggable: false,
       reason: `now:${signal.kind}`,

@@ -27,6 +27,12 @@ export interface AttentionRows {
   /**
    * Schedules an agent proposed and parked. Blocking: nothing runs until a
    * person says yes or no.
+   *
+   * **The `Task` objects, so the rows can be drawn — not a second answer to
+   * "what needs me".** A parked schedule is an attention signal of its own
+   * since DOR-1391, so `total` below counts it out of the one list like
+   * everything else; this array exists because an approve/reject card needs the
+   * task itself, which a normalized signal deliberately does not carry.
    */
   schedules: readonly Task[];
   /**
@@ -42,11 +48,12 @@ export interface AttentionRows {
   /** What recently went wrong, from the Inbox. Not blocking anything. */
   activity: readonly NotificationDTO[];
   /**
-   * True while ANY of the three sources is still on its first load.
+   * True while either source is still on its first load.
    *
-   * All three, deliberately — a surface that draws "All quiet" the moment two
-   * of them answer is claiming something it has not checked, and the session
-   * listing behind the error rows is the slowest of the three.
+   * Both, deliberately — a surface that draws "All quiet" the moment one of
+   * them answers is claiming something it has not checked. The attention half
+   * covers sessions, approvals, prompts and schedules in one answer since
+   * DOR-1391, so there is no third flag to compose here any more.
    */
   isLoading: boolean;
   /** How many rows all three groups come to — the number the badge shows. */
@@ -58,23 +65,44 @@ export interface AttentionRows {
  *
  * Blocking first (a parked schedule, then a wedged session), and what merely
  * happened after it.
+ *
+ * **Both blocking groups are slices of the ONE list.** Schedules used to be
+ * fetched beside the attention engine and counted on afterwards, which meant
+ * this hook, the sidebar's Heads up zone and the arrival watch each held their
+ * own idea of whether a parked schedule counted. It is an `AttentionSignal`
+ * now, so membership and the total are read off `useAttentionSignals` and the
+ * task lookup below exists only to hand the view something it can draw.
  */
 export function useAttentionRows(): AttentionRows {
-  const { schedules, isLoading: schedulesLoading } = usePendingScheduleApprovals();
   const signals = useAttentionSignals();
   const signalsLoading = useAttentionSignalsLoading();
   const { items: activity, isLoading: activityLoading } = useActivityNotifications();
+  // The payload for the cards, not the answer to whether there are any: the
+  // ids the one list holds are what decides that, immediately below.
+  const { schedules: tasks } = usePendingScheduleApprovals();
 
   const errors = useMemo(() => {
     const wedged = signals.filter((signal) => signal.kind === 'error');
     return wedged.length === 0 ? NO_SIGNALS : wedged;
   }, [signals]);
 
+  // The tasks the one list is currently calling blocking, in its order. A task
+  // whose signal has not landed yet (or has just gone) draws nothing, so the
+  // rows on screen and the total below can never disagree.
+  const schedules = useMemo(() => {
+    const parked = new Set(
+      signals
+        .filter((signal) => signal.kind === 'schedule-approval')
+        .map((signal) => signal.id.slice('schedule:'.length))
+    );
+    return tasks.filter((task) => parked.has(task.id));
+  }, [signals, tasks]);
+
   return {
     schedules,
     errors,
     activity,
-    isLoading: schedulesLoading || signalsLoading || activityLoading,
+    isLoading: signalsLoading || activityLoading,
     total: schedules.length + errors.length + activity.length,
   };
 }

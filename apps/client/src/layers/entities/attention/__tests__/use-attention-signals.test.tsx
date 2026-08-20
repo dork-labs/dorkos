@@ -21,11 +21,11 @@ const NOW = new Date('2026-08-09T09:15:00.000Z').getTime();
 const ALPHA = '/projects/alpha';
 
 /**
- * Two sessions: one touched a moment ago, one quiet for forty-five minutes.
+ * Two sessions: one touched a moment ago, one still for forty-five minutes.
  *
- * The stale one is what makes the dismissal case real — it is the only thing
- * here that can produce a dismissible nudge — and every other case parks it in
- * `streaming` so it stays silent.
+ * The stale one is what makes the "silence about a quiet session" case real —
+ * forty-five minutes is exactly what the retired idle nudge fired on — and
+ * every other case parks it in `streaming` so it cannot contribute anything.
  */
 const SESSIONS = [
   {
@@ -78,7 +78,6 @@ vi.mock('@/layers/entities/session/model/use-recent-sessions', () => ({
 import { TransportProvider } from '@/layers/shared/model';
 import { useSessionListStore } from '@/layers/entities/session';
 import { useAttentionSignals, useAttentionSignalsLoading } from '../model/use-attention-signals';
-import { useIdleNudgeStore } from '../model/idle-nudge-store';
 
 /** A `session_status` projection with a lifecycle and, optionally, a live verb. */
 function status(lifecycle: SessionStatus['lifecycle'], toolName?: string): SessionStatus {
@@ -117,9 +116,8 @@ describe('useAttentionSignals', () => {
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
     };
     useSessionListStore.getState().resetStatuses();
-    useIdleNudgeStore.getState().reset();
-    // The stale session is parked as working, so only the case that wants a
-    // nudge gets one.
+    // The stale session is parked as working unless a case says otherwise, so
+    // nothing here depends on what an untouched session does.
     useSessionListStore.getState().setSessionStatus('ses-2', status('streaming'));
   });
   afterEach(() => cleanup());
@@ -166,36 +164,48 @@ describe('useAttentionSignals', () => {
     expect(result.current[0]?.primary).toBe('alpha');
   });
 
-  it('drops an idle nudge the moment it is dismissed (BC-10)', async () => {
+  it('says nothing about a session that has only gone quiet (DOR-1391)', async () => {
+    // `ses-2` has been still for forty-five minutes, which is exactly what the
+    // retired idle nudge fired on. The engine is silent about it now, and the
+    // Today digest is where quiet sessions are mentioned instead.
     act(() => {
       useSessionListStore.getState().setSessionStatus('ses-2', status('idle'));
     });
-    const { result, rerender } = renderHook(() => useAttentionSignals(), { wrapper });
-    // It is THERE first. "It is gone" says nothing without this line.
-    await waitFor(() => expect(result.current.map((s) => s.id)).toEqual(['idle:ses-2']));
-
-    act(() => {
-      useIdleNudgeStore.getState().dismiss('idle:ses-2');
-    });
-    rerender();
+    const { result } = renderHook(() => useAttentionSignals(), { wrapper });
+    await waitFor(() => expect(providers.transport.listPendingApprovals).toHaveBeenCalled());
     expect(result.current).toEqual([]);
   });
 
-  it('refuses to let a dismissal reach anything that is not dismissible (BC-42)', async () => {
-    act(() => {
-      useSessionListStore.getState().setSessionStatus('ses-1', status('error'));
-    });
-    const { result, rerender } = renderHook(() => useAttentionSignals(), { wrapper });
-    await waitFor(() => expect(result.current.map((s) => s.id)).toEqual(['error:ses-1']));
+  it('carries a parked schedule in the one list (DOR-1391)', async () => {
+    // The fold: schedules used to be fetched beside this hook by every surface
+    // that needed both. Mounting the hook alone now answers with them.
+    providers.transport.listTasks = vi.fn().mockResolvedValue([
+      {
+        id: 'tsk-1',
+        name: 'nightly-audit',
+        displayName: 'Nightly audit',
+        prompt: 'Audit it.',
+        cron: '0 3 * * *',
+        timezone: 'UTC',
+        agentId: null,
+        enabled: false,
+        maxRuntime: null,
+        permissionMode: 'default',
+        status: 'pending_approval',
+        filePath: '/tasks/nightly-audit.json',
+        createdAt: new Date(NOW - 20 * 60_000).toISOString(),
+        updatedAt: new Date(NOW - 20 * 60_000).toISOString(),
+      },
+    ]);
 
-    act(() => {
-      useIdleNudgeStore.getState().dismiss('error:ses-1');
-    });
-    rerender();
+    const { result } = renderHook(() => useAttentionSignals(), { wrapper });
 
-    // A wedged session is not something the operator may wave away — it clears
-    // by being resolved, and nothing in Heads up offers a snooze.
-    expect(result.current.map((s) => s.id)).toEqual(['error:ses-1']);
+    await waitFor(() => expect(result.current.map((s) => s.id)).toEqual(['schedule:tsk-1']));
+    expect(result.current[0]).toMatchObject({
+      kind: 'schedule-approval',
+      primary: 'Nightly audit',
+      deepLink: '/tasks',
+    });
   });
 });
 
@@ -208,7 +218,6 @@ describe('useAttentionSignalsLoading', () => {
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
     };
     useSessionListStore.getState().resetStatuses();
-    useIdleNudgeStore.getState().reset();
   });
   afterEach(() => cleanup());
 

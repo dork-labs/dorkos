@@ -46,6 +46,7 @@ import { useRouter } from '@tanstack/react-router';
 import { cn } from '@/layers/shared/lib';
 import { PageContainer } from '@/layers/shared/ui';
 import {
+  needsYouLiveRegionText,
   SidebarBottomSlot,
   SidebarChrome,
   SidebarFooterStrip,
@@ -118,7 +119,13 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   // `DashboardSidebar` is never mounted at this width, so the one-time pin
   // migration has to run from here or a phone-only operator never gets it.
   useLegacyPinMigration();
-  const state = useSidebarState();
+  // Answer from anywhere (P4 AC-5). `slot` is `null` when there is nothing
+  // waiting AND nothing has failed — which is also what tells `SidebarZones`
+  // not to draw a Now zone for it. Read BEFORE the sidebar's state because the
+  // model needs to know which blockages these cards already cover, so it can
+  // leave those rows out rather than drawing each of them twice (DOR-1391).
+  const nowAttention = useNowAttentionSlot();
+  const state = useSidebarState({ coveredSignalIds: nowAttention.coveredSignalIds });
   const model = useSidebarModel(state);
   const { ask: askDorkBot, ready: dorkBotReady } = useAskDorkBot();
 
@@ -188,7 +195,16 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   // here: Now also holds the "N working" rollup, and a badge that counted rows
   // would tell a quiet morning that one agent needs it (P4 AC-2).
   const nowZone = model.zones.find((zone) => zone.id === 'now');
-  const needsYouCount = nowZone?.needsYouCount ?? 0;
+  // **The count outlives the zone, and on this cockpit it has to** (DOR-1391).
+  // The lead slot draws approvals and prompts as cards, and the model leaves
+  // those rows out — so when the cards cover everything there are no rows, no
+  // zone, and a badge read off the zone would say nothing while two agents sat
+  // blocked in cards on the screen above it. `state.attention` is the uncapped,
+  // unsuppressed list, and every kind in it is one Heads up admits (BC-5), so
+  // its length IS the number. The zone's own count still wins whenever there is
+  // a zone, because that one has already had the cap and the rollup reasoned
+  // about it.
+  const needsYouCount = nowZone?.needsYouCount ?? state.attention.length;
   // **The badge's words, said from outside the panels.** The badge itself is
   // `aria-hidden` on the grounds that the count is already announced — and it
   // is, by the region inside Now's zone, which lives inside a panel that is
@@ -197,12 +213,11 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   // announcement moved out here, beside the bar that never leaves the screen,
   // and the zone stands its own region down (`silenceLiveRegion`) rather than
   // both of them saying the same number.
-  const liveRegionText = useLiveRegionText(nowZone?.liveRegionText);
-
-  // Answer from anywhere (P4 AC-5). `null` when there is nothing waiting AND
-  // nothing has failed — which is also what tells `SidebarZones` not to draw a
-  // Now zone for it.
-  const nowAttention = useNowAttentionSlot();
+  // Same fallback, same reason: a screen-reader user with two cards on screen
+  // must hear the same number a sighted one reads off the badge.
+  const liveRegionText = useLiveRegionText(
+    nowZone?.liveRegionText ?? needsYouLiveRegionText(needsYouCount)
+  );
 
   return (
     <SidebarChrome activeTarget={state.activeTarget}>
@@ -244,7 +259,7 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
             <SidebarZones
               model={model}
               zoneIds={HOME_ZONE_IDS}
-              nowSlot={nowAttention}
+              nowSlot={nowAttention.slot}
               silenceLiveRegion
             />
             {/* A phone never mounted the bottom slot at all, so the one card

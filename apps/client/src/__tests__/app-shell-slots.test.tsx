@@ -81,13 +81,21 @@ vi.mock('@/layers/features/dashboard-sidebar', async () => {
     SidebarZones: ({ zoneIds }: { zoneIds?: readonly string[] }) => (
       <div data-testid={`sidebar-zones-${zoneIds?.join('+') ?? 'all'}`} />
     ),
-    useSidebarState: () => ({ activeTarget: null }),
+    // `attention` is here because the phone reads it: with every blockage drawn
+    // as a card the model emits no Heads up zone, so the tab badge falls back to
+    // this list for its count (DOR-1391). A stub missing it is not a
+    // `SidebarState`, and the widget must not paper over that with a defensive
+    // read — an empty list is the honest value for a shell suite that mounts no
+    // blockages.
+    useSidebarState: () => ({ activeTarget: null, attention: [] }),
     useSidebarModel: () => ({ zones: [] }),
     useAskDorkBot: () => ({ ask: vi.fn(), ready: true }),
     useLegacyPinMigration: () => {},
     // The phone's needs-you announcement, which the tabs now render OUTSIDE
     // their panels because a panel is `inert` whenever it is put away (P4.2).
     useLiveRegionText: (text: string | undefined) => text ?? '',
+    needsYouLiveRegionText: (count: number) =>
+      count === 0 ? undefined : `${count} agents need you`,
   };
 });
 
