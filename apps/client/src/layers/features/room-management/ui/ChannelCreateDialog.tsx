@@ -75,6 +75,12 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
   // value closed over at render time.
   const mountedRef = useRef(true);
   useEffect(() => {
+    // The setup half matters as much as the cleanup: StrictMode's dev-only
+    // setup→cleanup→setup double-invoke runs the cleanup below once before
+    // this ever mounts for real, and with no setup body to restore it the
+    // ref was stuck `false` for the dialog's whole life — every conflict
+    // read as "not mounted" and toasted on top of the inline alert.
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };

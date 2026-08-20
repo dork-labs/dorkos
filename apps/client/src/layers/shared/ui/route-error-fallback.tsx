@@ -26,6 +26,18 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
     void copy(error.stack);
   }
 
+  function stackCopyIcon() {
+    if (copied) return <Check className="size-3 text-green-500" />;
+    if (failed) return <X className="text-destructive size-3" />;
+    return <Copy className="size-3" />;
+  }
+
+  function stackCopyLabel(): string {
+    if (copied) return 'Copied!';
+    if (failed) return "Couldn't copy";
+    return 'Copy';
+  }
+
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 p-8">
       <AlertTriangle className="text-muted-foreground size-10" />
@@ -49,15 +61,9 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
               title="Copy stack trace"
               className="text-muted-foreground hover:text-foreground hover:bg-muted absolute top-0 right-0 flex items-center gap-1 rounded px-2 py-1 text-xs transition-all"
             >
-              {copied ? (
-                <Check className="size-3 text-green-500" />
-              ) : failed ? (
-                <X className="text-destructive size-3" />
-              ) : (
-                <Copy className="size-3" />
-              )}
+              {stackCopyIcon()}
               <span className={cn(copied && 'text-green-500', failed && 'text-destructive')}>
-                {copied ? 'Copied!' : failed ? "Couldn't copy" : 'Copy'}
+                {stackCopyLabel()}
               </span>
             </button>
             <pre className="text-muted-foreground overflow-x-auto pr-16 text-xs whitespace-pre-wrap">

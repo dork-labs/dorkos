@@ -19,6 +19,21 @@ interface CopyButtonProps {
  * match the compact form used inside Settings dialogs (size-3.5 icon,
  * muted-foreground hover).
  */
+/** The button's icon: a check on success, an X on failure, the bare glyph otherwise. */
+function CopyButtonIcon({
+  copied,
+  failed,
+  size,
+}: {
+  copied: boolean;
+  failed: boolean;
+  size: string;
+}) {
+  if (copied) return <Check className={cn(size, 'text-green-500')} />;
+  if (failed) return <X className={cn(size, 'text-destructive')} />;
+  return <Copy className={size} />;
+}
+
 export function CopyButton({
   value,
   label = 'Copy to clipboard',
@@ -38,13 +53,7 @@ export function CopyButton({
       onClick={() => void copy(value)}
       aria-label={failed ? "Couldn't copy — try again" : label}
     >
-      {copied ? (
-        <Check className={cn(iconSize, 'text-green-500')} />
-      ) : failed ? (
-        <X className={cn(iconSize, 'text-destructive')} />
-      ) : (
-        <Copy className={iconSize} />
-      )}
+      <CopyButtonIcon copied={copied} failed={failed} size={iconSize} />
     </button>
   );
 }

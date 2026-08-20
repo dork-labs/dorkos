@@ -222,6 +222,19 @@ function LogLocationRow({ dorkHome }: { dorkHome: string }) {
   const { copied, failed, copy } = useCopyFeedback();
   const logPath = `${dorkHome}/logs`;
 
+  function content() {
+    if (copied) return <span className="text-xs">Copied</span>;
+    if (failed) return <span className="text-destructive text-xs">Couldn&apos;t copy</span>;
+    return (
+      <>
+        <span className="max-w-40 truncate font-mono text-xs" dir="rtl" title={logPath}>
+          {logPath}
+        </span>
+        <Copy className="size-3 shrink-0" />
+      </>
+    );
+  }
+
   return (
     <SettingRow label="Log location" description="Directory where server log files are stored">
       <button
@@ -229,18 +242,7 @@ function LogLocationRow({ dorkHome }: { dorkHome: string }) {
         onClick={() => void copy(logPath)}
         className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
       >
-        {copied ? (
-          <span className="text-xs">Copied</span>
-        ) : failed ? (
-          <span className="text-destructive text-xs">Couldn&apos;t copy</span>
-        ) : (
-          <>
-            <span className="max-w-40 truncate font-mono text-xs" dir="rtl" title={logPath}>
-              {logPath}
-            </span>
-            <Copy className="size-3 shrink-0" />
-          </>
-        )}
+        {content()}
       </button>
     </SettingRow>
   );

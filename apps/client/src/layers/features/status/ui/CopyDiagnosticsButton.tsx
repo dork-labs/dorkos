@@ -10,6 +10,20 @@ interface CopyDiagnosticsButtonProps {
   className?: string;
 }
 
+/** The icon: a check on success, an X on failure, the clipboard glyph otherwise. */
+function DiagnosticsIcon({ copied, failed }: { copied: boolean; failed: boolean }) {
+  if (copied) return <Check className="size-3.5 text-green-500" aria-hidden />;
+  if (failed) return <X className="text-destructive size-3.5" aria-hidden />;
+  return <ClipboardCopy className="size-3.5" aria-hidden />;
+}
+
+/** The label paired with {@link DiagnosticsIcon} — always the same word for the same state. */
+function diagnosticsLabel(copied: boolean, failed: boolean): string {
+  if (copied) return 'Copied';
+  if (failed) return "Couldn't copy";
+  return 'Copy diagnostics';
+}
+
 /**
  * Put one JSON blob describing the session on the clipboard, and say so.
  *
@@ -30,14 +44,8 @@ export function CopyDiagnosticsButton({ diagnostics, className }: CopyDiagnostic
       className={cn('gap-1.5 text-xs', className)}
       onClick={handleCopy}
     >
-      {copied ? (
-        <Check className="size-3.5 text-green-500" aria-hidden />
-      ) : failed ? (
-        <X className="text-destructive size-3.5" aria-hidden />
-      ) : (
-        <ClipboardCopy className="size-3.5" aria-hidden />
-      )}
-      {copied ? 'Copied' : failed ? "Couldn't copy" : 'Copy diagnostics'}
+      <DiagnosticsIcon copied={copied} failed={failed} />
+      {diagnosticsLabel(copied, failed)}
     </Button>
   );
 }

@@ -6,7 +6,7 @@
  * empty does nothing, and until this dialog there was no affordance anywhere in
  * the product to put an agent in one.
  */
-import type { ReactNode } from 'react';
+import { StrictMode, useState, type ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -340,5 +340,71 @@ describe('ChannelCreateDialog', () => {
     nameIt('Backend Team');
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('survives StrictMode double-invoke: still inline, still no toast', async () => {
+    // The regression this guards: the mount effect had a cleanup half but no
+    // setup half. StrictMode's dev-only setup→cleanup→setup double-invoke ran
+    // that cleanup once before the dialog ever mounted for real, and with
+    // nothing to set `mountedRef.current` back to `true`, it stayed `false`
+    // for the dialog's whole life — every conflict read as "nobody left to
+    // show this inline" and toasted on top of the alert that was on screen.
+    //
+    // Wrapping the render call's `wrapper` OPTION in StrictMode does NOT
+    // reproduce this. It takes StrictMode wrapping the `ui` argument
+    // directly, with the dialog mounted for the first time by a state change
+    // inside an already-mounted host — `NewMenu.tsx`'s own shape
+    // (`{channelDialogOpen && <ChannelCreateDialog open ... />}`) — not
+    // present from the very first render.
+    const transport = createMockTransport({
+      createRoom: vi
+        .fn()
+        .mockRejectedValue(slugTakenError('A channel called #backend already exists')),
+    });
+    const queryClient = new QueryClient({
+      ...createQueryClientConfig(),
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    mockRosterRef.current = settled();
+
+    function Host() {
+      const [dialogOpen, setDialogOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setDialogOpen(true)}>
+            New channel
+          </button>
+          {dialogOpen && (
+            <ChannelCreateDialog
+              open
+              onOpenChange={(next) => !next && setDialogOpen(false)}
+              onCreated={vi.fn()}
+            />
+          )}
+        </>
+      );
+    }
+
+    render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>
+            <TooltipProvider>
+              <Host />
+            </TooltipProvider>
+          </TransportProvider>
+        </QueryClientProvider>
+      </StrictMode>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'New channel' }));
+    nameIt('Backend');
+    pick('Ana');
+    fireEvent.click(screen.getByRole('button', { name: 'Create channel with 1 agent' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A channel called #backend already exists'
+    );
+    expect(toastError).not.toHaveBeenCalled();
   });
 });

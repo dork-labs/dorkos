@@ -175,4 +175,56 @@ describe('useCopyFeedback', () => {
     expect(toast.error).toHaveBeenCalledWith("Couldn't copy to the clipboard");
     expect(toast.success).not.toHaveBeenCalled();
   });
+
+  it('does not let an earlier copy cut a later one short (successive copies / double-click)', async () => {
+    stubClipboard('resolve');
+    const { result } = renderHook(() => useCopyFeedback({ timeoutMs: 1000 }));
+
+    await act(async () => {
+      await result.current.copy('first');
+    });
+    expect(result.current.copied).toBe(true);
+
+    // Halfway through the first window, copy again. The second call must get
+    // its own full window rather than inherit whatever was left of the
+    // first's — without cancelling the first call's timer, this app would
+    // watch its own success state flicker off mid-read on a second copy.
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    await act(async () => {
+      await result.current.copy('second');
+    });
+    expect(result.current.copied).toBe(true);
+
+    // The FIRST call's timer would fire right here (500ms + 500ms = 1000ms
+    // since the first copy). Still true proves it was cancelled, not just
+    // that both happen to agree.
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(result.current.copied).toBe(true);
+
+    // The second call's own full window has now elapsed.
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(result.current.copied).toBe(false);
+  });
+
+  it('clears its pending revert timer on unmount', async () => {
+    stubClipboard('resolve');
+    const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
+    const { result, unmount } = renderHook(() => useCopyFeedback());
+
+    await act(async () => {
+      await result.current.copy('hello');
+    });
+    clearTimeoutSpy.mockClear();
+
+    unmount();
+
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    clearTimeoutSpy.mockRestore();
+  });
 });

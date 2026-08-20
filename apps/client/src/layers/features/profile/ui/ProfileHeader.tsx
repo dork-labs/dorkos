@@ -71,6 +71,13 @@ export function ProfileHeader({
     void copy(`@${member.handle}`);
   }
 
+  /** What the button reads: the handle at rest, "Copied", or the failure. */
+  function handleButtonLabel(): string {
+    if (copied) return 'Copied';
+    if (failed) return "Couldn't copy";
+    return `@${member.handle}`;
+  }
+
   return (
     // `pt-8` clears the chrome row the sheet puts in this corner (its close X,
     // and the kebab beside it) so the face is never crowded by controls that
@@ -148,7 +155,7 @@ export function ProfileHeader({
             failed ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          {copied ? 'Copied' : failed ? "Couldn't copy" : `@${member.handle}`}
+          {handleButtonLabel()}
         </button>
       )}
 

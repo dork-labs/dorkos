@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 /** How long `copied`/`failed` holds before the control reverts to idle (~1.2s). */
@@ -14,10 +14,14 @@ export interface UseCopyFeedbackOptions {
    *
    * This is the fallback for a control that has nothing left on screen to
    * morph once it is clicked — a dropdown item that closes its menu, a row
-   * inside a list that unmounts with it. Every such call site sets this flag
-   * rather than hand-rolling its own `toast.success`/`toast.error`, so "copy"
-   * reads as one pattern everywhere it appears in the app (research
-   * `20260819_notification-system-review.md` §2.4 item 2).
+   * inside a list that unmounts with it. Every call site that wants BOTH
+   * outcomes announced sets this flag rather than hand-rolling its own
+   * `toast.success`/`toast.error` (research
+   * `20260819_notification-system-review.md` §2.4 item 2). The one call site
+   * that wants only ONE outcome announced — `use-file-actions.ts`'s
+   * `copyPath`, silent on success by design — leaves this off and reads
+   * `copy()`'s own return value instead, since a flag this blunt has no way
+   * to announce just one side.
    */
   toastOnSettle?: boolean;
 }
@@ -61,6 +65,16 @@ export function useCopyFeedback(options: UseCopyFeedbackOptions = {}): UseCopyFe
   const { timeoutMs = DEFAULT_TIMEOUT_MS, toastOnSettle = false } = options;
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
+  // A second `copy()` before the first call's window closes must get its OWN
+  // full `timeoutMs` — without tracking the pending timer, the first call's
+  // now-stale one would fire mid-second-window and cut it short.
+  const revertTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (revertTimeoutRef.current !== null) clearTimeout(revertTimeoutRef.current);
+    };
+  }, []);
 
   const copy = useCallback(
     async (text: string) => {
@@ -77,9 +91,11 @@ export function useCopyFeedback(options: UseCopyFeedbackOptions = {}): UseCopyFe
         setFailed(true);
         if (toastOnSettle) toast.error("Couldn't copy to the clipboard");
       }
-      setTimeout(() => {
+      if (revertTimeoutRef.current !== null) clearTimeout(revertTimeoutRef.current);
+      revertTimeoutRef.current = setTimeout(() => {
         setCopied(false);
         setFailed(false);
+        revertTimeoutRef.current = null;
       }, timeoutMs);
       return ok;
     },
