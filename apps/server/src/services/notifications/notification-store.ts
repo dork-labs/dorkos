@@ -244,7 +244,11 @@ export class NotificationStore {
     if (query.before) conditions.push(lt(notifications.id, query.before));
     if (query.agentId) conditions.push(eq(notifications.agentId, query.agentId));
     if (query.sessionId) conditions.push(eq(notifications.sessionId, query.sessionId));
-    if (query.kind) conditions.push(eq(notifications.kind, query.kind));
+    // `inArray` even for one kind: the filter is a list now (see
+    // `ListNotificationsQuerySchema.kind`), and branching on its length would be
+    // two code paths for one question.
+    if (query.kind && query.kind.length > 0)
+      conditions.push(inArray(notifications.kind, query.kind));
     if (query.unread) conditions.push(isNull(notifications.readAt));
 
     const rows = this.db

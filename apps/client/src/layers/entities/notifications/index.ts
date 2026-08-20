@@ -25,6 +25,8 @@ export {
   matchesLens,
   upsertNotification,
   applyNotificationRead,
+  clearBumpedNotifications,
+  MAX_LIVE_PAGE_ROWS,
 } from './model/notification-cache';
 export type { NotificationLens, NotificationPages } from './model/notification-cache';
 export {

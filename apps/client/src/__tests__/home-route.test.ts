@@ -11,8 +11,9 @@ import { homeSearchSchema } from '../router';
 
 describe('the home route search schema', () => {
   it('keeps the attention deep links working', () => {
-    // Exactly what `useRecentActivityItems` navigates to, and what a pasted
-    // link carries. The pinned triage header opens the sheet off these two.
+    // Exactly what `notificationLink` (in `entities/notifications`) navigates
+    // to for a failed run and an unreachable agent, and what a pasted link
+    // carries. The pinned triage header opens the sheet off these two.
     expect(homeSearchSchema.parse({ detail: 'failed-run', itemId: 'run-9' })).toMatchObject({
       detail: 'failed-run',
       itemId: 'run-9',

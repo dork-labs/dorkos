@@ -15,6 +15,7 @@ import {
   NotificationEventSchema,
   NotificationReadEventSchema,
   type NotificationDTO,
+  type NotificationKind,
 } from '@dorkos/shared/notification-schemas';
 import { useEventSubscription, useTransport } from '@/layers/shared/model';
 import {
@@ -84,6 +85,9 @@ export function useNotifications(lens?: NotificationLens): NotificationsState {
   const agentId = lens?.agentId;
   const sessionId = lens?.sessionId;
   const unread = lens?.unread;
+  // Joined for the dependency the query key already carries, so a caller
+  // passing a fresh array literal every render does not refetch.
+  const kinds = lens?.kinds === undefined ? undefined : [...lens.kinds].sort().join(',');
 
   const query = useInfiniteQuery({
     queryKey,
@@ -93,6 +97,9 @@ export function useNotifications(lens?: NotificationLens): NotificationsState {
         ...(pageParam === undefined ? {} : { before: pageParam }),
         ...(agentId === undefined ? {} : { agentId }),
         ...(sessionId === undefined ? {} : { sessionId }),
+        ...(kinds === undefined || kinds === ''
+          ? {}
+          : { kind: kinds.split(',') as NotificationKind[] }),
         ...(unread === true ? { unread: true } : {}),
       }),
     initialPageParam: undefined as string | undefined,

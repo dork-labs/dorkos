@@ -275,7 +275,45 @@ export const ListNotificationsQuerySchema = z
     before: z.string().min(1).optional(),
     agentId: z.string().optional(),
     sessionId: z.string().optional(),
-    kind: NotificationKindSchema.optional(),
+    /**
+     * Only these kinds — a comma-separated list, e.g. `run.completed,agent.note`.
+     *
+     * **A list rather than a single kind, because the surfaces that filter by
+     * kind at all want several.** Home's "Recent activity" group asks for the
+     * three that mean something broke; narrowing to one kind per request would
+     * make it either open three requests or, worse, read the unfiltered list and
+     * narrow in the client — where a page of finished turns washes the failures
+     * out of the first 25 rows and whether you see one depends on having pressed
+     * "Load more".
+     *
+     * Flat and comma-separated rather than a repeated parameter, matching
+     * `ListActivityQuery.categories`: one spelling for multi-value filters
+     * across the API. Unknown kinds are refused rather than dropped — silently
+     * ignoring a typo answers a filter nobody asked for.
+     */
+    kind: z
+      .string()
+      .transform((value, ctx) => {
+        const parts = value
+          .split(',')
+          .map((part) => part.trim())
+          .filter((part) => part !== '');
+        if (parts.length === 0) return undefined;
+        const parsed = z.array(NotificationKindSchema).safeParse(parts);
+        if (!parsed.success) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `Unknown notification kind in "${value}".`,
+          });
+          return z.NEVER;
+        }
+        return parsed.data;
+      })
+      // Outside the transform, not inside it: `.optional()` here short-circuits
+      // on an absent parameter and leaves the KEY optional, where an inner
+      // `.optional()` would make every caller — including every test that builds
+      // a query by hand — pass `kind: undefined` explicitly.
+      .optional(),
     /**
      * Only unread notifications.
      *

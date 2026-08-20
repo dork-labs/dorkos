@@ -12,7 +12,7 @@ import {
 import { useTopology } from '@/layers/entities/mesh';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
-import { formatRelativeTime } from '../lib/format-relative-time';
+import { formatCompactAge } from '@/layers/shared/lib';
 import { Check } from 'lucide-react';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
 import { useMemo } from 'react';
@@ -50,7 +50,7 @@ function AgentRow({ agent }: AgentRowProps) {
       </div>
       {agent.lastSeenAt && (
         <span className="text-muted-foreground shrink-0 text-xs">
-          {formatRelativeTime(agent.lastSeenAt)} ago
+          {formatCompactAge(agent.lastSeenAt)} ago
         </span>
       )}
     </div>

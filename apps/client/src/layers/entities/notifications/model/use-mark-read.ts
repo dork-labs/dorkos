@@ -16,6 +16,7 @@ import {
   applyNotificationRead,
   restoreNotifications,
   snapshotNotifications,
+  NOTIFICATIONS_QUERY_KEY,
   type NotificationPages,
 } from './notification-cache';
 
@@ -62,7 +63,12 @@ export function useMarkRead(): MarkReadMutation {
     [readonly unknown[], NotificationPages | undefined][]
   >({
     mutationFn: (id) => transport.markNotificationRead(id),
-    onMutate: (id) => {
+    onMutate: async (id) => {
+      // Before the snapshot, always. An in-flight refetch that lands after this
+      // writes the server's pre-mark page straight over the optimistic one, and
+      // a snapshot taken while one is in the air is a snapshot of a page that no
+      // longer exists — so a rollback would restore the wrong thing.
+      await queryClient.cancelQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
       const snapshot = snapshotNotifications(queryClient);
       applyNotificationRead(queryClient, {
         ids: [id],
@@ -104,7 +110,10 @@ export function useMarkAllRead(): MarkAllReadMutation {
     [readonly unknown[], NotificationPages | undefined][]
   >({
     mutationFn: () => transport.markAllNotificationsRead(),
-    onMutate: () => {
+    onMutate: async () => {
+      // See `useMarkRead` above: cancel first, or an in-flight refetch clobbers
+      // the optimistic write and the snapshot rolls back to a stale page.
+      await queryClient.cancelQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
       const snapshot = snapshotNotifications(queryClient);
       applyNotificationRead(queryClient, {
         ids: [],

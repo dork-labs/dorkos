@@ -838,3 +838,226 @@ describe('InboxBell — history and read state', () => {
     expect(await screen.findByText('Activity')).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// The escape hatch: a quiet cockpit that is ASKED for its Inbox
+// ---------------------------------------------------------------------------
+
+describe('InboxBell — opening a bell that has nothing to say', () => {
+  /** Handlers the hook registered, keyed by event name. */
+  let handlers: Map<string, (raw: unknown) => void>;
+
+  beforeEach(() => {
+    handlers = new Map();
+    mockConnectionState = 'connected';
+    clearInboxRequest();
+    mockNavigate.mockClear();
+    vi.mocked(useEventSubscription).mockImplementation((event, handler) => {
+      handlers.set(event, handler as (raw: unknown) => void);
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  /** Nothing waiting, nothing unread, nothing trusted — the pill draws nothing. */
+  const FULLY_QUIET = {
+    listPendingApprovals: () => Promise.resolve({ approvals: [] }),
+    listNotifications: () =>
+      Promise.resolve({ notifications: [], nextCursor: null, unreadCount: 0 }),
+  };
+
+  it('opens for a session that asked, even with an empty Inbox and nothing waiting', async () => {
+    // The escape hatch this pins: `quiet` normally unmounts the whole popover,
+    // so without it "View notifications" in a session menu is a button that
+    // does nothing on exactly the cockpit where a person is most likely to
+    // press it — the calm one. Seeded defect: drop `&& !open` from `quiet` and
+    // this finds no bell at all.
+    renderIndicator(FULLY_QUIET);
+
+    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
+
+    act(() => requestInbox({ sessionId: 'ses-42' }));
+
+    const bell = await screen.findByTestId('inbox-bell');
+    // Neutral, and no number: "0 trusted" is a sentence about nothing.
+    expect(bell).toHaveAttribute('data-tone', 'neutral');
+    expect(bell).toHaveAccessibleName('Your Inbox. Nothing is waiting and nothing is unread.');
+    expect(bell).not.toHaveTextContent(/\d/);
+    expect(await screen.findByText('Activity · this session')).toBeInTheDocument();
+  });
+
+  it('opens on ⌘⇧Y with no ask cards anywhere to jump to', async () => {
+    // The shortcut's documented fallback — "opens whatever surface holds it" —
+    // for a route showing none of them. It reaches `requestAskTray`, which sets
+    // `open`, which is the only thing keeping the popover mounted here.
+    renderIndicator(FULLY_QUIET);
+
+    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
+
+    await userEvent.keyboard('{Meta>}{Shift>}y{/Shift}{/Meta}');
+
+    expect(await screen.findByTestId('inbox-bell')).toBeInTheDocument();
+    // No lens: the shortcut asks for everything waiting, not for one session.
+    expect(await screen.findByText('Activity')).toBeInTheDocument();
+  });
+
+  it('goes back to drawing nothing once the panel is closed', async () => {
+    renderIndicator(FULLY_QUIET);
+
+    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    act(() => requestInbox());
+    await screen.findByTestId('inbox-bell');
+
+    await userEvent.keyboard('{Escape}');
+
+    // The hatch is for the duration of the asking, not a permanent promotion:
+    // a marker that stayed behind would be the decoration-without-signal the
+    // widget has always refused.
+    await waitFor(() => expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Copy and ordering details the pill and panel owe
+// ---------------------------------------------------------------------------
+
+describe('InboxBell — what the panel says', () => {
+  /** Handlers the hook registered, keyed by event name. */
+  let handlers: Map<string, (raw: unknown) => void>;
+
+  beforeEach(() => {
+    handlers = new Map();
+    mockConnectionState = 'connected';
+    clearInboxRequest();
+    mockNavigate.mockClear();
+    vi.mocked(useEventSubscription).mockImplementation((event, handler) => {
+      handlers.set(event, handler as (raw: unknown) => void);
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('hides Mark all read under a filtered lens, where it would not mean what it says', async () => {
+    // The button is fleet-global. Under a session header it reads as "mark this
+    // session read" and would silently clear the whole Inbox.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listNotifications: vi
+        .fn()
+        .mockResolvedValue({ notifications: [], nextCursor: null, unreadCount: 3 }),
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    expect(await screen.findByRole('button', { name: 'Mark all read' })).toBeInTheDocument();
+
+    act(() => requestInbox({ sessionId: 'ses-42' }));
+
+    await screen.findByText('Activity · this session');
+    expect(screen.queryByRole('button', { name: 'Mark all read' })).not.toBeInTheDocument();
+
+    // And it comes back when the filter does.
+    await userEvent.click(screen.getByRole('button', { name: 'Show everything' }));
+    expect(await screen.findByRole('button', { name: 'Mark all read' })).toBeInTheDocument();
+  });
+
+  it('says nothing is waiting rather than "0 requests" while a receipt is still up', async () => {
+    // The settling window: the last ask has been answered, the card is still on
+    // screen saying how it ended, and the count is zero. The old summary read
+    // "0 requests are waiting for your answer", which is a sentence about
+    // nothing said at the exact moment somebody finished their queue.
+    const listPendingInteractions = vi.fn().mockResolvedValue({
+      interactions: [
+        {
+          sessionId: 'session-1',
+          cwd: '/projects/meeting-notes',
+          interaction: {
+            type: 'question',
+            id: 'q-1',
+            startedAt: Date.now(),
+            remainingMs: 600_000,
+            timeoutMs: 600_000,
+            questions: [],
+          },
+        },
+      ],
+    });
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listPendingInteractions,
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    // The panel's own summary, not the pill's accessible name — both say a
+    // version of this sentence, and only one of them is under test.
+    expect(
+      await screen.findByText('1 agent is waiting on your answer before carrying on.')
+    ).toBeInTheDocument();
+
+    // Somebody answered it, anywhere.
+    act(() =>
+      handlers.get('interaction_resolved')?.({
+        sessionId: 'session-1',
+        interactionId: 'q-1',
+        outcome: 'answered',
+        resolvedAt: new Date().toISOString(),
+      })
+    );
+
+    await waitFor(() => expect(screen.getByText('Answered.')).toBeInTheDocument());
+    expect(screen.queryByText(/0 requests/)).not.toBeInTheDocument();
+  });
+
+  it('keeps saying "answered" over "trusted" while a receipt is still up', async () => {
+    // Ordering inside the pill: a receipt is about the thing just finished and
+    // outranks a standing permission, which is a state that has been true all
+    // along. Seeded defect: move the trusted branch above the settling one and
+    // the pill flips to "2 trusted" in the frame the answer lands.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      getConfig: configWithStandingGrants(),
+      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
+      listPendingInteractions: vi.fn().mockResolvedValue({
+        interactions: [
+          {
+            sessionId: 'session-1',
+            cwd: '/projects/meeting-notes',
+            interaction: {
+              type: 'question',
+              id: 'q-1',
+              startedAt: Date.now(),
+              remainingMs: 600_000,
+              timeoutMs: 600_000,
+              questions: [],
+            },
+          },
+        ],
+      }),
+    });
+
+    const bell = await screen.findByTestId('inbox-bell');
+    await waitFor(() => expect(bell).toHaveAttribute('data-tone', 'waiting'));
+
+    act(() =>
+      handlers.get('interaction_resolved')?.({
+        sessionId: 'session-1',
+        interactionId: 'q-1',
+        outcome: 'answered',
+        resolvedAt: new Date().toISOString(),
+      })
+    );
+
+    await waitFor(() => expect(bell).toHaveTextContent('answered'));
+    expect(bell).toHaveAttribute('data-tone', 'waiting');
+    expect(bell).not.toHaveTextContent('trusted');
+  });
+});

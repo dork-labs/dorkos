@@ -13,6 +13,8 @@ import type {
 } from '@dorkos/shared/notification-schemas';
 import {
   applyNotificationRead,
+  clearBumpedNotifications,
+  MAX_LIVE_PAGE_ROWS,
   matchesLens,
   notificationsQueryKey,
   restoreNotifications,
@@ -91,6 +93,7 @@ describe('upsertNotification', () => {
 
   beforeEach(() => {
     client = new QueryClient();
+    clearBumpedNotifications();
   });
 
   it('puts a new notification at the front of the newest page', () => {
@@ -161,6 +164,7 @@ describe('applyNotificationRead', () => {
 
   beforeEach(() => {
     client = new QueryClient();
+    clearBumpedNotifications();
   });
 
   it('marks named ids and rewrites the count on every page', () => {
@@ -273,6 +277,7 @@ describe('upsertNotification and the unread count', () => {
 
   beforeEach(() => {
     client = new QueryClient();
+    clearBumpedNotifications();
   });
 
   it('bumps the count when a new unread notification arrives', () => {
@@ -333,5 +338,152 @@ describe('upsertNotification and the unread count', () => {
       client.getQueryData<NotificationPages>(notificationsQueryKey({ agentId: 'alpha' }))?.pages[0]
         ?.unreadCount
     ).toBe(4);
+  });
+});
+
+describe('the kinds lens', () => {
+  let client: QueryClient;
+
+  beforeEach(() => {
+    client = new QueryClient();
+    clearBumpedNotifications();
+  });
+
+  it('keeps a notification out of a kinds lens it does not belong to', () => {
+    expect(matchesLens(build({ kind: 'turn.completed' }), { kinds: ['run.completed'] })).toBe(
+      false
+    );
+    expect(
+      matchesLens(build({ kind: 'run.completed' }), {
+        kinds: ['run.completed', 'agent.unreachable'],
+      })
+    ).toBe(true);
+  });
+
+  it('shares one cache entry however the kinds were ordered', () => {
+    // TanStack hashes keys structurally, so an unsorted array would open a
+    // second entry — and a second request — for the same lens.
+    expect(
+      JSON.stringify(notificationsQueryKey({ kinds: ['run.completed', 'agent.unreachable'] }))
+    ).toBe(
+      JSON.stringify(notificationsQueryKey({ kinds: ['agent.unreachable', 'run.completed'] }))
+    );
+  });
+
+  it('does not let a burst of finished turns evict a failed run from its lens', () => {
+    // THE regression this lens exists for. Home's activity group reads its own
+    // paged query; a morning of finished turns lands in the unfiltered lens and
+    // must not touch it. Seeded defect: point `useActivityNotifications` back
+    // at the unfiltered list and the failure is pushed past the first page.
+    seed(client, undefined, infinite(page([])));
+    seed(client, { kinds: ['run.completed'] }, infinite(page([])));
+
+    upsertNotification(client, build({ id: 'failed-run', kind: 'run.completed', tier: 'notable' }));
+    for (let i = 0; i < 40; i += 1) {
+      upsertNotification(client, build({ id: `turn-${i}`, kind: 'turn.completed' }));
+    }
+
+    const activity = read(client, { kinds: ['run.completed'] });
+    expect(activity).toHaveLength(1);
+    expect(activity[0]?.id).toBe('failed-run');
+    // And the unfiltered lens did take all of them, so the two really are
+    // separate caches rather than one filtered twice.
+    expect(read(client).length).toBeGreaterThan(1);
+  });
+
+  it('still moves the fleet-wide count for a row a kinds lens rejects', () => {
+    seed(client, { kinds: ['run.completed'] }, infinite(page([], 2)));
+
+    upsertNotification(client, build({ id: 'turn-1', kind: 'turn.completed' }));
+
+    const data = client.getQueryData<NotificationPages>(
+      notificationsQueryKey({ kinds: ['run.completed'] })
+    );
+    expect(data?.pages[0]?.notifications).toHaveLength(0);
+    expect(data?.pages[0]?.unreadCount).toBe(3);
+  });
+});
+
+describe('the double-bump guard', () => {
+  let client: QueryClient;
+
+  beforeEach(() => {
+    client = new QueryClient();
+    clearBumpedNotifications();
+  });
+
+  it('counts one arrival once however many hooks are subscribed', () => {
+    // Every mounted `useNotifications` subscribes to the `notification` event
+    // separately, so one arrival calls this once per hook. Cache membership
+    // absorbs that when the row lands somewhere — but here it matches NO cached
+    // lens, so without the guard each caller sees "new" and adds one.
+    seed(client, { agentId: 'alpha' }, infinite(page([], 5)));
+    seed(client, { agentId: 'beta' }, infinite(page([], 5)));
+
+    const arrival = build({ id: 'n1', agentId: 'gamma' });
+    upsertNotification(client, arrival);
+    upsertNotification(client, arrival);
+    upsertNotification(client, arrival);
+
+    const alpha = client.getQueryData<NotificationPages>(
+      notificationsQueryKey({ agentId: 'alpha' })
+    );
+    expect(alpha?.pages[0]?.unreadCount).toBe(6);
+  });
+
+  it('still counts a genuinely different arrival', () => {
+    seed(client, { agentId: 'alpha' }, infinite(page([], 0)));
+
+    upsertNotification(client, build({ id: 'n1', agentId: 'gamma' }));
+    upsertNotification(client, build({ id: 'n2', agentId: 'gamma' }));
+
+    const alpha = client.getQueryData<NotificationPages>(
+      notificationsQueryKey({ agentId: 'alpha' })
+    );
+    expect(alpha?.pages[0]?.unreadCount).toBe(2);
+  });
+});
+
+describe('the live-page cap', () => {
+  let client: QueryClient;
+
+  beforeEach(() => {
+    client = new QueryClient();
+    clearBumpedNotifications();
+  });
+
+  it('stops the newest page growing without bound', () => {
+    seed(client, undefined, infinite(page([])));
+
+    for (let i = 0; i < MAX_LIVE_PAGE_ROWS + 20; i += 1) {
+      upsertNotification(client, build({ id: `n${String(i).padStart(3, '0')}` }));
+    }
+
+    expect(read(client)).toHaveLength(MAX_LIVE_PAGE_ROWS);
+  });
+
+  it('moves the cursor back to the last row it kept, so nothing is skipped', () => {
+    // `before: <cursor>` is exclusive. Leaving the cursor on a row the trim
+    // dropped would ask for everything OLDER than a row that is nowhere, and
+    // that row would never be seen again. Seeded defect: keep the original
+    // cursor and this reads the id of a row no longer in the page.
+    seed(client, undefined, infinite(page([build({ id: 'a000' })])));
+
+    for (let i = 0; i < MAX_LIVE_PAGE_ROWS + 5; i += 1) {
+      upsertNotification(client, build({ id: `n${String(i).padStart(3, '0')}` }));
+    }
+
+    const data = client.getQueryData<NotificationPages>(notificationsQueryKey());
+    const rows = data?.pages[0]?.notifications ?? [];
+    expect(data?.pages[0]?.nextCursor).toBe(rows[rows.length - 1]?.id);
+  });
+
+  it('leaves a page that never reached the cap alone, cursor included', () => {
+    seed(client, undefined, infinite(page([build({ id: 'a000' })])));
+    upsertNotification(client, build({ id: 'n001' }));
+
+    const data = client.getQueryData<NotificationPages>(notificationsQueryKey());
+    expect(data?.pages[0]?.nextCursor).toBeNull();
+    expect(data?.pages[0]?.notifications).toHaveLength(2);
   });
 });

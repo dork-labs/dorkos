@@ -321,11 +321,19 @@ export function InboxBell() {
                   <h2 className="text-status-warning-fg hidden text-xs font-medium tracking-widest uppercase md:block">
                     Needs You
                   </h2>
-                  {!unreadable && (
-                    <p className="text-muted-foreground text-xs md:mt-1">
-                      {waitingSummary(approvalCount, asks.length)}
-                    </p>
-                  )}
+                  {/* While only a receipt is left, the count is zero and the
+                      summary would read "0 requests are waiting for your
+                      answer" — a sentence about nothing, said at the exact
+                      moment somebody finished their queue. It says what just
+                      happened instead. */}
+                  {!unreadable &&
+                    (waitingCount === 0 ? (
+                      <p className="text-muted-foreground text-xs md:mt-1">Answered.</p>
+                    ) : (
+                      <p className="text-muted-foreground text-xs md:mt-1">
+                        {waitingSummary(approvalCount, asks.length)}
+                      </p>
+                    ))}
                   {/* Shown alongside the cards when a refresh failed but earlier
                       results are still on screen — the list may be out of date,
                       and saying so beats a stale count nobody thinks to question. */}
@@ -417,7 +425,12 @@ export function InboxBell() {
                         Show everything
                       </Button>
                     )}
-                    {unreadCount > 0 && (
+                    {/* Only when the list is unfiltered. The mutation is
+                        fleet-global — it marks every unread notification, not
+                        the ones on screen — so under a session header the
+                        button would read as "mark this session read" and
+                        silently clear the whole Inbox. */}
+                    {unreadCount > 0 && lens === undefined && (
                       <Button
                         variant="ghost"
                         size="sm"

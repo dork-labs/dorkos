@@ -127,6 +127,55 @@ describe('GET /api/notifications', () => {
     expect(res.body.notifications[0].outcome).toBe('expired');
   });
 
+  it('filters to several kinds at once, comma-separated', async () => {
+    // The shape home's activity group asks for: the three kinds that mean
+    // something broke, in one request. Without it that surface has to read the
+    // unfiltered list and narrow in the client, where a page of finished turns
+    // washes the failures out of the first 25 rows.
+    await seed(2);
+    await service.notify('dead-letter.created', { deadLetterId: 'dl-1', reason: 'no route' });
+    await service.notify('agent.unreachable', { agentId: 'a-9', agentName: 'tangerines' });
+
+    const res = await request(buildApp())
+      .get('/api/notifications')
+      .query({ kind: 'dead-letter.created,agent.unreachable' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.notifications.map((n: { kind: string }) => n.kind).sort()).toEqual([
+      'agent.unreachable',
+      'dead-letter.created',
+    ]);
+    // The unread count stays fleet-wide, whatever the filter: it is what the
+    // bell draws, and a count scoped to the lens would go quiet the moment
+    // somebody opened one page.
+    expect(res.body.unreadCount).toBe(4);
+  });
+
+  it('ignores whitespace around a comma-separated kind list', async () => {
+    await seed(1);
+    await service.notify('agent.unreachable', { agentId: 'a-9', agentName: 'tangerines' });
+
+    const res = await request(buildApp())
+      .get('/api/notifications')
+      .query({ kind: ' agent.unreachable , turn.completed ' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.notifications).toHaveLength(2);
+  });
+
+  it('refuses a kind it has never heard of rather than answering an unfiltered list', async () => {
+    // Silently dropping the typo would answer a filter nobody asked for, which
+    // reads as "there is nothing of that kind" instead of "that is not a kind".
+    await seed(2);
+
+    const res = await request(buildApp())
+      .get('/api/notifications')
+      .query({ kind: 'agent.unreachable,not-a-kind' });
+
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toContain('not-a-kind');
+  });
+
   it('filters to the unread ones, and reads `unread=false` as "everything"', async () => {
     const ids = await seed(2);
     service.markRead(ids[0]);

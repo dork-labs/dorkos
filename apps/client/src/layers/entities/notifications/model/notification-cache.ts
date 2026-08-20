@@ -16,6 +16,7 @@ import type { InfiniteData, QueryClient } from '@tanstack/react-query';
 import type {
   ListNotificationsResponse,
   NotificationDTO,
+  NotificationKind,
   NotificationReadEvent,
 } from '@dorkos/shared/notification-schemas';
 
@@ -25,12 +26,88 @@ export interface NotificationLens {
   agentId?: string;
   /** Only notifications about this session — the session menu's view. */
   sessionId?: string;
+  /**
+   * Only these kinds — home's activity group asks for the three that mean
+   * something broke.
+   *
+   * A lens key, so the rows come off their OWN paged query rather than being
+   * sieved out of the bell's first page: a working morning puts 25 finished
+   * turns above the one run that failed, and a group that narrowed in the client
+   * would show nothing until somebody pressed "Load more".
+   */
+  kinds?: readonly NotificationKind[];
   /** Only unread ones. */
   unread?: boolean;
 }
 
 /** Root of every Inbox query key, so one filter reaches all the lenses. */
 export const NOTIFICATIONS_QUERY_KEY = ['notifications'] as const;
+
+/**
+ * How many live arrivals one lens will hold on its newest page.
+ *
+ * A cockpit left open overnight prepends a row per event forever, and nothing
+ * else trims it: TanStack keeps the pages it has, and the rows arriving over SSE
+ * were never paged in. Two pages' worth is more than any popover shows and more
+ * than anybody scrolls without paging, so the tail past it is dropped.
+ *
+ * **Dropping is safe because the server still has it.** The rows fall off the
+ * BOTTOM of the newest page, which is exactly where "Load more" fetches from —
+ * so a person who scrolls that far gets them back off `GET /api/notifications`,
+ * cursored, rather than out of a cache that grew all night.
+ */
+export const MAX_LIVE_PAGE_ROWS = 50;
+
+/**
+ * How many arrivals the double-bump guard remembers.
+ *
+ * It only has to outlive one event's fan-out across the mounted hooks, which is
+ * a handful of synchronous calls. Two hundred is far more than that and still a
+ * few kilobytes of ids.
+ */
+const BUMPED_MEMORY = 200;
+
+/**
+ * Ids whose unread bump has already been counted.
+ *
+ * **Module-level because the double-count is too.** Every mounted
+ * `useNotifications` subscribes to the `notification` event separately, so one
+ * arrival calls {@link upsertNotification} once per hook. Cache membership
+ * usually absorbs that — the second call finds the row the first one wrote — but
+ * not when the row matches no cached lens: two hooks reading narrow lenses the
+ * notification does not belong to will each see "new" and each add one to a
+ * count that should have moved by one in total.
+ *
+ * A `Set` rather than a counter or a timestamp: the question is exactly "have we
+ * counted THIS id", and it must answer the same way however many hooks ask.
+ */
+const bumpedIds = new Set<string>();
+
+/**
+ * Whether this arrival still owes the unread count a bump, claiming it if so.
+ *
+ * @param id - The notification's id.
+ */
+function claimBump(id: string): boolean {
+  if (bumpedIds.has(id)) return false;
+  bumpedIds.add(id);
+  // Bounded, oldest out first. `Set` iterates in insertion order, so the first
+  // key is the oldest one.
+  if (bumpedIds.size > BUMPED_MEMORY) {
+    const oldest = bumpedIds.values().next().value;
+    if (oldest !== undefined) bumpedIds.delete(oldest);
+  }
+  return true;
+}
+
+/**
+ * Forget every claimed bump.
+ *
+ * @internal Exported for testing only.
+ */
+export function clearBumpedNotifications(): void {
+  bumpedIds.clear();
+}
 
 /** The cache shape one lens holds: the pages `useInfiniteQuery` has fetched. */
 export type NotificationPages = InfiniteData<ListNotificationsResponse, string | undefined>;
@@ -51,6 +128,12 @@ export function notificationsQueryKey(lens?: NotificationLens) {
     {
       ...(lens?.agentId === undefined ? {} : { agentId: lens.agentId }),
       ...(lens?.sessionId === undefined ? {} : { sessionId: lens.sessionId }),
+      // Joined rather than left as an array: TanStack hashes keys structurally,
+      // and `['run.completed','agent.note']` and its reverse are the same lens
+      // asked for in a different order.
+      ...(lens?.kinds === undefined || lens.kinds.length === 0
+        ? {}
+        : { kinds: [...lens.kinds].sort().join(',') }),
       ...(lens?.unread === true ? { unread: true } : {}),
     },
   ] as const;
@@ -69,14 +152,55 @@ export function notificationsQueryKey(lens?: NotificationLens) {
 export function matchesLens(notification: NotificationDTO, lens: NotificationLens): boolean {
   if (lens.agentId !== undefined && notification.agentId !== lens.agentId) return false;
   if (lens.sessionId !== undefined && notification.sessionId !== lens.sessionId) return false;
+  if (lens.kinds !== undefined && lens.kinds.length > 0 && !lens.kinds.includes(notification.kind))
+    return false;
   if (lens.unread === true && notification.readAt !== undefined) return false;
   return true;
 }
 
-/** Read the lens back off a cached query key. */
+/**
+ * Trim the newest page back under {@link MAX_LIVE_PAGE_ROWS}, moving the cursor
+ * with it.
+ *
+ * **The cursor has to move, or the cap eats a row.** `nextCursor` is the id of
+ * the last row ON the page, and `before: <cursor>` is exclusive — so if the trim
+ * drops the row the cursor names, "Load more" asks for everything older than a
+ * row that is no longer anywhere, and that row is silently skipped. Pointing the
+ * cursor at the last row we KEEP makes the dropped tail exactly what the next
+ * page fetches.
+ *
+ * A page that was the last one (`nextCursor: null`) and then got trimmed grows a
+ * cursor for the same reason: there is now something older to go and get.
+ *
+ * @param rows - The page's rows after the prepend, newest first.
+ * @param cursor - The page's current cursor.
+ */
+function capNewestPage(
+  rows: NotificationDTO[],
+  cursor: string | null
+): { notifications: NotificationDTO[]; nextCursor: string | null } {
+  if (rows.length <= MAX_LIVE_PAGE_ROWS) return { notifications: rows, nextCursor: cursor };
+  const kept = rows.slice(0, MAX_LIVE_PAGE_ROWS);
+  return { notifications: kept, nextCursor: kept[kept.length - 1]?.id ?? cursor };
+}
+
+/**
+ * Read the lens back off a cached query key.
+ *
+ * `kinds` is stored in the key as a sorted, comma-joined STRING (so two callers
+ * naming the same kinds in a different order share one cache entry), and it has
+ * to be split back into an array here. Handing the raw string to
+ * {@link matchesLens} would leave `includes` doing substring matching — which
+ * happens to answer correctly often enough to hide the bug.
+ */
 function lensOfKey(key: readonly unknown[]): NotificationLens {
   const filters = key[1];
-  return typeof filters === 'object' && filters !== null ? (filters as NotificationLens) : {};
+  if (typeof filters !== 'object' || filters === null) return {};
+  const { kinds, ...rest } = filters as Omit<NotificationLens, 'kinds'> & { kinds?: string };
+  return {
+    ...rest,
+    ...(kinds === undefined ? {} : { kinds: kinds.split(',') as NotificationKind[] }),
+  };
 }
 
 /**
@@ -100,11 +224,15 @@ function updateEveryLens(
 /**
  * Put a notification into the cache, or replace the one already there.
  *
- * **Upsert, never append.** A standing condition that resolves is broadcast a
- * second time under the SAME id, now carrying `resolvedAt` and its outcome, so a
- * surface holding the row has to replace it rather than draw the ending twice.
- * The same rule covers the ordinary race where a refetch and the event deliver
- * one row at once.
+ * **Upsert, never append, and the reason is a race rather than a re-broadcast.**
+ * The server writes one row per event and broadcasts each id exactly once — a
+ * standing condition stores nothing while it stands and produces a single row
+ * when it resolves, already carrying its outcome. What DOES arrive twice is one
+ * row down two paths: the `notification` event and a `GET /api/notifications`
+ * refetch that was already in flight when it fired. Appending would draw that
+ * row twice, which a person reads as "it happened again". Replacing by id also
+ * leaves the door open for a future kind that does revise a row in place,
+ * without that becoming a second code path.
  *
  * A row that is genuinely new goes to the FRONT of the first page: the list is
  * ordered by id descending and a ULID minted now sorts above everything already
@@ -131,7 +259,8 @@ export function upsertNotification(queryClient: QueryClient, notification: Notif
         page.notifications.some((entry) => entry.id === notification.id)
       )
     );
-  const bump = !knownAlready && notification.readAt === undefined ? 1 : 0;
+  const bump =
+    !knownAlready && notification.readAt === undefined && claimBump(notification.id) ? 1 : 0;
 
   updateEveryLens(queryClient, (pages, lens) => {
     const held = pages.pages.some((page) =>
@@ -161,10 +290,11 @@ export function upsertNotification(queryClient: QueryClient, notification: Notif
     // The count still moves in a lens the row does not belong to: it is the
     // whole Inbox's number, not this lens's.
     if (!belongs) return { ...pages, pages: pages.pages.map(withCount) };
+    const grown = [notification, ...first.notifications];
     return {
       ...pages,
       pages: [
-        { ...withCount(first), notifications: [notification, ...first.notifications] },
+        { ...withCount(first), ...capNewestPage(grown, first.nextCursor) },
         ...rest.map(withCount),
       ],
     };

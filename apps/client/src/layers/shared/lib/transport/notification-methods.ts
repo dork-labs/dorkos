@@ -27,7 +27,10 @@ export function createNotificationMethods(baseUrl: string) {
         before: query?.before,
         agentId: query?.agentId,
         sessionId: query?.sessionId,
-        kind: query?.kind,
+        // Comma-joined, the flat spelling the route parses and the same one
+        // `ListActivityQuery.categories` uses. An empty list is not a filter,
+        // so it sends nothing rather than `kind=`.
+        kind: query?.kind !== undefined && query.kind.length > 0 ? query.kind.join(',') : undefined,
         // The route parses the literal strings rather than coercing, so an
         // absent lens must send nothing at all: `unread=false` and no `unread`
         // mean the same thing, and sending `false` for every unfiltered read

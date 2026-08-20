@@ -66,8 +66,9 @@ vi.mock('@/layers/entities/agent', () => ({
 }));
 
 // Mock formatRelativeTime to produce predictable output
-vi.mock('../lib/format-relative-time', () => ({
-  formatRelativeTime: (_iso: string) => '5m',
+vi.mock('@/layers/shared/lib', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/lib')>()),
+  formatCompactAge: (_iso: string) => '5m',
 }));
 
 import { OfflineAgentDetailSheet } from '../ui/OfflineAgentDetailSheet';

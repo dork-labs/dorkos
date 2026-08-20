@@ -5,7 +5,7 @@
  */
 import { motion } from 'motion/react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { cn, formatRelativeTime } from '@/layers/shared/lib';
+import { cn, formatCompactAge } from '@/layers/shared/lib';
 import { NOTIFICATION_ICONS, notificationTone, isFailedRun } from '@/layers/entities/notifications';
 
 /** The entrance each row inherits from its list's stagger container. */
@@ -58,6 +58,10 @@ export function InboxRow({ notification, onOpen }: InboxRowProps) {
           unread ? 'bg-status-info' : 'bg-transparent'
         )}
       />
+      {/* The dot is the only thing that says "unread", and a dot is nothing at
+          all to a screen reader. Read rows say nothing rather than "Read":
+          every row would then start with a word carrying no news. */}
+      {unread && <span className="sr-only">Unread. </span>}
       <Icon
         aria-hidden
         className={cn(
@@ -82,8 +86,15 @@ export function InboxRow({ notification, onOpen }: InboxRowProps) {
           <span className="text-muted-foreground block truncate text-xs">{notification.body}</span>
         )}
       </span>
+      {/* The compact form ("5m", "2h", "3d"), not the sentence form ("45m ago").
+          Two reasons, and they point the same way: these rows sit beside
+          `AttentionSignalRow` in the Pulse panel and in home's header, and two
+          spellings of the same fact one line apart reads as two different
+          facts; and the popover is 30rem wide with a title, a body line and
+          this on one row, where four extra characters cost the title its
+          last word. `formatCompactAge` is the shared one both now use. */}
       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-        {formatRelativeTime(notification.createdAt)}
+        {formatCompactAge(notification.createdAt)}
       </span>
     </>
   );

@@ -10,7 +10,7 @@ import {
   ScrollArea,
 } from '@/layers/shared/ui';
 import { useAggregatedDeadLetters, useDismissDeadLetterGroup } from '@/layers/entities/relay';
-import { formatRelativeTime } from '../lib/format-relative-time';
+import { formatCompactAge } from '@/layers/shared/lib';
 
 interface DeadLetterDetailSheetProps {
   open: boolean;
@@ -61,10 +61,10 @@ export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetai
               {/* Timestamps */}
               <div className="space-y-1 text-sm">
                 <p className="text-muted-foreground">
-                  First seen: {formatRelativeTime(group.firstSeen)} ago
+                  First seen: {formatCompactAge(group.firstSeen)} ago
                 </p>
                 <p className="text-muted-foreground">
-                  Last seen: {formatRelativeTime(group.lastSeen)} ago
+                  Last seen: {formatCompactAge(group.lastSeen)} ago
                 </p>
               </div>
 
