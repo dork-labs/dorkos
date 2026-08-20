@@ -21,5 +21,8 @@ export function useCreateAgent() {
       // above: this is a feature and `entities/team` owns the constant.
       queryClient.invalidateQueries({ queryKey: ['team'] });
     },
+    // The shared mutation toast (`query-client.ts`) reports failures — the
+    // dialog used to show its own on top of it.
+    meta: { errorLabel: "Couldn't create that agent" },
   });
 }

@@ -10,5 +10,6 @@ export function useTestBinding() {
   const transport = useTransport();
   return useMutation<BindingTestResult, Error, string>({
     mutationFn: (bindingId) => transport.testBinding(bindingId),
+    meta: { errorLabel: 'Test failed' },
   });
 }

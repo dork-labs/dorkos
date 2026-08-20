@@ -6,6 +6,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { TransportProvider } from '@/layers/shared/model';
+import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useNativeCommands, isNativeCommandContent } from '../use-native-commands';
 import { useUsageReveal } from '../../use-usage-reveal';
@@ -43,11 +44,11 @@ describe('useNativeCommands', () => {
   function setup(
     sessionId: string | null = 's1',
     cwd: string | null = '/repo',
-    compact?: { supported: boolean; runtimeLabel: string }
-  ) {
-    const queryClient = new QueryClient({
+    compact?: { supported: boolean; runtimeLabel: string },
+    queryClient: QueryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
+    })
+  ) {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>{children}</TransportProvider>
@@ -109,13 +110,21 @@ describe('useNativeCommands', () => {
   it('only shows the success toast after the rename succeeds, never on a failure', async () => {
     // Finding 2/7: the success toast moved into the mutation's onSuccess. A
     // rejected updateSession rolls the title back and surfaces an error toast —
-    // it must NOT also flash a green "Renamed session" success.
+    // it must NOT also flash a green "Renamed session" success. The failure
+    // toast is now the shared mutation cache's (`useRenameSession`'s
+    // `meta.errorLabel`), so this needs the REAL error policy
+    // (`createQueryClientConfig`) rather than the bare client — a hand-rolled
+    // one has no `MutationCache.onError` and would report a silence that was
+    // never true.
     vi.mocked(transport.updateSession).mockRejectedValue(new Error('boom'));
-    const { result } = setup('s1', '/repo');
+    const { result } = setup('s1', '/repo', undefined, new QueryClient(createQueryClientConfig()));
     act(() => {
       result.current.tryRun('/rename Foo');
     });
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Failed to rename session'));
+    // The sonner mock above forwards only the message, so no second argument.
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("Couldn't rename that session — boom")
+    );
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 

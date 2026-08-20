@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
+import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
 import {
@@ -161,9 +162,7 @@ function createTestQueryClient() {
   });
 }
 
-function renderDialog(transport = createMockTransport()) {
-  const queryClient = createTestQueryClient();
-
+function renderDialog(transport = createMockTransport(), queryClient = createTestQueryClient()) {
   if (!vi.isMockFunction(transport.getConfig)) {
     transport.getConfig = vi.fn();
   }
@@ -438,14 +437,28 @@ describe('CreateAgentDialog', () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.createAgent).mockRejectedValue(new Error('Agent already exists'));
-    renderDialog(transport);
+    // The real error policy (`createQueryClientConfig`), not the bare test
+    // client — the dialog no longer toasts this itself, `useCreateAgent`'s
+    // `meta.errorLabel` routes it through the shared mutation cache instead.
+    renderDialog(
+      transport,
+      new QueryClient({
+        ...createQueryClientConfig(),
+        defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+      })
+    );
 
     const nameInput = await reachNamingViaDesign(user);
     await user.type(nameInput, 'Scout');
     await user.click(screen.getByTestId('create-button'));
 
     const { toast } = await import('sonner');
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Agent already exists'));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Couldn't create that agent — Agent already exists",
+        expect.anything()
+      )
+    );
   });
 
   // ---- Birth ceremony (M4) against #356's real onSuccess ----

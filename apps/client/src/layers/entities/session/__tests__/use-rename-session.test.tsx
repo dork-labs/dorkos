@@ -180,7 +180,11 @@ describe('useRenameSession — account honesty', () => {
 
     result.current.mutate({ sessionId: 's1', title: 'Fix the tokenizer' });
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to rename session'));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    // The shared mutation toast (`query-client.ts`, exercised via
+    // `meta.errorLabel` — not through this bare test client) is the only
+    // failure report now; this hook no longer shows its own.
+    expect(toast.error).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalled();
   });
 });

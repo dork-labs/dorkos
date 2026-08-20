@@ -18,6 +18,7 @@ import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
 import { ChannelCreateDialog } from '../ui/ChannelCreateDialog';
 
 /**
@@ -89,7 +90,11 @@ function renderDialog(
     createRoom: vi.fn().mockResolvedValue(made()),
     ...overrides.transport,
   });
+  // The real error policy (`createQueryClientConfig`), not a hand-rolled one —
+  // the failure toast below is the shared mutation cache's, not the dialog's
+  // own, and a re-declared config would quietly stop asserting that.
   const queryClient = new QueryClient({
+    ...createQueryClientConfig(),
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -277,8 +282,14 @@ describe('ChannelCreateDialog', () => {
     pick('Ana');
     fireEvent.click(screen.getByRole('button', { name: 'Create channel with 1 agent' }));
 
+    // The dialog no longer toasts this itself — `useCreateChannel`'s
+    // `meta.errorLabel` routes it through the shared mutation toast, composed
+    // with the server's own sentence.
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith('A channel called #backend already exists')
+      expect(toastError).toHaveBeenCalledWith(
+        "Couldn't create that channel — A channel called #backend already exists",
+        expect.anything()
+      )
     );
     // The retry is the same request, so nothing typed is thrown away.
     expect(onOpenChange).not.toHaveBeenCalledWith(false);

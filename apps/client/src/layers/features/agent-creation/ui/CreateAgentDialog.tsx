@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useNavigate } from '@tanstack/react-router';
-import { toast } from 'sonner';
 import { playCelebration, isSingleEmoji } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
@@ -202,9 +201,8 @@ export function CreateAgentDialog() {
             search: { dir: data._path, session: newSessionId },
           });
         },
-        onError: (error) => {
-          toast.error(error instanceof Error ? error.message : 'Failed to create agent');
-        },
+        // No local onError: `useCreateAgent`'s `meta.errorLabel` routes the
+        // failure through the shared mutation toast instead.
       }
     );
   }

@@ -84,7 +84,9 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
       await queryClient.invalidateQueries({ queryKey: TEAM_ROSTER_KEY });
       toast.success(`${member.displayName} is now the default agent`);
     },
-    onError: (err: Error) => toast.error(err.message),
+    // The shared mutation toast (`query-client.ts`) reports the failure now
+    // — this used to show its own on top of it.
+    meta: { errorLabel: "Couldn't set that as the default agent" },
   });
 
   if (!hasProfileActions(member, relationship)) return null;

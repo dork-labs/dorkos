@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
 
 import { useTransport } from '@/layers/shared/model';
 import type { ToursState } from '@dorkos/shared/config-schema';
@@ -78,7 +77,9 @@ export function useTours(): UseToursResult {
   const patchTours = useMutation({
     mutationFn: (patch: Partial<ToursState>) => transport.updateConfig({ tours: patch }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CONFIG_KEY] }),
-    onError: () => toast.error('Could not save your tour progress.'),
+    // The shared mutation toast (`query-client.ts`) reports the failure now
+    // — this used to show its own on top of it.
+    meta: { errorLabel: "Couldn't save your tour progress" },
   });
 
   function markSeen(id: TourId) {

@@ -82,6 +82,10 @@ export function useCreateChannel(): UseMutationResult<RoomWithRoster, Error, Cre
     mutationFn: ({ title, agentPaths }: CreateChannelInput) =>
       transport.createRoom({ kind: 'channel', title, members: [], agentPaths }),
     onSuccess: () => invalidateRoomReads(queryClient),
+    // The shared mutation toast (`query-client.ts`) reads this with the
+    // server's own sentence after it — the dialog's own onError used to
+    // duplicate the same message in a second toast.
+    meta: { errorLabel: "Couldn't create that channel" },
   });
 }
 
@@ -113,5 +117,9 @@ export function useStartDirectMessage(): UseMutationResult<
     mutationFn: ({ agentPaths, title }: StartDirectMessageInput) =>
       transport.createRoom({ kind: 'dm', title, members: [], agentPaths }),
     onSettled: () => invalidateRoomReads(queryClient),
+    // Its one caller (`NewMenu.tsx`, outside this task's remit) names who the
+    // conversation was with in its own onError — richer than a static label —
+    // so this opts the shared mutation toast out rather than duplicating it.
+    meta: { suppressErrorToast: true },
   });
 }
