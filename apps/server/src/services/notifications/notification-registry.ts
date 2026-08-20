@@ -279,11 +279,17 @@ const UNREACHABLE_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
 /**
  * How long a day's Shift Report stays deduped once raised.
  *
- * Just under 24 hours — comfortably spanning a local day (4am to 4am; see
- * `shift-report.ts`) without ever reaching into the NEXT one, which carries
- * its own `date` and therefore its own dedupe key regardless.
+ * A local day is exactly 24 hours (4am to 4am; see `shift-report.ts`), and
+ * this window has to OUTLAST the whole of it — not trim to it — so a restart
+ * late in the day still finds today's row via `findRecent`, however early in
+ * the day it was first raised. An hour past the day's own length is the
+ * margin: 24h flush against the day length leaves zero room for a report
+ * raised right at the boundary, where a restart minutes later could miss the
+ * window and insert a duplicate. The date key already scopes the dedupe to
+ * ONE calendar day on its own, so a wider window here can never suppress the
+ * NEXT day's report, which carries a different key regardless.
  */
-const REPORT_DAILY_DEDUPE_WINDOW_MS = 23 * 60 * 60 * 1000;
+const REPORT_DAILY_DEDUPE_WINDOW_MS = 25 * 60 * 60 * 1000;
 
 /** Longest slice of an agent's note that is used to tell two notes apart. */
 const NOTE_DEDUPE_PREFIX = 120;

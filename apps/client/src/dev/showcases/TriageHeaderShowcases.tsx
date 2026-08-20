@@ -278,8 +278,7 @@ export function TriageHeaderShowcases() {
             scheduleApprovals={[]}
             errorSignals={[]}
             activityItems={ACTIVITY}
-            shiftReport={SHIFT_REPORT}
-            onDismissShiftReport={() => {}}
+            shiftReport={{ notification: SHIFT_REPORT, onDismiss: () => {} }}
           />
         </div>
       </ShowcaseDemo>
@@ -299,8 +298,7 @@ export function TriageHeaderShowcases() {
             scheduleApprovals={SCHEDULES}
             errorSignals={ERRORS}
             activityItems={ACTIVITY}
-            shiftReport={SHIFT_REPORT}
-            onDismissShiftReport={() => {}}
+            shiftReport={{ notification: SHIFT_REPORT, onDismiss: () => {} }}
             presence={{ occupied: true, node: <PresenceSlotStandIn /> }}
           />
         </div>

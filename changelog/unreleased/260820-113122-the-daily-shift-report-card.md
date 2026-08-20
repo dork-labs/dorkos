@@ -1,6 +1,7 @@
 ---
 covers:
-  - 'feat(server,client,shared): the daily Shift Report tells you what happened while you were away (DOR-1389)'
+  - 'feat(server,client): the daily Shift Report tells you what happened while you were away (DOR-1389)'
+  - 'fix(server,client): the Shift Report counts the trailing 24 hours, not just what woke it (DOR-1389)'
 ---
 
 ### Added

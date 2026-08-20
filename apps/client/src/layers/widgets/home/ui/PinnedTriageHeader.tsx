@@ -123,9 +123,10 @@ export function PinnedTriageHeader({
         errorSignals={errors}
         activityItems={activity}
         onOpenActivity={openActivity}
-        shiftReport={shiftReport}
-        onDismissShiftReport={
-          shiftReport === undefined ? undefined : () => markRead(shiftReport.id)
+        shiftReport={
+          shiftReport === undefined
+            ? undefined
+            : { notification: shiftReport, onDismiss: () => markRead(shiftReport.id) }
         }
         presence={presence}
         condensed={isMobile && composerFocused === true}

@@ -6,11 +6,19 @@
  * that something happened: every `notify()` call broadcasts on
  * `eventFanOut` before it reaches a single connected client
  * (`EventFanOut.subscribe`), and that is the cheapest honest answer to "has
- * today started yet" — if nothing has happened since 4am, there is nothing
- * to check, and a timer would be polling for an answer the pipeline already
- * has. So this rides the existing broadcast rather than adding a server-wide
- * interval: the FIRST notification of a new local day is what turns the
- * report over, whatever kind it is.
+ * today started yet" — if nothing has happened since the day rolled over,
+ * there is nothing to check, and a timer would be polling for an answer the
+ * pipeline already has. So this rides the existing broadcast rather than
+ * adding a server-wide interval: the FIRST notification of a new local day
+ * is what turns the report over, whatever kind it is.
+ *
+ * **What the 4am boundary decides here, and what it does not.** It decides
+ * only two things: the dedupe date key a report is raised under, and when a
+ * NEW attempt is allowed at all (once a report has already been raised for
+ * today's date, nothing re-checks until the boundary rolls to a new one).
+ * The report's own CONTENT — what {@link composeShiftReport} counts — is a
+ * trailing 24 hours from the moment it composes, never from this boundary;
+ * see `shift-report.ts`'s module doc for why.
  *
  * **State is in-memory, not persisted, and that is a deliberate trade.** A
  * crash mid-day loses only "have I already reported today" — never the
@@ -18,8 +26,11 @@
  * every attempt — and the registry's own dedupe key
  * (`report-daily:{date}`, held open by `REPORT_DAILY_DEDUPE_WINDOW_MS`) is
  * the backstop that keeps a restart from writing a second row for a day
- * already reported. What a restart CAN do is delay today's report until the
- * next notification after it comes back up, which is the honest cost of not
+ * already reported: a `deduped` result latches `reportedFor` exactly as a
+ * fresh insert does, so a post-restart process stops re-scanning the table
+ * on every subsequent notification once it has confirmed today's row already
+ * exists. What a restart CAN do is delay today's report until the next
+ * notification after it comes back up, which is the honest cost of not
  * running a boot-time catch-up for a feature this quiet.
  *
  * @module services/notifications/emitters/shift-report
@@ -42,7 +53,7 @@ import {
  * @returns An unsubscribe function.
  */
 export function watchShiftReport(store: NotificationStore): () => void {
-  /** The local day a report was last successfully raised for, if any. */
+  /** The local day a report was last confirmed raised for, if any. */
   let reportedFor: string | undefined;
   /**
    * Whether an attempt is already in flight.
@@ -66,12 +77,12 @@ export function watchShiftReport(store: NotificationStore): () => void {
     const kind = (data as { notification?: { kind?: string } } | null)?.notification?.kind;
     if (kind === 'report.daily') return;
 
-    const boundary = shiftReportBoundary(Date.now());
-    const localDate = shiftReportDateKey(boundary);
+    const now = Date.now();
+    const localDate = shiftReportDateKey(shiftReportBoundary(now));
     if (checking || localDate === reportedFor) return;
 
     checking = true;
-    void raiseIfDue(store, boundary, localDate)
+    void raiseIfDue(store, now, localDate)
       .then((raised) => {
         if (raised) reportedFor = localDate;
       })
@@ -88,24 +99,32 @@ export function watchShiftReport(store: NotificationStore): () => void {
  * doing, and a composition error must never surface on the write path of
  * whatever activity triggered the check.
  *
- * @param store - Where the day's activity already lives.
- * @param boundary - The most recent local 4am, epoch ms.
- * @param localDate - `boundary`'s own calendar date — the report's identity.
- * @returns Whether a notification was actually stored. `false` on an empty
- *   day so far, so the caller keeps trying later in the same day.
+ * @param store - Where the last day's activity already lives.
+ * @param now - The instant to compose from, epoch ms — the report's window
+ *   is the trailing 24 hours from this, not from the local-day boundary.
+ * @param localDate - The local day this check belongs to (the boundary's own
+ *   date), used only as the report's dedupe identity.
+ * @returns Whether today is settled: a row now exists — either just stored,
+ *   or already there from an earlier attempt this process made or from
+ *   before a restart. `false` only means the window is still empty, so the
+ *   caller keeps trying later in the same day.
  */
 async function raiseIfDue(
   store: NotificationStore,
-  boundary: number,
+  now: number,
   localDate: string
 ): Promise<boolean> {
   try {
-    const counts = composeShiftReport(store, boundary);
+    const counts = composeShiftReport(store, now);
     if (!counts) return false;
 
     const { title, summary } = buildShiftReportText(counts);
     const result = await notify('report.daily', { date: localDate, title, summary });
-    return result.notification !== null;
+    // A dedupe hit means today's row already exists, so there is nothing left
+    // to compose for the rest of the day — treating only a fresh insert as
+    // "settled" would leave a post-restart process re-running this table scan
+    // on every single notification until the day rolls over.
+    return result.notification !== null || result.deduped;
   } catch (err) {
     logger.warn('[Notifications] Could not compose the daily Shift Report', { err });
     return false;

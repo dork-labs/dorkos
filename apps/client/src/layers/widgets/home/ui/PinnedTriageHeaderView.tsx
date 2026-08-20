@@ -168,6 +168,21 @@ export interface TriagePresenceSlot {
   node: ReactNode;
 }
 
+/**
+ * The unread daily Shift Report and how to dismiss it, together.
+ *
+ * A single object rather than a row prop plus a separate handler prop: the
+ * two are never useful apart, and keeping them apart let a caller pass the
+ * row without the handler, which drew an occupied, empty band (see
+ * {@link PinnedTriageHeaderViewProps.shiftReport}).
+ */
+export interface ShiftReportSlot {
+  /** The unread `report.daily` row. */
+  notification: NotificationDTO;
+  /** Dismiss the card — marks the row read. */
+  onDismiss: () => void;
+}
+
 export interface PinnedTriageHeaderViewProps {
   /** Approvals waiting on a decision, oldest first. */
   approvals: PendingApproval[];
@@ -212,10 +227,14 @@ export interface PinnedTriageHeaderViewProps {
    * The unread daily Shift Report, if any — "what agents did while you were
    * away," in one quiet card above Recent Activity. `undefined` once it has
    * been dismissed or there is nothing to report yet.
+   *
+   * One object, not a row plus a separate dismiss callback: the two only
+   * ever mean something TOGETHER, and splitting them let a caller pass the
+   * row without the handler — which drew an empty band, `occupied` true with
+   * nothing inside it to show why. A single optional prop makes that
+   * combination impossible to construct rather than merely wrong to reach.
    */
-  shiftReport?: NotificationDTO;
-  /** Dismiss the Shift Report card — marks it read. */
-  onDismissShiftReport?: () => void;
+  shiftReport?: ShiftReportSlot;
   /**
    * The presence strip slot, empty until the strip lands.
    *
@@ -314,7 +333,6 @@ export function PinnedTriageHeaderView({
   activityItems,
   onOpenActivity,
   shiftReport,
-  onDismissShiftReport,
   presence,
   condensed,
   onExpand,
@@ -481,8 +499,11 @@ export function PinnedTriageHeaderView({
                 </TriageGroup>
               )}
 
-              {showsShiftReport && onDismissShiftReport && (
-                <ShiftReportCard notification={shiftReport} onDismiss={onDismissShiftReport} />
+              {shiftReport && (
+                <ShiftReportCard
+                  notification={shiftReport.notification}
+                  onDismiss={shiftReport.onDismiss}
+                />
               )}
 
               {showsActivity && (
