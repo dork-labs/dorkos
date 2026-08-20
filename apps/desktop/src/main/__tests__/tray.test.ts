@@ -174,55 +174,95 @@ describe('setTrayActivity', () => {
     options.openActivity = vi.fn();
   });
 
-  it('counts agents in the tooltip, the menu, and the macOS title', () => {
+  it('counts working agents in the tooltip, the menu, and the macOS title', () => {
     onPlatform('darwin');
     setupTray(options);
     const tray = Tray.instances[0];
 
-    setTrayActivity(3);
+    setTrayActivity({ streaming: 3, blocked: 0 });
 
-    expect(tray.setToolTip).toHaveBeenLastCalledWith('DorkOS: 3 agents working');
+    expect(tray.setToolTip).toHaveBeenLastCalledWith('DorkOS: 3 working');
     expect(tray.setTitle).toHaveBeenLastCalledWith('3');
-    expect(menuLabels()[0]).toBe('3 agents working');
+    expect(menuLabels()[0]).toBe('3 working');
   });
 
-  it('says "1 agent working" rather than "1 agents working"', () => {
+  it('says "1 working" rather than "1 workings"', () => {
     onPlatform('darwin');
     setupTray(options);
 
-    setTrayActivity(1);
+    setTrayActivity({ streaming: 1, blocked: 0 });
 
-    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 1 agent working');
+    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 1 working');
+  });
+
+  it('says "1 waiting" rather than "1 waitings"', () => {
+    onPlatform('darwin');
+    setupTray(options);
+
+    setTrayActivity({ streaming: 0, blocked: 1 });
+
+    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 1 waiting');
+  });
+
+  it('joins working and waiting into one sentence when both are non-zero', () => {
+    onPlatform('darwin');
+    setupTray(options);
+
+    setTrayActivity({ streaming: 2, blocked: 1 });
+
+    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 2 working · 1 waiting');
+    expect(menuLabels()[0]).toBe('2 working · 1 waiting');
+  });
+
+  it('omits the working half when nothing is streaming', () => {
+    onPlatform('darwin');
+    setupTray(options);
+
+    setTrayActivity({ streaming: 0, blocked: 2 });
+
+    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 2 waiting');
   });
 
   it('clears the macOS title when nothing is running, rather than showing a zero', () => {
     onPlatform('darwin');
     setupTray(options);
 
-    setTrayActivity(2);
-    setTrayActivity(0);
+    setTrayActivity({ streaming: 2, blocked: 0 });
+    setTrayActivity({ streaming: 0, blocked: 0 });
 
     expect(Tray.instances[0].setTitle).toHaveBeenLastCalledWith('');
     expect(menuLabels()[0]).toBe('No agents working');
+  });
+
+  it('prefixes the macOS title with a dot when an agent is waiting on you', () => {
+    onPlatform('darwin');
+    setupTray(options);
+
+    // The tray icon itself is a macOS template image, recoloured by the OS —
+    // there is no pixel on it left to tint amber, so the leading dot on the
+    // title is the fallback signal (see the comment in tray.ts's render()).
+    setTrayActivity({ streaming: 1, blocked: 1 });
+
+    expect(Tray.instances[0].setTitle).toHaveBeenLastCalledWith('● 2');
   });
 
   it('does not set a title on Windows, where there is no text beside a tray icon', () => {
     onPlatform('win32');
     setupTray(options);
 
-    setTrayActivity(2);
+    setTrayActivity({ streaming: 2, blocked: 0 });
 
     expect(Tray.instances[0].setTitle).not.toHaveBeenCalled();
-    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 2 agents working');
+    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 2 working');
   });
 
-  it('does not redraw when the count has not changed', () => {
+  it('does not redraw when neither count has changed', () => {
     onPlatform('darwin');
     setupTray(options);
-    setTrayActivity(2);
+    setTrayActivity({ streaming: 2, blocked: 0 });
     const redrawsSoFar = vi.mocked(Menu.buildFromTemplate).mock.calls.length;
 
-    setTrayActivity(2);
+    setTrayActivity({ streaming: 2, blocked: 0 });
 
     expect(vi.mocked(Menu.buildFromTemplate).mock.calls).toHaveLength(redrawsSoFar);
   });
@@ -231,6 +271,37 @@ describe('setTrayActivity', () => {
     onPlatform('linux');
     setupTray(options);
 
-    expect(() => setTrayActivity(4)).not.toThrow();
+    expect(() => setTrayActivity({ streaming: 4, blocked: 0 })).not.toThrow();
+  });
+
+  it('sets the macOS Dock badge to the waiting count, and clears it at zero', () => {
+    onPlatform('darwin');
+    setupTray(options);
+
+    setTrayActivity({ streaming: 1, blocked: 3 });
+    expect(app.dock?.setBadge).toHaveBeenLastCalledWith('3');
+
+    setTrayActivity({ streaming: 1, blocked: 0 });
+    expect(app.dock?.setBadge).toHaveBeenLastCalledWith('');
+  });
+
+  it('does not touch the Dock badge off macOS', () => {
+    onPlatform('win32');
+    setupTray(options);
+
+    setTrayActivity({ streaming: 0, blocked: 2 });
+
+    expect(app.dock?.setBadge).not.toHaveBeenCalled();
+  });
+
+  it('sets the Dock badge even when there is no tray to redraw', () => {
+    onPlatform('darwin');
+    unreadableImageFiles.add('trayTemplate.png');
+    setupTray(options);
+    expect(hasTray()).toBe(false);
+
+    setTrayActivity({ streaming: 0, blocked: 1 });
+
+    expect(app.dock?.setBadge).toHaveBeenLastCalledWith('1');
   });
 });

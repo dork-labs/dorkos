@@ -2,6 +2,7 @@ import { app, Menu, nativeImage, Tray } from 'electron';
 import { join } from 'node:path';
 import log from 'electron-log';
 import { TRAY_IMAGE_BY_PLATFORM } from '../shared/tray-images';
+import type { AgentActivityCounts } from './agent-activity';
 
 /**
  * The menu-bar / system-tray presence: the proof that DorkOS is still there.
@@ -11,9 +12,12 @@ import { TRAY_IMAGE_BY_PLATFORM } from '../shared/tray-images';
  * the only surface that can answer "are my agents doing anything?" while every
  * window is closed.
  *
- * It stays quiet on purpose. No colour, no badge, no notifications: a count
- * beside the icon on macOS, the same sentence in the tooltip everywhere, and a
- * short menu. This is a control panel, not a notification farm.
+ * It stays quiet on purpose. No push notifications, no chimes — one sentence
+ * that stays a sentence: "N working", "M waiting", or both together. It went
+ * from saying only how many agents are running to also saying how many are
+ * stuck on you, because a count that hides "waiting on you" behind "working"
+ * is not a true count. That is still a fact you can glance at, not a push you
+ * are interrupted by — this is a control panel, not a notification farm.
  */
 
 /** Options for {@link setupTray}. */
@@ -26,7 +30,8 @@ export interface TrayOptions {
 
 let tray: Tray | null = null;
 let trayOptions: TrayOptions | null = null;
-let activeAgents = 0;
+let streamingAgents = 0;
+let blockedAgents = 0;
 
 /** Is there a tray icon to get the app back from? */
 export function hasTray(): boolean {
@@ -42,7 +47,8 @@ export function resetTray(): void {
   tray?.destroy();
   tray = null;
   trayOptions = null;
-  activeAgents = 0;
+  streamingAgents = 0;
+  blockedAgents = 0;
 }
 
 /**
@@ -94,33 +100,58 @@ export function setupTray(options: TrayOptions): void {
 }
 
 /**
- * Reflect how many agents are mid-run.
+ * Reflect how many agents are streaming and how many are blocked on you.
  *
- * @param count - Agents currently working. `0` means idle, not unknown.
+ * @param counts - See {@link AgentActivityCounts}. Both `0` means idle, not unknown.
  */
-export function setTrayActivity(count: number): void {
-  if (count === activeAgents) return;
-  activeAgents = count;
+export function setTrayActivity(counts: AgentActivityCounts): void {
+  if (counts.streaming === streamingAgents && counts.blocked === blockedAgents) return;
+  streamingAgents = counts.streaming;
+  blockedAgents = counts.blocked;
   render();
 }
 
-/** The one sentence the tray tells you, everywhere it tells you anything. */
-function describeActivity(count: number): string {
-  if (count === 0) return 'No agents working';
-  return count === 1 ? '1 agent working' : `${count} agents working`;
+/**
+ * The one sentence the tray tells you, everywhere it tells you anything.
+ *
+ * Each half only appears when it has something to say — "2 working" alone,
+ * "1 waiting" alone, or both joined, never a zero sitting beside a real
+ * number pretending to mean something.
+ */
+function describeActivity(streaming: number, blocked: number): string {
+  if (streaming === 0 && blocked === 0) return 'No agents working';
+  const parts: string[] = [];
+  if (streaming > 0) parts.push(streaming === 1 ? '1 working' : `${streaming} working`);
+  if (blocked > 0) parts.push(blocked === 1 ? '1 waiting' : `${blocked} waiting`);
+  return parts.join(' · ');
 }
 
-/** Redraw the tray's tooltip, macOS title and menu from the current count. */
+/** Redraw the tray's tooltip, macOS title/dock badge and menu from the current counts. */
 function render(): void {
+  // The Dock badge is macOS-only and lives on the app icon, not the tray icon,
+  // so it updates even on a platform without a tray image or when the tray
+  // failed to load — the one truly glanceable "waiting on you" signal survives
+  // both degradations. It carries the blocked count on its own; the Dock badge
+  // is a fact, not a call to action, so it clears rather than persisting once
+  // nothing is waiting.
+  if (process.platform === 'darwin') {
+    app.dock?.setBadge(blockedAgents > 0 ? String(blockedAgents) : '');
+  }
+
   if (!tray || !trayOptions) return;
-  const summary = describeActivity(activeAgents);
+  const summary = describeActivity(streamingAgents, blockedAgents);
 
   tray.setToolTip(`DorkOS: ${summary}`);
-  // macOS is the only platform that shows text beside a tray icon. A bare count
-  // next to the mark is the native idiom for "this is doing something", and it
-  // disappears entirely when nothing is.
+  // macOS is the only platform that shows text beside a tray icon. The icon
+  // itself is a "template" image (see tray-images.ts) — macOS strips its
+  // colour and recolours it itself for light/dark menu bars, so there is no
+  // pixel on it we could tint amber for "waiting on you". The title text is
+  // the only mark we control next to the icon, so a leading dot goes there
+  // instead of a colour the OS would only discard.
   if (process.platform === 'darwin') {
-    tray.setTitle(activeAgents > 0 ? String(activeAgents) : '');
+    const total = streamingAgents + blockedAgents;
+    const waitingMark = blockedAgents > 0 ? '● ' : '';
+    tray.setTitle(total > 0 ? `${waitingMark}${total}` : '');
   }
 
   const { showWindow, openActivity } = trayOptions;
