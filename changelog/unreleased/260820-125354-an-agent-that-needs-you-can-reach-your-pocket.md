@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,client,shared,db): an agent that needs you can reach your pocket, and answering anywhere goes quiet everywhere (DOR-1387)'
+  - "fix(server,client): a session's SECOND error escalates, and a removed schedule stops its clock (DOR-1387 review)"
 ---
 
 ### Added

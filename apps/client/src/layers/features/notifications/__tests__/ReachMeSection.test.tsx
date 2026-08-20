@@ -218,6 +218,49 @@ describe('what the device list draws', () => {
   });
 });
 
+describe('the warning that nothing can carry an escalation', () => {
+  it('waits for both lists before claiming nothing can carry it', async () => {
+    // An empty device list means "none subscribed" and "not loaded yet" alike.
+    // Flashing the warning off the second alarms somebody whose phone IS
+    // subscribed, and the first thing they do is doubt the setting.
+    stubPushCapableBrowser();
+    let releaseDevices!: (value: { subscriptions: [] }) => void;
+    renderSection({
+      listPushSubscriptions: vi.fn().mockReturnValue(
+        new Promise<{ subscriptions: [] }>((resolve) => {
+          releaseDevices = resolve;
+        })
+      ),
+    });
+
+    // The section is on screen, but the device list has not answered yet.
+    expect(await screen.findByText(/Devices DorkOS can reach/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing can carry that yet\./)).not.toBeInTheDocument();
+
+    releaseDevices({ subscriptions: [] });
+    expect(await screen.findByText(/Nothing can carry that yet\./)).toBeInTheDocument();
+  });
+
+  it('stays quiet once a device is subscribed', async () => {
+    stubPushCapableBrowser();
+    renderSection({
+      listPushSubscriptions: vi.fn().mockResolvedValue({
+        subscriptions: [
+          {
+            id: 'push-phone',
+            service: 'web.push.apple.com',
+            createdAt: '2026-08-20T08:00:00.000Z',
+            lastSeenAt: '2026-08-20T08:00:00.000Z',
+          },
+        ],
+      }),
+    });
+
+    expect(await screen.findByText(/Another device/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing can carry that yet\./)).not.toBeInTheDocument();
+  });
+});
+
 describe('surfaces that cannot be pushed to', () => {
   it('offers no button in the desktop app, and says why', async () => {
     stubPushCapableBrowser();

@@ -419,6 +419,15 @@ export function createTasksRouter(
       });
     }
 
+    // ...and the symmetric edge, which this route handled in only one direction
+    // until the DOR-1387 review: a schedule PATCHed INTO `pending_approval` is a
+    // condition that has just STARTED standing, so its clock starts here exactly
+    // as it does at the two create sites. Without this, a schedule parked by an
+    // update could wait indefinitely with no escalation behind it.
+    if (existing.status !== 'pending_approval' && updated.status === 'pending_approval') {
+      armEscalation('schedule.parked', scheduleParkPayload(updated));
+    }
+
     broadcastTasksChanged();
 
     return res.json(updated);

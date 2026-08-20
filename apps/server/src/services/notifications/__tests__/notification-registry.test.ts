@@ -33,6 +33,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
   'session.error': {
     sessionId: 'sess-1',
     agentId: 'agent-1',
+    since: '2026-08-20T09:00:00.000Z',
     sessionLabel: 'acme',
     detail: 'Ran out of turns',
   },

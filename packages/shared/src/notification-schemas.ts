@@ -55,7 +55,7 @@ export const NOTIFICATION_KINDS = [
   'ask.pending',
   /** An agent proposed a schedule that only a person can approve. Standing. */
   'schedule.parked',
-  /** A session hit an error and stopped. Standing. */
+  /** A session hit an error and stopped. Standing, per error episode. */
   'session.error',
   /** A turn finished. */
   'turn.completed',

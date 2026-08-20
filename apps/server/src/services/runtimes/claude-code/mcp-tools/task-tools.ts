@@ -22,7 +22,10 @@ import {
 } from '../../../tasks/task-write-policy.js';
 import { broadcastTasksChanged } from '../../../tasks/task-sse-events.js';
 import { armEscalation } from '../../../notifications/escalation-service.js';
-import { scheduleParkPayload } from '../../../notifications/emitters/schedule-park.js';
+import {
+  resolveParkedScheduleRemoved,
+  scheduleParkPayload,
+} from '../../../notifications/emitters/schedule-park.js';
 
 /** Guard that returns an error response when Tasks is disabled. */
 function requireTasks(deps: McpToolDeps) {
@@ -251,8 +254,13 @@ export function createDeleteScheduleHandler(deps: McpToolDeps) {
   return async (args: { id: string }) => {
     const err = requireTasks(deps);
     if (err) return err;
+    // Read BEFORE deleting: a schedule that was waiting on the operator has a
+    // standing condition (and possibly an armed escalation) to end, and once the
+    // row is gone there is nothing left to tell that from an ordinary task.
+    const existing = deps.taskStore!.getTask(args.id);
     const deleted = deps.taskStore!.deleteTask(args.id);
     if (!deleted) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+    resolveParkedScheduleRemoved(existing);
     broadcastTasksChanged();
     return jsonContent({ success: true, id: args.id });
   };

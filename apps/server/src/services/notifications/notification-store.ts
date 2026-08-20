@@ -263,11 +263,19 @@ export class NotificationStore {
   /**
    * Whether any delivery about this subject was marked seen or acted on.
    *
-   * The channel-side half of "acknowledged": the other acks (the interaction
-   * resolving, the schedule being decided, the row being read) cancel the timer
-   * directly, but a mark that arrives from a channel — a chat button pressed, a
-   * push tapped — lands here.
+   * The channel-side half of "acknowledged" from ADR 260819-234829: a chat
+   * button pressed, a push tapped. The escalation service asks this before it
+   * fires.
    *
+   * **Nothing in production writes `seen_at` or `acted_at` yet**, so today this
+   * always answers `false` and the live ack is the condition resolving. It is
+   * wired rather than deferred because it is the seam a channel-side ack hook
+   * lands on: when one arrives it writes the mark and this guard starts biting,
+   * with no change here. Said plainly so the next reader does not mistake a
+   * guard that cannot yet trigger for one that is being relied on.
+   *
+   * @internal The `false` answer is currently unconditional in production; only
+   *   tests exercise the `true` branch.
    * @param subjectKey - The subject, as the raising kind's dedupe key spells it.
    */
   wasAcknowledged(subjectKey: string): boolean {

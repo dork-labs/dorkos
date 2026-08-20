@@ -65,6 +65,15 @@ export interface PushSubscriptionState {
   availability: PushAvailability;
   /** Every browser this install may push to. */
   devices: PushSubscriptionDTO[];
+  /**
+   * Whether {@link PushSubscriptionState.devices} is an ANSWER rather than a
+   * default.
+   *
+   * An empty array means "none subscribed" and "not loaded yet" alike, and a
+   * surface that warns about the first while looking at the second alarms
+   * somebody whose phone is in fact subscribed.
+   */
+  devicesLoaded: boolean;
   /** The id of the row that is THIS browser, when it is subscribed. */
   localDeviceId: string | null;
   /** Subscribe this browser. Only ever call from a real click. */
@@ -182,6 +191,7 @@ export function usePushSubscription(): PushSubscriptionState {
   return {
     availability,
     devices: listed ?? [],
+    devicesLoaded: devices.isSuccess,
     localDeviceId,
     subscribe,
     remove,

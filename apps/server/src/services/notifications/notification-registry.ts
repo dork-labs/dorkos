@@ -77,6 +77,18 @@ export interface NotificationPayloads {
   'session.error': {
     sessionId: string;
     agentId?: string;
+    /**
+     * When THIS error episode started. ISO 8601 UTC.
+     *
+     * **Not decoration — it is the episode's identity.** A session can fall
+     * over, be fixed, and fall over again, and those are two different things
+     * to be told about. Keyed on the session alone, the escalation ledger's
+     * "already escalated?" check would read the first episode's row forever and
+     * silently suppress every later one (DOR-1387 review). It is stamped once
+     * when the error starts and carried verbatim to the resolution, so both
+     * edges of one episode build the same key.
+     */
+    since: string;
     /** What to call the session in a sentence. See `ask.pending`. */
     sessionLabel: string;
     /** One line of what went wrong, already trimmed. */
@@ -323,10 +335,6 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   'schedule.parked': {
-    // The RAISE edge is reserved for W3 escalation: a standing kind stores
-    // nothing while it stands, so there is nothing for a raise-time call to do
-    // until a timer needs arming. Its two resolutions (approved, rejected) ARE
-    // wired, in `routes/tasks.ts`.
     kind: 'schedule.parked',
     tier: 'blocking',
     storage: 'standing',
@@ -348,7 +356,13 @@ const ENTRIES: NotificationRegistryMap = {
     title: (p) => `${p.sessionLabel} stopped on an error`,
     body: (p) => p.detail,
     actions: () => OPEN_ACTION,
-    dedupeKey: (p) => `session-error:${p.sessionId}`,
+    // Keyed per EPISODE, not per session — the one kind here whose subject can
+    // recur. A session that falls over, is fixed, and falls over again is two
+    // things to be told about, and the escalation ledger asks "has this subject
+    // already been escalated?" against this exact string. On a session-only key
+    // the first episode's ledger row would answer yes forever and silently
+    // suppress the phone ping for every later one (DOR-1387 review).
+    dedupeKey: (p) => `session-error:${p.sessionId}:${p.since}`,
     relay: 'never',
   },
 
@@ -544,9 +558,11 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * that are real, so the gap is a listed fact rather than something a reader has
  * to discover by grepping for call sites.
  *
- * Absent, with its wave noted at the entry: `report.daily` (W4 task T12), and
- * the RAISE edge of `schedule.parked` (W3 escalation — its resolutions are
- * wired).
+ * Absent, with its wave noted at the entry: `report.daily` (W4 task T12).
+ *
+ * The three STANDING kinds are listed here on their resolution edge, which is
+ * the only edge that writes a row. Their raise edge starts an escalation clock
+ * instead of storing anything (DOR-1387) — see `escalation-service.ts`.
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',

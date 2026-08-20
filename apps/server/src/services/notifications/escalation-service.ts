@@ -19,7 +19,10 @@
  *    rejected, the error cleared. `NotificationService.resolveStanding` disarms
  *    for all three kinds in one place.
  * 2. **A delivery was marked seen or acted on** — a chat button pressed, a push
- *    tapped. Checked against the ledger at fire time.
+ *    tapped. Checked against the ledger at fire time, but **dormant**: nothing
+ *    in production writes those marks yet, so it always answers "no" today. It
+ *    is the seam a channel-side ack hook lands on (see
+ *    `NotificationStore.wasAcknowledged`), not a path anything currently takes.
  *
  * The ADR also names "the notification was read". That turns out to be the same
  * act as (1) rather than a third one: a standing kind stores NO row while it
@@ -33,6 +36,14 @@
  * again at fire time — rather than cached at boot. Turning it to `never` while
  * something is already armed silences that timer too, which is what a person
  * pressing "Never" means.
+ *
+ * **A new NUMBER applies to the next thing that starts waiting, not to a timer
+ * already running.** Only `never` reaches back, because only `never` is asked
+ * again at fire time; a timer armed for two minutes still fires at two minutes
+ * even if the knob moves to fifteen a moment later. The asymmetry is deliberate:
+ * "stop bothering me" has to take effect immediately, while re-arming every live
+ * timer on a settings write would let a person push an escalation away
+ * indefinitely without meaning to.
  *
  * ## One key
  *

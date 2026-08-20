@@ -141,6 +141,12 @@ function createDeps(): McpToolDeps {
     transcriptReader: { listSessions: vi.fn().mockResolvedValue([]) },
     defaultCwd: '/tmp/mcp-tool-gate',
     taskStore: {
+      // `tasks_delete` reads the row before removing it, so a schedule that was
+      // waiting on the operator can have its standing condition ended
+      // (DOR-1387). Answering `undefined` is the honest fixture here: this file
+      // is about the permission gate, and a schedule nobody was waiting on is
+      // the case where that read changes nothing.
+      getTask: () => undefined,
       deleteTask: (id: string) => {
         deletedTaskIds.push(id);
         return true;

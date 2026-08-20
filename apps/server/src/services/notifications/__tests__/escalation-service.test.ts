@@ -84,6 +84,14 @@ function ask(interactionId = 'int-1') {
   };
 }
 
+/**
+ * One error EPISODE on a session. `since` is what tells two episodes apart, so
+ * a case about the second one varies it rather than the session id.
+ */
+function sessionError(since = '2026-08-20T09:00:00.000Z', sessionId = 'sess-2') {
+  return { sessionId, sessionLabel: 'acme', since };
+}
+
 /** Every ledger row filed under one subject, escalations included. */
 function ledgerFor(subjectKey: string): Array<{ channel: string; escalated: boolean }> {
   return store.deliveriesForSubject(subjectKey).map((row) => ({
@@ -126,7 +134,7 @@ describe('arming', () => {
   it('files each of the three standing kinds under its registry dedupe key', () => {
     const service = buildService();
     const schedule = { taskId: 'task-1', taskName: 'Nightly', proposedBy: 'An agent' };
-    const error = { sessionId: 'sess-2', sessionLabel: 'acme' };
+    const error = sessionError();
 
     service.arm('ask.pending', ask());
     service.arm('schedule.parked', schedule);
@@ -218,7 +226,7 @@ describe('cancelling', () => {
 
   it('disarms a session whose error cleared', async () => {
     const service = buildService();
-    const error = { sessionId: 'sess-2', sessionLabel: 'acme' };
+    const error = sessionError();
     service.arm('session.error', error);
 
     service.cancelByKey(notificationEntry('session.error').dedupeKey(error));
@@ -230,8 +238,10 @@ describe('cancelling', () => {
   it('does not fire for a subject a channel already marked seen', async () => {
     const service = buildService();
     service.arm('ask.pending', ask());
-    // A delivery marked seen while the timer runs — a chat button pressed, a
-    // push tapped — with no in-process cancel to go with it.
+    // The mark is written by hand here because NOTHING IN PRODUCTION WRITES IT
+    // YET — no channel-side ack hook exists (see `wasAcknowledged`). This pins
+    // the guard so that when one lands it is already honoured; it is not
+    // evidence of a live path.
     store.recordDelivery({ subjectKey: 'ask:int-1', channel: 'telegram' });
     markSeen('ask:int-1');
 
@@ -328,6 +338,46 @@ describe('firing', () => {
     // Re-arming after the fire is what a rehydrating projector does. The ledger
     // is what stops it becoming a second buzz.
     service.arm('ask.pending', ask());
+    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
+
+    expect(sendToAll).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The regression the DOR-1387 review caught. Keyed on the session alone, the
+   * ledger's "already escalated?" check answered yes forever after the first
+   * episode: a session could fall over, be fixed, and fall over again, and only
+   * the FIRST failure ever reached a phone. Every later one was suppressed for
+   * the life of the row — up to thirty days.
+   */
+  it('escalates a SECOND error episode on a session that already had one', async () => {
+    const service = buildService();
+
+    const first = sessionError('2026-08-20T09:00:00.000Z');
+    service.arm('session.error', first);
+    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
+    expect(sendToAll).toHaveBeenCalledTimes(1);
+
+    // The error clears, and the session falls over again a minute later.
+    service.cancelByKey(notificationEntry('session.error').dedupeKey(first));
+    const second = sessionError('2026-08-20T09:02:00.000Z');
+    service.arm('session.error', second);
+    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
+
+    expect(sendToAll).toHaveBeenCalledTimes(2);
+    expect(ledgerFor(notificationEntry('session.error').dedupeKey(first))).toHaveLength(2);
+    expect(ledgerFor(notificationEntry('session.error').dedupeKey(second))).toHaveLength(2);
+  });
+
+  it('still suppresses a REPEAT of the same episode', async () => {
+    // The other half of the same rule: episode identity must not cost the
+    // idempotency that survives a restart.
+    const service = buildService();
+    const episode = sessionError();
+
+    service.arm('session.error', episode);
+    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
+    service.arm('session.error', episode);
     await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
 
     expect(sendToAll).toHaveBeenCalledTimes(1);

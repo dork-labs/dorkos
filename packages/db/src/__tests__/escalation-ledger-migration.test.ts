@@ -53,6 +53,13 @@ function isNotNull(raw: Raw, name: string): boolean {
   return columns(raw).find((c) => c.name === name)?.notnull === 1;
 }
 
+/** The indexes sqlite currently holds on the ledger. */
+function indexNames(raw: Raw): string[] {
+  return (
+    raw.prepare('PRAGMA index_list(notification_deliveries)').all() as { name: string }[]
+  ).map((i) => i.name);
+}
+
 /**
  * A database at the shape 0068 left — every migration before 0069 applied, and
  * 0069 itself not. Built by copying the migration folder minus 0069 and
@@ -158,6 +165,25 @@ describe('0069 — notification_deliveries gains subject_key and a nullable noti
       .get() as { n: string | null; s: string };
     expect(row.n).toBeNull();
     expect(row.s).toBe('ask:int-7');
+  });
+
+  /**
+   * A SQLite rebuild drops the old table and every index on it. Drizzle-kit
+   * re-emits them AFTER the rename, but that is a property of the generated SQL
+   * rather than a guarantee — and a silently missing `subject_key` index would
+   * cost nothing visible until the escalation service's two per-fire lookups
+   * were scanning an uncapped table.
+   */
+  it('re-creates both indexes after the rebuild, subject_key included', () => {
+    const raw = databaseAtOldShape();
+    applyMigration(raw);
+
+    expect(indexNames(raw)).toEqual(
+      expect.arrayContaining([
+        'idx_notification_deliveries_notification',
+        'idx_notification_deliveries_subject',
+      ])
+    );
   });
 
   it('keeps the cascade, so a pruned notification still takes its deliveries with it', () => {

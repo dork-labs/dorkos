@@ -69,14 +69,26 @@ start a clock with one free function and grow no dependency on the inbox.
   `NotificationService.resolveStanding`, which disarms once for all three
   kinds — synchronously and before it awaits a chat network, so an escalation
   cannot slip out in that window.
-- **The four acks this ADR names are two mechanisms.** "The interaction
-  resolved" and "the item was approved or rejected" are the same disarm above.
-  "A delivery marked seen/acted" is a ledger check at fire time. **"The
-  notification was read" turned out to be the first one again, not a third**: a
+- **The four acks this ADR names are two mechanisms, and only one is live.**
+  "The interaction resolved" and "the item was approved or rejected" are the
+  same disarm above, and that is the ack that actually fires today. **"The
+  notification was read" turned out to be the same one again, not a third**: a
   standing kind stores no row while it stands, so the only row a person can mark
   read is the history row a resolution already wrote — by which time the timer
   is gone. A hook on the read path would have been a line that could never run,
-  so there isn't one.
+  so there isn't one. **"A delivery marked seen/acted" is wired but dormant**:
+  `NotificationStore.wasAcknowledged` is checked before every fire, and nothing
+  in production writes `seen_at` or `acted_at`, so it always answers `false`
+  today. It is kept as the seam a channel-side ack hook lands on — a tapped
+  push, a pressed chat button — and is documented as dormant at the method
+  rather than left to look load-bearing.
+- **`session.error` is keyed per EPISODE**, not per session:
+  `session-error:<sessionId>:<since>`. On a session-only key the ledger's
+  "already escalated?" check reads the first episode's row forever, so a session
+  that falls over, is fixed, and falls over again escalates only the FIRST time
+  — for up to the row's thirty-day life. One shared payload builder in
+  `session-lifecycle.ts` serves both the arm and the resolution, because an
+  identical key at both edges IS the disarm.
 - **The knob is read live**, on every arm AND again at fire time, so moving it
   to `never` silences a timer that is already running.
 - **One key, not two.** A timer is filed under the registry's own

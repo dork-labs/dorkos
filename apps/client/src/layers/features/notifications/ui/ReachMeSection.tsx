@@ -53,6 +53,10 @@ export function ReachMeSection() {
     (binding) => binding.enabled && binding.canInitiate
   );
   const off = prefs.escalation.phoneAfterMinutes === 'never';
+  // Both answers, or neither. Warning "nothing can carry that" off a list that
+  // has simply not loaded yet would flash an alarm at somebody whose phone IS
+  // subscribed — and the first thing they would do is doubt the setting.
+  const knowsWhatCanCarry = push.devicesLoaded && bindings.isSuccess;
 
   return (
     <FieldCard>
@@ -60,7 +64,7 @@ export function ReachMeSection() {
         <SettingRow
           orientation="vertical"
           label="Try to reach me somewhere else after"
-          description="After this long unanswered, DorkOS pings your subscribed devices and connected chat apps. Answer anywhere and everything else goes quiet."
+          description="After this long unanswered, DorkOS pings your subscribed devices and connected chat apps. Answer anywhere and everything else goes quiet. A new time applies to whatever waits on you next; picking Never stops anything that is already counting down."
         >
           <SegmentedControl
             value={String(prefs.escalation.phoneAfterMinutes)}
@@ -76,7 +80,7 @@ export function ReachMeSection() {
           </SegmentedControl>
         </SettingRow>
 
-        {!off && push.devices.length === 0 && !chatCanCarry && (
+        {knowsWhatCanCarry && !off && push.devices.length === 0 && !chatCanCarry && (
           <p className="text-muted-foreground text-xs" role="status">
             Nothing can carry that yet. Add this device below, or connect a chat app under
             Connections and let an agent start conversations there.
