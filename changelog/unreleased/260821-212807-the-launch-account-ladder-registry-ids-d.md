@@ -3,6 +3,7 @@ covers:
   - 'feat(shared,server): the launch-account ladder — registry ids, defaultAccount, and a per-session hint (DOR-1407)'
   - 'test(server,shared): pin all five billing-account invariants, plus docs (DOR-1407)'
   - 'fix(shared,server,db,client): a pre-ladder config survives a skipped migration (DOR-1407)'
+  - 'fix(shared,server): a skipped migration no longer hides — or destroys — a billing choice (DOR-1407)'
 ---
 
 ### Changed
