@@ -36,6 +36,15 @@ export {
   usePendingInteractions,
   PENDING_INTERACTIONS_QUERY_KEY,
 } from './model/use-pending-interactions';
+// The Inbox popover's own named derivation of the same three queues above —
+// see its module doc for why a dedicated hook replaced three ad hoc calls.
+export { useWaitingQueue } from './model/use-waiting-queue';
+// The id vocabulary a blockage is named in (see `signal-ids.ts`'s module doc).
+// Exported so a consumer that mints a signal id by hand — `MobileNowAttention`
+// matches its own covered-ids list against `deriveAttentionSignals`'s ids —
+// spells it through the one function that decides the format, not a second
+// hand-written template literal.
+export { approvalSignalId, interactionSignalId } from './model/signal-ids';
 // The half-sentence that follows an agent's name ("wants to edit standup.md").
 // Exported because `features/ask` builds the card's headline from it, and one
 // phrasing is the point.

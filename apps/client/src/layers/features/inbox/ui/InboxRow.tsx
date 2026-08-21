@@ -6,17 +6,44 @@
 import { motion } from 'motion/react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { cn, formatCompactAge } from '@/layers/shared/lib';
-import { NOTIFICATION_ICONS, notificationTone, isFailedRun } from '@/layers/entities/notifications';
+import { NOTIFICATION_ICONS, notificationRowTone } from '@/layers/entities/notifications';
+import { AgentAvatar, resolveAgentVisual, type AgentVisualSource } from '@/layers/entities/agent';
 
 /** The entrance each row inherits from its list's stagger container. */
-const staggerItem = {
+export const staggerItem = {
   initial: { opacity: 0, y: 6 },
   animate: { opacity: 1, y: 0 },
 } as const;
 
+/**
+ * The glyph slot's fixed footprint — 18px, matching the `xs` avatar disc.
+ *
+ * **Load-bearing, not decorative.** An `AgentAvatar` at `xs` is 18px and the
+ * kind `Icon` is drawn at `size-3.5` (14px); relying on each one's own
+ * `shrink-0` to hold its place let the row's title column jitter 4px
+ * sideways every time a row's glyph switched between the two — invisible in
+ * jsdom, measured in a real browser (review round 1). Both `InboxRow` and
+ * `InboxGroupRow` wrap whichever they draw in a box of exactly this size, so
+ * the slot's width is a property of the SLOT, not an accident of the two
+ * things that happen to fill it.
+ */
+export const GLYPH_SLOT_CLASS = 'flex size-[18px] shrink-0 items-center justify-center';
+
 export interface InboxRowProps {
   /** The notification this row draws. */
   notification: NotificationDTO;
+  /**
+   * The agent behind `notification.agentId`, when the caller holds the roster.
+   *
+   * Three states, not two. `undefined` — the default — means the caller never
+   * looked it up (or the row has no `agentId` at all): draws the kind glyph,
+   * same as before this prop existed. `null` means the caller looked and the
+   * roster does not know this id — an agent since removed, say — and draws the
+   * same glyph rather than guessing. Only a resolved manifest draws a face.
+   *
+   * The row never fetches this itself — see the class doc's "holds no query".
+   */
+  agent?: AgentVisualSource | null;
   /**
    * What clicking the row does — mark it read, and go wherever it points.
    *
@@ -36,16 +63,31 @@ export interface InboxRowProps {
  * column, and a read row simply loses it — nothing greys out, because a
  * notification you have already seen is still true.
  *
- * Presentational: it holds no query and marks nothing read. Whoever renders it
- * decides what clicking means, which is what lets home's activity group and the
- * bell's list share one row.
+ * **A face when there is a "who" and a colour when there is a "how bad".** A row
+ * whose `agent` resolved draws that agent's own avatar — `xs`, the disc the
+ * sidebar already uses — in a fixed 18px slot ({@link GLYPH_SLOT_CLASS}); the
+ * kind `Icon` draws in the same slot otherwise. The slot's width is fixed
+ * because the two things it can hold are not the same size — see
+ * {@link GLYPH_SLOT_CLASS}'s own doc for why that is load-bearing rather than
+ * tidiness. A row drawn in the error tone keeps the coloured kind glyph
+ * regardless: tone answers "did anything break?", which is the question a
+ * list gets scanned for, and it must never lose that argument to a second
+ * colour painted onto the avatar's own tint. Warning-tone rows (most ordinary
+ * activity — a turn finishing, a DM arriving — carries the `notable` tier,
+ * not bad news) still get a face; only `error` keeps the glyph.
  *
- * @param props - The {@link InboxRowProps.notification} and what opening it does.
+ * Presentational: it holds no query and marks nothing read. Whoever renders it
+ * decides what clicking means and who the agent is, which is what lets home's
+ * activity group and the bell's list share one row.
+ *
+ * @param props - The {@link InboxRowProps.notification}, its resolved
+ *   {@link InboxRowProps.agent}, and what opening it does.
  */
-export function InboxRow({ notification, onOpen }: InboxRowProps) {
+export function InboxRow({ notification, agent, onOpen }: InboxRowProps) {
   const Icon = NOTIFICATION_ICONS[notification.kind];
-  const tone = isFailedRun(notification) ? 'error' : notificationTone(notification);
+  const tone = notificationRowTone(notification);
   const unread = notification.readAt === undefined;
+  const visual = tone !== 'error' && agent != null ? resolveAgentVisual(agent) : null;
 
   const body = (
     <>
@@ -62,17 +104,32 @@ export function InboxRow({ notification, onOpen }: InboxRowProps) {
           all to a screen reader. Read rows say nothing rather than "Read":
           every row would then start with a word carrying no news. */}
       {unread && <span className="sr-only">Unread. </span>}
-      <Icon
-        aria-hidden
-        className={cn(
-          'size-3.5 shrink-0',
-          tone === 'error'
-            ? 'text-status-error/70'
-            : tone === 'warning'
-              ? 'text-status-warning/70'
-              : 'text-muted-foreground'
+      <span data-slot="inbox-row-glyph" className={GLYPH_SLOT_CLASS}>
+        {visual ? (
+          <AgentAvatar
+            color={visual.color}
+            emoji={visual.emoji}
+            size="xs"
+            // No Bot badge: the square shape already says "agent", and a badge
+            // repeating that on every row in a list that is ALREADY agent rows
+            // is a column of identical marks saying nothing (the same call
+            // `AskCard.Face` makes at this size).
+            badge={null}
+          />
+        ) : (
+          <Icon
+            aria-hidden
+            className={cn(
+              'size-3.5',
+              tone === 'error'
+                ? 'text-status-error/70'
+                : tone === 'warning'
+                  ? 'text-status-warning/70'
+                  : 'text-muted-foreground'
+            )}
+          />
         )}
-      />
+      </span>
       <span className="min-w-0 flex-1">
         <span
           className={cn(

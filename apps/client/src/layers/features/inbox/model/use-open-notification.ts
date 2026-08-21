@@ -18,8 +18,19 @@ import { notificationLink, useMarkRead } from '@/layers/entities/notifications';
  *
  * **In that order, and it matters.** The click IS the reading, so waiting for
  * the destination to load before dimming the row would leave a bold row behind
- * on the way out. A row with nowhere to go — an update record — still marks
- * itself read; it just does not move.
+ * on the way out.
+ *
+ * **Defensive against a link-less notification, though nothing reaches it
+ * with one today.** `notificationLink` still returns `null` for two kinds
+ * (`update.installed`, `report.daily`), and this still marks such a
+ * notification read without navigating if it were ever called with one — but
+ * every current caller keeps that from happening. `InboxList` renders a
+ * link-less row as non-interactive text instead of wiring it to this hook
+ * (see its own class doc), and the other two callers' activity lenses
+ * (`ACTIVITY_KINDS` in `use-activity-notifications.ts`) never include either
+ * kind in the first place. Kept as a real branch, not deleted, because a
+ * future caller with a wider lens should not have to rediscover this the
+ * hard way.
  *
  * @returns A stable callback taking the notification that was clicked.
  */

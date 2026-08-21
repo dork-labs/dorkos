@@ -62,6 +62,9 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'report.daily': Sparkles,
 };
 
+/** How loudly a notification draws. */
+export type NotificationTone = 'error' | 'warning' | 'neutral';
+
 /**
  * How loudly a notification draws.
  *
@@ -71,7 +74,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
  *
  * @param notification - The row.
  */
-export function notificationTone(notification: NotificationDTO): 'error' | 'warning' | 'neutral' {
+export function notificationTone(notification: NotificationDTO): NotificationTone {
   if (notification.tier === 'blocking') return 'error';
   if (notification.tier === 'notable') return 'warning';
   return 'neutral';
@@ -89,6 +92,106 @@ export function notificationTone(notification: NotificationDTO): 'error' | 'warn
 export function isFailedRun(notification: NotificationDTO): boolean {
   return notification.kind === 'run.completed' && notification.tier === 'notable';
 }
+
+/**
+ * The tone a ROW draws in, folding {@link isFailedRun} over {@link notificationTone}.
+ *
+ * Every drawer of a row wants this composite, not the tier reading alone —
+ * `InboxRow` did the same two-line fold inline, and the burst-coalescing fold
+ * needs the identical answer to decide whether two adjacent rows are the same
+ * story (see `features/inbox/lib/group-activity-rows`). One function so the
+ * two can never drift apart.
+ *
+ * @param notification - The row.
+ */
+export function notificationRowTone(notification: NotificationDTO): NotificationTone {
+  return isFailedRun(notification) ? 'error' : notificationTone(notification);
+}
+
+/**
+ * Kinds a burst can actually form around.
+ *
+ * Verified against every server emitter under
+ * `apps/server/src/services/notifications/emitters/` (and the one inline
+ * `notify()` call in `apps/server/src/index.ts` for `dead-letter.created`):
+ * these seven are the only kinds whose payload an emitter ever populates
+ * `agentId` on. The other five — `ask.pending`, `session.error`,
+ * `dead-letter.created`, `update.installed`, `report.daily` — never carry
+ * one, so {@link groupActivityRows} (which requires an `agentId` to fold rows
+ * at all) can never build a group of them.
+ *
+ * Not inferred from the payload TYPE's `agentId?: string` — several of the
+ * excluded kinds (`session.error`, `ask.pending`) declare it optional too,
+ * without any emitter ever setting it. A named list, checked against
+ * behaviour, is the only honest source of truth here.
+ *
+ * `turn.completed` is the one exception worth flagging: its own emitter
+ * (`session-lifecycle.ts`) does not set `agentId` today either, so it cannot
+ * group in practice yet. Kept anyway — it is the highest-churn kind
+ * coalescing exists for (an agent finishing turn after turn is exactly the
+ * burst this feature was built to collapse), and wiring `agentId` through
+ * from the session's owning agent is a small, tracked follow-up rather than
+ * a reason to leave the phrase unwritten.
+ */
+const GROUPABLE_KINDS = [
+  'schedule.parked',
+  'turn.completed',
+  'run.completed',
+  'dm.received',
+  'mention.received',
+  'agent.note',
+  'agent.unreachable',
+] as const;
+
+/** A kind whose rows can fold into a burst — see {@link GROUPABLE_KINDS}. */
+export type GroupableNotificationKind = (typeof GROUPABLE_KINDS)[number];
+
+/**
+ * Whether a kind can ever head a burst.
+ *
+ * A type guard, not a cast: `groupActivityRows` narrows a notification's
+ * `kind` through this before it ever reaches {@link notificationBurstVerb},
+ * so a future emitter that starts setting `agentId` on a kind not yet listed
+ * here degrades to "stays ungrouped" rather than throwing the moment three of
+ * them land.
+ *
+ * @param kind - The kind to test.
+ */
+export function isGroupableKind(kind: NotificationKind): kind is GroupableNotificationKind {
+  return (GROUPABLE_KINDS as readonly NotificationKind[]).includes(kind);
+}
+
+/**
+ * The phrase a burst of `count` consecutive same-agent, same-kind rows reads
+ * as once collapsed — "finished 4 runs", not the singular row's own title,
+ * because the individual titles ("alpha finished") do not compose past one.
+ *
+ * Exhaustive over {@link GroupableNotificationKind} by construction (a
+ * `Record` over that union, not a fallback default): a groupable kind added
+ * without an entry here is a type error at this file, not a blank group
+ * header at runtime.
+ *
+ * @param kind - The shared kind every row in the burst carries.
+ * @param count - How many rows collapsed into it. Every phrase below is
+ *   hard-plural ("4 runs") because the fold that builds a burst
+ *   (`features/inbox/lib/group-activity-rows`) never calls this below its own
+ *   three-row threshold — the grammar leans on that invariant, it does not
+ *   duck it.
+ */
+export function notificationBurstVerb(kind: GroupableNotificationKind, count: number): string {
+  return BURST_VERB[kind](count);
+}
+
+/** The verb phrase per groupable kind that {@link notificationBurstVerb} looks up. */
+const BURST_VERB: Record<GroupableNotificationKind, (count: number) => string> = {
+  'schedule.parked': (n) => `proposed ${n} scheduled tasks`,
+  'turn.completed': (n) => `finished ${n} turns`,
+  'run.completed': (n) => `finished ${n} runs`,
+  'dm.received': (n) => `sent ${n} messages`,
+  'mention.received': (n) => `mentioned you ${n} times`,
+  'agent.note': (n) => `left ${n} notes`,
+  'agent.unreachable': (n) => `went offline ${n} times`,
+};
 
 /**
  * Where clicking a notification goes.
