@@ -3853,14 +3853,21 @@ describe('a Claude account registry written before ids, through the real conf lo
     ]);
   });
 
-  it('reads the registry back with ids even before anything writes', () => {
-    // What a LAUNCH sees on an un-migrated install. Zod heals on parse, so the
-    // ids the ladder resolves against are there the first time it looks.
+  it("keeps the stored registry readable as-is — the healing is the READER's job", () => {
+    // Deliberately NOT a claim about what a launch sees. This file's subject is
+    // the conf load path: the file is accepted, and what conf hands back is what
+    // is on disk, ids and all still absent until the migration writes them.
+    //
+    // Parsing it here with Zod would prove only that Zod heals, which is not the
+    // question a LAUNCH asks — nothing on the launch path consults Zod. That
+    // claim belongs to the seam the ladder actually reads, and it is made
+    // against `describeClaudeCodeAccounts` and `resolveLaunchAccountRoot` in
+    // `runtimes/claude-code/__tests__/pre-ladder-config.test.ts`.
     const { dir } = seedPreLadder();
     const stored = new ConfigManager(dir).getAll();
-    expect(UserConfigSchema.parse(stored).runtimes.claudeCode.accounts.map((a) => a.id)).toEqual([
-      'acme-corp',
-      'claude3',
+    expect(stored.runtimes.claudeCode.accounts.map((a) => a.path)).toEqual([
+      '/Users/me/.claude2',
+      '/Users/me/.claude3',
     ]);
   });
 });

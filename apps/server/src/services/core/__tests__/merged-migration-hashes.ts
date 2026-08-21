@@ -66,5 +66,12 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   '0.62.0': '622b3a68f4579a0c',
   '0.63.0': '3641c16254095166',
   '0.64.0': '2ba829b016b59c8c',
-  '0.65.0': '34cd0129c03cd570',
+  // Repinned once, on the branch that introduced this key and before it merged
+  // to `main` — so the population that could have run the earlier body is empty
+  // by construction: no build carrying `0.65.0` has ever existed outside this
+  // worktree. The change it records is the review fix that stopped the migration
+  // preferring a `null` `defaultAccount` over the operator's stored
+  // `activeAccount`, which destroyed a billing choice permanently. Once this
+  // merges, the key is frozen and a further change of mind opens `'0.66.0'`.
+  '0.65.0': 'f3f900081b2149cc',
 };

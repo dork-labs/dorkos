@@ -36,7 +36,8 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import type { UserConfig } from '@dorkos/shared/config-schema';
+import type { ClaudeCodeAccount, UserConfig } from '@dorkos/shared/config-schema';
+import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
@@ -67,20 +68,21 @@ function inheritedClaudeRoot(): string {
  */
 function readClaudeCodeConfig(config: ConfigReader): {
   defaultAccount: string | null;
-  // `id` is typed OPTIONAL here and required on `UserConfig`, deliberately.
-  // `configManager.get` hands back what conf stored, not a Zod parse, and a
-  // registry written before ids existed carries none until the `'0.65.0'`
-  // migration runs — which a dev tree never does. Typing it as the schema
-  // promises would let the compiler bless `account.id` reads that are
-  // `undefined` at runtime.
-  accounts: readonly { id?: string; path: string; label: string | null }[];
+  accounts: readonly ClaudeCodeAccount[];
 } {
   try {
-    const claudeCode = config.get('runtimes')?.claudeCode;
-    return {
-      defaultAccount: claudeCode?.defaultAccount ?? null,
-      accounts: claudeCode?.accounts ?? [],
-    };
+    // Through the healing read, NOT straight off the store. `configManager.get`
+    // hands back what conf stored — raw JSON, never a Zod parse — so this is the
+    // one place that can give every reader below it the migrated shape on an
+    // install the `'0.65.0'` migration has not reached (a dev tree never does).
+    //
+    // Both heals matter here and they fail differently. Without the rename, a
+    // stored `activeAccount` is invisible and new work bills whatever the shell
+    // pointed at. Without the ids, every row is unreferenceable and the ladder's
+    // top two rungs are inert — a hint matched by an id no stored row carries.
+    // Neither is a schema concern: `UserConfigSchema` is right either way, and
+    // nothing on this path consults it.
+    return readClaudeAccountSettings(config.get('runtimes')?.claudeCode);
   } catch (err) {
     logger.debug('[claude-config-dir] Claude account config unavailable', { err: String(err) });
     return { defaultAccount: null, accounts: [] };
@@ -308,14 +310,12 @@ export function describeClaudeCodeAccounts(
     resolvedAccount: defaultAccount ?? inheritedClaudeRoot(),
     inherited: defaultAccount === null,
     accounts: accounts.map((account) => ({
-      // The id agents and launch hints reference this account by. `null` is the
-      // wire's word for "nothing can point at this row" — reserved for a
-      // synthesized row describing an unregistered root, and reached here by an
-      // account whose id the `'0.65.0'` migration has not backfilled yet. The
-      // `?? null` is load-bearing: `undefined` is not what
-      // `ServerConfigSchema.claudeCode` accepts, so without it a pre-migration
-      // registry would fail to serialize onto `GET /api/config` at all.
-      id: account.id ?? null,
+      // The id agents and launch hints reference this account by. Never `null`
+      // for a REGISTERED account, including on a config the migration has not
+      // reached — `readClaudeCodeConfig` heals the id in. `null` on the wire is
+      // reserved for a row a caller synthesizes to describe an unregistered
+      // root, which nothing can point at (`ServerConfigSchema.claudeCode`).
+      id: account.id,
       path: account.path,
       label: account.label,
       // NOT `exists`: this is D4's structural check, so a directory that is

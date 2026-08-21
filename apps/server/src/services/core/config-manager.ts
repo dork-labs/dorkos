@@ -2511,11 +2511,18 @@ export function migrateClaudeAccountRegistry(store: {
   let changed = false;
 
   if ('activeAccount' in block) {
-    // The new key wins if both are somehow present: only a config written before
-    // this migration carries the old one, so the two cannot hold different
-    // truths, and preferring the new one keeps a re-run from resurrecting a
-    // value the person has since changed.
-    if (!('defaultAccount' in block)) block.defaultAccount = block.activeAccount;
+    // A `null` under the new name does NOT outrank a value under the old one.
+    //
+    // The premise this once carried — "only a config written before this
+    // migration carries the old key, so the two cannot disagree" — was false,
+    // and the way it failed was expensive. On any install this migration is
+    // skipped on, one unrelated settings write persists the whole parsed config
+    // and lands `defaultAccount: null` beside the still-present `activeAccount`.
+    // Preferring the new key there discards the operator's billing choice
+    // permanently, by way of a theme change. `null` is the absence of a choice;
+    // a real path under the new name is a decision made since the rename and
+    // still wins.
+    if (block.defaultAccount == null) block.defaultAccount = block.activeAccount;
     delete block.activeAccount;
     changed = true;
   }
