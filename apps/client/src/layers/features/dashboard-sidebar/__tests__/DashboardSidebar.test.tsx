@@ -766,14 +766,18 @@ describe('DashboardSidebar', () => {
       expect(libraryHeadings()).toEqual(['Pins', 'Channels', 'Direct messages', 'Agents']);
     });
 
-    it('nests a group inside Agents, one level down, as an <h4>', async () => {
+    it('draws a hand-made section as a peer, above the fixed four (D3)', async () => {
+      // What this catches: a return to the pre-D3 shape, where the section
+      // rendered as an <h4> nested inside the Agents wrapper.
       mockSidebarPrefs.mockReturnValue(
         makePrefs({ groups: [group({ items: [agent('/projects/alpha')] })] })
       );
       renderWithProviders(<DashboardSidebar />);
-      const heading = await screen.findByRole('heading', { name: /Clients/, level: 4 });
-      expect(sectionHeading('Agents').closest('[data-slot="sidebar-group"]')).toContainElement(
-        heading
+      await waitFor(() => expect(libraryHeadings()).toContain('Clients'));
+      expect(libraryHeadings()[0]).toBe('Clients');
+      expect(screen.queryByRole('heading', { name: /Clients/, level: 4 })).not.toBeInTheDocument();
+      expect(sectionHeading('Agents').closest('[data-slot="sidebar-group"]')).not.toContainElement(
+        screen.getByRole('heading', { name: /Clients/, level: 3 })
       );
     });
   });
@@ -928,7 +932,7 @@ describe('DashboardSidebar', () => {
       // true of an empty document and prove nothing.
       expect(await screen.findByRole('menuitem', { name: /Show/ })).toBeInTheDocument();
       expect(screen.queryByRole('menuitem', { name: /New agent/ })).not.toBeInTheDocument();
-      expect(screen.queryByRole('menuitem', { name: /New group/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: /New section/ })).not.toBeInTheDocument();
     });
 
     it('reveals each section "+" on focus as well as on hover — a keyboard has no hover', async () => {
@@ -1064,18 +1068,18 @@ describe('DashboardSidebar', () => {
       expect(localStorage.getItem('dorkos-pinned-agents')).toBeNull();
     });
 
-    it('renders a group you just made, empty, with somewhere to drop into', async () => {
+    it('renders a section you just made, empty, with somewhere to drop into', async () => {
       // The one section allowed to render empty. Every other one appears
-      // because something is in it — but a group that vanished the instant it
+      // because something is in it — but a section that vanished the instant it
       // was created could never be dragged into, which is exactly how it is
       // filled. The browser spec drives that flow end to end.
       mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [] })] }));
       renderWithProviders(<DashboardSidebar />);
-      await screen.findByRole('heading', { name: /Clients/, level: 4 });
-      expect(screen.getByText(/Drag agents, channels, or conversations here/)).toBeInTheDocument();
+      await screen.findByRole('heading', { name: /Clients/, level: 3 });
+      expect(screen.getByText(/Drag channels, conversations or agents here/)).toBeInTheDocument();
     });
 
-    it('tells a smart group with no matches so, rather than hiding it', async () => {
+    it('tells a smart section with no matches so, rather than hiding it', async () => {
       mockSidebarPrefs.mockReturnValue(
         makePrefs({
           groups: [
@@ -1090,11 +1094,11 @@ describe('DashboardSidebar', () => {
         })
       );
       renderWithProviders(<DashboardSidebar />);
-      await screen.findByRole('heading', { name: /Wedged/, level: 4 });
+      await screen.findByRole('heading', { name: /Wedged/, level: 3 });
       expect(screen.getByText('No agents match these rules')).toBeInTheDocument();
     });
 
-    it('keeps a smart group’s members out of the drag layer', async () => {
+    it('keeps a smart section’s members out of the drag layer', async () => {
       mockSidebarPrefs.mockReturnValue(
         makePrefs({
           groups: [
@@ -1109,10 +1113,10 @@ describe('DashboardSidebar', () => {
         })
       );
       renderWithProviders(<DashboardSidebar />);
-      const heading = await screen.findByRole('heading', { name: /Live now/, level: 4 });
+      const heading = await screen.findByRole('heading', { name: /Live now/, level: 3 });
       // A rule-owned row is not a drag source: dragging one out would ask the
       // operator to hand-edit a list the rules rebuild on the next render. The
-      // group HEADER stays draggable (groups reorder), so the assertion is
+      // section HEADER stays draggable (sections reorder), so the assertion is
       // scoped to the rows.
       const body = heading.closest('[data-slot="sidebar-group"]');
       const rows = body?.querySelectorAll('[data-sidebar-row]') ?? [];

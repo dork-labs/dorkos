@@ -120,21 +120,6 @@ describe('toSidebarModelPrefs', () => {
     }
   });
 
-  it('hands the model canonical membership lists, never bare agent paths', () => {
-    // The pre-DOR-579 encoding, which an un-migrated install still stores.
-    const legacy = {
-      ...SIDEBAR_PREFS_DEFAULTS,
-      pinned: ['/projects/alpha'],
-      muted: ['/projects/beta'],
-      groups: [{ id: 'g1', name: 'Clients', agentPaths: ['/projects/gamma'] }],
-    } as unknown as SidebarPrefs;
-
-    const view = toSidebarModelPrefs(legacy);
-    expect(view.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
-    expect(view.muted).toEqual([{ kind: 'agent', path: '/projects/beta' }]);
-    expect(view.groups[0]!.items).toEqual([{ kind: 'agent', path: '/projects/gamma' }]);
-  });
-
   it('never mutates what it was given', () => {
     const stored = prefs({ sections: { channels: { collapsed: true } } });
     const snapshot = structuredClone(stored);

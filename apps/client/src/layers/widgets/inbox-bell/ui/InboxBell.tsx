@@ -42,106 +42,52 @@ const staggerContainer = {
 } as const;
 
 /**
- * The entrance for the "All clear ✓" line — the same fade-and-rise idiom the
- * schedule rows declare for themselves (see `ScheduleApprovalRow`), reused here
- * because the beat is exactly that: one row's worth of motion, not a list.
- */
-const allClearVariants = {
-  initial: { opacity: 0, y: 8 },
-  animate: { opacity: 1, y: 0 },
-} as const;
-
-/**
- * "1 request", "2 schedules" — one counted noun, correctly pluralized.
- *
- * @param count - How many of this kind are waiting.
- * @param noun - The noun's singular form.
- */
-function countNoun(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
-}
-
-/**
- * Two or three kinds that are actually waiting, at once, named honestly and
- * joined with an Oxford comma — "1 request and 2 schedules", "1 question, 2
- * requests, and 3 schedules". Callers only reach this once more than one kind
- * is nonzero; a single kind gets its own sentence above, in its own words.
- *
- * Order matches the panel's own listing order below: questions first (their
- * window is the shortest), then capability requests, then schedules.
- *
- * @param approvals - Capability approvals waiting.
- * @param schedules - Parked schedules waiting.
- * @param asks - Prompts agents are parked on.
- */
-function listWaitingKinds(approvals: number, schedules: number, asks: number): string {
-  const parts = [
-    asks > 0 ? countNoun(asks, 'question') : null,
-    approvals > 0 ? countNoun(approvals, 'request') : null,
-    schedules > 0 ? countNoun(schedules, 'schedule') : null,
-  ].filter((part): part is string => part !== null);
-  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
-  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
-}
-
-/**
  * The pill's accessible name while something is waiting.
  *
  * Carries the count and what clicking does, because the visible label is trimmed
  * to an icon and a number on narrow screens.
  *
- * **It does not call everything by the same noun.** Three different objects are
- * counted here — a capability approval, a parked schedule, and a prompt an agent
- * is parked on — and none stands in for another: a schedule is not a question,
- * and neither is a permission request. When the queue is only one kind the
- * sentence says so in that kind's own words; when it is mixed it names every
- * kind that is actually present rather than reaching for a word that fits none
- * of them.
+ * **It does not call everything an approval.** Two different objects are counted
+ * here — a capability approval, and the three kinds of prompt an agent parks on
+ * — and a question is not a permission request. When the queue is only prompts
+ * the sentence says so; when it is mixed it names the neutral thing both are.
  *
- * @param approvals - Capability approvals waiting.
- * @param schedules - Parked schedules waiting.
+ * @param approvals - Capability approvals and parked schedules, both of which
+ * are requests needing approval and read as one in this sentence.
  * @param asks - Prompts agents are parked on.
  */
-function waitingLabel(approvals: number, schedules: number, asks: number): string {
-  if (schedules === 0 && asks === 0 && approvals > 0) {
-    return approvals === 1
-      ? '1 request needs your approval. Open to answer it.'
-      : `${approvals} requests need your approval. Open to answer them.`;
-  }
-  if (approvals === 0 && asks === 0 && schedules > 0) {
-    return schedules === 1
-      ? '1 schedule wants your approval. Open to answer it.'
-      : `${schedules} schedules want your approval. Open to answer them.`;
-  }
-  if (approvals === 0 && schedules === 0 && asks > 0) {
+function waitingLabel(approvals: number, asks: number): string {
+  const total = approvals + asks;
+  if (approvals === 0 && asks > 0) {
     return asks === 1
       ? '1 agent is waiting on your answer. Open to answer it.'
       : `${asks} agents are waiting on your answer. Open to answer them.`;
   }
-  return `${listWaitingKinds(approvals, schedules, asks)} are waiting on you. Open to answer them.`;
+  if (asks === 0) {
+    return total === 1
+      ? '1 request needs your approval. Open to answer it.'
+      : `${total} requests need your approval. Open to answer them.`;
+  }
+  return `${total} things are waiting on you. Open to answer them.`;
 }
 
 /**
  * The one-line summary inside the pinned section, under the same rule.
  *
- * @param approvals - Capability approvals waiting.
- * @param schedules - Parked schedules waiting.
+ * @param approvals - Capability approvals and parked schedules together.
  * @param asks - Prompts agents are parked on.
  */
-function waitingSummary(approvals: number, schedules: number, asks: number): string {
-  if (schedules === 0 && asks === 0 && approvals > 0) {
-    const subject = approvals === 1 ? '1 request is' : `${approvals} requests are`;
-    return `${subject} waiting for your approval. Nothing runs until you decide.`;
-  }
-  if (approvals === 0 && asks === 0 && schedules > 0) {
-    const subject = schedules === 1 ? '1 schedule wants' : `${schedules} schedules want`;
-    return `${subject} your approval. Nothing runs until you decide.`;
-  }
-  if (approvals === 0 && schedules === 0 && asks > 0) {
+function waitingSummary(approvals: number, asks: number): string {
+  const total = approvals + asks;
+  if (approvals === 0 && asks > 0) {
     const subject = asks === 1 ? '1 agent is' : `${asks} agents are`;
     return `${subject} waiting on your answer before carrying on.`;
   }
-  return `${listWaitingKinds(approvals, schedules, asks)} are waiting on you. Nothing runs until you decide.`;
+  if (asks === 0) {
+    const subject = total === 1 ? '1 request is' : `${total} requests are`;
+    return `${subject} waiting for your answer. Nothing runs until you decide.`;
+  }
+  return `${total} things are waiting for your answer. Nothing runs until you decide.`;
 }
 
 /**
@@ -289,11 +235,11 @@ export function InboxBell() {
     setOpen(true);
   }
 
-  // A parked schedule counts toward the number on the badge — it is a
-  // request for a decision just like a capability approval — but the SENTENCE
-  // no longer calls it one; `waitingLabel`/`waitingSummary` below name a
-  // schedule as a schedule.
-  const waitingCount = approvals.length + schedules.length + asks.length;
+  // A parked schedule counts as an approval, both in the number and in the
+  // sentence: "3 requests need your approval" is true of two capability holds
+  // and one proposed schedule, and it is what the panel below then shows.
+  const approvalCount = approvals.length + schedules.length;
+  const waitingCount = approvalCount + asks.length;
   const trustedCount = permissions.length;
   // A failed read while the whole link is down is not news about approvals — it
   // is the same outage the connection item already reports. Staying quiet keeps
@@ -321,8 +267,7 @@ export function InboxBell() {
   const showsPinned = waitingCount > 0 || settling.length > 0 || isError;
 
   const pill = resolvePill({
-    approvalCount: approvals.length,
-    scheduleCount: schedules.length,
+    approvalCount,
     askCount: asks.length,
     settlingCount: settling.length,
     unreadable,
@@ -375,21 +320,20 @@ export function InboxBell() {
             <div className="flex min-w-0 flex-col gap-3">
               {showsPinned && (
                 <div>
-                  <h2 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
+                  <h2 className="text-status-warning-fg hidden text-xs font-medium tracking-widest uppercase md:block">
                     Needs You
                   </h2>
                   {/* While only a receipt is left, the count is zero and the
-                      summary would call `waitingSummary(0, 0, 0)` directly —
-                      which returns ", and undefined are waiting on you.
-                      Nothing runs until you decide." (`listWaitingKinds` has
-                      no guard of its own for the all-zero case). It says what
-                      just happened instead. */}
+                      summary would read "0 requests are waiting for your
+                      answer" — a sentence about nothing, said at the exact
+                      moment somebody finished their queue. It says what just
+                      happened instead. */}
                   {!unreadable &&
                     (waitingCount === 0 ? (
                       <p className="text-muted-foreground text-xs md:mt-1">Answered.</p>
                     ) : (
                       <p className="text-muted-foreground text-xs md:mt-1">
-                        {waitingSummary(approvals.length, schedules.length, asks.length)}
+                        {waitingSummary(approvalCount, asks.length)}
                       </p>
                     ))}
                   {/* Shown alongside the cards when a refresh failed but earlier
@@ -423,9 +367,13 @@ export function InboxBell() {
                       in two hours — so it goes under the two that do. */}
                   {schedules.length > 0 && (
                     <div className="mt-3">
-                      <h3 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
+                      <h3 className="text-status-warning-fg hidden text-xs font-medium tracking-widest uppercase md:block">
                         Scheduled Runs
                       </h3>
+                      <p className="text-muted-foreground text-xs md:mt-1">
+                        An agent wants to run something on a timer. Nothing runs until you approve
+                        it.
+                      </p>
                       {/* The rows declare entrance `variants` but no `animate` of
                           their own, so the parent must carry the label or they
                           render stuck at their initial (invisible) variant. */}
@@ -450,16 +398,13 @@ export function InboxBell() {
               )}
 
               {beating && (
-                <motion.p
+                <p
                   data-slot="inbox-all-clear"
-                  variants={allClearVariants}
-                  initial="initial"
-                  animate="animate"
                   className="text-muted-foreground flex min-h-7 items-center gap-1.5 text-[13px]"
                 >
                   <Check className="text-status-success size-3.5 shrink-0" aria-hidden />
                   All clear
-                </motion.p>
+                </p>
               )}
 
               {/* History, always drawn: the Inbox is the one place a person can
@@ -468,7 +413,7 @@ export function InboxBell() {
                   it went. It says "Nothing yet" instead. */}
               <div>
                 <div className="flex min-w-0 items-center justify-between gap-2">
-                  <h2 className="text-muted-foreground sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
+                  <h2 className="text-muted-foreground hidden text-xs font-medium tracking-widest uppercase md:block">
                     {lens === undefined ? 'Activity' : 'Activity · this session'}
                   </h2>
                   <div className="ml-auto flex items-center gap-1">
@@ -518,7 +463,7 @@ export function InboxBell() {
                   most likely to be looking at when they wonder why nothing asked. */}
               {trustedCount > 0 && (
                 <div>
-                  <h2 className="text-muted-foreground sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
+                  <h2 className="text-muted-foreground hidden text-xs font-medium tracking-widest uppercase md:block">
                     Standing Permissions
                   </h2>
                   <p className="text-muted-foreground text-xs md:mt-1">
@@ -548,7 +493,6 @@ export function InboxBell() {
  */
 function resolvePill(counts: {
   approvalCount: number;
-  scheduleCount: number;
   askCount: number;
   settlingCount: number;
   unreadable: boolean;
@@ -556,7 +500,7 @@ function resolvePill(counts: {
   unreadCount: number;
   trustedCount: number;
 }): PillState {
-  const waiting = counts.approvalCount + counts.scheduleCount + counts.askCount;
+  const waiting = counts.approvalCount + counts.askCount;
 
   if (waiting > 0) {
     return {
@@ -564,7 +508,7 @@ function resolvePill(counts: {
       glyph: 'waiting',
       count: waiting,
       text: 'waiting on you',
-      label: waitingLabel(counts.approvalCount, counts.scheduleCount, counts.askCount),
+      label: waitingLabel(counts.approvalCount, counts.askCount),
     };
   }
   if (counts.settlingCount > 0) {

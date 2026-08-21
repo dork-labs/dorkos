@@ -65,21 +65,22 @@ export interface NewMenuModel {
   /** Open the create-agent dialog. */
   onNewAgent: () => void;
   /**
-   * Start the inline group editor, or absent when this cockpit is not offered
-   * grouping yet.
+   * Start the inline section editor.
    *
-   * Chrome appears by data volume and never by a settings toggle (BC-32):
-   * somebody with three agents on one runtime has nothing to file, and the
-   * inline editor draws inside Library ▸ Agents — a section a fleet that small
-   * has not grown. Same threshold the section header reads, from the same
-   * function.
+   * **Offered to everybody** (D3). It used to be absent below eight agents or
+   * two runtimes, on the reasoning that a small fleet has nothing to file — but
+   * a section holds channels and conversations too, and somebody with three
+   * agents still has a project's channel, its conversation and its agent to put
+   * together. The threshold that remains gates the SMART presets below, which
+   * really are about a fleet.
    */
-  onNewGroup?: () => void;
+  onNewGroup: () => void;
   /**
-   * Smart-group presets, one click each (DOR-338).
+   * Smart-section presets, one click each (DOR-338).
    *
-   * Non-empty whenever {@link NewMenuModel.onNewGroup} is: "Active now" applies
-   * to any fleet, and grouping and presets are gated on the one threshold.
+   * Empty for a small fleet, which is what withdraws the presets and the
+   * `Custom rules` entry from the submenu — the one gate
+   * `offersGroupAffordances` still keeps.
    */
   smartGroupPresets: SmartGroupPreset[];
   /** Make a smart group from one preset's rules. */
@@ -99,50 +100,69 @@ export interface NewMenuModel {
  * @param model - What each item does, and which of them exist here.
  */
 export function buildNewMenuNodes(model: NewMenuModel): SidebarMenuNode[] {
-  const onNewGroup = model.onNewGroup;
-  const groupItem: SidebarMenuNode[] =
-    onNewGroup === undefined
+  // The rule half — presets and the rule form — appears only for a fleet big
+  // enough for rules to mean anything.
+  const smartItems: SidebarMenuNode[] =
+    model.smartGroupPresets.length === 0
       ? []
       : [
+          { kind: 'separator', id: 'sep-smart' },
+          ...model.smartGroupPresets.map(
+            (preset): SidebarMenuNode => ({
+              kind: 'action',
+              id: `new-group-preset:${preset.label}`,
+              label: preset.label,
+              icon: Users,
+              opensInput: false,
+              run: () => model.onCreatePresetSmartGroup(preset),
+            })
+          ),
           {
-            // A submenu, because a group is made two ways: by hand, or from
-            // rules (DOR-338). Both live under the one item, so the menu's top
-            // level stays the five things the design names.
-            kind: 'submenu',
-            id: 'new-group' satisfies NewMenuItemId,
-            label: 'Agent group',
+            kind: 'action',
+            id: 'new-group-custom',
+            label: 'Custom rules',
             icon: Users,
-            items: [
-              {
-                kind: 'action',
-                id: 'new-group-empty',
-                label: 'Empty group',
-                icon: Users,
-                opensInput: true,
-                run: onNewGroup,
-              },
-              { kind: 'separator', id: 'sep-smart' },
-              ...model.smartGroupPresets.map(
-                (preset): SidebarMenuNode => ({
-                  kind: 'action',
-                  id: `new-group-preset:${preset.label}`,
-                  label: preset.label,
-                  icon: Users,
-                  opensInput: false,
-                  run: () => model.onCreatePresetSmartGroup(preset),
-                })
-              ),
-              {
-                kind: 'action',
-                id: 'new-group-custom',
-                label: 'Custom rules',
-                icon: Users,
-                opensInput: true,
-                run: model.onOpenSmartGroupDialog,
-              },
-            ],
+            opensInput: true,
+            run: model.onOpenSmartGroupDialog,
           },
         ];
+  // **A submenu only when there is a choice to make.** A section is made two
+  // ways — by hand, or from rules (DOR-338) — and a small fleet is offered only
+  // the first, so wrapping it costs a keystroke and an arrow to reach a list of
+  // one. Below the threshold the item IS "Section…", and it opens the name
+  // field directly.
+  //
+  // **The id stays `new-group` either way**: it is the deep-link token a
+  // section's `+` opens the menu on and the vocabulary
+  // `one-create-surface.test.ts` asserts. Only the words changed (D3).
+  const groupItem: SidebarMenuNode[] = [
+    smartItems.length === 0
+      ? {
+          kind: 'action',
+          id: 'new-group' satisfies NewMenuItemId,
+          label: 'Section',
+          icon: Users,
+          opensInput: true,
+          run: model.onNewGroup,
+        }
+      : {
+          kind: 'submenu',
+          id: 'new-group' satisfies NewMenuItemId,
+          label: 'Section',
+          icon: Users,
+          items: [
+            {
+              kind: 'action',
+              id: 'new-group-empty',
+              label: 'Empty section',
+              icon: Users,
+              opensInput: true,
+              run: model.onNewGroup,
+            },
+            ...smartItems,
+          ],
+        },
+  ];
 
   return [
     {
@@ -314,7 +334,7 @@ export function NewMenu() {
     onNewChannel: () => setChannelDialogOpen(true),
     onNewMessage: () => setPickerOpen(true),
     onNewAgent: () => useAgentCreationStore.getState().open(),
-    ...(offersGroups ? { onNewGroup: () => requestNewGroup() } : {}),
+    onNewGroup: () => requestNewGroup(),
     smartGroupPresets,
     onCreatePresetSmartGroup: (preset) => createSmartGroupFrom(preset.label, preset.rules),
     onOpenSmartGroupDialog: () => setSmartDialogOpen(true),
