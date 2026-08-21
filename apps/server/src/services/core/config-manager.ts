@@ -105,6 +105,7 @@ import {
   ComposerPrefsSchema,
   NOTIFICATION_PREFS_DEFAULTS,
   SidebarPrefsSchema,
+  ClaudeCodeAccountSchema,
   claudeAccountId,
   toSidebarItemRef,
   normalizeSidebarPrefs,
@@ -2472,9 +2473,13 @@ export function backfillNotificationDefaults(store: {
  * old key, the new one takes its `null` default and every new session silently
  * moves onto whatever account the environment happens to point at — a different
  * client's subscription, for the operator this feature was written for. The old
- * key is then deleted rather than left beside the new one, because the generated
- * JSON Schema closes this object and a leftover key fails validation on the next
- * read.
+ * key is then deleted rather than left beside the new one so the file converges
+ * on one spelling — NOT because leaving it would fail validation: Ajv would
+ * accept it, since `tolerateUnknownKeys` (`config/version-skew.ts`) reopens
+ * every generated object precisely so a key this build does not know cannot
+ * condemn a file. Two keys for one setting is the hazard here, not a rejected
+ * read: whichever one a later reader happens to consult decides who gets
+ * billed.
  *
  * The id backfill makes existing accounts REFERENCEABLE. An agent manifest and a
  * session launch hint name an account by id, so a registry whose entries have no
@@ -2953,6 +2958,13 @@ export const CONFIG_MIGRATIONS = {
   // everybody — strictly above the newest `v*` tag. Frozen from merge, not from
   // the release bump, for the reason `'0.60.0'` above states; anything further
   // opens `'0.63.0'`.
+  // Bodies at and below this key that seed `runtimes.claudeCode` write the
+  // PRE-LADDER shape — `activeAccount`, and accounts with no `id`. That is
+  // correct and must stay frozen: they are what the release they shipped in
+  // wrote, and `'0.65.0'` runs strictly after them on any install that reaches
+  // it, renaming the key and backfilling the ids. An install that never reaches
+  // `'0.65.0'` is carried by the schema tolerances instead
+  // (`tolerateLegacyClaudeAccountEncoding` + the Zod heal), not by editing these.
   '0.62.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
@@ -3136,9 +3148,62 @@ function tolerateLegacySidebarEncoding(ctx: {
   }
 }
 
+/**
+ * Widen the generated JSON Schema so conf's Ajv ACCEPTS a Claude account
+ * registry written before ids existed, instead of condemning the whole config
+ * file (spec `billing-account-ladder`, ADR 260821-205324).
+ *
+ * The second rename in this file's history, and the same hazard
+ * {@link tolerateLegacySidebarEncoding} exists for — with one difference worth
+ * naming, because it is why the unknown-key tolerance already in place does not
+ * cover it. `tolerateUnknownKeys` REOPENS objects, so a key this build does not
+ * know is survivable. Nothing reopens a `required` list. `accounts[].id` is
+ * required and did not exist before 0.65.0, so EVERY config file that has ever
+ * been written is schema-invalid the moment the `'0.65.0'` migration is skipped
+ * — and the constructor's recovery path then backs the file up and replaces it
+ * with defaults. Not the accounts. The whole file: `mesh.scanRoots`,
+ * `approvals`, `runtimes`, `cloud`, `onboarding`.
+ *
+ * And it is skipped routinely: a dev tree resolves `SERVER_VERSION` to `0.0.0`
+ * and runs no migrations at all, and cutting a release below `0.65.0` skips it
+ * for everyone on that release. Correctness must not hang on the migration
+ * running — which is the whole lesson of DOR-579, restated one rename later.
+ *
+ * The property stays DECLARED, so an id of the wrong TYPE is still refused; only
+ * its presence is optional. What fills it in is
+ * `backfillMissingAccountIds` inside `ClaudeCodeAccountsSchema`
+ * (`packages/shared/src/config-schema.ts`), which heals a missing id on every
+ * Zod parse by the migration's own rule. Ajv has to be widened separately
+ * because `z.toJSONSchema` emits a pipe's OUTPUT schema and so never sees that
+ * preprocess step — verified by the generated node still listing `id` as
+ * required.
+ *
+ * ## Removing it
+ *
+ * Back-compat for one release, exactly like its sibling: delete this once the
+ * `'0.65.0'` migration has shipped in a tagged release that every supported
+ * install has passed through. The tests in `'a Claude account registry written
+ * before ids'` fail if it is removed early.
+ *
+ * @param ctx - The `z.toJSONSchema` override context for one schema node.
+ */
+function tolerateLegacyClaudeAccountEncoding(ctx: {
+  zodSchema: unknown;
+  jsonSchema: Record<string, unknown>;
+}): void {
+  if (ctx.zodSchema !== ClaudeCodeAccountSchema) return;
+  const required = ctx.jsonSchema.required;
+  if (Array.isArray(required)) {
+    ctx.jsonSchema.required = required.filter((key) => key !== 'id');
+  }
+}
+
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
-  override: tolerateLegacySidebarEncoding,
+  override: (ctx) => {
+    tolerateLegacySidebarEncoding(ctx);
+    tolerateLegacyClaudeAccountEncoding(ctx);
+  },
 }) as { properties?: Record<string, unknown> };
 
 // A key this build does not declare is another build's key, not damage. Zod

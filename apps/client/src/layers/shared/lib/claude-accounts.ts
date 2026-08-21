@@ -52,7 +52,7 @@ export function claudeAccountName(path: string, accounts: readonly ClaudeAccount
  * The accounts a picker must offer: the registered ones, plus the account
  * currently in use when nobody registered it.
  *
- * That last case is ordinary rather than exotic — `activeAccount` can be set by
+ * That last case is ordinary rather than exotic — `defaultAccount` can be set by
  * hand in `~/.dork/config.json` (the configuration guide shows exactly that), and
  * the server honors it whether or not it is on the roster. A picker built from
  * the roster alone would then have no option matching the current value and would

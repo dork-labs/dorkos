@@ -199,6 +199,40 @@ describe('ClaudeAccountsSection', () => {
     });
   });
 
+  it('never mints an id a LATER row already owns', async () => {
+    // A half-migrated registry: the first row has no id yet, the second already
+    // holds the id that row's label slugifies to. Reserving ids as the walk goes
+    // would hand both rows `acme-corp` — one account unreachable, and a patch
+    // the server now refuses outright.
+    const user = userEvent.setup();
+    const transport = renderSection({
+      resolvedAccount: HOME,
+      inherited: true,
+      accounts: [
+        // Two labels that slugify to the SAME id, only one of which has been
+        // assigned one yet.
+        { id: null, path: HOME, label: 'Acme Corp', isAccountRoot: true },
+        { id: 'acme-corp', path: WORK, label: 'ACME corp', isAccountRoot: true },
+      ],
+    });
+    await waitFor(() => expect(screen.getAllByTestId('claude-account-row')).toHaveLength(2));
+
+    // The add path rewrites the WHOLE list, so both rows go through the mint.
+    await openAddForm(user);
+    await user.type(screen.getByLabelText('Account folder'), '/Users/dev/.claude9');
+    await user.type(screen.getByLabelText('Name'), 'Third');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    const patch = vi.mocked(transport.updateConfig).mock.calls[0]![0] as {
+      runtimes: { claudeCode: { accounts: { id: string }[] } };
+    };
+    const ids = patch.runtimes.claudeCode.accounts.map((a) => a.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    // The row that already owns `acme-corp` keeps it; the un-migrated row takes
+    // the next free spelling rather than colliding with it.
+    expect(ids).toEqual(['acme-corp-2', 'acme-corp', 'third']);
+  });
+
   it("refuses a path that is not the folder's full path, and says what to type", async () => {
     const user = userEvent.setup();
     const transport = renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });

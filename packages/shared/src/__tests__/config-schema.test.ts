@@ -1050,6 +1050,88 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     });
   });
 
+  it('heals a registry written before ids existed, rather than refusing it', () => {
+    // Every config file that has ever been written is missing `accounts[].id`
+    // until the `'0.65.0'` migration runs — and a dev tree runs no migrations at
+    // all. Zod parses the whole MERGED config inside `applyConfigPatch`, so a
+    // refusal here is every settings write in the cockpit refused.
+    const parsed = UserConfigSchema.parse({
+      version: 1,
+      runtimes: {
+        claudeCode: {
+          accounts: [
+            { path: '/Users/me/.claude2', label: 'Acme Corp' },
+            { path: '/Users/me/.claude3', label: null },
+          ],
+        },
+      },
+    });
+    expect(parsed.runtimes.claudeCode.accounts).toEqual([
+      { id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' },
+      { id: 'claude3', path: '/Users/me/.claude3', label: null },
+    ]);
+  });
+
+  it('reserves ids a LATER row already owns before minting one', () => {
+    // A half-migrated registry. Seeding the taken set as it walks would let the
+    // first row mint `acme-corp` and collide with the row that already holds it.
+    const parsed = UserConfigSchema.parse({
+      version: 1,
+      runtimes: {
+        claudeCode: {
+          accounts: [
+            { path: '/a/.claude', label: 'Acme Corp' },
+            { id: 'acme-corp', path: '/b/.claude', label: 'Acme Corp' },
+          ],
+        },
+      },
+    });
+    expect(parsed.runtimes.claudeCode.accounts.map((a) => a.id)).toEqual([
+      'acme-corp-2',
+      'acme-corp',
+    ]);
+  });
+
+  it('never invents the same id twice while healing', () => {
+    const parsed = UserConfigSchema.parse({
+      version: 1,
+      runtimes: {
+        claudeCode: {
+          accounts: [
+            { path: '/a/.claude', label: 'Acme Corp' },
+            { path: '/b/.claude', label: 'ACME corp' },
+            { path: '/c/.claude', label: null },
+          ],
+        },
+      },
+    });
+    const ids = parsed.runtimes.claudeCode.accounts.map((a) => a.id);
+    expect(ids).toEqual(['acme-corp', 'acme-corp-2', 'claude']);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('refuses two accounts sharing an id', () => {
+    // An id is a REFERENCE: an agent manifest and a launch hint name an account
+    // by it and the resolver takes the first match, so a duplicate makes one
+    // account unreachable and silently bills every agent naming it to the other
+    // one's subscription. Healing can never produce this; a hand edit can.
+    const result = UserConfigSchema.safeParse({
+      version: 1,
+      runtimes: {
+        claudeCode: {
+          accounts: [
+            { id: 'acme-corp', path: '/a/.claude', label: 'Acme Corp' },
+            { id: 'acme-corp', path: '/b/.claude', label: 'Other' },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain('Duplicate Claude account id');
+    // Named at the row that collides, so an editor can point at it.
+    expect(result.error?.issues[0]?.path).toEqual(['runtimes', 'claudeCode', 'accounts', 1, 'id']);
+  });
+
   it('rejects an account with an empty path', () => {
     // The path is the identity — an empty one names no directory at all.
     expect(() =>

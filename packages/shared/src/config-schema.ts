@@ -942,6 +942,89 @@ export function claudeAccountId(opts: {
 }
 
 /**
+ * The registered Claude accounts, healing a registry written before ids existed.
+ *
+ * ## Why the heal is here rather than only in the migration
+ *
+ * `id` is REQUIRED, and it did not exist before 0.65.0 — so every config file
+ * on every machine is missing it until the `'0.65.0'` migration runs. That
+ * migration is skipped more often than it sounds: `conf` runs a key only when
+ * `key > storedVersion && key <= projectVersion`, so a dev tree (`SERVER_VERSION`
+ * resolves to `0.0.0`) runs NO migrations at all, and cutting a release below
+ * `0.65.0` would skip it for every user on it.
+ *
+ * A missing REQUIRED field is not the same hazard as a leftover key, and this is
+ * the distinction that makes this function necessary. `tolerateUnknownKeys`
+ * (`config/version-skew.ts`) reopens objects, so an extra key is already
+ * survivable; nothing reopens a `required` list. Left alone, an un-migrated
+ * config fails Zod in `applyConfigPatch` — which parses the whole MERGED config
+ * — so every settings write in the cockpit is refused until the migration runs.
+ * Ajv is widened separately, in `config-manager.ts`, because
+ * `z.toJSONSchema` emits a pipe's OUTPUT schema and would never see this.
+ *
+ * The heal is the migration's rule, not a second one: {@link claudeAccountId},
+ * uniquified against the ids the registry already carries, so an id minted here
+ * and an id the migration wrote agree. Rows keep their order and every other
+ * field untouched.
+ *
+ * @param value - The stored `accounts` value, whatever shape it is in.
+ * @returns The same rows with any missing id filled in.
+ */
+function backfillMissingAccountIds(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  // Every id already present is reserved BEFORE any is minted — including ids
+  // belonging to rows later in the list. Seeding this as we go would let a
+  // backfilled row claim an id a subsequent row already owns.
+  const taken = new Set<string>();
+  for (const row of value) {
+    if (row && typeof row === 'object') {
+      const id = (row as { id?: unknown }).id;
+      if (typeof id === 'string' && id.length > 0) taken.add(id);
+    }
+  }
+  return value.map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    const account = row as Record<string, unknown>;
+    if (typeof account.id === 'string' && account.id.length > 0) return account;
+    const id = claudeAccountId({
+      label: typeof account.label === 'string' ? account.label : null,
+      path: typeof account.path === 'string' ? account.path : '',
+      taken,
+    });
+    taken.add(id);
+    return { ...account, id };
+  });
+}
+
+/**
+ * The Claude account registry: rows with stable ids, no two the same.
+ *
+ * Uniqueness is enforced rather than assumed because an id is a REFERENCE — an
+ * agent manifest and a session launch hint name an account by it, and the
+ * resolver takes the first match. Two rows sharing an id would make one of them
+ * unreachable and silently bill every agent naming it to the other one's
+ * subscription. {@link backfillMissingAccountIds} can never produce a collision;
+ * a hand-edited file or a buggy client can, and this is where they are told.
+ */
+export const ClaudeCodeAccountsSchema = z.preprocess(
+  backfillMissingAccountIds,
+  z.array(ClaudeCodeAccountSchema).superRefine((accounts, ctx) => {
+    const seen = new Set<string>();
+    accounts.forEach((account, index) => {
+      if (!seen.has(account.id)) {
+        seen.add(account.id);
+        return;
+      }
+      ctx.addIssue({
+        code: 'custom',
+        path: [index, 'id'],
+        message: `Duplicate Claude account id "${account.id}" — an id is how an agent or a session names one account, so it has to name exactly one.`,
+      });
+    });
+  })
+);
+
+/**
  * The model a NEW session on one runtime starts on, or `null` to let that
  * runtime pick its own — which is exactly the behavior before this field existed.
  *
@@ -1731,7 +1814,7 @@ export const UserConfigSchema = z.object({
            * never globs `~/.claude*`, because that guess sweeps up directories
            * that are not accounts at all (D4).
            */
-          accounts: z.array(ClaudeCodeAccountSchema).default(() => []),
+          accounts: ClaudeCodeAccountsSchema.default(() => []),
           /** Model a new claude-code session starts on. See {@link DefaultModelSchema}. */
           defaultModel: DefaultModelSchema,
           /** Effort a new claude-code session starts at. See {@link DefaultEffortSchema}. */

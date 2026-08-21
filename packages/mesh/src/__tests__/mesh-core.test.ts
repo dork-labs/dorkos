@@ -1164,6 +1164,63 @@ describe('update() write-through (ADR-0043)', () => {
     mesh.close();
   });
 
+  it("sets and then clears an agent's billing account, on disk and in the cache", async () => {
+    // The whole point of the DB column: the agent LIST is what the Settings
+    // exceptions strip reads, and a value that reached `agent.json` but not the
+    // derived cache would make every list-shaped surface report "inherited" for
+    // an agent that is not. Asserted through the REAL registry and a REAL file,
+    // not a stubbed return — a mock here would only restate the hypothesis.
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'billing-account');
+    await fs.mkdir(projectDir, { recursive: true });
+    const { readManifest: readDisk } = await import('../manifest.js');
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+    const manifest = await mesh.registerByPath(projectDir, {
+      name: 'biller',
+      runtime: 'claude-code',
+    });
+
+    await mesh.update(manifest.id, { account: 'acme-corp' });
+    expect((await readDisk(projectDir))!.account).toBe('acme-corp');
+    expect(mesh.get(manifest.id)?.account).toBe('acme-corp');
+    // And through the list, which is the read the exceptions strip actually makes.
+    expect(mesh.list().find((a) => a.id === manifest.id)?.account).toBe('acme-corp');
+
+    await mesh.update(manifest.id, { account: undefined });
+
+    const cleared = await readDisk(projectDir);
+    expect(Object.keys(cleared!)).not.toContain('account');
+    expect(mesh.get(manifest.id)?.account).toBeUndefined();
+
+    mesh.close();
+  });
+
+  it('carries an agent account from disk into the cache on syncFromDisk', async () => {
+    // The reconciler path (ADR-0043): `agent.json` is the source of truth and
+    // the DB is derived, so a manifest edited on disk — or written by another
+    // process — must bring its account across on the next sync.
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'synced-account');
+    await fs.mkdir(projectDir, { recursive: true });
+    const { readManifest: readDisk, writeManifest } = await import('../manifest.js');
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+    const manifest = await mesh.registerByPath(projectDir, {
+      name: 'synced',
+      runtime: 'claude-code',
+    });
+    expect(mesh.get(manifest.id)?.account).toBeUndefined();
+
+    const onDisk = (await readDisk(projectDir))!;
+    await writeManifest(projectDir, { ...onDisk, account: 'personal' });
+    expect(await mesh.syncFromDisk(projectDir)).toBe('synced');
+
+    expect(mesh.get(manifest.id)?.account).toBe('personal');
+
+    mesh.close();
+  });
+
   it('returns undefined for nonexistent agent', async () => {
     const base = await makeTempDir();
     const mesh = new MeshCore({ db, defaultScanRoot: base });

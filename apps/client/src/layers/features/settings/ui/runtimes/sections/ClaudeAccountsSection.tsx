@@ -50,9 +50,15 @@ type ClaudeCodePatch = {
  * what an agent or a session references an account by and dropping it on a
  * rewrite would break every reference to that account.
  *
- * `id` is nullable on the wire only for rows describing an unregistered root,
- * which never appear in this list; the fallback mints one by the same rule the
- * server's migration does rather than writing an empty string.
+ * `id` is nullable on the wire for a row describing an unregistered root, and
+ * absent on a registry the `'0.65.0'` migration has not reached yet; the
+ * fallback mints one by the same rule the migration and the config schema use,
+ * rather than writing an empty string.
+ *
+ * **Every id already in the list is reserved before any is minted.** Seeding the
+ * taken set row by row inside the walk would let a row mint an id that a LATER
+ * row already owns — two rows with one id, which the server now refuses outright
+ * and which would otherwise make one account unreachable.
  *
  * @param accounts - The registered accounts as `GET /api/config` reported them.
  * @returns Rows shaped for `PATCH /api/config`.
@@ -62,7 +68,7 @@ function toWritableAccounts(accounts: readonly Account[]): {
   path: string;
   label: string | null;
 }[] {
-  const taken = new Set<string>();
+  const taken = new Set(accounts.flatMap((account) => (account.id ? [account.id] : [])));
   return accounts.map((account) => {
     const id = account.id ?? claudeAccountId({ label: account.label, path: account.path, taken });
     taken.add(id);

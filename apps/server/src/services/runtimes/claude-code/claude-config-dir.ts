@@ -67,7 +67,13 @@ function inheritedClaudeRoot(): string {
  */
 function readClaudeCodeConfig(config: ConfigReader): {
   defaultAccount: string | null;
-  accounts: readonly { id: string; path: string; label: string | null }[];
+  // `id` is typed OPTIONAL here and required on `UserConfig`, deliberately.
+  // `configManager.get` hands back what conf stored, not a Zod parse, and a
+  // registry written before ids existed carries none until the `'0.65.0'`
+  // migration runs — which a dev tree never does. Typing it as the schema
+  // promises would let the compiler bless `account.id` reads that are
+  // `undefined` at runtime.
+  accounts: readonly { id?: string; path: string; label: string | null }[];
 } {
   try {
     const claudeCode = config.get('runtimes')?.claudeCode;
@@ -164,6 +170,10 @@ export function resolveLaunchAccountRoot(
     ['session hint', opts.hintId],
     ['agent manifest', opts.agentAccountId],
   ] as const) {
+    // The empty guard is what keeps `undefined === undefined` from matching. A
+    // registry the `'0.65.0'` migration has not reached carries rows with NO
+    // id, so `find(a => a.id === id)` with an absent `id` on both sides would
+    // return the first row and bill an account nobody named.
     if (!id) continue;
     const match = accounts.find((account) => account.id === id);
     if (match) return match.path;
@@ -298,11 +308,14 @@ export function describeClaudeCodeAccounts(
     resolvedAccount: defaultAccount ?? inheritedClaudeRoot(),
     inherited: defaultAccount === null,
     accounts: accounts.map((account) => ({
-      // The id agents and launch hints reference this account by. Never `null`
-      // here: every REGISTERED account has one. `null` is reserved for rows a
-      // caller synthesizes to describe an unregistered root, which nothing can
-      // point at (`ServerConfigSchema.claudeCode`).
-      id: account.id,
+      // The id agents and launch hints reference this account by. `null` is the
+      // wire's word for "nothing can point at this row" — reserved for a
+      // synthesized row describing an unregistered root, and reached here by an
+      // account whose id the `'0.65.0'` migration has not backfilled yet. The
+      // `?? null` is load-bearing: `undefined` is not what
+      // `ServerConfigSchema.claudeCode` accepts, so without it a pre-migration
+      // registry would fail to serialize onto `GET /api/config` at all.
+      id: account.id ?? null,
       path: account.path,
       label: account.label,
       // NOT `exists`: this is D4's structural check, so a directory that is

@@ -582,8 +582,10 @@ describe('backfillNotificationDefaults migration (notification-system, DOR-1385)
 describe('migrateClaudeAccountRegistry migration (billing-account-ladder, DOR-1407)', () => {
   it('carries the chosen account across the rename and drops the old key', () => {
     // The half that is not additive: left behind, the operator's chosen billing
-    // account is silently replaced by whatever the environment points at, and
-    // the leftover key fails Ajv on the next read.
+    // account is silently replaced by whatever the environment points at. The
+    // old key is dropped so the file converges on one spelling — Ajv would
+    // tolerate it (`tolerateUnknownKeys` reopens the object); two keys for one
+    // billing setting is what must not survive.
     const store = createMockStore({
       runtimes: {
         default: 'claude-code',
@@ -760,8 +762,15 @@ describe('migrateClaudeAccountRegistry migration (billing-account-ladder, DOR-14
       );
 
       new Conf({
-        cwd: dir,
         configName: 'config',
+        cwd: dir,
+        // The SHIPPED schema, tolerances included. Constructing without one was
+        // the defect this test had on review: `conf` only runs Ajv when it is
+        // given a schema, so the test that claimed to prove the migrated file
+        // validates was proving nothing at all.
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
         projectVersion: '0.65.0',
         migrations: CONFIG_MIGRATIONS,
       });
@@ -3732,6 +3741,127 @@ describe('migrateSidebarSectionPrefs migration (sidebar-now-today-library §D)',
     migrateSidebarSectionPrefs(store);
     expect(store.data.telemetry).toEqual({ userHasDecided: true, install: false });
     expect((store.data.ui as { theme: string }).theme).toBe('dark');
+  });
+});
+
+describe('a Claude account registry written before ids, through the real conf load path', () => {
+  // The expensive failure lives at the conf/Ajv seam, and the mock-store
+  // migration tests above cannot see it: `accounts[].id` is REQUIRED and did not
+  // exist before 0.65.0, so EVERY config file ever written is schema-invalid the
+  // moment the `'0.65.0'` migration is skipped — and ConfigManager's recovery
+  // path then backs up and replaces the WHOLE file, not just the accounts.
+  //
+  // `new ConfigManager(dir)` resolves SERVER_VERSION to `0.0.0` (the dev
+  // /package.json fallback), so NO migration runs. That is what every `pnpm dev`
+  // does, and what a release cut below 0.65.0 would do to every user on it.
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A config file holding a pre-0.65.0 Claude account registry. */
+  function seedPreLadder(): { dir: string; configPath: string } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-pre-account-ladder-'));
+    dirs.push(dir);
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        // Unrelated sections carrying real choices, so a silent whole-file reset
+        // is visible rather than coincidentally identical to the defaults.
+        mesh: { ...USER_CONFIG_DEFAULTS.mesh, scanRoots: ['/projects/alpha'] },
+        telemetry: { userHasDecided: true, install: false, heartbeat: false },
+        runtimes: {
+          ...USER_CONFIG_DEFAULTS.runtimes,
+          claudeCode: {
+            activeAccount: '/Users/me/.claude2',
+            accounts: [
+              { path: '/Users/me/.claude2', label: 'Acme Corp' },
+              { path: '/Users/me/.claude3', label: null },
+            ],
+          },
+        },
+        __internal__: { migrations: { version: '0.64.0' } },
+      })
+    );
+    return { dir, configPath };
+  }
+
+  it('is not condemned — no backup is written and the file is not replaced', () => {
+    const { dir } = seedPreLadder();
+    new ConfigManager(dir);
+    expect(wasBackedUp(dir)).toBe(false);
+  });
+
+  it('keeps every unrelated section, including a telemetry opt-out and the scan roots', () => {
+    // The real cost of condemning the file, stated as an assertion: this is what
+    // a person loses when a required field lands without a schema tolerance.
+    const { dir } = seedPreLadder();
+    const manager = new ConfigManager(dir);
+    expect(manager.get('mesh').scanRoots).toEqual(['/projects/alpha']);
+    expect(manager.get('telemetry').userHasDecided).toBe(true);
+    expect(manager.get('telemetry').install).toBe(false);
+  });
+
+  it('still refuses an id of the WRONG TYPE — tolerance is about absence only', () => {
+    // Dropping `id` from `required` must not become "stop validating ids". A
+    // number where a slug belongs is damage, not skew.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-bad-account-id-'));
+    dirs.push(dir);
+    fs.writeFileSync(
+      path.join(dir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        runtimes: {
+          ...USER_CONFIG_DEFAULTS.runtimes,
+          claudeCode: {
+            defaultAccount: null,
+            accounts: [{ id: 42, path: '/Users/me/.claude2', label: null }],
+          },
+        },
+        __internal__: { migrations: { version: '0.64.0' } },
+      })
+    );
+    new ConfigManager(dir);
+    expect(wasBackedUp(dir)).toBe(true);
+  });
+
+  it('still accepts a settings write while the migration has not run', () => {
+    // `applyConfigPatch` re-parses the whole MERGED config with Zod, and Zod is
+    // the half that HEALS rather than tolerates. Without the backfill inside
+    // `ClaudeCodeAccountsSchema` that parse fails on the missing ids and EVERY
+    // settings write in the cockpit is refused — a theme change included —
+    // until the migration runs. Ajv tolerance alone does not cover this.
+    const { dir, configPath } = seedPreLadder();
+    initConfigManager(dir);
+
+    expect(applyConfigPatch({ ui: { theme: 'light' } }).ok).toBe(true);
+
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      ui: { theme: string };
+      runtimes: { claudeCode: { accounts: { path: string }[] } };
+    };
+    // The write landed, and the registry it did not name is untouched — conf
+    // persists the sections a patch writes, so the ids are healed on every parse
+    // rather than rewritten here. The migration is what settles them on disk.
+    expect(onDisk.ui.theme).toBe('light');
+    expect(onDisk.runtimes.claudeCode.accounts.map((a) => a.path)).toEqual([
+      '/Users/me/.claude2',
+      '/Users/me/.claude3',
+    ]);
+  });
+
+  it('reads the registry back with ids even before anything writes', () => {
+    // What a LAUNCH sees on an un-migrated install. Zod heals on parse, so the
+    // ids the ladder resolves against are there the first time it looks.
+    const { dir } = seedPreLadder();
+    const stored = new ConfigManager(dir).getAll();
+    expect(UserConfigSchema.parse(stored).runtimes.claudeCode.accounts.map((a) => a.id)).toEqual([
+      'acme-corp',
+      'claude3',
+    ]);
   });
 });
 
