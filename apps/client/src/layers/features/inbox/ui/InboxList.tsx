@@ -8,7 +8,7 @@
  *
  * @module features/inbox/ui/InboxList
  */
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
@@ -21,7 +21,7 @@ import {
   type NotificationLens,
 } from '@/layers/entities/notifications';
 import { useOpenNotification } from '../model/use-open-notification';
-import { groupActivityRows } from '../lib/group-activity-rows';
+import { groupActivityRows, groupStateKey } from '../lib/group-activity-rows';
 import { InboxRow } from './InboxRow';
 import { InboxGroupRow } from './InboxGroupRow';
 
@@ -63,7 +63,11 @@ export interface InboxListProps {
  * — a pure reshape of whatever `useNotifications` already returned, run again
  * whenever that list changes. It never asks for more than the lens already
  * fetched and never trims it, so paging and the live cap stay entirely
- * `entities/notifications`'s job.
+ * `entities/notifications`'s job. This component owns which groups are open
+ * (a `Set` keyed by `groupStateKey`, not `InboxGroupRow`'s own state) for the
+ * reason its own inline comment gives; the guarantee that expansion is
+ * ephemeral and forgets itself on popover close is unaffected — it now comes
+ * from this component unmounting rather than `InboxGroupRow`'s.
  *
  * Paging is a button rather than a scroll sentinel: the list lives inside a
  * popover barely taller than a phone, and an infinite scroller in a 30rem panel
@@ -101,6 +105,26 @@ export function InboxList({ lens, emptyLabel = 'Nothing yet', onOpened }: InboxL
 
   const items = useMemo(() => groupActivityRows(notifications), [notifications]);
 
+  // Which groups are open, keyed by `groupStateKey` rather than by any
+  // group's own React key — see `InboxGroupRow`'s class doc for why a key
+  // tied to a group's MEMBERSHIP breaks the moment that membership changes
+  // shape. Lives here (and not in `InboxGroupRow` itself) for exactly one
+  // reason: a `Set` in local component state unmounts with this component,
+  // which is what "ephemeral, collapses on popover close" already meant
+  // before expand state moved — Radix drops the popover's content on close,
+  // taking this whole tree with it.
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(
+    () => new Set<string>()
+  );
+  const toggleGroup = useCallback((key: string) => {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
   if (isLoading) {
     return <p className="text-muted-foreground px-2 py-1 text-xs">Loading…</p>;
   }
@@ -127,6 +151,10 @@ export function InboxList({ lens, emptyLabel = 'Nothing yet', onOpened }: InboxL
               group={item}
               agent={resolveAgent(item.agentId)}
               agentName={getAgentDisplayName(agentsById.get(item.agentId))}
+              expanded={expandedGroups.has(groupStateKey(item.agentId, item.kind, item.tone))}
+              onToggleExpanded={() =>
+                toggleGroup(groupStateKey(item.agentId, item.kind, item.tone))
+              }
               onOpenNotification={handleOpen}
             />
           ) : (

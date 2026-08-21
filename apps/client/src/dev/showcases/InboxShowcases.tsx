@@ -9,9 +9,11 @@
  *
  * @module dev/showcases/InboxShowcases
  */
+import { useCallback, useState } from 'react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { InboxRow, InboxGroupRow, groupActivityRows } from '@/layers/features/inbox';
+import { InboxRow, InboxGroupRow, groupActivityRows, groupStateKey } from '@/layers/features/inbox';
 import type { AgentVisualSource } from '@/layers/entities/agent';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { InboxBellPill } from '@/layers/widgets/inbox-bell';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -100,12 +102,26 @@ const ROWS: NotificationDTO[] = [
  *
  * `dorkbot` and `tangerines` resolve; `shadow-fox` deliberately does not —
  * the third row's own point is the fallback, so leaving it out of this map
- * IS the fixture.
+ * IS the fixture. Carries `name` too, not just the face fields
+ * `AgentVisualSource` needs, so {@link getAgentDisplayName} — the same
+ * resolver `InboxList` calls on the real roster — has something to read.
  */
-const AGENTS: Record<string, AgentVisualSource> = {
-  dorkbot: { id: 'dorkbot', color: '#f97316', icon: '🤖' },
-  tangerines: { id: 'tangerines', color: '#f59e0b', icon: '🍊' },
+const AGENTS: Record<string, AgentVisualSource & { name: string }> = {
+  dorkbot: { id: 'dorkbot', color: '#f97316', icon: '🤖', name: 'DorkBot' },
+  tangerines: { id: 'tangerines', color: '#f59e0b', icon: '🍊', name: 'tangerines' },
 };
+
+/**
+ * Resolve a face the same way `InboxList` resolves one off the real roster:
+ * `undefined` for "no id to look up", `null` for "looked, not found" — never
+ * `''` standing in for a miss, which would key `AGENTS['']` instead of
+ * naming the miss explicitly (review round 1).
+ *
+ * @param agentId - The notification's own `agentId`, if it has one.
+ */
+function resolveShowcaseAgent(agentId: string | undefined) {
+  return agentId === undefined ? undefined : (AGENTS[agentId] ?? null);
+}
 
 /** Three of DorkBot's runs in a row — long enough to collapse. */
 const BURST_ROWS: NotificationDTO[] = [
@@ -251,10 +267,28 @@ function BellStatesShowcase() {
   );
 }
 
-/** The rows behind the bell, at the width the popover gives them. */
+/**
+ * The rows behind the bell, at the width the popover gives them.
+ *
+ * The two grouped demos below own a real `expanded` Set, exactly the shape
+ * `InboxList` keeps — `InboxGroupRow` no longer has state of its own to
+ * fake this with, so clicking a header here genuinely expands it rather than
+ * standing frozen.
+ */
 function InboxRowsShowcase() {
   const burstItems = groupActivityRows(BURST_ROWS);
   const pairItems = groupActivityRows(PAIR_ROWS);
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(
+    () => new Set<string>()
+  );
+  const toggleGroup = useCallback((key: string) => {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   return (
     <PlaygroundSection
@@ -271,7 +305,7 @@ function InboxRowsShowcase() {
             <InboxRow
               key={row.id}
               notification={row}
-              agent={row.agentId === undefined ? undefined : (AGENTS[row.agentId] ?? null)}
+              agent={resolveShowcaseAgent(row.agentId)}
               onOpen={() => {}}
             />
           ))}
@@ -288,15 +322,19 @@ function InboxRowsShowcase() {
               <InboxGroupRow
                 key={item.id}
                 group={item}
-                agent={AGENTS[item.agentId]}
-                agentName="DorkBot"
+                agent={resolveShowcaseAgent(item.agentId)}
+                agentName={getAgentDisplayName(AGENTS[item.agentId])}
+                expanded={expandedGroups.has(groupStateKey(item.agentId, item.kind, item.tone))}
+                onToggleExpanded={() =>
+                  toggleGroup(groupStateKey(item.agentId, item.kind, item.tone))
+                }
                 onOpenNotification={() => {}}
               />
             ) : (
               <InboxRow
                 key={item.notification.id}
                 notification={item.notification}
-                agent={AGENTS[item.notification.agentId ?? '']}
+                agent={resolveShowcaseAgent(item.notification.agentId)}
                 onOpen={() => {}}
               />
             )
@@ -312,15 +350,19 @@ function InboxRowsShowcase() {
               <InboxGroupRow
                 key={item.id}
                 group={item}
-                agent={AGENTS[item.agentId]}
-                agentName="tangerines"
+                agent={resolveShowcaseAgent(item.agentId)}
+                agentName={getAgentDisplayName(AGENTS[item.agentId])}
+                expanded={expandedGroups.has(groupStateKey(item.agentId, item.kind, item.tone))}
+                onToggleExpanded={() =>
+                  toggleGroup(groupStateKey(item.agentId, item.kind, item.tone))
+                }
                 onOpenNotification={() => {}}
               />
             ) : (
               <InboxRow
                 key={item.notification.id}
                 notification={item.notification}
-                agent={AGENTS[item.notification.agentId ?? '']}
+                agent={resolveShowcaseAgent(item.notification.agentId)}
                 onOpen={() => {}}
               />
             )

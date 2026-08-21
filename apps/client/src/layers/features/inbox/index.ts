@@ -17,5 +17,5 @@ export type { InboxRowProps } from './ui/InboxRow';
 export { InboxGroupRow } from './ui/InboxGroupRow';
 export type { InboxGroupRowProps } from './ui/InboxGroupRow';
 export { useOpenNotification } from './model/use-open-notification';
-export { groupActivityRows, MIN_BURST_SIZE } from './lib/group-activity-rows';
+export { groupActivityRows, groupStateKey, MIN_BURST_SIZE } from './lib/group-activity-rows';
 export type { InboxListItem, InboxRowItem, InboxGroupItem } from './lib/group-activity-rows';

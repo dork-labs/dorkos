@@ -36,5 +36,10 @@ export {
   notificationBurstVerb,
   notificationLink,
   isFailedRun,
+  isGroupableKind,
 } from './lib/notification-presentation';
-export type { NotificationLink, NotificationTone } from './lib/notification-presentation';
+export type {
+  NotificationLink,
+  NotificationTone,
+  GroupableNotificationKind,
+} from './lib/notification-presentation';

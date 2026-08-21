@@ -97,6 +97,24 @@ describe('InboxRow faces', () => {
   });
 });
 
+describe('InboxRow glyph slot', () => {
+  it('wraps both the icon and the face in a fixed-width slot, so the title column does not jitter', () => {
+    const { rerender } = render(<InboxRow notification={build()} onOpen={() => {}} />);
+    const iconSlot = document.querySelector('[data-slot="inbox-row-glyph"]');
+    expect(iconSlot).toHaveClass('size-[18px]');
+
+    rerender(
+      <InboxRow
+        notification={build({ kind: 'run.completed', tier: 'quiet' })}
+        agent={AGENT}
+        onOpen={() => {}}
+      />
+    );
+    const faceSlot = document.querySelector('[data-slot="inbox-row-glyph"]');
+    expect(faceSlot).toHaveClass('size-[18px]');
+  });
+});
+
 describe('InboxRow non-interactive rendering', () => {
   it('draws as a button when it can open somewhere', () => {
     render(<InboxRow notification={build()} onOpen={() => {}} />);

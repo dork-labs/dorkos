@@ -4,19 +4,15 @@
  *
  * @module features/inbox/ui/InboxGroupRow
  */
-import { useState } from 'react';
+import { useId } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { cn, formatCompactAge } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual, type AgentVisualSource } from '@/layers/entities/agent';
-import {
-  NOTIFICATION_ICONS,
-  notificationBurstVerb,
-  notificationLink,
-} from '@/layers/entities/notifications';
+import { NOTIFICATION_ICONS, notificationBurstVerb } from '@/layers/entities/notifications';
 import type { InboxGroupItem } from '../lib/group-activity-rows';
-import { InboxRow, staggerItem } from './InboxRow';
+import { GLYPH_SLOT_CLASS, InboxRow, staggerItem } from './InboxRow';
 
 export interface InboxGroupRowProps {
   /** The run this header summarises. */
@@ -40,6 +36,15 @@ export interface InboxGroupRowProps {
    */
   agentName: string;
   /**
+   * Whether the member rows are showing.
+   *
+   * Owned by the caller (`InboxList`), not this component — see the class
+   * doc's own note on why expand state cannot live here.
+   */
+  expanded: boolean;
+  /** Toggle {@link expanded}. Marks nothing read — see the class doc. */
+  onToggleExpanded: () => void;
+  /**
    * What opening one of the group's OWN rows does, once expanded — the same
    * mark-read-then-navigate the top-level list already runs. Never called by
    * the header itself: opening the group is a look, not a read.
@@ -50,24 +55,47 @@ export interface InboxGroupRowProps {
 /**
  * A burst, collapsed to one row until clicked open.
  *
- * **Opening it marks nothing.** The header's own click toggles local
- * component state and nothing else — no query, no read — which is what keeps
- * a curious glance at "what were those 4 runs" from silently clearing a dot
- * the operator has not actually looked at yet. Each member row underneath
- * keeps its own read state and its own click, unchanged from a row drawn on
- * its own: `InboxRow` again, not a lighter copy of it.
+ * **Opening it marks nothing.** The header's own click calls
+ * {@link InboxGroupRowProps.onToggleExpanded} and nothing else — no query, no
+ * read — which is what keeps a curious glance at "what were those 4 runs"
+ * from silently clearing a dot the operator has not actually looked at yet.
+ * Each member row underneath keeps its own read state and its own click,
+ * unchanged from a row drawn on its own: `InboxRow` again, not a lighter
+ * copy of it. Every member is groupable by construction — see
+ * `group-activity-rows.ts`'s `isGroupableKind` — so every member has
+ * somewhere to go, and this draws every one of them as a live row with no
+ * conditional fallback to a non-interactive branch.
+ *
+ * **Expand state lives one level up, in `InboxList`, not here.** It used to
+ * be this component's own `useState`, keyed by React's own `key={group.id}`
+ * — which broke the moment "Load more" grew a run backward or the live cap
+ * trimmed one, either of which changes `group.id` (see its own doc) and
+ * silently re-collapses an open group by remounting a fresh component under
+ * a new key (caught in review). `InboxList` instead tracks expansion in a
+ * `Set` keyed by `groupStateKey(agentId, kind, tone)` — the streak's own
+ * identity, untouched by either kind of membership change — and this
+ * component just draws whatever `expanded` it is handed.
  *
  * **The header borrows `InboxRow`'s tone rule exactly.** An error-tone group
  * keeps the coloured kind glyph; anything else with a resolved agent draws
- * that agent's face. The two can never drift apart because the header reads
- * `group.tone`, which the fold that built the group computed with the same
- * function `InboxRow` uses for a single row.
+ * that agent's face, in the same fixed-width slot `InboxRow` uses
+ * ({@link GLYPH_SLOT_CLASS}). The two can never drift apart because the
+ * header reads `group.tone`, which the fold that built the group computed
+ * with the same function `InboxRow` uses for a single row.
  *
  * @param props - The {@link InboxGroupRowProps.group}, its resolved
- *   {@link InboxGroupRowProps.agent}, and what opening a member row does.
+ *   {@link InboxGroupRowProps.agent}, its expansion state, and what opening a
+ *   member row does.
  */
-export function InboxGroupRow({ group, agent, agentName, onOpenNotification }: InboxGroupRowProps) {
-  const [expanded, setExpanded] = useState(false);
+export function InboxGroupRow({
+  group,
+  agent,
+  agentName,
+  expanded,
+  onToggleExpanded,
+  onOpenNotification,
+}: InboxGroupRowProps) {
+  const membersId = useId();
   const Icon = NOTIFICATION_ICONS[group.kind];
   const visual = group.tone !== 'error' && agent != null ? resolveAgentVisual(agent) : null;
   const unread = group.notifications.some((notification) => notification.readAt === undefined);
@@ -86,7 +114,8 @@ export function InboxGroupRow({ group, agent, agentName, onOpenNotification }: I
         data-expanded={expanded ? 'true' : 'false'}
         data-unread={unread ? 'true' : 'false'}
         aria-expanded={expanded}
-        onClick={() => setExpanded((current) => !current)}
+        aria-controls={membersId}
+        onClick={onToggleExpanded}
         className="hover:bg-accent/50 focus-visible:ring-ring/60 flex min-h-9 w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors outline-none focus-visible:ring-2"
       >
         {/* Identical column to `InboxRow`'s own dot — lit if ANY member is
@@ -100,27 +129,23 @@ export function InboxGroupRow({ group, agent, agentName, onOpenNotification }: I
           )}
         />
         {unread && <span className="sr-only">Unread. </span>}
-        {visual ? (
-          <AgentAvatar
-            color={visual.color}
-            emoji={visual.emoji}
-            size="xs"
-            badge={null}
-            className="shrink-0"
-          />
-        ) : (
-          <Icon
-            aria-hidden
-            className={cn(
-              'size-3.5 shrink-0',
-              group.tone === 'error'
-                ? 'text-status-error/70'
-                : group.tone === 'warning'
-                  ? 'text-status-warning/70'
-                  : 'text-muted-foreground'
-            )}
-          />
-        )}
+        <span data-slot="inbox-row-glyph" className={GLYPH_SLOT_CLASS}>
+          {visual ? (
+            <AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" badge={null} />
+          ) : (
+            <Icon
+              aria-hidden
+              className={cn(
+                'size-3.5',
+                group.tone === 'error'
+                  ? 'text-status-error/70'
+                  : group.tone === 'warning'
+                    ? 'text-status-warning/70'
+                    : 'text-muted-foreground'
+              )}
+            />
+          )}
+        </span>
         <span className="min-w-0 flex-1">
           <span
             className={cn(
@@ -138,19 +163,13 @@ export function InboxGroupRow({ group, agent, agentName, onOpenNotification }: I
       </button>
 
       {expanded && (
-        <div className="border-border/60 ml-[13px] border-l pl-2">
+        <div id={membersId} className="border-border/60 ml-[13px] border-l pl-2">
           {group.notifications.map((notification) => (
             <InboxRow
               key={notification.id}
               notification={notification}
               agent={agent}
-              // A member with nowhere to go draws the same non-interactive
-              // row a top-level list gives it — see `InboxList`'s own rule.
-              onOpen={
-                notificationLink(notification) === null
-                  ? undefined
-                  : () => onOpenNotification(notification)
-              }
+              onOpen={() => onOpenNotification(notification)}
             />
           ))}
         </div>

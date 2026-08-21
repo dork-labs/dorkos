@@ -82,6 +82,23 @@ describe('groupActivityRows', () => {
     expect(items).toEqual(rows.map((notification) => ({ type: 'row', notification })));
   });
 
+  it('never groups a kind that cannot carry an agentId, even if one is somehow present', () => {
+    // No real emitter sets `agentId` on `session.error` — this is a
+    // defensive case for the day one does. Without `isGroupableKind`,
+    // `notificationBurstVerb` would be called with a kind it has no phrase
+    // for and throw once three of these landed; with it, the run just
+    // never groups.
+    const rows = [
+      build({ agentId: 'alpha', kind: 'session.error', tier: 'blocking', id: 's1' }),
+      build({ agentId: 'alpha', kind: 'session.error', tier: 'blocking', id: 's2' }),
+      build({ agentId: 'alpha', kind: 'session.error', tier: 'blocking', id: 's3' }),
+    ];
+
+    const items = groupActivityRows(rows);
+
+    expect(items).toEqual(rows.map((notification) => ({ type: 'row', notification })));
+  });
+
   it('breaks the run when the kind changes mid-stream', () => {
     const rows = [
       build({ kind: 'run.completed' }),
