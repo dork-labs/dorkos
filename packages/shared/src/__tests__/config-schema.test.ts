@@ -127,7 +127,7 @@ describe('UserConfigSchema', () => {
         default: 'claude-code',
         defaultTrustStop: null,
         claudeCode: {
-          activeAccount: null,
+          defaultAccount: null,
           accounts: [],
           defaultModel: null,
           defaultEffort: null,
@@ -480,7 +480,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         default: 'claude-code',
         defaultTrustStop: null,
         claudeCode: {
-          activeAccount: null,
+          defaultAccount: null,
           accounts: [],
           defaultModel: null,
           defaultEffort: null,
@@ -772,7 +772,7 @@ describe('UserConfigSchema runtimes', () => {
       default: 'claude-code',
       defaultTrustStop: null,
       claudeCode: {
-        activeAccount: null,
+        defaultAccount: null,
         accounts: [],
         defaultModel: null,
         defaultEffort: null,
@@ -806,7 +806,7 @@ describe('UserConfigSchema runtimes', () => {
       default: 'claude-code',
       defaultTrustStop: null,
       claudeCode: {
-        activeAccount: null,
+        defaultAccount: null,
         accounts: [],
         defaultModel: null,
         defaultEffort: null,
@@ -998,7 +998,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     // The default IS today's behavior: nothing selected, so resolution falls
     // through to the inherited environment.
     expect(UserConfigSchema.parse({ version: 1 }).runtimes.claudeCode).toEqual({
-      activeAccount: null,
+      defaultAccount: null,
       accounts: [],
       defaultModel: null,
       defaultEffort: null,
@@ -1015,7 +1015,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       runtimes: { opencode: { enabled: false } },
     });
     expect(result.runtimes.claudeCode).toEqual({
-      activeAccount: null,
+      defaultAccount: null,
       accounts: [],
       defaultModel: null,
       defaultEffort: null,
@@ -1024,24 +1024,24 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     });
   });
 
-  it('keeps an active account and a labelled roster verbatim', () => {
+  it('keeps a default account and a labelled roster verbatim', () => {
     const result = UserConfigSchema.parse({
       version: 1,
       runtimes: {
         claudeCode: {
-          activeAccount: '/Users/me/.claude2',
+          defaultAccount: '/Users/me/.claude2',
           accounts: [
-            { path: '/Users/me/.claude', label: 'Acme Corp' },
-            { path: '/Users/me/.claude2', label: null },
+            { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
+            { id: 'claude2', path: '/Users/me/.claude2', label: null },
           ],
         },
       },
     });
     expect(result.runtimes.claudeCode).toEqual({
-      activeAccount: '/Users/me/.claude2',
+      defaultAccount: '/Users/me/.claude2',
       accounts: [
-        { path: '/Users/me/.claude', label: 'Acme Corp' },
-        { path: '/Users/me/.claude2', label: null },
+        { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
+        { id: 'claude2', path: '/Users/me/.claude2', label: null },
       ],
       defaultModel: null,
       defaultEffort: null,

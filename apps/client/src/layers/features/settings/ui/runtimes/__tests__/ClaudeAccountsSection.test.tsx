@@ -189,8 +189,10 @@ describe('ClaudeAccountsSection', () => {
       runtimes: {
         claudeCode: {
           accounts: [
-            { path: HOME, label: 'Personal' },
-            { path: WORK, label: null },
+            { id: 'personal', path: HOME, label: 'Personal' },
+            // The new account's stable reference, minted from its folder name
+            // because the operator typed only whitespace for a label.
+            { id: 'claude2', path: WORK, label: null },
           ],
         },
       },
@@ -268,7 +270,10 @@ describe('ClaudeAccountsSection', () => {
     expect(transport.updateConfig).toHaveBeenCalledTimes(1);
     expect(transport.updateConfig).toHaveBeenCalledWith({
       runtimes: {
-        claudeCode: { accounts: [{ path: HOME, label: 'Personal' }], defaultAccount: null },
+        claudeCode: {
+          accounts: [{ id: 'personal', path: HOME, label: 'Personal' }],
+          defaultAccount: null,
+        },
       },
     });
   });
@@ -289,7 +294,7 @@ describe('ClaudeAccountsSection', () => {
 
     expect(transport.updateConfig).toHaveBeenCalledTimes(1);
     expect(transport.updateConfig).toHaveBeenCalledWith({
-      runtimes: { claudeCode: { accounts: [{ path: WORK, label: 'Acme Corp' }] } },
+      runtimes: { claudeCode: { accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp' }] } },
     });
   });
 

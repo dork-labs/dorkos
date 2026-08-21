@@ -49,6 +49,7 @@ import {
   backfillDefaultTrustStops,
   backfillClaudeCodePersistentSession,
   backfillNotificationDefaults,
+  migrateClaudeAccountRegistry,
   backfillPromoDismissals,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
@@ -575,6 +576,214 @@ describe('backfillNotificationDefaults migration (notification-system, DOR-1385)
     const store = createMockStore({ notifications: chosen });
     backfillNotificationDefaults(store);
     expect(store.data.notifications).toBe(chosen);
+  });
+});
+
+describe('migrateClaudeAccountRegistry migration (billing-account-ladder, DOR-1407)', () => {
+  it('carries the chosen account across the rename and drops the old key', () => {
+    // The half that is not additive: left behind, the operator's chosen billing
+    // account is silently replaced by whatever the environment points at, and
+    // the leftover key fails Ajv on the next read.
+    const store = createMockStore({
+      runtimes: {
+        default: 'claude-code',
+        claudeCode: { activeAccount: '/Users/me/.claude2', accounts: [] },
+      },
+    });
+
+    migrateClaudeAccountRegistry(store);
+
+    expect(store.data.runtimes).toEqual({
+      default: 'claude-code',
+      claudeCode: { defaultAccount: '/Users/me/.claude2', accounts: [] },
+    });
+  });
+
+  it('carries a null default across too, rather than dropping the key', () => {
+    const store = createMockStore({
+      runtimes: { claudeCode: { activeAccount: null, accounts: [] } },
+    });
+    migrateClaudeAccountRegistry(store);
+    expect(store.data.runtimes).toEqual({ claudeCode: { defaultAccount: null, accounts: [] } });
+  });
+
+  it('backfills an id from the label, slugified', () => {
+    const store = createMockStore({
+      runtimes: {
+        claudeCode: {
+          activeAccount: null,
+          accounts: [{ path: '/Users/me/.claude2', label: 'Acme Corp' }],
+        },
+      },
+    });
+
+    migrateClaudeAccountRegistry(store);
+
+    expect(
+      (store.data.runtimes as { claudeCode: { accounts: unknown[] } }).claudeCode.accounts
+    ).toEqual([{ id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' }]);
+  });
+
+  it("falls back to the directory's basename when the account has no label", () => {
+    const store = createMockStore({
+      runtimes: {
+        claudeCode: {
+          activeAccount: null,
+          accounts: [{ path: '/Users/me/.claude3', label: null }],
+        },
+      },
+    });
+
+    migrateClaudeAccountRegistry(store);
+
+    expect(
+      (store.data.runtimes as { claudeCode: { accounts: { id: string }[] } }).claudeCode
+        .accounts[0]!.id
+    ).toBe('claude3');
+  });
+
+  it('uniquifies ids that would collide', () => {
+    // Two accounts an operator named the same thing, or two directories with the
+    // same basename under different parents. A duplicate id would make one of
+    // them unreachable and silently repoint every agent naming it.
+    const store = createMockStore({
+      runtimes: {
+        claudeCode: {
+          activeAccount: null,
+          accounts: [
+            { path: '/a/.claude', label: 'Acme Corp' },
+            { path: '/b/.claude', label: 'ACME corp' },
+            { path: '/c/.claude', label: 'acme-corp' },
+          ],
+        },
+      },
+    });
+
+    migrateClaudeAccountRegistry(store);
+
+    const ids = (
+      store.data.runtimes as { claudeCode: { accounts: { id: string }[] } }
+    ).claudeCode.accounts.map((account) => account.id);
+    expect(ids).toEqual(['acme-corp', 'acme-corp-2', 'acme-corp-3']);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('uniquifies against an id an earlier run already assigned', () => {
+    // Half-migrated state is reachable: a re-run after a crash, or an operator
+    // who hand-added an entry. A second pass must not mint a colliding id.
+    const store = createMockStore({
+      runtimes: {
+        claudeCode: {
+          accounts: [
+            { id: 'acme-corp', path: '/a/.claude', label: 'Acme Corp' },
+            { path: '/b/.claude', label: 'Acme Corp' },
+          ],
+        },
+      },
+    });
+
+    migrateClaudeAccountRegistry(store);
+
+    expect(
+      (store.data.runtimes as { claudeCode: { accounts: { id: string }[] } }).claudeCode.accounts
+    ).toEqual([
+      { id: 'acme-corp', path: '/a/.claude', label: 'Acme Corp' },
+      { id: 'acme-corp-2', path: '/b/.claude', label: 'Acme Corp' },
+    ]);
+  });
+
+  it('is idempotent — a second run changes nothing', () => {
+    // What this catches: a re-run (corrupt-recovery instantiates conf twice)
+    // re-minting ids and breaking every agent that references one.
+    const store = createMockStore({
+      runtimes: {
+        claudeCode: {
+          activeAccount: '/Users/me/.claude2',
+          accounts: [
+            { path: '/Users/me/.claude2', label: 'Acme Corp' },
+            { path: '/Users/me/.claude3', label: null },
+          ],
+        },
+      },
+    });
+
+    migrateClaudeAccountRegistry(store);
+    const afterFirst = structuredClone(store.data.runtimes);
+    migrateClaudeAccountRegistry(store);
+
+    expect(store.data.runtimes).toEqual(afterFirst);
+  });
+
+  it('leaves an already-migrated config completely alone', () => {
+    const migrated = {
+      claudeCode: {
+        defaultAccount: '/Users/me/.claude2',
+        accounts: [{ id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' }],
+      },
+    };
+    const store = createMockStore({ runtimes: structuredClone(migrated) });
+    migrateClaudeAccountRegistry(store);
+    expect(store.data.runtimes).toEqual(migrated);
+  });
+
+  it('is a no-op when there is no runtimes block at all', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    migrateClaudeAccountRegistry(store);
+    expect(store.data.runtimes).toBeUndefined();
+  });
+
+  it('a real pre-0.65.0 config file comes back renamed and referenceable (full conf path)', () => {
+    // The mock store never crosses the conf/Ajv boundary, and Ajv is what
+    // REJECTS a config the schema no longer admits. This is the only check that
+    // an install carrying the old shape survives the upgrade with its billing
+    // choice intact rather than being condemned and replaced.
+    const dir = path.join(os.tmpdir(), 'test-dork-account-ladder-' + Date.now());
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      const cfgPath = path.join(dir, 'config.json');
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          ...USER_CONFIG_DEFAULTS,
+          runtimes: {
+            ...USER_CONFIG_DEFAULTS.runtimes,
+            claudeCode: {
+              activeAccount: '/Users/me/.claude2',
+              accounts: [
+                { path: '/Users/me/.claude2', label: 'Acme Corp' },
+                { path: '/Users/me/.claude3', label: null },
+              ],
+            },
+          },
+          __internal__: { migrations: { version: '0.64.0' } },
+        })
+      );
+
+      new Conf({
+        cwd: dir,
+        configName: 'config',
+        projectVersion: '0.65.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        runtimes: { claudeCode: Record<string, unknown> };
+      };
+      expect(onDisk.runtimes.claudeCode).toMatchObject({
+        defaultAccount: '/Users/me/.claude2',
+        accounts: [
+          { id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' },
+          { id: 'claude3', path: '/Users/me/.claude3', label: null },
+        ],
+      });
+      expect(onDisk.runtimes.claudeCode).not.toHaveProperty('activeAccount');
+
+      // And the migrated file is one the live schema accepts, which is the whole
+      // point of doing it through conf.
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
