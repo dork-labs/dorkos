@@ -31,11 +31,12 @@ function build(overrides: Partial<NotificationDTO> = {}): NotificationDTO {
 /** Build a three-member group, newest first, all defaulting to read. */
 function buildGroup(
   notifications: NotificationDTO[],
-  overrides: Partial<Pick<InboxGroupItem, 'tone' | 'kind'>> = {}
+  overrides: Partial<Pick<InboxGroupItem, 'tone' | 'kind' | 'stateKey'>> = {}
 ): InboxGroupItem {
   return {
     type: 'group',
     id: notifications[notifications.length - 1].id,
+    stateKey: 'alpha:run.completed:neutral#0',
     agentId: 'alpha',
     kind: 'run.completed',
     tone: 'neutral',
@@ -209,7 +210,7 @@ describe('InboxGroupRow expansion', () => {
     expect(screen.queryAllByText('run finished')).toHaveLength(0);
   });
 
-  it('ties the member rows to the header via aria-controls', async () => {
+  it('ties the member rows to the header via aria-controls once expanded', async () => {
     const group = buildGroup([build({ id: 'a' }), build({ id: 'b' }), build({ id: 'c' })]);
 
     render(
@@ -227,6 +228,23 @@ describe('InboxGroupRow expansion', () => {
     const controlsId = header.getAttribute('aria-controls');
     expect(controlsId).toBeTruthy();
     expect(document.getElementById(controlsId as string)).not.toBeNull();
+  });
+
+  it('carries no aria-controls while collapsed — nothing exists for it to name', () => {
+    const group = buildGroup([build({ id: 'a' }), build({ id: 'b' }), build({ id: 'c' })]);
+
+    render(
+      <InboxGroupRow
+        group={group}
+        agent={AGENT}
+        agentName="alpha"
+        expanded={false}
+        onToggleExpanded={vi.fn()}
+        onOpenNotification={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button')).not.toHaveAttribute('aria-controls');
   });
 });
 

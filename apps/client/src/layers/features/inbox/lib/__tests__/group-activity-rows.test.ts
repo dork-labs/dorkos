@@ -33,6 +33,7 @@ describe('groupActivityRows', () => {
       {
         type: 'group',
         id: rows[2].id,
+        stateKey: 'alpha:run.completed:neutral#0',
         agentId: 'alpha',
         kind: 'run.completed',
         tone: 'neutral',
@@ -166,6 +167,7 @@ describe('groupActivityRows', () => {
       {
         type: 'group',
         id: rows[3].id,
+        stateKey: 'alpha:run.completed:error#0',
         agentId: 'alpha',
         kind: 'run.completed',
         tone: 'error',
@@ -173,6 +175,37 @@ describe('groupActivityRows', () => {
       },
       { type: 'row', notification: rows[4] },
     ]);
+  });
+
+  it('gives two non-adjacent same-shape groups DIFFERENT stateKeys — the shape alone collides', () => {
+    // [alpha×3 run.completed, beta×1 (breaks the run), alpha×3 run.completed]
+    // — a routine shape, since a single breaking row of a different agent or
+    // kind is common. Both alpha groups share agentId+kind+tone; only the
+    // `#<nth>` suffix tells them apart (review round 3).
+    const newerGroup = [
+      build({ agentId: 'alpha' }),
+      build({ agentId: 'alpha' }),
+      build({ agentId: 'alpha' }),
+    ];
+    const breaker = build({ agentId: 'beta' });
+    const olderGroup = [
+      build({ agentId: 'alpha' }),
+      build({ agentId: 'alpha' }),
+      build({ agentId: 'alpha' }),
+    ];
+    const rows = [...newerGroup, breaker, ...olderGroup];
+
+    const items = groupActivityRows(rows);
+
+    expect(items.map((item) => item.type)).toEqual(['group', 'row', 'group']);
+    const [first, , third] = items as [
+      { type: 'group'; stateKey: string },
+      unknown,
+      { type: 'group'; stateKey: string },
+    ];
+    expect(first.stateKey).toBe('alpha:run.completed:neutral#0');
+    expect(third.stateKey).toBe('alpha:run.completed:neutral#1');
+    expect(first.stateKey).not.toBe(third.stateKey);
   });
 
   it('keys a group on its OLDEST member, so a live arrival growing it does not change the key', () => {

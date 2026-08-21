@@ -49,13 +49,39 @@ export interface InboxGroupItem {
    * "Load more" can grow a run BACKWARD (older rows join from the tail), and
    * the live cap can trim rows off the tail too — both change who the oldest
    * member is. A component keyed on this id would silently re-collapse an
-   * open group the moment either happened (caught in review), so
+   * open group the moment either happened (caught in review round 1), so
    * `InboxList` does not: it tracks which groups are expanded itself, keyed
-   * by {@link groupStateKey} — the streak's own identity — rather than by
-   * this id. This field exists only to give React a reconciliation key
-   * that avoids pointless remounts on the common (SSE) case.
+   * by {@link InboxGroupItem.stateKey} instead. This field exists only to
+   * give React a reconciliation key that avoids pointless remounts on the
+   * common (SSE) case.
    */
   id: string;
+  /**
+   * The STABLE identity `InboxList` tracks expand/collapse state by —
+   * semantic, THEN disambiguated.
+   *
+   * `agentId:kind:tone` alone names a SHAPE, not a specific group: two
+   * non-adjacent streaks of the same agent doing the same kind of thing at
+   * the same tone — `[alpha×3 run.completed, beta×1, alpha×3 run.completed]`
+   * is a routine shape, since a single breaking row of a different kind or
+   * agent is common — produce the SAME shape twice in one fold. Keying
+   * `InboxList`'s expand `Set` on the shape alone made opening one open BOTH
+   * (caught in review round 2, driven against the real component). The
+   * `#<nth>` suffix — how many EARLIER groups of this exact shape the fold
+   * had already emitted, newest-to-oldest — makes every group's key unique
+   * within one render.
+   *
+   * **Stable under live prepends that grow an existing group, "Load more"
+   * extending a run backward, and the live cap trimming one** — none of
+   * those change how many same-shaped groups sit ABOVE a given group in scan
+   * order. The one thing that does: a live arrival forming a BRAND NEW group
+   * of the same shape ABOVE an already-open one. That shifts every later
+   * group of the shape up by one `#nth`, which degrades the open one to
+   * collapsed — never to the wrong group opening, because the vacated key
+   * simply matches nothing in the fold's *next* render until the operator
+   * expands the new group deliberately.
+   */
+  stateKey: string;
   agentId: string;
   kind: GroupableNotificationKind;
   tone: NotificationTone;
@@ -64,18 +90,17 @@ export interface InboxGroupItem {
 }
 
 /**
- * The STABLE identity of a group's expand/collapse state — semantic, not
- * positional. {@link InboxGroupItem.id} changes shape as a run's membership
- * changes (`Load more` extending it backward, the live cap trimming its
- * tail), which is exactly wrong for UI state a person just set. `agentId`,
- * `kind` and `tone` together name the STREAK itself, and neither kind of
- * membership change touches any of the three.
+ * The SHAPE a group's expand/collapse state key is built from — semantic,
+ * not positional, but not yet unique: see {@link InboxGroupItem.stateKey}
+ * for why `groupActivityRows` suffixes this with an occurrence number before
+ * handing it to a caller. Not exported — nothing outside this module needs
+ * the shape alone.
  *
  * @param agentId - The group's agent.
  * @param kind - The group's kind.
  * @param tone - The group's tone.
  */
-export function groupStateKey(
+function groupShapeKey(
   agentId: string,
   kind: GroupableNotificationKind,
   tone: NotificationTone
@@ -104,6 +129,10 @@ export type InboxListItem = InboxRowItem | InboxGroupItem;
  */
 export function groupActivityRows(notifications: readonly NotificationDTO[]): InboxListItem[] {
   const items: InboxListItem[] = [];
+  // How many groups of a given shape this pass has already emitted, newest
+  // first — the `#<nth>` half of `InboxGroupItem.stateKey`. See that field's
+  // own doc for why the shape alone is not enough.
+  const shapeOccurrences = new Map<string, number>();
   let i = 0;
 
   while (i < notifications.length) {
@@ -129,9 +158,13 @@ export function groupActivityRows(notifications: readonly NotificationDTO[]): In
 
     const run = notifications.slice(i, j);
     if (run.length >= MIN_BURST_SIZE) {
+      const shape = groupShapeKey(agentId, first.kind, tone);
+      const nth = shapeOccurrences.get(shape) ?? 0;
+      shapeOccurrences.set(shape, nth + 1);
       items.push({
         type: 'group',
         id: run[run.length - 1].id,
+        stateKey: `${shape}#${nth}`,
         agentId,
         kind: first.kind,
         tone,

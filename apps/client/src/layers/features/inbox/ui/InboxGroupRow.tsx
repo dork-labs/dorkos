@@ -71,10 +71,11 @@ export interface InboxGroupRowProps {
  * — which broke the moment "Load more" grew a run backward or the live cap
  * trimmed one, either of which changes `group.id` (see its own doc) and
  * silently re-collapses an open group by remounting a fresh component under
- * a new key (caught in review). `InboxList` instead tracks expansion in a
- * `Set` keyed by `groupStateKey(agentId, kind, tone)` — the streak's own
- * identity, untouched by either kind of membership change — and this
- * component just draws whatever `expanded` it is handed.
+ * a new key (caught in review round 1). `InboxList` instead tracks
+ * expansion in a `Set` keyed by `group.stateKey` — see that field's own doc
+ * for why the shape (`agentId:kind:tone`) alone was not enough either (round
+ * 2: two non-adjacent same-shape streaks collided into one Set entry) — and
+ * this component just draws whatever `expanded` it is handed.
  *
  * **The header borrows `InboxRow`'s tone rule exactly.** An error-tone group
  * keeps the coloured kind glyph; anything else with a resolved agent draws
@@ -114,7 +115,10 @@ export function InboxGroupRow({
         data-expanded={expanded ? 'true' : 'false'}
         data-unread={unread ? 'true' : 'false'}
         aria-expanded={expanded}
-        aria-controls={membersId}
+        // Only points somewhere when there is somewhere to point: the member
+        // rows only exist in the DOM while `expanded`, and `aria-controls`
+        // naming an id nothing carries is worse than omitting it.
+        aria-controls={expanded ? membersId : undefined}
         onClick={onToggleExpanded}
         className="hover:bg-accent/50 focus-visible:ring-ring/60 flex min-h-9 w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors outline-none focus-visible:ring-2"
       >

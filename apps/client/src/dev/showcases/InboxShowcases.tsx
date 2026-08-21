@@ -11,7 +11,7 @@
  */
 import { useCallback, useState } from 'react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { InboxRow, InboxGroupRow, groupActivityRows, groupStateKey } from '@/layers/features/inbox';
+import { InboxRow, InboxGroupRow, groupActivityRows } from '@/layers/features/inbox';
 import type { AgentVisualSource } from '@/layers/entities/agent';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { InboxBellPill } from '@/layers/widgets/inbox-bell';
@@ -324,10 +324,8 @@ function InboxRowsShowcase() {
                 group={item}
                 agent={resolveShowcaseAgent(item.agentId)}
                 agentName={getAgentDisplayName(AGENTS[item.agentId])}
-                expanded={expandedGroups.has(groupStateKey(item.agentId, item.kind, item.tone))}
-                onToggleExpanded={() =>
-                  toggleGroup(groupStateKey(item.agentId, item.kind, item.tone))
-                }
+                expanded={expandedGroups.has(item.stateKey)}
+                onToggleExpanded={() => toggleGroup(item.stateKey)}
                 onOpenNotification={() => {}}
               />
             ) : (
@@ -352,10 +350,8 @@ function InboxRowsShowcase() {
                 group={item}
                 agent={resolveShowcaseAgent(item.agentId)}
                 agentName={getAgentDisplayName(AGENTS[item.agentId])}
-                expanded={expandedGroups.has(groupStateKey(item.agentId, item.kind, item.tone))}
-                onToggleExpanded={() =>
-                  toggleGroup(groupStateKey(item.agentId, item.kind, item.tone))
-                }
+                expanded={expandedGroups.has(item.stateKey)}
+                onToggleExpanded={() => toggleGroup(item.stateKey)}
                 onOpenNotification={() => {}}
               />
             ) : (

@@ -6,7 +6,7 @@ covers:
 
 ### Added
 
-- Activity rows now show who did it. When a notification is about one of your agents, its row shows that agent's own color and icon instead of a plain bell or checkmark, so you can tell at a glance who finished a run or sent a message. A row about something going wrong still shows its warning color instead, so a problem never gets lost behind a friendly face (DOR-1396).
+- Activity rows now show who did it. When a notification is about one of your agents, its row shows that agent's own color and icon instead of a plain bell or checkmark, so you can tell at a glance who finished a run or sent a message. A row about something going wrong still shows its red icon instead, so a problem never gets lost behind a friendly face (DOR-1396).
 - When the same agent does the same thing three or more times in a row, like finishing four runs back to back, those rows now fold into one line ("Alpha Bot finished 4 runs") that you can open to see each one. A single event, or just a pair, still shows on its own (DOR-1396).
 
 ### Fixed

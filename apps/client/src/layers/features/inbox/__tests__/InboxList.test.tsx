@@ -415,6 +415,45 @@ describe('InboxList burst coalescing', () => {
       search: { detail: 'failed-run', itemId: 'run-b' },
     });
   });
+
+  it('expanding one of two non-adjacent same-shape groups leaves the other collapsed', async () => {
+    // [alpha×3 run.completed, beta×1 (breaks the run), alpha×3 run.completed]
+    // — two groups sharing agentId+kind+tone. The bug (review round 3): the
+    // Set tracking which groups are open was keyed on that shared shape
+    // alone, so opening the first one opened both.
+    renderList(<InboxList />, {
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [
+          build({ id: 'g1-a', kind: 'run.completed', tier: 'quiet', title: 'g1 run a finished' }),
+          build({ id: 'g1-b', kind: 'run.completed', tier: 'quiet', title: 'g1 run b finished' }),
+          build({ id: 'g1-c', kind: 'run.completed', tier: 'quiet', title: 'g1 run c finished' }),
+          build({
+            id: 'breaker',
+            agentId: 'beta',
+            kind: 'run.completed',
+            tier: 'quiet',
+            title: 'beta run finished',
+          }),
+          build({ id: 'g2-a', kind: 'run.completed', tier: 'quiet', title: 'g2 run a finished' }),
+          build({ id: 'g2-b', kind: 'run.completed', tier: 'quiet', title: 'g2 run b finished' }),
+          build({ id: 'g2-c', kind: 'run.completed', tier: 'quiet', title: 'g2 run c finished' }),
+        ],
+        nextCursor: null,
+        unreadCount: 0,
+      }),
+      listMeshAgents: vi.fn().mockResolvedValue({ agents: [buildAgent()] }),
+    });
+
+    const headers = await screen.findAllByRole('button', { name: /Alpha Bot finished 3 runs/ });
+    expect(headers).toHaveLength(2);
+
+    await userEvent.click(headers[0]);
+
+    expect(headers[0]).toHaveAttribute('aria-expanded', 'true');
+    expect(headers[1]).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('g1 run a finished')).toBeInTheDocument();
+    expect(screen.queryByText('g2 run a finished')).not.toBeInTheDocument();
+  });
 });
 
 describe('InboxList faces', () => {

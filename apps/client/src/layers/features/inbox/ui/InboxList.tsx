@@ -21,7 +21,7 @@ import {
   type NotificationLens,
 } from '@/layers/entities/notifications';
 import { useOpenNotification } from '../model/use-open-notification';
-import { groupActivityRows, groupStateKey } from '../lib/group-activity-rows';
+import { groupActivityRows } from '../lib/group-activity-rows';
 import { InboxRow } from './InboxRow';
 import { InboxGroupRow } from './InboxGroupRow';
 
@@ -64,10 +64,11 @@ export interface InboxListProps {
  * whenever that list changes. It never asks for more than the lens already
  * fetched and never trims it, so paging and the live cap stay entirely
  * `entities/notifications`'s job. This component owns which groups are open
- * (a `Set` keyed by `groupStateKey`, not `InboxGroupRow`'s own state) for the
- * reason its own inline comment gives; the guarantee that expansion is
- * ephemeral and forgets itself on popover close is unaffected — it now comes
- * from this component unmounting rather than `InboxGroupRow`'s.
+ * (a `Set` keyed by each group's own `stateKey`, not `InboxGroupRow`'s own
+ * state) for the reason its own inline comment gives; the guarantee that
+ * expansion is ephemeral and forgets itself on popover close is
+ * unaffected — it now comes from this component unmounting rather than
+ * `InboxGroupRow`'s.
  *
  * Paging is a button rather than a scroll sentinel: the list lives inside a
  * popover barely taller than a phone, and an infinite scroller in a 30rem panel
@@ -105,7 +106,10 @@ export function InboxList({ lens, emptyLabel = 'Nothing yet', onOpened }: InboxL
 
   const items = useMemo(() => groupActivityRows(notifications), [notifications]);
 
-  // Which groups are open, keyed by `groupStateKey` rather than by any
+  // Which groups are open, keyed by each group's own `stateKey` (the fold
+  // stamps it, disambiguated by occurrence — see `InboxGroupItem.stateKey`'s
+  // own doc for why the shape alone collided two non-adjacent same-shape
+  // groups into one Set entry, caught in review round 2) rather than by any
   // group's own React key — see `InboxGroupRow`'s class doc for why a key
   // tied to a group's MEMBERSHIP breaks the moment that membership changes
   // shape. Lives here (and not in `InboxGroupRow` itself) for exactly one
@@ -151,10 +155,8 @@ export function InboxList({ lens, emptyLabel = 'Nothing yet', onOpened }: InboxL
               group={item}
               agent={resolveAgent(item.agentId)}
               agentName={getAgentDisplayName(agentsById.get(item.agentId))}
-              expanded={expandedGroups.has(groupStateKey(item.agentId, item.kind, item.tone))}
-              onToggleExpanded={() =>
-                toggleGroup(groupStateKey(item.agentId, item.kind, item.tone))
-              }
+              expanded={expandedGroups.has(item.stateKey)}
+              onToggleExpanded={() => toggleGroup(item.stateKey)}
               onOpenNotification={handleOpen}
             />
           ) : (
