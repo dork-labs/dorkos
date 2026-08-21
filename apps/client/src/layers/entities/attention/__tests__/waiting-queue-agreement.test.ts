@@ -80,6 +80,11 @@ function schedule(overrides: Partial<Task> = {}): Task {
     filePath: '/tasks/nightly-audit.json',
     createdAt: new Date(NOW - 20 * MINUTE).toISOString(),
     updatedAt: new Date(NOW - 20 * MINUTE).toISOString(),
+    reason: null,
+    proposedBySessionId: null,
+    proposedByAgentPath: null,
+    proposedByName: null,
+    nextRuns: [],
     ...overrides,
   };
 }
