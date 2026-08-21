@@ -186,12 +186,12 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
               // the dialog opens. It is disabled there — the picker above is
               // what to do next, and the quiet button below is the way out
               // without anybody.
-              submitLabel={(count) =>
-                count === 0
+              submitLabel={(chosen) =>
+                chosen.length === 0
                   ? 'Create channel'
-                  : count === 1
+                  : chosen.length === 1
                     ? 'Create channel with 1 agent'
-                    : `Create channel with ${count} agents`
+                    : `Create channel with ${chosen.length} agents`
               }
               // No "Create agent" button beside this one, unlike the room sheet
               // and the direct-message panel. Two reasons, and neither is

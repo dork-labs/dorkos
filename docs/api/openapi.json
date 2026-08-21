@@ -6625,7 +6625,7 @@
               "visibility",
               "platformTitle"
             ],
-            "description": "This room's bridge, when it has one. Optional as well as nullable: the sidebar's bulk room list does not resolve it today (a per-row bridge lookup a list never renders is cost nobody asked for), so absent and `null` both mean 'draw nothing bridge-related here' — only `GET /api/rooms/:id` and the room-create responses populate it for real."
+            "description": "This room's bridge, and `null` when it has none. `GET /api/rooms`, `GET /api/rooms/:id` and the room-create responses all populate it, so on any of those `null` means \"not bridged\" — the sidebar reads it to tell a direct message somebody made by hand from one a bridged private chat projects. Still optional, for the one reason a field like this stays optional: a client fixture that assembles a room by hand need not carry it, and a caller that predates it still parses. Absent means \"this source did not say\", never `false`."
           }
         },
         "required": [

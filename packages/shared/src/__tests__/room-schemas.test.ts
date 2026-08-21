@@ -4,6 +4,8 @@ import {
   AuthorRefSchema,
   canonicalizeEntry,
   CreateRoomRequestSchema,
+  directMessageTitle,
+  isDirectMessageTitleDerived,
   isReactionEmoji,
   REACTION_EMOJI_MAX_CODE_POINTS,
   REACTION_FREQUENTS_COUNT,
@@ -587,5 +589,57 @@ describe('withoutActivityTarget', () => {
     const stripped = withoutActivityTarget(payload);
     expect(stripped).toEqual(payload);
     expect('activity' in stripped).toBe(false);
+  });
+});
+
+describe('directMessageTitle', () => {
+  it('names one agent, and lists a few', () => {
+    expect(directMessageTitle(['Ana'])).toBe('Ana');
+    expect(directMessageTitle(['Ana', 'Kai'])).toBe('Ana and Kai');
+    expect(directMessageTitle(['Ana', 'Kai', 'Bo'])).toBe('Ana, Kai and Bo');
+  });
+
+  it('counts the rest past three, so a sidebar row stays one line', () => {
+    expect(directMessageTitle(['Ana', 'Kai', 'Bo', 'Di'])).toBe('Ana, Kai, Bo and 1 other');
+    expect(directMessageTitle(['Ana', 'Kai', 'Bo', 'Di', 'Ed'])).toBe('Ana, Kai, Bo and 2 others');
+  });
+
+  it('answers nothing for nobody', () => {
+    expect(directMessageTitle([])).toBe('');
+  });
+});
+
+describe('isDirectMessageTitleDerived', () => {
+  it('recognises a title it wrote itself', () => {
+    expect(isDirectMessageTitleDerived('Ana', ['Ana'])).toBe(true);
+    expect(isDirectMessageTitleDerived('Ana and Kai', ['Ana', 'Kai'])).toBe(true);
+  });
+
+  it('recognises one written in a different order', () => {
+    // The cockpit names a conversation in the order the agents were picked; the
+    // server reads the roster back in its own order. Compared as one string this
+    // would read as a person's rename about half the time.
+    expect(isDirectMessageTitleDerived('Ana and Kai', ['Kai', 'Ana'])).toBe(true);
+    expect(isDirectMessageTitleDerived('Ana, Kai and Bo', ['Bo', 'Ana', 'Kai'])).toBe(true);
+  });
+
+  it('does not recognise a name somebody chose', () => {
+    expect(isDirectMessageTitleDerived('Launch', ['Ana'])).toBe(false);
+    expect(isDirectMessageTitleDerived('Ana and Bo', ['Ana', 'Kai'])).toBe(false);
+  });
+
+  it('stops being order-blind once the title stops naming everybody', () => {
+    // Past three the title counts the rest, so it no longer says who is in the
+    // room and only the exact string can be recognised. Answering "not derived"
+    // leaves the name alone, which is the recoverable mistake.
+    const names = ['Ana', 'Kai', 'Bo', 'Di'];
+    expect(isDirectMessageTitleDerived('Ana, Kai, Bo and 1 other', names)).toBe(true);
+    expect(
+      isDirectMessageTitleDerived('Ana, Kai, Bo and 1 other', ['Kai', 'Ana', 'Bo', 'Di'])
+    ).toBe(false);
+  });
+
+  it('recognises nothing when there is nobody to have been named after', () => {
+    expect(isDirectMessageTitleDerived('', [])).toBe(false);
   });
 });

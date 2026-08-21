@@ -42,7 +42,7 @@ function renderPicker(
     <AgentRosterPicker
       roster={roster}
       onSubmit={onSubmit}
-      submitLabel={(n) => `Commit ${n}`}
+      submitLabel={(chosen) => `Commit ${chosen.length}`}
       emptyRosterMessage={EMPTY_COPY}
       allChosenMessage="All chosen."
       {...extra}
@@ -66,7 +66,7 @@ describe('AgentRosterPicker states', () => {
       <AgentRosterPicker
         roster={{ candidates: [], isLoading: true, isError: false, retry: vi.fn() }}
         onSubmit={vi.fn()}
-        submitLabel={(n) => `Commit ${n}`}
+        submitLabel={(chosen) => `Commit ${chosen.length}`}
         emptyRosterMessage={EMPTY_COPY}
         allChosenMessage="All chosen."
       />

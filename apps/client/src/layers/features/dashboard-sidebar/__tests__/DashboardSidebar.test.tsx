@@ -59,15 +59,32 @@ const channel = (id: string, slug: string) => room({ id, kind: 'channel', slug, 
  * stored on its manifest, and drawing this row from them is what DOR-582 was.
  */
 function dmWith(id: string, agentPath: string, title: string): RoomSummary {
+  return groupDmWith(id, [agentPath], title);
+}
+
+/**
+ * A direct message with several agents in it — a GROUP message, which is the
+ * only hand-made direct message Library lists (`sidebar-simplification` D2).
+ *
+ * Most cases here want a DM with a row in Direct messages, and a one-to-one no
+ * longer has one: it is the agent's own session under a second name, so the
+ * agent's row stands for it. {@link dmWith} is what a one-to-one is spelled
+ * with, and it is used where the suppression itself is the subject.
+ *
+ * @param id - The room id.
+ * @param agentPaths - The agents on the roster.
+ * @param title - What the conversation is called.
+ */
+function groupDmWith(id: string, agentPaths: string[], title: string): RoomSummary {
   const participants: AuthorRef[] = [
     { id: `${id}-you`, kind: 'human', displayName: 'You', handle: null },
-    {
-      id: `${id}-agent`,
-      kind: 'agent',
-      displayName: title,
+    ...agentPaths.map((agentPath, index) => ({
+      id: `${id}-agent-${index}`,
+      kind: 'agent' as const,
+      displayName: `${title} ${index}`,
       handle: null,
       agentRef: agentAuthorRef(agentPath),
-    },
+    })),
   ];
   return room({ id, kind: 'dm', title, participants });
 }
@@ -765,10 +782,23 @@ describe('DashboardSidebar', () => {
   describe('BC-28 — Library’s sections', () => {
     it('reads Pins, Channels, Direct messages, Agents', async () => {
       mockSidebarPrefs.mockReturnValue(makePrefs({ pinned: [agent('/projects/alpha')] }));
-      mockRooms.mockReturnValue([channel('r1', 'general'), dmWith('r2', '/projects/beta', 'beta')]);
+      mockRooms.mockReturnValue([
+        channel('r1', 'general'),
+        groupDmWith('r2', ['/projects/alpha', '/projects/beta'], 'beta'),
+      ]);
       renderWithProviders(<DashboardSidebar />);
       await waitFor(() => expect(libraryHeadings().length).toBe(4));
       expect(libraryHeadings()).toEqual(['Pins', 'Channels', 'Direct messages', 'Agents']);
+    });
+
+    it('draws no Direct messages section for a one-to-one, which the agent’s row already is', async () => {
+      // One door to an agent (`sidebar-simplification` D2): a 1:1 direct message
+      // is that agent's session under a second name, so Library lists the agent
+      // and not both.
+      mockRooms.mockReturnValue([channel('r1', 'general'), dmWith('r2', '/projects/beta', 'beta')]);
+      renderWithProviders(<DashboardSidebar />);
+      await waitFor(() => expect(libraryHeadings()).toContain('Channels'));
+      expect(libraryHeadings()).not.toContain('Direct messages');
     });
 
     it('nests a group inside Agents, one level down, as an <h4>', async () => {
@@ -827,7 +857,7 @@ describe('DashboardSidebar', () => {
       );
       mockRooms.mockReturnValue([
         { ...channel('r1', 'general'), unreadCount: 2 },
-        dmWith('r2', '/projects/beta', 'beta'),
+        groupDmWith('r2', ['/projects/alpha', '/projects/beta'], 'beta'),
       ]);
       // Today is recency-driven, so a room has to have been OPENED to be in it.
       useInteractionStore.getState().recordOpened('room', 'r1', Date.now() - 5_000);
@@ -890,7 +920,11 @@ describe('DashboardSidebar', () => {
     // and a "the rows are gone" assertion that matched it would pass on the
     // wrong element.
     mockRooms.mockReturnValue([
-      { ...dmWith('r2', '/projects/beta', 'Quiet chat'), unreadCount: 3, working: 2 },
+      {
+        ...groupDmWith('r2', ['/projects/alpha', '/projects/beta'], 'Quiet chat'),
+        unreadCount: 3,
+        working: 2,
+      },
     ]);
     renderWithProviders(<DashboardSidebar />);
     const heading = await screen.findByRole('heading', { name: /Direct messages/, level: 3 });
@@ -937,7 +971,10 @@ describe('DashboardSidebar', () => {
     });
 
     it('reveals each section "+" on focus as well as on hover — a keyboard has no hover', async () => {
-      mockRooms.mockReturnValue([channel('r1', 'general'), dmWith('d1', '/a/1', 'Alpha')]);
+      mockRooms.mockReturnValue([
+        channel('r1', 'general'),
+        groupDmWith('d1', ['/a/1', '/a/2'], 'Alpha'),
+      ]);
       renderWithProviders(<DashboardSidebar />);
       await waitFor(() => expect(libraryHeadings()).toContain('Channels'));
 
@@ -1417,7 +1454,7 @@ describe('Heads up — the zone that justifies the redesign', () => {
       // zone that promises to hold only what needs you.
       mockRooms.mockReturnValue([
         { ...channel('c1', 'deploys'), unreadCount: 12 },
-        { ...dmWith('d1', '/projects/alpha', 'alpha'), unreadCount: 6 },
+        { ...groupDmWith('d1', ['/projects/alpha', '/projects/beta'], 'alpha'), unreadCount: 6 },
       ]);
       seedSessions([
         {

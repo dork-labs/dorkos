@@ -245,6 +245,32 @@ export class BridgeStore {
   }
 
   /**
+   * The bridges for a set of rooms, keyed by room id — one query for the whole
+   * list, where {@link BridgeStore.findBridgeByRoom} is one per room.
+   *
+   * A room with no bridge is simply absent from the map, never a `null` value:
+   * absent is what a `Map.get` already answers, and a second spelling of the
+   * same fact is a second thing a caller could get wrong.
+   *
+   * `GET /api/rooms` is what needs it. The sidebar decides whether a direct
+   * message is one a person made by hand or one a bridged chat projects
+   * (`sidebar-simplification` D2), which it cannot do without knowing which
+   * rooms are bridged — and asking per room turned a two-query list into one
+   * query per room.
+   *
+   * @param roomIds - The rooms to ask about. An empty list asks nothing.
+   */
+  findBridgesByRooms(roomIds: readonly string[]): Map<string, Bridge> {
+    if (roomIds.length === 0) return new Map();
+    const rows = this.db
+      .select()
+      .from(roomBridges)
+      .where(inArray(roomBridges.roomId, [...roomIds]))
+      .all();
+    return new Map(rows.map((row) => [row.roomId, toBridge(row)]));
+  }
+
+  /**
    * Every live (non-archived) bridge — the catch-up scan's worklist on start
    * (spec §6.1's first trigger). Archived bridges are excluded because a chat
    * that is no longer connected has nothing to catch up.

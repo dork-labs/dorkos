@@ -63,6 +63,13 @@ function pureModuleSources(): { file: string; source: string }[] {
  */
 const ALLOWED_VALUE_IMPORTS = [
   '@dorkos/shared/smart-groups',
+  // `agentAuthorRef` — the wire contract's own hash from an agent's directory to
+  // the handle a room roster names it by. The one-door rule has to match a
+  // direct message's roster back to the fleet (`hand-made-dm.ts`), and this is
+  // the function BOTH ends already use; a second hash here would be a second
+  // answer to "which agent is this author". It is a schema module: pure
+  // declarations and pure helpers, no clock and no state.
+  '@dorkos/shared/room-schemas',
   '@/layers/entities/session',
   // The cockpit's 4am day boundary, which the command palette also reads so
   // that a conversation Today has retired can say so in ⌘K. A leaf module by
