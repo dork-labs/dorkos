@@ -53,7 +53,7 @@ const FRAMES = ['cockpit', 'narrow', 'keyboard', 'override', 'bare', 'dragged'] 
  * What one of the sidebar's geometry tokens resolves to, in pixels.
  *
  * **Read out of the live document, never restated here.** The whole point of D1
- * is that `--sidebar-header-x`, `--sidebar-row-x` and `--sidebar-nested-x` are
+ * is that `--sidebar-header-x` and `--sidebar-row-x` are
  * the one place the panel's indents are decided; a spec that hard-coded `20`
  * would go green on a build where the token said 24 and every row had moved.
  *
@@ -161,17 +161,17 @@ test.describe('SidebarRow — the reserved right gutter @smoke', () => {
     }
   });
 
-  test('puts the header, its rows and a nested section on the three tokens', async ({ page }) => {
+  test('puts every header on one x and every row on the other', async ({ page }) => {
     await openShowcase(page);
 
     // The two levels the whole panel is cut to, measured against each other in
-    // one frame. Headers sit inboard of the glyph column their rows start on;
-    // a section's members add exactly one `--sidebar-nested-x` to both. If any
-    // of the three drifts, the list stops reading as a hierarchy — and it drifts
-    // silently, because each half is a plausible number on its own.
+    // one frame. Headers sit inboard of the glyph column their rows start on,
+    // and a hand-made section is a PEER rather than a child (D3), so its header
+    // and its rows land on those same two x values. If either drifts, the list
+    // stops reading as a hierarchy — and it drifts silently, because each half
+    // is a plausible number on its own.
     const headerX = await token(page, '--sidebar-header-x');
     const rowX = await token(page, '--sidebar-row-x');
-    const nestedX = await token(page, '--sidebar-nested-x');
     expect(headerX).toBeLessThan(rowX);
 
     const geometry = page.locator('[data-slot="sidebar-geometry-frame"]');
@@ -184,16 +184,17 @@ test.describe('SidebarRow — the reserved right gutter @smoke', () => {
     const row = geometry.locator('[data-slot="sidebar-geometry-row"]');
     expect(await left(row)).toBeCloseTo(rowX - PANEL_X, 1);
 
-    // The nested pair, measured as an OFFSET from their un-nested siblings
-    // rather than as absolute numbers: that is what `--sidebar-nested-x` means,
-    // and it is the only reading that stays true if the other two are retuned.
-    const nestedRowBox = await box(geometry.locator('[data-slot="sidebar-geometry-nested-row"]'));
+    // The section's pair, measured as an OFFSET from their siblings above:
+    // exactly zero, which is what "there is no third level" means. Absolute
+    // numbers would restate the two tokens; a difference stays true if either
+    // is retuned.
+    const sectionRowBox = await box(geometry.locator('[data-slot="sidebar-geometry-section-row"]'));
     const rowBox = await box(row);
-    expect(nestedRowBox.x - rowBox.x).toBeCloseTo(nestedX, 1);
+    expect(sectionRowBox.x - rowBox.x).toBeCloseTo(0, 1);
 
-    const nestedHeaderBox = await box(geometry.locator('[data-sidebar-section-toggle]').nth(1));
+    const sectionHeaderBox = await box(geometry.locator('[data-sidebar-section-toggle]').nth(1));
     const headerBox = await box(header);
-    expect(nestedHeaderBox.x - headerBox.x).toBeCloseTo(nestedX, 1);
+    expect(sectionHeaderBox.x - headerBox.x).toBeCloseTo(0, 1);
   });
 
   test('starts the widest glyph on the same x as the narrowest one', async ({ page }) => {
