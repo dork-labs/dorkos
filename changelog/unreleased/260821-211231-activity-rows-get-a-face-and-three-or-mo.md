@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): Activity rows get a face, and three or more of the same kind collapse into one (DOR-1396)'
   - 'fix(client): the glyph slot stops jittering, group expand state survives Load more, and burst phrases stop naming kinds that can never group (DOR-1396)'
+  - 'fix(client): two non-adjacent same-shape groups no longer share one expand key (DOR-1396)'
 ---
 
 ### Added
