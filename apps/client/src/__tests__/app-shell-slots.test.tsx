@@ -28,19 +28,15 @@ let mockSearch: Record<string, unknown> = {};
 // headers' internals (those are unit-tested at
 // `layers/widgets/one-bar/__tests__/*Header.test.tsx`).
 //
-// Each stub also renders the REAL `InboxBell` — the real `OneBar` puts it in
-// the fixed cluster every route bar carries (I1: search · inbox · right-panel
-// toggle, present and in that order on every route) — so the "approvals
-// marker placement" suite below can still prove the marker reaches every
-// route without depending on the real header/`OneBar` internals.
+// The stubs render the route's half of the bar and NOTHING ELSE. The fixed
+// cluster is not theirs: the shell mounts `BarFixedCluster` once, as a sibling
+// after the cross-fade, so the bell and the panel toggle stay put while the bar
+// under them changes. The mock below supplies that cluster with the REAL
+// `InboxBell` inside it, which is what lets the "approvals marker placement"
+// suite prove the marker reaches every route.
 function makeHeaderStub(testId: string, label: string) {
   return function HeaderStub() {
-    return (
-      <div data-testid={testId}>
-        {label}
-        <InboxBell />
-      </div>
-    );
+    return <div data-testid={testId}>{label}</div>;
   };
 }
 
@@ -141,6 +137,14 @@ vi.mock('@/layers/widgets/one-bar', async () => {
   return {
     resolveRouteHeader,
     OneBarProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
+    // The real bell, in the shell's own cluster — the one thing this suite needs
+    // from the bar module beyond the resolver, because the approvals marker
+    // rides it and must be reachable from every route.
+    BarFixedCluster: () => (
+      <div data-testid="bar-fixed-cluster">
+        <InboxBell />
+      </div>
+    ),
   };
 });
 

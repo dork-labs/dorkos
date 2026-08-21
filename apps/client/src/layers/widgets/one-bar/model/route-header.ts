@@ -13,7 +13,7 @@ export type RouteHeader = ComponentType | null;
 /** A route match, as much of one as {@link resolveRouteHeader} looks at. */
 interface HeaderRouteMatch {
   routeId: string;
-  staticData: { header?: RouteHeader };
+  staticData?: { header?: RouteHeader };
 }
 
 /** Which bar to render, and the key the cross-fade animates on. */
@@ -47,9 +47,14 @@ export function resolveRouteHeader(
   matches: readonly HeaderRouteMatch[]
 ): ResolvedRouteHeader | null {
   for (let i = matches.length - 1; i >= 0; i--) {
-    const match = matches[i];
-    const header = match.staticData.header;
-    if (header) return { key: match.routeId, Header: header };
+    // Both reads are guarded. `staticData` is required by the module
+    // augmentation, but this function is handed whatever the router has — and a
+    // route built before that augmentation existed, or a hand-rolled match in a
+    // test, carries neither. Answering `null` there is the same honest answer as
+    // a chain that declares no bar; throwing on a missing key would turn a
+    // shell that draws no header into a shell that draws nothing at all.
+    const header = matches[i].staticData?.header;
+    if (header) return { key: matches[i].routeId, Header: header };
   }
   return null;
 }

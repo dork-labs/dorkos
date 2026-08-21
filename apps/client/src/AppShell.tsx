@@ -43,6 +43,7 @@ import {
 } from '@/layers/features/onboarding';
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import {
+  BarFixedCluster,
   OneBarProvider,
   resolveRouteHeader,
   type OneBarRouteState,
@@ -551,12 +552,10 @@ export function AppShell() {
                           <Separator orientation="vertical" className="mr-1 h-4" />
                         </>
                       )}
-                      {/* ── The route's bar, cross-faded on route change. The
-                            fixed cluster (search · inbox · right-panel toggle)
-                            is inside `OneBar`, not here: it is the same three
-                            controls in the same order on every route (I1), and
-                            a bar that had to remember to append them is a bar
-                            that can forget. ── */}
+                      {/* ── The route's bar, cross-faded on route change.
+                            ONLY the route's own half fades: identity, chips and
+                            page actions are what differ between routes, so they
+                            are what animates. ── */}
                       <AnimatePresence mode="wait" initial={false}>
                         {routeHeader && (
                           <motion.div
@@ -573,6 +572,12 @@ export function AppShell() {
                           </motion.div>
                         )}
                       </AnimatePresence>
+                      {/* ── Search · inbox · right-panel toggle. Outside the
+                            cross-fade and after it, which is both halves of
+                            I1: they stay mounted so the corner never blinks on
+                            navigation, and the route's bar — confined to the
+                            sibling above — cannot render anything past them. ── */}
+                      <BarFixedCluster />
                     </header>
                     {/* ── Global banner slot — one standing banner at a time, ranked
                           by priority. Sits below the header and inside the inset, so the

@@ -115,14 +115,10 @@ describe('TeamHeader', () => {
     expect(mockOpenCreateDialog).toHaveBeenCalledTimes(1);
   });
 
-  it('renders CommandPaletteTrigger', () => {
-    render(
-      <BarHarness teamViewMode="cards">
-        <TeamHeader />
-      </BarHarness>
-    );
-    expect(screen.getByTestId('command-palette-trigger')).toBeInTheDocument();
-  });
+  // The search trigger used to be asserted here, back when each route bar
+  // rendered its own. It belongs to `BarFixedCluster` now — mounted once by the
+  // shell so it does not re-animate on navigation — and is pinned in
+  // `OneBar.test.tsx`. A bar asserting it would be asserting the shell's job.
 
   describe('view switcher (desktop)', () => {
     it('offers every view, the table included', () => {

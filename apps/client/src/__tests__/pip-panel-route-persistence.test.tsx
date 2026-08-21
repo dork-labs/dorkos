@@ -82,6 +82,7 @@ vi.mock('@/layers/widgets/one-bar', async () => {
   return {
     resolveRouteHeader,
     OneBarProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
+    BarFixedCluster: () => <div data-testid="bar-fixed-cluster" />,
   };
 });
 

@@ -6,7 +6,7 @@
  *
  * @module widgets/one-bar
  */
-export { OneBar, BarTitle } from './ui/OneBar';
+export { OneBar, BarTitle, BarFixedCluster } from './ui/OneBar';
 export { TitleBar } from './ui/TitleBar';
 export { DashboardHeader } from './ui/DashboardHeader';
 export { ActivityHeader } from './ui/ActivityHeader';

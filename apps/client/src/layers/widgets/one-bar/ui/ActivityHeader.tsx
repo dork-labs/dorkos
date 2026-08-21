@@ -8,14 +8,5 @@ import { BarTitle, OneBar } from './OneBar';
  * first content row, the way `/tasks` already does it.
  */
 export function ActivityHeader() {
-  return (
-    <OneBar
-      identity={
-        <>
-          <BarTitle>Activity</BarTitle>
-          <ActivityFilterBar />
-        </>
-      }
-    />
-  );
+  return <OneBar identity={<BarTitle>Activity</BarTitle>} fill={<ActivityFilterBar />} />;
 }

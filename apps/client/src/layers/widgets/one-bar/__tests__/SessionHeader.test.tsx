@@ -83,11 +83,10 @@ describe('SessionHeader', () => {
     expect(nav).toHaveTextContent('Session');
   });
 
-  it('renders CommandPaletteTrigger', () => {
-    renderBar({ agentName: 'dorkbot' });
-    const triggers = screen.getAllByLabelText('Open command palette');
-    expect(triggers.length).toBeGreaterThanOrEqual(1);
-  });
+  // The search trigger used to be asserted here, back when each route bar
+  // rendered its own. It belongs to `BarFixedCluster` now — mounted once by the
+  // shell so it does not re-animate on navigation — and is pinned in
+  // `OneBar.test.tsx`. A bar asserting it would be asserting the shell's job.
 
   it('omits agent name when no agent', () => {
     renderBar({ agentName: undefined });

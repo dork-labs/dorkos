@@ -1,6 +1,12 @@
 import { Plus } from 'lucide-react';
 import { Badge, BarTabStrip, Button, type BarTab } from '@/layers/shared/ui';
-import { OneBar, BarTitle, TitleBar, OneBarProvider } from '@/layers/widgets/one-bar';
+import {
+  OneBar,
+  BarTitle,
+  TitleBar,
+  OneBarProvider,
+  BarFixedCluster,
+} from '@/layers/widgets/one-bar';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -25,11 +31,17 @@ const TEAM_TABS: BarTab[] = [
 const LONG_ROOM_NAME = 'Priya, Kai, Ikechi and 47 others about the quarterly migration plan';
 
 /**
- * The 36px row a bar actually lives in.
+ * The 36px row a bar actually lives in, composed the way `AppShell` composes it.
  *
  * The shell's `<header>` supplies the height, the hairline and the gutters, so a
- * bar shown without them reads nothing like the real thing — the truncation
- * demo in particular only means something inside a box that can run out of room.
+ * bar shown without them reads nothing like the real thing — the truncation demo
+ * in particular only means something inside a box that can run out of room.
+ *
+ * **`BarFixedCluster` is rendered here, after `children`, exactly as the shell
+ * renders it after the route's bar.** Showing the identity half on its own would
+ * be showing a bar the app never draws, and it would quietly drop the real
+ * `InboxBell` out of the mount gate's reach — which is how `/dev/one-bar` came
+ * to be 100% error cards with every test green.
  */
 function BarFrame({ children, width }: { children: React.ReactNode; width?: number }) {
   return (
@@ -37,7 +49,10 @@ function BarFrame({ children, width }: { children: React.ReactNode; width?: numb
       className="bg-background overflow-hidden rounded-md border"
       style={width ? { maxWidth: width } : undefined}
     >
-      <header className="relative flex h-9 items-center gap-2 border-b px-2">{children}</header>
+      <header className="relative flex h-9 items-center gap-2 border-b px-2">
+        {children}
+        <BarFixedCluster />
+      </header>
     </div>
   );
 }
@@ -62,7 +77,7 @@ export function OneBarShowcases() {
     <OneBarProvider value={{ ...QUIET_BAR_STATE }}>
       <PlaygroundSection
         title="One Bar"
-        description="One row per page: identity · chips · flex space · page actions · search, inbox, right-panel toggle. The last three are rendered by the bar itself, so nothing can wedge a control between them (I1)."
+        description="One row per page: identity · chips · flex space · page actions · search, inbox, right-panel toggle. The shell mounts the last three after the bar and outside its cross-fade, so they never blink on navigation and no page can wedge a control between them (I1)."
       >
         <ShowcaseLabel>Title only — what most routes are</ShowcaseLabel>
         <ShowcaseDemo>

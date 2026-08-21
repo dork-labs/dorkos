@@ -238,6 +238,19 @@ const marketplaceRouteSearchSchema = mergeDialogSearch(marketplaceSearchSchema);
 /** Search params available on the `/marketplace` route. */
 export type MarketplaceSearch = z.infer<typeof marketplaceRouteSearchSchema>;
 
+/**
+ * The bars for pages whose identity is just their name.
+ *
+ * Named components rather than inline arrows in `staticData`: an anonymous
+ * function shows up as `<Unknown>` in React DevTools and in a component stack,
+ * which is exactly where you look when the wrong bar is on screen.
+ */
+const WorkspacesBar = () => <TitleBar title="Workspaces" />;
+const ConnectionsBar = () => <TitleBar title="Connections" />;
+const MarketplaceBar = () => <TitleBar title="Marketplace" />;
+const MarketplaceSourcesBar = () => <TitleBar title="Marketplace Sources" />;
+const FeedbackRequestsBar = () => <TitleBar title="Product feedback" />;
+
 // ── Pathless layout route (home surface) ────────────────────
 // Uses `id` not `path` — no URL segment added, so `/`, `/activity`, `/tasks`
 // and `/workspaces` keep the exact addresses they have always had. All this
@@ -470,7 +483,7 @@ const channelsRoute = createRoute({
 const workspacesRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/workspaces',
-  staticData: { header: () => <TitleBar title="Workspaces" /> },
+  staticData: { header: WorkspacesBar },
   component: WorkspacesPage,
 });
 
@@ -486,7 +499,7 @@ const connectionsSearchSchema = mergeDialogSearch(
 const connectionsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/connections',
-  staticData: { header: () => <TitleBar title="Connections" /> },
+  staticData: { header: ConnectionsBar },
   validateSearch: zodValidator(connectionsSearchSchema),
   component: ConnectionsPage,
 });
@@ -495,7 +508,7 @@ const connectionsRoute = createRoute({
 const marketplaceRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/marketplace',
-  staticData: { header: () => <TitleBar title="Marketplace" /> },
+  staticData: { header: MarketplaceBar },
   validateSearch: zodValidator(marketplaceRouteSearchSchema),
   component: MarketplacePage,
 });
@@ -504,7 +517,7 @@ const marketplaceRoute = createRoute({
 const marketplaceSourcesRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/marketplace/sources',
-  staticData: { header: () => <TitleBar title="Marketplace Sources" /> },
+  staticData: { header: MarketplaceSourcesBar },
   component: MarketplaceSourcesPage,
 });
 
@@ -533,7 +546,7 @@ const activityRoute = createRoute({
 const feedbackRequestsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/feedback-requests',
-  staticData: { header: () => <TitleBar title="Product feedback" /> },
+  staticData: { header: FeedbackRequestsBar },
   component: FeedbackRequestsPage,
 });
 

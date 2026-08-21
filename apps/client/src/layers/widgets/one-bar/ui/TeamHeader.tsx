@@ -114,12 +114,8 @@ export function TeamHeader() {
 
   return (
     <OneBar
-      identity={
-        <>
-          <BarTitle>Team</BarTitle>
-          {viewSwitcher}
-        </>
-      }
+      identity={<BarTitle>Team</BarTitle>}
+      fill={viewSwitcher}
       actions={
         <Button variant="outline" size="xs" onClick={() => openCreateDialog()}>
           <Plus />

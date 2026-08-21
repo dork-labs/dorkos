@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRoute,
@@ -24,9 +24,10 @@ import {
   Separator,
   Toaster,
 } from '@/layers/shared/ui';
-import { TransportProvider, useTheme } from '@/layers/shared/model';
+import { useTheme } from '@/layers/shared/model';
 import { ChevronLeft, LayoutDashboard, Sun, Monitor, Moon, Search } from 'lucide-react';
 import { createPlaygroundTransport } from './playground-transport';
+import { PlaygroundProviders } from './playground-providers';
 import { PlaygroundSearch } from './PlaygroundSearch';
 import { PAGE_COMPONENTS } from './playground-pages';
 import {
@@ -338,10 +339,8 @@ function DevPlaygroundShell() {
 /** Dev-only playground shell with sidebar navigation, rendered at `/dev`. */
 export default function DevPlayground() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>
-        <RouterProvider router={devRouter} />
-      </TransportProvider>
-    </QueryClientProvider>
+    <PlaygroundProviders queryClient={queryClient} transport={transport}>
+      <RouterProvider router={devRouter} />
+    </PlaygroundProviders>
   );
 }

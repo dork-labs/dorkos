@@ -58,15 +58,27 @@ describe('route headers', () => {
   // guard, so a route that genuinely forgets its header still fails.
   const HEADERLESS_ROUTES: readonly string[] = ['/agents'];
 
-  it('declares a non-null header for every addressable route except /agents', () => {
+  it('declares a component header for every addressable route except /agents', () => {
+    // Asserts the POSITIVE shape, not the absence of one wrong value. `.not
+    // .toBeNull()` was the first spelling here and it was no guard at all: a
+    // route that omitted `staticData` entirely reads `undefined`, which is not
+    // null, so the one failure this test exists to catch was the one it passed.
     const { routesByPath } = router();
     for (const [path, route] of Object.entries(routesByPath)) {
       if (HEADERLESS_ROUTES.includes(path)) continue;
       expect(
-        route.options.staticData?.header,
-        `${path} has no staticData.header — add one in router.tsx (staticData: { header: <Component> })`
-      ).not.toBeNull();
+        typeof route.options.staticData?.header,
+        `${path} has no staticData.header component — add one in router.tsx (staticData: { header: <Component> })`
+      ).toBe('function');
     }
+  });
+
+  it('fails a route that omits staticData entirely, not just one that nulls it', () => {
+    // The mutation the assertion above is built to survive, pinned so nobody
+    // relaxes it back to a null check. `undefined` must be as loud as `null`.
+    const omitted = { options: {} } as { options: { staticData?: { header?: unknown } } };
+    expect(typeof omitted.options.staticData?.header).not.toBe('function');
+    expect(typeof (null as unknown)).not.toBe('function');
   });
 
   it('declares a null header on every layout/root route — they render no bar of their own', () => {

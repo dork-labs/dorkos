@@ -4,42 +4,56 @@ import { RightPanelToggle } from '@/layers/features/right-panel';
 import { InboxBell } from '@/layers/widgets/inbox-bell';
 
 interface OneBarProps {
-  /** Who or what this page is: a title string, a tab strip, a room or session identity. */
+  /**
+   * Who or what this page is: a title, a room's `#name`, an agent identity.
+   * Rendered at its natural width — it does not grow.
+   */
   identity: ReactNode;
+  /**
+   * Identity content that should absorb the leftover width: a filter bar, a tab
+   * strip. It carries the `flex-1` basis-0, which is what keeps the title beside
+   * it at its natural width — see the truncation note below.
+   */
+  fill?: ReactNode;
   /** State chips that describe the identity — working, archived, bridged, origin. */
   chips?: ReactNode;
-  /** Page actions (New Agent, New Task). Rendered before the fixed cluster, never after it. */
+  /** Page actions (New Agent, New Task), at the right edge before the fixed cluster. */
   actions?: ReactNode;
 }
 
 /**
- * The one header row every route gets. Left to right:
- * `[identity] [chips] [flex space] [actions] [search · inbox · right panel]`.
+ * The one header row every route gets:
+ * `[identity] [chips] [fill / flex space] [actions]`, with the shell's
+ * {@link BarFixedCluster} always after it.
  *
- * **The fixed cluster is rendered here, not by callers (I1).** Search, the
- * inbox bell and the right-panel toggle are always the last three controls, in
- * that order, on every route — so they are a property of the bar rather than a
- * thing each page remembers to append. A consumer has no slot after `actions`,
- * which is what makes "nothing ever renders between search and the right-panel
- * toggle" enforceable rather than aspirational. The cluster is `shrink-0`: a
- * long room name eats the identity zone, never the controls.
+ * **Truncation priority (I2), and the one thing to get right here.** `identity`
+ * and `fill` are direct flex children of the bar, not siblings inside a wrapper.
+ * That distinction is load-bearing: when both sat in one `flex-1` wrapper as
+ * plain auto-basis items, they shrank in proportion to their content, so the
+ * `/activity` title collapsed to 0px and `/team` rendered as "Te…" at 390px.
+ * Giving `fill` the `flex-1` basis-0 makes it the item that absorbs and yields
+ * space, leaving the title at its natural width until nothing else is left —
+ * at which point `min-w-0 truncate` ellipsizes it and the `title` attribute
+ * keeps the full text reachable. Room names are user-controlled and arrive from
+ * bridged Slack/Telegram rooms, so a title that cannot truncate blows the 36px
+ * row open on a phone.
  *
- * **Truncation priority (I2).** The identity zone is `min-w-0` so its children
- * may shrink, and the title truncates with an ellipsis and keeps its full text
- * in a `title` attribute — `ChannelsHeader` feeds this user-controlled room
- * names (up to 200 chars, longer from a bridged Slack/Telegram room), and an
- * untruncated one blows the 36px row open on a phone. Chips sit outside that
- * shrinking region so state stays readable while the name gives ground; later
- * phases compress them to icons before the name is allowed to ellipsize.
+ * **The fixed cluster is not here (I1).** Search, the inbox bell and the
+ * right-panel toggle are rendered once by the shell, outside the cross-fade, so
+ * they stay mounted while the bar under them changes — inside the keyed
+ * `motion.div` they faded out and back on every navigation, which is a flicker
+ * on the two controls that must always look reachable. The invariant survives
+ * the move intact: the shell renders the route's bar and *then* the cluster, so
+ * a route bar's entire output lands in the preceding sibling and no page can
+ * put anything between search and the toggle. It is enforced by structure
+ * either way; only the owner changed.
  *
  * **No layout jump (I3).** Controls that come and go mid-run — a Stop button, a
  * "3 working" chip — must not shove the identity or the cluster sideways when
  * they appear. The pattern for that is reserved space, not conditional
  * rendering: keep the element mounted and animate or hide its contents (an
  * `aria-hidden` placeholder of the same width, or a `motion` width/opacity
- * transition), so the row's boxes are the same before and after. The cluster is
- * already immovable — it is `shrink-0` at the end of the row — so the rule
- * binds on whatever a route puts in `chips` and `actions`.
+ * transition), so the row's boxes are the same before and after.
  *
  * **Window dragging (I5)** is handled by the `app-drag-region` class on the
  * shell's `<header>`, which this renders inside. Empty bar space drags the
@@ -48,21 +62,17 @@ interface OneBarProps {
  * tooltip triggers. Anything interactive that is none of those shapes has to
  * say `-webkit-app-region: no-drag` for itself.
  */
-export function OneBar({ identity, chips, actions }: OneBarProps) {
+export function OneBar({ identity, fill, chips, actions }: OneBarProps) {
   return (
     <>
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <div className="flex min-w-0 items-center gap-2">{identity}</div>
-        {chips ? <div className="flex shrink-0 items-center gap-1.5">{chips}</div> : null}
-      </div>
-      {/* The fixed cluster. Order is the invariant: actions, then search, then
-          the inbox, then the right-panel toggle — and nothing after. */}
-      <div className="flex shrink-0 items-center gap-2">
-        {actions}
-        <CommandPaletteTrigger />
-        <InboxBell />
-        <RightPanelToggle />
-      </div>
+      {identity}
+      {chips ? <div className="flex shrink-0 items-center gap-1.5">{chips}</div> : null}
+      {fill ? (
+        <div className="ml-3 flex min-w-0 flex-1 items-center">{fill}</div>
+      ) : (
+        <div className="flex-1" />
+      )}
+      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </>
   );
 }
@@ -84,5 +94,29 @@ export function BarTitle({ children }: BarTitleProps) {
     <span className="min-w-0 truncate text-sm font-medium" title={children}>
       {children}
     </span>
+  );
+}
+
+/**
+ * Search, the inbox, and the right-panel toggle — the last three controls of
+ * every bar, in that order, on every route (I1).
+ *
+ * Mounted once by the shell, as a sibling *after* the route bar's cross-fade.
+ * Two things follow from that placement, and both are the point of it. The
+ * controls do not animate when the route changes, so the corner a person reaches
+ * for never blinks. And a route bar cannot render past them: its whole output is
+ * confined to the preceding sibling, so "nothing ever renders between search and
+ * the right-panel toggle" is a fact about the DOM rather than a rule each page
+ * has to remember.
+ *
+ * `shrink-0`, so a long room name eats the identity zone and never the controls.
+ */
+export function BarFixedCluster() {
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <CommandPaletteTrigger />
+      <InboxBell />
+      <RightPanelToggle />
+    </div>
   );
 }
