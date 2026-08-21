@@ -130,20 +130,23 @@ function renderStrip(overrides: Partial<Transport> = {}) {
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
 
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: (search: Record<string, unknown>) => search,
     component: Host,
   });
   const channelsRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/channels',
     validateSearch: (search: Record<string, unknown>) => search,
     component: () => <p>channels</p>,
   });
   const sessionRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/session',
     validateSearch: (search: Record<string, unknown>) => search,
@@ -444,8 +447,12 @@ describe('usePresenceStrip — what a quiet fleet costs', () => {
       defaultOptions: { queries: { retry: false, gcTime: 0 } },
     });
 
-    const rootRoute = createRootRoute({ component: () => <Outlet /> });
+    const rootRoute = createRootRoute({
+      staticData: { header: null },
+      component: () => <Outlet />,
+    });
     const indexRoute = createRoute({
+      staticData: { header: null },
       getParentRoute: () => rootRoute,
       path: '/',
       validateSearch: (search: Record<string, unknown>) => search,

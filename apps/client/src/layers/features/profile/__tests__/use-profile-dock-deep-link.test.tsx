@@ -63,9 +63,10 @@ function Dirty() {
 }
 
 function renderHooks(url: string, options: { draft?: boolean } = {}) {
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
   const makeRoute = (path: string) =>
     createRoute({
+      staticData: { header: null },
       getParentRoute: () => rootRoute,
       path,
       validateSearch: zodValidator(

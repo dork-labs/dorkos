@@ -54,10 +54,13 @@ export interface ProfileDeepLinkHarness {
  *   surface that reads an already-open profile.
  */
 export function buildProfileDeepLinkHarness(initialUrl = '/'): ProfileDeepLinkHarness {
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  // `staticData.header` is required on every route (see the module augmentation
+  // in `router.tsx`). This harness renders no app shell, so it declares none.
+  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/',
+    staticData: { header: null },
     validateSearch: zodValidator(slotSchema),
     component: Slot,
   });

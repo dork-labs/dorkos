@@ -20,6 +20,7 @@ import {
   Hash,
   Fingerprint,
   PanelLeft,
+  PanelTop,
 } from 'lucide-react';
 import type { PlaygroundSection } from './playground-registry';
 import {
@@ -45,6 +46,7 @@ import {
   ROOMS_SECTIONS,
   TOUR_SPOTLIGHT_SECTIONS,
   SIDEBAR_MODEL_SECTIONS,
+  ONE_BAR_SECTIONS,
 } from './playground-registry';
 
 /** Navigation group a page belongs to in the sidebar. */
@@ -353,6 +355,16 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'app-shell',
     sections: SIDEBAR_MODEL_SECTIONS,
     path: 'sidebar-model',
+  },
+  {
+    id: 'one-bar',
+    label: 'One Bar',
+    description:
+      'The one header row every route gets — its identity zone, its state chips, its page actions, and the fixed cluster nothing may render past.',
+    icon: PanelTop,
+    group: 'app-shell',
+    sections: ONE_BAR_SECTIONS,
+    path: 'one-bar',
   },
 ];
 

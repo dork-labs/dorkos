@@ -76,20 +76,23 @@ async function renderCard(onDismiss = vi.fn(), profile: ProfileOverrides = {}) {
   vi.mocked(mockTransport.updateConfig).mockResolvedValue(undefined);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-  const rootRoute = createRootRoute();
+  const rootRoute = createRootRoute({ staticData: { header: null } });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: zodValidator(searchSchema),
     component: () => <ProgressCard onDismiss={onDismiss} />,
   });
   const tasksRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/tasks',
     validateSearch: zodValidator(searchSchema),
     component: () => <div data-testid="tasks-route" />,
   });
   const connectionsRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/connections',
     validateSearch: zodValidator(

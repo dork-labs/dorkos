@@ -114,6 +114,7 @@ async function renderPage(pageId: string): Promise<HTMLElement> {
     defaultOptions: { queries: { retry: false, gcTime: 0, refetchOnWindowFocus: false } },
   });
   const rootRoute = createRootRoute({
+    staticData: { header: null },
     component: () => (
       // The global stream, exactly as `main.tsx` wraps the real router: a
       // showcase that draws a live surface (the room's lane reads what is

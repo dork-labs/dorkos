@@ -50,7 +50,10 @@ const transport = createPlaygroundTransport();
 // Minimal router providing TanStack Router context for hooks (useSearch, useNavigate)
 // that are called transitively by showcase components. Uses memory history so it
 // doesn't interfere with the playground's own URL-based routing.
-const devRootRoute = createRootRoute({ component: DevPlaygroundShell });
+const devRootRoute = createRootRoute({
+  staticData: { header: null },
+  component: DevPlaygroundShell,
+});
 const devRouter = createRouter({
   routeTree: devRootRoute,
   history: createMemoryHistory({ initialEntries: ['/dev'] }),

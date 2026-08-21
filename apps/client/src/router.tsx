@@ -25,6 +25,16 @@ import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
+import {
+  ActivityHeader,
+  ChannelsHeader,
+  DashboardHeader,
+  SessionHeader,
+  TasksHeader,
+  TeamHeader,
+  TitleBar,
+  type RouteHeader,
+} from '@/layers/widgets/one-bar';
 import { DEFAULT_TEAM_VIEW, LEGACY_TABLE_VIEW, TEAM_VIEWS } from '@/layers/shared/lib';
 import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
 import type { Transport } from '@dorkos/shared/transport';
@@ -46,6 +56,7 @@ interface RouterContext {
 // read and write it from anywhere. Root search params are inherited by every
 // child route, so this never strips a leaf route's own params.
 const rootRoute = createRootRouteWithContext<RouterContext>()({
+  staticData: { header: null },
   validateSearch: zodValidator(onboardingStageSearchSchema),
   component: () => <Outlet />,
   notFoundComponent: NotFoundFallback,
@@ -57,6 +68,7 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 const appShellRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: '_shell',
+  staticData: { header: null },
   component: AppShell,
   /**
    * Retire `?relay=open`.
@@ -236,6 +248,7 @@ export type MarketplaceSearch = z.infer<typeof marketplaceRouteSearchSchema>;
 const homeSurfaceRoute = createRoute({
   getParentRoute: () => appShellRoute,
   id: '_home',
+  staticData: { header: null },
   component: HomeSurfaceLayout,
 });
 
@@ -243,6 +256,7 @@ const homeSurfaceRoute = createRoute({
 const indexRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/',
+  staticData: { header: DashboardHeader },
   validateSearch: zodValidator(homeSearchSchema),
   component: HomeRoomPage,
   // Redirect to /session if ?session= param is present (backward compat for old bookmarks)
@@ -362,6 +376,7 @@ export async function sessionRouteLoader({
 const sessionRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/session',
+  staticData: { header: SessionHeader },
   validateSearch: zodValidator(sessionSearchSchema),
   component: SessionPage,
   loaderDeps: sessionLoaderDeps,
@@ -372,6 +387,7 @@ const sessionRoute = createRoute({
 const teamRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/team',
+  staticData: { header: TeamHeader },
   validateSearch: zodValidator(teamSearchSchema),
   component: TeamRoute,
 });
@@ -393,6 +409,8 @@ const teamRoute = createRoute({
 const agentsAliasRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/agents',
+  // Nothing to show: this route only redirects, so it never renders a bar.
+  staticData: { header: null },
   validateSearch: zodValidator(teamSearchSchema),
   beforeLoad: ({ search }) => {
     throw redirect({ to: '/team', search, replace: true });
@@ -403,6 +421,7 @@ const agentsAliasRoute = createRoute({
 const tasksRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/tasks',
+  staticData: { header: TasksHeader },
   component: TasksPage,
 });
 
@@ -442,6 +461,7 @@ export type ChannelsSearch = z.infer<typeof channelsSearchSchema>;
 const channelsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/channels',
+  staticData: { header: ChannelsHeader },
   validateSearch: zodValidator(channelsSearchSchema),
   component: ChannelsPage,
 });
@@ -450,6 +470,7 @@ const channelsRoute = createRoute({
 const workspacesRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/workspaces',
+  staticData: { header: () => <TitleBar title="Workspaces" /> },
   component: WorkspacesPage,
 });
 
@@ -465,6 +486,7 @@ const connectionsSearchSchema = mergeDialogSearch(
 const connectionsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/connections',
+  staticData: { header: () => <TitleBar title="Connections" /> },
   validateSearch: zodValidator(connectionsSearchSchema),
   component: ConnectionsPage,
 });
@@ -473,6 +495,7 @@ const connectionsRoute = createRoute({
 const marketplaceRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/marketplace',
+  staticData: { header: () => <TitleBar title="Marketplace" /> },
   validateSearch: zodValidator(marketplaceRouteSearchSchema),
   component: MarketplacePage,
 });
@@ -481,6 +504,7 @@ const marketplaceRoute = createRoute({
 const marketplaceSourcesRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/marketplace/sources',
+  staticData: { header: () => <TitleBar title="Marketplace Sources" /> },
   component: MarketplaceSourcesPage,
 });
 
@@ -500,6 +524,7 @@ export type ActivitySearch = z.infer<typeof activitySearchSchema>;
 const activityRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/activity',
+  staticData: { header: ActivityHeader },
   validateSearch: zodValidator(activitySearchSchema),
   component: ActivityPage,
 });
@@ -508,6 +533,7 @@ const activityRoute = createRoute({
 const feedbackRequestsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/feedback-requests',
+  staticData: { header: () => <TitleBar title="Product feedback" /> },
   component: FeedbackRequestsPage,
 });
 
@@ -546,5 +572,23 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
 declare module '@tanstack/react-router' {
   interface Register {
     router: ReturnType<typeof createAppRouter>;
+  }
+
+  /**
+   * Every route says what its bar is.
+   *
+   * TanStack makes `staticData` a REQUIRED route option the moment this
+   * interface has a required member, so a route added without a `header` does
+   * not compile — which is the whole point. Before this, header selection was a
+   * `pathname` switch in `AppShell` that a new route never touched, so a route
+   * with no case silently wore the dashboard's header (DOR-587, DOR-919).
+   *
+   * `null` is the honest answer for the routes that have no bar of their own:
+   * the root, the two pathless layout routes, and `/agents`, which only
+   * redirects. `AppShell` walks the match chain leaf-first and renders the first
+   * non-null one.
+   */
+  interface StaticDataRouteOption {
+    header: RouteHeader;
   }
 }

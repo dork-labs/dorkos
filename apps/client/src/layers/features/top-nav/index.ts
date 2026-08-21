@@ -1,21 +1,14 @@
 /**
- * Top navigation bar components — agent identity chip, command palette trigger, and route headers.
+ * Parts of the top bar that stand on their own: the command palette trigger and
+ * the system health dot.
+ *
+ * The bar that arranges them, and the per-route bars that fill it, live in
+ * `widgets/one-bar` — they compose the inbox bell, which is a widget, so they
+ * cannot live at this layer.
  *
  * @module features/top-nav
  */
 export { CommandPaletteTrigger } from './ui/CommandPaletteTrigger';
-export { PageHeader } from './ui/PageHeader';
-export { SessionHeader } from './ui/SessionHeader';
-export { DashboardHeader } from './ui/DashboardHeader';
-export { ChannelsHeader } from './ui/ChannelsHeader';
-export { TeamHeader } from './ui/TeamHeader';
-export { ActivityHeader } from './ui/ActivityHeader';
-export { TasksHeader } from './ui/TasksHeader';
-export { MarketplaceHeader } from './ui/MarketplaceHeader';
-export { MarketplaceSourcesHeader } from './ui/MarketplaceSourcesHeader';
-export { WorkspacesHeader } from './ui/WorkspacesHeader';
-export { ConnectionsHeader } from './ui/ConnectionsHeader';
-export { FeedbackRequestsHeader } from './ui/FeedbackRequestsHeader';
 export { SystemHealthDot } from './ui/SystemHealthDot';
 export { useSystemHealth } from './model/use-system-health';
 export type { SystemHealthState } from './model/use-system-health';

@@ -103,13 +103,15 @@ vi.mock('sonner', () => ({
 // ---------------------------------------------------------------------------
 
 function renderMarketplace() {
-  const rootRoute = createRootRoute();
+  const rootRoute = createRootRoute({ staticData: { header: null } });
   const shellRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     id: '_shell',
     component: () => <Outlet />,
   });
   const marketplaceRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => shellRoute,
     path: '/marketplace',
     validateSearch: zodValidator(mergeDialogSearch(marketplaceSearchSchema)),

@@ -1,9 +1,18 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { TooltipProvider } from '@/layers/shared/ui';
 import { ChannelsHeader } from '../ui/ChannelsHeader';
+import { BarHarness } from './bar-harness';
+
+// The fixed cluster OneBar renders. Both are real widgets with their own data
+// needs; this suite is about what the BAR says, so they are stubbed at the seam.
+vi.mock('@/layers/widgets/inbox-bell', () => ({
+  InboxBell: () => <button aria-label="Inbox">Inbox</button>,
+}));
+vi.mock('@/layers/features/right-panel', () => ({
+  RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
+}));
 
 afterEach(() => {
   cleanup();
@@ -11,9 +20,9 @@ afterEach(() => {
 
 function renderHeader(roomTitle: string | null) {
   return render(
-    <TooltipProvider>
-      <ChannelsHeader roomTitle={roomTitle} />
-    </TooltipProvider>
+    <BarHarness roomTitle={roomTitle}>
+      <ChannelsHeader />
+    </BarHarness>
   );
 }
 
@@ -31,7 +40,7 @@ describe('ChannelsHeader', () => {
   });
 
   it('truncates a long room title instead of blowing the header open', () => {
-    // The first PageHeader caller with user-controlled title text (up to 200
+    // The first OneBar caller with user-controlled title text (up to 200
     // chars; bridged rooms arrive from outside our control). Regression pin
     // for the 36px-header overflow found in review.
     const long = 'Priya, Kai, Ikechi and 47 others about the quarterly migration plan';

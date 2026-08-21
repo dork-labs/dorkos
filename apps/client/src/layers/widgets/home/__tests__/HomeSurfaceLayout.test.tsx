@@ -29,29 +29,34 @@ function page(name: string) {
 const activitySearchSchema = z.object({ categories: z.string().optional() });
 
 function renderAt(initialUrl: string) {
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
   const homeSurfaceRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     id: '_home',
     component: HomeSurfaceLayout,
   });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => homeSurfaceRoute,
     path: '/',
     component: page('home'),
   });
   const activityRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => homeSurfaceRoute,
     path: '/activity',
     validateSearch: zodValidator(activitySearchSchema),
     component: page('activity'),
   });
   const tasksRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => homeSurfaceRoute,
     path: '/tasks',
     component: page('tasks'),
   });
   const workspacesRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => homeSurfaceRoute,
     path: '/workspaces',
     component: page('workspaces'),
@@ -88,7 +93,7 @@ function activeTabLabels(): string[] {
 
 /** How many tabs are drawing the sliding underline. */
 function indicatorCount(): number {
-  return document.querySelectorAll('[data-slot="home-tab-indicator"]').length;
+  return document.querySelectorAll('[data-slot="bar-tab-strip-indicator"]').length;
 }
 
 describe('HomeSurfaceLayout', () => {
@@ -258,7 +263,7 @@ describe('HomeTabBar — a strip that says when it holds more', () => {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: Element
     ) {
-      if (this.getAttribute('data-slot') === 'home-tab-bar') return rect(0, 390);
+      if (this.getAttribute('data-slot') === 'bar-tab-strip') return rect(0, 390);
       if (this.hasAttribute('data-active')) return rect(294, 422);
       return rect(0, 0);
     });
@@ -285,7 +290,7 @@ describe('HomeTabBar — a strip that says when it holds more', () => {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: Element
     ) {
-      if (this.getAttribute('data-slot') === 'home-tab-bar') return rect(0, 390);
+      if (this.getAttribute('data-slot') === 'bar-tab-strip') return rect(0, 390);
       if (this.hasAttribute('data-active')) return rect(8, 81);
       return rect(0, 0);
     });

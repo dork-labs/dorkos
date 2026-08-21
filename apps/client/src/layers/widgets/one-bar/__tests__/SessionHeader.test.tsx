@@ -1,8 +1,18 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
+import type { SessionOrigin } from '@dorkos/shared/types';
 import { SessionHeader } from '../ui/SessionHeader';
-import { TooltipProvider } from '@/layers/shared/ui';
+import { BarHarness } from './bar-harness';
+
+// The fixed cluster OneBar renders. Both are real widgets with their own data
+// needs; this suite is about what the BAR says, so they are stubbed at the seam.
+vi.mock('@/layers/widgets/inbox-bell', () => ({
+  InboxBell: () => <button aria-label="Inbox">Inbox</button>,
+}));
+vi.mock('@/layers/features/right-panel', () => ({
+  RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
+}));
 
 // Mock app store (used by CommandPaletteTrigger)
 vi.mock('@/layers/shared/model', () => ({
@@ -43,8 +53,12 @@ beforeAll(() => {
   });
 });
 
-function renderWithTooltip(ui: React.ReactElement) {
-  return render(<TooltipProvider>{ui}</TooltipProvider>);
+function renderBar(state: { agentName?: string; origin?: SessionOrigin; originLabel?: string }) {
+  return render(
+    <BarHarness {...state}>
+      <SessionHeader />
+    </BarHarness>
+  );
 }
 
 describe('SessionHeader', () => {
@@ -53,30 +67,30 @@ describe('SessionHeader', () => {
   });
 
   it('renders agent name in breadcrumb', () => {
-    renderWithTooltip(<SessionHeader agentName="dorkbot" />);
+    renderBar({ agentName: 'dorkbot' });
     expect(screen.getByText('dorkbot')).toBeInTheDocument();
   });
 
   it('renders Team link pointing to /team', () => {
-    renderWithTooltip(<SessionHeader agentName="dorkbot" />);
+    renderBar({ agentName: 'dorkbot' });
     const link = screen.getByRole('link', { name: 'Team' });
     expect(link).toHaveAttribute('href', '/team');
   });
 
   it('renders Session breadcrumb segment', () => {
-    renderWithTooltip(<SessionHeader agentName="dorkbot" />);
+    renderBar({ agentName: 'dorkbot' });
     const nav = screen.getByLabelText('Breadcrumb');
     expect(nav).toHaveTextContent('Session');
   });
 
   it('renders CommandPaletteTrigger', () => {
-    renderWithTooltip(<SessionHeader agentName="dorkbot" />);
+    renderBar({ agentName: 'dorkbot' });
     const triggers = screen.getAllByLabelText('Open command palette');
     expect(triggers.length).toBeGreaterThanOrEqual(1);
   });
 
   it('omits agent name when no agent', () => {
-    renderWithTooltip(<SessionHeader agentName={undefined} />);
+    renderBar({ agentName: undefined });
     expect(screen.queryByText('dorkbot')).not.toBeInTheDocument();
     const nav = screen.getByLabelText('Breadcrumb');
     expect(nav).toHaveTextContent('Session');
@@ -85,28 +99,26 @@ describe('SessionHeader', () => {
   // --- Origin chip (session-origin-legibility) ---
 
   it('shows a muted origin chip for a non-user session', () => {
-    renderWithTooltip(
-      <SessionHeader agentName="dorkbot" origin="channel" originLabel="Telegram" />
-    );
+    renderBar({ agentName: 'dorkbot', origin: 'channel', originLabel: 'Telegram' });
     const nav = screen.getByLabelText('Breadcrumb');
     expect(nav).toHaveTextContent('Telegram');
   });
 
   it('falls back to the descriptor label when no originLabel is set', () => {
-    renderWithTooltip(<SessionHeader agentName="dorkbot" origin="task" />);
+    renderBar({ agentName: 'dorkbot', origin: 'task' });
     const nav = screen.getByLabelText('Breadcrumb');
     expect(nav).toHaveTextContent('Scheduled task');
   });
 
   it('shows no origin chip for a user-origin session', () => {
-    renderWithTooltip(<SessionHeader agentName="dorkbot" origin="user" />);
+    renderBar({ agentName: 'dorkbot', origin: 'user' });
     const nav = screen.getByLabelText('Breadcrumb');
     expect(nav).not.toHaveTextContent('Telegram');
     expect(screen.queryByLabelText(/^Origin:/)).not.toBeInTheDocument();
   });
 
   it('shows no origin chip when origin is absent', () => {
-    renderWithTooltip(<SessionHeader agentName="dorkbot" />);
+    renderBar({ agentName: 'dorkbot' });
     expect(screen.queryByLabelText(/^Origin:/)).not.toBeInTheDocument();
   });
 });
