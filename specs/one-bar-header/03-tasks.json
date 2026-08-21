@@ -1,0 +1,105 @@
+{
+  "spec": "specs/one-bar-header/02-specification.md",
+  "slug": "one-bar-header",
+  "generatedAt": "2026-08-21T15:35:00-05:00",
+  "mode": "full",
+  "lastDecomposeDate": "2026-08-21",
+  "constraints": {
+    "concurrency": "Phases are sequential PRs; within a phase, one worktree, one implementer. F1 blocks everything.",
+    "review": "Every task's branch faces an adversarial review by a separate agent following REVIEW.md before its PR opens.",
+    "conflict": "F1 alone touches AppShell/router header wiring. R1 and R2 both touch room-view; R2 depends on R1's bar. Playground showcases land with their phase, not in the sweep."
+  },
+  "tasks": [
+    {
+      "id": "F1",
+      "phase": 1,
+      "phaseName": "P1 — bar system foundation",
+      "subject": "[one-bar] [P1] OneBar primitive, declarative route headers, BarTabStrip, fixed cluster",
+      "description": "Spec §3.1-3.3: evolve PageHeader into OneBar (identity/chips/actions slots, fixed search+bell+panel cluster rendered by the primitive — I1); replace useHeaderSlot switch with per-route header declarations in router.tsx; extract HomeTabBar mechanics into BarTabStrip; collapse the six title-only wrapper files into TitleBar declarations; I5 drag-region rules; playground showcases for OneBar variants + BarTabStrip. Visual parity release — no page redesigns.",
+      "activeForm": "Building the OneBar foundation",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "H1",
+      "phase": 2,
+      "phaseName": "P2 — home surfaces",
+      "subject": "[one-bar] [P2] Home-surface tabs into the bar; activity filters into content",
+      "description": "Spec §3.4: BarTabStrip in the bar on / /activity /tasks /workspaces; delete HomeTabBar row from HomeSurfaceLayout; drop Home's #team identity row (RoomSurface header suppressed on home ahead of R1's full deletion if sequencing requires); health dot placement; ActivityFilterBar moves into ActivityPage content; New Task action stays; E1 for Workspaces H1. Phone-Home checkpoint: prototype 390px home bar, screenshot to Dorian before finalizing (spec §4).",
+      "activeForm": "Moving home surfaces into the bar",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["F1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "R1",
+      "phase": 3,
+      "phaseName": "P3 — channels",
+      "subject": "[one-bar] [P3] RoomIdentity bar, RoomHeader deletion, members chip, one door to #team",
+      "description": "Spec §3.4-3.5: channel bar shows # name · topic · archived/bridge badges · working chip · halt · members chip with I2/I3 truncation and no-jump reserved space; delete RoomHeader.tsx; /channels beforeLoad redirects team-room id to / preserving ?thread=; sidebar #team links home; members chip opens right panel (interim: opens existing dialog if R2 hasn't landed — avoid by landing R1+R2 in one PR if reviewable).",
+      "activeForm": "Collapsing the channel header",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["F1", "H1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "R2",
+      "phase": 4,
+      "phaseName": "P4 — room right panel",
+      "subject": "[one-bar] [P4] Room right-panel tab; RoomDetailsDialog eliminated",
+      "description": "Spec §3.6: register Room RightPanelContribution (visible on /channels and /); RoomPanel re-hosts RoomDetailsHeader/RoomLoudnessLine/RoomMemberList/AddMembersRow/RoomDetailsFooter on useRoomDetailsView/Writes; focus API (members/add/topic); re-point all three entry points (bar chip, RoomFlow empty state, sidebar RoomRow menu); delete RoomDetailsDialog; replace Room Sheet showcases with RoomPanel showcases.",
+      "activeForm": "Building the room right panel",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["R1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "S1",
+      "phase": 5,
+      "phaseName": "P5 — session identity",
+      "subject": "[one-bar] [P5] Session bar: avatar + agent name › session title",
+      "description": "Spec §3.4: SessionIdentity replaces the breadcrumb SessionHeader; agent avatar via resolveAgentVisual; session title from the sidebar's session-title source, live-updating, 'New session' fallback; origin chip kept; bare-directory and renamed/deleted-agent fallbacks (spec §5.3).",
+      "activeForm": "Rebuilding the session bar",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["F1"],
+      "parallelWith": ["R1", "R2"],
+      "issue": null
+    },
+    {
+      "id": "T1",
+      "phase": 6,
+      "phaseName": "P6 — team views",
+      "subject": "[one-bar] [P6] Team views as BarTabStrip; select box dies; mobile +",
+      "description": "Spec §3.4: Cards·Table·Topology·│·Denied·Access via BarTabStrip writing ?view=; delete pill tabs, <Select>, mobileTabs(); New Agent collapses to + icon on mobile; 390px verification.",
+      "activeForm": "Unifying team view tabs",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": ["F1"],
+      "parallelWith": ["S1"],
+      "issue": null
+    },
+    {
+      "id": "W1",
+      "phase": 7,
+      "phaseName": "P7 — sweep",
+      "subject": "[one-bar] [P7] E1 H1 drops, MarketplaceToolbar rename, dead-code sweep, docs",
+      "description": "Spec §3.7: drop in-page H1s (Marketplace, Connections; audit others); rename features/marketplace MarketplaceHeader → MarketplaceToolbar; knip + dead-code pass over deleted header files; e2e selector updates not already done in-phase; changelog fragment; full-route browser screenshot pass at 1440/390 attached to DOR-1399; Electron drag + Obsidian embed checks.",
+      "activeForm": "Sweeping up",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": ["H1", "R2", "S1", "T1"],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}
