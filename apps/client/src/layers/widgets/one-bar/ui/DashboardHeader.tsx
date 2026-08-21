@@ -1,18 +1,15 @@
-import { SystemHealthDot, useSystemHealth } from '@/layers/features/top-nav';
-import { BarTitle, OneBar } from './OneBar';
+import { HomeSurfaceBar } from './HomeSurfaceBar';
+import { HomeMembersChip } from './HomeMembersChip';
 
 /**
- * Home route bar — title and health dot. Starting a conversation lives in the
- * page's composer, not here.
+ * Home's bar — the home surface strip, with #team's head count beside it.
  *
- * The title says **Home**, matching the tab that opens this page. Two words for
- * one place is one word too many, and the home surface's tab strip reads "Home"
- * — a bar reading "Dashboard" over it made the same screen disagree with itself.
+ * The word "Home" is not written here any more, and that is the point: the tab
+ * says it, and a title over a tab saying the same thing was the same screen
+ * saying one word twice. What is Home's own is the room it opens on — so the
+ * members chip is the only thing this route adds to the shared bar, and the
+ * #team identity row that used to sit under the header is gone with it.
  */
 export function DashboardHeader() {
-  const healthState = useSystemHealth();
-
-  return (
-    <OneBar identity={<BarTitle>Home</BarTitle>} chips={<SystemHealthDot state={healthState} />} />
-  );
+  return <HomeSurfaceBar chips={<HomeMembersChip />} />;
 }

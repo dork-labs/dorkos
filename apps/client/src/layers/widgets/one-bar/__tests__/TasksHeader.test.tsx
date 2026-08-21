@@ -13,6 +13,13 @@ vi.mock('@/layers/features/right-panel', () => ({
   RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
 }));
 
+// The shared half of the bar — the tab strip and the health dot — has its own
+// suite. Mounting the real one here would drag a router and a health query into
+// a file about one button.
+vi.mock('../ui/HomeSurfaceBar', () => ({
+  HomeSurfaceBar: ({ actions }: { actions?: React.ReactNode }) => <div>{actions}</div>,
+}));
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
@@ -54,18 +61,9 @@ beforeAll(() => {
 // ---------------------------------------------------------------------------
 
 describe('TasksHeader', () => {
-  it('titles the page "Scheduled", the same word as its tab', () => {
-    // The route is still `/tasks` and the tab bar directly below this header
-    // says "Scheduled". A header reading "Tasks" made one screen disagree with
-    // itself, which is the whole reason this assertion exists.
-    render(
-      <BarHarness>
-        <TasksHeader />
-      </BarHarness>
-    );
-
-    expect(screen.getByText('Scheduled')).toBeInTheDocument();
-  });
+  // The page's NAME is the tab now — "Scheduled" is drawn by the shared
+  // home-surface strip, and `HomeSurfaceBar.test.tsx` pins that it says so on
+  // this route. What is left here is what Scheduled adds to that bar.
 
   it('still calls the thing you create a task', () => {
     // Renaming the page did not rename the noun: task creation keeps its own

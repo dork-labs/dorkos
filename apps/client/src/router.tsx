@@ -26,9 +26,9 @@ import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
 import {
-  ActivityHeader,
   ChannelsHeader,
   DashboardHeader,
+  HomeSurfaceBar,
   SessionHeader,
   TasksHeader,
   TeamHeader,
@@ -245,7 +245,6 @@ export type MarketplaceSearch = z.infer<typeof marketplaceRouteSearchSchema>;
  * function shows up as `<Unknown>` in React DevTools and in a component stack,
  * which is exactly where you look when the wrong bar is on screen.
  */
-const WorkspacesBar = () => <TitleBar title="Workspaces" />;
 const ConnectionsBar = () => <TitleBar title="Connections" />;
 const MarketplaceBar = () => <TitleBar title="Marketplace" />;
 const MarketplaceSourcesBar = () => <TitleBar title="Marketplace Sources" />;
@@ -483,7 +482,7 @@ const channelsRoute = createRoute({
 const workspacesRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/workspaces',
-  staticData: { header: WorkspacesBar },
+  staticData: { header: HomeSurfaceBar },
   component: WorkspacesPage,
 });
 
@@ -537,7 +536,11 @@ export type ActivitySearch = z.infer<typeof activitySearchSchema>;
 const activityRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/activity',
-  staticData: { header: ActivityHeader },
+  // No bar of its own: Activity is one of the four home surfaces, so its bar IS
+  // the shared strip with Activity lit. Its category filters used to ride up
+  // here in the identity zone; they are the page's first content row now, the
+  // way a filter toolbar belongs to what it filters (spec §3.4, phase H1).
+  staticData: { header: HomeSurfaceBar },
   validateSearch: zodValidator(activitySearchSchema),
   component: ActivityPage,
 });

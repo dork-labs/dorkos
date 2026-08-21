@@ -235,6 +235,24 @@ describe('HomeRoomPage — the room', () => {
     expect(transport.getRoom).toHaveBeenCalledWith(TEAM_ID);
   });
 
+  it('draws no room masthead — the bar above already is one (phase H1)', async () => {
+    // Home IS #team, and the bar names it and carries its members chip. The
+    // masthead under it said the same thing a second time and cost the feed a
+    // whole row on every phone. `hideHeader` is what suppresses it, and only a
+    // render of the real `RoomSurface` can say whether the row is gone: the prop
+    // could be passed and ignored.
+    const { container } = renderHome();
+    await screen.findByPlaceholderText('Message #team…');
+
+    // The masthead's own parts: the room's `h1` and the roster button beside it.
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+    expect(container.querySelector('[data-testid="room-header-working"]')).toBeNull();
+
+    // And what the host contributes above the feed is untouched — the whole
+    // point of hiding a masthead rather than the chrome around it.
+    expect(container.querySelector('[data-slot="pinned-triage-header"]')).not.toBeNull();
+  });
+
   it('mounts the pinned triage header OUTSIDE the feed it sits above', async () => {
     const { container } = renderHome();
     await screen.findByPlaceholderText('Message #team…');

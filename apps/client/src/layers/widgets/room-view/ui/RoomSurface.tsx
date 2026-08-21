@@ -82,6 +82,21 @@ export interface RoomSurfaceProps {
    * panel, which covers the chrome anyway.
    */
   onComposerFocusChange?: (focused: boolean) => void;
+  /**
+   * Draw the room without its masthead, because the host's bar already is one.
+   *
+   * On for Home and Home only (phase H1). Home IS #team, so the row naming the
+   * room sat directly under a bar that named the page — two identity rows over
+   * one conversation, and the second one pushed the feed down on every phone.
+   * The bar carries what the masthead carried (the room's name is the page's
+   * name, and the members chip is up there beside it), so here it would be the
+   * same fact twice.
+   *
+   * A prop rather than a deletion: `/channels` still needs the masthead until
+   * phase R1 gives it a room bar of its own, and a room drawn with no identity
+   * anywhere is worse than one drawn with it twice.
+   */
+  hideHeader?: boolean;
 }
 
 /**
@@ -114,6 +129,7 @@ export function RoomSurface({
   aboveComposer,
   offerJumpBackIn,
   onComposerFocusChange,
+  hideHeader = false,
 }: RoomSurfaceProps) {
   const isMobile = useIsMobile();
   // How much of the screen a software keyboard is currently eating. `0`
@@ -295,7 +311,7 @@ export function RoomSurface({
 
   const roomColumn = (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <RoomHeader room={room} onOpenMembers={() => setDetailsFocus('members')} />
+      {!hideHeader && <RoomHeader room={room} onOpenMembers={() => setDetailsFocus('members')} />}
       {/* The host's chrome, between the masthead and the scroller and inside
           neither — see `RoomSurfaceProps.aboveTimeline` for why that placement
           is the whole point. */}

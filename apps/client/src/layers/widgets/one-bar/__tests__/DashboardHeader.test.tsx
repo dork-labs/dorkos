@@ -1,115 +1,131 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
-import { DashboardHeader } from '../ui/DashboardHeader';
-import { BarHarness } from './bar-harness';
+/**
+ * Home's bar: the shared home-surface strip, plus the one thing that is Home's
+ * own — #team's head count (spec `one-bar-header` §3.4, phase H1).
+ *
+ * The strip itself is proven in `HomeSurfaceBar.test.tsx`; what this file
+ * asserts is the chip, because the chip is where a wrong number would be
+ * believed. Home IS #team, so it is the count of the room the page below is
+ * already showing, read from the same query — never a second request and never
+ * a placeholder that corrects itself a moment later.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { TooltipProvider } from '@/layers/shared/ui';
 
-// The fixed cluster OneBar renders. Both are real widgets with their own data
-// needs; this suite is about what the BAR says, so they are stubbed at the seam.
-vi.mock('@/layers/widgets/inbox-bell', () => ({
-  InboxBell: () => <button aria-label="Inbox">Inbox</button>,
+// The shared half of the bar has its own suite; here it would only drag a router
+// and a health query into a file about a chip.
+vi.mock('../ui/HomeSurfaceBar', () => ({
+  HomeSurfaceBar: ({ chips }: { chips?: React.ReactNode }) => <div>{chips}</div>,
 }));
-vi.mock('@/layers/features/right-panel', () => ({
-  RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
-}));
 
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
-
-const mockSetGlobalPaletteOpen = vi.fn();
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
-    };
-    return selector ? selector(state) : state;
+/** #team as `useTeamRoom` answers, and its roster as `useRoom` answers. */
+const { room, roster } = vi.hoisted(() => ({
+  room: {
+    current: {
+      id: 'team-room',
+      kind: 'channel',
+      slug: 'team',
+      title: '#team',
+      topic: null,
+      archived: false,
+      createdAt: '2026-08-21T00:00:00.000Z',
+      bridge: null,
+    } as Record<string, unknown> | null,
   },
-  useNow: () => Date.now(),
+  roster: { members: undefined as { members: { authorId: string }[] } | undefined },
 }));
 
-vi.mock('@/layers/entities/tasks', () => ({
-  useTaskRuns: () => ({ data: undefined }),
-  useTasksEnabled: () => false,
+vi.mock('@/layers/entities/room', () => ({
+  useTeamRoom: () => ({ status: room.current ? 'ready' : 'missing', room: room.current }),
+  useRoom: () => ({ data: roster.members }),
+  roomDisplayTitle: () => '#team',
 }));
 
-vi.mock('@/layers/entities/relay', () => ({
-  useAggregatedDeadLetters: () => ({ data: undefined }),
-  useRelayAdapters: () => ({ data: undefined }),
+const detailsDialog = vi.fn();
+vi.mock('@/layers/features/room-management', () => ({
+  RoomDetailsDialog: (props: { focus: string }) => {
+    detailsDialog(props);
+    return <div data-testid="room-details">{props.focus}</div>;
+  },
 }));
 
-vi.mock('@/layers/entities/mesh', () => ({
-  useMeshStatus: () => ({ data: undefined }),
-}));
+import { DashboardHeader } from '../ui/DashboardHeader';
 
-// ---------------------------------------------------------------------------
-// Browser API mocks
-// ---------------------------------------------------------------------------
-
-beforeAll(() => {
-  Object.defineProperty(window, 'matchMedia', {
-    writable: true,
-    value: vi.fn().mockImplementation((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function renderWithTooltip(ui: React.ReactElement) {
-  return render(<BarHarness>{ui}</BarHarness>);
+/** Four agents and you, which is what a real #team looks like early on. */
+function members(count: number) {
+  return { members: Array.from({ length: count }, (_, i) => ({ authorId: `author-${i}` })) };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+function renderHomeBar() {
+  return render(
+    <TooltipProvider>
+      <DashboardHeader />
+    </TooltipProvider>
+  );
+}
 
-describe('DashboardHeader', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+beforeEach(() => {
+  vi.clearAllMocks();
+  roster.members = members(5);
+  room.current = {
+    id: 'team-room',
+    kind: 'channel',
+    slug: 'team',
+    title: '#team',
+    topic: null,
+    archived: false,
+    createdAt: '2026-08-21T00:00:00.000Z',
+    bridge: null,
+  };
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+describe('DashboardHeader — the members chip', () => {
+  it('says how many are in #team, and says it as a name a screen reader can use', () => {
+    renderHomeBar();
+
+    const chip = screen.getByRole('button', { name: '5 members' });
+    expect(chip).toHaveTextContent('5');
   });
 
-  afterEach(() => {
-    cleanup();
+  it('counts one member in the singular', () => {
+    roster.members = members(1);
+    renderHomeBar();
+
+    expect(screen.getByRole('button', { name: '1 member' })).toBeInTheDocument();
   });
 
-  it('titles the page "Home", the same word as its tab', () => {
-    // The tab bar sits directly below this header, so the two must say the same
-    // thing; "Dashboard" over a tab reading "Home" was one screen disagreeing
-    // with itself.
-    renderWithTooltip(<DashboardHeader />);
-    expect(screen.getByText('Home')).toBeInTheDocument();
-    expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+  it('draws nothing until the roster has actually arrived', () => {
+    // A chip that opens on `0` and corrects itself has told the reader something
+    // false about their own team, and a wrong number is not one people re-check.
+    roster.members = undefined;
+    renderHomeBar();
+
+    expect(screen.queryByTestId('bar-members-chip')).not.toBeInTheDocument();
   });
 
-  // The search trigger used to be asserted here, back when each route bar
-  // rendered its own. It belongs to `BarFixedCluster` now — mounted once by the
-  // shell so it does not re-animate on navigation — and is pinned in
-  // `OneBar.test.tsx`. A bar asserting it would be asserting the shell's job.
+  it('draws nothing when there is no team room to count', () => {
+    room.current = null;
+    renderHomeBar();
 
-  it('renders system health dot', () => {
-    const { container } = renderWithTooltip(<DashboardHeader />);
-    const dots = container.querySelectorAll('span.rounded-full');
-    expect(dots.length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByTestId('bar-members-chip')).not.toBeInTheDocument();
   });
 
-  it('no longer renders a "New conversation" button (the composer supersedes it)', () => {
-    renderWithTooltip(<DashboardHeader />);
-    expect(screen.queryByRole('button', { name: /new conversation/i })).not.toBeInTheDocument();
-  });
+  it('opens the room’s members when pressed, not some other part of it', async () => {
+    // The focus is the part of this that survives phase R2, when the same press
+    // opens the room right panel instead of the sheet.
+    const user = userEvent.setup();
+    renderHomeBar();
 
-  it('does not render other quick-action buttons', () => {
-    renderWithTooltip(<DashboardHeader />);
-    expect(screen.queryByRole('button', { name: /schedule/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('room-details')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '5 members' }));
+
+    await waitFor(() => expect(screen.getByTestId('room-details')).toBeInTheDocument());
+    expect(detailsDialog).toHaveBeenCalledWith(expect.objectContaining({ focus: 'members' }));
   });
 });

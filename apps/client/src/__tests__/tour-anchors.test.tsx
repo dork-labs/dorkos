@@ -44,6 +44,7 @@ import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
 import { TasksList } from '@/layers/features/tasks';
 import { TeamRosterGrid } from '@/layers/features/team-roster';
 import { HomeSurfaceLayout } from '@/layers/widgets/home';
+import { HomeSurfaceBar } from '@/layers/widgets/one-bar';
 import { MessagingRegion } from '@/layers/widgets/connections';
 import { HomeRoomPage } from '../app/HomeRoomPage';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
@@ -154,7 +155,16 @@ const ROSTER = MOCK_TEAM_ROSTER;
  * anchored inside the sidebar looks fine on a desktop.
  */
 const TOUR_SURFACES: Record<TourId, () => ReactNode> = {
-  general: () => <HomeSurfaceLayout />,
+  // Bar above, pages below — the composition the general tour actually runs
+  // against. The surface tabs it spotlights are the BAR's since phase H1, and
+  // the shell mounts that bar as a sibling of the routed page, so a surface that
+  // was only the layout would have no `home-tabs` for the tour to find.
+  general: () => (
+    <>
+      <HomeSurfaceBar />
+      <HomeSurfaceLayout />
+    </>
+  ),
   tasks: () => <TasksList tasks={[]} isLoading={false} agentMap={new Map()} onEditTask={vi.fn()} />,
   relay: () => <MessagingRegion />,
   mesh: () => <TeamRosterGrid members={ROSTER} roster={ROSTER} grouped={false} />,

@@ -158,20 +158,28 @@ test.describe('Home surface — 375px @smoke', () => {
     }));
     expect(pageOverflow.scrollWidth).toBeLessThanOrEqual(pageOverflow.clientWidth);
 
-    // Every tab is reachable and big enough to hit with a thumb. 44px is the
-    // `min-h-11` the bar sets for exactly this, and each tab has to be inside
-    // the viewport once scrolled to — a tab you cannot reach is not a tab.
+    // Every tab is reachable once scrolled to — a tab you cannot reach is not a
+    // tab — and each one fills the bar's height rather than sitting in a slice
+    // of it.
+    //
+    // **36px, not 44.** The tabs live in the one header bar now (phase H1), and
+    // that row is 36px on every route and every width; the 44px target belonged
+    // to the standalone row this replaced. It is below the 44px touch guidance,
+    // which is a real cost and a deliberate one: the alternative is a phone that
+    // spends 80px of a 844px screen on two header rows. Flagged for the phone
+    // checkpoint rather than hidden here.
     //
     // One pixel of slack on the edges, because a laid-out box is fractional:
     // the last tab measures 375.3125 at the end of the bar's scroll, which is a
     // third of a pixel and not a tab anybody has trouble hitting. Wider than
     // that is a real overhang.
+    const barHeight = (await homeSurface.tabBar.boundingBox())!.height;
     for (const { label } of HOME_TABS) {
       const tab = homeSurface.tab(label);
       await tab.scrollIntoViewIfNeeded();
       const box = await tab.boundingBox();
       expect(box, `${label} has no box`).not.toBeNull();
-      expect(box!.height).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(barHeight - 1);
       expect(box!.x).toBeGreaterThanOrEqual(-1);
       expect(box!.x + box!.width).toBeLessThanOrEqual(376);
     }

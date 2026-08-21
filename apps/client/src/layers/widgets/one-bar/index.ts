@@ -8,8 +8,9 @@
  */
 export { OneBar, BarTitle, BarFixedCluster } from './ui/OneBar';
 export { TitleBar } from './ui/TitleBar';
+export { HomeSurfaceBar } from './ui/HomeSurfaceBar';
+export { BarMembersChip } from './ui/BarMembersChip';
 export { DashboardHeader } from './ui/DashboardHeader';
-export { ActivityHeader } from './ui/ActivityHeader';
 export { TasksHeader } from './ui/TasksHeader';
 export { ChannelsHeader } from './ui/ChannelsHeader';
 export { SessionHeader } from './ui/SessionHeader';

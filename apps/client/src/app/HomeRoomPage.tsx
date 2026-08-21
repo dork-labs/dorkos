@@ -194,6 +194,10 @@ export function HomeRoomPage() {
         threadId={thread}
         threadRoute="/"
         offerJumpBackIn
+        // The bar above already says #team and carries its members chip, so the
+        // room's own masthead would be the same identity twice — and on a phone
+        // the second one cost the feed a whole row (spec §3.4, phase H1).
+        hideHeader
         onComposerFocusChange={setComposerFocused}
         aboveTimeline={
           <>

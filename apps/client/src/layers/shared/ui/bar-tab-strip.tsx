@@ -32,8 +32,9 @@ interface BarTabStripProps {
    */
   indicatorLayoutId: string;
   /**
-   * `bar` sits inside the 36px OneBar; `row` is a standalone strip that owns a
-   * full row and its bottom hairline, with 44px touch targets on a phone.
+   * `bar` sits inside the 36px OneBar, sized to its labels so chips can sit
+   * beside them; `row` is a standalone strip that owns a full row and its bottom
+   * hairline, with 44px touch targets on a phone.
    */
   density?: 'bar' | 'row';
   /**
@@ -130,7 +131,21 @@ export function BarTabStrip({
     // pinned to what the strip SHOWS rather than to what it holds — absolutely
     // positioning them inside the scroller would park them at the scrolled
     // content's edges and scroll them away with it.
-    <div className={cn('relative', isRow ? 'shrink-0 border-b' : 'flex min-w-0 flex-1', className)}>
+    // In the bar the strip is IDENTITY, so it takes the width its labels need
+    // and no more (`flex-initial`: size to content, shrink when the row runs
+    // out). Growing to fill the bar — which it did while nothing sat beside it —
+    // left the chips that belong next to the tabs floating in the middle of an
+    // empty row, and it made the strip start scrolling while there was still
+    // free space to its right, because a `flex-1` strip and the bar's `flex-1`
+    // spacer split the slack between them instead of giving it to the tabs.
+    // `min-w-0` is what still lets it shrink and scroll on a phone.
+    <div
+      className={cn(
+        'relative',
+        isRow ? 'shrink-0 border-b' : 'flex min-w-0 flex-initial',
+        className
+      )}
+    >
       <nav
         ref={scrollerRef}
         onScroll={edges.onScroll}

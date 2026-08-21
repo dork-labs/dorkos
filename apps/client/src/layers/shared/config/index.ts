@@ -11,6 +11,7 @@ export {
   normalizePathname,
   type HomeSurfacePath,
 } from './home-surface';
+export { HOME_TABS, resolveHomeTabId, type HomeTab, type HomeTabId } from './home-tabs';
 export {
   TOUR_ANCHORS,
   tourAnchorSelector,
