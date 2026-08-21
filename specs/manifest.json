@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260821-185930",
+      "slug": "schedule-approval-experience",
+      "title": "The schedule approval moment — informed consent, not a shrug",
+      "created": "2026-08-21",
+      "status": "specified"
+    },
+    {
       "id": "260819-203828",
       "slug": "sidebar-simplification",
       "title": "Sidebar simplification: two levels, one door, sections, one bottom slot",
