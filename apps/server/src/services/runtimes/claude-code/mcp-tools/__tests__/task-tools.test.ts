@@ -25,6 +25,7 @@ import {
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
 import { getTasksTools } from '../task-tools.js';
+import { handRegisteredInSessionTools } from '../index.js';
 import type { Task } from '@dorkos/shared/schemas';
 
 /** The shape `tool()` returns, narrowed to what this test drives. */
@@ -337,6 +338,32 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
     await create(tools, GOOD_ARGS);
 
     expect(emit).toHaveBeenCalledWith(expect.objectContaining({ actorLabel: 'An agent' }));
+  });
+
+  it('picks the session up through the REAL composition root, not a hand-built resolver', async () => {
+    // Every other case here injects `resolveProvenance` itself, so all of them
+    // stay green if `mcp-tools/index.ts` stops PASSING one — which is the whole
+    // wiring. This drives the same function a live session drives
+    // (`createDorkOsToolServer` → `handRegisteredInSessionTools`) and hands it
+    // only a session, so the argument in `getTasksTools(deps, …)` is load-bearing
+    // for it (DOR-1394 review).
+    const session = {
+      eventQueue: [],
+      cwd: '/tmp/agents/nb',
+      sdkSessionId: 'ses-canonical',
+    };
+
+    const wired = Object.fromEntries(
+      (handRegisteredInSessionTools(deps, { session }) as unknown as SessionTool[]).map((t) => [
+        t.name,
+        t,
+      ])
+    );
+    await create(wired, GOOD_ARGS);
+
+    const created = store.getTasks()[0]!;
+    expect(created.proposedByAgentPath).toBe('/tmp/agents/nb');
+    expect(created.proposedBySessionId).toBe('ses-canonical');
   });
 
   it('leaves provenance null on the sessionless external server, and still demands a reason', async () => {

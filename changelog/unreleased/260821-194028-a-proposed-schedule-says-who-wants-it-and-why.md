@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,shared,db): a proposed schedule says who wants it, why, and when it would run (DOR-1394)'
+  - 'fix(server,shared): the REST door demands a reason too, and the cron preview stops costing every task (DOR-1394 review)'
 ---
 
 ### Added

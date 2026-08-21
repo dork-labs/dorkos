@@ -82,10 +82,19 @@ describe('operator-only task fields on the REST routes', () => {
   let scheduler: TaskSchedulerService;
   /** Stands in for `sessionGate`'s resolved user, when login is on. */
   let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+  /**
+   * Stands in for what `resolveAgentIdentity` leaves on `res.locals` when a
+   * caller presents a token that resolves to a live agent. Set directly rather
+   * than by mounting the middleware, because the middleware's own job (hash the
+   * token, read the table) is covered in `middleware/__tests__`; what these
+   * cases need is the state it produces.
+   */
+  let resolvedAgentIdentity: { agentPath: string; displayName: string } | undefined;
 
   beforeEach(() => {
     state.authEnabled = false;
     signedInUser = undefined;
+    resolvedAgentIdentity = undefined;
     scheduler = createMockScheduler();
     db = createTestDb();
     store = new TaskStore(db);
@@ -101,6 +110,7 @@ describe('operator-only task fields on the REST routes', () => {
     app.use(express.json());
     app.use((_req, res, next) => {
       if (signedInUser) res.locals.user = signedInUser;
+      if (resolvedAgentIdentity) res.locals.agentIdentity = resolvedAgentIdentity;
       next();
     });
     app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
@@ -178,6 +188,8 @@ describe('operator-only task fields on the REST routes', () => {
           prompt: 'do a thing',
           cron: '0 3 * * *',
           target: 'global',
+          // Required of this caller since DOR-1394 — see the reason cases below.
+          reason: 'Nobody is watching the overnight run.',
         });
 
       expect(res.status).toBe(201);
@@ -187,6 +199,84 @@ describe('operator-only task fields on the REST routes', () => {
       expect(created.status).toBe('pending_approval');
       // And it must not have been handed to the scheduler on the way out.
       expect(scheduler.registerTask).not.toHaveBeenCalled();
+    });
+
+    it('cannot propose a schedule without saying why (DOR-1394)', async () => {
+      // The REST door is the other way an agent proposes a schedule — it is what
+      // `dorkos task create` calls — and until now it demanded nothing while the
+      // MCP door demanded a reason. An operator would have got a card with
+      // nothing to read on it, which is the thing this whole change exists to
+      // stop.
+      const before = store.getTasks().length;
+
+      for (const reason of [undefined, '', '   ']) {
+        const res = await request(app)
+          .post('/api/tasks')
+          .set('x-dorkos-agent', 'agent-token-abc')
+          .send({
+            name: 'reasonless',
+            description: 'no case made',
+            prompt: 'do a thing',
+            cron: '0 3 * * *',
+            target: 'global',
+            ...(reason === undefined ? {} : { reason }),
+          });
+
+        expect(res.status, `reason ${JSON.stringify(reason)}`).toBe(400);
+        expect(String(res.body.error)).toContain('needs a reason');
+      }
+
+      // Refused before the file is written, so nothing is left on disk or in the
+      // table for the reconciler to resurrect.
+      expect(store.getTasks()).toHaveLength(before);
+    });
+
+    it('keeps the reason it gave, on the parked row', async () => {
+      const res = await request(app)
+        .post('/api/tasks')
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({
+          name: 'nightly-sweep',
+          description: 'sweeps',
+          prompt: 'do a thing',
+          cron: '0 3 * * *',
+          target: 'global',
+          reason: 'The overnight backlog needs sweeping before you start.',
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.reason).toBe('The overnight backlog needs sweeping before you start.');
+
+      const created = store.getTasks().find((t) => t.name === 'nightly-sweep')!;
+      expect(created.reason).toBe('The overnight backlog needs sweeping before you start.');
+      expect(created.status).toBe('pending_approval');
+      // Nothing resolved the header to a live agent in this app, so the row
+      // honestly records no path rather than trusting what the caller claimed.
+      expect(created.proposedByAgentPath).toBeNull();
+    });
+
+    it('is credited by its RESOLVED identity, never by anything it sent', async () => {
+      resolvedAgentIdentity = { agentPath: '/tmp/agents/nightly-bot', displayName: 'Nightly Bot' };
+
+      const res = await request(app)
+        .post('/api/tasks')
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({
+          name: 'credited',
+          description: 'sweeps',
+          prompt: 'do a thing',
+          cron: '0 3 * * *',
+          target: 'global',
+          reason: 'The overnight backlog needs sweeping.',
+          // A caller naming its own path must not be believed: crediting a
+          // proposal to an agent the operator trusts is exactly the lie the
+          // approval card would carry to them.
+          proposedByAgentPath: '/tmp/agents/somebody-else',
+        });
+
+      expect(res.status).toBe(201);
+      const created = store.getTasks().find((t) => t.name === 'credited')!;
+      expect(created.proposedByAgentPath).toBe('/tmp/agents/nightly-bot');
     });
 
     it('may still write the ordinary fields', async () => {
@@ -206,6 +296,25 @@ describe('operator-only task fields on the REST routes', () => {
   });
 
   describe('the cockpit', () => {
+    it('creates a task without giving any reason at all (DOR-1394)', async () => {
+      // The asymmetry is the point. A reason is what an agent owes the person it
+      // is asking; a person creating their own task is asking nobody, and their
+      // task does not park. Requiring one here would be a form to fill in for
+      // no reader.
+      const res = await request(app).post('/api/tasks').send({
+        name: 'my-own-task',
+        description: 'mine',
+        prompt: 'do a thing',
+        cron: '0 3 * * *',
+        target: 'global',
+      });
+
+      expect(res.status).toBe(201);
+      const created = store.getTasks().find((t) => t.name === 'my-own-task')!;
+      expect(created.status).toBe('active');
+      expect(created.reason).toBeNull();
+    });
+
     it('still approves a task and sets its permission mode', async () => {
       // Under the default `local-trust` posture a caller presenting no agent
       // identity and no approval token clears `trustedCaller`, exactly as on

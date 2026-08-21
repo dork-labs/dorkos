@@ -16,6 +16,13 @@ import {
 } from '../../services/notifications/escalation-service.js';
 import type { NotificationStore } from '../../services/notifications/notification-store.js';
 import type { WebPushChannel } from '../../services/notifications/channels/web-push.js';
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+} from '../../services/core/agent-identity/index.js';
+
+/** The directory a proposing agent lives in — the key its identity is stored under. */
+const AGENT_PATH = '/tmp/agents/nightly-bot';
 
 vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
@@ -148,6 +155,9 @@ describe('Tasks routes', () => {
     store.close();
     // Whether or not a case wired one, so a ladder never leaks into the next.
     setEscalationService(null);
+    // Likewise the identity singleton: a case that minted one must not leave a
+    // later case resolving a name it never asked for.
+    resetAgentIdentityService();
   });
 
   describe('GET /api/tasks', () => {
@@ -167,10 +177,11 @@ describe('Tasks routes', () => {
       expect(res.body[0].nextRun).toBe('2026-03-01T00:00:00.000Z');
     });
 
-    it('previews the next few runs, from the task’s own cron and timezone (DOR-1394)', async () => {
-      store.createTask(
-        taskInput({ name: 'Test', prompt: 'p', cron: '0 3 * * *', timezone: 'Asia/Tokyo' })
+    it('previews a parked schedule’s next runs, from its own cron and timezone (DOR-1394)', async () => {
+      const parked = store.createTask(
+        taskInput({ name: 'Parked', prompt: 'p', cron: '0 3 * * *', timezone: 'Asia/Tokyo' })
       );
+      store.updateTask(parked.id, { status: 'pending_approval' });
 
       const res = await request(app).get('/api/tasks');
 
@@ -195,6 +206,21 @@ describe('Tasks routes', () => {
       expect(res.body[0].nextRuns).toEqual(PREVIEWED_RUNS);
     });
 
+    it('does not read the cron of a task nobody is being asked to approve', async () => {
+      // Reading a cron builds a throwaway job and asks it for three occurrences,
+      // and this route runs over every task on every cockpit poll. Only the
+      // approval card consumes `nextRuns`, and it only ever shows parked rows —
+      // so an active task must not pay for an answer nothing reads (DOR-1394).
+      store.createTask(taskInput({ name: 'Active', prompt: 'p', cron: '0 3 * * *' }));
+
+      const res = await request(app).get('/api/tasks');
+
+      expect(res.body[0].nextRuns).toEqual([]);
+      expect(scheduler.previewNextRuns).not.toHaveBeenCalled();
+      // The live job still answers, exactly as it always did.
+      expect(res.body[0].nextRun).toBe('2026-03-01T00:00:00.000Z');
+    });
+
     it('still says nothing about when a paused schedule runs', async () => {
       const paused = store.createTask(
         taskInput({ name: 'Paused', prompt: 'p', cron: '0 3 * * *', enabled: false })
@@ -205,9 +231,9 @@ describe('Tasks routes', () => {
       const res = await request(app).get('/api/tasks');
 
       // Home reads `nextRun` to say what happens next. A time here would be a
-      // promise nothing is keeping. The preview is still offered separately.
+      // promise nothing is keeping.
       expect(res.body[0].nextRun).toBeNull();
-      expect(res.body[0].nextRuns).toEqual(PREVIEWED_RUNS);
+      expect(res.body[0].nextRuns).toEqual([]);
     });
 
     it('carries an agent proposal’s reason and provenance through to the operator', async () => {
@@ -218,7 +244,7 @@ describe('Tasks routes', () => {
           cron: '0 3 * * *',
           reason: 'The overnight backlog needs sweeping before you start.',
           proposedBySessionId: 'ses-42',
-          proposedByAgentPath: '/tmp/agents/nightly-bot',
+          proposedByAgentPath: AGENT_PATH,
         })
       );
 
@@ -226,9 +252,46 @@ describe('Tasks routes', () => {
 
       expect(res.body[0].reason).toBe('The overnight backlog needs sweeping before you start.');
       expect(res.body[0].proposedBySessionId).toBe('ses-42');
-      expect(res.body[0].proposedByAgentPath).toBe('/tmp/agents/nightly-bot');
-      // No identity service is wired in this app, so nothing resolves a name —
-      // and the field says so rather than inventing one.
+      expect(res.body[0].proposedByAgentPath).toBe(AGENT_PATH);
+    });
+
+    it('names the proposer, resolved from the live agent identity', async () => {
+      // A real identity service with a real minted token, because the point is
+      // that the route RESOLVES the name — asserting `null` in an app where null
+      // is the only possible answer would pass whether or not it did (DOR-1394
+      // review).
+      const identity = initAgentIdentityService(db);
+      await identity.mint({ agentPath: AGENT_PATH, displayName: 'Nightly Bot' });
+      store.createTask(
+        taskInput({
+          name: 'Proposed',
+          prompt: 'p',
+          cron: '0 3 * * *',
+          proposedByAgentPath: AGENT_PATH,
+        })
+      );
+
+      const res = await request(app).get('/api/tasks');
+
+      expect(res.body[0].proposedByName).toBe('Nightly Bot');
+    });
+
+    it('says nothing about a proposer whose agent has been revoked', async () => {
+      const identity = initAgentIdentityService(db);
+      await identity.mint({ agentPath: AGENT_PATH, displayName: 'Nightly Bot' });
+      await identity.revoke(AGENT_PATH);
+      store.createTask(
+        taskInput({
+          name: 'Proposed',
+          prompt: 'p',
+          cron: '0 3 * * *',
+          proposedByAgentPath: AGENT_PATH,
+        })
+      );
+
+      const res = await request(app).get('/api/tasks');
+
+      // The name is never stored, so switching an agent off stops crediting it.
       expect(res.body[0].proposedByName).toBeNull();
     });
   });
@@ -295,9 +358,9 @@ describe('Tasks routes', () => {
       // The mocked scheduler.getNextRun() always resolves to this fixed date —
       // the create response must carry it, not the store's default null.
       expect(res.body.nextRun).toBe('2026-03-01T00:00:00.000Z');
-      // …and the preview alongside it, for the same reason: a freshly created
-      // task would otherwise report none until the next list fetch.
-      expect(res.body.nextRuns).toEqual(PREVIEWED_RUNS);
+      // No preview: this caller cleared the agent bar, so the task is `active`
+      // and nobody is being asked to approve it.
+      expect(res.body.nextRuns).toEqual([]);
     });
   });
 
@@ -310,8 +373,61 @@ describe('Tasks routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.name).toBe('Updated');
       // The patch response is a task like any other, so it carries the same
-      // derived fields the list does — the approval card reads this reply.
+      // derived fields the list does — and for an active task that means no
+      // preview, exactly as the list reports.
+      expect(res.body.nextRuns).toEqual([]);
+    });
+
+    it('sends back the preview when the patch is what parked the schedule', async () => {
+      // The approval card reads this reply: a schedule PATCHed into
+      // `pending_approval` has to come back carrying the times it would fire,
+      // or the card that renders from this response has nothing to show until a
+      // full list refetch.
+      const sched = store.createTask(taskInput({ name: 'ToPark', prompt: 'p', cron: '0 3 * * *' }));
+      vi.mocked(scheduler.getNextRun).mockReturnValue(null);
+
+      const res = await request(app)
+        .patch(`/api/tasks/${sched.id}`)
+        .send({ status: 'pending_approval' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('pending_approval');
       expect(res.body.nextRuns).toEqual(PREVIEWED_RUNS);
+      expect(res.body.nextRun).toBe(PREVIEWED_RUNS[0]);
+    });
+
+    it('names the proposer in its own reply, not only in the list', async () => {
+      // The single-task path (`present`) and the list path (`presentAll`) are
+      // two functions, and a probe proved the list tests alone leave the first
+      // one free to stop resolving names entirely (DOR-1394 review). The
+      // approval card renders from THIS reply after an approve or a park.
+      const identity = initAgentIdentityService(db);
+      await identity.mint({ agentPath: AGENT_PATH, displayName: 'Nightly Bot' });
+      const sched = store.createTask(
+        taskInput({
+          name: 'Proposed',
+          prompt: 'p',
+          cron: '0 3 * * *',
+          proposedByAgentPath: AGENT_PATH,
+        })
+      );
+
+      const res = await request(app).patch(`/api/tasks/${sched.id}`).send({ enabled: false });
+
+      expect(res.status).toBe(200);
+      expect(res.body.proposedByName).toBe('Nightly Bot');
+    });
+
+    it('keeps a reason sent with a park', async () => {
+      const sched = store.createTask(taskInput({ name: 'ToPark', prompt: 'p', cron: '0 3 * * *' }));
+
+      const res = await request(app)
+        .patch(`/api/tasks/${sched.id}`)
+        .send({ status: 'pending_approval', reason: 'Parking this until I check the cron.' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.reason).toBe('Parking this until I check the cron.');
+      expect(store.getTask(sched.id)!.reason).toBe('Parking this until I check the cron.');
     });
 
     it('returns 404 for nonexistent schedule', async () => {

@@ -4529,6 +4529,9 @@
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
+          },
+          "reason": {
+            "type": "string"
           }
         },
         "required": [
@@ -4586,6 +4589,9 @@
           },
           "status": {
             "$ref": "#/components/schemas/SettableTaskStatus"
+          },
+          "reason": {
+            "type": "string"
           }
         }
       },

@@ -7,9 +7,23 @@
  * run, and nothing else. It must not arm the cron, must not approve the
  * schedule, and must not end the condition that is waiting on the person.
  *
- * The notification modules are mocked wholesale rather than spied on: the point
- * is that NOTHING in the run path reaches them, whichever import route it might
- * take.
+ * ## What the notification mocks do and do not prove
+ *
+ * They are mocked wholesale rather than spied on so that a call reaching them by
+ * ANY import route is caught. But the claim they support is narrow, and it is
+ * worth stating exactly, because the obvious reading is wrong: a run does not
+ * leave the notification pipeline alone in general. In production
+ * `TaskStore.setOnRunTerminal` is wired to `notifyRunCompleted`, so a finished
+ * run raises `run.completed` — quiet on success, notable and relayable on
+ * failure. This test does not install that listener, so it says nothing about
+ * that path.
+ *
+ * What it does pin is the APPROVAL: `resolveStanding` and
+ * `cancelEscalationByKey` are how a parked schedule's standing condition is
+ * ended and its escalation timer disarmed, and a trial run must touch neither.
+ *
+ * `notify` and `armEscalation` are stubbed only so the mocked modules stay
+ * complete; nothing here asserts on them.
  *
  * @module services/tasks/__tests__/trigger-pending-schedule
  */
@@ -126,7 +140,7 @@ describe('a schedule waiting for approval can still be run once', () => {
     await service.stop();
   });
 
-  it('leaves the standing approval condition standing', async () => {
+  it('leaves the standing approval condition standing (nothing decides the approval)', async () => {
     const task = parkedTask();
     const service = new TaskSchedulerService(store, agent, CONFIG);
     await service.start();

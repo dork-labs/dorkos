@@ -25,7 +25,6 @@ import { armEscalation } from '../../../notifications/escalation-service.js';
 import {
   resolveParkedScheduleRemoved,
   resolveScheduleParkPayload,
-  UNNAMED_PROPOSER,
 } from '../../../notifications/emitters/schedule-park.js';
 
 /**
@@ -223,26 +222,33 @@ export function createCreateScheduleHandler(
     // Agent-created schedules always require user approval
     deps.taskStore!.updateTask(schedule.id, { status: 'pending_approval' });
     const updated = deps.taskStore!.getTask(schedule.id);
-    const parked = updated ? await resolveScheduleParkPayload(updated) : undefined;
-    if (parked) armEscalation('schedule.parked', parked);
 
-    // Parity with the REST route's create handler (routes/tasks.ts): without
-    // this, a schedule an agent proposes is invisible until the next full
-    // list refetch, with no SSE and no activity entry to tell the person it
-    // is waiting on them. `metadata.status` carries the parked state into the
-    // feed so a consumer can tell this apart from an operator's own
-    // (immediately active) creation without a second lookup.
+    // One block, not two, so `parked` is genuinely non-optional inside it: the
+    // payload exists exactly when `updated` does, and splitting them forced a
+    // `?? 'An agent'` fallback below that could never run but read as if it
+    // might (DOR-1394 review).
     if (updated) {
+      const parked = await resolveScheduleParkPayload(updated);
+      armEscalation('schedule.parked', parked);
+
+      // Parity with the REST route's create handler (routes/tasks.ts): without
+      // this, a schedule an agent proposes is invisible until the next full
+      // list refetch, with no SSE and no activity entry to tell the person it
+      // is waiting on them. `metadata.status` carries the parked state into the
+      // feed so a consumer can tell this apart from an operator's own
+      // (immediately active) creation without a second lookup.
+      //
       // Attributed the same way `capability-gate-audit.ts` attributes its
       // agent-actor events: by the agent's project path. The in-session server
       // now knows it (`resolveProvenance`, DOR-1394), so the feed can name the
       // proposer instead of saying "an agent" — and it names it from the SAME
       // resolved payload the notification uses, so the two cannot disagree
       // about who asked. The sessionless external `/mcp` server carries no
-      // session, so there it stays unattributed, exactly as before.
+      // session, so `parked.proposedBy` falls back to "An agent" there and no
+      // `actorId` is attached, exactly as before.
       deps.activityService?.emit({
         actorType: 'agent',
-        actorLabel: parked?.proposedBy ?? UNNAMED_PROPOSER,
+        actorLabel: parked.proposedBy,
         ...(provenance.agentPath ? { actorId: provenance.agentPath } : {}),
         category: 'tasks',
         eventType: 'tasks.task_created',

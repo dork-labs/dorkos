@@ -3855,12 +3855,14 @@ export const TaskSchema = z
     proposedByName: z.string().nullable().default(null),
     nextRun: z.string().nullable().optional(),
     /**
-     * The next few times this cron fires. ISO 8601 UTC, soonest first.
+     * The next few times this cron would fire. ISO 8601 UTC, soonest first.
      *
-     * Computed for every task with a cron, including the ones the scheduler has
-     * never registered — a schedule waiting for approval is exactly where "when
-     * would this actually run?" is the question, and it is the one place the
-     * live job cannot answer because there is no job yet.
+     * **Populated only for a schedule waiting for approval.** That is where the
+     * question lives — the operator is deciding whether a cron they did not
+     * write means what the agent says it means — and it is the one place the
+     * live job cannot answer, because a parked schedule is never registered.
+     * Every other task reports `[]`: reading a cron costs a throwaway job
+     * construction per task per request, and no surface asks for it there.
      */
     nextRuns: z.array(z.string()).default([]),
   })
@@ -3928,6 +3930,17 @@ export const CreateTaskRequestSchema = z
     enabled: z.boolean().optional().default(true),
     maxRuntime: z.string().nullable().optional(),
     permissionMode: PermissionModeSchema.optional().default('acceptEdits'),
+    /**
+     * Why this schedule should exist, in the proposer's own words.
+     *
+     * Optional here and REQUIRED by the route for a caller that does not clear
+     * the agent bar, because those are two different questions. A person
+     * creating their own task owes nobody an explanation and sends none; a
+     * caller whose task will park at `pending_approval` is proposing, and a
+     * proposal with nothing to read is one the operator cannot judge. Zod cannot
+     * express "required depending on who is asking", so the route asks.
+     */
+    reason: z.string().optional(),
   })
   .openapi('CreateTaskRequest');
 
@@ -4038,6 +4051,8 @@ export const UpdateTaskRequestSchema = z
     maxRuntime: z.string().nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
     status: SettableTaskStatusSchema.optional(),
+    /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */
+    reason: z.string().optional(),
   })
   .openapi('UpdateTaskRequest');
 

@@ -8,7 +8,7 @@
  *
  * @module services/notifications/__tests__/schedule-park-payload
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/types';
@@ -18,8 +18,18 @@ import {
   type AgentIdentityService,
 } from '../../core/agent-identity/index.js';
 import { TaskStore } from '../../tasks/task-store.js';
-import { resolveScheduleParkPayload, UNNAMED_PROPOSER } from '../emitters/schedule-park.js';
+import {
+  resolveParkedScheduleRemoved,
+  resolveScheduleParkPayload,
+  UNNAMED_PROPOSER,
+} from '../emitters/schedule-park.js';
 import { notificationEntry } from '../notification-registry.js';
+import { NotificationStore } from '../notification-store.js';
+import {
+  NotificationService,
+  getNotificationService,
+  setNotificationService,
+} from '../notification-service.js';
 
 const AGENT_PATH = '/tmp/agents/nightly-bot';
 
@@ -36,6 +46,7 @@ describe('the payload a parked schedule sends', () => {
 
   afterEach(() => {
     resetAgentIdentityService();
+    setNotificationService(null);
   });
 
   /** A schedule parked exactly as `tasks_create` parks one. */
@@ -97,6 +108,36 @@ describe('the payload a parked schedule sends', () => {
     expect(located.sessionId).toBe('ses-42');
     // Still filed under the TASK, which is what the approval actions act on.
     expect(located.subjectId).toBe(payload.taskId);
+  });
+
+  it('names the proposer on the row a REMOVED proposal leaves behind', async () => {
+    // This is the path where the name matters most and is easiest to lose. When
+    // a parked schedule goes away without anybody deciding it — an agent deleted
+    // it, its file vanished, a Shape was torn down — the row is filed `cancelled`
+    // and UNREAD, so it is something the operator FINDS later with no memory of
+    // the context. "An agent proposed a scheduled task" is close to useless then.
+    //
+    // It is also the one caller that cannot await the lookup (it is
+    // fire-and-forget by design), so a regression here would be invisible to
+    // every other case in this file.
+    setNotificationService(new NotificationService(new NotificationStore(db)));
+    await identity.mint({ agentPath: AGENT_PATH, displayName: 'Nightly Bot' });
+
+    resolveParkedScheduleRemoved(parked({ proposedByAgentPath: AGENT_PATH }));
+
+    const rows = await vi.waitFor(() => {
+      const listed = getNotificationService()!.list({ limit: 25, unread: false }).notifications;
+      expect(listed).toHaveLength(1);
+      return listed;
+    });
+
+    expect(rows[0]).toMatchObject({
+      kind: 'schedule.parked',
+      outcome: 'cancelled',
+      title: 'Nightly Bot proposed a scheduled task',
+    });
+    // Unread, because nobody decided anything — see `resolveParkedScheduleRemoved`.
+    expect(rows[0]!.readAt).toBeUndefined();
   });
 
   it('keys on the task alone, so naming the proposer cannot split one condition in two', async () => {

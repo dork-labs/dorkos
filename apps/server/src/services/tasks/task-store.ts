@@ -231,6 +231,48 @@ export class TaskStore {
   }
 
   /**
+   * Record who proposed a schedule and why, on a row that already exists.
+   *
+   * Separate from {@link updateTask} rather than folded into it, because these
+   * are not fields a task write may carry. `proposedByAgentPath` is stamped from
+   * a resolved credential and `proposedBySessionId` from the invoking session —
+   * both are things the server KNOWS about a caller, and a caller that could
+   * send them could claim to be any agent it liked.
+   *
+   * `reason` rides along here rather than through the update mapping for the
+   * same reason it is written at all: it belongs to the proposal, and the only
+   * moment it is set is the moment a schedule parks.
+   *
+   * Exists because the REST create path writes a file first and syncs through
+   * `upsertFromFile`, which builds its row from a SKILL.md and so has nowhere to
+   * carry any of this. The MCP path calls `createTask` and needs none of it.
+   *
+   * @param id - The task to stamp.
+   * @param proposal - The fields to write; an omitted field is left alone.
+   * @returns The updated task, or null when no such task exists.
+   */
+  recordProposal(
+    id: string,
+    proposal: {
+      reason?: string | null;
+      proposedBySessionId?: string | null;
+      proposedByAgentPath?: string | null;
+    }
+  ): Task | null {
+    if (!this.getTask(id)) return null;
+
+    const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+    if (proposal.reason !== undefined) updates.reason = proposal.reason;
+    if (proposal.proposedBySessionId !== undefined)
+      updates.proposedBySessionId = proposal.proposedBySessionId;
+    if (proposal.proposedByAgentPath !== undefined)
+      updates.proposedByAgentPath = proposal.proposedByAgentPath;
+
+    this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
+    return this.getTask(id);
+  }
+
+  /**
    * Delete a task and everything keyed to it. Returns true if found and deleted.
    *
    * Both child deletes are explicit, in one transaction, rather than left to

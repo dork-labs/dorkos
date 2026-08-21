@@ -31,6 +31,7 @@ import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
+import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { armEscalation } from '../services/notifications/escalation-service.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
@@ -163,7 +164,7 @@ function parksOnCreate(trusted: boolean): boolean {
 }
 
 /**
- * How many upcoming runs a task carries in `nextRuns`.
+ * How many upcoming runs a parked schedule carries in `nextRuns`.
  *
  * Three, because the question the preview answers is "is this cron what the
  * agent says it is?" — one occurrence cannot show a rhythm, and a long list is
@@ -171,6 +172,11 @@ function parksOnCreate(trusted: boolean): boolean {
  * time-of-day at a glance.
  */
 const NEXT_RUNS_PREVIEW_COUNT = 3;
+
+/** What a create or park refuses when the proposal makes no case for itself. */
+const MISSING_REASON_MESSAGE =
+  'A task that has to be approved needs a reason. Say why this schedule should exist — ' +
+  'whoever approves it has only that to go on.';
 
 /**
  * Create the Tasks router with schedule and run management endpoints.
@@ -193,10 +199,17 @@ export function createTasksRouter(
   /**
    * Describe when a task will run, for one task on its way out of this router.
    *
-   * `nextRuns` is computed from the cron itself, so it answers for a schedule
-   * the scheduler has never registered — which is every proposal waiting for
-   * approval, and precisely where "when would this run?" is the question
-   * (DOR-1394).
+   * **`nextRuns` is computed for `pending_approval` rows and nobody else**, and
+   * the narrowness is the design (DOR-1394 review). Reading a cron means
+   * constructing a throwaway `croner` job and asking it for three occurrences —
+   * measured at roughly 1.4ms, synchronously, per task — and this route runs on
+   * every cockpit poll over every task there is. The only surface that reads the
+   * field is the approval card, which only ever shows parked schedules, so
+   * computing it for the rest would be milliseconds per poll spent on an answer
+   * nothing asks for. Everything else reports `[]`.
+   *
+   * A parked schedule is exactly where the question cannot be answered any other
+   * way: the scheduler never registers one, so it holds no job to ask.
    *
    * `nextRun` keeps its old meaning everywhere it already had one: the live
    * job's own answer, and `null` for a task that is not going to fire. The one
@@ -206,10 +219,11 @@ export function createTasksRouter(
    * task nothing will fire is a promise nobody is keeping.
    */
   function withRunTimes(task: Task): Task {
-    const nextRuns = scheduler.previewNextRuns(task.cron, task.timezone, NEXT_RUNS_PREVIEW_COUNT);
     const live = scheduler.getNextRun(task.id)?.toISOString() ?? null;
-    const parkedPreview = task.status === 'pending_approval' ? (nextRuns[0] ?? null) : null;
-    return { ...task, nextRuns, nextRun: live ?? parkedPreview };
+    if (task.status !== 'pending_approval') return { ...task, nextRuns: [], nextRun: live };
+
+    const nextRuns = scheduler.previewNextRuns(task.cron, task.timezone, NEXT_RUNS_PREVIEW_COUNT);
+    return { ...task, nextRuns, nextRun: live ?? nextRuns[0] ?? null };
   }
 
   /** One task, ready to send: run times attached and its proposer named. */
@@ -240,6 +254,17 @@ export function createTasksRouter(
     if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
     const data = parseBody(CreateTaskRequestSchema, req.body, res);
     if (!data) return;
+
+    // A task this caller cannot arm itself is a PROPOSAL, and a proposal has to
+    // make its own case (DOR-1394). Asked here rather than in the Zod schema
+    // because it depends on WHO is asking, and asked before the file is written
+    // so a reasonless proposal never lands on disk for the reconciler to find.
+    // The MCP door demands the same thing through its own tool schema, so the
+    // two agent-facing doors now agree.
+    const proposedReason = data.reason?.trim();
+    if (parksOnCreate(trusted) && !proposedReason) {
+      return res.status(400).json({ error: MISSING_REASON_MESSAGE });
+    }
 
     // Resolve slug and target directory
     const slug = slugify(data.name);
@@ -346,6 +371,15 @@ export function createTasksRouter(
     // where the timer is disarmed, through `resolveStanding`.
     if (parksOnCreate(trusted)) {
       store.updateTask(schedule.id, { status: 'pending_approval' });
+      // Stamped from the RESOLVED credential, never from the body: a caller that
+      // could name its own agent path could credit its proposal to any agent the
+      // operator trusts. `getRequestAgentIdentity` answers only for a caller that
+      // presented a live token, so an unidentified one leaves this null and the
+      // card honestly says it does not know who asked.
+      store.recordProposal(schedule.id, {
+        reason: proposedReason ?? null,
+        proposedByAgentPath: getRequestAgentIdentity(res)?.agentPath ?? null,
+      });
       schedule = store.getTask(schedule.id)!;
       armEscalation('schedule.parked', await resolveScheduleParkPayload(schedule));
     }
@@ -420,7 +454,7 @@ export function createTasksRouter(
       }
     }
 
-    const updated = store.updateTask(req.params.id, data);
+    let updated = store.updateTask(req.params.id, data);
     if (!updated) {
       return res.status(404).json({ error: 'Task not found' });
     }
@@ -461,7 +495,20 @@ export function createTasksRouter(
     // condition that has just STARTED standing, so its clock starts here exactly
     // as it does at the two create sites. Without this, a schedule parked by an
     // update could wait indefinitely with no escalation behind it.
+    //
+    // Unlike the create path above there is NO reason gate here, and that is a
+    // fact about who can reach this line rather than an omission. `status` is
+    // operator-only (`task-write-policy.ts`), so `refusedOperatorOnlyTaskWrite`
+    // has already 403'd any caller that did not clear the agent bar — a schedule
+    // can only be PATCHed into `pending_approval` by the operator, and an
+    // operator parking their own task owes nobody an explanation. A `reason` sent
+    // with that park is still kept, so the field means the same thing on every
+    // door it can arrive through.
     if (existing.status !== 'pending_approval' && updated.status === 'pending_approval') {
+      const parkReason = data.reason?.trim();
+      if (parkReason) {
+        updated = store.recordProposal(req.params.id, { reason: parkReason }) ?? updated;
+      }
       armEscalation('schedule.parked', await resolveScheduleParkPayload(updated));
     }
 
