@@ -28,6 +28,13 @@ import { createMockTransport } from '@dorkos/test-utils';
 let mockConnectionState: ConnectionState = 'connected';
 
 /**
+ * Whether `useIsMobile` reports the phone breakpoint; mutable so a test can
+ * drive the popover into its Drawer (bottom sheet) branch instead of the
+ * default desktop Popover the rest of this suite renders.
+ */
+let mockIsMobile = false;
+
+/**
  * The router this suite does not mount.
  *
  * `useSafeNavigate` only returns `null` in the Obsidian embed; everywhere else
@@ -48,6 +55,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
       failedAttempts: 0,
     }),
     useSafeNavigate: () => mockNavigate,
+    useIsMobile: () => mockIsMobile,
   };
 });
 
@@ -560,7 +568,9 @@ describe('InboxBell', () => {
 
     const marker = await screen.findByTestId('inbox-bell');
     await waitFor(() => expect(marker).toHaveTextContent('2'));
-    expect(marker).toHaveAccessibleName(/2 requests need your approval/i);
+    // Two SCHEDULES, not two "requests" — the noun the pill uses has to match
+    // what is actually waiting.
+    expect(marker).toHaveAccessibleName(/2 schedules want your approval/i);
 
     await userEvent.click(marker);
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
@@ -581,7 +591,8 @@ describe('InboxBell', () => {
 
     const marker = await screen.findByTestId('inbox-bell');
     await waitFor(() => expect(marker).toHaveTextContent('2'));
-    expect(marker).toHaveAccessibleName(/2 requests need your approval/i);
+    // One of each kind, named as both: neither noun swallows the other.
+    expect(marker).toHaveAccessibleName(/1 request and 1 schedule are waiting on you/i);
   });
 
   it('says nothing at all about a schedule that is already running', async () => {
@@ -934,6 +945,7 @@ describe('InboxBell — what the panel says', () => {
   beforeEach(() => {
     handlers = new Map();
     mockConnectionState = 'connected';
+    mockIsMobile = false;
     clearInboxRequest();
     mockNavigate.mockClear();
     vi.mocked(useEventSubscription).mockImplementation((event, handler) => {
@@ -1059,5 +1071,64 @@ describe('InboxBell — what the panel says', () => {
     await waitFor(() => expect(bell).toHaveTextContent('answered'));
     expect(bell).toHaveAttribute('data-tone', 'waiting');
     expect(bell).not.toHaveTextContent('trusted');
+  });
+
+  it('names schedules as schedules, never as "requests", when they are all that is waiting', async () => {
+    // The bug this pins: a parked schedule is a decision to approve or reject,
+    // not a question, and it is also not a generic capability "request" — it
+    // is its own kind of thing. Seeded defect: fold `schedules` back into
+    // `approvals` in the `waitingSummary` call and this reads "2 requests are
+    // waiting for your approval. Nothing runs until you decide." instead.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listTasks: vi
+        .fn()
+        .mockResolvedValue([
+          parkedSchedule(),
+          parkedSchedule({ id: 'task-2', displayName: 'Weekly digest' }),
+        ]),
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+
+    expect(await screen.findByText('2 schedules want your approval.')).toBeInTheDocument();
+    expect(screen.queryByText(/request/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps every section heading in the accessible tree below the desktop breakpoint', async () => {
+    // The four section headings used `hidden md:block`, which sets `display:
+    // none` below `md` — removing the heading from the ACCESSIBILITY TREE, not
+    // just off screen, and leaving a phone screen reader with one heading for
+    // the entire popover. jsdom never loads the app's compiled stylesheet, so
+    // no query here can observe `display: none` the way a real browser would —
+    // `getByRole('heading', ...)` would find every heading on the old classes
+    // too. What DOES discriminate is the class list itself: `sr-only` (visible
+    // to assistive tech at every width) swapped in for `hidden`, with
+    // `md:not-sr-only` restoring the exact desktop look at `md`. Rendered under
+    // the Drawer (mobile/bottom-sheet) branch, which is where a phone user
+    // actually meets these headings. Seeded defect: put `hidden md:block` back
+    // on any of the four and this goes red.
+    mockIsMobile = true;
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      listTasks: vi.fn().mockResolvedValue([parkedSchedule()]),
+      getConfig: configWithStandingGrants(),
+      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [buildNotification()],
+        nextCursor: null,
+        unreadCount: 1,
+      }),
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+
+    for (const name of ['Needs You', 'Scheduled Runs', 'Activity', 'Standing Permissions']) {
+      const heading = await screen.findByRole('heading', { name });
+      expect(heading).toBeInTheDocument();
+      expect(heading.className).toContain('sr-only');
+      expect(heading.className).toContain('md:not-sr-only');
+      expect(heading.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    }
   });
 });
