@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(client): the Inbox popover speaks honestly about what's waiting, keeps its headings for phone screen readers, and eases the all-clear in (DOR-1395)"
+  - 'fix(client): the Inbox popover keeps its "nothing runs until you decide" promise across every waiting state, not just one (DOR-1395)'
 ---
 
 ### Fixed
