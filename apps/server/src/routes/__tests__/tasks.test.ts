@@ -81,10 +81,26 @@ function createMockScheduler(): TaskSchedulerService {
     triggerManualRun: vi.fn().mockResolvedValue(null),
     cancelRun: vi.fn().mockResolvedValue({ state: 'not_found' }),
     getNextRun: vi.fn().mockReturnValue(new Date('2026-03-01T00:00:00Z')),
+    previewNextRuns: vi.fn().mockReturnValue([...PREVIEWED_RUNS]),
     getActiveRunCount: vi.fn().mockReturnValue(0),
     isRegistered: vi.fn().mockReturnValue(false),
   } as unknown as TaskSchedulerService;
 }
+
+/**
+ * What the mocked scheduler's cron preview answers.
+ *
+ * Deliberately different from `getNextRun`'s fixed date, so a route that
+ * confused the two — or dropped one — cannot pass by returning the other. The
+ * cron math itself is proved against real expressions in
+ * `services/tasks/__tests__/task-scheduler-service.test.ts`; what these route
+ * tests prove is that the answer is asked for and carried.
+ */
+const PREVIEWED_RUNS = [
+  '2026-04-01T02:00:00.000Z',
+  '2026-04-02T02:00:00.000Z',
+  '2026-04-03T02:00:00.000Z',
+];
 
 /**
  * Install a real escalation ladder for the cases that assert one is armed.
@@ -150,6 +166,71 @@ describe('Tasks routes', () => {
       expect(res.body[0].name).toBe('Test');
       expect(res.body[0].nextRun).toBe('2026-03-01T00:00:00.000Z');
     });
+
+    it('previews the next few runs, from the task’s own cron and timezone (DOR-1394)', async () => {
+      store.createTask(
+        taskInput({ name: 'Test', prompt: 'p', cron: '0 3 * * *', timezone: 'Asia/Tokyo' })
+      );
+
+      const res = await request(app).get('/api/tasks');
+
+      expect(res.body[0].nextRuns).toEqual(PREVIEWED_RUNS);
+      // Asked with what the task actually says, not with a default — a preview
+      // computed from the wrong timezone is worse than none.
+      expect(scheduler.previewNextRuns).toHaveBeenCalledWith('0 3 * * *', 'Asia/Tokyo', 3);
+    });
+
+    it('gives a schedule waiting for approval a nextRun, which the scheduler cannot', async () => {
+      const parked = store.createTask(
+        taskInput({ name: 'Parked', prompt: 'p', cron: '0 3 * * *' })
+      );
+      store.updateTask(parked.id, { status: 'pending_approval' });
+      // A parked schedule is never registered, so the live job has no answer —
+      // this is exactly the row where nextRun used to be null.
+      vi.mocked(scheduler.getNextRun).mockReturnValue(null);
+
+      const res = await request(app).get('/api/tasks');
+
+      expect(res.body[0].nextRun).toBe(PREVIEWED_RUNS[0]);
+      expect(res.body[0].nextRuns).toEqual(PREVIEWED_RUNS);
+    });
+
+    it('still says nothing about when a paused schedule runs', async () => {
+      const paused = store.createTask(
+        taskInput({ name: 'Paused', prompt: 'p', cron: '0 3 * * *', enabled: false })
+      );
+      store.updateTask(paused.id, { enabled: false });
+      vi.mocked(scheduler.getNextRun).mockReturnValue(null);
+
+      const res = await request(app).get('/api/tasks');
+
+      // Home reads `nextRun` to say what happens next. A time here would be a
+      // promise nothing is keeping. The preview is still offered separately.
+      expect(res.body[0].nextRun).toBeNull();
+      expect(res.body[0].nextRuns).toEqual(PREVIEWED_RUNS);
+    });
+
+    it('carries an agent proposal’s reason and provenance through to the operator', async () => {
+      store.createTask(
+        taskInput({
+          name: 'Proposed',
+          prompt: 'p',
+          cron: '0 3 * * *',
+          reason: 'The overnight backlog needs sweeping before you start.',
+          proposedBySessionId: 'ses-42',
+          proposedByAgentPath: '/tmp/agents/nightly-bot',
+        })
+      );
+
+      const res = await request(app).get('/api/tasks');
+
+      expect(res.body[0].reason).toBe('The overnight backlog needs sweeping before you start.');
+      expect(res.body[0].proposedBySessionId).toBe('ses-42');
+      expect(res.body[0].proposedByAgentPath).toBe('/tmp/agents/nightly-bot');
+      // No identity service is wired in this app, so nothing resolves a name —
+      // and the field says so rather than inventing one.
+      expect(res.body[0].proposedByName).toBeNull();
+    });
   });
 
   describe('POST /api/tasks', () => {
@@ -214,6 +295,9 @@ describe('Tasks routes', () => {
       // The mocked scheduler.getNextRun() always resolves to this fixed date —
       // the create response must carry it, not the store's default null.
       expect(res.body.nextRun).toBe('2026-03-01T00:00:00.000Z');
+      // …and the preview alongside it, for the same reason: a freshly created
+      // task would otherwise report none until the next list fetch.
+      expect(res.body.nextRuns).toEqual(PREVIEWED_RUNS);
     });
   });
 
@@ -225,6 +309,9 @@ describe('Tasks routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.name).toBe('Updated');
+      // The patch response is a task like any other, so it carries the same
+      // derived fields the list does — the approval card reads this reply.
+      expect(res.body.nextRuns).toEqual(PREVIEWED_RUNS);
     });
 
     it('returns 404 for nonexistent schedule', async () => {

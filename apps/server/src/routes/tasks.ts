@@ -33,7 +33,8 @@ import { readCallerAuthority } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { armEscalation } from '../services/notifications/escalation-service.js';
-import { scheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
+import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
+import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -162,6 +163,16 @@ function parksOnCreate(trusted: boolean): boolean {
 }
 
 /**
+ * How many upcoming runs a task carries in `nextRuns`.
+ *
+ * Three, because the question the preview answers is "is this cron what the
+ * agent says it is?" — one occurrence cannot show a rhythm, and a long list is
+ * a wall of timestamps nobody reads. Three shows the interval and the
+ * time-of-day at a glance.
+ */
+const NEXT_RUNS_PREVIEW_COUNT = 3;
+
+/**
  * Create the Tasks router with schedule and run management endpoints.
  *
  * @param store - TaskStore for data persistence
@@ -179,6 +190,38 @@ export function createTasksRouter(
 ): Router {
   const router = Router();
 
+  /**
+   * Describe when a task will run, for one task on its way out of this router.
+   *
+   * `nextRuns` is computed from the cron itself, so it answers for a schedule
+   * the scheduler has never registered — which is every proposal waiting for
+   * approval, and precisely where "when would this run?" is the question
+   * (DOR-1394).
+   *
+   * `nextRun` keeps its old meaning everywhere it already had one: the live
+   * job's own answer, and `null` for a task that is not going to fire. The one
+   * addition is `pending_approval`, which now reports its first previewed
+   * occurrence instead of `null`. Paused and disabled tasks deliberately stay
+   * `null` — Home reads this field to say what happens next, and a time for a
+   * task nothing will fire is a promise nobody is keeping.
+   */
+  function withRunTimes(task: Task): Task {
+    const nextRuns = scheduler.previewNextRuns(task.cron, task.timezone, NEXT_RUNS_PREVIEW_COUNT);
+    const live = scheduler.getNextRun(task.id)?.toISOString() ?? null;
+    const parkedPreview = task.status === 'pending_approval' ? (nextRuns[0] ?? null) : null;
+    return { ...task, nextRuns, nextRun: live ?? parkedPreview };
+  }
+
+  /** One task, ready to send: run times attached and its proposer named. */
+  async function present(task: Task): Promise<Task> {
+    return withRunTimes(await withProposerName(task));
+  }
+
+  /** {@link present} for a whole list, with one identity lookup per distinct agent. */
+  async function presentAll(tasks: Task[]): Promise<Task[]> {
+    return (await withProposerNames(tasks)).map(withRunTimes);
+  }
+
   // === Template endpoints ===
 
   router.get('/templates', async (_req, res) => {
@@ -188,12 +231,8 @@ export function createTasksRouter(
 
   // === Schedule endpoints ===
 
-  router.get('/', (_req, res) => {
-    const schedules = store.getTasks().map((s) => ({
-      ...s,
-      nextRun: scheduler.getNextRun(s.id)?.toISOString() ?? null,
-    }));
-    res.json(schedules);
+  router.get('/', async (_req, res) => {
+    res.json(await presentAll(store.getTasks()));
   });
 
   router.post('/', async (req, res) => {
@@ -308,7 +347,7 @@ export function createTasksRouter(
     if (parksOnCreate(trusted)) {
       store.updateTask(schedule.id, { status: 'pending_approval' });
       schedule = store.getTask(schedule.id)!;
-      armEscalation('schedule.parked', scheduleParkPayload(schedule));
+      armEscalation('schedule.parked', await resolveScheduleParkPayload(schedule));
     }
 
     if (schedule.enabled && schedule.status === 'active') {
@@ -329,13 +368,11 @@ export function createTasksRouter(
 
     broadcastTasksChanged();
 
-    // nextRun is derived from the scheduler (not persisted on the schedule row),
-    // so it must be attached here the same way the list endpoint does below —
-    // otherwise a freshly created task reports nextRun: null until the next list fetch.
-    return res.status(201).json({
-      ...schedule,
-      nextRun: scheduler.getNextRun(schedule.id)?.toISOString() ?? null,
-    });
+    // Run times and the proposer's name are derived, not persisted on the row,
+    // so they must be attached here the same way the list endpoint does —
+    // otherwise a freshly created task reports none of them until the next list
+    // fetch.
+    return res.status(201).json(await present(schedule));
   });
 
   router.patch('/:id', async (req, res) => {
@@ -413,10 +450,10 @@ export function createTasksRouter(
     // is no separate endpoint for it, so this transition is where the parked
     // condition ends and its history row is written.
     if (existing.status === 'pending_approval' && updated.status === 'active') {
-      void resolveStanding('schedule.parked', scheduleParkPayload(updated), {
-        outcome: 'approved',
-        actorPrincipal: readCallerPrincipal(req, res),
-      });
+      const actorPrincipal = readCallerPrincipal(req, res);
+      void resolveScheduleParkPayload(updated).then((payload) =>
+        resolveStanding('schedule.parked', payload, { outcome: 'approved', actorPrincipal })
+      );
     }
 
     // ...and the symmetric edge, which this route handled in only one direction
@@ -425,12 +462,12 @@ export function createTasksRouter(
     // as it does at the two create sites. Without this, a schedule parked by an
     // update could wait indefinitely with no escalation behind it.
     if (existing.status !== 'pending_approval' && updated.status === 'pending_approval') {
-      armEscalation('schedule.parked', scheduleParkPayload(updated));
+      armEscalation('schedule.parked', await resolveScheduleParkPayload(updated));
     }
 
     broadcastTasksChanged();
 
-    return res.json(updated);
+    return res.json(await present(updated));
   });
 
   router.delete('/:id', async (req, res) => {
@@ -470,10 +507,10 @@ export function createTasksRouter(
     // is this endpoint. Only a schedule that was actually waiting counts: a
     // person tidying up a task they never had to approve is not a rejection.
     if (schedule.status === 'pending_approval') {
-      void resolveStanding('schedule.parked', scheduleParkPayload(schedule), {
-        outcome: 'rejected',
-        actorPrincipal: readCallerPrincipal(req, res),
-      });
+      const actorPrincipal = readCallerPrincipal(req, res);
+      void resolveScheduleParkPayload(schedule).then((payload) =>
+        resolveStanding('schedule.parked', payload, { outcome: 'rejected', actorPrincipal })
+      );
     }
 
     broadcastTasksChanged();

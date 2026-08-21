@@ -56,6 +56,59 @@ describe('TaskStore', () => {
       expect(task.nextRun).toBeNull();
     });
 
+    it('carries an agent proposal — the reason, the session, the directory (DOR-1394)', () => {
+      const created = store.createTask(
+        taskInput({
+          name: 'Nightly sweep',
+          prompt: 'sweep the backlog',
+          cron: '0 3 * * *',
+          reason: 'The overnight backlog needs sweeping before you start.',
+          proposedBySessionId: 'ses-42',
+          proposedByAgentPath: '/tmp/agents/nightly-bot',
+        })
+      );
+
+      // Round-tripped through SQLite, not just echoed back by the insert.
+      const read = store.getTask(created.id)!;
+      expect(read.reason).toBe('The overnight backlog needs sweeping before you start.');
+      expect(read.proposedBySessionId).toBe('ses-42');
+      expect(read.proposedByAgentPath).toBe('/tmp/agents/nightly-bot');
+      // Both resolved by whoever READS the task, so the store leaves them empty
+      // rather than caching an answer that can go stale.
+      expect(read.proposedByName).toBeNull();
+      expect(read.nextRuns).toEqual([]);
+    });
+
+    it('leaves provenance null for a task nobody proposed', () => {
+      const created = store.createTask(
+        taskInput({ name: 'Operator task', prompt: 'do a thing', cron: '0 3 * * *' })
+      );
+
+      const read = store.getTask(created.id)!;
+      expect(read.reason).toBeNull();
+      expect(read.proposedBySessionId).toBeNull();
+      expect(read.proposedByAgentPath).toBeNull();
+    });
+
+    it('keeps a proposal intact when the task is later approved', () => {
+      const created = store.createTask(
+        taskInput({
+          name: 'Nightly sweep',
+          prompt: 'sweep the backlog',
+          cron: '0 3 * * *',
+          reason: 'The overnight backlog needs sweeping.',
+          proposedByAgentPath: '/tmp/agents/nightly-bot',
+        })
+      );
+      store.updateTask(created.id, { status: 'pending_approval' });
+
+      // Approving is a status write; it must not erase the case the agent made
+      // for the schedule, which is the record of why it exists at all.
+      const approved = store.updateTask(created.id, { status: 'active' })!;
+      expect(approved.reason).toBe('The overnight backlog needs sweeping.');
+      expect(approved.proposedByAgentPath).toBe('/tmp/agents/nightly-bot');
+    });
+
     it('persists tasks in the database', () => {
       store.createTask(
         taskInput({

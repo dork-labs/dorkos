@@ -24,8 +24,41 @@ import { broadcastTasksChanged } from '../../../tasks/task-sse-events.js';
 import { armEscalation } from '../../../notifications/escalation-service.js';
 import {
   resolveParkedScheduleRemoved,
-  scheduleParkPayload,
+  resolveScheduleParkPayload,
+  UNNAMED_PROPOSER,
 } from '../../../notifications/emitters/schedule-park.js';
+
+/**
+ * Who is proposing a schedule, read at CALL time rather than at registration.
+ *
+ * Both fields are resolved lazily and for the same reason: the SDK rekeys a
+ * session to its canonical id mid-first-turn, so an id captured when the tool
+ * server was built names a session that no longer exists. The DevTools tools
+ * resolve their session id late for exactly this reason — see
+ * `mcp-tools/index.ts`.
+ *
+ * Absent entirely on the sessionless external `/mcp` server, where there is no
+ * session to attribute a proposal to and provenance stays null.
+ */
+export type TaskProvenanceResolver = () => {
+  /** The invoking session's canonical id. */
+  sessionId?: string;
+  /**
+   * The invoking session's working directory, which is the key agent identity
+   * is stored under (`agent-identity/agent-token-env.ts`) — so this is what
+   * later resolves the proposer's name.
+   */
+  agentPath?: string;
+};
+
+/** What `tasks_create` tells an agent that gave no reason. */
+export const MISSING_REASON_ERROR =
+  'A scheduled task needs a reason. Say why this schedule should exist, in your own words — ' +
+  'the person reading the approval has only what you write here to decide on.';
+
+/** The description `tasks_create` gives the `reason` argument. */
+export const REASON_DESCRIPTION =
+  'Why this schedule should exist, in your own words — the operator reads this to decide.';
 
 /** Guard that returns an error response when Tasks is disabled. */
 function requireTasks(deps: McpToolDeps) {
@@ -135,11 +168,15 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
  * `scheduling-tasks` skill already says so). That is a separate, non-security
  * loose end from DOR-504 and is deliberately left as it is here.
  */
-export function createCreateScheduleHandler(deps: McpToolDeps) {
+export function createCreateScheduleHandler(
+  deps: McpToolDeps,
+  resolveProvenance?: TaskProvenanceResolver
+) {
   return async (args: {
     name: string;
     prompt: string;
     cron: string;
+    reason: string;
     description?: string;
     timezone?: string;
     maxRuntime?: string;
@@ -152,6 +189,19 @@ export function createCreateScheduleHandler(deps: McpToolDeps) {
     if (err) return err;
     const refusal = refuseOperatorOnlyTaskFields(args);
     if (refusal) return refusal;
+
+    // Asked here as well as in the schema, because the schema cannot ask it
+    // properly: `z.string()` is satisfied by `''`, and a blank reason is the
+    // same non-answer as no reason at all to whoever has to decide. Refused
+    // before the write, so a reasonless proposal never parks somewhere for a
+    // person to find with nothing to read.
+    const reason = args.reason?.trim();
+    if (!reason) return jsonContent({ error: MISSING_REASON_ERROR }, true);
+
+    // Resolved now, not when this handler was built: the SDK rekeys a session
+    // to its canonical id mid-first-turn (see {@link TaskProvenanceResolver}).
+    const provenance = resolveProvenance?.() ?? {};
+
     const schedule = deps.taskStore!.createTask({
       name: args.name,
       description: args.description ?? args.name,
@@ -160,6 +210,9 @@ export function createCreateScheduleHandler(deps: McpToolDeps) {
       timezone: args.timezone ?? null,
       maxRuntime: null,
       filePath: '',
+      reason,
+      proposedBySessionId: provenance.sessionId ?? null,
+      proposedByAgentPath: provenance.agentPath ?? null,
     });
     // The escalation clock starts here (DOR-1387). Parked schedules have no
     // observer seam, so the hook lands at the write that parks one. Still
@@ -170,7 +223,8 @@ export function createCreateScheduleHandler(deps: McpToolDeps) {
     // Agent-created schedules always require user approval
     deps.taskStore!.updateTask(schedule.id, { status: 'pending_approval' });
     const updated = deps.taskStore!.getTask(schedule.id);
-    if (updated) armEscalation('schedule.parked', scheduleParkPayload(updated));
+    const parked = updated ? await resolveScheduleParkPayload(updated) : undefined;
+    if (parked) armEscalation('schedule.parked', parked);
 
     // Parity with the REST route's create handler (routes/tasks.ts): without
     // this, a schedule an agent proposes is invisible until the next full
@@ -179,15 +233,17 @@ export function createCreateScheduleHandler(deps: McpToolDeps) {
     // feed so a consumer can tell this apart from an operator's own
     // (immediately active) creation without a second lookup.
     if (updated) {
-      // No `actorId`, unlike `capability-gate-audit.ts`'s agent-actor events:
-      // that observer is handed a resolved `identity` (an agent path) by the
-      // capability gate it audits. `getTasksTools` carries no such identity —
-      // it is built once from `McpToolDeps`, which the sessionless external
-      // `/mcp` server shares too — so there is no agent path to attribute this
-      // call to, only the generic fact that an agent (not the operator) made it.
+      // Attributed the same way `capability-gate-audit.ts` attributes its
+      // agent-actor events: by the agent's project path. The in-session server
+      // now knows it (`resolveProvenance`, DOR-1394), so the feed can name the
+      // proposer instead of saying "an agent" — and it names it from the SAME
+      // resolved payload the notification uses, so the two cannot disagree
+      // about who asked. The sessionless external `/mcp` server carries no
+      // session, so there it stays unattributed, exactly as before.
       deps.activityService?.emit({
         actorType: 'agent',
-        actorLabel: 'An agent',
+        actorLabel: parked?.proposedBy ?? UNNAMED_PROPOSER,
+        ...(provenance.agentPath ? { actorId: provenance.agentPath } : {}),
         category: 'tasks',
         eventType: 'tasks.task_created',
         resourceType: 'schedule',
@@ -287,8 +343,11 @@ export function createGetRunHistoryHandler(deps: McpToolDeps) {
  * out again (DOR-499). Unguarded, so it needs no separate definitions function.
  *
  * @param deps - Shared MCP tool dependencies.
+ * @param resolveProvenance - How `tasks_create` learns which session is
+ *   proposing. Omitted by the sessionless external `/mcp` registration, where a
+ *   proposal genuinely has no session behind it and provenance stays null.
  */
-export function getTasksTools(deps: McpToolDeps) {
+export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvenanceResolver) {
   return [
     tool(
       'tasks_list',
@@ -303,13 +362,14 @@ export function getTasksTools(deps: McpToolDeps) {
         name: z.string().describe('Name for the scheduled job'),
         prompt: z.string().describe('The prompt to send to the agent on each run'),
         cron: z.string().describe('Cron expression (e.g., "0 2 * * *" for daily at 2am)'),
+        reason: z.string().describe(REASON_DESCRIPTION),
         description: z.string().optional().describe('Description of what this task does'),
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
         maxRuntime: z.string().optional().describe('Maximum run time (e.g., "5m", "1h")'),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
       },
-      createCreateScheduleHandler(deps)
+      createCreateScheduleHandler(deps, resolveProvenance)
     ),
     tool(
       'tasks_update',

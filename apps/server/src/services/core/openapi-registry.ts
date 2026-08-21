@@ -1238,7 +1238,7 @@ registry.registerPath({
   summary: 'List all schedules',
   responses: {
     200: {
-      description: 'Array of schedules with nextRun',
+      description: 'Array of schedules, each with its next run and a preview of the few after it',
       content: { 'application/json': { schema: z.array(TaskSchema) } },
     },
   },

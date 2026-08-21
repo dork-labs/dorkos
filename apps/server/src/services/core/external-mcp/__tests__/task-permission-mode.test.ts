@@ -47,7 +47,11 @@ interface JsonRpcMessage {
   result?: {
     tools?: {
       name: string;
-      inputSchema?: { properties?: Record<string, { description?: string }> };
+      inputSchema?: {
+        properties?: Record<string, { description?: string }>;
+        /** JSON Schema's own list of the arguments a caller must send. */
+        required?: string[];
+      };
     }[];
     content?: { type: string; text: string }[];
     isError?: boolean;
@@ -141,6 +145,37 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
     }
   });
 
+  it('will not create a schedule with no reason, and the schema says so (DOR-1394)', async () => {
+    const body = await rpc('tools/list');
+    const tool = body.result?.tools?.find((t) => t.name === 'tasks_create');
+    // Required in the advertised schema, which is what the SDK enforces before
+    // the handler is ever reached.
+    expect(tool?.inputSchema?.required).toContain('reason');
+
+    const before = store.getTasks().length;
+    const res = await request(app)
+      .post('/mcp')
+      .set('Content-Type', 'application/json')
+      .set('Accept', 'application/json, text/event-stream')
+      .send({
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        id: 1,
+        params: {
+          name: 'tasks_create',
+          arguments: { name: 'reasonless', prompt: 'do a thing', cron: '0 3 * * *' },
+        },
+      });
+
+    // Refused by the SDK's own schema parse, before the handler is reached — so
+    // the reply is an error naming the missing argument, and nothing was
+    // written, which is the part that counts.
+    const parsed = parseResponse(res);
+    expect(parsed.result?.isError).toBe(true);
+    expect(parsed.result?.content?.[0]?.text ?? '').toContain('reason');
+    expect(store.getTasks()).toHaveLength(before);
+  });
+
   it('advertises status on both tools, so it is refused and not dropped', async () => {
     const body = await rpc('tools/list');
     for (const name of ['tasks_create', 'tasks_update']) {
@@ -159,6 +194,10 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
       name: 'self-approving',
       prompt: 'do a thing',
       cron: '0 3 * * *',
+      // A reason is required, so the call has to carry one to even reach the
+      // guard this test is about — a call missing it is refused by the SDK's
+      // own schema parse, which proves something different.
+      reason: 'It should run nightly.',
       status: 'active',
     });
 
@@ -207,6 +246,7 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
       name: 'sneaky',
       prompt: 'do a thing',
       cron: '0 3 * * *',
+      reason: 'It should run nightly.',
       permissionMode: 'bypassPermissions',
     });
 

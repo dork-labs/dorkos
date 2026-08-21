@@ -21,7 +21,7 @@ import {
 } from '../notification-service.js';
 import { watchAskResolution } from '../emitters/ask-resolution.js';
 import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
-import { scheduleParkPayload } from '../emitters/schedule-park.js';
+import { resolveScheduleParkPayload } from '../emitters/schedule-park.js';
 import { EscalationService, armEscalation, setEscalationService } from '../escalation-service.js';
 import type { WebPushChannel } from '../channels/web-push.js';
 import { TaskStore } from '../../tasks/task-store.js';
@@ -280,7 +280,7 @@ describe('a parked schedule that is removed rather than decided', () => {
   }
 
   /** A schedule parked exactly as `tasks_create` parks one. */
-  function parkedSchedule(store: TaskStore) {
+  async function parkedSchedule(store: TaskStore) {
     const task = store.createTask({
       name: 'nightly',
       description: 'test',
@@ -290,13 +290,13 @@ describe('a parked schedule that is removed rather than decided', () => {
     });
     store.updateTask(task.id, { status: 'pending_approval' });
     const parked = store.getTask(task.id)!;
-    armEscalation('schedule.parked', scheduleParkPayload(parked));
+    armEscalation('schedule.parked', await resolveScheduleParkPayload(parked));
     return parked;
   }
 
   it('disarms when an agent deletes it through tasks_delete', async () => {
     const store = new TaskStore(db);
-    const parked = parkedSchedule(store);
+    const parked = await parkedSchedule(store);
 
     await tasksDelete(store)({ id: parked.id });
     await flush();
@@ -310,7 +310,7 @@ describe('a parked schedule that is removed rather than decided', () => {
     // rejected it would both put words in their mouth and file the row
     // already-read — which is how a pending approval vanishes silently.
     const store = new TaskStore(db);
-    const parked = parkedSchedule(store);
+    const parked = await parkedSchedule(store);
 
     await tasksDelete(store)({ id: parked.id });
     await flush();

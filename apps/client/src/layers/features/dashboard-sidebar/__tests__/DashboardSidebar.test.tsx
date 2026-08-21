@@ -200,6 +200,11 @@ function parkedSchedule(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     filePath: `/tasks/${overrides.id}.json`,
     createdAt: '2026-08-19T09:00:00.000Z',
     updatedAt: '2026-08-19T09:00:00.000Z',
+    reason: null,
+    proposedBySessionId: null,
+    proposedByAgentPath: null,
+    proposedByName: null,
+    nextRuns: [],
     ...overrides,
   };
 }

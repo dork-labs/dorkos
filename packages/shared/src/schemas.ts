@@ -3834,7 +3834,35 @@ export const TaskSchema = z
     filePath: z.string(),
     createdAt: z.string(),
     updatedAt: z.string(),
+    /**
+     * Why this schedule should exist, in the proposer's own words.
+     *
+     * An agent has to give one — a proposal an operator is asked to approve has
+     * to make its own case. A person creating their own schedule owes nobody an
+     * explanation, so their tasks carry `null`.
+     */
+    reason: z.string().nullable().default(null),
+    /** The session an agent proposed this from, so the conversation behind it can be opened. */
+    proposedBySessionId: z.string().nullable().default(null),
+    /** The working directory of the proposing session — the key an agent identity resolves from. */
+    proposedByAgentPath: z.string().nullable().default(null),
+    /**
+     * What to call the proposer, resolved when the task is READ rather than
+     * stored: an agent can be renamed or have its identity revoked, and a name
+     * written into the row at proposal time would outlive both. `null` when
+     * nothing resolves, which is what the "An agent" fallback is for.
+     */
+    proposedByName: z.string().nullable().default(null),
     nextRun: z.string().nullable().optional(),
+    /**
+     * The next few times this cron fires. ISO 8601 UTC, soonest first.
+     *
+     * Computed for every task with a cron, including the ones the scheduler has
+     * never registered — a schedule waiting for approval is exactly where "when
+     * would this actually run?" is the question, and it is the one place the
+     * live job cannot answer because there is no job yet.
+     */
+    nextRuns: z.array(z.string()).default([]),
   })
   .openapi('Task');
 

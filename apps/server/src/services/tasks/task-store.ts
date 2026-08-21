@@ -41,6 +41,16 @@ export interface CreateTaskStoreInput {
   maxRuntime?: number | null;
   permissionMode?: string;
   filePath: string;
+  /** Why the schedule should exist, in the proposer's own words. See {@link CreateTaskStoreInput.proposedByAgentPath}. */
+  reason?: string | null;
+  /** The session that proposed it, when an agent did. */
+  proposedBySessionId?: string | null;
+  /**
+   * The proposing session's working directory — the key the agent-identity
+   * service resolves a display name from. Stored rather than the name itself,
+   * so a rename or a revocation is reflected the next time the task is read.
+   */
+  proposedByAgentPath?: string | null;
 }
 
 /**
@@ -180,6 +190,9 @@ export class TaskStore {
         permissionMode: input.permissionMode ?? 'acceptEdits',
         status: 'active',
         filePath: input.filePath,
+        reason: input.reason ?? null,
+        proposedBySessionId: input.proposedBySessionId ?? null,
+        proposedByAgentPath: input.proposedByAgentPath ?? null,
         tags: '[]',
         createdAt: now,
         updatedAt: now,
@@ -739,7 +752,15 @@ export class TaskStore {
   }
 }
 
-/** Convert a Drizzle schedule row to a Task object. */
+/**
+ * Convert a Drizzle schedule row to a Task object.
+ *
+ * `proposedByName` and `nextRuns` are left at their empty values here on
+ * purpose. Both are resolved when a task is READ by something that can answer
+ * them — the name from the agent-identity service (async, and the store is a
+ * synchronous data layer), the run times from the scheduler — so the store
+ * never caches an answer that can go stale between a write and a read.
+ */
 function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
   return {
     id: row.id,
@@ -757,7 +778,12 @@ function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     filePath: row.filePath,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    reason: row.reason ?? null,
+    proposedBySessionId: row.proposedBySessionId ?? null,
+    proposedByAgentPath: row.proposedByAgentPath ?? null,
+    proposedByName: null,
     nextRun: null,
+    nextRuns: [],
   } as Task;
 }
 
