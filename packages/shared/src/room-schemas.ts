@@ -217,6 +217,90 @@ export function agentAuthorRef(agentPath: string): string {
 }
 
 /**
+ * How many participants a group message names before it starts counting.
+ * Three fits a sidebar row; the fourth is what would truncate mid-word.
+ */
+const NAMED_PARTICIPANTS = 3;
+
+/**
+ * What to call a direct message, from the people in it.
+ *
+ * One name is a one-to-one. Beyond that it reads as a list, and past
+ * {@link NAMED_PARTICIPANTS} it names the first few and counts the rest — a
+ * sidebar row is one line, and a title long enough to need an ellipsis tells a
+ * reader less than "and 3 others" does.
+ *
+ * A title is a label, not an identity: the server matches a conversation on its
+ * member set (`RoomService.createRoom`), so renaming one later never splits it
+ * and two DMs can share a name without confusing anything but a person.
+ *
+ * **It lives on the wire contract because both ends compute it**
+ * (`sidebar-simplification` spec D2). The cockpit names a group message when it
+ * opens one; the server re-derives the same string when an agent is added, so a
+ * title nobody typed keeps up with the roster it was made from
+ * (`RoomService.addMember`). Two copies of this rule would be two spellings of
+ * one title, and the server's rename would then read as somebody else's edit.
+ *
+ * @param names - The participants' display names, in the order they were picked.
+ * @returns The title, or an empty string for no names — which the caller should
+ *   never reach, because a conversation with nobody in it is not one.
+ */
+export function directMessageTitle(names: readonly string[]): string {
+  if (names.length === 0) return '';
+  if (names.length === 1) return names[0];
+  if (names.length <= NAMED_PARTICIPANTS) {
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  }
+  const rest = names.length - NAMED_PARTICIPANTS;
+  return `${names.slice(0, NAMED_PARTICIPANTS).join(', ')} and ${rest} ${
+    rest === 1 ? 'other' : 'others'
+  }`;
+}
+
+/**
+ * Every ordering of a short list.
+ *
+ * @param items - The list to permute.
+ */
+function permutations<T>(items: readonly T[]): T[][] {
+  if (items.length <= 1) return [[...items]];
+  return items.flatMap((item, index) =>
+    permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [
+      item,
+      ...rest,
+    ])
+  );
+}
+
+/**
+ * Whether a direct message's title is one {@link directMessageTitle} wrote from
+ * these names, rather than one a person typed.
+ *
+ * It is the whole of the rule that decides whether the server may re-title a
+ * group message when somebody joins it (`sidebar-simplification` D2, DOR-772):
+ * a title nobody typed keeps up with its roster, and a title somebody chose is
+ * never touched. When in doubt it answers `false` — leaving a name alone is the
+ * recoverable mistake.
+ *
+ * **Order-insensitive up to {@link NAMED_PARTICIPANTS}, and it has to be.** The
+ * cockpit names a conversation in the order the agents were picked; the server
+ * reads a roster back oldest-first with the author id breaking the tie a seeded
+ * roster always has (`RoomStore.listMembers`), which is not that order. Compared
+ * as one string, "Ana and Kai" would read as a person's rename about half the
+ * time. Beyond three names the title stops naming everybody ("… and 2 others"),
+ * so there the comparison is the plain one and a differently-ordered title is
+ * simply left alone.
+ *
+ * @param title - The room's current title.
+ * @param names - The display names the title would have been made from.
+ */
+export function isDirectMessageTitleDerived(title: string, names: readonly string[]): boolean {
+  if (names.length === 0) return false;
+  if (names.length > NAMED_PARTICIPANTS) return title === directMessageTitle(names);
+  return permutations(names).some((ordering) => directMessageTitle(ordering) === title);
+}
+
+/**
  * How an author appears to a reader: the opaque persisted id, enough to render
  * it, and — for an agent — a stable handle to recognise it by. The `naturalKey`
  * behind the id (an agent's `agentPath`) never leaves the server: a room is a
@@ -362,7 +446,7 @@ export const RoomSchema = z
     bridge: RoomBridgeInfoSchema.nullable()
       .optional()
       .describe(
-        "This room's bridge, when it has one. Optional as well as nullable: the sidebar's bulk room list does not resolve it today (a per-row bridge lookup a list never renders is cost nobody asked for), so absent and `null` both mean 'draw nothing bridge-related here' — only `GET /api/rooms/:id` and the room-create responses populate it for real."
+        'This room\'s bridge, and `null` when it has none. `GET /api/rooms`, `GET /api/rooms/:id` and the room-create responses all populate it, so on any of those `null` means "not bridged" — the sidebar reads it to tell a direct message somebody made by hand from one a bridged private chat projects. Still optional, for the one reason a field like this stays optional: a client fixture that assembles a room by hand need not carry it, and a caller that predates it still parses. Absent means "this source did not say", never `false`.'
       ),
   })
   .openapi('Room');

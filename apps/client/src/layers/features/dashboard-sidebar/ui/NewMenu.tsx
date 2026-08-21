@@ -39,8 +39,12 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { useStartNewSession } from '@/layers/entities/session';
-import { ChannelCreateDialog, NewDirectMessageMenu } from '@/layers/features/room-management';
+import { useDirectoryState, useStartNewSession } from '@/layers/entities/session';
+import {
+  ChannelCreateDialog,
+  NewDirectMessageMenu,
+  opensAgentSession,
+} from '@/layers/features/room-management';
 import { useCreateFlowStore, type NewMenuItemId } from '../model/create-flow-store';
 import { offersGroupAffordances } from '../model/rules/build-library-sections';
 import {
@@ -179,7 +183,12 @@ export function buildNewMenuNodes(model: NewMenuModel): SidebarMenuNode[] {
     {
       kind: 'action',
       id: 'new-message' satisfies NewMenuItemId,
-      label: 'Direct message',
+      // "Group message", because that is what this item makes now: picking one
+      // agent in the panel it opens goes to that agent's session instead
+      // (`sidebar-simplification` D2). The id does not move with the label —
+      // `NEW_MENU_ITEM_IDS` is what the Direct messages header's "+" deep-links
+      // to, and renaming a thing is not renaming its address.
+      label: 'Group message',
       icon: AtSign,
       opensInput: true,
       run: model.onNewMessage,
@@ -213,6 +222,7 @@ export function NewMenu() {
 
   const navigate = useNavigate();
   const startNewSession = useStartNewSession();
+  const [, setDirectory] = useDirectoryState();
   const startDirectMessage = useStartDirectMessage();
   const lastUsedAgent = useLastUsedAgent();
   const { update } = useUpdateSidebarPrefs();
@@ -289,8 +299,20 @@ export function NewMenu() {
 
   useNewSessionShortcut(newSession);
 
-  const startDirectMessageWith = useCallback(
+  const startConversationWith = useCallback(
     (chosen: AgentPickerCandidate[]) => {
+      // **One door to an agent** (`sidebar-simplification` D2). One agent opens
+      // its session — the same conversation its sidebar row opens, resolved by
+      // the same resolve-or-mint lookup — because a 1:1 direct message was that
+      // session in disguise. The rule is read from `lib/one-door`, which is also
+      // what the button says, so the words and the destination cannot drift.
+      const [only] = chosen;
+      if (only !== undefined && opensAgentSession(chosen)) {
+        setDirectory(only.agentPath, {
+          onOpened: () => useInteractionStore.getState().recordOpened('agent', only.agentPath),
+        });
+        return;
+      }
       const title = directMessageTitle(chosen.map((candidate) => candidate.displayName));
       // **No `onError` here, and that is the fix rather than an omission**
       // (DOR-1391). A per-call callback is dispatched only while this component
@@ -305,7 +327,7 @@ export function NewMenu() {
         { onSuccess: openRoom }
       );
     },
-    [openRoom, startDirectMessage]
+    [openRoom, setDirectory, startDirectMessage]
   );
 
   const nodes = buildNewMenuNodes({
@@ -383,7 +405,7 @@ export function NewMenu() {
       <NewDirectMessageMenu
         open={pickerOpen}
         onOpenChange={setPickerOpen}
-        onStart={startDirectMessageWith}
+        onStart={startConversationWith}
         hideTrigger
       />
       <SmartGroupRuleDialog

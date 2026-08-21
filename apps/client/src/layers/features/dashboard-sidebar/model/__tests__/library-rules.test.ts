@@ -5,22 +5,28 @@
  * @module features/dashboard-sidebar/model/__tests__/library-rules
  */
 import { describe, expect, it } from 'vitest';
+import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import {
   buildSidebarModel,
   persistedSectionId,
   SIDEBAR_FOLDING_SECTION_IDS,
   SIDEBAR_LIBRARY_SECTION_IDS,
+  type SidebarRowModel,
   type SidebarSectionModel,
 } from '../build-sidebar-model';
 import {
   agent,
   busyFixture,
   firstRunFixture,
+  hoursAgo,
+  person,
   powerFixture,
   prefs,
   quietFixture,
+  room,
 } from '../fixtures';
 import { buildLibrarySections, offersGroupAffordances } from '../rules/build-library-sections';
+import { TODAY_SOFT_CAP } from '../rules/order-today';
 import { buildWorkingRollup } from '../rules/build-working-rollup';
 import { rollUpCollapsedSection } from '../rules/roll-up-collapsed-section';
 import type { SidebarState } from '../sidebar-state';
@@ -521,5 +527,294 @@ describe('SIDEBAR_LIBRARY_SECTION_IDS is the order', () => {
     }
     // A group\u2019s fold lives on the group itself, not in `prefs.sections`.
     expect(persistedSectionId('group:anything')).toBeNull();
+  });
+});
+
+describe('D2 — one door to an agent', () => {
+  const ANA = '/Users/dev/code/ana';
+  const KAI = '/Users/dev/code/kai';
+  const GONE = '/Users/dev/code/retired';
+
+  /** One agent on a direct message's roster, as the wire carries it. */
+  function agentAuthor(path: string, displayName: string) {
+    return {
+      id: `author-${displayName}`,
+      kind: 'agent' as const,
+      displayName,
+      handle: null,
+      agentRef: agentAuthorRef(path),
+    };
+  }
+
+  /** The operator, who is on every direct message they can see. */
+  const operator = person('person:me', 'You');
+
+  /**
+   * A cockpit with two agents and whatever rooms this case is about.
+   *
+   * @param rooms - The rooms on the wire.
+   * @param overrides - Anything else this case needs.
+   */
+  function cockpit(
+    rooms: SidebarState['rooms'],
+    overrides: Partial<SidebarState> = {}
+  ): SidebarState {
+    return {
+      ...quietFixture,
+      agents: [agent(ANA), agent(KAI)],
+      displayNames: { [ANA]: 'Ana', [KAI]: 'Kai' },
+      rooms,
+      ...overrides,
+    };
+  }
+
+  /** The Direct messages section's row keys. */
+  function dmKeys(state: SidebarState): string[] {
+    return (
+      library(state)
+        .find((section) => section.id === 'dms')
+        ?.rows.map((row) => row.key) ?? []
+    );
+  }
+
+  /** Today's rows, as the model finally emits them. */
+  function todayRowsOf(state: SidebarState): SidebarRowModel[] {
+    return (
+      buildSidebarModel(state)
+        .zones.find((zone) => zone.id === 'today')
+        ?.sections.flatMap((section) => section.rows) ?? []
+    );
+  }
+
+  /** One agent's Library row, wherever it ended up. */
+  function agentRowFor(state: SidebarState, path: string) {
+    return library(state)
+      .flatMap((section) => [
+        ...section.rows,
+        ...(section.subsections ?? []).flatMap((sub) => sub.rows),
+      ])
+      .find((row) => row.target.kind === 'agent' && row.target.path === path);
+  }
+
+  it('leaves a hand-made one-to-one out of Direct messages', () => {
+    const state = cockpit([
+      room({
+        id: 'dm-ana',
+        kind: 'dm',
+        title: 'Ana',
+        participants: [operator, agentAuthor(ANA, 'Ana')],
+      }),
+    ]);
+    expect(dmKeys(state)).toEqual([]);
+    // And the section goes with it, because a section exists when something is
+    // in it (BC-32).
+    expect(library(state).map((section) => section.id)).not.toContain('dms');
+  });
+
+  it('keeps a group message, which is a conversation no session holds', () => {
+    const state = cockpit([
+      room({
+        id: 'dm-both',
+        kind: 'dm',
+        title: 'Ana and Kai',
+        participants: [operator, agentAuthor(ANA, 'Ana'), agentAuthor(KAI, 'Kai')],
+      }),
+    ]);
+    expect(dmKeys(state)).toEqual(['room:dm-both']);
+  });
+
+  it('keeps a bridged private chat, whose other end is a person somewhere else', () => {
+    const state = cockpit([
+      room({
+        id: 'dm-telegram',
+        kind: 'dm',
+        title: 'Ana',
+        bridge: { visibility: null, platformTitle: 'Ana' },
+        participants: [operator, agentAuthor(ANA, 'Ana')],
+      }),
+    ]);
+    expect(dmKeys(state)).toEqual(['room:dm-telegram']);
+  });
+
+  it('keeps a one-to-one whose agent has left the fleet', () => {
+    // Nothing else would stand for it: the suppression trades a second list for
+    // a dot on the agent's row, and a retired agent has no row to carry one.
+    const state = cockpit([
+      room({
+        id: 'dm-gone',
+        kind: 'dm',
+        title: 'Retired',
+        participants: [operator, agentAuthor(GONE, 'Retired')],
+      }),
+    ]);
+    expect(dmKeys(state)).toEqual(['room:dm-gone']);
+  });
+
+  it('keeps a one-to-one the operator filed into a section by hand', () => {
+    const state = cockpit(
+      [
+        room({
+          id: 'dm-ana',
+          kind: 'dm',
+          title: 'Ana',
+          participants: [operator, agentAuthor(ANA, 'Ana')],
+        }),
+      ],
+      {
+        prefs: prefs({
+          groups: [
+            {
+              id: 'group-mine',
+              name: 'Mine',
+              kind: 'manual',
+              items: [{ kind: 'room', roomId: 'dm-ana' }],
+              sortMode: 'manual',
+              collapsed: false,
+              displayFilter: 'all',
+              muted: false,
+            },
+          ],
+        }),
+      }
+    );
+    const group = library(state)
+      .find((section) => section.id === 'agents')
+      ?.subsections?.find((sub) => sub.id === 'group:group-mine');
+    expect(group?.rows.map((row) => row.key)).toEqual(['room:dm-ana']);
+  });
+
+  it('puts the unread on the agent’s own row instead', () => {
+    const state = cockpit([
+      room({
+        id: 'dm-ana',
+        kind: 'dm',
+        title: 'Ana',
+        unreadCount: 3,
+        participants: [operator, agentAuthor(ANA, 'Ana')],
+      }),
+    ]);
+    expect(agentRowFor(state, ANA)?.unread).toEqual({ tier: 'directed', count: 3 });
+    // And says nothing about the agent that has nothing waiting.
+    expect(agentRowFor(state, KAI)?.unread).toEqual({ tier: 'none' });
+  });
+
+  it('says nothing on the row when the conversation is muted', () => {
+    const state = cockpit(
+      [
+        room({
+          id: 'dm-ana',
+          kind: 'dm',
+          title: 'Ana',
+          unreadCount: 3,
+          participants: [operator, agentAuthor(ANA, 'Ana')],
+        }),
+      ],
+      { prefs: prefs({ muted: [{ kind: 'room', roomId: 'dm-ana' }] }) }
+    );
+    expect(agentRowFor(state, ANA)?.unread).toEqual({ tier: 'none' });
+  });
+
+  it('still draws the conversation in Today once the operator has been in it', () => {
+    // The suppression is Library's and Library's only: Today's membership is
+    // "have they interacted with it", and it is untouched (BC-16).
+    const state = cockpit(
+      [
+        room({
+          id: 'dm-ana',
+          kind: 'dm',
+          title: 'Ana',
+          unreadCount: 3,
+          participants: [operator, agentAuthor(ANA, 'Ana')],
+        }),
+      ],
+      { interactions: { 'room:dm-ana': hoursAgo(1) } }
+    );
+    expect(todayRowsOf(state).map((row) => row.key)).toContain('room:dm-ana');
+  });
+
+  it('is reachable when an agent opened it and the operator never has', () => {
+    // The `notify-dm` shape, and the case that makes the suppression safe: the
+    // operator has never opened this room, so the ordinary "have they
+    // interacted with it" rule leaves it out — and with no Library row either
+    // it would be on no surface at all. Its directed unread is what puts it in
+    // Today, under its own reason and as the ROOM's row, so clicking it opens
+    // the conversation rather than the agent's session.
+    const state = cockpit([
+      room({
+        id: 'dm-ana',
+        kind: 'dm',
+        title: 'Ana',
+        unreadCount: 1,
+        participants: [operator, agentAuthor(ANA, 'Ana')],
+      }),
+    ]);
+    const rows = todayRowsOf(state);
+    const row = rows.find((entry) => entry.key === 'room:dm-ana');
+    expect(row, 'a room nothing else draws has to be reachable from Today').toBeDefined();
+    expect(row?.reason).toBe('today:dm-suppressed-unread');
+    expect(row?.target).toMatchObject({ kind: 'room', roomId: 'dm-ana', roomKind: 'dm' });
+    expect(row?.unread).toEqual({ tier: 'directed', count: 1 });
+  });
+
+  it('drops out of Today once it has been read', () => {
+    // The clause is the unread and nothing else, so a room with nothing waiting
+    // does not accumulate in Today on the strength of having once had something.
+    const state = cockpit([
+      room({
+        id: 'dm-ana',
+        kind: 'dm',
+        title: 'Ana',
+        unreadCount: 0,
+        participants: [operator, agentAuthor(ANA, 'Ana')],
+      }),
+    ]);
+    expect(todayRowsOf(state).map((entry) => entry.key)).not.toContain('room:dm-ana');
+  });
+
+  it('stays silent when the operator muted it', () => {
+    // Mute kills Today eligibility (BC-40), and a reachability clause is not a
+    // way around that. `roomRow` derives the unread, so muting the room makes
+    // its tier `none` and this clause never fires.
+    const state = cockpit(
+      [
+        room({
+          id: 'dm-ana',
+          kind: 'dm',
+          title: 'Ana',
+          unreadCount: 1,
+          participants: [operator, agentAuthor(ANA, 'Ana')],
+        }),
+      ],
+      { prefs: prefs({ muted: [{ kind: 'room', roomId: 'dm-ana' }] }) }
+    );
+    expect(todayRowsOf(state).map((entry) => entry.key)).not.toContain('room:dm-ana');
+  });
+
+  it('survives the cap and the overnight boundary it never had a timestamp for', () => {
+    // Both exemptions already exist for a directed unread; this asserts they
+    // actually cover a row that arrives with no interaction timestamp at all,
+    // which is the shape this clause introduces. Nine touched channels push the
+    // soft cap of eight past full.
+    const noise = Array.from({ length: 9 }, (_, index) =>
+      room({ id: `c${index}`, kind: 'channel', title: `noise-${index}` })
+    );
+    const state = cockpit(
+      [
+        ...noise,
+        room({
+          id: 'dm-ana',
+          kind: 'dm',
+          title: 'Ana',
+          unreadCount: 1,
+          participants: [operator, agentAuthor(ANA, 'Ana')],
+        }),
+      ],
+      {
+        interactions: Object.fromEntries(noise.map((entry) => [`room:${entry.id}`, hoursAgo(0.5)])),
+      }
+    );
+    const keys = todayRowsOf(state).map((entry) => entry.key);
+    expect(keys.length).toBeGreaterThan(TODAY_SOFT_CAP);
+    expect(keys).toContain('room:dm-ana');
   });
 });

@@ -614,6 +614,17 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
 - **BC-34 — Clicking an agent opens its most recent human conversation** (a fresh session if
   none). An agent is a teammate, not a folder. The inline 3-session expansion panel is removed;
   depth moves to the session switcher. (§4)
+  _Amended by `sidebar-simplification` D2 (2026-08-19): unchanged in substance, and now the ONLY
+  door to an agent. A hand-made 1:1 direct message was the second one — the same agent, the same
+  working directory, a log holding its final words and none of its work — so Library no longer
+  lists one (`library:dm-suppressed-1to1`) and the agent's row carries its unread instead. Such a
+  room is still in Today, still in ⌘K, and still on the agent's profile; nothing is archived or
+  migrated. Today's membership gains ONE clause for it (`today:dm-suppressed-unread`): a suppressed
+  1:1 with a **directed unread** is eligible whether or not it has ever been opened — otherwise a
+  line an agent opened by itself would have no row anywhere. It is the room's own row, so clicking
+  it opens the conversation; the agent-row dot beside it is a secondary signal, and clicking the
+  agent still opens the session. Both go quiet when the conversation is read. A bridged private chat keeps its row: its other end is a person
+  somewhere else, and no session is that conversation._
 - **BC-35 — The session switcher** is a `ResponsiveDialog` (dialog on desktop, bottom sheet on
   mobile) reachable from the agent row's "N live" chip, a long-press on mobile, and ⌘K. Groups:
   **Live now** (with verbs; concurrent sessions are simply multiple rows), **Recent** (one-line
@@ -675,7 +686,13 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   that exists only while true and never enters Heads up. (§7)
 - **BC-45 — One New button** is the only create surface: Session (`⌘N`; `↵` = last-used agent),
   Channel, Direct message, Agent…, Agent group. A section's hover `+` deep-links into this same
-  menu with the relevant item pre-selected. Every other create entry point in the sidebar is
+  menu with the relevant item pre-selected.
+  _Amended by `sidebar-simplification` D2 (2026-08-19): the third item reads **Group message**,
+  and its id stays `new-message` — renaming a thing is not renaming its address, and the Direct
+  messages header's `+` deep-links to that id. In the panel it opens, exactly one agent selected
+  reads "Open session with X" and lands where the agent's row lands; two or more read "Start group
+  message" and make a room. The rule is stated under the picker: "One agent opens a session. Two
+  or more start a group message."_ Every other create entry point in the sidebar is
   deleted (`AddAgentMenu`, per-section `+` handlers, the inline group-create trigger keeps its
   inline editor but is reached through New). (§7)
 - **BC-46 — The ⌘K pill** ("Jump to anything…") sits under the header.

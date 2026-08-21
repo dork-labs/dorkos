@@ -18,8 +18,9 @@ import {
   type SidebarSectionModel,
 } from '../build-sidebar-model';
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
-import { muteIndex, type MuteIndex } from './apply-mute-rules';
-import { agentRow, roomLibraryRow } from './library-rows';
+import { muteIndex } from './apply-mute-rules';
+import { indexSuppressedDms } from './hand-made-dm';
+import { agentRow, roomLibraryRow, type LibraryRowContext } from './library-rows';
 import { liveSessionIdsForPath } from './live-sessions';
 import { rollUpCollapsedSection } from './roll-up-collapsed-section';
 import { rowKey } from './targets';
@@ -136,21 +137,21 @@ function effectiveAttention(agent: AgentRosterEntry, muted: boolean) {
  *
  * @param agents - The agents in this section, in their pre-filter order.
  * @param state - The snapshot.
- * @param mutes - The resolved mute sets.
+ * @param ctx - What every row here is built with ({@link LibraryRowContext}).
  * @param filter - The section's display filter.
  * @param reason - The reason to stamp on each row.
  */
 function filteredAgentRows(
   agents: readonly AgentRosterEntry[],
   state: SidebarState,
-  mutes: MuteIndex,
+  ctx: LibraryRowContext,
   filter: string | undefined,
   reason: string
 ): { rows: SidebarRowModel[]; hidden: number; hiddenLabel: string } {
   const rows: SidebarRowModel[] = [];
   let hidden = 0;
   for (const agent of agents) {
-    const muted = mutes.agents.has(agent.path);
+    const muted = ctx.mutes.agents.has(agent.path);
     const attention = effectiveAttention(agent, muted);
     const keep =
       filter === 'attention'
@@ -162,7 +163,7 @@ function filteredAgentRows(
       hidden += 1;
       continue;
     }
-    rows.push(agentRow(agent, state, mutes, reason));
+    rows.push(agentRow(agent, state, ctx, reason));
   }
   return {
     rows,
@@ -267,7 +268,7 @@ function section(
  *
  * @param group - The group.
  * @param state - The snapshot.
- * @param mutes - The resolved mute sets.
+ * @param ctx - What every row here is built with ({@link LibraryRowContext}).
  * @param byPath - The roster, by path.
  * @param rooms - Every room, by id.
  * @param isWorking - Whether a row's subject is streaming ({@link rowIsWorking}).
@@ -275,7 +276,7 @@ function section(
 function groupSection(
   group: SidebarGroup,
   state: SidebarState,
-  mutes: MuteIndex,
+  ctx: LibraryRowContext,
   byPath: Map<string, AgentRosterEntry>,
   rooms: Map<string, RoomSummary>,
   isWorking: (row: SidebarRowModel) => boolean
@@ -300,16 +301,16 @@ function groupSection(
       // rebuild on the next render. `classifySidebarDrop` refuses a drop INTO
       // one for the same reason; this is the other half of it.
       if (agent)
-        rows.push({ ...agentRow(agent, state, mutes, 'library:group-member'), draggable: false });
+        rows.push({ ...agentRow(agent, state, ctx, 'library:group-member'), draggable: false });
     }
   } else {
     for (const ref of group.items) {
       if (ref.kind === 'agent') {
         const agent = byPath.get(ref.path);
-        if (agent) rows.push(agentRow(agent, state, mutes, 'library:group-member'));
+        if (agent) rows.push(agentRow(agent, state, ctx, 'library:group-member'));
       } else {
         const room = rooms.get(ref.roomId);
-        if (room) rows.push(roomLibraryRow(room, state, mutes, 'library:group-member'));
+        if (room) rows.push(roomLibraryRow(room, state, ctx, 'library:group-member'));
       }
     }
   }
@@ -357,6 +358,11 @@ interface LibrarySectionContent {
  */
 export function buildLibrarySections(state: SidebarState): SidebarSectionModel[] {
   const mutes = muteIndex(state.prefs);
+  // One pass over the rooms, answering both halves of the one-door rule: which
+  // direct messages Library leaves out, and what each agent's row says instead
+  // (`sidebar-simplification` D2).
+  const suppressedDms = indexSuppressedDms(state, mutes);
+  const ctx: LibraryRowContext = { mutes, dmUnread: suppressedDms.unreadByAgentPath };
   const byPath = new Map(state.agents.map((agent) => [agent.path, agent]));
   const rooms = new Map(
     state.rooms.filter((room) => !room.archived).map((room) => [room.id, room])
@@ -376,10 +382,10 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
   for (const ref of state.prefs.pinned) {
     if (ref.kind === 'agent') {
       const agent = byPath.get(ref.path);
-      if (agent) pinnedRows.push(agentRow(agent, state, mutes, 'library:pinned'));
+      if (agent) pinnedRows.push(agentRow(agent, state, ctx, 'library:pinned'));
     } else {
       const room = rooms.get(ref.roomId);
-      if (room) pinnedRows.push(roomLibraryRow(room, state, mutes, 'library:pinned'));
+      if (room) pinnedRows.push(roomLibraryRow(room, state, ctx, 'library:pinned'));
     }
   }
 
@@ -387,10 +393,17 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
   const dmRows: SidebarRowModel[] = [];
   for (const room of rooms.values()) {
     if (groupedRooms.has(room.id)) continue;
+    // A hand-made 1:1 direct message is the agent's own session under a second
+    // name, and the agent already has a row. It keeps its place in Today, in
+    // ⌘K and on the agent's profile; what it loses is a standing second list
+    // (reason `library:dm-suppressed-1to1`). A section the operator put it in
+    // by hand is left alone above — an item somebody filed is somewhere they
+    // put it.
+    if (suppressedDms.isSuppressed(room)) continue;
     const row = roomLibraryRow(
       room,
       state,
-      mutes,
+      ctx,
       room.kind === 'dm' ? 'library:dm' : 'library:channel'
     );
     (room.kind === 'dm' ? dmRows : channelRows).push(row);
@@ -410,7 +423,7 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
   const filtered = filteredAgentRows(
     ungrouped,
     state,
-    mutes,
+    ctx,
     agentPrefs?.displayFilter,
     'library:agent'
   );
@@ -420,7 +433,7 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
   const reveal = revealRow(filtered.hidden, filtered.hiddenLabel);
   const isWorking = rowIsWorking(state, rooms);
   const groups = state.prefs.groups.map((group) =>
-    groupSection(group, state, mutes, byPath, rooms, isWorking)
+    groupSection(group, state, ctx, byPath, rooms, isWorking)
   );
 
   // What each of the four sections holds, keyed by id. A `Record` over
