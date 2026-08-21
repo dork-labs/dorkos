@@ -208,6 +208,11 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     filePath: '/tmp/nightly-sweep/SKILL.md',
     createdAt: new Date(Date.now() - 20 * 60_000).toISOString(),
     updatedAt: new Date(Date.now() - 20 * 60_000).toISOString(),
+    reason: null,
+    proposedBySessionId: null,
+    proposedByAgentPath: null,
+    proposedByName: null,
+    nextRuns: [],
     ...overrides,
   };
 }

@@ -29,6 +29,11 @@ function task(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     filePath: `/tmp/${overrides.id}/SKILL.md`,
     createdAt: '2026-08-19T09:00:00.000Z',
     updatedAt: '2026-08-19T09:00:00.000Z',
+    reason: null,
+    proposedBySessionId: null,
+    proposedByAgentPath: null,
+    proposedByName: null,
+    nextRuns: [],
     ...overrides,
   };
 }

@@ -103,6 +103,11 @@ const TASK: Task = {
   filePath: '',
   createdAt: NOW,
   updatedAt: NOW,
+  reason: null,
+  proposedBySessionId: null,
+  proposedByAgentPath: null,
+  proposedByName: null,
+  nextRuns: [],
 };
 
 const METRICS: DeliveryMetrics = {

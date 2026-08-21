@@ -4406,11 +4406,46 @@
           "updatedAt": {
             "type": "string"
           },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "proposedBySessionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "proposedByAgentPath": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "proposedByName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
           "nextRun": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "nextRuns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
           }
         },
         "required": [
@@ -4494,6 +4529,9 @@
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
+          },
+          "reason": {
+            "type": "string"
           }
         },
         "required": [
@@ -4551,6 +4589,9 @@
           },
           "status": {
             "$ref": "#/components/schemas/SettableTaskStatus"
+          },
+          "reason": {
+            "type": "string"
           }
         }
       },
@@ -11555,7 +11596,7 @@
         "summary": "List all schedules",
         "responses": {
           "200": {
-            "description": "Array of schedules with nextRun",
+            "description": "Array of schedules, each with its next run and a preview of the few after it",
             "content": {
               "application/json": {
                 "schema": {

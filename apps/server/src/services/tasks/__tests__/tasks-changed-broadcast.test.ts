@@ -120,6 +120,7 @@ function createMockScheduler(): TaskSchedulerService {
     triggerManualRun: vi.fn().mockResolvedValue(null),
     cancelRun: vi.fn().mockReturnValue(false),
     getNextRun: vi.fn().mockReturnValue(new Date('2026-03-01T00:00:00Z')),
+    previewNextRuns: vi.fn().mockReturnValue([]),
     getActiveRunCount: vi.fn().mockReturnValue(0),
     isRegistered: vi.fn().mockReturnValue(false),
   } as unknown as TaskSchedulerService;
@@ -218,7 +219,12 @@ describe('a task write tells the world it happened', () => {
     // Reverses the earlier "deliberately absent" call: the Tasks list needs
     // this signal even though the autonomy banner never will.
     const result = await tools['tasks_create']!.handler(
-      { name: 'agent-proposed', prompt: 'do a thing', cron: '0 3 * * *' },
+      {
+        name: 'agent-proposed',
+        prompt: 'do a thing',
+        cron: '0 3 * * *',
+        reason: 'The nightly sweep keeps the backlog honest.',
+      },
       undefined
     );
 
@@ -228,7 +234,12 @@ describe('a task write tells the world it happened', () => {
 
   it('MCP tasks_create writes an activity event with the parked status attached', async () => {
     const result = await tools['tasks_create']!.handler(
-      { name: 'agent-proposed', prompt: 'do a thing', cron: '0 3 * * *' },
+      {
+        name: 'agent-proposed',
+        prompt: 'do a thing',
+        cron: '0 3 * * *',
+        reason: 'The nightly sweep keeps the backlog honest.',
+      },
       undefined
     );
     expect(result.isError).not.toBe(true);

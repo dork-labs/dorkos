@@ -17,6 +17,7 @@ import { withSpan, SPAN, ATTR } from '../observability/index.js';
 import { consumeRunStream, interruptRun } from './run-stream.js';
 import { publishRunStop, type CancelRunOutcome, type RunStopDelivery } from './run-cancel.js';
 import { buildTaskAppend } from './task-append.js';
+import { previewNextRuns } from './cron-preview.js';
 
 export type { CancelRunOutcome } from './run-cancel.js';
 
@@ -402,6 +403,25 @@ export class TaskSchedulerService {
     const job = this.cronJobs.get(taskId);
     if (!job) return null;
     return job.nextRun() ?? null;
+  }
+
+  /**
+   * When a cron WOULD fire, for a schedule this service has not registered
+   * (DOR-1394). Implemented in `cron-preview.ts`; forwarded here so that "when
+   * does this task run?" has ONE seam, whether or not a job exists — a caller
+   * holding a scheduler should never have to know which of two places to ask.
+   *
+   * @param cron - The cron expression to read.
+   * @param timezone - IANA timezone the expression is written in; UTC when absent.
+   * @param count - How many occurrences to return.
+   * @returns The next `count` fire times as ISO 8601 strings, soonest first.
+   */
+  previewNextRuns(
+    cron: string | null | undefined,
+    timezone: string | null | undefined,
+    count: number
+  ): string[] {
+    return previewNextRuns(cron, timezone, count);
   }
 
   /** Check if a task has a registered cron job. */

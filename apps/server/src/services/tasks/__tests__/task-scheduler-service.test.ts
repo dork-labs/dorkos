@@ -650,6 +650,75 @@ describe('TaskSchedulerService', () => {
     });
   });
 
+  describe('previewNextRuns()', () => {
+    it('reads a cron the scheduler has never registered (DOR-1394)', () => {
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      const runs = service.previewNextRuns('0 3 * * *', 'UTC', 3);
+
+      expect(runs).toHaveLength(3);
+      // Daily at 03:00 UTC, in order, one day apart.
+      for (const run of runs) expect(run).toMatch(/T03:00:00\.000Z$/);
+      const gaps = runs.slice(1).map((r, i) => Date.parse(r) - Date.parse(runs[i]!));
+      expect(gaps).toEqual([86_400_000, 86_400_000]);
+      expect(Date.parse(runs[0]!)).toBeGreaterThan(Date.now());
+    });
+
+    it('honours the timezone, so the same expression means different instants', () => {
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      const utc = service.previewNextRuns('0 3 * * *', 'UTC', 1);
+      const tokyo = service.previewNextRuns('0 3 * * *', 'Asia/Tokyo', 1);
+
+      // 03:00 in Tokyo is 18:00 UTC the day before — if the timezone were
+      // ignored, both would land on the same instant and this would be equal.
+      expect(tokyo[0]).toMatch(/T18:00:00\.000Z$/);
+      expect(tokyo[0]).not.toBe(utc[0]);
+    });
+
+    it('treats a missing timezone as UTC', () => {
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      expect(service.previewNextRuns('0 3 * * *', null, 1)).toEqual(
+        service.previewNextRuns('0 3 * * *', 'UTC', 1)
+      );
+    });
+
+    it('returns nothing for a cron it cannot read, rather than throwing', () => {
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      // An agent writes these. A proposal with a broken cron still has to be
+      // readable — and rejectable — by the person it is waiting on.
+      for (const cron of ['not a cron', '99 99 99 99 99', '* * *', '']) {
+        expect(service.previewNextRuns(cron, 'UTC', 3), `cron ${cron}`).toEqual([]);
+      }
+      expect(service.previewNextRuns('0 3 * * *', 'Mars/Olympus_Mons', 3)).toEqual([]);
+      expect(service.previewNextRuns(null, 'UTC', 3)).toEqual([]);
+      expect(service.previewNextRuns(undefined, 'UTC', 3)).toEqual([]);
+    });
+
+    it('returns nothing when asked for nothing', () => {
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      expect(service.previewNextRuns('0 3 * * *', 'UTC', 0)).toEqual([]);
+      expect(service.previewNextRuns('0 3 * * *', 'UTC', -1)).toEqual([]);
+    });
+
+    it('schedules nothing — reading a cron must not arm it', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Parked', prompt: 'test', cron: '* * * * *' })
+      );
+      store.updateTask(task.id, { status: 'pending_approval' });
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      await service.start();
+
+      expect(service.previewNextRuns(task.cron, task.timezone, 3)).toHaveLength(3);
+
+      expect(service.isRegistered(task.id)).toBe(false);
+      expect(service.getNextRun(task.id)).toBeNull();
+
+      await service.stop();
+    });
+  });
+
   describe('registerTask / unregisterTask', () => {
     it('can register and unregister a task', () => {
       const task = store.createTask(taskInput({ name: 'Reg', prompt: 'test', cron: '0 * * * *' }));
@@ -1292,7 +1361,12 @@ describe('buildTaskAppend', () => {
       filePath: '/tmp/tasks/daily-cleanup/SKILL.md',
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
+      reason: null,
+      proposedBySessionId: null,
+      proposedByAgentPath: null,
+      proposedByName: null,
       nextRun: null,
+      nextRuns: [],
     };
 
     const run: TaskRun = {

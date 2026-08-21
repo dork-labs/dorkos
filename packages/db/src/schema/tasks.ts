@@ -9,8 +9,22 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   cron: text('cron').notNull(),
   timezone: text('timezone').notNull().default('UTC'),
   prompt: text('prompt').notNull(),
-  cwd: text('cwd'),
   agentId: text('agent_id'),
+  /**
+   * Why the schedule should exist, in the proposer's own words. An agent must
+   * give one (`tasks_create` requires it); a person creating their own schedule
+   * needs no case made to themselves, so their rows are NULL.
+   */
+  reason: text('reason'),
+  /** The session an agent proposed this from, so the operator can read the conversation behind it. */
+  proposedBySessionId: text('proposed_by_session_id'),
+  /**
+   * The working directory of the session that proposed it, which is the key the
+   * agent-identity service resolves a display name from. The name itself is
+   * deliberately NOT stored: an agent can be renamed or revoked, and a cached
+   * name would outlive both.
+   */
+  proposedByAgentPath: text('proposed_by_agent_path'),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   maxRuntime: integer('max_runtime'),
   permissionMode: text('permission_mode').notNull().default('acceptEdits'),
