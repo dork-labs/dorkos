@@ -13,6 +13,12 @@ import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { PendingInteractionDTO, Session, Task } from '@dorkos/shared/types';
 import type { AttentionSignal } from './attention-signal';
 import { describeInteraction } from './describe-interaction';
+import {
+  approvalSignalId,
+  interactionSignalId,
+  interactionSignalKind,
+  scheduleSignalId,
+} from './signal-ids';
 
 /** Everything {@link deriveAttentionSignals} reads. */
 export interface AttentionSources {
@@ -152,7 +158,7 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
   // ── Capability approvals: the one blockage that is not a session ──
   for (const approval of sources.approvals) {
     signals.push({
-      id: `approval:${approval.approvalId}`,
+      id: approvalSignalId(approval.approvalId),
       kind: 'permission-prompt',
       primary: approval.requestedBy ?? approval.capabilityTitle,
       ...(approval.requestedBy === undefined ? {} : { secondary: approval.capabilityTitle }),
@@ -166,7 +172,7 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
   // kind of detail the Tasks page shows and a one-line row does not.
   for (const task of sources.schedules) {
     signals.push({
-      id: `schedule:${task.id}`,
+      id: scheduleSignalId(task.id),
       kind: 'schedule-approval',
       primary: task.displayName ?? task.name,
       secondary: SCHEDULE_SECONDARY,
@@ -191,11 +197,21 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
       // of these, and so does a runtime that reported `blocked` before its
       // prompt arrived. It reads as a permission ask waiting on you, which is
       // what it is.
-      const isQuestion = interaction?.type === 'question';
+      //
+      // The id and kind for a CAPTURED prompt come from `signal-ids.ts` — the
+      // same functions `deriveWaitingItems` calls for the Inbox popover's own
+      // per-item count, so the two can never classify the same interaction
+      // differently.
       signals.push(
         sessionSignal(session, sources, {
-          id: `blocked:${interaction?.id ?? session.id}`,
-          kind: isQuestion ? 'question' : 'permission-prompt',
+          id:
+            interaction === undefined
+              ? `blocked:${session.id}`
+              : interactionSignalId(interaction.id),
+          kind:
+            interaction === undefined
+              ? 'permission-prompt'
+              : interactionSignalKind(interaction.type),
           secondary:
             interaction === undefined ? 'Waiting on you' : describeInteraction(interaction),
           since:

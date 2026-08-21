@@ -36,6 +36,9 @@ export {
   usePendingInteractions,
   PENDING_INTERACTIONS_QUERY_KEY,
 } from './model/use-pending-interactions';
+// The Inbox popover's own named derivation of the same three queues above —
+// see its module doc for why a dedicated hook replaced three ad hoc calls.
+export { useWaitingQueue } from './model/use-waiting-queue';
 // The half-sentence that follows an agent's name ("wants to edit standup.md").
 // Exported because `features/ask` builds the card's headline from it, and one
 // phrasing is the point.

@@ -10,13 +10,7 @@ import {
   ResponsivePopoverTitle,
 } from '@/layers/shared/ui';
 import { useEventStream } from '@/layers/shared/model';
-import {
-  useAskAgentNames,
-  usePendingApprovals,
-  usePendingInteractions,
-  usePendingScheduleApprovals,
-  useSettlingAsks,
-} from '@/layers/entities/attention';
+import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
 import {
   useInboxRequest,
   useMarkAllRead,
@@ -228,14 +222,14 @@ interface PillState {
  * there.
  */
 export function InboxBell() {
-  const { approvals, isError, retry } = usePendingApprovals();
-  // The other half of "waiting on you": the prompts agents are parked on. Both
-  // are counted by the one pill, because a person does not hold two queues.
-  const { interactions: asks } = usePendingInteractions();
-  // And the third: a schedule an agent proposed and parked. It never arms
-  // itself (DOR-504), so until somebody says yes or no it is a request sitting
-  // in exactly the same queue as the other two.
-  const { schedules } = usePendingScheduleApprovals();
+  // The popover's one derivation of "what's waiting" (spec
+  // `schedule-approval-experience` §C4) — capability approvals, the prompts
+  // agents are parked on, and schedules an agent proposed and never armed
+  // (DOR-504), all three counted by the one pill because a person does not
+  // hold three queues. `items` carries the same id/kind vocabulary
+  // `useAttentionSignals` builds its own signals from, so a change to what
+  // counts as a blockage has one derivation to update on this read side.
+  const { approvals, asks, schedules, items: waitingItems, isError, retry } = useWaitingQueue();
   // Answered prompts, still on screen saying how they ended. They are NOT
   // counted — nothing is waiting on them — but the pill has to stay mounted
   // while one is being said, or the receipt is torn away in the frame it
@@ -292,8 +286,11 @@ export function InboxBell() {
   // A parked schedule counts toward the number on the badge — it is a
   // request for a decision just like a capability approval — but the SENTENCE
   // no longer calls it one; `waitingLabel`/`waitingSummary` below name a
-  // schedule as a schedule.
-  const waitingCount = approvals.length + schedules.length + asks.length;
+  // schedule as a schedule. The count itself comes from `useWaitingQueue`'s
+  // `items` rather than re-summing three lengths here, so it can never drift
+  // from what that derivation counts (always equal by construction; see its
+  // doc comment).
+  const waitingCount = waitingItems.length;
   const trustedCount = permissions.length;
   // A failed read while the whole link is down is not news about approvals — it
   // is the same outage the connection item already reports. Staying quiet keeps
