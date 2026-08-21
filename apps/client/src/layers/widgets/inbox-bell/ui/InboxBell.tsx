@@ -62,9 +62,10 @@ function countNoun(count: number, noun: string): string {
 }
 
 /**
- * Every kind that is actually waiting, named honestly and joined with an
- * Oxford comma — "1 request", "1 request and 2 schedules", "1 question, 2
- * requests, and 3 schedules".
+ * Two or three kinds that are actually waiting, at once, named honestly and
+ * joined with an Oxford comma — "1 request and 2 schedules", "1 question, 2
+ * requests, and 3 schedules". Callers only reach this once more than one kind
+ * is nonzero; a single kind gets its own sentence above, in its own words.
  *
  * Order matches the panel's own listing order below: questions first (their
  * window is the shortest), then capability requests, then schedules.
@@ -79,7 +80,6 @@ function listWaitingKinds(approvals: number, schedules: number, asks: number): s
     approvals > 0 ? countNoun(approvals, 'request') : null,
     schedules > 0 ? countNoun(schedules, 'schedule') : null,
   ].filter((part): part is string => part !== null);
-  if (parts.length === 1) return parts[0];
   if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
   return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
 }
@@ -134,15 +134,14 @@ function waitingSummary(approvals: number, schedules: number, asks: number): str
     return `${subject} waiting for your approval. Nothing runs until you decide.`;
   }
   if (approvals === 0 && asks === 0 && schedules > 0) {
-    return schedules === 1
-      ? '1 schedule wants your approval.'
-      : `${schedules} schedules want your approval.`;
+    const subject = schedules === 1 ? '1 schedule wants' : `${schedules} schedules want`;
+    return `${subject} your approval. Nothing runs until you decide.`;
   }
   if (approvals === 0 && schedules === 0 && asks > 0) {
     const subject = asks === 1 ? '1 agent is' : `${asks} agents are`;
     return `${subject} waiting on your answer before carrying on.`;
   }
-  return `${listWaitingKinds(approvals, schedules, asks)} are waiting on you.`;
+  return `${listWaitingKinds(approvals, schedules, asks)} are waiting on you. Nothing runs until you decide.`;
 }
 
 /**
@@ -290,12 +289,11 @@ export function InboxBell() {
     setOpen(true);
   }
 
-  // A parked schedule still counts toward the number on the badge — it is a
+  // A parked schedule counts toward the number on the badge — it is a
   // request for a decision just like a capability approval — but the SENTENCE
   // no longer calls it one; `waitingLabel`/`waitingSummary` below name a
   // schedule as a schedule.
-  const approvalCount = approvals.length + schedules.length;
-  const waitingCount = approvalCount + asks.length;
+  const waitingCount = approvals.length + schedules.length + asks.length;
   const trustedCount = permissions.length;
   // A failed read while the whole link is down is not news about approvals — it
   // is the same outage the connection item already reports. Staying quiet keeps
@@ -381,10 +379,11 @@ export function InboxBell() {
                     Needs You
                   </h2>
                   {/* While only a receipt is left, the count is zero and the
-                      summary would read "0 requests are waiting for your
-                      answer" — a sentence about nothing, said at the exact
-                      moment somebody finished their queue. It says what just
-                      happened instead. */}
+                      summary would call `waitingSummary(0, 0, 0)` directly —
+                      which returns ", and undefined are waiting on you.
+                      Nothing runs until you decide." (`listWaitingKinds` has
+                      no guard of its own for the all-zero case). It says what
+                      just happened instead. */}
                   {!unreadable &&
                     (waitingCount === 0 ? (
                       <p className="text-muted-foreground text-xs md:mt-1">Answered.</p>

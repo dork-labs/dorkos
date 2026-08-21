@@ -1091,8 +1091,64 @@ describe('InboxBell — what the panel says', () => {
 
     await userEvent.click(await screen.findByTestId('inbox-bell'));
 
-    expect(await screen.findByText('2 schedules want your approval.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('2 schedules want your approval. Nothing runs until you decide.')
+    ).toBeInTheDocument();
     expect(screen.queryByText(/request/i)).not.toBeInTheDocument();
+  });
+
+  it('names all three kinds at once, in the panel listing order, still promising nothing runs', async () => {
+    // Two kinds of coverage a two-kind test cannot give: `countNoun`'s plural
+    // path exercised on a THIRD kind in the same sentence, and the three-part
+    // Oxford join (`a, b, and c`) — indistinguishable from a two-part join
+    // (`a and b`) until a third part is actually present. Seeded defect:
+    // break `countNoun`'s pluralization (drop the trailing `s`) or the Oxford
+    // join (e.g. always `.join(', ')` with no "and") and this goes red.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      listTasks: vi
+        .fn()
+        .mockResolvedValue([
+          parkedSchedule(),
+          parkedSchedule({ id: 'task-2', displayName: 'Weekly digest' }),
+        ]),
+      listPendingInteractions: vi.fn().mockResolvedValue({
+        interactions: [
+          {
+            sessionId: 'session-1',
+            cwd: '/projects/meeting-notes',
+            interaction: {
+              type: 'question',
+              id: 'q-1',
+              startedAt: Date.now(),
+              remainingMs: 600_000,
+              timeoutMs: 600_000,
+              questions: [],
+            },
+          },
+          {
+            sessionId: 'session-2',
+            cwd: '/projects/roadmap',
+            interaction: {
+              type: 'question',
+              id: 'q-2',
+              startedAt: Date.now(),
+              remainingMs: 600_000,
+              timeoutMs: 600_000,
+              questions: [],
+            },
+          },
+        ],
+      }),
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+
+    expect(
+      await screen.findByText(
+        '2 questions, 1 request, and 2 schedules are waiting on you. Nothing runs until you decide.'
+      )
+    ).toBeInTheDocument();
   });
 
   it('keeps every section heading in the accessible tree below the desktop breakpoint', async () => {

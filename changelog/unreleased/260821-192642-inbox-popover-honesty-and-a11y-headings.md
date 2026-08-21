@@ -10,5 +10,5 @@ covers:
 
 ### Changed
 
-- Removed the extra sentence under "Scheduled Runs" in the Inbox popover. The schedule card underneath already says what it's about to run (DOR-1395)
+- Removed the extra sentence under "Scheduled Runs" in the Inbox popover. The summary above it already promises nothing runs until you decide, and the schedule card underneath already says what it's about to run (DOR-1395)
 - The "All clear" checkmark now fades and rises into place instead of appearing all at once (DOR-1395)
