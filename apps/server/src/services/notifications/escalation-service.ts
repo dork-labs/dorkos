@@ -379,9 +379,13 @@ export class EscalationService {
  * Which agent's chat bindings carry an escalation.
  *
  * A binding belongs to an agent, and the condition being escalated does not
- * always name one — an Ask arrives from a projector, which knows a session and a
- * working directory but not which agent is behind them. Without a fallback the
- * headline case ("a blocked agent reaches your pocket") would never reach
+ * always name one. `ask.pending` and `session.error` resolve theirs from the
+ * session's working directory (`agent-path-lookup.ts`, DOR-1408), but that
+ * resolution is itself best-effort: it comes up empty for a directory that
+ * names no registered agent, or if a session event races Mesh wiring the
+ * lookup in at boot. Without a fallback, a subject-less condition — still the
+ * routine case on an install where that resolution misses — would leave the
+ * headline promise ("a blocked agent reaches your pocket") never reaching
  * Telegram at all.
  *
  * So: the subject's own agent when it named one and that agent can actually

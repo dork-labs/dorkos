@@ -12,6 +12,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { EscalationDelay } from '@dorkos/shared/config-schema';
 import { SessionStateProjector } from '../../session/session-state-projector.js';
+import { setAgentPathLookup, resetAgentPathLookup } from '../../mesh/agent-path-lookup.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { NotificationStore } from '../notification-store.js';
 import {
@@ -24,6 +25,8 @@ import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
 import { resolveScheduleParkPayload } from '../emitters/schedule-park.js';
 import { EscalationService, armEscalation, setEscalationService } from '../escalation-service.js';
 import type { WebPushChannel } from '../channels/web-push.js';
+import type { RelayChannelDeps, RelayChannelPublisher } from '../channels/relay.js';
+import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import { TaskStore } from '../../tasks/task-store.js';
 import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/task-tools.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
@@ -65,6 +68,9 @@ function askOn(projector: SessionStateProjector, id: string): void {
   } as never);
 }
 
+/** The Mesh agent every test's `/Users/dev/acme` session resolves to (DOR-1408). */
+const ACME_AGENT_ID = 'agent-acme';
+
 beforeEach(() => {
   vi.useFakeTimers();
   db = createTestDb();
@@ -84,6 +90,14 @@ beforeEach(() => {
     })
   );
 
+  // A session rooted at `/Users/dev/acme` now stamps `agentId` on the Ask/error
+  // payload it raises (DOR-1408) — this is what lets `pickRelayAgent` (see the
+  // `the relay leg` describe block below) prefer the condition's own agent.
+  setAgentPathLookup({
+    getByPath: (projectPath) =>
+      projectPath === '/Users/dev/acme' ? { id: ACME_AGENT_ID } : undefined,
+  });
+
   unsubscribes = [watchAskResolution(), watchSessionLifecycle()];
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
 });
@@ -92,6 +106,7 @@ afterEach(() => {
   for (const off of unsubscribes) off();
   setEscalationService(null);
   setNotificationService(null);
+  resetAgentPathLookup();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -346,5 +361,111 @@ describe('the knob', () => {
     await vi.advanceTimersByTimeAsync(60 * ONE_MINUTE);
 
     expect(sendToAll).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Which agent's chat binding the relay leg reaches, once a condition names one
+ * (DOR-1408). Before that, `ask.pending`/`session.error` payloads never
+ * carried `agentId`, so `pickRelayAgent` (`escalation-service.ts`) never had a
+ * `subjectAgentId` to prefer and every escalation fell through to "the most
+ * recently bound agent that can" — a different agent's chat than the one the
+ * condition was actually about. Stamping `agentId` on those two payloads
+ * activates a preference `pickRelayAgent` always had but could never exercise;
+ * this pins that behavior end to end, through a real relay leg rather than a
+ * unit test that hands `pickRelayAgent` its own `subjectAgentId`.
+ */
+describe('the escalation relay leg', () => {
+  /** A chat session as `NotifyTargetBindingRouter` reports one. */
+  interface FakeSession {
+    scope: 'chat' | 'user';
+    chatId?: string;
+    sessionId: string;
+    lastActivityAt: number;
+  }
+
+  /** Build a binding with the fields `pickRelayAgent`/`resolveNotifyTarget` read. */
+  function binding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
+    return {
+      id: 'b-1',
+      adapterId: 'tg-1',
+      agentId: 'agent-1',
+      sessionStrategy: 'per-chat',
+      label: '',
+      permissionMode: 'acceptEdits',
+      enabled: true,
+      canInitiate: true,
+      canReply: true,
+      canReceive: true,
+      notifyOnTaskComplete: true,
+      bridge: 'off',
+      roomId: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  let publish: ReturnType<typeof vi.fn>;
+  let relayDeps: RelayChannelDeps;
+
+  beforeEach(() => {
+    publish = vi.fn().mockResolvedValue({ deliveredTo: 1 });
+    const sessionsByBinding: Record<string, FakeSession[]> = {
+      // The condition's OWN agent — bound to `chat-ACME`, but the OLDER of
+      // the two bindings by `updatedAt`.
+      'b-acme': [{ scope: 'chat', chatId: 'chat-ACME', sessionId: 's-acme', lastActivityAt: 1000 }],
+      // A DIFFERENT agent's binding — bound to `chat-NEWEST`, and the MOST
+      // RECENTLY updated of the two, which is what a subject-less condition
+      // (the pre-DOR-1408 state) fell back to.
+      'b-other': [
+        { scope: 'chat', chatId: 'chat-NEWEST', sessionId: 's-other', lastActivityAt: 2000 },
+      ],
+    };
+    relayDeps = {
+      isRelayEnabled: () => true,
+      relayCore: { publish } as unknown as RelayChannelPublisher,
+      bindingStore: {
+        getAll: () => [
+          binding({
+            id: 'b-acme',
+            adapterId: 'tg-acme',
+            agentId: ACME_AGENT_ID,
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          }),
+          binding({
+            id: 'b-other',
+            adapterId: 'tg-other',
+            agentId: 'agent-other',
+            updatedAt: '2026-06-01T00:00:00.000Z',
+          }),
+        ],
+      },
+      bindingRouter: {
+        getSessionsByBinding: (bindingId) => sessionsByBinding[bindingId] ?? [],
+      },
+    };
+    setEscalationService(
+      new EscalationService({
+        store,
+        push: { sendToAll } as unknown as WebPushChannel,
+        relay: () => relayDeps,
+        readDelay: () => delay,
+      })
+    );
+  });
+
+  it("reaches the condition's own agent's chat, not the most-recently-bound agent's", async () => {
+    const projector = new SessionStateProjector('sess-relay-1');
+    projector.cwd = '/Users/dev/acme';
+    askOn(projector, 'int-relay-1');
+
+    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
+    await flush();
+
+    expect(publish).toHaveBeenCalledTimes(1);
+    const [subject] = publish.mock.calls[0] as [string, unknown, unknown];
+    expect(subject).toContain('chat-ACME');
+    expect(subject).not.toContain('chat-NEWEST');
   });
 });

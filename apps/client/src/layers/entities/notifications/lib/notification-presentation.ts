@@ -113,25 +113,28 @@ export function notificationRowTone(notification: NotificationDTO): Notification
  *
  * Verified against every server emitter under
  * `apps/server/src/services/notifications/emitters/` (and the one inline
- * `notify()` call in `apps/server/src/index.ts` for `dead-letter.created`):
- * these seven are the only kinds whose payload an emitter ever populates
- * `agentId` on. The other five — `ask.pending`, `session.error`,
- * `dead-letter.created`, `update.installed`, `report.daily` — never carry
- * one, so {@link groupActivityRows} (which requires an `agentId` to fold rows
- * at all) can never build a group of them.
+ * `notify()` call in `apps/server/src/index.ts` for `dead-letter.created`).
+ * `update.installed` and `report.daily` are excluded structurally — their
+ * payload TYPE carries no `agentId` field at all, optional or otherwise, so
+ * {@link groupActivityRows} (which requires an `agentId` to fold rows at all)
+ * can never build a group of them.
  *
- * Not inferred from the payload TYPE's `agentId?: string` — several of the
- * excluded kinds (`session.error`, `ask.pending`) declare it optional too,
- * without any emitter ever setting it. A named list, checked against
- * behaviour, is the only honest source of truth here.
+ * `ask.pending`, `session.error` and `dead-letter.created` are excluded
+ * DESPITE now carrying `agentId` (DOR-1408 wired all three): grouping is a
+ * separate decision from attribution, made here and not automatically earned
+ * by a payload field. The first two are drawn in the `error` tone regardless
+ * (`notificationRowTone`), so `InboxRow` never draws a face for them either —
+ * folding three of a kind that never shows a face into "Alpha Bot hit 3
+ * errors" would trade the ability to scan each one for a summary line, which
+ * is the wrong trade for the loudest tier the registry has. `dead-letter.created`
+ * DOES draw a face when its sender resolves (`quiet`/`neutral` tone), but
+ * stays out of the grouping list on its own, smaller-volume merits — nothing
+ * here forces it to stay excluded going forward.
  *
- * `turn.completed` is the one exception worth flagging: its own emitter
- * (`session-lifecycle.ts`) does not set `agentId` today either, so it cannot
- * group in practice yet. Kept anyway — it is the highest-churn kind
- * coalescing exists for (an agent finishing turn after turn is exactly the
- * burst this feature was built to collapse), and wiring `agentId` through
- * from the session's owning agent is a small, tracked follow-up rather than
- * a reason to leave the phrase unwritten.
+ * Not inferred from the payload TYPE's `agentId?: string` for exactly this
+ * reason: a kind gaining the field is attribution, not an automatic license
+ * to summarize its rows. A named list, checked against behaviour AND product
+ * intent, is the only honest source of truth here.
  */
 const GROUPABLE_KINDS = [
   'schedule.parked',
