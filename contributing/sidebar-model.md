@@ -82,8 +82,7 @@ SidebarModel
         ├── label: string | null      // null = a headerless body (Heads up and Today)
         ├── collapsible / collapsed   // only Library sections may fold
         ├── rollup?                   // the signal that survives folding
-        ├── subsections?              // groups inside Agents. One level, never two
-        └── rows: SidebarRowModel[]
+        └── rows: SidebarRowModel[]   // a section's members. There is nothing below them
             ├── target                // what clicking it does
             ├── glyph / primary / secondary
             ├── status                // an avatar dot, from lifecycle
@@ -101,20 +100,22 @@ Two shapes are worth knowing before you read the code:
 
 Every zone, section and row carries `reason`, formatted `<namespace>:<rule>` — lowercase letters and hyphens, exactly one colon, asserted for every node of every fixture. It is the answer to "why is this row here?" in devtools, and it is also the handle tests grab.
 
-| Namespace          | Sits on                                 | Values you will see                                                                                                                                                                                              |
-| ------------------ | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `zone:`            | a zone                                  | `zone:now`, `zone:getting-started`, `zone:today`, `zone:library`                                                                                                                                                 |
-| `now:`             | the Heads up body section, and its rows | `now:body`; then `now:permission-prompt`, `now:question`, `now:schedule-approval`, `now:error`                                                                                                                   |
-| `getting-started:` | the day-one body section                | `getting-started:body`                                                                                                                                                                                           |
-| `today:`           | Today's body section, and most rows     | `today:body`; `today:interaction-recency` (you touched it); `today:digest`; `today:automated` (unfolded behind the reveal)                                                                                       |
-| `anchor:`          | one Today row                           | `anchor:active-session` — first because you have it open                                                                                                                                                         |
-| `rollup:`          | a row standing for other rows           | `rollup:working`, `rollup:now-overflow`, `rollup:automated`                                                                                                                                                      |
-| `suggestion:`      | a Getting-started row                   | the suggestion's own id, e.g. `suggestion:agents-found`, `suggestion:ask-dorkbot`                                                                                                                                |
-| `library:`         | Library's sections and rows             | sections `library:pins`, `library:channels`, `library:dms`, `library:agents`, `library:group`; rows `library:pinned`, `library:channel`, `library:dm`, `library:agent`, `library:group-member`, `library:reveal` |
+| Namespace          | Sits on                                 | Values you will see                                                                                                                                                                                                  |
+| ------------------ | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zone:`            | a zone                                  | `zone:now`, `zone:getting-started`, `zone:today`, `zone:library`                                                                                                                                                     |
+| `now:`             | the Heads up body section, and its rows | `now:body`; then `now:permission-prompt`, `now:question`, `now:schedule-approval`, `now:error`                                                                                                                       |
+| `getting-started:` | the day-one body section                | `getting-started:body`                                                                                                                                                                                               |
+| `today:`           | Today's body section, and most rows     | `today:body`; `today:interaction-recency` (you touched it); `today:digest`; `today:automated` (unfolded behind the reveal)                                                                                           |
+| `anchor:`          | one Today row                           | `anchor:active-session` — first because you have it open                                                                                                                                                             |
+| `rollup:`          | a row standing for other rows           | `rollup:working`, `rollup:now-overflow`, `rollup:automated`                                                                                                                                                          |
+| `suggestion:`      | a Getting-started row                   | the suggestion's own id, e.g. `suggestion:agents-found`, `suggestion:ask-dorkbot`                                                                                                                                    |
+| `library:`         | Library's sections and rows             | sections `library:pins`, `library:channels`, `library:dms`, `library:agents`, `library:group`; rows `library:pinned`, `library:channel`, `library:dm`, `library:agent`, `library:group-member`, `library:all-agents` |
+
+`library:all-agents` is the Agents section's last row — the door to the Team page, present whenever the roster holds more than the section is drawing (D3). It replaced `library:reveal`, an "N inactive" row that took a click and answered nothing (DOR-1105).
 
 Two things that look like each other and are not:
 
-- A group sub-header's **id** is `group:<groupId>` — a raw id, so it is not reason-shaped. Its **reason** is `library:group`.
+- A hand-made section's **id** is `group:<groupId>` — a raw id, so it is not reason-shaped. Its **reason** is `library:group`. The `group` spelling is the STORED one: what a person reads says "section" everywhere (D3), and `ui.sidebar.groups` is not renamed because it is persisted.
 - A suggestion's reason, its row key, and the token written into `prefs.gettingStarted.retired[]` are all the same string. One spelling, so renaming a suggestion can never un-retire it.
 
 ### How the rules compose
