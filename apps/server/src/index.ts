@@ -71,6 +71,7 @@ import {
 } from './services/notifications/notification-service.js';
 import { watchSessionLifecycle } from './services/notifications/emitters/session-lifecycle.js';
 import { watchAskResolution } from './services/notifications/emitters/ask-resolution.js';
+import { deadLetterPayload } from './services/notifications/emitters/dead-letter.js';
 import { notifyRunCompleted } from './services/notifications/emitters/run-completed.js';
 import { agentLivenessObserver } from './services/notifications/emitters/agent-liveness.js';
 import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
@@ -134,6 +135,7 @@ import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
+import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
@@ -1221,10 +1223,7 @@ async function start() {
           // leave a quiet row in the inbox so it is still findable tomorrow.
           onDeadLetter: (notice) => {
             eventFanOut.broadcast('relay_dead_letter', notice);
-            void notify('dead-letter.created', {
-              deadLetterId: notice.messageId,
-              reason: notice.reason,
-            });
+            void notify('dead-letter.created', deadLetterPayload(notice));
           },
         })
       );
@@ -1257,6 +1256,13 @@ async function start() {
       logger,
     });
     logger.info('[Mesh] MeshCore initialized');
+
+    // Wire the cwd -> agent lookup notification emitters read from (session
+    // lifecycle, ask resolution): both fire from module-level projector
+    // subscriptions registered before this line runs, so they read this
+    // singleton lazily rather than receiving MeshCore as a constructor
+    // dependency. See `agent-path-lookup.ts`.
+    setAgentPathLookup(meshCore);
 
     // Provide MeshCore to every registered runtime that can use it: per-session
     // manifest lookup, peer-agents context, and the guard that decides whether a
