@@ -862,12 +862,24 @@ export type RawMcpServerConfig = z.infer<typeof RawMcpServerConfigSchema>;
  * its own `projects/` transcripts and its own sign-in
  * (`runtimes.claudeCode.accounts`, spec `claude-code-accounts` D1).
  *
- * The **path is the identity**: it is literally what `CLAUDE_CONFIG_DIR` takes,
- * so there is no id to generate, migrate, or keep in step with anything. The
+ * The **path is what runs**: it is literally what `CLAUDE_CONFIG_DIR` takes. The
  * label exists because the operator's real question is _which client_ a session
  * belongs to, and `~/.claude2` does not answer that while "Acme Corp" does.
+ *
+ * The **id is what everything else references** (ADR 260821-205324). An agent
+ * manifest and a session launch hint name an account by id, never by path, so a
+ * directory the operator moves or renames stays one edit in one
+ * operator-controlled place instead of silently breaking every agent pointing at
+ * it. An id that is no longer registered degrades to the next tier of the launch
+ * ladder rather than failing a launch.
  */
 export const ClaudeCodeAccountSchema = z.object({
+  /**
+   * Stable kebab-case slug for this account, unique within the registry. What
+   * agents and launch hints reference. Generated at registration from the label
+   * (else the path's basename) — see {@link claudeAccountId}.
+   */
+  id: z.string().min(1),
   /** Absolute path of the Claude config directory this account lives in. */
   path: z.string().min(1),
   /** What the operator calls this account; `null` when they have not named it. */
@@ -876,6 +888,58 @@ export const ClaudeCodeAccountSchema = z.object({
 
 /** One known Claude Code account. See {@link ClaudeCodeAccountSchema}. */
 export type ClaudeCodeAccount = z.infer<typeof ClaudeCodeAccountSchema>;
+
+/**
+ * Reduce a name to the kebab-case alphabet account ids use.
+ *
+ * Lowercased, every run of non-alphanumerics collapsed to a single hyphen, and
+ * the ends trimmed. Returns `''` when nothing survives — the caller decides what
+ * to fall back to, because "the label slugified to nothing" and "there was no
+ * label" want the same answer and only the caller knows the next candidate.
+ *
+ * @param value - Free-form text (a label, a path basename).
+ * @returns The kebab slug, possibly empty.
+ */
+export function slugifyAccountId(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * The id to register a Claude account under: the label slugified, else the
+ * path's last segment slugified, else `account` — uniquified against ids already
+ * taken by appending `-2`, `-3`, … .
+ *
+ * One implementation for the config migration that backfills ids onto existing
+ * registries and for the settings UI that registers a new account, so an id
+ * minted by either is minted by the same rule.
+ *
+ * @param opts - The account being named and the ids already in use.
+ * @param opts.label - The operator's name for the account, if they gave one.
+ * @param opts.path - The account's config directory (its basename is the fallback).
+ * @param opts.taken - Ids already present in the registry.
+ * @returns A kebab slug that is not in `taken`.
+ */
+export function claudeAccountId(opts: {
+  label?: string | null;
+  path: string;
+  taken: Iterable<string>;
+}): string {
+  const basename =
+    opts.path
+      .replace(/[/\\]+$/, '')
+      .split(/[/\\]/)
+      .pop() ?? '';
+  const base = slugifyAccountId(opts.label ?? '') || slugifyAccountId(basename) || 'account';
+  const taken = new Set(opts.taken);
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${base}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
 
 /**
  * The model a NEW session on one runtime starts on, or `null` to let that
@@ -1637,9 +1701,10 @@ export const UserConfigSchema = z.object({
         .object({
           /**
            * Absolute path of the Claude config directory a NEW session runs and
-           * bills on. `null` inherits whatever the process already has —
-           * `$CLAUDE_CONFIG_DIR`, else `~/.claude` — which is byte-for-byte the
-           * behavior before this field existed.
+           * bills on when neither the session nor its agent names one. `null`
+           * inherits whatever the process already has — `$CLAUDE_CONFIG_DIR`,
+           * else `~/.claude` — which is byte-for-byte the behavior before this
+           * field existed.
            *
            * An explicit path OVERRIDES an inherited `CLAUDE_CONFIG_DIR`, so which
            * account runs the work stops depending on which terminal happened to
@@ -1647,8 +1712,19 @@ export const UserConfigSchema = z.object({
            * {@link ClaudeCodeAccountSchema} entries, so removing an account can
            * never silently repoint the selection at a different client
            * (spec `claude-code-accounts` D1/D2).
+           *
+           * **A path here, an id everywhere else** (ADR 260821-205324). This one
+           * field stays a path on purpose: the default may legitimately name a
+           * root that is not a registry entry at all, and choosing it is what
+           * adds it to the read set (ADR 260801-204126). Agents and launch hints
+           * have no such case and reference accounts by {@link
+           * ClaudeCodeAccountSchema.shape.id}.
+           *
+           * Renamed from `activeAccount` in 0.65.0 (`billing-account-ladder`):
+           * "active" described the retired global-switch semantics, where the
+           * status-bar picker repointed this value for every future session.
            */
-          activeAccount: z.string().nullable().default(null),
+          defaultAccount: z.string().nullable().default(null),
           /**
            * The Claude accounts DorkOS knows about — what lets it show which
            * client a session belongs to. The operator registers these: DorkOS
@@ -1679,7 +1755,7 @@ export const UserConfigSchema = z.object({
           persistentSession: z.boolean().default(false),
         })
         .default(() => ({
-          activeAccount: null,
+          defaultAccount: null,
           accounts: [],
           defaultModel: null,
           defaultEffort: null,
@@ -1760,7 +1836,7 @@ export const UserConfigSchema = z.object({
       default: 'claude-code',
       defaultTrustStop: null,
       claudeCode: {
-        activeAccount: null,
+        defaultAccount: null,
         accounts: [],
         defaultModel: null,
         defaultEffort: null,

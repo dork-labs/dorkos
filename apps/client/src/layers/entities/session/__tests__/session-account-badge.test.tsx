@@ -63,7 +63,11 @@ function configWithAccounts(
     claudeCode: {
       resolvedAccount: HOME_ACCOUNT,
       inherited: true,
-      accounts: accounts.map((account) => ({ ...account, isAccountRoot: true })),
+      accounts: accounts.map((account, index) => ({
+        ...account,
+        id: `account-${index}`,
+        isAccountRoot: true,
+      })),
     },
   };
 }

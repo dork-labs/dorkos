@@ -44,21 +44,21 @@ function config(resolvedAccount: string): Partial<ServerConfig> {
       resolvedAccount,
       inherited: false,
       accounts: [
-        { path: HOME, label: 'Personal', isAccountRoot: true },
-        { path: WORK, label: 'Acme Corp', isAccountRoot: true },
+        { id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true },
+        { id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true },
       ],
     },
   };
 }
 
 /** Mount the rename mutation over a session-list cache holding one session. */
-function setup(opts: { sessionAccount?: string; activeAccount?: string }) {
+function setup(opts: { sessionAccount?: string; defaultAccount?: string }) {
   const transport = createMockTransport({
-    // No `activeAccount` stands for a server that reports no account block at
+    // No `defaultAccount` stands for a server that reports no account block at
     // all — the hook then knows the session's account but not the active one.
     getConfig: vi
       .fn()
-      .mockResolvedValue(opts.activeAccount ? config(opts.activeAccount) : ({} as ServerConfig)),
+      .mockResolvedValue(opts.defaultAccount ? config(opts.defaultAccount) : ({} as ServerConfig)),
     updateSession: vi.fn().mockResolvedValue(undefined),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -84,7 +84,7 @@ describe('useRenameSession — account honesty', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('says where the new name will appear when the session is on another account', async () => {
-    const { result, transport } = setup({ sessionAccount: WORK, activeAccount: HOME });
+    const { result, transport } = setup({ sessionAccount: WORK, defaultAccount: HOME });
     // Wait for the config read, or the hook cannot know which account is active.
     await waitFor(() => expect(result.current.accounts.resolvedAccount).toBe(HOME));
 
@@ -108,7 +108,7 @@ describe('useRenameSession — account honesty', () => {
   it('does not flash a name it would have to take back', async () => {
     const { result, transport, titleInList } = setup({
       sessionAccount: WORK,
-      activeAccount: HOME,
+      defaultAccount: HOME,
     });
     await waitFor(() => expect(result.current.accounts.resolvedAccount).toBe(HOME));
 
@@ -141,7 +141,7 @@ describe('useRenameSession — account honesty', () => {
   it('stays quiet when the session is on the active account, and shows the name at once', async () => {
     const { result, transport, titleInList } = setup({
       sessionAccount: HOME,
-      activeAccount: HOME,
+      defaultAccount: HOME,
     });
     await waitFor(() => expect(result.current.accounts.resolvedAccount).toBe(HOME));
 
@@ -154,7 +154,7 @@ describe('useRenameSession — account honesty', () => {
   });
 
   it('stays quiet for a session with no account at all', async () => {
-    const { result, transport } = setup({ activeAccount: HOME });
+    const { result, transport } = setup({ defaultAccount: HOME });
     await waitFor(() => expect(result.current.accounts.resolvedAccount).toBe(HOME));
 
     result.current.rename.mutate({ sessionId: 's1', title: 'Fix the tokenizer' });

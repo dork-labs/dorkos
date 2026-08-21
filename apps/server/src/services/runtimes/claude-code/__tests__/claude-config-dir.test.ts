@@ -22,7 +22,7 @@ function fakeConfig(claudeCode: Partial<UserConfig['runtimes']['claudeCode']> = 
   const runtimes: UserConfig['runtimes'] = {
     ...USER_CONFIG_DEFAULTS.runtimes,
     claudeCode: {
-      activeAccount: null,
+      defaultAccount: null,
       accounts: [],
       defaultModel: null,
       defaultEffort: null,
@@ -70,11 +70,11 @@ describe('resolveActiveClaudeRoot (spec claude-code-accounts D2)', () => {
     expect(resolveActiveClaudeRoot(fakeConfig())).toBe('/tmp/inherited-claude');
   });
 
-  it('OVERRIDES an inherited CLAUDE_CONFIG_DIR with an explicit activeAccount', () => {
+  it('OVERRIDES an inherited CLAUDE_CONFIG_DIR with an explicit defaultAccount', () => {
     // The determinism the feature exists for: which account runs the work must not
     // depend on which terminal happened to launch DorkOS (acceptance criterion 3).
     process.env.CLAUDE_CONFIG_DIR = '/tmp/inherited-claude';
-    expect(resolveActiveClaudeRoot(fakeConfig({ activeAccount: '/tmp/chosen-claude' }))).toBe(
+    expect(resolveActiveClaudeRoot(fakeConfig({ defaultAccount: '/tmp/chosen-claude' }))).toBe(
       '/tmp/chosen-claude'
     );
   });
@@ -153,7 +153,10 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     const account = makeAccount(path.join(tmp, 'claude2'));
     process.env.CLAUDE_CONFIG_DIR = account;
     const roots = resolveClaudeRootSet(
-      fakeConfig({ activeAccount: account, accounts: [{ path: account, label: 'Acme' }] })
+      fakeConfig({
+        defaultAccount: account,
+        accounts: [{ id: 'acme', path: account, label: 'Acme' }],
+      })
     );
     expect(roots).toEqual([account]);
   });
@@ -162,8 +165,8 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     const account = makeAccount(path.join(tmp, 'claude2'));
     const roots = resolveClaudeRootSet(
       fakeConfig({
-        activeAccount: account,
-        accounts: [{ path: `${account}${path.sep}`, label: 'Acme' }],
+        defaultAccount: account,
+        accounts: [{ id: 'acme', path: `${account}${path.sep}`, label: 'Acme' }],
       })
     );
     expect(roots).toEqual([account]);
@@ -174,10 +177,10 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     const other = makeAccount(path.join(tmp, 'claude3'));
     const roots = resolveClaudeRootSet(
       fakeConfig({
-        activeAccount: active,
+        defaultAccount: active,
         accounts: [
-          { path: other, label: 'Beta Inc' },
-          { path: active, label: 'Acme Corp' },
+          { id: 'beta-inc', path: other, label: 'Beta Inc' },
+          { id: 'acme-corp', path: active, label: 'Acme Corp' },
         ],
       })
     );
@@ -189,7 +192,7 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     // dropping it would hide history.
     makeAccount(stagedHomeRoot);
     const active = makeAccount(path.join(tmp, 'claude2'));
-    expect(resolveClaudeRootSet(fakeConfig({ activeAccount: active }))).toEqual([
+    expect(resolveClaudeRootSet(fakeConfig({ defaultAccount: active }))).toEqual([
       active,
       stagedHomeRoot,
     ]);
@@ -201,7 +204,7 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     const active = makeAccount(path.join(tmp, 'claude2'));
     const inherited = makeAccount(path.join(tmp, 'claude-from-shell'));
     process.env.CLAUDE_CONFIG_DIR = inherited;
-    expect(resolveClaudeRootSet(fakeConfig({ activeAccount: active }))).toEqual([
+    expect(resolveClaudeRootSet(fakeConfig({ defaultAccount: active }))).toEqual([
       active,
       inherited,
     ]);
@@ -214,8 +217,8 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     const notAnAccount = makeNonAccount(path.join(tmp, 'claudekit'));
     const roots = resolveClaudeRootSet(
       fakeConfig({
-        activeAccount: account,
-        accounts: [{ path: notAnAccount, label: 'not an account' }],
+        defaultAccount: account,
+        accounts: [{ id: 'not-an-account', path: notAnAccount, label: 'not an account' }],
       })
     );
     expect(roots).toEqual([account]);
@@ -225,7 +228,10 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     const account = makeAccount(path.join(tmp, 'claude2'));
     const gone = path.join(tmp, 'deleted-account');
     const roots = resolveClaudeRootSet(
-      fakeConfig({ activeAccount: account, accounts: [{ path: gone, label: 'moved' }] })
+      fakeConfig({
+        defaultAccount: account,
+        accounts: [{ id: 'moved', path: gone, label: 'moved' }],
+      })
     );
     expect(roots).toEqual([account]);
   });
@@ -234,7 +240,7 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     // An active account with no `projects/` has no sessions to enumerate, so the
     // listing set is empty rather than carrying a root that yields nothing.
     expect(
-      resolveClaudeRootSet(fakeConfig({ activeAccount: makeNonAccount(path.join(tmp, 'empty')) }))
+      resolveClaudeRootSet(fakeConfig({ defaultAccount: makeNonAccount(path.join(tmp, 'empty')) }))
     ).toEqual([]);
   });
 
@@ -274,10 +280,12 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
 
   it('reports a chosen account as not inherited', () => {
     process.env.CLAUDE_CONFIG_DIR = '/tmp/inherited-claude';
-    expect(describeClaudeCodeAccounts(fakeConfig({ activeAccount: '/tmp/chosen' }))).toMatchObject({
-      resolvedAccount: '/tmp/chosen',
-      inherited: false,
-    });
+    expect(describeClaudeCodeAccounts(fakeConfig({ defaultAccount: '/tmp/chosen' }))).toMatchObject(
+      {
+        resolvedAccount: '/tmp/chosen',
+        inherited: false,
+      }
+    );
   });
 
   it('says which registered accounts DorkOS can currently find', () => {
@@ -288,14 +296,14 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       describeClaudeCodeAccounts(
         fakeConfig({
           accounts: [
-            { path: real, label: 'Acme Corp' },
-            { path: missing, label: null },
+            { id: 'acme-corp', path: real, label: 'Acme Corp' },
+            { id: 'gone', path: missing, label: null },
           ],
         })
       ).accounts
     ).toEqual([
-      { path: real, label: 'Acme Corp', isAccountRoot: true },
-      { path: missing, label: null, isAccountRoot: false },
+      { id: 'acme-corp', path: real, label: 'Acme Corp', isAccountRoot: true },
+      { id: 'gone', path: missing, label: null, isAccountRoot: false },
     ]);
   });
 });

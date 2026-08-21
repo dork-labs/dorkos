@@ -105,6 +105,7 @@ import {
   ComposerPrefsSchema,
   NOTIFICATION_PREFS_DEFAULTS,
   SidebarPrefsSchema,
+  claudeAccountId,
   toSidebarItemRef,
   normalizeSidebarPrefs,
 } from '@dorkos/shared/config-schema';
@@ -2460,6 +2461,91 @@ export function backfillNotificationDefaults(store: {
 }
 
 /**
+ * Migration body: rename `runtimes.claudeCode.activeAccount` to `defaultAccount`
+ * and give every registered account a stable `id` (spec
+ * `billing-account-ladder`, ADR 260821-205324).
+ *
+ * **Both halves are load-bearing, and neither is additive.**
+ *
+ * The rename carries the VALUE. `activeAccount` held the absolute path of the
+ * Claude config directory the operator's work bills to; left behind under the
+ * old key, the new one takes its `null` default and every new session silently
+ * moves onto whatever account the environment happens to point at — a different
+ * client's subscription, for the operator this feature was written for. The old
+ * key is then deleted rather than left beside the new one, because the generated
+ * JSON Schema closes this object and a leftover key fails validation on the next
+ * read.
+ *
+ * The id backfill makes existing accounts REFERENCEABLE. An agent manifest and a
+ * session launch hint name an account by id, so a registry whose entries have no
+ * ids can be pointed at by nothing at all — and the id is required by the
+ * schema, so an un-backfilled entry fails validation outright. Ids come from
+ * {@link claudeAccountId}: the operator's label slugified, else the directory's
+ * basename, else `account`, uniquified against the ids already assigned. That is
+ * the same function the settings UI registers new accounts with, so an id minted
+ * here and an id minted there are minted by one rule.
+ *
+ * Idempotent in both halves: the rename runs only while the old key is present
+ * and the new one is not, and an entry that already carries a non-empty `id`
+ * keeps it, so a re-run cannot rename an account out from under an agent that
+ * references it.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function migrateClaudeAccountRegistry(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (runtimes == null || typeof runtimes !== 'object') return;
+  const claudeCode = (runtimes as { claudeCode?: unknown }).claudeCode;
+  if (claudeCode == null || typeof claudeCode !== 'object') return;
+
+  const block = { ...(claudeCode as Record<string, unknown>) };
+  let changed = false;
+
+  if ('activeAccount' in block) {
+    // The new key wins if both are somehow present: only a config written before
+    // this migration carries the old one, so the two cannot hold different
+    // truths, and preferring the new one keeps a re-run from resurrecting a
+    // value the person has since changed.
+    if (!('defaultAccount' in block)) block.defaultAccount = block.activeAccount;
+    delete block.activeAccount;
+    changed = true;
+  }
+
+  const accounts = block.accounts;
+  if (Array.isArray(accounts)) {
+    const taken = new Set<string>();
+    for (const entry of accounts) {
+      if (entry && typeof entry === 'object') {
+        const id = (entry as { id?: unknown }).id;
+        if (typeof id === 'string' && id.length > 0) taken.add(id);
+      }
+    }
+    const next = accounts.map((entry) => {
+      if (!entry || typeof entry !== 'object') return entry;
+      const account = entry as Record<string, unknown>;
+      const existing = account.id;
+      if (typeof existing === 'string' && existing.length > 0) return account;
+      const id = claudeAccountId({
+        label: typeof account.label === 'string' ? account.label : null,
+        path: typeof account.path === 'string' ? account.path : '',
+        taken,
+      });
+      taken.add(id);
+      changed = true;
+      return { ...account, id };
+    });
+    if (changed) block.accounts = next;
+  }
+
+  if (!changed) return;
+  store.set('runtimes', { ...(runtimes as Record<string, unknown>), claudeCode: block });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -2902,6 +2988,21 @@ export const CONFIG_MIGRATIONS = {
     // merges top-level defaults SHALLOWLY and there is no `notifications` block
     // on any existing install at all.
     backfillNotificationDefaults(store);
+  },
+  // v0.62.0 is the newest tag and 0.63.0/0.64.0 have merged, so 0.65.0 is the
+  // next key that can still run for everybody. Frozen from merge, not from the
+  // release bump, for the reason `'0.60.0'` above states; anything further opens
+  // `'0.66.0'`.
+  '0.65.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `runtimes.claudeCode.activeAccount` -> `defaultAccount`, plus a stable
+    // `id` on every registered account (spec `billing-account-ladder`,
+    // DOR-1407). NOT additive in either half: without the rename the operator's
+    // chosen billing account is silently dropped, and without the ids the
+    // registry fails schema validation and nothing can reference an account.
+    migrateClaudeAccountRegistry(store);
   },
 } as const;
 

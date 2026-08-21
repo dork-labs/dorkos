@@ -14,6 +14,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 const MOCK_CLAUDE_ROOT = '/mock/.claude';
 vi.mock('../../runtimes/claude-code/claude-config-dir.js', () => ({
   resolveActiveClaudeRoot: () => MOCK_CLAUDE_ROOT,
+  resolveLaunchAccountRoot: () => MOCK_CLAUDE_ROOT,
   resolveClaudeRootSet: () => [MOCK_CLAUDE_ROOT],
 }));
 vi.mock('../../../lib/boundary.js', () => ({

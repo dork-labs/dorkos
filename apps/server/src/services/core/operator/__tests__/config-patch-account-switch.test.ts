@@ -49,14 +49,14 @@ describe('applyConfigPatch — Claude account live-apply trigger', () => {
     for (const key of Object.keys(stored)) delete stored[key];
     Object.assign(stored, {
       version: 1,
-      runtimes: { claudeCode: { activeAccount: null, accounts: [] } },
+      runtimes: { claudeCode: { defaultAccount: null, accounts: [] } },
       ui: { theme: 'dark' },
     });
   });
 
-  it('applies live when the active account changes', () => {
+  it('applies live when the default account changes', () => {
     const result = applyConfigPatch({
-      runtimes: { claudeCode: { activeAccount: '/Users/dev/.claude2' } },
+      runtimes: { claudeCode: { defaultAccount: '/Users/dev/.claude2' } },
     });
 
     expect(result.ok).toBe(true);
@@ -66,7 +66,7 @@ describe('applyConfigPatch — Claude account live-apply trigger', () => {
   it('applies live when the account roster changes', () => {
     applyConfigPatch({
       runtimes: {
-        claudeCode: { accounts: [{ path: '/Users/dev/.claude2', label: 'Acme' }] },
+        claudeCode: { accounts: [{ id: 'acme', path: '/Users/dev/.claude2', label: 'Acme' }] },
       },
     });
 
@@ -85,14 +85,14 @@ describe('applyConfigPatch — Claude account live-apply trigger', () => {
     // The cockpit saving an unchanged form, or a patch that touches a sibling
     // runtime. Same values must be a no-op, or every save costs a full rebuild.
     applyConfigPatch({
-      runtimes: { claudeCode: { activeAccount: null, accounts: [] }, codex: { enabled: true } },
+      runtimes: { claudeCode: { defaultAccount: null, accounts: [] }, codex: { enabled: true } },
     });
 
     expect(applyClaudeAccountChange).not.toHaveBeenCalled();
   });
 
   it('does NOT apply when the write was REJECTED', () => {
-    const result = applyConfigPatch({ runtimes: { claudeCode: { activeAccount: 42 } } });
+    const result = applyConfigPatch({ runtimes: { claudeCode: { defaultAccount: 42 } } });
 
     expect(result.ok).toBe(false);
     expect(applyClaudeAccountChange).not.toHaveBeenCalled();
@@ -120,7 +120,7 @@ describe('applyConfigPatch — Claude account live-apply trigger', () => {
       });
 
       const result = applyConfigPatch({
-        runtimes: { claudeCode: { activeAccount: '/Users/dev/.claude2' } },
+        runtimes: { claudeCode: { defaultAccount: '/Users/dev/.claude2' } },
       });
 
       expect(result.ok).toBe(true);

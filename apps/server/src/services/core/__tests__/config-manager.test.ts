@@ -69,7 +69,7 @@ const RUNTIMES_DEFAULTS = {
   default: 'claude-code',
   defaultTrustStop: null,
   claudeCode: {
-    activeAccount: null,
+    defaultAccount: null,
     accounts: [],
     defaultModel: null,
     defaultEffort: null,
@@ -1693,10 +1693,10 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
           runtimes: {
             ...USER_CONFIG_DEFAULTS.runtimes,
             claudeCode: {
-              activeAccount: '/Users/me/.claude3',
+              defaultAccount: '/Users/me/.claude3',
               accounts: [
-                { path: '/Users/me/.claude', label: 'Acme Corp' },
-                { path: '/Users/me/.claude3', label: null },
+                { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
+                { id: 'claude3', path: '/Users/me/.claude3', label: null },
               ],
             },
           },
@@ -1704,10 +1704,10 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
       );
       const manager = initConfigManager(dir);
       expect(manager.get('runtimes').claudeCode).toEqual({
-        activeAccount: '/Users/me/.claude3',
+        defaultAccount: '/Users/me/.claude3',
         accounts: [
-          { path: '/Users/me/.claude', label: 'Acme Corp' },
-          { path: '/Users/me/.claude3', label: null },
+          { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
+          { id: 'claude3', path: '/Users/me/.claude3', label: null },
         ],
         defaultModel: null,
         defaultEffort: null,

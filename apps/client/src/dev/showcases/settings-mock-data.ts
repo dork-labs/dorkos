@@ -186,10 +186,15 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
     resolvedAccount: '/Users/dev/.claude2',
     inherited: false,
     accounts: [
-      { path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
-      { path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: true },
-      { path: '/Users/dev/.claude3', label: null, isAccountRoot: true },
-      { path: '/Users/dev/.claude-new', label: 'Just signed up', isAccountRoot: false },
+      { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+      { id: 'acme-corp', path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: true },
+      { id: 'claude3', path: '/Users/dev/.claude3', label: null, isAccountRoot: true },
+      {
+        id: 'just-signed-up',
+        path: '/Users/dev/.claude-new',
+        label: 'Just signed up',
+        isAccountRoot: false,
+      },
     ],
   },
 };

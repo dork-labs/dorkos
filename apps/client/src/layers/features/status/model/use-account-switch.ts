@@ -14,7 +14,7 @@ import { useClaudeAccounts } from '@/layers/shared/model';
 import { useUpdateConfig } from '@/layers/entities/config';
 
 /**
- * Stands in for "no account chosen", which writes `activeAccount: null`. Radix
+ * Stands in for "no account chosen", which writes `defaultAccount: null`. Radix
  * refuses an empty-string radio value, so the absence needs a spelling.
  */
 export const DEFAULT_ACCOUNT_VALUE = '__default__';
@@ -47,7 +47,7 @@ export interface AccountSwitch {
 /**
  * Read the registered Claude accounts and switch which one new work runs on.
  *
- * A refusal is surfaced, never swallowed: `runtimes.claudeCode.activeAccount` is
+ * A refusal is surfaced, never swallowed: `runtimes.claudeCode.defaultAccount` is
  * `operator-only`, so under Require login this write needs an operator session
  * cookie and answers 403 without one. The status bar has no room for an inline
  * error, so the toast carries the server's own sentence.
@@ -58,9 +58,9 @@ export function useAccountSwitch(): AccountSwitch {
   const queryClient = useQueryClient();
 
   const choose = (value: string) => {
-    const activeAccount = value === DEFAULT_ACCOUNT_VALUE ? null : value;
+    const defaultAccount = value === DEFAULT_ACCOUNT_VALUE ? null : value;
     updateConfig.mutate(
-      { runtimes: { claudeCode: { activeAccount } } },
+      { runtimes: { claudeCode: { defaultAccount } } },
       {
         onSuccess: () => {
           // The `['config']` PREFIX: the settings tabs read the bare key while

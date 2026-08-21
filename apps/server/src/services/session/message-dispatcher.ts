@@ -665,6 +665,11 @@ export interface DispatchMessageOpts {
   roomContext?: RoomContextData;
   /** Background the caller attached to this turn; the person never sees it. */
   seedContext?: string;
+  /**
+   * Claude account registry id this LAUNCH should bill to, when the sender made
+   * an explicit pre-launch choice. Passed straight through to the turn.
+   */
+  accountHint?: string;
   /** Per-turn execution settings, when the caller has resolved them itself. */
   settings?: Pick<SessionSettings, 'model' | 'effort'>;
   /** The projector for `sessionId` (keyed by the stable client-facing id). */
@@ -864,6 +869,7 @@ interface DispatchPlan {
     | 'context'
     | 'roomContext'
     | 'seedContext'
+    | 'accountHint'
     | 'settings'
     | 'stallTimeoutMs'
     | 'onError'
@@ -1138,6 +1144,7 @@ function launchDispatch(
       ...(turn.context ? { context: turn.context } : {}),
       ...(turn.roomContext ? { roomContext: turn.roomContext } : {}),
       ...(turn.seedContext ? { seedContext: turn.seedContext } : {}),
+      ...(turn.accountHint ? { accountHint: turn.accountHint } : {}),
       ...(turn.settings ? { settings: turn.settings } : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
       // The turn is running: THIS is the instant the message stops waiting, and

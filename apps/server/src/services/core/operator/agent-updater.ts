@@ -41,7 +41,8 @@ export type AgentUpdateErrorCode =
   | 'VALIDATION'
   | 'NOT_FOUND'
   | 'IMMUTABLE_NAME'
-  | 'SYSTEM_PROTECTED';
+  | 'SYSTEM_PROTECTED'
+  | 'OPERATOR_ONLY';
 
 /**
  * Typed failure from {@link updateAgentManifest}. Callers translate `code` into
@@ -135,6 +136,23 @@ export async function updateAgentManifest(opts: {
   }
 
   const rawBody = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+
+  // Guard: billing is the operator's call, never an agent's (spec
+  // `billing-account-ladder` invariant 4).
+  //
+  // This service is the AGENT-REACHABLE write path — the `update_agent` MCP tool
+  // and the self-edit route both land here — so an agent that could set
+  // `account` on a manifest could repoint whose subscription its work bills to,
+  // which is the credential axis `config-write-policy.ts` already holds
+  // `defaultAccount` on. Refused rather than stripped: an agent told nothing
+  // would report the change as done. The operator's own surface, `PATCH
+  // /api/mesh/agents/:id`, accepts the field and does not come through here.
+  if ('account' in rawBody) {
+    throw new AgentUpdateError(
+      'OPERATOR_ONLY',
+      "An agent's billing account is set by a person, in the agent's Runs on settings."
+    );
+  }
 
   // Guard: name (slug) is immutable after creation — use displayName instead.
   if ('name' in rawBody) {

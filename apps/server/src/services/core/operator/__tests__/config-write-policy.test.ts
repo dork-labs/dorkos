@@ -92,9 +92,10 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.maxAgentDepth',
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',
+      'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
       'runtimes.claudeCode.accounts[].path',
-      'runtimes.claudeCode.activeAccount',
+      'runtimes.claudeCode.defaultAccount',
       'runtimes.claudeCode.defaultTrustStop',
       'runtimes.codex.binaryPath',
       'runtimes.codex.credentialRef',
@@ -371,6 +372,7 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
       'connectors.rawMcpServers[].url',
     ]);
     expect(findOperatorOnlyPaths({ runtimes: { claudeCode: { accounts: [] } } })).toEqual([
+      'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
       'runtimes.claudeCode.accounts[].path',
     ]);

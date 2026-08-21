@@ -178,8 +178,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // protection is structural, exactly as it is for the raw-MCP entries above:
   // `runtimes.claudeCode.accounts` ships EMPTY, so no account is known until a
   // person registers one, and these leaves carry no default of their own. A path
-  // and a human label send nothing and grant nothing on their own — which
-  // account WORK runs on is `activeAccount`, classified `safe` below.
+  // an id and a human label send nothing and grant nothing on their own — which
+  // account WORK runs on is `defaultAccount`, classified `safe` below.
+  'runtimes.claudeCode.accounts[].id',
   'runtimes.claudeCode.accounts[].path',
   'runtimes.claudeCode.accounts[].label',
   // The per-runtime execution defaults all ship `null`, which means "let the
@@ -290,7 +291,7 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // already pointed at and reaches for no other sign-in. The directory this names
   // is where that account's credential material lives, which puts it on the same
   // axis as the references below: the slot starts empty (spec claude-code-accounts).
-  'runtimes.claudeCode.activeAccount': null,
+  'runtimes.claudeCode.defaultAccount': null,
   // Credential references start empty (ADR-0315).
   'runtimes.opencode.provider': null,
   'runtimes.opencode.baseURL': null,

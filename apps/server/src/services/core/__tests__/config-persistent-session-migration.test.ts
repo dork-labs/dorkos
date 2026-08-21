@@ -97,8 +97,8 @@ function seedUpgradeBoot(claudeCode: Record<string, unknown>): string {
 /** The `claudeCode` block as v0.58.0 wrote it — every leaf but the new one. */
 function priorClaudeCodeBlock(): Record<string, unknown> {
   return {
-    activeAccount: '/Users/me/.claude2',
-    accounts: [{ path: '/Users/me/.claude2', label: 'Acme Corp' }],
+    defaultAccount: '/Users/me/.claude2',
+    accounts: [{ id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' }],
     defaultModel: 'opus',
     defaultEffort: 'high',
     defaultTrustStop: null,
@@ -117,10 +117,10 @@ describe('runtimes.claudeCode.persistentSession on an upgrade boot (real conf + 
 
     expect(manager.getDot('runtimes.claudeCode.persistentSession')).toBe(false);
     // The rest of the section is untouched — the backfill spreads the stored block.
-    expect(manager.get('runtimes').claudeCode.activeAccount).toBe('/Users/me/.claude2');
+    expect(manager.get('runtimes').claudeCode.defaultAccount).toBe('/Users/me/.claude2');
     expect(manager.get('runtimes').claudeCode.defaultModel).toBe('opus');
     expect(manager.get('runtimes').claudeCode.accounts).toEqual([
-      { path: '/Users/me/.claude2', label: 'Acme Corp' },
+      { id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' },
     ]);
   });
 

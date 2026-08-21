@@ -398,6 +398,17 @@ export const AgentManifestSchema = z
         'Reasoning effort new sessions for this agent start at. Absent = inherit the server default.',
       example: 'high',
     }),
+    // Same `.catch(undefined)` degradation as `model`/`effort` above, and the
+    // same reason: a hand-edited `agent.json` naming an account that no longer
+    // exists must cost this agent its billing override, never its place in the
+    // fleet. The `.openapi(...)` metadata is repeated outside the `.catch()` for
+    // the generator's sake (see the note above `model`).
+    account: z.string().min(1).optional().catch(undefined).openapi({
+      type: 'string',
+      description:
+        'Claude Code account new sessions for this agent run and bill on, as a registry id (runtimes.claudeCode.accounts[].id). Absent = inherit the server default. Operator-only: agents cannot set this on themselves or on each other.',
+      example: 'acme-corp',
+    }),
     enabledToolGroups: EnabledToolGroupsSchema,
     // DorkOS-managed MCP servers for this agent. Deliberately NOT `.catch([])`
     // (unlike `model`/`effort` above): a malformed entry must fail the manifest
@@ -431,10 +442,16 @@ export type AgentManifest = z.infer<typeof AgentManifestSchema>;
 // (ADR 260803-233420, guarantee 2).
 export type AgentManifestUpdate = Omit<
   Partial<AgentManifest>,
-  'model' | 'effort' | 'mcpServers'
+  'model' | 'effort' | 'account' | 'mcpServers'
 > & {
   model?: string | null;
   effort?: (typeof EFFORT_LEVELS)[number] | null;
+  /**
+   * Account id to bill this agent's new sessions to; `null` returns it to
+   * inheriting the server default, on the same convention as `model`/`effort`.
+   * Writable only from the operator surface — see {@link UpdateAgentRequestSchema}.
+   */
+  account?: string | null;
 };
 
 // === Lightweight Path Entry ===
@@ -628,6 +645,7 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   icon: true,
   model: true,
   effort: true,
+  account: true,
   enabledToolGroups: true,
 })
   .partial()
@@ -640,6 +658,11 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
     // so the wire needs a way to say it — `null`, on the same convention.
     model: z.string().min(1).nullable().optional(),
     effort: z.enum(EFFORT_LEVELS).nullable().optional(),
+    // Same `null`-restores-inheritance convention. This schema is the OPERATOR's
+    // write surface (`PATCH /api/mesh/agents/:id`, reached from the cockpit);
+    // billing is operator-only, so the agent-reachable self-edit path refuses
+    // this key outright — see `services/core/operator/agent-updater.ts`.
+    account: z.string().min(1).nullable().optional(),
   })
   .openapi('UpdateAgentRequest');
 

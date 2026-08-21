@@ -40,8 +40,8 @@ describe('claudeAccountsChanged', () => {
   it('sees a new active account', () => {
     expect(
       claudeAccountsChanged(
-        { claudeCode: { activeAccount: null, accounts: [] } },
-        { claudeCode: { activeAccount: '/Users/dev/.claude2', accounts: [] } }
+        { claudeCode: { defaultAccount: null, accounts: [] } },
+        { claudeCode: { defaultAccount: '/Users/dev/.claude2', accounts: [] } }
       )
     ).toBe(true);
   });
@@ -49,11 +49,11 @@ describe('claudeAccountsChanged', () => {
   it('sees a new roster entry', () => {
     expect(
       claudeAccountsChanged(
-        { claudeCode: { activeAccount: null, accounts: [] } },
+        { claudeCode: { defaultAccount: null, accounts: [] } },
         {
           claudeCode: {
-            activeAccount: null,
-            accounts: [{ path: '/Users/dev/.claude2', label: null }],
+            defaultAccount: null,
+            accounts: [{ id: 'acct-4', path: '/Users/dev/.claude2', label: null }],
           },
         }
       )
@@ -65,11 +65,11 @@ describe('claudeAccountsChanged', () => {
       claudeAccountsChanged(
         {
           claudeCode: {
-            activeAccount: null,
-            accounts: [{ path: '/Users/dev/.claude2', label: null }],
+            defaultAccount: null,
+            accounts: [{ id: 'acct-5', path: '/Users/dev/.claude2', label: null }],
           },
         },
-        { claudeCode: { activeAccount: null, accounts: [] } }
+        { claudeCode: { defaultAccount: null, accounts: [] } }
       )
     ).toBe(true);
   });
@@ -81,14 +81,14 @@ describe('claudeAccountsChanged', () => {
       claudeAccountsChanged(
         {
           claudeCode: {
-            activeAccount: '/Users/dev/.claude2',
-            accounts: [{ path: '/Users/dev/.claude2', label: 'Acme' }],
+            defaultAccount: '/Users/dev/.claude2',
+            accounts: [{ id: 'acme', path: '/Users/dev/.claude2', label: 'Acme' }],
           },
         },
         {
           claudeCode: {
-            activeAccount: '/Users/dev/.claude2',
-            accounts: [{ path: '/Users/dev/.claude2', label: 'Acme' }],
+            defaultAccount: '/Users/dev/.claude2',
+            accounts: [{ id: 'acme', path: '/Users/dev/.claude2', label: 'Acme' }],
           },
         }
       )
@@ -98,8 +98,8 @@ describe('claudeAccountsChanged', () => {
   it('ignores a change to a SIBLING runtime', () => {
     expect(
       claudeAccountsChanged(
-        { claudeCode: { activeAccount: null, accounts: [] }, codex: { enabled: true } },
-        { claudeCode: { activeAccount: null, accounts: [] }, codex: { enabled: false } }
+        { claudeCode: { defaultAccount: null, accounts: [] }, codex: { enabled: true } },
+        { claudeCode: { defaultAccount: null, accounts: [] }, codex: { enabled: false } }
       )
     ).toBe(false);
   });
@@ -108,7 +108,7 @@ describe('claudeAccountsChanged', () => {
     // The pre-migration read window: `runtimes.claudeCode` may be missing
     // entirely, and the section defaults are `null` + `[]`.
     expect(
-      claudeAccountsChanged(undefined, { claudeCode: { activeAccount: null, accounts: [] } })
+      claudeAccountsChanged(undefined, { claudeCode: { defaultAccount: null, accounts: [] } })
     ).toBe(false);
   });
 });

@@ -770,6 +770,7 @@ router.post('/:id/messages', async (req, res) => {
     cwd,
     context,
     runtime: runtimeHint,
+    account: accountHintRaw,
     agentPath,
     workspaceKey,
     workspaceProvider,
@@ -839,6 +840,30 @@ router.post('/:id/messages', async (req, res) => {
   if (isNewSession)
     reportUsageEvent({ event: 'session_created', properties: { runtime: runtimeType } });
 
+  // The billing-account launch hint, on exactly the `runtime` hint's lifecycle
+  // (ADR 260821-205323, mirroring ADR-0255). It is honored only on the send that
+  // CREATED this session, and only for claude-code — after launch the account is
+  // a fact on disk that nothing can move (ADR 260801-204127), and no other
+  // runtime has accounts at all. Anything else is ignored out loud rather than
+  // silently, because the person who picked it believed it would apply.
+  //
+  // Whether the id NAMES a registered account is deliberately not asked here:
+  // the resolver falls through an unknown id to the next rung so a launch never
+  // fails over a billing setting, and a 400 here would be exactly that failure.
+  let accountHint: string | undefined;
+  if (accountHintRaw !== undefined) {
+    if (isNewSession && runtimeType === 'claude-code') {
+      accountHint = accountHintRaw;
+    } else {
+      logger.warn('[POST /messages] ignoring account hint', {
+        sessionId,
+        account: accountHintRaw,
+        runtime: runtimeType,
+        reason: isNewSession ? 'runtime has no accounts' : 'session already launched',
+      });
+    }
+  }
+
   // Read X-Client-Id header, or generate UUID if missing
   const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
 
@@ -889,6 +914,8 @@ router.post('/:id/messages', async (req, res) => {
       // context bag, never `content`: the prompt stays the person's message
       // byte for byte, and the seed is stripped from every rendered transcript.
       ...(seedContext ? { seedContext } : {}),
+      // Only ever set on the session-creating claude-code send (see above).
+      ...(accountHint ? { accountHint } : {}),
       // Absent means `queue`, which is also what every disposition resolves to
       // until the native rungs land (P4). The receipt says which it was.
       ...(disposition ? { disposition } : {}),

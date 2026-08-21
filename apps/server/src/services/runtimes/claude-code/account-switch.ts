@@ -41,7 +41,7 @@ import type { ClaudeCodeRuntime } from './claude-code-runtime.js';
  */
 type RuntimesAccountView = {
   claudeCode?: {
-    activeAccount?: UserConfig['runtimes']['claudeCode']['activeAccount'];
+    defaultAccount?: UserConfig['runtimes']['claudeCode']['defaultAccount'];
     accounts?: readonly UserConfig['runtimes']['claudeCode']['accounts'][number][];
   };
   /** Sibling runtime sections ride along and are deliberately not compared. */
@@ -49,7 +49,7 @@ type RuntimesAccountView = {
 };
 
 /**
- * Whether a config write changed WHERE Claude Code sessions live — the active
+ * Whether a config write changed WHERE Claude Code sessions live — the default
  * account or the registered roster.
  *
  * Compared by serialized value rather than by reference: the config manager hands
@@ -71,7 +71,7 @@ export function claudeAccountsChanged(
 ): boolean {
   const shape = (runtimes: RuntimesAccountView | undefined): string =>
     JSON.stringify([
-      runtimes?.claudeCode?.activeAccount ?? null,
+      runtimes?.claudeCode?.defaultAccount ?? null,
       runtimes?.claudeCode?.accounts ?? [],
     ]);
   return shape(before) !== shape(after);

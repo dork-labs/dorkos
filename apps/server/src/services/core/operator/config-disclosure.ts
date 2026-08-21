@@ -314,7 +314,8 @@ export const CONFIG_DISCLOSURE = {
   // account's sign-in lives inside the directory and never passes through config,
   // so there is nothing here to withhold. An agent knowing which account it is
   // running on is the point.
-  'runtimes.claudeCode.activeAccount': 'expose',
+  'runtimes.claudeCode.defaultAccount': 'expose',
+  'runtimes.claudeCode.accounts[].id': 'expose',
   'runtimes.claudeCode.accounts[].path': 'expose',
   'runtimes.claudeCode.accounts[].label': 'expose',
   // The execution defaults a new session on each runtime starts with. A model id

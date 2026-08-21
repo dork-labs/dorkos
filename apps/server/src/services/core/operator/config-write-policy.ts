@@ -467,20 +467,21 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.opencode.defaultTrustStop': 'operator-only',
   // Which Claude account new work runs and BILLS on, and the roster it is chosen
   // from (spec claude-code-accounts D6). A Claude config directory carries its own
-  // sign-in, so moving the active account moves the operator's spend onto a
+  // sign-in, so moving the default account moves the operator's spend onto a
   // different subscription — for the operator this feature was written for, a
   // different paying client. That is the credential axis this module holds, so an
   // agent must not be able to do it, and it never needs to: the person picks their
   // client in the cockpit. The roster is guarded with it, because an account is
   // only selectable once it is registered.
-  'runtimes.claudeCode.activeAccount': 'operator-only',
+  'runtimes.claudeCode.defaultAccount': 'operator-only',
+  'runtimes.claudeCode.accounts[].id': 'operator-only',
   'runtimes.claudeCode.accounts[].path': 'operator-only',
   'runtimes.claudeCode.accounts[].label': 'operator-only',
   // The execution defaults for new sessions on each runtime. Writable, and the
   // operator was asked directly: a model and an effort level are a preference
   // about how work runs, on the same footing as `runtimes.default` right above,
   // not a security control. Neither can move spend onto a different sign-in —
-  // that is `activeAccount`, which stays operator-only just above. The
+  // that is `defaultAccount`, which stays operator-only just above. The
   // interesting case ("set yourself to the cheapest model for this batch") is a
   // reasonable thing to ask an agent to do, and a person can always see and
   // reverse it: the chip on every row says where the value came from.
@@ -642,7 +643,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.codex.credentialRef',
       'runtimes.opencode.provider',
       'runtimes.opencode.baseURL',
-      'runtimes.claudeCode.activeAccount',
+      'runtimes.claudeCode.defaultAccount',
+      'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].path',
       'runtimes.claudeCode.accounts[].label',
     ],

@@ -718,6 +718,17 @@ export interface MessageOpts extends SessionSettings {
    * through and match on it.
    */
   messageId?: string;
+  /**
+   * Which billing account this LAUNCH should run on, as a registry id — the
+   * top rung of the claude-code account ladder (ADR 260821-205323).
+   *
+   * The server sets it only on the send that CREATES a claude-code session, and
+   * only from a person's explicit pre-launch choice; every other runtime ignores
+   * it, as does any later send. It is consumed at spawn time and stored nowhere:
+   * once a session exists, its account is derived from its transcript's on-disk
+   * root and cannot be moved (ADR 260801-204127).
+   */
+  accountHint?: string;
 }
 
 /**
