@@ -1,6 +1,7 @@
 ---
 covers:
-  - 'refactor(client): one header row per page, with the same three controls always at its end (DOR-1400)'
+  - 'refactor(client): one header row per page, owned by one declarative system (DOR-1400)'
+  - "fix(client): the bar's fixed cluster stops flickering, and its titles stop collapsing (DOR-1400)"
 ---
 
 ### Changed
