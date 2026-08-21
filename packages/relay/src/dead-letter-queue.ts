@@ -35,6 +35,17 @@ export interface DeadLetterNotice {
   reason: string;
   /** ISO 8601 timestamp of the rejection. */
   failedAt: string;
+  /**
+   * The rejected envelope's own `from` — the sender's Relay subject, verbatim.
+   *
+   * Carried straight off the envelope already in scope at rejection, never
+   * inferred: a caller that wants to know WHICH agent's message bounced can
+   * run this through `parseAgentSubject()` and use the id only when the
+   * shape is `agent-scoped` (a mesh agent), never a runtime-scoped session or
+   * a non-agent sender like a scheduler or the console — those are not an
+   * agent to credit.
+   */
+  fromSubject: string;
 }
 
 /** Options for creating a DeadLetterQueue. */
@@ -185,6 +196,7 @@ export class DeadLetterQueue {
           endpointHash,
           reason,
           failedAt: new Date().toISOString(),
+          fromSubject: envelope.from,
         });
       } catch {
         // Swallow — observer failure is not a rejection failure.
