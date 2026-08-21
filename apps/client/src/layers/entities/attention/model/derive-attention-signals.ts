@@ -15,6 +15,8 @@ import type { AttentionSignal } from './attention-signal';
 import { describeInteraction } from './describe-interaction';
 import {
   approvalSignalId,
+  blockedSessionSignalId,
+  errorSessionSignalId,
   interactionSignalId,
   interactionSignalKind,
   scheduleSignalId,
@@ -198,15 +200,17 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
       // prompt arrived. It reads as a permission ask waiting on you, which is
       // what it is.
       //
-      // The id and kind for a CAPTURED prompt come from `signal-ids.ts` — the
-      // same functions `deriveWaitingItems` calls for the Inbox popover's own
-      // per-item count, so the two can never classify the same interaction
-      // differently.
+      // Every id and kind here comes from `signal-ids.ts` — the captured-prompt
+      // branch shares its functions with `deriveWaitingItems`'s own per-item
+      // count, so the two can never classify the same interaction differently;
+      // the fallback has no counterpart there (see `blockedSessionSignalId`'s
+      // own doc) but lives in the same file regardless, so this loop never
+      // mints an id itself.
       signals.push(
         sessionSignal(session, sources, {
           id:
             interaction === undefined
-              ? `blocked:${session.id}`
+              ? blockedSessionSignalId(session.id)
               : interactionSignalId(interaction.id),
           kind:
             interaction === undefined
@@ -226,7 +230,7 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
     if (lifecycle === 'error') {
       signals.push(
         sessionSignal(session, sources, {
-          id: `error:${session.id}`,
+          id: errorSessionSignalId(session.id),
           kind: 'error',
           secondary: 'Stopped with an error',
           since: session.updatedAt,

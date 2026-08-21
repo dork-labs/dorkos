@@ -86,10 +86,18 @@ function schedule(overrides: Partial<Task> = {}): Task {
 
 /**
  * Reduce a signal list to what an agreement check compares: the ids of every
- * signal that counts as blocking a person. Mirrors
- * `use-blocking-arrivals.ts`'s `BLOCKING_KINDS` — every kind but `error`,
- * which raises no approval, no ask and no schedule and so never reaches
+ * signal that counts as blocking a person — every kind but `error`, which
+ * raises no approval, no ask and no schedule and so never reaches
  * {@link deriveWaitingItems} at all.
+ *
+ * **A hardcoded independent copy of the rule, not a live read of
+ * `use-blocking-arrivals.ts`'s `BLOCKING_KINDS`.** That file is not imported
+ * here (this suite lives in `entities/`, which may not import a feature), so
+ * this is a second, by-hand statement of the same "every kind but error"
+ * rule — pinned separately by `use-blocking-arrivals.test.tsx`'s own suite.
+ * If the two ever disagreed about which kinds block, THIS test would not
+ * catch it; it only catches `deriveWaitingItems` and `deriveAttentionSignals`
+ * disagreeing about a kind they both can produce.
  *
  * @param signals - What {@link deriveAttentionSignals} returned.
  */

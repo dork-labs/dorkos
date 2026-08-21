@@ -27,6 +27,8 @@
 import { useMemo, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
+  approvalSignalId,
+  interactionSignalId,
   useAskAgentNames,
   usePendingApprovals,
   usePendingInteractions,
@@ -48,9 +50,10 @@ export interface NowAttentionSlot {
    * **This is the whole of the "one blockage, one place" rule** (DOR-1391): the
    * cards below and the Now rows underneath them were drawing the same
    * approvals and the same prompts, so a single blocked agent appeared twice in
-   * one viewport. The ids are spelled exactly as `deriveAttentionSignals` mints
-   * them — `approval:<id>` and `blocked:<interactionId>` — because that is what
-   * the model matches on.
+   * one viewport. The ids are built through {@link approvalSignalId} and
+   * {@link interactionSignalId} — the same functions `deriveAttentionSignals`
+   * itself calls — because that is what the model matches on, and a
+   * hand-spelled copy of the format is a copy that can drift from it.
    *
    * A blocked session whose prompt has not arrived yet keeps its row, and
    * correctly: its signal is `blocked:<sessionId>`, no card here covers it, and
@@ -94,8 +97,8 @@ export function useNowAttentionSlot(): NowAttentionSlot {
   // Receipts are not covered: a settled Ask has no signal left to hide.
   const coveredSignalIds = useMemo(
     () => [
-      ...approvals.map((approval) => `approval:${approval.approvalId}`),
-      ...asks.map((ask) => `blocked:${ask.interaction.id}`),
+      ...approvals.map((approval) => approvalSignalId(approval.approvalId)),
+      ...asks.map((ask) => interactionSignalId(ask.interaction.id)),
     ],
     [approvals, asks]
   );

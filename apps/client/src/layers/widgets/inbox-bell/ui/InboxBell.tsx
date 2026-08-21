@@ -287,9 +287,9 @@ export function InboxBell() {
   // request for a decision just like a capability approval — but the SENTENCE
   // no longer calls it one; `waitingLabel`/`waitingSummary` below name a
   // schedule as a schedule. The count itself comes from `useWaitingQueue`'s
-  // `items` rather than re-summing three lengths here, so it can never drift
-  // from what that derivation counts (always equal by construction; see its
-  // doc comment).
+  // `items`, and `resolvePill` below is handed this SAME number rather than
+  // re-summing the three lengths itself — one variable, not two arithmetic
+  // expressions that happen to agree today.
   const waitingCount = waitingItems.length;
   const trustedCount = permissions.length;
   // A failed read while the whole link is down is not news about approvals — it
@@ -318,6 +318,7 @@ export function InboxBell() {
   const showsPinned = waitingCount > 0 || settling.length > 0 || isError;
 
   const pill = resolvePill({
+    waitingCount,
     approvalCount: approvals.length,
     scheduleCount: schedules.length,
     askCount: asks.length,
@@ -541,9 +542,18 @@ export function InboxBell() {
  * then unread history, then live trust. Everything below the first true branch
  * is still in the panel — the pill only decides what the header says.
  *
+ * **`waitingCount` is a parameter, not a re-derivation.** The badge paints
+ * this exact number (`count: counts.waitingCount` below); the per-kind counts
+ * beside it exist only for `waitingLabel`'s nouns. An earlier version summed
+ * `approvalCount + scheduleCount + askCount` again here — the same arithmetic
+ * as the caller's `waitingCount`, expressed a second time, which is exactly
+ * the shape of drift this file exists to close off (spec
+ * `schedule-approval-experience` §C4 review).
+ *
  * @param counts - Every number the pill could report, plus the two read failures.
  */
 function resolvePill(counts: {
+  waitingCount: number;
   approvalCount: number;
   scheduleCount: number;
   askCount: number;
@@ -553,13 +563,11 @@ function resolvePill(counts: {
   unreadCount: number;
   trustedCount: number;
 }): PillState {
-  const waiting = counts.approvalCount + counts.scheduleCount + counts.askCount;
-
-  if (waiting > 0) {
+  if (counts.waitingCount > 0) {
     return {
       tone: 'waiting',
       glyph: 'waiting',
-      count: waiting,
+      count: counts.waitingCount,
       text: 'waiting on you',
       label: waitingLabel(counts.approvalCount, counts.scheduleCount, counts.askCount),
     };
