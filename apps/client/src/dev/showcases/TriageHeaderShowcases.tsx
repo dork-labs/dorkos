@@ -63,6 +63,11 @@ const SCHEDULES: Task[] = [
     filePath: '/Users/dev/agents/dorkbot/.dork/tasks/morning-standup/SKILL.md',
     createdAt: minutesFromLoad(-26),
     updatedAt: minutesFromLoad(-26),
+    reason: null,
+    proposedBySessionId: null,
+    proposedByAgentPath: null,
+    proposedByName: null,
+    nextRuns: [],
   },
 ];
 

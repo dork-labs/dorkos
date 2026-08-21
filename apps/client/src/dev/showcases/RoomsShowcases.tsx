@@ -575,7 +575,7 @@ function Picker({
           isError,
         })}
         onSubmit={() => {}}
-        submitLabel={(count) => (count > 1 ? `Add ${count} agents` : 'Add agent')}
+        submitLabel={(chosen) => (chosen.length > 1 ? `Add ${chosen.length} agents` : 'Add agent')}
         emptyRosterMessage={emptyRosterMessage ?? 'You have not added any agents yet.'}
         emptyRosterAction={emptyRosterAction}
         allChosenMessage="Every agent you have is already in here."

@@ -24,10 +24,11 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 const mockStartNewSession = vi.fn();
+const mockSetDirectory = vi.fn();
 let mockSelectedCwd: string | null = null;
 vi.mock('@/layers/entities/session', () => ({
   useStartNewSession: () => mockStartNewSession,
-  useDirectoryState: () => [mockSelectedCwd, vi.fn()],
+  useDirectoryState: () => [mockSelectedCwd, mockSetDirectory],
 }));
 
 const mockAgentCreationOpen = vi.fn();
@@ -69,11 +70,43 @@ vi.mock('@/layers/entities/room', async (importOriginal) => {
   return { ...actual, useStartDirectMessage: () => ({ mutate: mockStartDm }) };
 });
 
-vi.mock('@/layers/features/room-management', () => ({
-  ChannelCreateDialog: () => <div data-testid="channel-create-dialog" />,
-  NewDirectMessageMenu: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="dm-picker" /> : null,
-}));
+vi.mock('@/layers/features/room-management', async (importOriginal) => {
+  // The RULE is the real one — the point of these cases is that the menu's
+  // branch and the picker's own label read the same predicate — while the panel
+  // itself is a stub with a commit button per selection size.
+  const actual =
+    await importOriginal<typeof import('@/layers/features/room-management/lib/one-door')>();
+  return {
+    opensAgentSession: actual.opensAgentSession,
+    ChannelCreateDialog: () => <div data-testid="channel-create-dialog" />,
+    NewDirectMessageMenu: ({
+      open,
+      onStart,
+    }: {
+      open: boolean;
+      onStart: (chosen: { agentPath: string; displayName: string }[]) => void;
+    }) =>
+      open ? (
+        <div data-testid="dm-picker">
+          <button
+            type="button"
+            data-testid="dm-picker-commit-one"
+            onClick={() => onStart([{ agentPath: '/projects/alpha', displayName: 'Alpha' }])}
+          />
+          <button
+            type="button"
+            data-testid="dm-picker-commit-two"
+            onClick={() =>
+              onStart([
+                { agentPath: '/projects/alpha', displayName: 'Alpha' },
+                { agentPath: '/projects/beta', displayName: 'Beta' },
+              ])
+            }
+          />
+        </div>
+      ) : null,
+  };
+});
 
 vi.mock('../ui/SmartGroupRuleDialog', () => ({
   SmartGroupRuleDialog: ({ open }: { open: boolean }) =>
@@ -268,12 +301,37 @@ describe('NewMenu', () => {
     expect(await screen.findByTestId('channel-create-dialog')).toBeInTheDocument();
   });
 
-  it('opens the real direct-message picker from Direct message', async () => {
+  it('opens the real picker from Group message', async () => {
     renderMenu();
     await openMenu();
     expect(screen.queryByTestId('dm-picker')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Direct message…' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Group message…' }));
     expect(await screen.findByTestId('dm-picker')).toBeInTheDocument();
+  });
+
+  it('opens that agent’s session when the picker committed exactly one', async () => {
+    renderMenu();
+    await openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Group message…' }));
+    fireEvent.click(await screen.findByTestId('dm-picker-commit-one'));
+
+    // The same door the agent's own sidebar row opens — resolve-or-mint on that
+    // directory — and emphatically not a second conversation.
+    expect(mockSetDirectory).toHaveBeenCalledWith('/projects/alpha', expect.anything());
+    expect(mockStartDm).not.toHaveBeenCalled();
+  });
+
+  it('makes a group message when the picker committed two', async () => {
+    renderMenu();
+    await openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Group message…' }));
+    fireEvent.click(await screen.findByTestId('dm-picker-commit-two'));
+
+    expect(mockSetDirectory).not.toHaveBeenCalled();
+    expect(mockStartDm).toHaveBeenCalledWith(
+      { agentPaths: ['/projects/alpha', '/projects/beta'], title: 'Alpha and Beta' },
+      expect.anything()
+    );
   });
 
   it('opens the agent-creation flow from Agent', async () => {

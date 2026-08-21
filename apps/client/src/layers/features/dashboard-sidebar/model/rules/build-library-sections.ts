@@ -19,8 +19,9 @@ import {
 } from '../build-sidebar-model';
 import type { SidebarSortMode } from '../section-sort-options';
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
-import { muteIndex, type MuteIndex } from './apply-mute-rules';
-import { agentRow, roomLibraryRow } from './library-rows';
+import { muteIndex } from './apply-mute-rules';
+import { indexSuppressedDms } from './hand-made-dm';
+import { agentRow, roomLibraryRow, type LibraryRowContext } from './library-rows';
 import { liveSessionIdsForPath } from './live-sessions';
 import { rollUpCollapsedSection } from './roll-up-collapsed-section';
 import { rowKey } from './targets';
@@ -310,7 +311,7 @@ function section(
  *
  * @param group - The section, as stored.
  * @param state - The snapshot.
- * @param mutes - The resolved mute sets.
+ * @param ctx - What every row here is built with ({@link LibraryRowContext}).
  * @param byPath - The roster, by path.
  * @param rooms - Every room, by id.
  * @param isWorking - Whether a row's subject is streaming ({@link rowIsWorking}).
@@ -319,7 +320,7 @@ function section(
 function groupSection(
   group: SidebarGroup,
   state: SidebarState,
-  mutes: MuteIndex,
+  ctx: LibraryRowContext,
   byPath: Map<string, AgentRosterEntry>,
   rooms: Map<string, RoomSummary>,
   isWorking: (row: SidebarRowModel) => boolean,
@@ -328,8 +329,8 @@ function groupSection(
   const rows: SidebarRowModel[] = [];
   /** One agent's row, or nothing when the section's filter hides it. */
   const pushAgent = (agent: AgentRosterEntry, draggable: boolean) => {
-    if (!passesDisplayFilter(agent, mutes.agents.has(agent.path), group.displayFilter)) return;
-    const row = agentRow(agent, state, mutes, 'library:group-member');
+    if (!passesDisplayFilter(agent, ctx.mutes.agents.has(agent.path), group.displayFilter)) return;
+    const row = agentRow(agent, state, ctx, 'library:group-member');
     rows.push(draggable ? row : { ...row, draggable: false });
   };
 
@@ -363,7 +364,7 @@ function groupSection(
         // A room has no attention state, so no display filter can judge one:
         // "Needs attention" is an agent question, and a channel the operator
         // filed here stays filed here whatever the radio says.
-        if (room) rows.push(roomLibraryRow(room, state, mutes, 'library:group-member'));
+        if (room) rows.push(roomLibraryRow(room, state, ctx, 'library:group-member'));
       }
     }
   }
@@ -474,6 +475,11 @@ function agentsToShow(
  */
 export function buildLibrarySections(state: SidebarState): SidebarSectionModel[] {
   const mutes = muteIndex(state.prefs);
+  // One pass over the rooms, answering both halves of the one-door rule: which
+  // direct messages Library leaves out, and what each agent's row says instead
+  // (`sidebar-simplification` D2).
+  const suppressedDms = indexSuppressedDms(state, mutes);
+  const ctx: LibraryRowContext = { mutes, dmUnread: suppressedDms.unreadByAgentPath };
   const byPath = new Map(state.agents.map((agent) => [agent.path, agent]));
   const rooms = new Map(
     state.rooms.filter((room) => !room.archived).map((room) => [room.id, room])
@@ -496,10 +502,10 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
     if (ref.kind === 'agent') {
       pinnedAgentPaths.add(ref.path);
       const agent = byPath.get(ref.path);
-      if (agent) pinnedRows.push(agentRow(agent, state, mutes, 'library:pinned'));
+      if (agent) pinnedRows.push(agentRow(agent, state, ctx, 'library:pinned'));
     } else {
       const room = rooms.get(ref.roomId);
-      if (room) pinnedRows.push(roomLibraryRow(room, state, mutes, 'library:pinned'));
+      if (room) pinnedRows.push(roomLibraryRow(room, state, ctx, 'library:pinned'));
     }
   }
 
@@ -507,10 +513,17 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
   const dmRows: SidebarRowModel[] = [];
   for (const room of rooms.values()) {
     if (groupedRooms.has(room.id)) continue;
+    // A hand-made 1:1 direct message is the agent's own session under a second
+    // name, and the agent already has a row. It keeps its place in Today, in
+    // ⌘K and on the agent's profile; what it loses is a standing second list
+    // (reason `library:dm-suppressed-1to1`). A section the operator put it in
+    // by hand is left alone above — an item somebody filed is somewhere they
+    // put it.
+    if (suppressedDms.isSuppressed(room)) continue;
     const row = roomLibraryRow(
       room,
       state,
-      mutes,
+      ctx,
       room.kind === 'dm' ? 'library:dm' : 'library:channel'
     );
     (room.kind === 'dm' ? dmRows : channelRows).push(row);
@@ -529,11 +542,11 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
   const candidates = state.agents.filter(
     (agent) =>
       !groupedAgents.has(agent.path) &&
-      passesDisplayFilter(agent, mutes.agents.has(agent.path), agentPrefs?.displayFilter)
+      passesDisplayFilter(agent, ctx.mutes.agents.has(agent.path), agentPrefs?.displayFilter)
   );
   const shown = agentsToShow(candidates, pinnedAgentPaths);
   const agentRows = orderLibraryRows(
-    shown.map((agent) => agentRow(agent, state, mutes, 'library:agent')),
+    shown.map((agent) => agentRow(agent, state, ctx, 'library:agent')),
     agentPrefs?.sortMode,
     recencyOf
   );
@@ -575,7 +588,7 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
   // first, in the order they stored them.
   return [
     ...state.prefs.groups.map((group) =>
-      groupSection(group, state, mutes, byPath, rooms, isWorking, recencyOf)
+      groupSection(group, state, ctx, byPath, rooms, isWorking, recencyOf)
     ),
     ...SIDEBAR_LIBRARY_SECTION_IDS.map((id) =>
       section(id, content[id].label, content[id].rows, state, content[id].reason, isWorking)

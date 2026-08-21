@@ -134,6 +134,11 @@ export const TASK_WRITE_POLICY = {
   // `mcp-tools/task-tools.ts` for the separate fact that `tasks_create` accepts
   // this argument and ignores it.
   maxRuntime: 'agent-writable',
+  // The case FOR the schedule, in the proposer's own words (DOR-1394). Writable
+  // by definition: it is the agent's own sentence, and the whole point is that
+  // an agent must supply it. An operator-only verdict here would refuse every
+  // proposal that did what it was asked to do.
+  reason: 'agent-writable',
 
   // The runtime's safety prompts, for a run nobody is watching.
   permissionMode: 'operator-only',

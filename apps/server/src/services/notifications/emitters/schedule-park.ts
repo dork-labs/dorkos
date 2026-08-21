@@ -13,23 +13,56 @@
 import type { Task } from '@dorkos/shared/types';
 import type { NotificationPayload } from '../notification-registry.js';
 import { resolveStanding } from '../notification-service.js';
+import { withProposerName } from '../../tasks/task-provenance.js';
 
 /**
- * Describe a parked schedule.
+ * What a parked schedule is called when nothing resolves a proposer.
  *
- * `proposedBy` says "An agent" rather than naming one: a schedule parks because
- * its creator did not clear the agent bar, and the row records the fact rather
- * than an identity nothing on this path resolved.
+ * Every "we do not know" case lands here alike: a schedule an operator's own
+ * unauthenticated request parked, one proposed through the sessionless external
+ * `/mcp` server, or one whose agent has since been renamed away or revoked. All
+ * that is honestly known then is that a person did not do it.
+ */
+export const UNNAMED_PROPOSER = 'An agent';
+
+/**
+ * Describe a parked schedule, from what the task already carries.
+ *
+ * Deliberately not exported: naming the proposer takes a database read, and a
+ * caller that reached this directly would silently get "An agent" for a schedule
+ * whose agent is perfectly well known. {@link resolveScheduleParkPayload} is the
+ * only door, so that cannot happen by omission.
  *
  * @param task - The schedule that is (or was) waiting.
  */
-export function scheduleParkPayload(task: Task): NotificationPayload<'schedule.parked'> {
+function scheduleParkPayload(task: Task): NotificationPayload<'schedule.parked'> {
   return {
     taskId: task.id,
     taskName: task.displayName ?? task.name,
     ...(task.agentId ? { agentId: task.agentId } : {}),
-    proposedBy: 'An agent',
+    ...(task.proposedBySessionId ? { proposedBySessionId: task.proposedBySessionId } : {}),
+    proposedBy: task.proposedByName ?? UNNAMED_PROPOSER,
   };
+}
+
+/**
+ * The same payload, with the proposer's name looked up first.
+ *
+ * Use this wherever the caller is already async — which every edge that arms or
+ * resolves this condition is — so a person is told WHICH agent wants to run
+ * something on their machine rather than that some agent does. The lookup
+ * degrades to {@link UNNAMED_PROPOSER} and never throws.
+ *
+ * Nothing keyed on the payload changes: the dedupe key is the task id, so a
+ * condition armed before a name resolved and resolved after it did are still
+ * the same condition to the escalation ladder.
+ *
+ * @param task - The schedule that is (or was) waiting.
+ */
+export async function resolveScheduleParkPayload(
+  task: Task
+): Promise<NotificationPayload<'schedule.parked'>> {
+  return scheduleParkPayload(await withProposerName(task));
 }
 
 /**
@@ -59,5 +92,11 @@ export function scheduleParkPayload(task: Task): NotificationPayload<'schedule.p
  */
 export function resolveParkedScheduleRemoved(task: Task | null | undefined): void {
   if (!task || task.status !== 'pending_approval') return;
-  void resolveStanding('schedule.parked', scheduleParkPayload(task), { outcome: 'cancelled' });
+  // Already fire-and-forget before the name lookup joined it, and deliberately
+  // still is: the callers are removals (a delete, a reconciler sweep, a Shape
+  // teardown), and none of them may be made to wait on — or fail because of —
+  // the row that records what happened to the approval.
+  void resolveScheduleParkPayload(task).then((payload) =>
+    resolveStanding('schedule.parked', payload, { outcome: 'cancelled' })
+  );
 }

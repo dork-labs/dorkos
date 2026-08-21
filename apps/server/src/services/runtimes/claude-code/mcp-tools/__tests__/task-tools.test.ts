@@ -14,19 +14,26 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/__tests__/task-tools
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+  type AgentIdentityService,
+} from '../../../../core/agent-identity/index.js';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
 import { getTasksTools } from '../task-tools.js';
+import { handRegisteredInSessionTools } from '../index.js';
 import type { Task } from '@dorkos/shared/schemas';
 
 /** The shape `tool()` returns, narrowed to what this test drives. */
 interface SessionTool {
   name: string;
   description: string;
-  inputSchema: Record<string, { description?: string }>;
+  /** Each entry is the argument's Zod schema; `isOptional()` is how "required" is asked. */
+  inputSchema: Record<string, { description?: string; isOptional?: () => boolean }>;
   handler: (
     args: Record<string, unknown>,
     extra: unknown
@@ -204,11 +211,172 @@ describe('tasks_* operator-only field guard (in-session dorkos server)', () => {
         name: 'ordinary',
         prompt: 'do a thing',
         cron: '0 3 * * *',
+        reason: 'The overnight backlog needs sweeping before you start.',
       });
       expect(isError).toBe(false);
       const created = payload.schedule as Task;
       expect(created.status).toBe('pending_approval');
       expect(created.permissionMode).toBe('acceptEdits');
     });
+  });
+});
+
+describe('tasks_create records who is proposing and why (DOR-1394)', () => {
+  let db: Db;
+  let store: TaskStore;
+  let deps: McpToolDeps;
+  let emit: ReturnType<typeof vi.fn>;
+  let identity: AgentIdentityService;
+
+  beforeEach(() => {
+    db = createTestDb();
+    store = new TaskStore(db);
+    identity = initAgentIdentityService(db);
+    emit = vi.fn();
+    deps = {
+      taskStore: store,
+      defaultCwd: '/tmp/test',
+      activityService: { emit },
+    } as unknown as McpToolDeps;
+  });
+
+  afterEach(() => {
+    resetAgentIdentityService();
+    store.close();
+  });
+
+  /** The tool set a session gets, with `resolveProvenance` wired as `index.ts` wires it. */
+  function toolsWith(resolveProvenance?: () => { sessionId?: string; agentPath?: string }) {
+    return Object.fromEntries(
+      (getTasksTools(deps, resolveProvenance) as unknown as SessionTool[]).map((t) => [t.name, t])
+    );
+  }
+
+  /** Call `tasks_create` and parse its single JSON content block. */
+  async function create(
+    tools: Record<string, SessionTool>,
+    args: Record<string, unknown>
+  ): Promise<{ isError: boolean; payload: Record<string, unknown> }> {
+    const result = await tools.tasks_create!.handler(args, undefined);
+    return {
+      isError: result.isError === true,
+      payload: JSON.parse(result.content[0]!.text) as Record<string, unknown>,
+    };
+  }
+
+  const GOOD_ARGS = {
+    name: 'nightly-sweep',
+    prompt: 'sweep the backlog',
+    cron: '0 3 * * *',
+    reason: 'The overnight backlog needs sweeping before you start.',
+  };
+
+  it('advertises reason as a required argument, in the words an agent has to answer', () => {
+    const tools = toolsWith();
+    expect(tools.tasks_create!.inputSchema.reason?.description).toContain('in your own words');
+    // Required, not optional: the SDK parses a call against this schema before
+    // the handler runs, so this is what makes a reasonless call impossible.
+    expect(tools.tasks_create!.inputSchema.reason?.isOptional?.()).not.toBe(true);
+  });
+
+  it('stores the reason on the task', async () => {
+    const { isError } = await create(toolsWith(), GOOD_ARGS);
+    expect(isError).toBe(false);
+    expect(store.getTasks()[0]!.reason).toBe(GOOD_ARGS.reason);
+  });
+
+  it('refuses a blank reason and creates nothing', async () => {
+    for (const reason of ['', '   ', '\n\t']) {
+      const { isError, payload } = await create(toolsWith(), { ...GOOD_ARGS, reason });
+      expect(isError, `reason ${JSON.stringify(reason)} must be refused`).toBe(true);
+      expect(String(payload.error)).toContain('needs a reason');
+    }
+    // Refused before the write, so nothing parked with nothing to read.
+    expect(store.getTasks()).toHaveLength(0);
+  });
+
+  it('records the session and directory the proposal came from', async () => {
+    const tools = toolsWith(() => ({ sessionId: 'ses-canonical', agentPath: '/tmp/agents/nb' }));
+    await create(tools, GOOD_ARGS);
+
+    const created = store.getTasks()[0]!;
+    expect(created.proposedBySessionId).toBe('ses-canonical');
+    expect(created.proposedByAgentPath).toBe('/tmp/agents/nb');
+  });
+
+  it('reads the session id at call time, not when the tools were built', async () => {
+    // The SDK rekeys a session to its canonical id mid-first-turn, so a resolver
+    // read once at construction would record the trigger id — a session nothing
+    // can open. Reading late is the whole point of the resolver being a function.
+    let current = 'ses-trigger';
+    const tools = toolsWith(() => ({ sessionId: current, agentPath: '/tmp/agents/nb' }));
+
+    current = 'ses-canonical';
+    await create(tools, GOOD_ARGS);
+
+    expect(store.getTasks()[0]!.proposedBySessionId).toBe('ses-canonical');
+  });
+
+  it('names the proposer in the activity feed, from the same answer the notification uses', async () => {
+    await identity.mint({ agentPath: '/tmp/agents/nb', displayName: 'Nightly Bot' });
+    const tools = toolsWith(() => ({ sessionId: 'ses-1', agentPath: '/tmp/agents/nb' }));
+
+    await create(tools, GOOD_ARGS);
+
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: 'agent',
+        actorLabel: 'Nightly Bot',
+        actorId: '/tmp/agents/nb',
+      })
+    );
+  });
+
+  it('says "An agent" in the feed when nothing resolves a name', async () => {
+    const tools = toolsWith(() => ({ sessionId: 'ses-1', agentPath: '/tmp/agents/unknown' }));
+
+    await create(tools, GOOD_ARGS);
+
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ actorLabel: 'An agent' }));
+  });
+
+  it('picks the session up through the REAL composition root, not a hand-built resolver', async () => {
+    // Every other case here injects `resolveProvenance` itself, so all of them
+    // stay green if `mcp-tools/index.ts` stops PASSING one — which is the whole
+    // wiring. This drives the same function a live session drives
+    // (`createDorkOsToolServer` → `handRegisteredInSessionTools`) and hands it
+    // only a session, so the argument in `getTasksTools(deps, …)` is load-bearing
+    // for it (DOR-1394 review).
+    const session = {
+      eventQueue: [],
+      cwd: '/tmp/agents/nb',
+      sdkSessionId: 'ses-canonical',
+    };
+
+    const wired = Object.fromEntries(
+      (handRegisteredInSessionTools(deps, { session }) as unknown as SessionTool[]).map((t) => [
+        t.name,
+        t,
+      ])
+    );
+    await create(wired, GOOD_ARGS);
+
+    const created = store.getTasks()[0]!;
+    expect(created.proposedByAgentPath).toBe('/tmp/agents/nb');
+    expect(created.proposedBySessionId).toBe('ses-canonical');
+  });
+
+  it('leaves provenance null on the sessionless external server, and still demands a reason', async () => {
+    const tools = toolsWith();
+    const { isError } = await create(tools, GOOD_ARGS);
+    expect(isError).toBe(false);
+
+    const created = store.getTasks()[0]!;
+    expect(created.proposedBySessionId).toBeNull();
+    expect(created.proposedByAgentPath).toBeNull();
+    expect(created.reason).toBe(GOOD_ARGS.reason);
+
+    const refused = await create(tools, { ...GOOD_ARGS, reason: ' ' });
+    expect(refused.isError).toBe(true);
   });
 });

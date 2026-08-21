@@ -63,7 +63,7 @@ import {
   setEscalationService,
   type StandingCondition,
 } from './services/notifications/escalation-service.js';
-import { scheduleParkPayload } from './services/notifications/emitters/schedule-park.js';
+import { resolveScheduleParkPayload } from './services/notifications/emitters/schedule-park.js';
 import {
   NotificationService,
   notify,
@@ -1598,15 +1598,22 @@ async function start() {
   // restart.
   if (taskStore) {
     try {
-      const stillParked: StandingCondition[] = taskStore
-        .getTasks()
-        .filter((task) => task.status === 'pending_approval')
-        .map((task) => ({
-          kind: 'schedule.parked' as const,
-          payload: scheduleParkPayload(task),
-          since: Date.parse(task.updatedAt),
-        }))
-        .filter((condition) => Number.isFinite(condition.since));
+      const stillParked: StandingCondition[] = (
+        await Promise.all(
+          taskStore
+            .getTasks()
+            .filter((task) => task.status === 'pending_approval')
+            .map(async (task) => ({
+              kind: 'schedule.parked' as const,
+              // Resolved here too, not just at the live edges: a proposal that
+              // survived a restart is the one an operator has had longest, and
+              // the escalation it re-arms is the message most likely to reach a
+              // phone. It should still name the agent.
+              payload: await resolveScheduleParkPayload(task),
+              since: Date.parse(task.updatedAt),
+            }))
+        )
+      ).filter((condition) => Number.isFinite(condition.since));
       getEscalationService()?.rearmFromStandingState(stillParked);
     } catch (err) {
       logger.warn('[Escalation] Could not re-arm from parked schedules', logError(err));

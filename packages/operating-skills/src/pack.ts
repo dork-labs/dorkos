@@ -107,6 +107,13 @@ export interface OperatingSkill {
  *   tool names; find the tool whose name ends in it under your harness's prefix.
  *   `operating-dorkos` lost three restatements to stay under its line cap; the
  *   content they restated is still stated once.
+ * - 11: `tasks_create` now REQUIRES a `reason` (DOR-1394), and `scheduling-tasks`
+ *   says so, says it is not the description, and shows the sentence to write. The
+ *   bump is what makes that reach anybody: an already-seeded file is only
+ *   rewritten on a strictly higher stamp (`seed.ts` returns `unchanged` at
+ *   `storedVersion >= VERSION`), so an agent seeded at 10 would have kept prose
+ *   that omits a now-required argument and had its very next `tasks_create`
+ *   refused by the schema parse with no idea why.
  *
  *   Be precise about who a bump reaches, because it is narrower than the History
  *   above makes it sound. Until DOR-671 it was DorkBot and nobody else:
@@ -121,7 +128,7 @@ export interface OperatingSkill {
  *   boot is not permission to write into somebody's repository, and a user-initiated
  *   repair for those is DOR-664.
  */
-export const OPERATING_SKILLS_VERSION = 10;
+export const OPERATING_SKILLS_VERSION = 11;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
