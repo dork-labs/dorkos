@@ -62,6 +62,9 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'report.daily': Sparkles,
 };
 
+/** How loudly a notification draws. */
+export type NotificationTone = 'error' | 'warning' | 'neutral';
+
 /**
  * How loudly a notification draws.
  *
@@ -71,7 +74,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
  *
  * @param notification - The row.
  */
-export function notificationTone(notification: NotificationDTO): 'error' | 'warning' | 'neutral' {
+export function notificationTone(notification: NotificationDTO): NotificationTone {
   if (notification.tier === 'blocking') return 'error';
   if (notification.tier === 'notable') return 'warning';
   return 'neutral';
@@ -89,6 +92,56 @@ export function notificationTone(notification: NotificationDTO): 'error' | 'warn
 export function isFailedRun(notification: NotificationDTO): boolean {
   return notification.kind === 'run.completed' && notification.tier === 'notable';
 }
+
+/**
+ * The tone a ROW draws in, folding {@link isFailedRun} over {@link notificationTone}.
+ *
+ * Every drawer of a row wants this composite, not the tier reading alone —
+ * `InboxRow` did the same two-line fold inline, and the burst-coalescing fold
+ * needs the identical answer to decide whether two adjacent rows are the same
+ * story (see `features/inbox/lib/group-activity-rows`). One function so the
+ * two can never drift apart.
+ *
+ * @param notification - The row.
+ */
+export function notificationRowTone(notification: NotificationDTO): NotificationTone {
+  return isFailedRun(notification) ? 'error' : notificationTone(notification);
+}
+
+/**
+ * The phrase a burst of `count` consecutive same-agent, same-kind rows reads
+ * as once collapsed — "finished 4 runs", not the singular row's own title,
+ * because the individual titles ("alpha finished") do not compose past one.
+ *
+ * Exhaustive over {@link NotificationKind} by construction (a `Record` over
+ * the union, not a fallback default): a kind added to the registry without an
+ * entry here is a type error at this file, not a blank group header at
+ * runtime.
+ *
+ * @param kind - The shared kind every row in the burst carries.
+ * @param count - How many rows collapsed into it. The fold that builds a
+ *   burst (`features/inbox/lib/group-activity-rows`) never calls this below
+ *   its own three-row threshold, but nothing here assumes that.
+ */
+export function notificationBurstVerb(kind: NotificationKind, count: number): string {
+  return BURST_VERB[kind](count);
+}
+
+/** The verb phrase per kind that {@link notificationBurstVerb} looks up. */
+const BURST_VERB: Record<NotificationKind, (count: number) => string> = {
+  'ask.pending': (n) => `asked ${n} questions`,
+  'schedule.parked': (n) => `proposed ${n} scheduled tasks`,
+  'session.error': (n) => `hit ${n} errors`,
+  'turn.completed': (n) => `finished ${n} turns`,
+  'run.completed': (n) => `finished ${n} runs`,
+  'dm.received': (n) => `sent ${n} messages`,
+  'mention.received': (n) => `mentioned you ${n} times`,
+  'agent.note': (n) => `left ${n} notes`,
+  'dead-letter.created': (n) => `had ${n} messages fail to deliver`,
+  'agent.unreachable': (n) => `went offline ${n} times`,
+  'update.installed': (n) => `updated ${n} times`,
+  'report.daily': (n) => `sent ${n} reports`,
+};
 
 /**
  * Where clicking a notification goes.

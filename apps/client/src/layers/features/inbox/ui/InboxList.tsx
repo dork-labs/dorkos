@@ -8,11 +8,22 @@
  *
  * @module features/inbox/ui/InboxList
  */
+import { useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { Button } from '@/layers/shared/ui';
-import { useNotifications, type NotificationLens } from '@/layers/entities/notifications';
+import { getAgentDisplayName } from '@/layers/shared/lib';
+import { useRegisteredAgents } from '@/layers/entities/mesh';
+import {
+  notificationLink,
+  useNotifications,
+  type NotificationLens,
+} from '@/layers/entities/notifications';
 import { useOpenNotification } from '../model/use-open-notification';
+import { groupActivityRows } from '../lib/group-activity-rows';
 import { InboxRow } from './InboxRow';
+import { InboxGroupRow } from './InboxGroupRow';
 
 /** The stagger the rows inherit — each row declares the child half. */
 const staggerContainer = {
@@ -37,8 +48,22 @@ export interface InboxListProps {
  *
  * **Clicking a row does two things, in this order.** It marks the row read — the
  * click IS the reading, and waiting for the destination to load before dimming
- * it would leave a bold row behind on the way out — and then it navigates. A row
- * with nowhere to go still marks itself read; it just does not move.
+ * it would leave a bold row behind on the way out — and then it navigates.
+ *
+ * **A row with nowhere to go draws as text, not a dead button.** `update.installed`
+ * and `report.daily` are the two kinds `notificationLink` returns `null` for —
+ * there is no destination, and a full-width button that visibly does nothing
+ * but clear the dot reads as broken. `InboxRow` already has the non-interactive
+ * branch for exactly this (its `onOpen` is optional); this is the surface that
+ * now actually takes it. Its unread dot still clears through "Mark all read" —
+ * the row itself just is not a control pretending to travel somewhere.
+ *
+ * **Bursts of three or more collapse.** Three-plus consecutive rows sharing an
+ * agent, a kind and a tone (`groupActivityRows`) fold into one `InboxGroupRow`
+ * — a pure reshape of whatever `useNotifications` already returned, run again
+ * whenever that list changes. It never asks for more than the lens already
+ * fetched and never trims it, so paging and the live cap stay entirely
+ * `entities/notifications`'s job.
  *
  * Paging is a button rather than a scroll sentinel: the list lives inside a
  * popover barely taller than a phone, and an infinite scroller in a 30rem panel
@@ -50,6 +75,31 @@ export function InboxList({ lens, emptyLabel = 'Nothing yet', onOpened }: InboxL
   const { notifications, isLoading, isError, hasMore, loadMore, isLoadingMore } =
     useNotifications(lens);
   const openNotification = useOpenNotification();
+
+  // The roster, for the face each row/group draws when its `agentId` names a
+  // known agent. One query, shared by every row through TanStack's cache —
+  // rendering fifty rows costs the one request the first row's hook fires.
+  const { data: agentsData } = useRegisteredAgents();
+  const agentsById = useMemo(() => {
+    const map = new Map<string, AgentManifest>();
+    for (const agent of agentsData?.agents ?? []) map.set(agent.id, agent);
+    return map;
+  }, [agentsData]);
+  const resolveAgent = useCallback(
+    (agentId: string | undefined) =>
+      agentId === undefined ? undefined : (agentsById.get(agentId) ?? null),
+    [agentsById]
+  );
+
+  const handleOpen = useCallback(
+    (notification: NotificationDTO) => {
+      openNotification(notification);
+      onOpened?.();
+    },
+    [openNotification, onOpened]
+  );
+
+  const items = useMemo(() => groupActivityRows(notifications), [notifications]);
 
   if (isLoading) {
     return <p className="text-muted-foreground px-2 py-1 text-xs">Loading…</p>;
@@ -70,16 +120,29 @@ export function InboxList({ lens, emptyLabel = 'Nothing yet', onOpened }: InboxL
   return (
     <div className="min-w-0">
       <motion.div variants={staggerContainer} initial="initial" animate="animate">
-        {notifications.map((notification) => (
-          <InboxRow
-            key={notification.id}
-            notification={notification}
-            onOpen={() => {
-              openNotification(notification);
-              onOpened?.();
-            }}
-          />
-        ))}
+        {items.map((item) =>
+          item.type === 'group' ? (
+            <InboxGroupRow
+              key={item.id}
+              group={item}
+              agent={resolveAgent(item.agentId)}
+              agentName={getAgentDisplayName(agentsById.get(item.agentId))}
+              onOpenNotification={handleOpen}
+            />
+          ) : (
+            <InboxRow
+              key={item.notification.id}
+              notification={item.notification}
+              agent={resolveAgent(item.notification.agentId)}
+              // A row with nowhere to go is not a control — see the class doc.
+              onOpen={
+                notificationLink(item.notification) === null
+                  ? undefined
+                  : () => handleOpen(item.notification)
+              }
+            />
+          )
+        )}
       </motion.div>
 
       {hasMore && (

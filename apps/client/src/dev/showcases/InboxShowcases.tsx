@@ -10,7 +10,8 @@
  * @module dev/showcases/InboxShowcases
  */
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { InboxRow } from '@/layers/features/inbox';
+import { InboxRow, InboxGroupRow, groupActivityRows } from '@/layers/features/inbox';
+import type { AgentVisualSource } from '@/layers/entities/agent';
 import { InboxBellPill } from '@/layers/widgets/inbox-bell';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -81,6 +82,82 @@ const ROWS: NotificationDTO[] = [
     body: 'You were on 0.60.2.',
     createdAt: minutesAgo(1_400),
     readAt: minutesAgo(1_390),
+  },
+  {
+    id: '01JZB0000000000000000006',
+    kind: 'dm.received',
+    tier: 'notable',
+    subject: { type: 'room', id: 'room-1' },
+    agentId: 'shadow-fox',
+    title: 'shadow-fox messaged you',
+    body: 'Can you take a look at the deploy?',
+    createdAt: minutesAgo(6),
+  },
+];
+
+/**
+ * The roster this showcase pretends to hold, keyed by the `agentId`s above.
+ *
+ * `dorkbot` and `tangerines` resolve; `shadow-fox` deliberately does not —
+ * the third row's own point is the fallback, so leaving it out of this map
+ * IS the fixture.
+ */
+const AGENTS: Record<string, AgentVisualSource> = {
+  dorkbot: { id: 'dorkbot', color: '#f97316', icon: '🤖' },
+  tangerines: { id: 'tangerines', color: '#f59e0b', icon: '🍊' },
+};
+
+/** Three of DorkBot's runs in a row — long enough to collapse. */
+const BURST_ROWS: NotificationDTO[] = [
+  {
+    id: '01JZB0000000000000000010',
+    kind: 'run.completed',
+    tier: 'quiet',
+    subject: { type: 'run', id: 'run-1' },
+    agentId: 'dorkbot',
+    title: 'Nightly sweep finished',
+    createdAt: minutesAgo(5),
+  },
+  {
+    id: '01JZB0000000000000000011',
+    kind: 'run.completed',
+    tier: 'quiet',
+    subject: { type: 'run', id: 'run-2' },
+    agentId: 'dorkbot',
+    title: 'Nightly sweep finished',
+    createdAt: minutesAgo(65),
+  },
+  {
+    id: '01JZB0000000000000000012',
+    kind: 'run.completed',
+    tier: 'quiet',
+    subject: { type: 'run', id: 'run-3' },
+    agentId: 'dorkbot',
+    title: 'Nightly sweep finished',
+    createdAt: minutesAgo(125),
+    readAt: minutesAgo(120),
+  },
+];
+
+/** Two of the same run — one short of the threshold, so it stays flat. */
+const PAIR_ROWS: NotificationDTO[] = [
+  {
+    id: '01JZB0000000000000000020',
+    kind: 'run.completed',
+    tier: 'quiet',
+    subject: { type: 'run', id: 'run-4' },
+    agentId: 'tangerines',
+    title: 'Weekly digest finished',
+    createdAt: minutesAgo(8),
+  },
+  {
+    id: '01JZB0000000000000000021',
+    kind: 'run.completed',
+    tier: 'quiet',
+    subject: { type: 'run', id: 'run-5' },
+    agentId: 'tangerines',
+    title: 'Weekly digest finished',
+    createdAt: minutesAgo(70),
   },
 ];
 
@@ -176,17 +253,78 @@ function BellStatesShowcase() {
 
 /** The rows behind the bell, at the width the popover gives them. */
 function InboxRowsShowcase() {
+  const burstItems = groupActivityRows(BURST_ROWS);
+  const pairItems = groupActivityRows(PAIR_ROWS);
+
   return (
     <PlaygroundSection
       title="Inbox rows"
       description="What happened, newest first. Unread carries a dot rather than a colour — the row's own tone already says how loud the event was, and two scales fighting for one line is how neither gets read."
     >
-      <ShowcaseLabel>A mixed page: unread above, read below</ShowcaseLabel>
+      <ShowcaseLabel>
+        A mixed page: faces where an agent resolved, the kind glyph where one did not (shadow-fox)
+        or where the tone is loud enough to keep it (the failed run)
+      </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
           {ROWS.map((row) => (
-            <InboxRow key={row.id} notification={row} onOpen={() => {}} />
+            <InboxRow
+              key={row.id}
+              notification={row}
+              agent={row.agentId === undefined ? undefined : (AGENTS[row.agentId] ?? null)}
+              onOpen={() => {}}
+            />
           ))}
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        A burst of three, collapsed — click to expand; expanding never marks anything read
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          {burstItems.map((item) =>
+            item.type === 'group' ? (
+              <InboxGroupRow
+                key={item.id}
+                group={item}
+                agent={AGENTS[item.agentId]}
+                agentName="DorkBot"
+                onOpenNotification={() => {}}
+              />
+            ) : (
+              <InboxRow
+                key={item.notification.id}
+                notification={item.notification}
+                agent={AGENTS[item.notification.agentId ?? '']}
+                onOpen={() => {}}
+              />
+            )
+          )}
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Two in a row stays flat — the coalescing threshold is three</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          {pairItems.map((item) =>
+            item.type === 'group' ? (
+              <InboxGroupRow
+                key={item.id}
+                group={item}
+                agent={AGENTS[item.agentId]}
+                agentName="tangerines"
+                onOpenNotification={() => {}}
+              />
+            ) : (
+              <InboxRow
+                key={item.notification.id}
+                notification={item.notification}
+                agent={AGENTS[item.notification.agentId ?? '']}
+                onOpen={() => {}}
+              />
+            )
+          )}
         </div>
       </ShowcaseDemo>
 

@@ -32,7 +32,9 @@ export type { NotificationLens, NotificationPages } from './model/notification-c
 export {
   NOTIFICATION_ICONS,
   notificationTone,
+  notificationRowTone,
+  notificationBurstVerb,
   notificationLink,
   isFailedRun,
 } from './lib/notification-presentation';
-export type { NotificationLink } from './lib/notification-presentation';
+export type { NotificationLink, NotificationTone } from './lib/notification-presentation';

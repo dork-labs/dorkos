@@ -12,6 +12,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 
@@ -36,6 +37,26 @@ function build(overrides: Partial<NotificationDTO> = {}): NotificationDTO {
     agentId: 'alpha',
     title: 'alpha finished',
     createdAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+/** Build a roster agent, overriding only what a test cares about. */
+function buildAgent(overrides: Partial<AgentManifest> = {}): AgentManifest {
+  return {
+    id: 'alpha',
+    name: 'alpha',
+    displayName: 'Alpha Bot',
+    description: '',
+    runtime: 'claude-code',
+    capabilities: [],
+    behavior: { responseMode: 'always' },
+    registeredAt: new Date().toISOString(),
+    registeredBy: 'test',
+    personaEnabled: true,
+    isSystem: false,
+    enabledToolGroups: {},
+    mcpServers: [],
     ...overrides,
   };
 }
@@ -167,7 +188,7 @@ describe('InboxList', () => {
     });
   });
 
-  it('reads a row that has nowhere to go without trying to travel', async () => {
+  it('draws a row with nowhere to go as text, not a button pretending to travel', async () => {
     const markNotificationRead = vi.fn().mockResolvedValue({ ok: true, marked: 1, unreadCount: 0 });
     renderList(<InboxList />, {
       listNotifications: vi.fn().mockResolvedValue({
@@ -178,6 +199,7 @@ describe('InboxList', () => {
             tier: 'quiet',
             subject: { type: 'system', id: '0.61.0' },
             title: 'DorkOS updated to 0.61.0',
+            agentId: undefined,
           }),
         ],
         nextCursor: null,
@@ -186,9 +208,15 @@ describe('InboxList', () => {
       markNotificationRead,
     });
 
-    await userEvent.click(await screen.findByText('DorkOS updated to 0.61.0'));
+    await screen.findByText('DorkOS updated to 0.61.0');
 
-    expect(markNotificationRead).toHaveBeenCalledWith('v');
+    // No button affordance — InboxRow's non-interactive branch, not a
+    // full-width control that visibly does nothing but clear a dot.
+    expect(screen.queryByRole('button', { name: /DorkOS updated/ })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('DorkOS updated to 0.61.0'));
+
+    expect(markNotificationRead).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
   });
 
@@ -282,5 +310,139 @@ describe('InboxList', () => {
 
     // The popover closes on this; a page passes nothing and stays put.
     expect(onOpened).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('InboxList burst coalescing', () => {
+  it('collapses three consecutive same-agent, same-kind rows into one group', async () => {
+    renderList(<InboxList />, {
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [
+          build({ id: 'a', kind: 'run.completed', tier: 'quiet', title: 'run a finished' }),
+          build({ id: 'b', kind: 'run.completed', tier: 'quiet', title: 'run b finished' }),
+          build({ id: 'c', kind: 'run.completed', tier: 'quiet', title: 'run c finished' }),
+        ],
+        nextCursor: null,
+        unreadCount: 0,
+      }),
+      listMeshAgents: vi.fn().mockResolvedValue({ agents: [buildAgent()] }),
+    });
+
+    expect(await screen.findByText('Alpha Bot finished 3 runs')).toBeInTheDocument();
+    expect(screen.queryByText('run a finished')).not.toBeInTheDocument();
+  });
+
+  it('leaves two consecutive same-agent, same-kind rows as individual rows — below the threshold', async () => {
+    renderList(<InboxList />, {
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [
+          build({ id: 'a', kind: 'run.completed', tier: 'quiet', title: 'run a finished' }),
+          build({ id: 'b', kind: 'run.completed', tier: 'quiet', title: 'run b finished' }),
+        ],
+        nextCursor: null,
+        unreadCount: 0,
+      }),
+      listMeshAgents: vi.fn().mockResolvedValue({ agents: [buildAgent()] }),
+    });
+
+    expect(await screen.findByText('run a finished')).toBeInTheDocument();
+    expect(screen.getByText('run b finished')).toBeInTheDocument();
+    expect(screen.queryByText(/finished 2 runs/)).not.toBeInTheDocument();
+  });
+
+  it('expanding a group reveals its members and marks nothing read', async () => {
+    const markNotificationRead = vi.fn().mockResolvedValue({ ok: true, marked: 1, unreadCount: 0 });
+    renderList(<InboxList />, {
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [
+          build({ id: 'a', kind: 'run.completed', tier: 'quiet', title: 'run a finished' }),
+          build({ id: 'b', kind: 'run.completed', tier: 'quiet', title: 'run b finished' }),
+          build({ id: 'c', kind: 'run.completed', tier: 'quiet', title: 'run c finished' }),
+        ],
+        nextCursor: null,
+        unreadCount: 0,
+      }),
+      listMeshAgents: vi.fn().mockResolvedValue({ agents: [buildAgent()] }),
+      markNotificationRead,
+    });
+
+    await userEvent.click(await screen.findByText('Alpha Bot finished 3 runs'));
+
+    expect(await screen.findByText('run a finished')).toBeInTheDocument();
+    expect(markNotificationRead).not.toHaveBeenCalled();
+  });
+
+  it('still opens an individual member row normally once expanded', async () => {
+    const markNotificationRead = vi.fn().mockResolvedValue({ ok: true, marked: 1, unreadCount: 0 });
+    renderList(<InboxList />, {
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [
+          build({
+            id: 'a',
+            kind: 'run.completed',
+            tier: 'quiet',
+            title: 'run a finished',
+            subject: { type: 'run', id: 'run-a' },
+          }),
+          build({
+            id: 'b',
+            kind: 'run.completed',
+            tier: 'quiet',
+            title: 'run b finished',
+            subject: { type: 'run', id: 'run-b' },
+          }),
+          build({
+            id: 'c',
+            kind: 'run.completed',
+            tier: 'quiet',
+            title: 'run c finished',
+            subject: { type: 'run', id: 'run-c' },
+          }),
+        ],
+        nextCursor: null,
+        unreadCount: 0,
+      }),
+      listMeshAgents: vi.fn().mockResolvedValue({ agents: [buildAgent()] }),
+      markNotificationRead,
+    });
+
+    await userEvent.click(await screen.findByText('Alpha Bot finished 3 runs'));
+    await userEvent.click(await screen.findByText('run b finished'));
+
+    expect(markNotificationRead).toHaveBeenCalledWith('b');
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/',
+      search: { detail: 'failed-run', itemId: 'run-b' },
+    });
+  });
+});
+
+describe('InboxList faces', () => {
+  it('draws the resolved agent face on a row', async () => {
+    renderList(<InboxList />, {
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [build({ id: 'a', kind: 'run.completed', tier: 'quiet' })],
+        nextCursor: null,
+        unreadCount: 0,
+      }),
+      listMeshAgents: vi.fn().mockResolvedValue({ agents: [buildAgent()] }),
+    });
+
+    await screen.findByText('alpha finished');
+    expect(document.querySelector('[data-slot="agent-avatar"]')).toBeInTheDocument();
+  });
+
+  it('falls back to the kind glyph when the roster does not know the agent', async () => {
+    renderList(<InboxList />, {
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [build({ id: 'a', kind: 'run.completed', tier: 'quiet' })],
+        nextCursor: null,
+        unreadCount: 0,
+      }),
+      listMeshAgents: vi.fn().mockResolvedValue({ agents: [] }),
+    });
+
+    await screen.findByText('alpha finished');
+    expect(document.querySelector('[data-slot="agent-avatar"]')).not.toBeInTheDocument();
   });
 });
