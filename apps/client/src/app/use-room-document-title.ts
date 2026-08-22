@@ -10,6 +10,7 @@
  * @module app/use-room-document-title
  */
 import { useMemo } from 'react';
+import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useSafePathname, useSafeSearch } from '@/layers/shared/model';
 import {
   hasUnread,
@@ -24,6 +25,16 @@ const ROOMS_PATHNAME = '/channels';
 
 /** The room facts the document title is built from. */
 export interface RoomDocumentTitle {
+  /**
+   * The open room on `/channels`, roster and all, or `null`.
+   *
+   * The tab needs only its name, but the channel bar needs the room — archived,
+   * bridge visibility, working count, head count — and this is the one place the
+   * open room is resolved. Handing back the object rather than a second copy of
+   * the query is what keeps the bar and the tab reading the same room (spec
+   * `one-bar-header` §3.4).
+   */
+  room: RoomWithRoster | null;
   /** The open room, written the way it is spoken (`#general`), or `null`. */
   roomTitle: string | null;
   /** How many rooms hold unread entries. */
@@ -68,8 +79,11 @@ export function useRoomDocumentTitle(): RoomDocumentTitle {
 
   const unreadRoomCount = useMemo(() => (rooms ?? []).filter(hasUnread).length, [rooms]);
 
+  const open = roomId && room ? room : null;
+
   return {
-    roomTitle: roomId && room ? roomDisplayTitle(room) : null,
+    room: open,
+    roomTitle: open ? roomDisplayTitle(open) : null,
     unreadRoomCount,
   };
 }

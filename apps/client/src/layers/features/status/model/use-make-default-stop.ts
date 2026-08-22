@@ -30,6 +30,7 @@ import { settingsForRuntime, useRuntimeCapabilities } from '@/layers/entities/ru
 import { useHasDismissedDefaultStopOffer, useSessionChatStore } from '@/layers/entities/session';
 import { isWorkingMode, resolveTrustStops } from '@/layers/shared/lib';
 import type { MakeDefaultStopLineProps } from '../ui/MakeDefaultStopLine';
+import { configKeys } from '@/layers/entities/config';
 
 /**
  * How long the offer stays before it withdraws itself, in ms.
@@ -224,7 +225,7 @@ export function useMakeDefaultStop(opts: {
         },
         {
           onSuccess: () => {
-            void queryClient.invalidateQueries({ queryKey: ['config'] });
+            void queryClient.invalidateQueries({ queryKey: configKeys.all });
             setOfferedStop(null);
           },
           onError: (err) => setWriteError(describeWriteFailure(err)),

@@ -3,8 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTransport } from '@/layers/shared/model';
 import type { OnboardingState, OnboardingStep } from '@dorkos/shared/config-schema';
-
-const CONFIG_KEY = ['config'] as const;
+import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
 
 /**
  * Manage first-time user onboarding state stored server-side in `~/.dork/config.json`.
@@ -22,9 +21,9 @@ export function useOnboarding() {
   const pendingSkipped = useRef(new Set<OnboardingStep>());
 
   const { data: config, isLoading } = useQuery({
-    queryKey: [...CONFIG_KEY],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: CONFIG_STALE_TIME_MS,
   });
 
   const DEFAULT_STATE: OnboardingState = {
@@ -69,7 +68,7 @@ export function useOnboarding() {
   const patchOnboarding = useMutation({
     mutationFn: (patch: Partial<OnboardingState>) => transport.updateConfig({ onboarding: patch }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [...CONFIG_KEY] }).then(() => {
+      queryClient.invalidateQueries({ queryKey: configKeys.all }).then(() => {
         pendingCompleted.current.clear();
         pendingSkipped.current.clear();
       });

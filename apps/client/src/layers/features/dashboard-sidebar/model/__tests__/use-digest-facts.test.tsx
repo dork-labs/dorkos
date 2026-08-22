@@ -63,6 +63,7 @@ function input(overrides: Partial<UseDigestFactsInput> = {}): UseDigestFactsInpu
     sessionStatuses: {},
     interactions: { 'session:s0': hoursAgo(14) },
     storedLastShownDate: '2026-08-08',
+    settled: true,
     ...overrides,
   };
 }
@@ -241,6 +242,41 @@ describe('useDigestFacts — once a day, per account (BC-22)', () => {
     rerender(input({ storedLastShownDate: '2026-08-09' }));
     expect(result.current.lastShownDate).toBe('2026-08-08');
     expect(result.current.digest.finishedWhileAwayCount).toBe(2);
+  });
+
+  // ── The latch waits for the panel (spec `sidebar-simplification` D6) ──
+
+  it('shows nothing and writes nothing while the panel is still booting', () => {
+    // Prefs ride the config query, so before the boot gate opens
+    // `storedLastShownDate` is `undefined` whatever is on disk — which reads as
+    // "never shown". A latch taken there would spend the day's one showing on a
+    // frame nobody saw, and would show the row a second time the same day.
+    //
+    // Red when: `settled` stops gating the latch (the row reappears), or stops
+    // gating `showing` (the write fires while the panel is still bones).
+    const { result } = renderHook(() =>
+      useDigestFacts(input({ settled: false, storedLastShownDate: undefined }))
+    );
+    expect(result.current.lastShownDate).toBeUndefined();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('reads the pref that arrives WITH the settled model, not the one at mount', () => {
+    // The other half: the value the rule judges against is the one the config
+    // query actually delivered. Here it says the row was already shown today,
+    // so nothing renders and nothing is written — the exact case a mount-time
+    // latch got wrong, because at mount the pref was still `undefined`.
+    //
+    // Red when: the latch moves back to mount (`useState(() => stored)`), which
+    // captures `undefined` and lets the row through.
+    const { result, rerender } = renderHook((props: UseDigestFactsInput) => useDigestFacts(props), {
+      initialProps: input({ settled: false, storedLastShownDate: undefined }),
+    });
+    expect(update).not.toHaveBeenCalled();
+
+    rerender(input({ settled: true, storedLastShownDate: '2026-08-09' }));
+    expect(result.current.lastShownDate).toBe('2026-08-09');
+    expect(update).not.toHaveBeenCalled();
   });
 });
 

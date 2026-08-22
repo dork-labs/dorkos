@@ -10,8 +10,7 @@ import {
   type TourOccasion,
 } from './tour-definitions';
 import { useTourStore } from './tour-store';
-
-const CONFIG_KEY = ['config'] as const;
+import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
 
 /** The engine's public surface. */
 export interface UseToursResult {
@@ -57,9 +56,9 @@ export function useTours(): UseToursResult {
   const queryClient = useQueryClient();
 
   const { data: config } = useQuery({
-    queryKey: [...CONFIG_KEY],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: CONFIG_STALE_TIME_MS,
   });
 
   const seen = config?.tours?.seen ?? [];
@@ -76,7 +75,7 @@ export function useTours(): UseToursResult {
 
   const patchTours = useMutation({
     mutationFn: (patch: Partial<ToursState>) => transport.updateConfig({ tours: patch }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...CONFIG_KEY] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: configKeys.all }),
     // The shared mutation toast (`query-client.ts`) reports the failure now
     // — this used to show its own on top of it.
     meta: { errorLabel: "Couldn't save your tour progress" },

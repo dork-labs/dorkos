@@ -24,6 +24,7 @@ import { TOUCH_TARGET_MIN_H } from '@/layers/shared/ui';
 import type { SidebarRowModel, SidebarZoneModel } from '../model/build-sidebar-model';
 import type { SidebarZoneProps } from './SidebarZone';
 import { useMarkRoomsRead } from '../model/use-mark-rooms-read';
+import { useBootState } from '../model/boot/use-boot-state';
 import { useScrollToActive } from '../model/use-scroll-to-active';
 import { useTodayOrderHold } from '../model/holds/use-today-order-hold';
 import { SidebarZone } from './SidebarZone';
@@ -60,7 +61,10 @@ export function TodayZone({ zone, onToggleAll, silenceLiveRegion = false }: Toda
   const anchorKey = rows.find((row) => row.reason === ANCHOR_REASON)?.key ?? null;
 
   const hold = useTodayOrderHold(rows, anchorKey);
-  useScrollToActive(container, anchorKey);
+  // The boot gate, not this zone's own mount: a room anchor that arrives after
+  // the panel does is a load, not a switch (spec D6).
+  const boot = useBootState();
+  useScrollToActive(container, anchorKey, boot.settled);
 
   // Read off the model's rows, not the held ones: what is unread is a fact
   // about the zone, and BC-17's hold is about the ORDER a pointer sees. The two

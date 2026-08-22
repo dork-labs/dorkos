@@ -7,7 +7,7 @@
  * Pure refactor of the action callbacks previously inlined in `TunnelDialog`.
  * Behavior is byte-identical to the source — same try/catch boundaries,
  * same error messages, same `broadcastTunnelChange()` and
- * `queryClient.invalidateQueries({ queryKey: ['config'] })` calls.
+ * `queryClient.invalidateQueries({ queryKey: configKeys.all })` calls.
  *
  * @module features/settings/model/use-tunnel-actions
  */
@@ -19,6 +19,7 @@ import { requestOwnerSetup } from '@/layers/shared/lib';
 import { broadcastTunnelChange } from '@/layers/entities/tunnel';
 import { START_TIMEOUT_MS } from './tunnel-view-state';
 import type { TunnelMachine } from './use-tunnel-machine';
+import { configKeys } from '@/layers/entities/config';
 
 interface UseTunnelActionsArgs {
   machine: TunnelMachine;
@@ -62,7 +63,7 @@ export function useTunnelActions({
       clearTimeout(timeout);
       machine.setState('connected');
       machine.setUrl(result.url);
-      queryClient.invalidateQueries({ queryKey: ['config'] });
+      queryClient.invalidateQueries({ queryKey: configKeys.all });
       broadcastTunnelChange();
     } catch (err) {
       clearTimeout(timeout);
@@ -98,7 +99,7 @@ export function useTunnelActions({
           await transport.stopTunnel();
           machine.setState('off');
           machine.setUrl(null);
-          queryClient.invalidateQueries({ queryKey: ['config'] });
+          queryClient.invalidateQueries({ queryKey: configKeys.all });
           broadcastTunnelChange();
         } catch (err) {
           machine.setState('connected');
@@ -116,7 +117,7 @@ export function useTunnelActions({
       machine.setAuthToken('');
       machine.setShowTokenInput(false);
       machine.setShowSetup(false);
-      queryClient.invalidateQueries({ queryKey: ['config'] });
+      queryClient.invalidateQueries({ queryKey: configKeys.all });
     } catch {
       machine.setTokenError('Could not save token. Try again.');
     }
@@ -125,7 +126,7 @@ export function useTunnelActions({
   const handleSaveDomain = useCallback(async () => {
     try {
       await transport.updateConfig({ tunnel: { domain: machine.domain.trim() || null } });
-      queryClient.invalidateQueries({ queryKey: ['config'] });
+      queryClient.invalidateQueries({ queryKey: configKeys.all });
     } catch {
       // Silently fail — domain will be re-synced from config
     }

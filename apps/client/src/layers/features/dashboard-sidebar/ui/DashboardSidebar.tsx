@@ -21,6 +21,7 @@
  */
 import { SidebarContent } from '@/layers/shared/ui';
 import { SidebarBottomSlot } from './bottom-slot/SidebarBottomSlot';
+import { useBootState } from '../model/boot/use-boot-state';
 import { useLegacyPinMigration } from '../model/use-legacy-pin-migration';
 import { useSidebarModel } from '../model/use-sidebar-model';
 import { useSidebarState } from '../model/use-sidebar-state';
@@ -40,11 +41,21 @@ export function DashboardSidebar() {
   useLegacyPinMigration();
   const state = useSidebarState();
   const model = useSidebarModel(state);
+  const boot = useBootState();
 
   return (
     // The panel root is the sidebar's one landmark (R2). Zones are sections
     // inside it, each labelled by its own heading.
-    <nav aria-label="Sidebar" className="flex min-h-0 flex-1 flex-col">
+    //
+    // `aria-busy` is the WHOLE announcement of a cold boot (spec D6): the
+    // skeleton itself is `aria-hidden` and there is no live region reading out
+    // bones, because "the sidebar is still loading" is a property of the
+    // landmark and not an event worth interrupting anybody for.
+    <nav
+      aria-label="Sidebar"
+      aria-busy={boot.phase === 'cold' ? true : undefined}
+      className="flex min-h-0 flex-1 flex-col"
+    >
       {/* **The sidebar's whole horizontal inset, paid here and at the row.**
           Eight pixels of panel padding plus eight on every row is the 16px total
           left inset the density calls for (design-decisions §11). Nothing

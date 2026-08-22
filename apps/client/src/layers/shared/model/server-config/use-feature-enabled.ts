@@ -1,9 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '../TransportContext';
+import { configKeys, CONFIG_STALE_TIME_MS } from './query-keys';
 
 type Subsystem = 'tasks' | 'relay';
-
-const CONFIG_STALE_TIME = 5 * 60 * 1000;
 
 /** Whether a subsystem is on, and whether that answer can be believed yet. */
 export interface FeatureEnabledState {
@@ -32,9 +31,9 @@ export function useFeatureEnabledState(subsystem: Subsystem): FeatureEnabledStat
   const transport = useTransport();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
-    staleTime: CONFIG_STALE_TIME,
+    staleTime: CONFIG_STALE_TIME_MS,
   });
 
   return { enabled: data?.[subsystem]?.enabled ?? false, isLoading };

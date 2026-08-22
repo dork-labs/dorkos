@@ -107,13 +107,9 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${title}, 3 members`);
-    for (const agent of [ana, kai]) {
-      const disc = roomsPage.memberList
-        .locator('[data-slot="room-member-avatar"]')
-        .filter({ hasText: agent.name });
-      expect(await visibleText(disc)).toBe(agent.emoji);
-    }
+    // You plus both agents. The roster is a head count in the bar now, not a row
+    // of discs — each agent's own face is proven on the sidebar row just below.
+    await expect(roomsPage.membersChip).toHaveAccessibleName('3 members');
 
     // A group's mark stacks its agents' faces rather than standing in for them
     // with one, in roster order. Read the expected faces from the roster itself
@@ -170,7 +166,7 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${title}, 3 members`);
+    await expect(roomsPage.membersChip).toHaveAccessibleName('3 members');
     // And no one-to-one with the first agent was left behind by the stray Enter.
     await expect(roomsPage.rowIn(roomsPage.directMessages, ana.name)).toHaveCount(0);
   });

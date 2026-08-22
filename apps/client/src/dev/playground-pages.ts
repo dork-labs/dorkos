@@ -32,6 +32,7 @@ import { OverviewPage } from './pages/OverviewPage';
 import { PromosPage } from './pages/PromosPage';
 import { RoomsPage } from './pages/RoomsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SidebarBootPage } from './pages/SidebarBootPage';
 import { SidebarModelPage } from './pages/SidebarModelPage';
 import { SimulatorPage } from './pages/SimulatorPage';
 import { TablesPage } from './pages/TablesPage';
@@ -75,5 +76,6 @@ export const PAGE_COMPONENTS: Record<string, ComponentType<PlaygroundPageProps>>
   rooms: RoomsPage,
   'tour-spotlight': TourSpotlightPage,
   'sidebar-model': SidebarModelPage,
+  'sidebar-boot': SidebarBootPage,
   'one-bar': OneBarPage,
 };

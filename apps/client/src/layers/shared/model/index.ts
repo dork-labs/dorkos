@@ -38,6 +38,10 @@ export {
   type FeatureEnabledState,
 } from './server-config/use-feature-enabled';
 export { useClaudeAccounts } from './server-config/use-claude-accounts';
+// The one `/config` query key, here rather than in `entities/config` because
+// `shared/` reads config too and may not import an entity. `entities/config`
+// re-exports it, so nothing above changes its import.
+export { configKeys, CONFIG_STALE_TIME_MS } from './server-config/query-keys';
 export { useNow } from './use-now';
 // The WAI-ARIA feed pattern. `Feed` (in `shared/ui`) and `feedArticleProps`
 // are what a surface uses; `useFeedKeyboardNav` and `FEED_ARTICLE_ATTR` are the

@@ -23,6 +23,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ExecutionDefaults } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { configKeys } from '@/layers/entities/config';
 import { useTrustStopWrites } from '../model/use-trust-stop-writes';
 
 afterEach(() => {
@@ -142,7 +143,7 @@ function setup(
 async function ready(queryClient: QueryClient) {
   await waitFor(() => {
     expect(queryClient.getQueryData(['capabilities'])).toBeDefined();
-    expect(queryClient.getQueryData(['config', 'current'])).toBeDefined();
+    expect(queryClient.getQueryData(configKeys.current())).toBeDefined();
   });
   await act(async () => {});
 }
@@ -267,6 +268,6 @@ describe('useTrustStopWrites — who moves with the write', () => {
 
     act(() => result.current.changeTrustStop(null, 'act'));
 
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['config'] }));
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: configKeys.all }));
   });
 });

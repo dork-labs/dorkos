@@ -218,22 +218,26 @@ test.describe('Home is the #team room @smoke', () => {
     await expect(page.getByRole('heading', { name: /your agents/i })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /system status/i })).toHaveCount(0);
 
-    // And it is the SAME widget under the alias, not a second copy. `/channels`
-    // still draws the masthead Home does without (phase R1 gives that route a
-    // room bar of its own and retires it), so the alias is where the room's own
-    // chrome can still be pointed at — and ONE of it is what says a fork did not
-    // happen.
+    // **The alias is gone: `/channels?id=<team>` now redirects here** (One Bar
+    // spec §3.5, phase R1 — the note left above by phase H1 said this route would
+    // get a room bar of its own, and what it got instead was a redirect). #team
+    // was reachable at two addresses that drew it differently — Home with its
+    // triage header and starter chips, `/channels` with neither — so which
+    // version you got depended on which link you happened to press. One room, one
+    // address.
+    //
+    // Landing back on `/` is therefore the assertion that replaces "one masthead,
+    // not two": a fork cannot hide behind a redirect that ends up on the surface
+    // this test has already checked.
     await page.goto(`/channels?id=${team.id}`);
     await basePage.waitForAppReady();
-    await expect(roomsPage.roomHeading).toContainText('team', { timeout: SERVER_ROUND_TRIP_MS });
-    // ONE masthead, not two: the sidebar also draws a `room-title` for the
-    // channel row, so the count that means "one room tree" is the masthead's.
-    await expect(roomsPage.roomHeader).toHaveCount(1);
-    // The room's composer, addressed the way every other room spec addresses
-    // it. Not `home-composer`: that testid is stamped only where the recents
-    // panel is offered, which is the home surface alone (`ChannelComposer`), and
-    // its absence here is the correct answer rather than a missing composer.
-    await expect(roomsPage.composer('#team')).toBeVisible();
+    await expect(page).toHaveURL(/\/(\?|$)/, { timeout: SERVER_ROUND_TRIP_MS });
+    // Still no masthead where it landed, and still the same room: Home draws the
+    // bar and nothing underneath that repeats the room's name.
+    await expect(roomsPage.roomHeading).toHaveCount(0);
+    await expect(homeSurface.composerField).toHaveAttribute('placeholder', /#team/, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
   });
 
   test('typing here reaches your default agent, and nobody else piles on', async ({

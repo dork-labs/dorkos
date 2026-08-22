@@ -13,7 +13,10 @@ export { TitleBar } from './ui/TitleBar';
 // mounted across a tab press (see `resolveRouteHeader`).
 export { HomeSurfaceBar } from './ui/HomeSurfaceBar';
 export { BarMembersChip } from './ui/BarMembersChip';
-export { ChannelsHeader } from './ui/ChannelsHeader';
+// The room chips, shared by the channel bar and Home's — Home is a room too.
+export { RoomMembersChip } from './ui/RoomMembersChip';
+export { RoomRunState } from './ui/RoomRunState';
+export { ChannelsBar } from './ui/ChannelsBar';
 export { SessionHeader } from './ui/SessionHeader';
 export { TeamHeader, TEAM_VIEW_TABS } from './ui/TeamHeader';
 export { OneBarProvider, useOneBarState } from './model/one-bar-context';

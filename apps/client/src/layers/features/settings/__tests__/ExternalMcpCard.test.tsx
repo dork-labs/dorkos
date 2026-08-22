@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { configKeys } from '@/layers/entities/config';
 import { ExternalMcpCard } from '../ui/external-mcp/ExternalMcpCard';
 import type { ServerConfig } from '@dorkos/shared/types';
 
@@ -273,7 +274,7 @@ describe('ExternalMcpCard', () => {
     await user.click(screen.getByRole('button', { name: 'Rotate' }));
     await user.click(screen.getByRole('button', { name: 'Rotate token' }));
     await waitFor(() => expect(transport.rotateMcpLocalToken).toHaveBeenCalledTimes(1));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['config'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: configKeys.all });
     // The rotate response carries the new token; it renders without a reveal.
     expect(await screen.findByText('dork_mcp_local_test')).toBeInTheDocument();
   });

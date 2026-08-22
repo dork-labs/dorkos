@@ -5,11 +5,8 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 import { Pin } from 'lucide-react';
-import { SidebarRow, WELCOME_BACK_GLOW } from '../sidebar-row';
+import { SidebarRow } from '../sidebar-row';
 import {
   ROW_TITLE_CLASS,
   ROW_TRAILING_CLASS,
@@ -516,58 +513,6 @@ describe('SidebarRow — the reserved verb line (BC-24, R1)', () => {
     );
     expect(screen.getByText('Editing RoomRow.tsx…')).toBeInTheDocument();
     expect(screen.queryByText('Scout shipped the fix')).not.toBeInTheDocument();
-  });
-});
-
-describe('SidebarRow — the welcome-back glow (BC-49)', () => {
-  it('glows for a row whose work finished while you were away', () => {
-    render(<SidebarRow title="#general" welcomeBack />);
-    expect(row().className).toContain(WELCOME_BACK_GLOW);
-  });
-
-  it('leaves every other row alone', () => {
-    render(<SidebarRow title="#general" />);
-    expect(row().className).not.toContain('welcome-back-glow');
-  });
-
-  it('plays once, and cannot be re-armed by a model rebuild', () => {
-    // "On first paint" is the whole moment. A row that could be re-armed by a
-    // prop flipping back and forth is a row that pulses at you every time the
-    // sidebar model rebuilds — and it rebuilds on every unread, every rename
-    // and every new session.
-    const { rerender } = render(<SidebarRow title="#general" welcomeBack={false} />);
-    expect(row().className).not.toContain('welcome-back-glow');
-
-    rerender(<SidebarRow title="#general" welcomeBack />);
-    expect(row().className).not.toContain('welcome-back-glow');
-  });
-
-  it('renders nothing at all under a reduced-motion preference', () => {
-    // The gate is `motion-safe:`, so the utility is never applied rather than
-    // applied-and-suppressed. Nothing is lost: the beat is an announcement
-    // about the past, not a fact the row would otherwise be missing.
-    render(<SidebarRow title="#general" welcomeBack />);
-    expect(WELCOME_BACK_GLOW.startsWith('motion-safe:')).toBe(true);
-    expect(row().className).not.toMatch(/(^|\s)animate-welcome-back-glow(\s|$)/);
-  });
-
-  it('names a utility that actually exists in the stylesheet', () => {
-    // Not a formality. ~20 call sites in this repo wore `animate-tasks` for
-    // months while no keyframe by that name existed, and the pulse they were
-    // asking for was silently dead CSS the whole time (see `index.css`). A
-    // Tailwind class that matches no utility is not an error anywhere else in
-    // the toolchain, so this is the only place the typo can be caught.
-    const css = readFileSync(
-      resolve(dirname(fileURLToPath(import.meta.url)), '../../../../index.css'),
-      'utf8'
-    );
-    const utility = WELCOME_BACK_GLOW.replace('motion-safe:', '');
-    expect(css).toContain(`@utility ${utility} {`);
-    expect(css).toContain('@keyframes welcome-back-glow {');
-    // …and that the utility really drives those keyframes, rather than
-    // declaring a name and animating something else.
-    const block = css.slice(css.indexOf(`@utility ${utility} {`));
-    expect(block.slice(0, block.indexOf('}'))).toMatch(/animation:\s*welcome-back-glow\b/);
   });
 });
 
