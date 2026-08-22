@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { Fragment, useCallback, useEffect, useRef } from 'react';
 import { Link, type LinkProps } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
@@ -16,6 +16,14 @@ export interface BarTab {
   to: LinkProps['to'];
   /** Search params to carry or rewrite — how `/team`'s views spell `?view=`. */
   search?: LinkProps['search'];
+  /**
+   * Draw a hairline immediately before this tab, splitting the strip into
+   * groups — `/team`'s three ways of reading the roster, then its two rules
+   * surfaces. A property of the tab the group STARTS with rather than a
+   * separate entry in the list, so a group cannot be reordered away from its
+   * own divider and no divider can outlive the tab it introduces.
+   */
+  dividerBefore?: boolean;
 }
 
 interface BarTabStripProps {
@@ -165,56 +173,74 @@ export function BarTabStrip({
         data-testid={testId}
         className={cn(
           'flex items-stretch gap-1 overflow-x-auto',
+          // The native scrollbar is hidden by `data-slot` in `index.css` — the
+          // edge fades below are this strip's affordance, and a reserved
+          // scrollbar was eating 11px of its own tap target. It cannot be a
+          // utility class here: the global `* { scrollbar-width: thin }` it has
+          // to beat is unlayered, so it outranks anything in `utilities`.
           isRow ? 'px-2' : 'min-w-0 flex-1'
         )}
       >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           return (
-            <Link
-              key={tab.id}
-              ref={isActive ? activeRef : undefined}
-              to={tab.to}
-              search={tab.search}
-              data-active={isActive || undefined}
-              className={cn(
-                'relative flex shrink-0 items-center text-sm font-medium whitespace-nowrap transition-colors',
-                // Two densities, two targets. A standalone row gets `min-h-11`
-                // — the 44px touch target — relaxing to 36px on a desktop. In
-                // the bar there is no such room: `h-full` fills the shell's row,
-                // which measures 35px (the wrapper's `self-stretch` is what
-                // makes "full" mean the row rather than one line of text).
-                // That is under the 44px touch guidance, and it is the trade the
-                // One Bar makes on a phone — one 36px row instead of two rows
-                // totalling 80px. Flagged at the spec's phone checkpoint, not
-                // silently absorbed.
-                isRow ? 'min-h-11 px-3 md:min-h-9' : 'h-full px-2.5',
-                // An INSET ring, not the shared `focus-ring` box-shadow. Setting
-                // `overflow-x: auto` computes `overflow-y` to `auto` as well, and
-                // this nav's content box is exactly one tab tall — so a ring drawn
-                // outside the tab's border box falls outside the scroll container
-                // and is clipped top and bottom. A ring painted inside the border
-                // box has nothing to clip against, and the tab's full-height
-                // target survives (padding on the nav would have had to grow the
-                // row to keep it).
-                'focus-visible:ring-ring outline-hidden focus-visible:ring-2 focus-visible:ring-inset',
-                isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {tab.label}
-              {isActive && (
-                // Reduced motion is handled once, app-wide: the shell wraps
-                // everything in `<MotionConfig reducedMotion="user">`
-                // (AppShell.tsx), which drops this slide for anyone who asked for
-                // less motion.
-                <motion.span
-                  data-slot="bar-tab-strip-indicator"
-                  layoutId={indicatorLayoutId}
-                  className="bg-primary absolute right-0 bottom-0 left-0 h-0.5"
-                  transition={INDICATOR_SPRING}
+            <Fragment key={tab.id}>
+              {tab.dividerBefore && (
+                // Inset from the row's top and bottom so it reads as a group
+                // break rather than a second hairline competing with the bar's
+                // own. `aria-hidden`: the grouping is visual, and a screen
+                // reader announcing a separator between two links in a
+                // four-link region would be noise, not structure.
+                <div
+                  aria-hidden
+                  data-slot="bar-tab-strip-divider"
+                  className="bg-border my-2 w-px shrink-0 self-stretch"
                 />
               )}
-            </Link>
+              <Link
+                ref={isActive ? activeRef : undefined}
+                to={tab.to}
+                search={tab.search}
+                data-active={isActive || undefined}
+                className={cn(
+                  'relative flex shrink-0 items-center text-sm font-medium whitespace-nowrap transition-colors',
+                  // Two densities, two targets. A standalone row gets `min-h-11`
+                  // — the 44px touch target — relaxing to 36px on a desktop. In
+                  // the bar there is no such room: `h-full` fills the shell's row,
+                  // which measures 35px (the wrapper's `self-stretch` is what
+                  // makes "full" mean the row rather than one line of text).
+                  // That is under the 44px touch guidance, and it is the trade the
+                  // One Bar makes on a phone — one 36px row instead of two rows
+                  // totalling 80px. Flagged at the spec's phone checkpoint, not
+                  // silently absorbed.
+                  isRow ? 'min-h-11 px-3 md:min-h-9' : 'h-full px-2.5',
+                  // An INSET ring, not the shared `focus-ring` box-shadow. Setting
+                  // `overflow-x: auto` computes `overflow-y` to `auto` as well, and
+                  // this nav's content box is exactly one tab tall — so a ring drawn
+                  // outside the tab's border box falls outside the scroll container
+                  // and is clipped top and bottom. A ring painted inside the border
+                  // box has nothing to clip against, and the tab's full-height
+                  // target survives (padding on the nav would have had to grow the
+                  // row to keep it).
+                  'focus-visible:ring-ring outline-hidden focus-visible:ring-2 focus-visible:ring-inset',
+                  isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {tab.label}
+                {isActive && (
+                  // Reduced motion is handled once, app-wide: the shell wraps
+                  // everything in `<MotionConfig reducedMotion="user">`
+                  // (AppShell.tsx), which drops this slide for anyone who asked for
+                  // less motion.
+                  <motion.span
+                    data-slot="bar-tab-strip-indicator"
+                    layoutId={indicatorLayoutId}
+                    className="bg-primary absolute right-0 bottom-0 left-0 h-0.5"
+                    transition={INDICATOR_SPRING}
+                  />
+                )}
+              </Link>
+            </Fragment>
           );
         })}
       </nav>
