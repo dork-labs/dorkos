@@ -245,15 +245,12 @@ function Root() {
 /**
  * The query client, plus the local memory the sidebar boots from.
  *
- * **Two providers, because the restore has to happen twice over.**
- * `bootCache.restore()` runs before this tree ever renders (see the call below
- * `ReactDOM.createRoot`), which is what lets the first frame be a finished
- * sidebar rather than bones —
- * `PersistQueryClientProvider`'s own restore resolves through a promise and
- * lands a microtask too late for that. What the provider is here for is the
- * WRITE side: it subscribes to the cache and keeps the blob current for the next
- * load. Its restore then re-reads the object we already parsed and hydrates
- * nothing new.
+ * **The provider's own restore is what makes a reload warm** — it holds queries
+ * paused while `isRestoring` and resolves long before the router has mounted the
+ * sidebar, so `useBootState` latches `startedWarm` on hydrated data and the
+ * panel is simply there. That was measured against a production build rather
+ * than assumed: see `BootCache` for the numbers and why an earlier synchronous
+ * pre-render hydrate was removed.
  *
  * On a surface with no local memory — the Obsidian embed, whose server is in the
  * same process — this is the plain provider and nothing is written anywhere.
@@ -450,13 +447,6 @@ installClientErrorHandlers(transport);
 // never persisted. QueryCache/MutationCache and the durable session stream
 // record their own breadcrumbs directly (query-client.ts, stream-manager.ts).
 installBreadcrumbHandlers();
-
-// Paint from local memory. This runs BEFORE the first render on purpose: the
-// sidebar decides at mount whether it came up warm, and a restore that resolves
-// a microtask later would arrive after that decision was already made — the
-// panel would show bones for a frame and then animate into a shape it already
-// knew (spec `sidebar-simplification` D6).
-bootCache?.restore(queryClient);
 
 ReactDOM.createRoot(document.getElementById('root')!, {
   onCaughtError: (error, errorInfo) => {

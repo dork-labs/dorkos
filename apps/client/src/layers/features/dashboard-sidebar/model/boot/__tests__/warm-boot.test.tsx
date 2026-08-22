@@ -22,7 +22,13 @@ import { dehydrate, QueryClient, QueryClientProvider } from '@tanstack/react-que
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
-import { createBootCache, HttpTransport } from '@/layers/shared/lib';
+import { persistQueryClientRestore } from '@tanstack/react-query-persist-client';
+import {
+  createBootCache,
+  isBootQueryKey,
+  HttpTransport,
+  type BootCache,
+} from '@/layers/shared/lib';
 import { configKeys } from '@/layers/shared/model';
 import { powerFixture } from '../../fixtures/power';
 // Heads up's three sources are the one part of the gate that is mocked here,
@@ -102,6 +108,20 @@ function bootCacheOver(storage: Storage, buster = '1.0.0') {
   })!;
 }
 
+/**
+ * Restore exactly the way `PersistQueryClientProvider` does.
+ *
+ * The provider is the only thing that restores in production, so the test uses
+ * its function rather than a stand-in — otherwise "the reload came up warm"
+ * would be a claim about a path the app never takes.
+ *
+ * @param queryClient - The client the second mount renders against.
+ * @param cache - The boot cache holding the persist options.
+ */
+async function restoreThrough(queryClient: QueryClient, cache: BootCache): Promise<void> {
+  await persistQueryClientRestore({ queryClient, ...cache.persistOptions });
+}
+
 describe('booting the sidebar from local memory', () => {
   it('paints warm on the reload, from the answers the last load left behind', async () => {
     const storage = fakeStorage();
@@ -111,6 +131,25 @@ describe('booting the sidebar from local memory', () => {
     const firstMount = mount(first, answeringTransport());
     expect(firstMount.result.current.startedWarm).toBe(false);
     await waitFor(() => expect(firstMount.result.current.settled).toBe(true));
+
+    // **The third hand-kept list, pinned against the first two.** `useBootState`
+    // names its sources in `shape`; `query-persister.ts` names the same keys
+    // again, literally, because `shared/` may not import an entity module. This
+    // asserts them against each other using the keys the REAL hooks minted:
+    // add a source to the boot hook and forget the allow-list, and the warm
+    // reload below would still pass on a lucky day — this goes red immediately,
+    // naming the key that was left out.
+    //
+    // Heads up's three sources are mocked away in this file (see above), so what
+    // remains in the cache is exactly the shape sources plus manifests — every
+    // one of which must be remembered.
+    const minted = first
+      .getQueryCache()
+      .getAll()
+      .map((query) => query.queryKey);
+    expect(minted.length).toBeGreaterThan(0);
+    expect(minted.filter((key) => !isBootQueryKey(key))).toEqual([]);
+
     firstMount.unmount();
 
     // What the persister would have written, through the real allow-list.
@@ -124,12 +163,12 @@ describe('booting the sidebar from local memory', () => {
 
     // ── The reload: a fresh client, a network that says nothing ──
     const second = new QueryClient();
-    bootCacheOver(storage).restore(second);
+    await restoreThrough(second, bootCacheOver(storage));
     const secondMount = mount(second, silentTransport());
 
-    // The very first render, with no `await` in front of it. This is the
-    // assertion the whole task exists for: the panel knows its shape before the
-    // server has said a word, so it is simply there rather than animating in.
+    // The panel knew its shape before the server said a word — the network here
+    // never answers at all, so `startedWarm` can only be true because the blob
+    // in storage put every boot query in the cache before this mount.
     expect(secondMount.result.current.startedWarm).toBe(true);
     expect(secondMount.result.current.phase).not.toBe('cold');
     secondMount.unmount();
@@ -152,7 +191,7 @@ describe('booting the sidebar from local memory', () => {
     await waitFor(() => expect(storage.length).toBe(1), { timeout: 5_000 });
 
     const second = new QueryClient();
-    bootCacheOver(storage, '2.0.0').restore(second);
+    await restoreThrough(second, bootCacheOver(storage, '2.0.0'));
     const secondMount = mount(second, silentTransport());
 
     // A new build may have changed what a payload looks like, so it starts from

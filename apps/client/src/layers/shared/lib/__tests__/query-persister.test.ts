@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { dehydrate, QueryClient } from '@tanstack/react-query';
+import { persistQueryClientRestore } from '@tanstack/react-query-persist-client';
 import {
   BOOT_CACHE_KEY_PREFIX,
   BOOT_CACHE_MAX_AGE_MS,
@@ -54,6 +55,16 @@ function blob(options: {
 }
 
 const BUSTER = '1.2.3';
+
+/**
+ * Long enough for the persister's one-second write throttle to have fired.
+ *
+ * Real timers rather than fake ones: the throttle lives inside
+ * `createSyncStoragePersister`, which captured `setTimeout` at module load, so
+ * `vi.useFakeTimers()` here would swap a clock the code under test is not
+ * holding and prove nothing (see the fake-timer entry in `.claude/rules/testing.md`).
+ */
+const SAVE_THROTTLE_WAIT_MS = 1_500;
 
 describe('the sidebar’s local memory', () => {
   describe('what it is allowed to remember', () => {
@@ -152,39 +163,49 @@ describe('the sidebar’s local memory', () => {
 
     const KEY = `${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`;
 
-    it('paints the remembered answers into the cache, synchronously', () => {
+    /**
+     * Restore the way the app really does — through the library's own path.
+     *
+     * `PersistQueryClientProvider` calls exactly this, so driving it here means
+     * the buster and max-age rules are tested where they are ENFORCED (in
+     * `persistQueryClientRestore`) rather than against a second copy of them
+     * written to make the test pass.
+     */
+    async function restoreThrough(storage: Storage, buster = BUSTER) {
+      const queryClient = new QueryClient();
+      const cache = cacheOver(storage, buster);
+      await persistQueryClientRestore({ queryClient, ...cache.persistOptions });
+      return queryClient;
+    }
+
+    it('paints the remembered answers into the cache', async () => {
       const storage = fakeStorage({
         [KEY]: blob({
           buster: BUSTER,
           queries: [{ queryKey: configKeys.current(), data: { version: '1.2.3' } }],
         }),
       });
-      const queryClient = new QueryClient();
 
-      cacheOver(storage).restore(queryClient);
+      const queryClient = await restoreThrough(storage);
 
-      // No await anywhere above: this is the whole point. `startedWarm` is
-      // latched on the mount render, so a restore that resolved a microtask
-      // later would arrive after the panel had already decided it came up cold.
       expect(queryClient.getQueryState(configKeys.current())?.dataUpdatedAt).toBeGreaterThan(0);
     });
 
-    it('throws away a blob from another build rather than painting yesterday’s shape', () => {
+    it('throws away a blob from another build rather than painting yesterday’s shape', async () => {
       const storage = fakeStorage({
         [KEY]: blob({
           buster: '0.0.1',
           queries: [{ queryKey: configKeys.current(), data: { version: '0.0.1' } }],
         }),
       });
-      const queryClient = new QueryClient();
 
-      cacheOver(storage).restore(queryClient);
+      const queryClient = await restoreThrough(storage, BUSTER);
 
       expect(queryClient.getQueryState(configKeys.current())).toBeUndefined();
       expect(storage.getItem(KEY)).toBeNull();
     });
 
-    it('throws away a blob older than a day', () => {
+    it('throws away a blob older than a day', async () => {
       const storage = fakeStorage({
         [KEY]: blob({
           buster: BUSTER,
@@ -192,20 +213,68 @@ describe('the sidebar’s local memory', () => {
           queries: [{ queryKey: ['team'], data: [] }],
         }),
       });
-      const queryClient = new QueryClient();
 
-      cacheOver(storage).restore(queryClient);
+      const queryClient = await restoreThrough(storage);
 
       expect(queryClient.getQueryState(['team'])).toBeUndefined();
       expect(storage.getItem(KEY)).toBeNull();
     });
 
-    it('survives a blob somebody else corrupted', () => {
-      const storage = fakeStorage({ [KEY]: 'not json' });
-      const queryClient = new QueryClient();
+    /**
+     * Blobs that are well-formed JSON and still not a cache.
+     *
+     * **`localStorage` is a shared, writable namespace.** A browser extension, a
+     * previous build, a write cut off by a crashing tab, or a person in devtools
+     * can leave any of these behind, and `hydrate` walks straight into the ones
+     * that parse. Each must end as a cold boot with the key gone — never a
+     * thrown error, and never a hydrate attempt.
+     */
+    const POISON: [name: string, raw: string][] = [
+      ['not JSON at all', 'not json'],
+      ['JSON that is not an object', '"just a string"'],
+      ['null', 'null'],
+      ['no clientState', JSON.stringify({ buster: BUSTER, timestamp: Date.now() })],
+      [
+        'garbage-queries — queries is not an array',
+        JSON.stringify({
+          buster: BUSTER,
+          timestamp: Date.now(),
+          clientState: { mutations: [], queries: 'garbage' },
+        }),
+      ],
+      [
+        'query-not-object — an entry hydrate would read fields off',
+        JSON.stringify({
+          buster: BUSTER,
+          timestamp: Date.now(),
+          clientState: { mutations: [], queries: [null] },
+        }),
+      ],
+      [
+        'a query with no queryKey',
+        JSON.stringify({
+          buster: BUSTER,
+          timestamp: Date.now(),
+          clientState: { mutations: [], queries: [{ state: { data: 1 } }] },
+        }),
+      ],
+      [
+        'a timestamp that is not a number',
+        JSON.stringify({
+          buster: BUSTER,
+          timestamp: 'yesterday',
+          clientState: { mutations: [], queries: [] },
+        }),
+      ],
+    ];
 
-      expect(() => cacheOver(storage).restore(queryClient)).not.toThrow();
+    it.each(POISON)('boots cold and forgets the blob: %s', async (_name, raw) => {
+      const storage = fakeStorage({ [KEY]: raw });
+
+      const queryClient = await restoreThrough(storage);
+
       expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+      expect(storage.getItem(KEY)).toBeNull();
     });
 
     it('drops another cockpit’s memory rather than leaving it behind forever', () => {
@@ -257,10 +326,15 @@ describe('the sidebar’s local memory', () => {
         storage,
       })!;
 
+      // Something worth remembering, or the empty-write guard would (rightly)
+      // leave no key at all and this would be asserting the wrong thing.
+      const queryClient = new QueryClient();
+      queryClient.setQueryData(configKeys.current(), { userSettings: {} });
+
       await cache.persistOptions.persister.persistClient({
         buster: BUSTER,
         timestamp: Date.now(),
-        clientState: dehydrate(new QueryClient(), cache.persistOptions.dehydrateOptions),
+        clientState: dehydrate(queryClient, cache.persistOptions.dehydrateOptions),
       });
 
       // The write is throttled — a boot alone produces dozens of cache events,
@@ -290,6 +364,50 @@ describe('the sidebar’s local memory', () => {
 
       const written = storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`);
       expect(written).toContain('promosDismissed');
+    });
+
+    it('does not recreate the key after a sign-out has cleared it', async () => {
+      const storage = fakeStorage();
+      const cache = createBootCache({
+        transport: new HttpTransport('/api'),
+        apiBaseUrl: '/api',
+        buster: BUSTER,
+        storage,
+      })!;
+      const queryClient = new QueryClient();
+      queryClient.setQueryData(configKeys.current(), { userSettings: {} });
+
+      // Signing out drops the boot queries and wipes the storage — in that
+      // order, as `useSignOut` does it.
+      queryClient.removeQueries({ predicate: (query) => isBootQueryKey(query.queryKey) });
+      clearBootCache(storage);
+
+      // Dropping them was itself a cache event, so the throttled save fires up
+      // to a second later. It must find nothing worth writing and leave no key
+      // behind — otherwise the person is left holding an empty artefact of the
+      // session they just ended.
+      await cache.persistOptions.persister.persistClient({
+        buster: BUSTER,
+        timestamp: Date.now(),
+        clientState: dehydrate(queryClient, cache.persistOptions.dehydrateOptions),
+      });
+      await new Promise((resolve) => setTimeout(resolve, SAVE_THROTTLE_WAIT_MS));
+
+      expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`)).toBeNull();
+    });
+
+    it('does not write an empty memory on the way out of an emptied page', () => {
+      const storage = fakeStorage({ [`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`]: 'stale' });
+      const cache = createBootCache({
+        transport: new HttpTransport('/api'),
+        apiBaseUrl: '/api',
+        buster: BUSTER,
+        storage,
+      })!;
+
+      cache.flush(new QueryClient());
+
+      expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`)).toBeNull();
     });
 
     it('forgets every cockpit when asked', () => {

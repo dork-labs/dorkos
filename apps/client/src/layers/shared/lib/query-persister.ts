@@ -169,17 +169,6 @@ function bootCacheKeys(storage: Storage): string[] {
   return keys;
 }
 
-/** Read the blob without waiting for a microtask. Any damage to it reads as "nothing remembered". */
-function readPersistedClient(storage: Storage, key: string): PersistedClient | undefined {
-  try {
-    const raw = storage.getItem(key);
-    if (raw === null) return undefined;
-    return JSON.parse(raw) as PersistedClient;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * The dehydrate rule: in the allow-list, and holding an answer worth keeping.
  *
@@ -193,27 +182,62 @@ function shouldPersist(query: { queryKey: readonly unknown[] }): boolean {
   );
 }
 
-/** Whether a remembered blob is still one this build may paint. */
-function isUsable(persisted: PersistedClient, buster: string): boolean {
-  if (typeof persisted.timestamp !== 'number') return false;
-  if (persisted.buster !== buster) return false;
-  return Date.now() - persisted.timestamp <= BOOT_CACHE_MAX_AGE_MS;
+/**
+ * Whether a blob read back out of storage is shaped like something to hydrate.
+ *
+ * **Valid JSON is not a valid cache**, and the difference is the whole reason
+ * this exists. `localStorage` is a shared, writable namespace: a browser
+ * extension, an old build of this app, a half-finished write cut off by a
+ * crashing tab, or a person poking at devtools can all leave a well-formed JSON
+ * document here that `hydrate` then walks into. `hydrate` reads
+ * `clientState.queries` and then reads fields off each entry, so a `queries`
+ * that is a string, or an array with a `null` in it, throws inside React's
+ * render path rather than at a boundary we control.
+ *
+ * So the shape is checked BEFORE hydration rather than repaired after it. What
+ * fails here is thrown away and the next load is simply cold, which is the
+ * behaviour a person can live with; a blank cockpit is not.
+ *
+ * @param value - Whatever `JSON.parse` produced for the stored blob.
+ */
+function isRestorableClient(value: unknown): value is PersistedClient {
+  if (typeof value !== 'object' || value === null) return false;
+  const client = value as Partial<PersistedClient>;
+  if (typeof client.timestamp !== 'number') return false;
+  const state = client.clientState;
+  if (typeof state !== 'object' || state === null) return false;
+  if (!Array.isArray(state.queries)) return false;
+  return state.queries.every(
+    (query) =>
+      typeof query === 'object' &&
+      query !== null &&
+      Array.isArray((query as { queryKey?: unknown }).queryKey)
+  );
 }
 
-/** What the app root needs to boot from local memory and to keep it current. */
+/**
+ * What the app root needs to boot from local memory and to keep it current.
+ *
+ * **There is no `restore` here, and that was measured rather than assumed.**
+ * `PersistQueryClientProvider` restores through a promise, so the obvious worry
+ * is that its data lands a microtask after the first paint — too late for
+ * `useBootState`'s `startedWarm`, which is latched at mount. An earlier draft of
+ * this file therefore hydrated synchronously before `createRoot().render()`.
+ *
+ * It was not buying anything. Against a PRODUCTION build (one bundle, not dev's
+ * few hundred module requests), with and without that call, a warm reload showed
+ * no skeleton and exactly one distinct picture of the row list, twice each —
+ * first row at 125-142 ms either way. The provider holds queries paused while
+ * `isRestoring`, and its restore resolves well before the router has mounted the
+ * sidebar. The measurement is in the PR body; the probe is
+ * `scratchpad/3.2/probe-sync-restore.mjs`.
+ *
+ * So the synchronous path is gone, and with it the double-read plumbing it
+ * needed. Its removal also closed a real hazard: hydrating at module scope put
+ * `hydrate` outside every error boundary, where one malformed blob in
+ * `localStorage` was a blank cockpit rather than a cold boot.
+ */
 export interface BootCache {
-  /**
-   * Put the remembered answers into the query cache, right now.
-   *
-   * **Must run before the first render**, and that is the whole point of it.
-   * `PersistQueryClientProvider` restores through a promise, so its data lands a
-   * microtask after the first paint — one frame too late for
-   * `useBootState`'s `startedWarm`, which is latched at mount and decides
-   * whether the panel animates into place or is simply there.
-   *
-   * @param queryClient - The client the app renders against.
-   */
-  restore(queryClient: QueryClient): void;
   /**
    * Write the cache to storage now, without waiting for the throttle.
    *
@@ -277,33 +301,32 @@ export function createBootCache(options: {
     throttleTime: SAVE_THROTTLE_MS,
   });
 
-  // Read once. `restore` needs it synchronously and the provider asks for it
-  // again a microtask later; handing back the same object spares a second parse
-  // of the whole blob and makes the provider's own restore a no-op re-hydrate
-  // (`hydrate` skips a query whose cached answer is not newer).
-  let firstRead: PersistedClient | undefined = readPersistedClient(storage, key);
-  let firstReadConsumed = false;
+  /**
+   * Write, unless there is nothing to remember.
+   *
+   * **An empty write is how a sign-out undid itself.** Signing out clears the
+   * storage AND drops the boot queries from the cache — and dropping them is a
+   * cache event, so the throttled save fires up to a second later and recreates
+   * the key holding `queries: []`. The person is left with an empty artefact of
+   * a session they ended. Nothing to remember means nothing on disk.
+   */
+  const write = (client: PersistedClient): void => {
+    if (client.clientState.queries.length === 0) {
+      persister.removeClient();
+      return;
+    }
+    persister.persistClient(client);
+  };
 
   return {
-    restore(queryClient) {
-      if (firstRead === undefined) return;
-      if (!isUsable(firstRead, buster)) {
+    flush(queryClient) {
+      const clientState = dehydrate(queryClient, { shouldDehydrateQuery: shouldPersist });
+      if (clientState.queries.length === 0) {
         storage.removeItem(key);
-        firstRead = undefined;
         return;
       }
-      hydrate(queryClient, firstRead.clientState);
-    },
-    flush(queryClient) {
       try {
-        storage.setItem(
-          key,
-          JSON.stringify({
-            buster,
-            timestamp: Date.now(),
-            clientState: dehydrate(queryClient, { shouldDehydrateQuery: shouldPersist }),
-          })
-        );
+        storage.setItem(key, JSON.stringify({ buster, timestamp: Date.now(), clientState }));
       } catch {
         // A full quota on the way out of the page is not worth a thrown error
         // nobody can see. The next load reads whatever the throttled save left.
@@ -314,14 +337,30 @@ export function createBootCache(options: {
       buster,
       dehydrateOptions: { shouldDehydrateQuery: shouldPersist },
       persister: {
-        persistClient: (client) => persister.persistClient(client),
+        persistClient: (client) => write(client),
         removeClient: () => persister.removeClient(),
-        restoreClient: () => {
-          if (!firstReadConsumed) {
-            firstReadConsumed = true;
-            return Promise.resolve(firstRead);
+        /**
+         * Read the blob, and refuse anything `hydrate` would choke on.
+         *
+         * The library's own restore wraps `hydrate` in a try/catch and drops the
+         * blob when it throws — but it rethrows too, and either way the check
+         * belongs before the data reaches React rather than after. See
+         * {@link isRestorableClient} for what "malformed" covers and why valid
+         * JSON is not enough.
+         */
+        restoreClient: async () => {
+          try {
+            const restored = await persister.restoreClient();
+            if (restored === undefined) return undefined;
+            if (!isRestorableClient(restored)) {
+              persister.removeClient();
+              return undefined;
+            }
+            return restored;
+          } catch {
+            persister.removeClient();
+            return undefined;
           }
-          return Promise.resolve(persister.restoreClient());
         },
       },
     },

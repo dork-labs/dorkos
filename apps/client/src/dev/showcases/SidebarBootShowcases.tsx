@@ -188,12 +188,13 @@ function measureBootCache(): { key: string; bytes: number; queries: number }[] {
     const raw = window.localStorage.getItem(key) ?? '';
     let queries = 0;
     try {
-      queries = (JSON.parse(raw) as { clientState?: { queries?: unknown[] } }).clientState?.queries
-        ?.length as number;
+      queries =
+        (JSON.parse(raw) as { clientState?: { queries?: unknown[] } }).clientState?.queries
+          ?.length ?? 0;
     } catch {
       queries = 0;
     }
-    entries.push({ key, bytes: new Blob([raw]).size, queries: queries || 0 });
+    entries.push({ key, bytes: new Blob([raw]).size, queries });
   }
   return entries;
 }

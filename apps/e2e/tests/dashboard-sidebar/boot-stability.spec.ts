@@ -31,12 +31,20 @@ import type { RoomsApi } from '../../fixtures/rooms-api';
  * No agent turn is spent here — channels are the cheapest rows this suite can
  * make, and the fleet it reads is whatever the machine already has.
  *
- * **One assertion D6 asks for is deliberately absent**: "no `data-arrived` rows
- * on boot". That attribute is task 3.3's arrive animation and does not exist in
- * the tree yet, so asserting it counts to zero today would be a green check
- * proving nothing. 3.3 owns it, and its own task text says so. What IS asserted
- * here is the property that attribute would violate — the panel showed one
- * picture and never a second — which is checkable now and stays checkable.
+ * **What the sampler cannot see, said plainly.** A picture is each row's title,
+ * its `data-face`, and its box. That is deliberately narrow — it is the set of
+ * things whose late arrival MOVES the panel — and it means this test is blind to
+ * anything that changes a row without changing its geometry: a colour, a badge
+ * appearing inside an already-reserved slot, an opacity-only fade, an unread
+ * dot. None of those are what D6 is about, but none of them are covered here
+ * either, and a later author should not read "one picture" as "nothing changed".
+ *
+ * **So one assertion D6 asks for is deliberately absent**: "no `data-arrived`
+ * rows on boot". That attribute is task 4.1's arrive animation; it does not
+ * exist in the tree yet, and it drives a background-colour keyframe — precisely
+ * the opacity/colour class this sampler is blind to. Asserting it counts to zero
+ * today would be a green check proving nothing twice over. **Task 4.1 owns it
+ * and must add its own assertion**, as its task text already says.
  */
 
 /** How long to watch after the panel has rows, for anything arriving late. */
