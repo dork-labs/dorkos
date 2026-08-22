@@ -18,7 +18,7 @@
  * @module features/dashboard-sidebar/ui/SidebarChrome
  */
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
-import { useNavigate, useRouter } from '@tanstack/react-router';
+import { useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
@@ -43,7 +43,7 @@ import {
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { hasUnread, useRooms, useRoomOpenThreadStore } from '@/layers/entities/room';
+import { hasUnread, useRooms, useRoomOpenThreadStore, useTeamRoom } from '@/layers/entities/room';
 import {
   beginSessionNavigation,
   notifySessionLookupFailed,
@@ -150,6 +150,17 @@ export interface SidebarChromeValue {
   namespaceOptions: readonly string[];
   /** What the operator has open, so the matching row (and its Library copy) tints. */
   activeTarget: SidebarTarget | null;
+  /**
+   * The room `/` is showing, when `/` is what is showing — otherwise `null`.
+   *
+   * **Only the row tint reads this, and that narrowness is the point.** Home
+   * draws #team, so that row has to look open when you are on Home; but the
+   * sidebar's `activeTarget` feeds the scroll anchor, the working rollup and
+   * Today's membership, and answering "a room is open" there pinned #team into
+   * Today on every visit to the dashboard. This carries the one fact the tint
+   * needs and reaches nothing else.
+   */
+  homeRoomId: string | null;
   /** Open whatever a row points at, and remember that it was opened (BC-16). */
   openTarget: (target: SidebarTarget) => void;
   /** Start a session, optionally scoped to one agent's directory. */
@@ -403,6 +414,15 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
     [dorkBotPath, navigate, startNewSession]
   );
 
+  // Which room is #team, so its row can go to the one address that draws it.
+  // A cache read of the room list this sidebar is already rendering.
+  const teamRoomId = useTeamRoom().room?.id ?? null;
+  // Home IS #team, so on `/` that row is the open one. Read off the live
+  // pathname rather than the model's target for the reason `homeRoomId`
+  // documents: this must not become a second opinion about what is "active".
+  const onHome = useRouterState({ select: (state) => state.location.pathname === '/' });
+  const homeRoomId = onHome ? teamRoomId : null;
+
   const openTarget = useCallback(
     (target: SidebarTarget) => {
       switch (target.kind) {
@@ -430,6 +450,17 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           // whether a keyboard opens over what you came to look at.
           if (target.rootEntryId !== undefined) {
             useRoomOpenThreadStore.getState().openThread(target.roomId, target.rootEntryId, false);
+          }
+          // **#team's row goes to Home, because Home IS #team** (spec
+          // `one-bar-header` §3.5). `/channels` would redirect here anyway, so
+          // this is not what makes the one door — it is what keeps the door from
+          // being a bounce through an address that no longer draws anything.
+          if (target.roomId === teamRoomId) {
+            void navigate({
+              to: '/',
+              search: target.rootEntryId ? { thread: target.rootEntryId } : {},
+            });
+            return;
           }
           navigate({
             to: '/channels',
@@ -479,7 +510,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           return;
       }
     },
-    [navigate, openAgent, openSession, openSuggestion, router, startNewSession]
+    [navigate, openAgent, openSession, openSuggestion, router, startNewSession, teamRoomId]
   );
 
   // Sheet when the fleet can name the agent, docked panel when it cannot. Never
@@ -514,6 +545,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       runtimeOptions,
       namespaceOptions,
       activeTarget,
+      homeRoomId,
       openTarget,
       newSession: (dir?: string) => startNewSession(dir),
       viewProfileFor,
@@ -542,6 +574,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       runtimeOptions,
       namespaceOptions,
       activeTarget,
+      homeRoomId,
       openTarget,
       startNewSession,
       viewProfileFor,

@@ -5,20 +5,20 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Section IDs must equal `slugify(title)` — verified by the playground-registry test suite.
  *
- * Sources: RoomsShowcases — Room Sheet, RoomMemberRow, RoomAvatar,
+ * Sources: RoomsShowcases — Room Panel, RoomMemberRow, RoomAvatar,
  * BridgeVisibilityBadge, ResponseModeControl, LoudnessMeter, RoomLoudnessLine,
  * AgentRosterPicker, RemoveMemberConfirm. RoomThreadShowcases — ThreadReplyRow,
  * RoomThreadPanel, Thread arrival animations.
  */
 export const ROOMS_SECTIONS: PlaygroundSection[] = [
   {
-    id: 'room-sheet',
-    title: 'Room Sheet',
+    id: 'room-panel',
+    title: 'Room Panel',
     page: 'rooms',
     category: 'Rooms',
     keywords: [
       'room',
-      'sheet',
+      'panel',
       'members',
       'roster',
       'channel',

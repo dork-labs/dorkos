@@ -26,7 +26,7 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * sharing one ruler in `room-sheet-helpers.ts`, which is also where the three
  * measurement traps these tests fell into are written down.
  */
-test.describe('Room sheet — what only a laid-out page can show @smoke', () => {
+test.describe('Room panel — what only a laid-out page can show @smoke', () => {
   test('the room meter and the pointed-at member move as one, and slide rather than jump', async ({
     page,
     basePage,
@@ -338,7 +338,7 @@ test.describe('Room sheet — what only a laid-out page can show @smoke', () => 
     const scale = sheet.getByRole('radiogroup', { name: `How loud is ${ana.name} here?` });
     await expect(scale).toBeVisible();
 
-    // Four segments inside a 448px dialog, indented under the disc. The labels
+    // Four segments inside a panel column, indented under the disc. The labels
     // are the ONLY thing telling the rungs apart, so an ellipsis here removes
     // the meaning rather than the polish — which is the measured reason the
     // phone gets a list instead.
@@ -352,7 +352,7 @@ test.describe('Room sheet — what only a laid-out page can show @smoke', () => 
   });
 });
 
-test.describe('Room sheet with motion turned down @smoke', () => {
+test.describe('Room panel with motion turned down @smoke', () => {
   test('the preview snaps to its answer instead of sliding, and loses nothing', async ({
     page,
     basePage,

@@ -41,7 +41,12 @@ const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }));
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
-  useRouter: () => ({ state: { location: { href: '/' } }, navigate: mockNavigate }),
+  useRouter: () => ({ state: { location: { href: '/channels' } }, navigate: mockNavigate }),
+  // Somewhere that is not Home, so `homeRoomId` stays null and nothing here
+  // depends on which room #team is. Where Home's row gets its tint is
+  // `SidebarModelRow`'s question, and it has its own coverage.
+  useRouterState: ({ select }: { select: (state: unknown) => unknown }) =>
+    select({ location: { pathname: '/channels' } }),
 }));
 
 // The profile opener reads route state this file does not mount. Where it sends

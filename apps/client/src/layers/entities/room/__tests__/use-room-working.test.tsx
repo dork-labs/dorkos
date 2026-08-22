@@ -7,10 +7,15 @@
  * itself aged out and lets a stale dot back, and a cached room list that
  * disagrees with what the stream just said.
  */
+import type { ReactNode } from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useRoomWorking, useRoomWorkingStore } from '../model/use-room-working';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider } from '@/layers/shared/model';
+import { useOpenRoomWorking, useRoomWorking, useRoomWorkingStore } from '../model/use-room-working';
 import { PRESENCE_TTL_MS } from '../model/use-room-presence';
+import { roomKeys } from '../api/query-keys';
 
 /** Put the store back to an empty cockpit between cases. */
 beforeEach(() => useRoomWorkingStore.setState({ rooms: {} }));
@@ -88,6 +93,57 @@ describe('useRoomWorking', () => {
     const stale = Date.now() - PRESENCE_TTL_MS - 1;
     act(() => useRoomWorkingStore.getState().observe({ roomId: 'r1', working: 1 }, stale));
     const { result } = renderHook(() => useRoomWorking('r1', 4));
+    expect(result.current).toBe(0);
+  });
+});
+
+describe('useOpenRoomWorking', () => {
+  /**
+   * The open room's hook, wired to a cockpit that has already fetched its room
+   * list — which is the state every real cockpit is in by the time a room opens.
+   */
+  function renderOpen(roomId: string, listed: { id: string; working: number }[]) {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    queryClient.setQueryData(roomKeys.list(), listed);
+    const transport = createMockTransport({});
+    return renderHook(() => useOpenRoomWorking(roomId), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      ),
+    });
+  }
+
+  it('says the room is busy from the room list, before the stream has said anything', () => {
+    // **The mid-turn window, and the only thing that covers it.** Opening a room
+    // while a turn is already running is the case a live signal cannot answer:
+    // the room's stream republishes presence up to ten seconds later, so for
+    // those seconds a reader who opened a working room would be told nothing is
+    // happening. The list's `working` field is a live read of the same claim map
+    // taken when the list was fetched, and it fills exactly that gap.
+    //
+    // This was covered by the room masthead's suite until phase R1 deleted the
+    // masthead; the bar's chip reads the same hook, so the coverage belongs here
+    // now — one level below either surface.
+    const { result } = renderOpen('r1', [{ id: 'r1', working: 2 }]);
+    expect(result.current).toBe(2);
+  });
+
+  it('lets the stream take over the moment it speaks', () => {
+    const { result } = renderOpen('r1', [{ id: 'r1', working: 2 }]);
+    expect(result.current).toBe(2);
+
+    // The turn ends. A cached list still remembering it must not keep the chip
+    // lit — the stream's `0` is the newer fact.
+    act(() => useRoomWorkingStore.getState().observe({ roomId: 'r1', working: 0 }));
+    expect(result.current).toBe(0);
+  });
+
+  it('answers 0 for a room the list has never carried', () => {
+    const { result } = renderOpen('r1', [{ id: 'other', working: 5 }]);
     expect(result.current).toBe(0);
   });
 });

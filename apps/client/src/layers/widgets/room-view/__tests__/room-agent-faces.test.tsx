@@ -3,19 +3,30 @@
  * One agent, one face, everywhere in a room (DOR-1002).
  *
  * Four surfaces here could not reach the fleet on their own and each used to
- * decide for itself: the masthead's roster stack and the room's own mark, both
- * drawn by `entities/room`; the message gutter, drawn from `toMessageAuthor`;
- * and a mention's hover card. All four fell back to the author row's render
- * cache — which almost no agent fills — so the same agent wore its real face in
- * the sidebar and a bare letter in the room, or in a DM wore its face in the
- * roster and a letter in the mark 200px away.
+ * decide for itself. Two are drawn by the timeline: the message gutter, from
+ * `toMessageAuthor`, and a mention's hover card. Both fell back to the author
+ * row's render cache — which almost no agent fills — so the same agent wore its
+ * real face in the sidebar and a bare letter in the room.
  *
- * **This file tests the WIRING, which the unit tests cannot see.** The parity
- * test proves `MemberList` uses an override it is handed, and
- * `RoomFlow.test.tsx` proves `toMessageAuthor` does; neither notices if a
- * caller stops handing one over. So nothing here passes a face in by hand: the
- * fleet is mocked at the transport, exactly the two calls the real hook makes,
- * and every assertion is what a person would see on screen.
+ * **The other two moved rather than went** (phase R1, then R2, spec
+ * `one-bar-header` §3.4 and §3.6). The masthead's roster stack and the room's
+ * own mark left with the masthead, and for one phase were drawn nowhere at all.
+ * They are back in the room right panel, which reads the fleet itself, so both
+ * are covered here again — against `RoomPanelBody`, mounted for real.
+ *
+ * The one place they are NOT asserted here is the BAR, which draws the room's
+ * mark for a one-to-one from the same join: it is a different widget with a
+ * different bench, so it carries its own real-join file
+ * (`one-bar/__tests__/ChannelsBar.face.test.tsx`). One derivation
+ * (`useRoomFaces`), three surfaces, two files that mock nothing below the
+ * transport.
+ *
+ * **This file tests the WIRING, which the unit tests cannot see.** The panel's
+ * own suite proves its rows draw an override they are handed, and
+ * `RoomFlow.test.tsx` proves `toMessageAuthor` does; neither notices if a caller
+ * stops handing one over. So nothing here passes a face in by hand: the fleet is
+ * mocked at the transport, exactly the two calls the real hook makes, and every
+ * assertion is what a person would see on screen.
  *
  * The manifest names its own icon and colour rather than leaving them hashed,
  * so an assertion can name the glyph it expects — and so each case doubles as
@@ -30,16 +41,11 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import {
-  agentAuthorRef,
-  type RoomEntry,
-  type RoomRosterEntry,
-  type RoomWithRoster,
-} from '@dorkos/shared/room-schemas';
+import { agentAuthorRef, type RoomEntry, type RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { RoomHeader } from '../ui/RoomHeader';
 import { Conversation } from '@/layers/features/conversation';
+import { RoomPanelBody } from '@/layers/features/room-management';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { RoomFlow } from '../ui/RoomFlow';
 
@@ -111,21 +117,30 @@ function agentMember(id: string, displayName: string, path: string): RoomRosterE
 const KAI_MEMBER = agentMember('author-kai', 'Kai', KAI_PATH);
 const GHOST_MEMBER = agentMember('author-ghost', 'Ghost', GHOST_PATH);
 
-function room(kind: 'channel' | 'dm', members: RoomRosterEntry[]): RoomWithRoster {
+/**
+ * The room the panel reads, holding these members.
+ *
+ * The panel is addressed by id and reads everything else — including the room's
+ * KIND — from the server's copy, so a direct message has to be answered as one
+ * here rather than asserted about a channel.
+ */
+function roomHolding(members: RoomRosterEntry[], kind: 'channel' | 'dm' = 'channel') {
   return {
     id: 'room-1',
     kind,
-    slug: 'general',
-    title: 'general',
+    slug: kind === 'dm' ? null : 'general',
+    title: kind === 'dm' ? 'Kai' : 'General',
     topic: null,
     workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     createdAt: '2026-08-10T09:00:00.000Z',
-    lastActivityAt: '2026-08-10T09:00:00.000Z',
-    reactionFrequents: [],
-    viewerAuthorId: 'author-you',
+    lastActivityAt: '2026-08-10T10:00:00.000Z',
+    unreadCount: 0,
+    participants: null,
     members,
+    viewerAuthorId: 'author-you',
+    reactionFrequents: [],
   };
 }
 
@@ -194,10 +209,10 @@ function renderIn(ui: ReactNode, overrides: Partial<Transport>) {
 /**
  * What each disc of a kind drew, in document order.
  *
- * The FIRST child of each, because the masthead's disc also carries an
- * `sr-only` name and reading the whole subtree would compare a glyph against a
- * glyph plus a name. A list rather than one, so a render holding a resolvable
- * and an unresolvable agent can be read in a single tick.
+ * The FIRST child of each, because a disc may also carry an `sr-only` name and
+ * reading the whole subtree would compare a glyph against a glyph plus a name. A
+ * list rather than one, so a render holding a resolvable and an unresolvable
+ * agent can be read in a single tick.
  */
 function glyphsOf(slot: string): string[] {
   return [...document.querySelectorAll<HTMLElement>(`[data-slot="${slot}"]`)].map(
@@ -225,30 +240,6 @@ function timeline(members: RoomRosterEntry[]) {
 }
 
 describe('an agent wears its own face across a room', () => {
-  it('draws the manifest face in the masthead roster', async () => {
-    renderIn(
-      <RoomHeader room={room('channel', [KAI_MEMBER])} onOpenMembers={() => {}} />,
-      fleetAnswering()
-    );
-
-    // The roster is drawn from the room immediately and the fleet answers
-    // afterwards, so this waits rather than reading once: the letter is on
-    // screen first, and the face replacing it is the behaviour under test.
-    await waitFor(() => expect(glyphsOf('room-member-avatar')).toEqual([KAI_ICON]));
-  });
-
-  it('draws the same manifest face in the room’s own mark for a direct message', async () => {
-    // The mark and the roster stack sit 200px apart in the same masthead. Only
-    // a DM draws a face here — `RoomAvatar` decides that, which is why the
-    // channel cases above pass it the same faces and see no change.
-    renderIn(
-      <RoomHeader room={room('dm', [KAI_MEMBER])} onOpenMembers={() => {}} />,
-      fleetAnswering()
-    );
-
-    await waitFor(() => expect(glyphsOf('room-avatar')).toEqual([KAI_ICON]));
-  });
-
   it('draws the same manifest face in the message gutter', async () => {
     renderIn(timeline([KAI_MEMBER]), fleetAnswering());
 
@@ -287,23 +278,6 @@ describe('an agent wears its own face across a room', () => {
     );
   });
 
-  it('keeps the honest letter for the agent the fleet could not name, beside one it could', async () => {
-    // The rung the ladder stops at, through the real callers — and proved
-    // without a timing assumption. Kai and Ghost are in one roster and one
-    // render: waiting for KAI's face to PAINT is what proves the fleet has
-    // answered, so Ghost's letter read in the same tick is a statement rather
-    // than a race. Gating on a query having been CALLED would not do it — that
-    // is satisfied at initiation, and with nothing to resolve the second query
-    // never runs at all.
-    renderIn(
-      <RoomHeader room={room('channel', [KAI_MEMBER, GHOST_MEMBER])} onOpenMembers={() => {}} />,
-      fleetAnswering()
-    );
-
-    await waitFor(() => expect(glyphsOf('room-member-avatar')[0]).toBe(KAI_ICON));
-    expect(glyphsOf('room-member-avatar')[1]).toBe('G');
-  });
-
   it('keeps the honest letter in the gutter too, beside a face it could resolve', async () => {
     const ghostEntry: RoomEntry = { ...ENTRY, id: 'entry-2', authorId: 'author-ghost' };
     renderIn(
@@ -325,5 +299,53 @@ describe('an agent wears its own face across a room', () => {
 
     await waitFor(() => expect(glyphsOf('message-author-avatar')[0]).toBe(KAI_ICON));
     expect(glyphsOf('message-author-avatar')[1]).toBe('G');
+  });
+
+  it('draws the same manifest face on the roster row in the room panel', async () => {
+    // The roster that went with the masthead, rebuilt in the right panel (phase
+    // R2). The panel reads the fleet itself, which is what lets it draw a real
+    // face again — and what makes it able to draw a WRONG one, which is the
+    // thing this asserts against. Nothing is handed in by hand: the fleet is
+    // mocked at the transport, and the panel is addressed only by room id.
+    renderIn(<RoomPanelBody roomId="room-1" />, {
+      ...fleetAnswering(),
+      getRoom: vi.fn().mockResolvedValue(roomHolding([KAI_MEMBER])),
+    });
+
+    await screen.findByText('Kai');
+    await waitFor(() => expect(glyphsOf('identity-avatar')).toEqual([KAI_ICON]));
+  });
+
+  it('keeps the honest letter on a roster row the fleet cannot place', async () => {
+    // The other half of the same rule: a face this cockpit cannot resolve stays
+    // a letter rather than becoming a hash that looks like somebody's choice.
+    renderIn(<RoomPanelBody roomId="room-1" />, {
+      ...fleetAnswering(),
+      getRoom: vi.fn().mockResolvedValue(roomHolding([KAI_MEMBER, GHOST_MEMBER])),
+    });
+
+    await screen.findByText('Ghost');
+    await waitFor(() => expect(glyphsOf('identity-avatar')[0]).toBe(KAI_ICON));
+    expect(glyphsOf('identity-avatar')[1]).toBe('G');
+  });
+
+  it('gives a direct message the face of the agent it is with', async () => {
+    // The room's own mark, which also went with the masthead. A DM is about who
+    // is in it, so its mark is that agent's face — the same join the row below
+    // it makes, rather than a letter disc for the agent the reader is looking
+    // at.
+    renderIn(<RoomPanelBody roomId="room-1" />, {
+      ...fleetAnswering(),
+      getRoom: vi.fn().mockResolvedValue(roomHolding([KAI_MEMBER], 'dm')),
+    });
+
+    // "Kai" is on screen twice in a one-to-one — it names the room AND the one
+    // agent in it — so the wait is on the roster row's own control, which is
+    // what has to have landed before the mark can be read.
+    await screen.findByRole('button', { name: 'How loud Kai is here' });
+    await waitFor(() => {
+      const mark = document.querySelector('[data-slot="room-avatar"]');
+      expect(mark?.textContent).toContain(KAI_ICON);
+    });
   });
 });

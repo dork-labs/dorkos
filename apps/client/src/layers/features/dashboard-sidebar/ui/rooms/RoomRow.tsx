@@ -34,7 +34,7 @@ import { sidebarItemFaces, type SidebarItemVisual } from '../../model/sidebar-it
 import { DISABLED_SORTABLE_BINDINGS, type SortableBindings } from '../dnd/SidebarDndPrimitives';
 import { buildRoomRowMenuNodes } from './RoomRowMenuItems';
 import { useRoomRowMenu, type RoomRowActs } from './use-room-row-menu';
-import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
+import { openRoomPanel, type RoomDetailsFocus } from '@/layers/features/room-management';
 
 /** Longest room name the server accepts (`UpdateRoomRequestSchema.title`). */
 const MAX_NAME = 200;
@@ -127,9 +127,10 @@ interface RoomRowProps {
  * renders the same list into the right-click ContextMenu and the "…"
  * DropdownMenu. Rename is an inline editor on the row itself, matching the
  * gesture the sidebar already uses for naming a section. Everything else opens
- * the room sheet — including "Edit topic…", which used to raise a modal of its
- * own for one text field; the sheet is where the topic is now written, and this
- * menu item is one of its doors.
+ * the room panel — including "Edit topic…", which used to raise a modal of its
+ * own for one text field; the panel is where the topic is now written, and this
+ * menu item is one of its doors. Those items open the ROOM as well as the panel,
+ * because the panel describes whichever room the page is showing.
  */
 export const RoomRow = memo(function RoomRow({
   room,
@@ -152,7 +153,19 @@ export const RoomRow = memo(function RoomRow({
   const [renameValue, setRenameValue] = useState(room.title);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
-  const [detailsFocus, setDetailsFocus] = useState<RoomDetailsFocus | null>(null);
+  /**
+   * Open this room's panel at the part the menu item named — after opening the
+   * room itself.
+   *
+   * The panel describes the room the PAGE is showing (spec §3.6), and this menu
+   * is over a list of rooms most of which are not it. So the row does what
+   * pressing the row does first, and the panel follows it there; the id travels
+   * with the request so the panel being left behind cannot answer instead.
+   */
+  const openRoomDetails = (focus: RoomDetailsFocus) => {
+    onSelect();
+    openRoomPanel(focus, room.id);
+  };
   const renameRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLButtonElement>(null);
   const committedRef = useRef(false);
@@ -296,12 +309,12 @@ export const RoomRow = memo(function RoomRow({
         onToggleMute: () => acts.setMuted(!isMuted),
         onMoveToGroup: acts.moveToSection,
         onNewGroup: () => onRequestNewGroup(roomRef),
-        onAddAgents: () => setDetailsFocus('add'),
-        onOpenMembers: () => setDetailsFocus('members'),
+        onAddAgents: () => openRoomDetails('add'),
+        onOpenMembers: () => openRoomDetails('members'),
         onViewAgentProfile:
           acts.soleAgentPath === null ? null : viewAgentProfile(acts.soleAgentPath),
         onRename: startRename,
-        onEditTopic: () => setDetailsFocus('topic'),
+        onEditTopic: () => openRoomDetails('topic'),
         onLeave: () => setLeaveOpen(true),
         onRejoin: acts.rejoin,
         onArchive: () => setArchiveOpen(true),
@@ -440,18 +453,6 @@ export const RoomRow = memo(function RoomRow({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Mounted only while open: a closed sheet would still hold a roster from
-          before the last change, and every room row in the sidebar would carry
-          one of them. */}
-      {detailsFocus !== null && (
-        <RoomDetailsDialog
-          room={room}
-          open
-          onOpenChange={(next) => !next && setDetailsFocus(null)}
-          focus={detailsFocus}
-        />
-      )}
     </>
   );
 });

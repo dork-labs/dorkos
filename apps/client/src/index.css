@@ -654,6 +654,26 @@ body {
   }
 }
 
+/* The in-bar tab strips scroll sideways inside a 36px header row, and their
+   edge fades — not a scrollbar — are the affordance that says so (see
+   `bar-tab-strip.tsx`). The rule above hides scrollbars below 768px, which left
+   a desktop narrow enough to overflow (a small window, or the right panel open)
+   reserving 11px inside the row: the tabs fell from a 35px tap target to 24px
+   and a scrollbar painted itself in the header. Declared here rather than as a
+   utility class on the element because the `*` rule above is unlayered and
+   would win against one.
+
+   The selector is the `data-slot`, so it covers BOTH densities on purpose — the
+   standalone `row` strip scrolls for the same reason and answers it with the
+   same fades, and a scrollbar under a 44px touch row is no more wanted there
+   than in the bar. Measured at /dev/one-bar (DOR-1405). */
+[data-slot='bar-tab-strip'] {
+  scrollbar-width: none;
+}
+[data-slot='bar-tab-strip']::-webkit-scrollbar {
+  display: none;
+}
+
 /* Fallback for older Safari that doesn't support dvh */
 @supports not (height: 100dvh) {
   body {
@@ -1712,6 +1732,15 @@ body {
   }
   [data-vaul-drawer] {
     padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* The room panel's footer — Archive, and the room's age — is pinned to the
+     bottom of a slide-over that fills a phone's screen, so on a notched device
+     it lands exactly where the home indicator does. Same shape as the
+     composer's rule above: the ordinary padding on every other device, the
+     inset where there is one. Nothing inside it pads again, so the gap cannot
+     double. */
+  .room-panel-footer {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 }
 

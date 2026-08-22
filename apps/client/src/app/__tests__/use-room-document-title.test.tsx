@@ -160,7 +160,7 @@ describe('useRoomDocumentTitle', () => {
 
     const { result } = renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
 
-    expect(result.current).toEqual({ roomTitle: null, unreadRoomCount: 0 });
+    expect(result.current).toEqual({ room: null, roomTitle: null, unreadRoomCount: 0 });
   });
 
   it('keeps the badge live with no sidebar mounted anywhere', async () => {

@@ -6,7 +6,6 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import { ResponsiveDialog, ResponsiveDialogContent } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import type { RoomDetailsRoom } from '../model/room-details';
 import { RoomDetailsHeader } from '../ui/RoomDetailsHeader';
@@ -14,13 +13,12 @@ import { RoomDetailsHeader } from '../ui/RoomDetailsHeader';
 /**
  * What is NOT asserted here, and why.
  *
- * `DrawerHeader` is `text-center sm:text-left`, so below 640px the sheet's
- * header is centred and this component overrides it — a name you press to edit
- * must not slide sideways as its own text changes. That is a painted position,
- * and jsdom reports every element as 0 × 0, so there is nothing here that can
- * tell a centred line from a left-aligned one. Asserting the class name instead
- * would pin the implementation and still not check the outcome. Verified in a
- * browser at 390px.
+ * The header pins itself left at every width — a name you press to edit must not
+ * slide sideways as its own text changes. That is a painted position, and jsdom
+ * reports every element as 0 × 0, so there is nothing here that can tell a
+ * centred line from a left-aligned one. Asserting the class name instead would
+ * pin the implementation and still not check the outcome. Verified in a browser
+ * at 390px.
  */
 const CHANNEL: RoomDetailsRoom = {
   id: 'room-1',
@@ -43,17 +41,12 @@ function renderHeader(overrides: Partial<RoomDetailsRoom> = {}, transport?: Tran
     </QueryClientProvider>
   );
   render(
-    <ResponsiveDialog open>
-      <ResponsiveDialogContent aria-describedby={undefined}>
-        <RoomDetailsHeader
-          room={{ ...CHANNEL, ...overrides }}
-          participants={null}
-          visuals={null}
-          startTopicEditing={false}
-          topicRef={{ current: null }}
-        />
-      </ResponsiveDialogContent>
-    </ResponsiveDialog>,
+    <RoomDetailsHeader
+      room={{ ...CHANNEL, ...overrides }}
+      participants={null}
+      visuals={null}
+      startTopicEditing={false}
+    />,
     { wrapper }
   );
   return { transport: port };
@@ -93,14 +86,15 @@ async function expectNothingElseWrote(transport: Transport): Promise<void> {
 afterEach(cleanup);
 
 describe('RoomDetailsHeader', () => {
-  it('names the sheet by the room, not by the control that edits its name', async () => {
+  it('names the line by what pressing it does', async () => {
     // The visible name is a BUTTON, and a button's name has to say what
-    // pressing it does. Left as the dialog's title, the whole sheet would
-    // announce as "Room name: General" — which describes a control rather than
-    // a surface. Red if the editable line is ever made the title again.
+    // pressing it does rather than repeat the room. The surface itself is named
+    // one level up — by the panel's own "Room" tab since phase R2, which is why
+    // the sr-only dialog title this header used to carry is gone rather than
+    // moved. Red if the line's accessible name ever becomes just the room.
     renderHeader();
 
-    expect(await screen.findByRole('dialog', { name: '#general' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^Room name/ })).toBeInTheDocument();
   });
 
   it('offers a channel a topic and a direct message none', () => {
