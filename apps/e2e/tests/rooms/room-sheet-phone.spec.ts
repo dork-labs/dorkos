@@ -20,25 +20,25 @@ import {
 test.describe.configure({ mode: 'default', timeout: 90_000 });
 
 /**
- * The room details sheet under a thumb, measured.
+ * The room details panel under a thumb, measured.
  *
  * A separate file from `room-sheet.spec.ts` because the viewport is a
  * describe-level fixture and these are the assertions that only exist below
- * 768px: a drawer rather than a dialog, a rung list rather than a segmented
- * control, and touch targets at all. The ruler both files share, and the
- * measurement traps they both fell into, are in `room-sheet-helpers.ts`.
+ * 768px: a slide-over rather than an inset column, a rung list rather than a
+ * segmented control, and touch targets at all. The ruler both files share, and
+ * the measurement traps they both fell into, are in `room-sheet-helpers.ts`.
  *
- * **What this file cannot prove: the real safe-area insets.** `index.css` pads
- * `[data-vaul-drawer]` with `env(safe-area-inset-bottom)` so the home indicator
- * never sits under the footer, and the risk is that something else pads it too
- * and the gap doubles. Headless Chromium has no supported way to set those
- * insets — they are 0 in every browser Playwright drives — so a test asserting
- * the gap would be asserting `0 === 0` and could never fail. What IS checked
- * below is the structural half that survives a zero inset: exactly one element
- * in the drawer declares that padding, so there is nothing to double. The
- * pixel gap itself stays a device check.
+ * **Two tests left this file in phase R2, and what went with them is the
+ * point.** The surface was a bottom drawer while it was a modal, and two cases
+ * here were about that drawer alone: that exactly one rule padded it for the
+ * home indicator, and that its own grip — and nothing else — could throw it
+ * away. The panel is a slide-over from the right now: nothing pads for the home
+ * indicator because nothing sits against that edge, and there is no swipe to
+ * dismiss, so both cases asserted chrome that no longer exists. What survived
+ * of the second is here: the roster is still the scrolling region, a drag over
+ * it still must not throw the panel away, and the panel still has a way out.
  */
-test.describe('Room sheet on a phone — 390×844 @smoke', () => {
+test.describe('Room panel on a phone — 390×844 @smoke', () => {
   test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
 
   test('the sheet stays on the screen, and its middle is the part that scrolls', async ({
@@ -53,16 +53,16 @@ test.describe('Room sheet on a phone — 390×844 @smoke', () => {
     const sheet = await openSheet(page, roomId);
 
     const box = await rectOf(sheet);
-    // On screen at both ends. A drawer is `bottom-0` with `h-auto`, so a roster
-    // of eight grows its TOP off the screen and takes the room's name with it —
-    // the failure is at the top edge, which is why both are asserted.
+    // On screen at both ends. The panel takes the whole height of a phone now,
+    // so a roster of eight has to scroll INSIDE it — the failure this catches is
+    // a panel that grows to fit its content and pushes its own ends off screen.
     expect(box.top).toBeGreaterThanOrEqual(0);
     expect(box.bottom).toBeLessThanOrEqual(PHONE.height + 1);
-    // And capped, so the cap is what makes the body a scrolling region at all.
-    expect(box.height).toBeLessThanOrEqual(PHONE.height * 0.85 + 1);
 
-    const body = sheet.locator('[data-slot="responsive-dialog-body"]');
-    const header = sheet.getByRole('heading').first();
+    const body = sheet.locator('.overflow-y-auto').first();
+    // The room's name, which is a control rather than a heading — the panel is
+    // named by its tab (phase R2).
+    const header = sheet.getByRole('button', { name: /^Room name/ });
     const footer = sheet.getByRole('button', { name: 'Archive room' });
     await expect(footer).toBeVisible();
 
@@ -73,69 +73,13 @@ test.describe('Room sheet on a phone — 390×844 @smoke', () => {
       el.scrollTop = el.scrollHeight;
       return el.scrollTop;
     });
-    expect(scrolled, 'the sheet body has nothing to scroll').toBeGreaterThan(0);
+    expect(scrolled, 'the panel body has nothing to scroll').toBeGreaterThan(0);
 
     // Pinned: the room's name and the way out of the room do not scroll away.
     // A pixel of tolerance is sub-pixel layout; a scrolled-away header moves by
     // its own height or more.
     expect((await rectOf(header)).top).toBeCloseTo(headerBefore.top, 0);
     expect((await rectOf(footer)).top).toBeCloseTo(footerBefore.top, 0);
-  });
-
-  test('exactly one element carries the home-indicator padding, so it cannot double', async ({
-    page,
-    basePage,
-    roomsApi,
-  }) => {
-    const { roomId } = await seedRoom(roomsApi, 'safe-area');
-    await openCockpit(basePage);
-    const sheet = await openSheet(page, roomId);
-
-    // The inset itself is 0 in every browser Playwright drives, so the GAP is
-    // not assertable here (see this file's header). What is assertable is the
-    // shape of the rule: `index.css` pads `[data-vaul-drawer]` and nothing
-    // inside it may pad again. A second declaration is how the gap doubles on
-    // a real phone, and it is visible from here even at a zero inset.
-    const declarations = await sheet.evaluate((root) => {
-      const found: string[] = [];
-      const walk = (rules: CSSRuleList) => {
-        for (const rule of [...rules]) {
-          // A rule is judged on its selector and recursed into for its
-          // children, and it can be both. Two traps here, each of which cost a
-          // run: `@supports` wraps the rule that matters and has no selector of
-          // its own, so counting its `cssText` is how this first "found" one
-          // declaration that was the wrong one — and since CSS nesting shipped,
-          // an ordinary `CSSStyleRule` ALSO carries a (usually empty)
-          // `cssRules`, so treating "has cssRules" as "is a wrapper" skipped
-          // every real rule and found none at all.
-          const selector = (rule as CSSStyleRule).selectorText;
-          if (typeof selector === 'string' && selector !== '') {
-            if (
-              rule.cssText.includes('safe-area-inset-bottom') &&
-              (root.matches(selector) || root.querySelector(selector) !== null)
-            ) {
-              found.push(selector);
-            }
-          }
-          const nested = (rule as CSSRule & { cssRules?: CSSRuleList }).cssRules;
-          if (nested !== undefined && nested.length > 0) walk(nested);
-        }
-      };
-      for (const styleSheet of [...document.styleSheets]) {
-        try {
-          walk(styleSheet.cssRules);
-        } catch {
-          continue; // cross-origin stylesheet; none of ours are
-        }
-      }
-      return found;
-    });
-
-    expect(
-      declarations,
-      `more than one rule pads for the home indicator inside the drawer: ${declarations.join(', ')}`
-    ).toHaveLength(1);
-    expect(declarations[0]).toContain('data-vaul-drawer');
   });
 
   test('every control a thumb has to hit is at least 44px tall', async ({
@@ -217,7 +161,7 @@ test.describe('Room sheet on a phone — 390×844 @smoke', () => {
     );
   });
 
-  test('dragging the roster scrolls it; dragging the sheet itself puts it away', async ({
+  test('dragging the roster scrolls it, and never throws the panel away', async ({
     page,
     basePage,
     roomsApi,
@@ -226,25 +170,23 @@ test.describe('Room sheet on a phone — 390×844 @smoke', () => {
     await openCockpit(basePage);
     const sheet = await openSheet(page, roomId);
 
-    // A scale open and the list scrolled is the state where the two gestures
-    // are most confusable: vaul listens for a downward drag to dismiss, and the
-    // roster wants the same drag to scroll back up through it.
+    // A scale open and the list scrolled is the state where a stray gesture
+    // costs the most: the reader is part-way through a list with an expanded row
+    // in it, and losing the panel loses their place in both.
     await expandScale(sheet, ana.name);
 
-    const body = sheet.locator('[data-slot="responsive-dialog-body"]');
+    const body = sheet.locator('.overflow-y-auto').first();
     await body.evaluate((el) => {
       el.scrollTop = el.scrollHeight;
     });
     const scrolledTo = await body.evaluate((el) => el.scrollTop);
     expect(scrolledTo, 'nothing to scroll, so this test proves nothing').toBeGreaterThan(0);
 
-    // Two separate claims, because one gesture cannot carry both here.
-    //
     // **The roster is the scrolling region.** Driven with the wheel, which is a
     // real scroll gesture the browser handles natively. A mouse drag is not:
-    // click-and-drag inside a `overflow-y: auto` box scrolls nothing in any
+    // click-and-drag inside an `overflow-y: auto` box scrolls nothing in any
     // browser, so an assertion that it did would be asserting against the
-    // platform rather than against this sheet.
+    // platform rather than against this panel.
     const box = await rectOf(body);
     const x = box.left + box.width / 2;
     const y = box.top + box.height * 0.6;
@@ -252,11 +194,10 @@ test.describe('Room sheet on a phone — 390×844 @smoke', () => {
     await page.mouse.wheel(0, -200);
     await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeLessThan(scrolledTo);
 
-    // **And a downward drag over it does not throw the sheet away.** This is
-    // vaul's own gesture, and it reaches it through pointer events, which
-    // Playwright's mouse does generate — so this half is a real test of the
-    // guard. A drawer that dismissed here would discard the reader's place in a
-    // list they were part-way through, with an expanded row open in it.
+    // **And a drag across it does not dismiss anything.** The modal this
+    // replaced was a bottom drawer that listened for exactly this gesture, and
+    // guarding the roster from it was a real fix; a slide-over has no such
+    // gesture, so what this now pins is that nothing has re-introduced one.
     const heldAt = await body.evaluate((el) => el.scrollTop);
     await page.mouse.move(x, y);
     await page.mouse.down();
@@ -267,13 +208,9 @@ test.describe('Room sheet on a phone — 390×844 @smoke', () => {
     // And it did not silently jump somewhere else either.
     expect(await body.evaluate((el) => el.scrollTop)).toBe(heldAt);
 
-    // The drawer's own handle is where dismissal lives, and it still works —
-    // otherwise the assertion above would pass on a drawer nobody can close.
-    const grip = await rectOf(sheet);
-    await page.mouse.move(grip.left + grip.width / 2, grip.top + 8);
-    await page.mouse.down();
-    await page.mouse.move(grip.left + grip.width / 2, PHONE.height - 10, { steps: 16 });
-    await page.mouse.up();
+    // The panel's own close is where dismissal lives, and it still works —
+    // otherwise the assertion above would pass on a panel nobody can shut.
+    await page.getByRole('button', { name: 'Close panel' }).click();
     await expect(sheet).toBeHidden({ timeout: SERVER_ROUND_TRIP_MS });
   });
 
