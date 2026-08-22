@@ -108,7 +108,7 @@ src/
 │       │   ├── model/
 │       │   ├── ui/
 │       │   └── index.ts
-│       ├── home/        # HomeSurfaceLayout + HomeTabBar + PinnedTriageHeader — the chrome over /, /activity, /tasks, /workspaces
+│       ├── home/        # HomeSurfaceLayout + PinnedTriageHeader — the chrome over /, /activity, /tasks, /workspaces (their shared tab strip rides in widgets/one-bar)
 │       │   ├── lib/     #   home-tabs.ts: the four tabs and the pathname → active-tab resolver
 │       │   ├── ui/
 │       │   └── index.ts

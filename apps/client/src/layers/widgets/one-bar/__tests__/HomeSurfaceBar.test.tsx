@@ -31,6 +31,15 @@ vi.mock('@/layers/features/top-nav', () => ({
   CommandPaletteTrigger: () => <button aria-label="Search">Search</button>,
 }));
 
+// The two per-surface extras. Both are wired to real queries and have their own
+// suites; what this file is about is WHICH surface gets them and where they land.
+vi.mock('../ui/HomeMembersChip', () => ({
+  HomeMembersChip: () => <span data-testid="home-members-chip" />,
+}));
+vi.mock('../ui/NewTaskAction', () => ({
+  NewTaskAction: () => <button type="button">New Task</button>,
+}));
+
 import { HomeSurfaceBar } from '../ui/HomeSurfaceBar';
 
 const activitySearchSchema = z.object({ categories: z.string().optional() });
@@ -49,12 +58,14 @@ function page(name: string) {
  * beside the outlet — which is also what makes the pathname the only thing
  * deciding which tab is lit.
  */
-function renderAt(initialUrl: string, bar = <HomeSurfaceBar />) {
+function renderAt(initialUrl: string) {
   const rootRoute = createRootRoute({
     staticData: { header: null },
     component: () => (
       <>
-        <header className="flex h-9 items-center gap-2">{bar}</header>
+        <header className="flex h-9 items-center gap-2">
+          <HomeSurfaceBar />
+        </header>
         <Outlet />
       </>
     ),
@@ -211,39 +222,72 @@ describe('HomeSurfaceBar', () => {
     expect(activeTabLabels()).toEqual(['Scheduled']);
   });
 
-  it('keeps the health dot on every surface, and last, so it never moves', async () => {
-    // A status light that slides sideways as you change tabs is one people stop
-    // reading. It is anchored after whatever chips a surface adds, so Home's
-    // members chip appears to its LEFT and the dot itself stays put.
+  it('keeps the health dot last on every surface, behind the page action', async () => {
+    // **What this can and cannot prove.** jsdom lays nothing out, so it cannot
+    // measure where the dot is drawn — the x-positions are in the browser
+    // evidence on DOR-1401 (identical on all four surfaces). What it CAN prove
+    // is the property those pixels follow from: the dot is the last thing in the
+    // bar, after the flexible space and after whatever page action the surface
+    // adds. Put it in the chips zone instead — which is where it was — and it is
+    // no longer last, and it slid 47px the moment Home's members chip appeared
+    // beside it.
     for (const [url, testId] of [
       ['/', 'home'],
       ['/activity', 'activity'],
       ['/tasks', 'tasks'],
       ['/workspaces', 'workspaces'],
     ] as const) {
-      renderAt(url, <HomeSurfaceBar chips={<span data-testid="surface-chip" />} />);
+      renderAt(url);
       await screen.findByTestId(`${testId}-page`);
 
       const dot = screen.getByTestId('system-health-dot');
-      const chip = screen.getByTestId('surface-chip');
-      expect(
-        chip.compareDocumentPosition(dot) & Node.DOCUMENT_POSITION_FOLLOWING,
-        `the dot is not last on ${url}`
-      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      const bar = dot.closest('header')!;
+      const after = [...bar.querySelectorAll('*')].filter(
+        (el) => dot.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING
+      );
+      expect(after, `something is drawn after the health dot on ${url}`).toEqual([]);
 
       cleanup();
     }
   });
 
-  it('puts a surface’s page action after its chips', async () => {
-    renderAt('/tasks', <HomeSurfaceBar actions={<button type="button">New Task</button>} />);
+  it('gives Home the members chip and Scheduled the New Task action — and not the other way round', async () => {
+    renderAt('/');
+    await screen.findByTestId('home-page');
+    expect(screen.getByTestId('home-members-chip')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New Task' })).not.toBeInTheDocument();
+    cleanup();
+
+    renderAt('/tasks');
+    await screen.findByTestId('tasks-page');
+    expect(screen.getByRole('button', { name: 'New Task' })).toBeInTheDocument();
+    expect(screen.queryByTestId('home-members-chip')).not.toBeInTheDocument();
+    cleanup();
+
+    // And a surface with neither draws neither, rather than inheriting the last
+    // one's — the failure a per-route bar could not have, and a shared one can.
+    renderAt('/workspaces');
+    await screen.findByTestId('workspaces-page');
+    expect(screen.queryByTestId('home-members-chip')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New Task' })).not.toBeInTheDocument();
+  });
+
+  it('keeps ONE tab strip mounted across a tab press — the node survives', async () => {
+    // The bug this pins: the shell used to key its cross-fade on the route id,
+    // so four home routes were four keys and every tab press unmounted the strip
+    // and mounted a new one. The person saw the whole row blink; the sliding
+    // underline could not slide, because the element it would slide from was
+    // gone. All four routes declare the SAME bar component now, and the key is
+    // derived from the component — so React reconciles in place.
+    const user = userEvent.setup();
+    renderAt('/');
+    await screen.findByTestId('home-page');
+    const before = screen.getByTestId('home-tabs');
+
+    await user.click(screen.getByRole('link', { name: 'Scheduled' }));
     await screen.findByTestId('tasks-page');
 
-    const action = screen.getByRole('button', { name: 'New Task' });
-    const dot = screen.getByTestId('system-health-dot');
-    expect(dot.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    );
+    expect(screen.getByTestId('home-tabs')).toBe(before);
   });
 });
 

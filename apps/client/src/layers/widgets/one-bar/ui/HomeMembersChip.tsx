@@ -31,6 +31,11 @@ export function HomeMembersChip() {
   const room = team.room;
   const count = roster.data?.members.length;
   if (room === null || count === undefined) return null;
+  // An archived #team draws no room at all — Home offers to bring it back
+  // instead (`HomeRoomPage`). A head count for a conversation that is not on
+  // screen, opening a sheet to manage members of a room the owner put away, is
+  // a control for something that is not there.
+  if (team.status === 'archived') return null;
 
   return (
     <>

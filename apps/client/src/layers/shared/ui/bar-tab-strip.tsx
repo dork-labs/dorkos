@@ -142,7 +142,18 @@ export function BarTabStrip({
     <div
       className={cn(
         'relative',
-        isRow ? 'shrink-0 border-b' : 'flex min-w-0 flex-initial',
+        // `self-stretch` is what makes the tabs a real target. The bar centres
+        // its children, so without it this wrapper is only as tall as one line
+        // of text — the `h-full` on each tab then resolved against a 24px box,
+        // and every tab in the strip was a 24px tap target inside a 36px row
+        // (measured in Chromium at 1440, DOR-1401). Stretched, `h-full` means
+        // the row: 35px of pressable height, the 36px header less the 1px of it
+        // that is the bottom hairline. The active underline lands on that
+        // baseline too, instead of floating above it.
+        //
+        // The shell's cross-fade wrapper has to stretch as well, or this one has
+        // nothing taller to stretch to (`AppShell.tsx`).
+        isRow ? 'shrink-0 border-b' : 'flex min-w-0 flex-initial self-stretch',
         className
       )}
     >
@@ -168,17 +179,24 @@ export function BarTabStrip({
               data-active={isActive || undefined}
               className={cn(
                 'relative flex shrink-0 items-center text-sm font-medium whitespace-nowrap transition-colors',
-                // `min-h-11` is the 44px touch target on a phone; the desktop
-                // strip relaxes to the shell's denser rhythm. In the bar the row
-                // height is already the shell's 36px, so the tab just fills it.
+                // Two densities, two targets. A standalone row gets `min-h-11`
+                // — the 44px touch target — relaxing to 36px on a desktop. In
+                // the bar there is no such room: `h-full` fills the shell's row,
+                // which measures 35px (the wrapper's `self-stretch` is what
+                // makes "full" mean the row rather than one line of text).
+                // That is under the 44px touch guidance, and it is the trade the
+                // One Bar makes on a phone — one 36px row instead of two rows
+                // totalling 80px. Flagged at the spec's phone checkpoint, not
+                // silently absorbed.
                 isRow ? 'min-h-11 px-3 md:min-h-9' : 'h-full px-2.5',
                 // An INSET ring, not the shared `focus-ring` box-shadow. Setting
                 // `overflow-x: auto` computes `overflow-y` to `auto` as well, and
                 // this nav's content box is exactly one tab tall — so a ring drawn
                 // outside the tab's border box falls outside the scroll container
                 // and is clipped top and bottom. A ring painted inside the border
-                // box has nothing to clip against, and the 44px target survives
-                // (padding on the nav would have had to grow the row to keep it).
+                // box has nothing to clip against, and the tab's full-height
+                // target survives (padding on the nav would have had to grow the
+                // row to keep it).
                 'focus-visible:ring-ring outline-hidden focus-visible:ring-2 focus-visible:ring-inset',
                 isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
               )}
@@ -200,11 +218,12 @@ export function BarTabStrip({
           );
         })}
       </nav>
-      {/* Decorative, and never in the way of the tab underneath: the fade sits
-          over a 44px touch target, so anything that swallowed a tap would cost
-          more than the cue is worth. In `row` density it stops short of the
-          bottom hairline (`bottom-px`) so the border reads as one unbroken line
-          under it. */}
+      {/* Decorative, and never in the way of the tab underneath: the fade covers
+          the full height of whatever target it sits over — the row in the bar,
+          44px in a standalone row — so anything that swallowed a tap would cost more
+          than the cue is worth. In `row` density it stops short of the bottom
+          hairline (`bottom-px`) so the border reads as one unbroken line under
+          it. */}
       {edges.start && (
         <div
           aria-hidden

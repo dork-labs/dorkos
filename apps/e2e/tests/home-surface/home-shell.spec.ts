@@ -159,27 +159,24 @@ test.describe('Home surface — 375px @smoke', () => {
     expect(pageOverflow.scrollWidth).toBeLessThanOrEqual(pageOverflow.clientWidth);
 
     // Every tab is reachable once scrolled to — a tab you cannot reach is not a
-    // tab — and each one fills the bar's height rather than sitting in a slice
-    // of it.
+    // tab — and each one is the full height of the bar it lives in.
     //
-    // **36px, not 44.** The tabs live in the one header bar now (phase H1), and
-    // that row is 36px on every route and every width; the 44px target belonged
-    // to the standalone row this replaced. It is below the 44px touch guidance,
-    // which is a real cost and a deliberate one: the alternative is a phone that
-    // spends 80px of a 844px screen on two header rows. Flagged for the phone
-    // checkpoint rather than hidden here.
-    //
-    // One pixel of slack on the edges, because a laid-out box is fractional:
-    // the last tab measures 375.3125 at the end of the bar's scroll, which is a
-    // third of a pixel and not a tab anybody has trouble hitting. Wider than
-    // that is a real overhang.
-    const barHeight = (await homeSurface.tabBar.boundingBox())!.height;
+    // **35, spelled out.** The tabs ride inside the one header bar now (phase
+    // H1). That header is 36px and its last pixel is the bottom hairline, so a
+    // tab filling the row measures 35 — the number Chromium reports, not the
+    // number the CSS reads like. It is a literal rather than a measurement off
+    // the bar, because a height compared against the bar's own height passes at
+    // any height at all, including the 24px targets this assertion exists to
+    // catch (each tab as tall as its text inside a 36px row, DOR-1401). 35px is
+    // below the 44px touch guidance: a deliberate trade — one 36px row beats two
+    // rows totalling 80px on an 844px screen — recorded at the phone checkpoint.
+    const TAB_HEIGHT = 35;
     for (const { label } of HOME_TABS) {
       const tab = homeSurface.tab(label);
       await tab.scrollIntoViewIfNeeded();
       const box = await tab.boundingBox();
       expect(box, `${label} has no box`).not.toBeNull();
-      expect(box!.height).toBeGreaterThanOrEqual(barHeight - 1);
+      expect(box!.height).toBe(TAB_HEIGHT);
       expect(box!.x).toBeGreaterThanOrEqual(-1);
       expect(box!.x + box!.width).toBeLessThanOrEqual(376);
     }

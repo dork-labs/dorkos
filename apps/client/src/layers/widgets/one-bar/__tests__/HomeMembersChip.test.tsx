@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 /**
- * Home's bar: the shared home-surface strip, plus the one thing that is Home's
- * own — #team's head count (spec `one-bar-header` §3.4, phase H1).
+ * The one thing Home adds to the shared home-surface bar: #team's head count
+ * (spec `one-bar-header` §3.4, phase H1).
  *
- * The strip itself is proven in `HomeSurfaceBar.test.tsx`; what this file
- * asserts is the chip, because the chip is where a wrong number would be
- * believed. Home IS #team, so it is the count of the room the page below is
+ * The bar itself is proven in `HomeSurfaceBar.test.tsx`; what this file asserts
+ * is the chip, because the chip is where a wrong number would be believed. Home IS #team, so it is the count of the room the page below is
  * already showing, read from the same query — never a second request and never
  * a placeholder that corrects itself a moment later.
  */
@@ -13,12 +12,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TooltipProvider } from '@/layers/shared/ui';
-
-// The shared half of the bar has its own suite; here it would only drag a router
-// and a health query into a file about a chip.
-vi.mock('../ui/HomeSurfaceBar', () => ({
-  HomeSurfaceBar: ({ chips }: { chips?: React.ReactNode }) => <div>{chips}</div>,
-}));
 
 /** #team as `useTeamRoom` answers, and its roster as `useRoom` answers. */
 const { room, roster } = vi.hoisted(() => ({
@@ -51,7 +44,7 @@ vi.mock('@/layers/features/room-management', () => ({
   },
 }));
 
-import { DashboardHeader } from '../ui/DashboardHeader';
+import { HomeMembersChip } from '../ui/HomeMembersChip';
 
 /** Four agents and you, which is what a real #team looks like early on. */
 function members(count: number) {
@@ -61,7 +54,7 @@ function members(count: number) {
 function renderHomeBar() {
   return render(
     <TooltipProvider>
-      <DashboardHeader />
+      <HomeMembersChip />
     </TooltipProvider>
   );
 }
@@ -85,7 +78,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe('DashboardHeader — the members chip', () => {
+describe('HomeMembersChip', () => {
   it('says how many are in #team, and says it as a name a screen reader can use', () => {
     renderHomeBar();
 

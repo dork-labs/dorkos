@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { TasksHeader } from '../ui/TasksHeader';
+import { NewTaskAction } from '../ui/NewTaskAction';
 import { BarHarness } from './bar-harness';
 
 // The fixed cluster OneBar renders. Both are real widgets with their own data
@@ -11,13 +11,6 @@ vi.mock('@/layers/widgets/inbox-bell', () => ({
 }));
 vi.mock('@/layers/features/right-panel', () => ({
   RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
-}));
-
-// The shared half of the bar — the tab strip and the health dot — has its own
-// suite. Mounting the real one here would drag a router and a health query into
-// a file about one button.
-vi.mock('../ui/HomeSurfaceBar', () => ({
-  HomeSurfaceBar: ({ actions }: { actions?: React.ReactNode }) => <div>{actions}</div>,
 }));
 
 // ---------------------------------------------------------------------------
@@ -60,7 +53,7 @@ beforeAll(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('TasksHeader', () => {
+describe('NewTaskAction', () => {
   // The page's NAME is the tab now — "Scheduled" is drawn by the shared
   // home-surface strip, and `HomeSurfaceBar.test.tsx` pins that it says so on
   // this route. What is left here is what Scheduled adds to that bar.
@@ -70,7 +63,7 @@ describe('TasksHeader', () => {
     // vocabulary, here and in the dialogs.
     render(
       <BarHarness>
-        <TasksHeader />
+        <NewTaskAction />
       </BarHarness>
     );
 
