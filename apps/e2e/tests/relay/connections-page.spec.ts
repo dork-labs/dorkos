@@ -21,7 +21,7 @@ test.describe('Connections page @smoke', () => {
   test('both regions are on one page, no tabs between them', async ({ connectionsPage }) => {
     await connectionsPage.goto();
 
-    await expect(connectionsPage.heading).toBeVisible();
+    await expect(connectionsPage.heading).toBeAttached();
     await expect(connectionsPage.messaging).toBeVisible();
     await expect(connectionsPage.accounts).toBeVisible();
     // The separation is a heading and a scroll, not a click. A tab strip here
@@ -32,7 +32,7 @@ test.describe('Connections page @smoke', () => {
   test('the command palette lands on the page', async ({ connectionsPage }) => {
     await connectionsPage.openFromPalette();
 
-    await expect(connectionsPage.heading).toBeVisible();
+    await expect(connectionsPage.heading).toBeAttached();
     await expect(connectionsPage.page).toHaveURL(/\/connections/);
   });
 

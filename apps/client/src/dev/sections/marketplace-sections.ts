@@ -10,7 +10,7 @@ import type { PlaygroundSection } from '../playground-registry';
  * Sources: MarketplaceShowcases — PackageCard, PackageTypeBadge, PackageGrid,
  * FeaturedRail, PackageDetailSheet, InstallConfirmationDialog,
  * PermissionPreviewSection, InstalledPackagesView, MarketplaceSourcesView,
- * MarketplaceHeader, MarketplaceSidebar, Package Primitives.
+ * MarketplaceToolbar, MarketplaceSidebar, Package Primitives.
  */
 export const MARKETPLACE_SECTIONS: PlaygroundSection[] = [
   {
@@ -77,11 +77,11 @@ export const MARKETPLACE_SECTIONS: PlaygroundSection[] = [
     keywords: ['marketplace', 'sources', 'registry', 'git', 'add', 'remove', 'manage'],
   },
   {
-    id: 'marketplaceheader',
-    title: 'MarketplaceHeader',
+    id: 'marketplacetoolbar',
+    title: 'MarketplaceToolbar',
     page: 'marketplace',
     category: 'Marketplace',
-    keywords: ['dork', 'hub', 'header', 'search', 'sort', 'query'],
+    keywords: ['dork', 'hub', 'toolbar', 'search', 'sort', 'query'],
   },
   {
     id: 'marketplacesidebar',

@@ -514,23 +514,6 @@ export function OneBarShowcases() {
             />
           </BarFrame>
         </ShowcaseDemo>
-
-        <ShowcaseLabel>
-          Standalone row (`density=&quot;row&quot;`) — 44px touch targets and its own hairline. No
-          route wears this today: the home surface wore it until its tabs moved into the bar (phase
-          H1), and it is kept for a strip that owns a row of its own inside a page
-        </ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="bg-background overflow-hidden rounded-md border">
-            <BarTabStrip
-              tabs={HOME_TABS}
-              activeTabId="workspaces"
-              label="Home sections, standalone"
-              indicatorLayoutId="playground-home-tabs-row"
-              density="row"
-            />
-          </div>
-        </ShowcaseDemo>
       </PlaygroundSection>
 
       <PlaygroundSection

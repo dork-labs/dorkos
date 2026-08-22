@@ -31,7 +31,7 @@ import { InstallConfirmationDialog } from '@/layers/features/marketplace/ui/Inst
 import { PermissionPreviewSection } from '@/layers/features/marketplace/ui/PermissionPreviewSection';
 import { InstalledPackagesView } from '@/layers/features/marketplace/ui/InstalledPackagesView';
 import { MarketplaceSourcesView } from '@/layers/features/marketplace/ui/MarketplaceSourcesView';
-import { MarketplaceHeader } from '@/layers/features/marketplace/ui/MarketplaceHeader';
+import { MarketplaceToolbar } from '@/layers/features/marketplace/ui/MarketplaceToolbar';
 import { MarketplaceSidebar } from '@/layers/features/marketplace/ui/MarketplaceSidebar';
 import { useMarketplaceStore } from '@/layers/features/marketplace/model/marketplace-store';
 import { useMarketplaceParams } from '@/layers/features/marketplace/model/use-marketplace-params';
@@ -503,19 +503,19 @@ function MarketplaceSourcesViewShowcase() {
 }
 
 // ---------------------------------------------------------------------------
-// MarketplaceHeader showcase
+// MarketplaceToolbar showcase
 // ---------------------------------------------------------------------------
 
-/** MarketplaceHeader — search input and sort selector. */
-function MarketplaceHeaderShowcase() {
+/** MarketplaceToolbar — search input and sort selector. */
+function MarketplaceToolbarShowcase() {
   return (
     <PlaygroundSection
-      title="MarketplaceHeader"
+      title="MarketplaceToolbar"
       description="Debounced search input and the sort selector. Writes the search term and sort order to the URL via useMarketplaceParams. The type + category filter facets live in the MarketplaceSidebar takeover panel now."
     >
       <ShowcaseDemo>
         <div className="max-w-2xl">
-          <MarketplaceHeader />
+          <MarketplaceToolbar />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -610,7 +610,7 @@ export function MarketplaceShowcases() {
       <PermissionPreviewSectionShowcase />
       <InstalledPackagesViewShowcase />
       <MarketplaceSourcesViewShowcase />
-      <MarketplaceHeaderShowcase />
+      <MarketplaceToolbarShowcase />
       <MarketplaceSidebarShowcase />
       <PackagePrimitivesShowcase />
     </>

@@ -59,7 +59,9 @@ From the architecture trace (2026-08-21):
 }
 ```
 
-The fixed cluster is rendered by `OneBar` itself (search always included, as `PageHeader` does today with `CommandPaletteTrigger`), so I1 cannot be violated by a consumer. `InboxBell` and `RightPanelToggle` move from `AppShell` into `OneBar`'s cluster so all three live together (AppShell keeps mounting the bar itself).
+The fixed cluster is out of every route bar's reach, so I1 cannot be violated by a consumer. **As shipped, that is structural rather than a rule `OneBar` enforces on its children.** `AppShell` mounts `BarFixedCluster` as a sibling of the route bar, immediately _after_ it inside the header row — the route's own bar renders inside the `AnimatePresence` cross-fade wrapper that precedes it. A route bar's entire subtree is therefore confined to that preceding sibling: it has no way to render into, reorder, or wrap the cluster, because the cluster is not in its tree at all. Search, `InboxBell` and `RightPanelToggle` all live in that one cluster (they moved out of `AppShell`'s own layout to get there), so the last three controls in the row are the same three, in the same order, on every route — and a new route bar gets that for free without knowing the invariant exists.
+
+Keeping the cluster outside the cross-fade is what also makes it hold still while the identity half of the bar fades between routes.
 
 ### 3.2 Declarative route headers
 
@@ -116,7 +118,7 @@ Which room does the panel show? The room the current route displays (`/channels?
 ### 3.7 Deletions & renames (leave-it-cleaner riders)
 
 - Delete: `RoomHeader.tsx`, `HomeTabBar.tsx` (post-extraction), `TeamHeader` pills + `<Select>`, `SessionHeader` breadcrumb, `RoomDetailsDialog.tsx`, six title-only header wrapper files, `useHeaderSlot` switch.
-- Drop in-page H1s (E1): `Marketplace` (widget page), `Workspaces`, `Connections` — pages open with their one-line description. Audit other routes for the same pattern while there.
+- Drop visual in-page H1s (E1): `Marketplace` (widget page), `Workspaces`, `Connections`, `Marketplace Sources`, `Product feedback` — pages open with their one-line description, keeping an `sr-only` h1 for the heading outline. Audit other routes for the same pattern while there.
 - Rename `layers/features/marketplace/ui/MarketplaceHeader.tsx` → `MarketplaceToolbar.tsx` (resolves the name collision).
 - `PageHeader`'s consumer-specific TSDoc moves to the truncation policy doc on `OneBar`.
 
