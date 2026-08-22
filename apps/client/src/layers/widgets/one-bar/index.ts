@@ -18,7 +18,7 @@ export { RoomMembersChip } from './ui/RoomMembersChip';
 export { RoomRunState } from './ui/RoomRunState';
 export { ChannelsBar } from './ui/ChannelsBar';
 export { SessionHeader } from './ui/SessionHeader';
-export { TeamHeader } from './ui/TeamHeader';
+export { TeamHeader, TEAM_VIEW_TABS } from './ui/TeamHeader';
 export { OneBarProvider, useOneBarState } from './model/one-bar-context';
 export type { OneBarRouteState } from './model/one-bar-context';
 export { resolveRouteHeader } from './model/route-header';

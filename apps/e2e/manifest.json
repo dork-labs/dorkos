@@ -370,11 +370,11 @@
     "team-page": {
       "specFile": "tests/team/team-page.spec.ts",
       "feature": "team",
-      "description": "the sidebar reaches the Team page, /agents redirects to /team keeping the view, the operator is on the roster drawn as a circle, an agent is drawn as a square with who it belongs to, the Agents chip hides the people, clicking an attribution filters to that owner, Group: manager clusters the roster under a header, a filtered roster survives a reload, the view switch reaches the table and the topology, the Denied view reports having blocked nothing, the Access view renders the cross-project access surface, and on a phone the roster draws one column with no table option",
-      "lastRun": "2026-08-11T22:36:46.593Z",
+      "description": "the sidebar reaches the Team page, /agents redirects to /team keeping the view, the operator is on the roster drawn as a circle, an agent is drawn as a square with who it belongs to, the Agents chip hides the people, clicking an attribution filters to that owner, Group: manager clusters the roster under a header, a filtered roster survives a reload, the view switch reaches the table and the topology, the Denied view reports having blocked nothing, the Access view renders the cross-project access surface, and on a phone the roster draws one column, the view strip offers every view including the table, and New Agent stays reachable as an icon",
+      "lastRun": "2026-08-22T03:50:45.996Z",
       "lastStatus": "passed",
-      "runCount": 7,
-      "passCount": 5,
+      "runCount": 8,
+      "passCount": 6,
       "failCount": 1,
       "relatedCode": [
         "apps/client/src/router.tsx",
@@ -1018,6 +1018,105 @@
     }
   },
   "runHistory": [
+    {
+      "id": "2026-08-07T02-12-57",
+      "timestamp": "2026-08-07T02:12:57.019Z",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 24934
+    },
+    {
+      "id": "2026-08-07T09-53-20",
+      "timestamp": "2026-08-07T09:53:20.277Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 49814
+    },
+    {
+      "id": "2026-08-07T11-13-21",
+      "timestamp": "2026-08-07T11:13:21.004Z",
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "skipped": 0,
+      "duration": 62497
+    },
+    {
+      "id": "2026-08-07T11-23-48",
+      "timestamp": "2026-08-07T11:23:48.016Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 16189
+    },
+    {
+      "id": "2026-08-07T11-27-46",
+      "timestamp": "2026-08-07T11:27:46.692Z",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 155583
+    },
+    {
+      "id": "2026-08-07T23-57-01",
+      "timestamp": "2026-08-07T23:57:01.343Z",
+      "total": 13,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 31393
+    },
+    {
+      "id": "2026-08-08T16-08-01",
+      "timestamp": "2026-08-08T16:08:01.847Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 176536
+    },
+    {
+      "id": "2026-08-08T16-19-53",
+      "timestamp": "2026-08-08T16:19:53.977Z",
+      "total": 62,
+      "passed": 62,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 189686
+    },
+    {
+      "id": "2026-08-08T21-20-59",
+      "timestamp": "2026-08-08T21:20:59.547Z",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 56312
+    },
+    {
+      "id": "2026-08-08T21-22-25",
+      "timestamp": "2026-08-08T21:22:25.053Z",
+      "total": 2,
+      "passed": 1,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 70879
+    },
+    {
+      "id": "2026-08-08T21-24-21",
+      "timestamp": "2026-08-08T21:24:21.469Z",
+      "total": 63,
+      "passed": 63,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 104614
+    },
     {
       "id": "2026-08-08T21-25-32",
       "timestamp": "2026-08-08T21:25:32.483Z",
@@ -1818,6 +1917,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 40760
+    },
+    {
+      "id": "2026-08-22T03-50-45",
+      "timestamp": "2026-08-22T03:50:45.996Z",
+      "total": 18,
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 114523
     },
     {
       "id": "2026-08-22T04-35-08",
