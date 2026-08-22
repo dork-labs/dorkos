@@ -51,6 +51,15 @@ export function RoomPanel() {
    * The first render is not a move, so the `null` on mount is skipped. It lives
    * here rather than in the body because the body is keyed on the room, so it
    * unmounts before the move it would have to notice.
+   *
+   * **It rests on #team resolving without a loading frame, which is worth
+   * writing down.** A move to `null` counts as a move, so a route that passed
+   * THROUGH "no room yet" on its way to one would release a press that is still
+   * in flight — the same swallowing this replaced, one step further along. That
+   * cannot happen today because a sidebar press arriving at `/` finds the room
+   * list already warm (`useRooms`, the query the sidebar itself is drawn from),
+   * so `useRouteRoom` answers `ready` on the first render rather than `loading`.
+   * If #team's resolution ever gains a cold path, re-check this release.
    */
   const shownBefore = useRef<string | null>(null);
   useEffect(() => {

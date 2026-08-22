@@ -69,74 +69,6 @@ function oneToOne(agentPath: string): RoomSummary {
   });
 }
 
-/**
- * The fleet the membership surfaces read for themselves.
- *
- * Mocked at the hook rather than injected as a prop, because these components
- * now fetch it — which is the point of the slice owning it. Each test that
- * cares sets `mockRoster` to the state it is about; the hook's own three-state
- * behaviour is asserted in `use-agent-picker-candidates.test.tsx` and the
- * rendering of each state in `AgentRosterPicker.test.tsx`.
- */
-const { mockRosterRef } = vi.hoisted(() => ({
-  mockRosterRef: { current: null as unknown },
-}));
-vi.mock('@/layers/features/room-management/model/use-agent-picker-candidates', () => ({
-  useAgentPickerCandidates: () => mockRosterRef.current,
-}));
-
-// The room sheet this row opens reads route state to decide where each member
-// row's face leads (`useProfileDeepLink`), and this file mounts it with no
-// router. Where that link goes has its own file —
-// `features/room-management/__tests__/RoomMemberRow.click-to-profile.test.tsx`,
-// which mounts a real router and asserts the id that travels.
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...actual,
-    useProfileDeepLink: () => ({ isOpen: false, memberId: null, open: vi.fn(), close: vi.fn() }),
-  };
-});
-
-/** A fleet that has been read successfully. The state is named, never defaulted. */
-function settled(candidates: { agentPath: string; displayName: string }[]) {
-  return { candidates, isLoading: false, isError: false, retry: vi.fn() };
-}
-
-const FLEET = [{ agentPath: '/repo/ana', displayName: 'Ana' }];
-
-/** What `getRoom` answers with for the members panel: the operator plus Ana. */
-function roomWithRoster() {
-  return {
-    ...channel(),
-    members: [
-      {
-        roomId: 'room-1',
-        authorId: 'me',
-        responseMode: 'always' as const,
-        joinedAt: '2026-07-26T10:00:00.000Z',
-        joinedSeq: 0,
-        lastReadSeq: 0,
-        author: { id: 'me', kind: 'human' as const, displayName: 'You' },
-      },
-      {
-        roomId: 'room-1',
-        authorId: 'author-ana',
-        responseMode: 'mention-only' as const,
-        joinedAt: '2026-07-26T10:00:00.000Z',
-        joinedSeq: 0,
-        lastReadSeq: 0,
-        author: {
-          id: 'author-ana',
-          kind: 'agent' as const,
-          displayName: 'Ana',
-          agentRef: agentAuthorRef('/repo/ana'),
-        },
-      },
-    ],
-  };
-}
-
 /** Mesh answers with the paths RoomRow maps a 1:1's `agentRef` back onto. */
 const MESH_AGENTS = { agents: [{ projectPath: '/repo/ana' }, { projectPath: '/repo/bo' }] };
 
@@ -239,7 +171,6 @@ function itemLabels(menu: HTMLElement): string[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockRosterRef.current = settled(FLEET);
   // Both are module state shared by the whole graph: left as one test finished
   // them, the next would read a door somebody else opened.
   useRoomPanelFocusStore.setState({ request: null });
