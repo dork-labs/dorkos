@@ -13,13 +13,13 @@ export { TitleBar } from './ui/TitleBar';
 // mounted across a tab press (see `resolveRouteHeader`).
 export { HomeSurfaceBar } from './ui/HomeSurfaceBar';
 export { BarMembersChip } from './ui/BarMembersChip';
-// The room chips, shared by the channel bar and Home's — Home is a room too.
-export { RoomMembersChip } from './ui/RoomMembersChip';
-export { RoomRunState } from './ui/RoomRunState';
 export { ChannelsBar } from './ui/ChannelsBar';
 export { SessionHeader } from './ui/SessionHeader';
 export { TeamHeader, TEAM_VIEW_TABS } from './ui/TeamHeader';
-export { OneBarProvider, useOneBarState } from './model/one-bar-context';
+// `useOneBarState` is deliberately NOT exported: the route bars that read it
+// all live in this module, and the state it hands out is only meaningful to a
+// component the shell has mounted inside the bar.
+export { OneBarProvider } from './model/one-bar-context';
 export type { OneBarRouteState } from './model/one-bar-context';
 export { resolveRouteHeader } from './model/route-header';
 export type { RouteHeader } from './model/route-header';
