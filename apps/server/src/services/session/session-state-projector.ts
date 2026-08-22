@@ -46,6 +46,7 @@ import { RingBuffer } from './ring-buffer.js';
 import { devtoolsCaptureStore } from './devtools-capture-store.js';
 import type { SessionEventStore } from './session-event-store.js';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
+import { getStagedContextStore } from './staged-context-store.js';
 import {
   RECORDED_EVENT_TYPES,
   type ProjectorPersistence,
@@ -2269,6 +2270,10 @@ export function rekeyProjector(oldId: string, newId: string): void {
     // words would evaporate on the session's very first turn. One call site,
     // beside the receipts, because both are "durable rows keyed by session id".
     getMessageQueueStore()?.rekeySession(fromId, newId);
+    // And the staged hold with them, for the same reason one step further on:
+    // the person has already been told their words will ride the next reply, and
+    // a hold left at the pre-rename id is invisible to every dispatch after it.
+    getStagedContextStore()?.rekeySession(fromId, newId);
   } catch (err) {
     logger.warn('[SessionStateProjector] durable rows not carried across rekey', {
       oldId: fromId,

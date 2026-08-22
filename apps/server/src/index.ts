@@ -311,8 +311,10 @@ import { sessionListBroadcaster } from './services/session/session-list-broadcas
 import {
   MessageQueueStore,
   SessionEventStore,
+  StagedContextStore,
   setMessageQueueStore,
   setSessionEventStore,
+  setStagedContextStore,
   onProjectorRekey,
   sweepOrphanedMessageQueues,
   sessionOriginResolvers,
@@ -563,6 +565,11 @@ async function start() {
   // a message somebody typed and was told was accepted must outlive the request
   // that accepted it, a second window, a failed turn and a restart.
   setMessageQueueStore(new MessageQueueStore(db));
+
+  // The durable hold for staged words, on the same beat again: the server tells
+  // the person "Added context for the next reply" on a stream that survives a
+  // restart, so what that receipt points at has to survive one too (DOR-1324).
+  setStagedContextStore(new StagedContextStore(db));
 
   // Inject the DB handle into the runtime registry so session-scoped resolution
   // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read

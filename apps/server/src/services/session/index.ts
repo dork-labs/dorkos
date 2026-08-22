@@ -113,6 +113,12 @@ export {
   toQueuedMessage,
 } from './message-queue-store.js';
 export type { EnqueueInput, MoveTarget, QueuedMessageRecord } from './message-queue-store.js';
+export {
+  StagedContextStore,
+  getStagedContextStore,
+  setStagedContextStore,
+} from './staged-context-store.js';
+export type { StagedContextEntry } from './staged-context-store.js';
 export type {
   TriggerCommandIntentDeps,
   TriggerCommandIntentOpts,
