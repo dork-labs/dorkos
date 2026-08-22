@@ -1,7 +1,7 @@
 ---
 id: 260819-234830
 title: OS-level notifications join DorkOS's periphery — superseding the ADR 0009 ban
-status: proposed
+status: accepted
 created: 2026-08-19
 spec: notification-system
 supersedes: '0009'
@@ -12,10 +12,12 @@ superseded-by: null
 
 ## Status
 
-Proposed. Supersedes ADR 0009 (calm-tech notification layers) on the point of
-OS-level delivery; 0009's in-app layering (badge → toast → title) remains
-valid and absorbed. The Electron leg (DOR-1386) has shipped — see
-Implementation notes below; the browser and web-push legs remain to land.
+Accepted 2026-08-22. Supersedes ADR 0009 (calm-tech notification layers) on
+the point of OS-level delivery; 0009's in-app layering (badge → toast → title)
+remains valid and absorbed. All three legs have landed: Electron native
+notifications (DOR-1386, PR #1147), in-page browser notifications and the
+Notifications settings page (DOR-1385, PR #1151), and the web-push/relay phone
+leg (DOR-1387, PR #1153) — see Implementation notes below.
 
 ## Context
 

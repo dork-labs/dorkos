@@ -1,7 +1,7 @@
 ---
 id: 260821-190444
 title: A proposed schedule carries its own case — required reason, stamped provenance, and a test run that commits nothing
-status: proposed
+status: accepted
 created: 2026-08-21
 spec: schedule-approval-experience
 superseded-by: null
@@ -12,7 +12,11 @@ amends: null
 
 ## Status
 
-Proposed.
+Accepted 2026-08-22 — implemented in DOR-1394/DOR-1398 (PRs #1160, #1168).
+`tasks_create` refuses a blank reason
+(`apps/server/src/services/runtimes/claude-code/mcp-tools/task-tools.ts`),
+provenance is stamped by `task-store.ts`, and the test run is
+`POST /api/tasks/:id/trigger` (`services/tasks/__tests__/trigger-pending-schedule.test.ts`).
 
 ## Context
 

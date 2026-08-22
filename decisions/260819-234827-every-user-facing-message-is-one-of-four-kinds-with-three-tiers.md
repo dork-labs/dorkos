@@ -1,7 +1,7 @@
 ---
 id: 260819-234827
 title: Every user-facing message is one of four kinds (Attention, Activity, Suggestion, Feedback) with three tiers (Blocking, Notable, Quiet)
-status: proposed
+status: accepted
 created: 2026-08-19
 spec: notification-system
 superseded-by: null
@@ -11,7 +11,8 @@ superseded-by: null
 
 ## Status
 
-Proposed. Implemented across DOR-1383..DOR-1391 (2026-08-20); accept via /adr:review.
+Accepted 2026-08-22 — implemented across DOR-1383..DOR-1391 (PRs #1146–#1155).
+The closed kind/tier enums live in `packages/shared/src/notification-schemas.ts`.
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 id: 260819-234829
 title: Blocking notifications climb an ack-based escalation ladder with exactly one knob
-status: proposed
+status: accepted
 created: 2026-08-19
 spec: notification-system
 superseded-by: null
@@ -11,7 +11,9 @@ superseded-by: null
 
 ## Status
 
-Proposed. Shipped in DOR-1387 — see Implementation notes below.
+Accepted 2026-08-22 — shipped in DOR-1387 (PR #1153). The single knob
+`notifications.escalation.phoneAfterMinutes` is in
+`packages/shared/src/config-schema.ts`; see Implementation notes below.
 
 ## Context
 
