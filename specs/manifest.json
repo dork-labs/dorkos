@@ -2709,6 +2709,13 @@
       "title": "Unified notification system",
       "created": "2026-08-19",
       "status": "implemented"
+    },
+    {
+      "id": "260821-204928",
+      "slug": "billing-account-ladder",
+      "title": "Billing Account Ladder: default → per-agent → per-session",
+      "created": "2026-08-21",
+      "status": "specified"
     }
   ]
 }

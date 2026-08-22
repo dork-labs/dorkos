@@ -34,6 +34,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 vi.mock('../claude-config-dir.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../claude-config-dir.js')>()),
   resolveActiveClaudeRoot: () => ACTIVE,
+  resolveLaunchAccountRoot: () => ACTIVE,
 }));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: {

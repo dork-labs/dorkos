@@ -136,3 +136,39 @@ describe('a convention file the server will not store is a refusal, not a 200', 
     expect(await readConventionFile(agentPath, 'SOUL.md')).toBe('Be careful.');
   });
 });
+
+describe('billing stays operator-only (spec billing-account-ladder invariant 4)', () => {
+  it('refuses an `account` on the agent-reachable self-edit path', async () => {
+    // This service backs the `update_agent` MCP tool. An agent that could set
+    // `account` on a manifest could repoint whose subscription its work bills
+    // to — the credential axis `config-write-policy.ts` already holds
+    // `defaultAccount` on. Refused, not stripped: an agent told nothing would
+    // report the change as done.
+    await expect(
+      updateAgentManifest({ agentPath, body: { account: 'acme-corp' } })
+    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+  });
+
+  it('writes nothing at all when it refuses', async () => {
+    await expect(
+      updateAgentManifest({ agentPath, body: { displayName: 'Sneaky', account: 'acme-corp' } })
+    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+
+    const onDisk = await readManifest(agentPath);
+    expect(onDisk?.account).toBeUndefined();
+    // The refusal is whole: the legitimate half of the patch did not land either.
+    expect(onDisk?.displayName).toBe('Warden');
+  });
+
+  it('refuses `account: null` too — clearing is a write to the field', async () => {
+    await expect(updateAgentManifest({ agentPath, body: { account: null } })).rejects.toMatchObject(
+      { code: 'OPERATOR_ONLY' }
+    );
+  });
+
+  it('still accepts the fields an agent may edit', async () => {
+    // The guard is narrow: it must not turn into a blanket refusal of self-edit.
+    const updated = await updateAgentManifest({ agentPath, body: { displayName: 'The Warden' } });
+    expect(updated.displayName).toBe('The Warden');
+  });
+});

@@ -406,6 +406,14 @@ export interface TriggerTurnOpts {
    */
   seedContext?: string;
   /**
+   * Which billing account this LAUNCH should run on, as a Claude account
+   * registry id. Set only by the route that accepted a person's pre-launch
+   * choice on the send that creates a claude-code session; passed straight
+   * through to the runtime, which resolves it against the registry and stores
+   * nothing (ADR 260821-205323).
+   */
+  accountHint?: string;
+  /**
    * Execution settings for THIS turn, when the caller has resolved them itself.
    *
    * The normal path leaves this unset: settings live in `session_metadata` and
@@ -523,6 +531,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     context,
     roomContext,
     seedContext,
+    accountHint,
     settings,
     projector,
     deps,
@@ -673,6 +682,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       deps.sendMessage(sessionId, content, {
         cwd,
         additionalContext,
+        ...(accountHint !== undefined ? { accountHint } : {}),
         ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
         ...settings,
       }),

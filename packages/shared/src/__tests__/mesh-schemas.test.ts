@@ -397,3 +397,45 @@ describe('UpdateAgentRequestSchema — model and effort', () => {
     expect(UpdateAgentRequestSchema.safeParse({ model: '' }).success).toBe(false);
   });
 });
+
+describe('AgentManifestSchema — account (billing-account-ladder, DOR-1407)', () => {
+  it('keeps the account id the agent is pinned to', () => {
+    const manifest = AgentManifestSchema.parse({ ...baseManifest, account: 'acme-corp' });
+    expect(manifest.account).toBe('acme-corp');
+  });
+
+  it('reads an absent account as "inherit", never as an error', () => {
+    expect(AgentManifestSchema.parse(baseManifest).account).toBeUndefined();
+  });
+
+  it('survives a hand-edited manifest with a nonsense account, dropping only that field', () => {
+    // Same degradation as model/effort, and for the same reason: an agent must
+    // not vanish from the fleet over a typo in a billing setting. It loses the
+    // override and falls back to the server default.
+    const result = AgentManifestSchema.safeParse({
+      ...baseManifest,
+      name: 'still-here',
+      account: 42,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.name).toBe('still-here');
+    expect(result.data?.account).toBeUndefined();
+  });
+
+  it('degrades an empty account string rather than keeping an id nothing can match', () => {
+    const result = AgentManifestSchema.safeParse({ ...baseManifest, account: '' });
+    expect(result.success).toBe(true);
+    expect(result.data?.account).toBeUndefined();
+  });
+});
+
+describe('UpdateAgentRequestSchema — account', () => {
+  it('accepts an account id, and null to go back to inheriting the default', () => {
+    expect(UpdateAgentRequestSchema.parse({ account: 'acme-corp' }).account).toBe('acme-corp');
+    expect(UpdateAgentRequestSchema.parse({ account: null }).account).toBeNull();
+  });
+
+  it('refuses an empty account — a caller gets told, unlike a file on disk', () => {
+    expect(UpdateAgentRequestSchema.safeParse({ account: '' }).success).toBe(false);
+  });
+});

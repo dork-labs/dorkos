@@ -119,6 +119,30 @@ describe('update_agent', () => {
     expect(mocks.writeManifest).not.toHaveBeenCalled();
   });
 
+  it("refuses to repoint an agent's billing (spec billing-account-ladder invariant 4)", async () => {
+    // The MCP tool is the agent-reachable surface. Its declared input schema
+    // does not carry `account` at all, and the shared updater refuses the key
+    // even if one reaches it another way — belt and braces, because this is the
+    // credential axis: an agent that could set `account` could move its own work
+    // onto a different paying client's subscription.
+    mocks.readManifest.mockResolvedValue({
+      id: '01ABC',
+      name: 'my-agent',
+      isSystem: false,
+      displayName: 'Old',
+    });
+    const handler = createUpdateAgentHandler(buildDeps());
+
+    const result = await handler({
+      cwd: '/agents/my-agent',
+      account: 'acme-corp',
+    } as Parameters<typeof handler>[0] & { account: string });
+
+    expect(result.isError).toBe(true);
+    expect(parsePayload<{ code: string }>(result).code).toBe('OPERATOR_ONLY');
+    expect(mocks.writeManifest).not.toHaveBeenCalled();
+  });
+
   it('errors when neither agent_id nor cwd is provided', async () => {
     const handler = createUpdateAgentHandler(buildDeps());
     const result = await handler({ displayName: 'x' });

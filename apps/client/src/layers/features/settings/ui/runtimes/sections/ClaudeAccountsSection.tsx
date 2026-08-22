@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, Trash2 } from 'lucide-react';
+import { claudeAccountId } from '@dorkos/shared/config-schema';
 import type { ServerConfig } from '@dorkos/shared/types';
 import {
   claudeAccountName,
@@ -30,7 +31,7 @@ import {
 import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 
 /**
- * Stands in for "no account chosen", which writes `activeAccount: null`. Radix
+ * Stands in for "no account chosen", which writes `defaultAccount: null`. Radix
  * refuses an empty-string item value, so the absence needs a spelling.
  */
 const DEFAULT_ACCOUNT = '__default__';
@@ -40,9 +41,40 @@ type Account = NonNullable<ServerConfig['claudeCode']>['accounts'][number];
 
 /** The `runtimes.claudeCode` slice a write may carry. */
 type ClaudeCodePatch = {
-  activeAccount?: string | null;
-  accounts?: { path: string; label: string | null }[];
+  defaultAccount?: string | null;
+  accounts?: { id: string; path: string; label: string | null }[];
 };
+
+/**
+ * The registry rows as a WRITE carries them — ids included, because the id is
+ * what an agent or a session references an account by and dropping it on a
+ * rewrite would break every reference to that account.
+ *
+ * `id` is nullable on the wire for a row describing an unregistered root, and
+ * absent on a registry the `'0.65.0'` migration has not reached yet; the
+ * fallback mints one by the same rule the migration and the config schema use,
+ * rather than writing an empty string.
+ *
+ * **Every id already in the list is reserved before any is minted.** Seeding the
+ * taken set row by row inside the walk would let a row mint an id that a LATER
+ * row already owns — two rows with one id, which the server now refuses outright
+ * and which would otherwise make one account unreachable.
+ *
+ * @param accounts - The registered accounts as `GET /api/config` reported them.
+ * @returns Rows shaped for `PATCH /api/config`.
+ */
+function toWritableAccounts(accounts: readonly Account[]): {
+  id: string;
+  path: string;
+  label: string | null;
+}[] {
+  const taken = new Set(accounts.flatMap((account) => (account.id ? [account.id] : [])));
+  return accounts.map((account) => {
+    const id = account.id ?? claudeAccountId({ label: account.label, path: account.path, taken });
+    taken.add(id);
+    return { id, path: account.path, label: account.label };
+  });
+}
 
 /**
  * Turn a failed config write into one sentence a person can act on.
@@ -123,17 +155,32 @@ export function ClaudeAccountsSection() {
   }
 
   function chooseAccount(value: string) {
-    write({ activeAccount: value === DEFAULT_ACCOUNT ? null : value });
+    write({ defaultAccount: value === DEFAULT_ACCOUNT ? null : value });
   }
 
   function addAccount() {
     if (!canAdd) return;
     write(
       {
-        accounts: [
-          ...accounts.map((account) => ({ path: account.path, label: account.label })),
-          { path: trimmedPath, label: newLabel.trim() || null },
-        ],
+        accounts: (() => {
+          const existing = toWritableAccounts(accounts);
+          const label = newLabel.trim() || null;
+          return [
+            ...existing,
+            {
+              // The new account's stable reference, minted from the label (else
+              // the directory's basename) and uniquified against the ids already
+              // registered — the same rule the config migration backfills with.
+              id: claudeAccountId({
+                label,
+                path: trimmedPath,
+                taken: existing.map((account) => account.id),
+              }),
+              path: trimmedPath,
+              label,
+            },
+          ];
+        })(),
       },
       () => {
         setNewPath('');
@@ -144,14 +191,12 @@ export function ClaudeAccountsSection() {
   }
 
   function removeAccount(path: string) {
-    const remaining = accounts
-      .filter((account) => account.path !== path)
-      .map((account) => ({ path: account.path, label: account.label }));
+    const remaining = toWritableAccounts(accounts.filter((account) => account.path !== path));
     // Removing the account work is currently running on has to release it too,
     // or DorkOS would keep billing an account the operator just took off the
-    // list. `activeAccount` is a path, so nothing else can inherit the slot.
+    // list. `defaultAccount` is a path, so nothing else can inherit the slot.
     const releasesActive = !inherited && resolvedAccount === path;
-    write({ accounts: remaining, ...(releasesActive && { activeAccount: null }) });
+    write({ accounts: remaining, ...(releasesActive && { defaultAccount: null }) });
   }
 
   return (

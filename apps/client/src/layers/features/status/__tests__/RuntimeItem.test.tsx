@@ -248,8 +248,8 @@ function AccountsProbe() {
 /** Server config registering `count` named Claude accounts, the first one active. */
 function withAccounts(count: number): Partial<ServerConfig> {
   const all = [
-    { path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
-    { path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: true },
+    { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+    { id: 'acme-corp', path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: true },
   ];
   return {
     claudeCode: {
@@ -679,7 +679,7 @@ describe('RuntimeItem', () => {
       await user.click(screen.getByText('Acme Corp'));
 
       expect(lastTransport.updateConfig).toHaveBeenCalledWith({
-        runtimes: { claudeCode: { activeAccount: '/Users/dev/.claude2' } },
+        runtimes: { claudeCode: { defaultAccount: '/Users/dev/.claude2' } },
       });
     });
 
@@ -713,8 +713,13 @@ describe('RuntimeItem', () => {
           resolvedAccount: '/Users/dev/.claude',
           inherited: true,
           accounts: [
-            { path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
-            { path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: false },
+            { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+            {
+              id: 'acme-corp',
+              path: '/Users/dev/.claude2',
+              label: 'Acme Corp',
+              isAccountRoot: false,
+            },
           ],
         },
       };

@@ -48,7 +48,7 @@ import { resolveAgentTokenEnv } from '../../../core/agent-identity/index.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
 import type { AgentSession } from '../agent-types.js';
-import { claudeConfigDirEnv, resolveActiveClaudeRoot } from '../claude-config-dir.js';
+import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { resolveToolConfig } from '../tooling/tool-filter.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
@@ -230,12 +230,25 @@ export async function resolveLaunch(args: {
   // Which Claude Code account this turn runs and BILLS on (spec
   // `claude-code-accounts` D3): the session's own account when disk has already
   // told us one — a resumed conversation must stay on the client whose
-  // subscription paid for it, whichever account happens to be active — else the
-  // active account, which is what a brand-new session runs on.
+  // subscription paid for it, whichever account happens to be the default — else
+  // the launch ladder, which is what a brand-new session runs on.
   //
-  // `undefined` is "unknown", never an error: a session with no transcript yet
-  // legitimately has no account of its own.
-  const accountRoot = session.accountRoot ?? resolveActiveClaudeRoot();
+  // **The `??` is the ladder's only gate** (spec `billing-account-ladder`
+  // invariant 5). `session.accountRoot` is derived from the transcript on disk,
+  // so its presence means this session has already launched and its account is
+  // settled; running the ladder anyway would let a stale hint or a since-changed
+  // agent setting move a live conversation's billing mid-stream. `undefined` is
+  // "unknown", never an error: a session with no transcript yet legitimately has
+  // no account of its own, and that is exactly the case the ladder answers.
+  const accountRoot =
+    session.accountRoot ??
+    resolveLaunchAccountRoot({
+      hintId: messageOpts?.accountHint,
+      // The account this agent is pinned to, off the manifest already read
+      // above. It reaches the spawn env and stops there — nothing writes it to
+      // `session_metadata`, because disk stays the per-session truth.
+      agentAccountId: manifest?.account,
+    });
   const accountEnv = claudeConfigDirEnv(accountRoot);
 
   const sdkOptions: Options = {

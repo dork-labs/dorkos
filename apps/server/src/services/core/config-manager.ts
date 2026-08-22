@@ -105,6 +105,9 @@ import {
   ComposerPrefsSchema,
   NOTIFICATION_PREFS_DEFAULTS,
   SidebarPrefsSchema,
+  ClaudeCodeAccountSchema,
+  ClaudeCodeSettingsSchema,
+  claudeAccountId,
   toSidebarItemRef,
 } from '@dorkos/shared/config-schema';
 import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
@@ -2468,6 +2471,102 @@ export function backfillNotificationDefaults(store: {
 }
 
 /**
+ * Migration body: rename `runtimes.claudeCode.activeAccount` to `defaultAccount`
+ * and give every registered account a stable `id` (spec
+ * `billing-account-ladder`, ADR 260821-205324).
+ *
+ * **Both halves are load-bearing, and neither is additive.**
+ *
+ * The rename carries the VALUE. `activeAccount` held the absolute path of the
+ * Claude config directory the operator's work bills to; left behind under the
+ * old key, the new one takes its `null` default and every new session silently
+ * moves onto whatever account the environment happens to point at — a different
+ * client's subscription, for the operator this feature was written for. The old
+ * key is then deleted rather than left beside the new one so the file converges
+ * on one spelling — NOT because leaving it would fail validation: Ajv would
+ * accept it, since `tolerateUnknownKeys` (`config/version-skew.ts`) reopens
+ * every generated object precisely so a key this build does not know cannot
+ * condemn a file. Two keys for one setting is the hazard here, not a rejected
+ * read: whichever one a later reader happens to consult decides who gets
+ * billed.
+ *
+ * The id backfill makes existing accounts REFERENCEABLE. An agent manifest and a
+ * session launch hint name an account by id, so a registry whose entries have no
+ * ids can be pointed at by nothing at all — and the id is required by the
+ * schema, so an un-backfilled entry fails validation outright. Ids come from
+ * {@link claudeAccountId}: the operator's label slugified, else the directory's
+ * basename, else `account`, uniquified against the ids already assigned. That is
+ * the same function the settings UI registers new accounts with, so an id minted
+ * here and an id minted there are minted by one rule.
+ *
+ * Idempotent in both halves: the rename runs only while the old key is present
+ * and the new one is not, and an entry that already carries a non-empty `id`
+ * keeps it, so a re-run cannot rename an account out from under an agent that
+ * references it.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function migrateClaudeAccountRegistry(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (runtimes == null || typeof runtimes !== 'object') return;
+  const claudeCode = (runtimes as { claudeCode?: unknown }).claudeCode;
+  if (claudeCode == null || typeof claudeCode !== 'object') return;
+
+  const block = { ...(claudeCode as Record<string, unknown>) };
+  let changed = false;
+
+  if ('activeAccount' in block) {
+    // A `null` under the new name does NOT outrank a value under the old one.
+    //
+    // The premise this once carried — "only a config written before this
+    // migration carries the old key, so the two cannot disagree" — was false,
+    // and the way it failed was expensive. On any install this migration is
+    // skipped on, one unrelated settings write persists the whole parsed config
+    // and lands `defaultAccount: null` beside the still-present `activeAccount`.
+    // Preferring the new key there discards the operator's billing choice
+    // permanently, by way of a theme change. `null` is the absence of a choice;
+    // a real path under the new name is a decision made since the rename and
+    // still wins.
+    if (block.defaultAccount == null) block.defaultAccount = block.activeAccount;
+    delete block.activeAccount;
+    changed = true;
+  }
+
+  const accounts = block.accounts;
+  if (Array.isArray(accounts)) {
+    const taken = new Set<string>();
+    for (const entry of accounts) {
+      if (entry && typeof entry === 'object') {
+        const id = (entry as { id?: unknown }).id;
+        if (typeof id === 'string' && id.length > 0) taken.add(id);
+      }
+    }
+    const next = accounts.map((entry) => {
+      if (!entry || typeof entry !== 'object') return entry;
+      const account = entry as Record<string, unknown>;
+      const existing = account.id;
+      if (typeof existing === 'string' && existing.length > 0) return account;
+      const id = claudeAccountId({
+        label: typeof account.label === 'string' ? account.label : null,
+        path: typeof account.path === 'string' ? account.path : '',
+        taken,
+      });
+      taken.add(id);
+      changed = true;
+      return { ...account, id };
+    });
+    if (changed) block.accounts = next;
+  }
+
+  if (!changed) return;
+  store.set('runtimes', { ...(runtimes as Record<string, unknown>), claudeCode: block });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -2875,6 +2974,13 @@ export const CONFIG_MIGRATIONS = {
   // everybody — strictly above the newest `v*` tag. Frozen from merge, not from
   // the release bump, for the reason `'0.60.0'` above states; anything further
   // opens `'0.63.0'`.
+  // Bodies at and below this key that seed `runtimes.claudeCode` write the
+  // PRE-LADDER shape — `activeAccount`, and accounts with no `id`. That is
+  // correct and must stay frozen: they are what the release they shipped in
+  // wrote, and `'0.65.0'` runs strictly after them on any install that reaches
+  // it, renaming the key and backfilling the ids. An install that never reaches
+  // `'0.65.0'` is carried by the schema tolerances instead
+  // (`tolerateLegacyClaudeAccountEncoding` + the Zod heal), not by editing these.
   '0.62.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
@@ -2910,6 +3016,21 @@ export const CONFIG_MIGRATIONS = {
     // merges top-level defaults SHALLOWLY and there is no `notifications` block
     // on any existing install at all.
     backfillNotificationDefaults(store);
+  },
+  // v0.62.0 is the newest tag and 0.63.0/0.64.0 have merged, so 0.65.0 is the
+  // next key that can still run for everybody. Frozen from merge, not from the
+  // release bump, for the reason `'0.60.0'` above states; anything further opens
+  // `'0.66.0'`.
+  '0.65.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `runtimes.claudeCode.activeAccount` -> `defaultAccount`, plus a stable
+    // `id` on every registered account (spec `billing-account-ladder`,
+    // DOR-1407). NOT additive in either half: without the rename the operator's
+    // chosen billing account is silently dropped, and without the ids the
+    // registry fails schema validation and nothing can reference an account.
+    migrateClaudeAccountRegistry(store);
   },
 } as const;
 
@@ -3004,9 +3125,87 @@ function tolerateRetiredSidebarKeys(ctx: {
   }
 }
 
+/**
+ * Widen the generated JSON Schema so conf's Ajv ACCEPTS a Claude account
+ * registry written before ids existed, instead of condemning the whole config
+ * file (spec `billing-account-ladder`, ADR 260821-205324).
+ *
+ * The second rename in this file's history, and the same hazard
+ * {@link tolerateRetiredSidebarKeys} exists for — with one difference worth
+ * naming, because it is why the unknown-key tolerance already in place does not
+ * cover it. `tolerateUnknownKeys` REOPENS objects, so a key this build does not
+ * know is survivable. Nothing reopens a `required` list. `accounts[].id` is
+ * required and did not exist before 0.65.0, so EVERY config file that has ever
+ * been written is schema-invalid the moment the `'0.65.0'` migration is skipped
+ * — and the constructor's recovery path then backs the file up and replaces it
+ * with defaults. Not the accounts. The whole file: `mesh.scanRoots`,
+ * `approvals`, `runtimes`, `cloud`, `onboarding`.
+ *
+ * And it is skipped routinely: a dev tree resolves `SERVER_VERSION` to `0.0.0`
+ * and runs no migrations at all, and cutting a release below `0.65.0` skips it
+ * for everyone on that release. Correctness must not hang on the migration
+ * running — which is the whole lesson of DOR-579, restated one rename later.
+ *
+ * The property stays DECLARED, so an id of the wrong TYPE is still refused; only
+ * its presence is optional. What fills it in is
+ * `backfillMissingAccountIds` inside `ClaudeCodeAccountsSchema`
+ * (`packages/shared/src/config-schema.ts`), which heals a missing id on every
+ * Zod parse by the migration's own rule. Ajv has to be widened separately
+ * because `z.toJSONSchema` emits a pipe's OUTPUT schema and so never sees that
+ * preprocess step — verified by the generated node still listing `id` as
+ * required.
+ *
+ * ## Removing it
+ *
+ * Back-compat for one release, exactly like its sibling: delete this once the
+ * `'0.65.0'` migration has shipped in a tagged release that every supported
+ * install has passed through. The tests in `'a Claude account registry written
+ * before ids'` fail if it is removed early.
+ *
+ * @param ctx - The `z.toJSONSchema` override context for one schema node.
+ */
+function tolerateLegacyClaudeAccountEncoding(ctx: {
+  zodSchema: unknown;
+  jsonSchema: Record<string, unknown>;
+}): void {
+  // The retired `activeAccount` spelling, DECLARED — with its real type, not as
+  // an open catchall, on the same rule the sidebar's retired keys follow.
+  //
+  // Declaring it is not about letting it past Ajv; `tolerateUnknownKeys` already
+  // does that. It is about `preserveUnknownKeys` (`config/version-skew.ts`),
+  // which carries every key the schema does NOT declare from the stored value
+  // onto the value replacing it — so that an older build saving a theme cannot
+  // delete a newer build's settings. Left undeclared, `activeAccount` was
+  // re-attached to the file after EVERY write, including the write that had just
+  // cleared the account. The next read healed it straight back, and "go back to
+  // inheriting" became "pin to the old account, permanently". Declared, this
+  // build owns the key: a write whose parse output drops it genuinely removes it.
+  if (ctx.zodSchema === ClaudeCodeSettingsSchema) {
+    const properties = ctx.jsonSchema.properties as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (!properties) return;
+    // Deliberately no `default`: conf builds Ajv with `useDefaults`, so a
+    // declared default would WRITE this retired key into every config on earth.
+    properties.activeAccount = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+    return;
+  }
+  if (ctx.zodSchema !== ClaudeCodeAccountSchema) return;
+  const required = ctx.jsonSchema.required;
+  if (Array.isArray(required)) {
+    ctx.jsonSchema.required = required.filter((key) => key !== 'id');
+  }
+}
+
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
-  override: tolerateRetiredSidebarKeys,
+  // Two tolerances, composed. `z.toJSONSchema` takes ONE override, so a second
+  // one added later must join this function rather than replace the argument —
+  // silently dropping the other is a whole config file condemned.
+  override: (ctx) => {
+    tolerateRetiredSidebarKeys(ctx);
+    tolerateLegacyClaudeAccountEncoding(ctx);
+  },
 }) as { properties?: Record<string, unknown> };
 
 // A key this build does not declare is another build's key, not damage. Zod

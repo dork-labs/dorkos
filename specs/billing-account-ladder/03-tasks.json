@@ -1,0 +1,48 @@
+{
+  "spec": "specs/billing-account-ladder/02-specification.md",
+  "slug": "billing-account-ladder",
+  "generatedAt": "2026-08-21T20:56:00-07:00",
+  "mode": "full",
+  "lastDecomposeDate": "2026-08-21",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — shared + server foundation",
+      "subject": "[billing-account-ladder] [P1] Build the launch-account ladder: registry ids, defaultAccount rename, agent field, launch hint, operator gating",
+      "description": "packages/shared: ClaudeCodeAccountSchema gains required `id` slug; rename runtimes.claudeCode.activeAccount -> defaultAccount (semver-keyed config migration carrying the value and backfilling unique ids from label/path basename); AgentManifestSchema gains account?: string with .catch(undefined); AgentManifestUpdate/UpdateAgentRequestSchema gain account?: string|null; SendMessageRequestSchema gains account?: string; ServerConfigSchema.claudeCode.accounts[] rows gain id: string|null. apps/server: resolveLaunchAccountRoot ladder (hint id -> agent id -> defaultAccount path -> env/default) feeding claudeConfigDirEnv; launch-resolver uses session.accountRoot ?? resolveLaunchAccountRoot; hint rides POST /messages like the runtime hint, honored only on the session-creating claude-code send; rename fallout in claude-config-dir.ts, describeClaudeCodeAccounts (adds ids), config-write-policy, config-disclosure, safe-defaults (defaultAccount stays operator-only); agent-manifest `account` writes rejected/stripped on agent-reachable surfaces (MCP tools) while the client HTTP route accepts it. Acceptance: all five spec invariants have passing tests (ladder order, unknown-id fallthrough, named-by-absence per tier, resume guard, operator-only); migration tests; existing claude-code-accounts tests pass unmodified; changelog fragment; spec + draft ADR files committed with this branch.",
+      "activeForm": "Building the launch-account ladder foundation",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — client: settings + status bar",
+      "subject": "[billing-account-ladder] [P2] Settings 'Default account' + session-scoped status-bar picker",
+      "description": "apps/client: ClaudeAccountsSection relabeled 'Default account' with copy 'New sessions bill this account unless the agent or the session picks another.', writes defaultAccount, registration generates a unique kebab id before the config PATCH; RuntimeItem pre-launch account radio becomes session-scoped — no PATCH /api/config (delete use-account-switch's global mutation), choice held as a client-side launch hint sent as `account` on the session-creating first message via useSessionSubmit (same lifecycle as the runtime hint); options 'Default — <label>' (omit) + registered accounts; copy 'This session only. Locked once the first message sends.'; post-launch row stays the read-only derived account. Acceptance: RTL tests prove the picker performs no config PATCH and the first send carries the hint; settings tests cover rename + id generation/uniquification; changelog fragment.",
+      "activeForm": "Rebuilding settings and status-bar account surfaces",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": ["3.1"],
+      "issue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 — client: agent profile + exceptions strip",
+      "subject": "[billing-account-ladder] [P3] Agent 'Runs on' Account row + exceptions-strip account deviations",
+      "description": "apps/client: RunsOnPopover gains an Account row (ExecutionRow pattern) rendered only when agent.runtime === claude-code and >1 account known; amber 'set here' / emerald 'inherited' provenance chips; picker footer 'Using server default: <label> — tap to restore' writing account: null; unregistered id renders the amber breakage treatment mirroring 'no longer offered' models; writes via existing agent PATCH. ExecutionExceptionsStrip includes agents whose account deviates from the default or is broken (broken amber-first), linking to the profile. Acceptance: RTL tests for row visibility rules, provenance, null-restore, breakage chip, strip inclusion; changelog fragment.",
+      "activeForm": "Adding the agent Account row and exceptions coverage",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": ["2.1"],
+      "issue": null
+    }
+  ]
+}

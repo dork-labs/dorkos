@@ -36,6 +36,12 @@ export const agents = sqliteTable('agents', {
   // disk to answer. NULL = inherit.
   model: text('model'),
   effort: text('effort'),
+  // Which Claude Code account this agent's new sessions bill to, as a registry
+  // id (spec `billing-account-ladder`). Cached beside `model`/`effort` and for
+  // the same reason: the agent LIST is what the Settings exceptions strip reads
+  // to name every agent that differs from the server default, and answering
+  // that from disk would mean opening every agent.json. NULL = inherit.
+  account: text('account'),
   registeredAt: text('registered_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   // manifest_json DROPPED — redundant with individual structured columns

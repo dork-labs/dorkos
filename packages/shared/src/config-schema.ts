@@ -798,12 +798,24 @@ export type RawMcpServerConfig = z.infer<typeof RawMcpServerConfigSchema>;
  * its own `projects/` transcripts and its own sign-in
  * (`runtimes.claudeCode.accounts`, spec `claude-code-accounts` D1).
  *
- * The **path is the identity**: it is literally what `CLAUDE_CONFIG_DIR` takes,
- * so there is no id to generate, migrate, or keep in step with anything. The
+ * The **path is what runs**: it is literally what `CLAUDE_CONFIG_DIR` takes. The
  * label exists because the operator's real question is _which client_ a session
  * belongs to, and `~/.claude2` does not answer that while "Acme Corp" does.
+ *
+ * The **id is what everything else references** (ADR 260821-205324). An agent
+ * manifest and a session launch hint name an account by id, never by path, so a
+ * directory the operator moves or renames stays one edit in one
+ * operator-controlled place instead of silently breaking every agent pointing at
+ * it. An id that is no longer registered degrades to the next tier of the launch
+ * ladder rather than failing a launch.
  */
 export const ClaudeCodeAccountSchema = z.object({
+  /**
+   * Stable kebab-case slug for this account, unique within the registry. What
+   * agents and launch hints reference. Generated at registration from the label
+   * (else the path's basename) — see {@link claudeAccountId}.
+   */
+  id: z.string().min(1),
   /** Absolute path of the Claude config directory this account lives in. */
   path: z.string().min(1),
   /** What the operator calls this account; `null` when they have not named it. */
@@ -812,6 +824,281 @@ export const ClaudeCodeAccountSchema = z.object({
 
 /** One known Claude Code account. See {@link ClaudeCodeAccountSchema}. */
 export type ClaudeCodeAccount = z.infer<typeof ClaudeCodeAccountSchema>;
+
+/**
+ * Reduce a name to the kebab-case alphabet account ids use.
+ *
+ * Lowercased, every run of non-alphanumerics collapsed to a single hyphen, and
+ * the ends trimmed. Returns `''` when nothing survives — the caller decides what
+ * to fall back to, because "the label slugified to nothing" and "there was no
+ * label" want the same answer and only the caller knows the next candidate.
+ *
+ * @param value - Free-form text (a label, a path basename).
+ * @returns The kebab slug, possibly empty.
+ */
+export function slugifyAccountId(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * The id to register a Claude account under: the label slugified, else the
+ * path's last segment slugified, else `account` — uniquified against ids already
+ * taken by appending `-2`, `-3`, … .
+ *
+ * One implementation for the config migration that backfills ids onto existing
+ * registries and for the settings UI that registers a new account, so an id
+ * minted by either is minted by the same rule.
+ *
+ * @param opts - The account being named and the ids already in use.
+ * @param opts.label - The operator's name for the account, if they gave one.
+ * @param opts.path - The account's config directory (its basename is the fallback).
+ * @param opts.taken - Ids already present in the registry.
+ * @returns A kebab slug that is not in `taken`.
+ */
+export function claudeAccountId(opts: {
+  label?: string | null;
+  path: string;
+  taken: Iterable<string>;
+}): string {
+  const basename =
+    opts.path
+      .replace(/[/\\]+$/, '')
+      .split(/[/\\]/)
+      .pop() ?? '';
+  const base = slugifyAccountId(opts.label ?? '') || slugifyAccountId(basename) || 'account';
+  const taken = new Set(opts.taken);
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${base}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+/**
+ * The registered Claude accounts, healing a registry written before ids existed.
+ *
+ * ## Why the heal is here rather than only in the migration
+ *
+ * `id` is REQUIRED, and it did not exist before 0.65.0 — so every config file
+ * on every machine is missing it until the `'0.65.0'` migration runs. That
+ * migration is skipped more often than it sounds: `conf` runs a key only when
+ * `key > storedVersion && key <= projectVersion`, so a dev tree (`SERVER_VERSION`
+ * resolves to `0.0.0`) runs NO migrations at all, and cutting a release below
+ * `0.65.0` would skip it for every user on it.
+ *
+ * A missing REQUIRED field is not the same hazard as a leftover key, and this is
+ * the distinction that makes this function necessary. `tolerateUnknownKeys`
+ * (`config/version-skew.ts`) reopens objects, so an extra key is already
+ * survivable; nothing reopens a `required` list. Left alone, an un-migrated
+ * config fails Zod in `applyConfigPatch` — which parses the whole MERGED config
+ * — so every settings write in the cockpit is refused until the migration runs.
+ * Ajv is widened separately, in `config-manager.ts`, because
+ * `z.toJSONSchema` emits a pipe's OUTPUT schema and would never see this.
+ *
+ * The heal is the migration's rule, not a second one: {@link claudeAccountId},
+ * uniquified against the ids the registry already carries, so an id minted here
+ * and an id the migration wrote agree. Rows keep their order and every other
+ * field untouched.
+ *
+ * @param value - The stored `accounts` value, whatever shape it is in.
+ * @returns The same rows with any missing id filled in.
+ */
+function backfillMissingAccountIds(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  // Every id already present is reserved BEFORE any is minted — including ids
+  // belonging to rows later in the list. Seeding this as we go would let a
+  // backfilled row claim an id a subsequent row already owns.
+  const taken = new Set<string>();
+  for (const row of value) {
+    if (row && typeof row === 'object') {
+      const id = (row as { id?: unknown }).id;
+      if (typeof id === 'string' && id.length > 0) taken.add(id);
+    }
+  }
+  return value.map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    const account = row as Record<string, unknown>;
+    if (typeof account.id === 'string' && account.id.length > 0) return account;
+    const id = claudeAccountId({
+      label: typeof account.label === 'string' ? account.label : null,
+      path: typeof account.path === 'string' ? account.path : '',
+      taken,
+    });
+    taken.add(id);
+    return { ...account, id };
+  });
+}
+
+/**
+ * Read `activeAccount` as `defaultAccount` on a config the `'0.65.0'` migration
+ * has not reached (spec `billing-account-ladder`).
+ *
+ * The rename half of the same hazard {@link backfillMissingAccountIds} covers,
+ * and the more expensive half, because what is at stake is not a derived id but
+ * a choice the operator made about **who gets billed**. Left unhealed, a stored
+ * `activeAccount` is invisible: `defaultAccount` reads `null`, the cockpit
+ * reports "inherited", and new sessions run on whatever `$CLAUDE_CONFIG_DIR` the
+ * launching shell exported — a different paying client's subscription, silently.
+ *
+ * It also has to happen BEFORE anything writes. `applyConfigPatch` re-parses and
+ * persists the whole config, so without this a single unrelated settings change
+ * lands `defaultAccount: null` on disk beside the old key — and the migration,
+ * finding the new key present, would then keep the `null` and destroy the choice
+ * permanently. Healing here means that write persists the right value instead.
+ *
+ * ## What this cannot see, and who covers it
+ *
+ * `null` and absent are treated alike here, and that is a deliberate limitation
+ * rather than a full answer. `null` IS the absence of a choice under the new
+ * name — but it is ALSO exactly how the cockpit spells "go back to inheriting".
+ * This function is handed a stored block with no idea which of the two it is
+ * looking at, so on its own it would read a deliberate clear as "nothing chosen
+ * yet" and resurrect the old account the person just dismissed.
+ *
+ * Intent is known one layer up, where the incoming patch is still in hand:
+ * `applyConfigPatch` calls {@link settleLegacyAccountAlias} first, which removes
+ * the legacy key whenever the patch NAMES `defaultAccount`. By the time this
+ * runs there is nothing left to resurrect, so a clear clears. Neither half works
+ * alone — this one silently undoes clears, and that one only sees writes.
+ *
+ * A `defaultAccount` holding an actual path is a decision made since the rename
+ * and wins over the old key regardless.
+ *
+ * ## The legacy key is dropped from the OUTPUT
+ *
+ * A contract of this function, so its answer carries one spelling for any
+ * caller. Be precise about what that does and does not buy: parsing through
+ * {@link ClaudeCodeSettingsSchema} would strip an undeclared key anyway, so
+ * dropping it here changes nothing an end-to-end test can see. It is
+ * defense-in-depth and legibility, not the mechanism.
+ *
+ * The mechanism that actually settles the FILE is a schema declaration, made in
+ * `config-manager.ts`: `preserveUnknownKeys` re-attaches every key the schema
+ * does not declare after each write, so while `activeAccount` was undeclared it
+ * came back forever — including after the write that cleared the account.
+ *
+ * With all of it in place, a write that names `runtimes` persists a settled
+ * block. A write naming some OTHER section — a theme change — still rewrites the
+ * stored object as it stands, legacy key included, because `applyConfigPatch`
+ * only persists the sections a patch names. That file converges when the
+ * migration reaches it, or on the next write that touches `runtimes`, whichever
+ * comes first.
+ *
+ * @param value - The stored `runtimes.claudeCode` block, whatever shape it is in.
+ * @returns The block with `defaultAccount` carrying the choice and the legacy
+ *   key gone.
+ */
+export function healClaudeAccountRename(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const block = value as Record<string, unknown>;
+  if (!('activeAccount' in block)) return value;
+  const { activeAccount: legacy, ...rest } = block;
+  // A real value under the new name is a decision made since the rename; `null`
+  // or absent means nobody has decided under it, so the old key still speaks.
+  const healed =
+    rest.defaultAccount == null && typeof legacy === 'string' && legacy.length > 0
+      ? legacy
+      : (rest.defaultAccount ?? null);
+  return { ...rest, defaultAccount: healed };
+}
+
+/**
+ * Take the legacy account key out of a merged config when the incoming patch
+ * NAMED the new one — so an explicit clear is not read as "never set".
+ *
+ * The piece {@link healClaudeAccountRename} cannot supply. The heal sees a
+ * stored block; only the write path still holds the patch, and the patch is the
+ * only place the difference between "this person chose the default" and "nobody
+ * has chosen yet" exists. Both spellings of that difference arrive as `null`.
+ *
+ * Applies whenever `runtimes.claudeCode.defaultAccount` is present in the patch
+ * at all, whatever its value. Clearing to `null` is the case that was broken;
+ * naming a different account is the same act and must not leave the superseded
+ * spelling on disk either.
+ *
+ * Mutates `merged` in place — it is a fresh deep-merge result owned by the
+ * caller, never the stored config.
+ *
+ * @param merged - The patch already deep-merged onto the current config.
+ * @param patch - The patch as the caller received it.
+ */
+export function settleLegacyAccountAlias(merged: unknown, patch: unknown): void {
+  const named = (patch as { runtimes?: { claudeCode?: Record<string, unknown> } } | null)?.runtimes
+    ?.claudeCode;
+  if (!named || typeof named !== 'object' || !('defaultAccount' in named)) return;
+  const block = (merged as { runtimes?: { claudeCode?: Record<string, unknown> } } | null)?.runtimes
+    ?.claudeCode;
+  if (block && typeof block === 'object') delete block.activeAccount;
+}
+
+/**
+ * The Claude account settings as every READER should see them, healed.
+ *
+ * The launch ladder, the `GET /api/config` block and the root-set scan all read
+ * `runtimes.claudeCode` straight off the `conf` store — raw stored JSON, never a
+ * Zod parse — so none of them would otherwise see either heal. That is the
+ * difference between a schema that is correct and a product that is: an id
+ * healed only on parse leaves the ladder's top two rungs inert on every
+ * un-migrated install, because a hint is matched by an id no stored row has.
+ *
+ * Read-time only, by design. Nothing here writes: the migration remains the sole
+ * writer of the settled shape, and a reader that heals cannot corrupt a file it
+ * never touches.
+ *
+ * @param raw - The stored `runtimes.claudeCode` block, or anything at all.
+ * @returns The default account and the registry, with ids and the rename applied.
+ */
+export function readClaudeAccountSettings(raw: unknown): {
+  defaultAccount: string | null;
+  accounts: ClaudeCodeAccount[];
+} {
+  const healed = healClaudeAccountRename(raw);
+  const block =
+    healed && typeof healed === 'object' ? (healed as Record<string, unknown>) : undefined;
+  const defaultAccount = typeof block?.defaultAccount === 'string' ? block.defaultAccount : null;
+  const rows = backfillMissingAccountIds(block?.accounts);
+  const accounts = Array.isArray(rows)
+    ? rows.filter(
+        (row): row is ClaudeCodeAccount =>
+          !!row &&
+          typeof row === 'object' &&
+          typeof (row as ClaudeCodeAccount).id === 'string' &&
+          typeof (row as ClaudeCodeAccount).path === 'string'
+      )
+    : [];
+  return { defaultAccount, accounts };
+}
+
+/**
+ * The Claude account registry: rows with stable ids, no two the same.
+ *
+ * Uniqueness is enforced rather than assumed because an id is a REFERENCE — an
+ * agent manifest and a session launch hint name an account by it, and the
+ * resolver takes the first match. Two rows sharing an id would make one of them
+ * unreachable and silently bill every agent naming it to the other one's
+ * subscription. {@link backfillMissingAccountIds} can never produce a collision;
+ * a hand-edited file or a buggy client can, and this is where they are told.
+ */
+export const ClaudeCodeAccountsSchema = z.preprocess(
+  backfillMissingAccountIds,
+  z.array(ClaudeCodeAccountSchema).superRefine((accounts, ctx) => {
+    const seen = new Set<string>();
+    accounts.forEach((account, index) => {
+      if (!seen.has(account.id)) {
+        seen.add(account.id);
+        return;
+      }
+      ctx.addIssue({
+        code: 'custom',
+        path: [index, 'id'],
+        message: `Duplicate Claude account id "${account.id}" — an id is how an agent or a session names one account, so it has to name exactly one.`,
+      });
+    });
+  })
+);
 
 /**
  * The model a NEW session on one runtime starts on, or `null` to let that
@@ -876,6 +1163,74 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
  * session starts, not just this one.
  */
 const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
+
+/**
+ * What a NEW Claude Code session starts with, and which account it bills.
+ *
+ * Named rather than left inline in {@link UserConfigSchema} so the JSON-schema
+ * override in `config-manager.ts` can key on this node's identity, exactly as it
+ * does for {@link ClaudeCodeAccountSchema}. That override has to DECLARE the
+ * retired `activeAccount` spelling on this object — an undeclared key is one
+ * `preserveUnknownKeys` carries forward forever, which would resurrect a billing
+ * choice the operator had just cleared — and a node it cannot name is a node it
+ * cannot widen.
+ */
+export const ClaudeCodeSettingsSchema = z.object({
+  /**
+   * Absolute path of the Claude config directory a NEW session runs and
+   * bills on when neither the session nor its agent names one. `null`
+   * inherits whatever the process already has — `$CLAUDE_CONFIG_DIR`,
+   * else `~/.claude` — which is byte-for-byte the behavior before this
+   * field existed.
+   *
+   * An explicit path OVERRIDES an inherited `CLAUDE_CONFIG_DIR`, so which
+   * account runs the work stops depending on which terminal happened to
+   * launch DorkOS. Stored as a path, never an index into
+   * {@link ClaudeCodeAccountSchema} entries, so removing an account can
+   * never silently repoint the selection at a different client
+   * (spec `claude-code-accounts` D1/D2).
+   *
+   * **A path here, an id everywhere else** (ADR 260821-205324). This one
+   * field stays a path on purpose: the default may legitimately name a
+   * root that is not a registry entry at all, and choosing it is what
+   * adds it to the read set (ADR 260801-204126). Agents and launch hints
+   * have no such case and reference accounts by {@link
+   * ClaudeCodeAccountSchema.shape.id}.
+   *
+   * Renamed from `activeAccount` in 0.65.0 (`billing-account-ladder`):
+   * "active" described the retired global-switch semantics, where the
+   * status-bar picker repointed this value for every future session.
+   */
+  defaultAccount: z.string().nullable().default(null),
+  /**
+   * The Claude accounts DorkOS knows about — what lets it show which
+   * client a session belongs to. The operator registers these: DorkOS
+   * never globs `~/.claude*`, because that guess sweeps up directories
+   * that are not accounts at all (D4).
+   */
+  accounts: ClaudeCodeAccountsSchema.default(() => []),
+  /** Model a new claude-code session starts on. See {@link DefaultModelSchema}. */
+  defaultModel: DefaultModelSchema,
+  /** Effort a new claude-code session starts at. See {@link DefaultEffortSchema}. */
+  defaultEffort: DefaultEffortSchema,
+  /**
+   * Trust stop a new claude-code session starts at, overriding
+   * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
+   */
+  defaultTrustStop: DefaultTrustStopSchema,
+  /**
+   * Whether a Claude Code chat keeps its agent running between your
+   * messages instead of starting it up again for each one. Ships
+   * `false`, which is how DorkOS has always worked: every message gets
+   * its own run.
+   *
+   * Read when a chat's agent starts, so a chat already under way keeps
+   * the way it started until its process is replaced. That is what lets
+   * one machine run chats both ways at the same time and compare them on
+   * the same work (spec `persistent-session-runtime` §P3).
+   */
+  persistentSession: z.boolean().default(false),
+});
 
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -1569,59 +1924,20 @@ export const UserConfigSchema = z.object({
        * `runtimes.<runtime>.defaultTrustStop` beats this one.
        */
       defaultTrustStop: DefaultTrustStopSchema,
-      claudeCode: z
-        .object({
-          /**
-           * Absolute path of the Claude config directory a NEW session runs and
-           * bills on. `null` inherits whatever the process already has —
-           * `$CLAUDE_CONFIG_DIR`, else `~/.claude` — which is byte-for-byte the
-           * behavior before this field existed.
-           *
-           * An explicit path OVERRIDES an inherited `CLAUDE_CONFIG_DIR`, so which
-           * account runs the work stops depending on which terminal happened to
-           * launch DorkOS. Stored as a path, never an index into
-           * {@link ClaudeCodeAccountSchema} entries, so removing an account can
-           * never silently repoint the selection at a different client
-           * (spec `claude-code-accounts` D1/D2).
-           */
-          activeAccount: z.string().nullable().default(null),
-          /**
-           * The Claude accounts DorkOS knows about — what lets it show which
-           * client a session belongs to. The operator registers these: DorkOS
-           * never globs `~/.claude*`, because that guess sweeps up directories
-           * that are not accounts at all (D4).
-           */
-          accounts: z.array(ClaudeCodeAccountSchema).default(() => []),
-          /** Model a new claude-code session starts on. See {@link DefaultModelSchema}. */
-          defaultModel: DefaultModelSchema,
-          /** Effort a new claude-code session starts at. See {@link DefaultEffortSchema}. */
-          defaultEffort: DefaultEffortSchema,
-          /**
-           * Trust stop a new claude-code session starts at, overriding
-           * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
-           */
-          defaultTrustStop: DefaultTrustStopSchema,
-          /**
-           * Whether a Claude Code chat keeps its agent running between your
-           * messages instead of starting it up again for each one. Ships
-           * `false`, which is how DorkOS has always worked: every message gets
-           * its own run.
-           *
-           * Read when a chat's agent starts, so a chat already under way keeps
-           * the way it started until its process is replaced. That is what lets
-           * one machine run chats both ways at the same time and compare them on
-           * the same work (spec `persistent-session-runtime` §P3).
-           */
-          persistentSession: z.boolean().default(false),
-        })
-        .default(() => ({
-          activeAccount: null,
-          accounts: [],
-          defaultModel: null,
-          defaultEffort: null,
-          defaultTrustStop: null,
-          persistentSession: false,
-        })),
+      // The rename heal runs BEFORE this object is parsed, so a config still
+      // spelling the default `activeAccount` parses with the operator's choice
+      // in the new key. What settles the FILE is a write that names `runtimes`,
+      // and only because `config-manager.ts` DECLARES the retired key — see
+      // {@link healClaudeAccountRename} for why declaring it is the mechanism
+      // and dropping it from the parse output is not.
+      claudeCode: z.preprocess(healClaudeAccountRename, ClaudeCodeSettingsSchema).default(() => ({
+        defaultAccount: null,
+        accounts: [],
+        defaultModel: null,
+        defaultEffort: null,
+        defaultTrustStop: null,
+        persistentSession: false,
+      })),
       opencode: z
         .object({
           enabled: z.boolean().default(true),
@@ -1696,7 +2012,7 @@ export const UserConfigSchema = z.object({
       default: 'claude-code',
       defaultTrustStop: null,
       claudeCode: {
-        activeAccount: null,
+        defaultAccount: null,
         accounts: [],
         defaultModel: null,
         defaultEffort: null,

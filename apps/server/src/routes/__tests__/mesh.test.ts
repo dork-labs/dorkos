@@ -566,6 +566,32 @@ describe('Mesh routes', () => {
       expect(meshCore.update).toHaveBeenCalledWith('agent-1', { model: 'gpt-5.3-codex' });
     });
 
+    it("carries an agent's billing account through to the manifest write", async () => {
+      // The operator half of invariant 4 (spec `billing-account-ladder`): this
+      // route is the cockpit's, and it MUST accept `account`. The
+      // agent-reachable self-edit path refuses the same key — see
+      // `services/core/operator/__tests__/agent-updater.test.ts`.
+      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, account: 'acme-corp' });
+
+      const res = await request(app)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ account: 'acme-corp' });
+
+      expect(res.status).toBe(200);
+      expect(meshCore.update).toHaveBeenCalledWith('agent-1', { account: 'acme-corp' });
+    });
+
+    it('reads a null account as "bill the server default again"', async () => {
+      meshCore.update.mockReturnValue(MOCK_MANIFEST);
+
+      const res = await request(app).patch('/api/mesh/agents/agent-1').send({ account: null });
+
+      expect(res.status).toBe(200);
+      const patch = meshCore.update.mock.calls[0][1] as Record<string, unknown>;
+      expect(Object.keys(patch)).toEqual(['account']);
+      expect(patch.account).toBeUndefined();
+    });
+
     it('reads null as "go back to inheriting the server default"', async () => {
       meshCore.update.mockReturnValue(MOCK_MANIFEST);
 

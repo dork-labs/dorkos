@@ -169,10 +169,10 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       // A populated roster, including an unnamed account, so the projection is
       // exercised on both `label` branches rather than on an empty array.
       claudeCode: {
-        activeAccount: '/Users/me/.claude2',
+        defaultAccount: '/Users/me/.claude2',
         accounts: [
-          { path: '/Users/me/.claude', label: 'Acme Corp' },
-          { path: '/Users/me/.claude2', label: null },
+          { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
+          { id: 'claude2', path: '/Users/me/.claude2', label: null },
         ],
         defaultModel: 'opus',
         defaultEffort: 'high',

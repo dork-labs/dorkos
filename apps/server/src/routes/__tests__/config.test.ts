@@ -376,7 +376,11 @@ describe('PATCH /api/config', () => {
 
       const refused = await request(server)
         .patch('/api/config')
-        .send({ runtimes: { claudeCode: { accounts: [{ path: '/tmp/theirs', label: null }] } } })
+        .send({
+          runtimes: {
+            claudeCode: { accounts: [{ id: 'acct-1', path: '/tmp/theirs', label: null }] },
+          },
+        })
         .expect(403);
       expect(refused.body.paths).toContain('runtimes.claudeCode.accounts[].path');
 
@@ -394,11 +398,13 @@ describe('PATCH /api/config', () => {
       const accounts = await request(server)
         .patch('/api/config')
         .send({
-          runtimes: { claudeCode: { accounts: [{ path: '/Users/me/.claude', label: 'Me' }] } },
+          runtimes: {
+            claudeCode: { accounts: [{ id: 'me', path: '/Users/me/.claude', label: 'Me' }] },
+          },
         })
         .expect(200);
       expect(accounts.body.config.runtimes.claudeCode.accounts).toEqual([
-        { path: '/Users/me/.claude', label: 'Me' },
+        { id: 'me', path: '/Users/me/.claude', label: 'Me' },
       ]);
 
       const servers = await request(server)
@@ -428,7 +434,9 @@ describe('PATCH /api/config', () => {
       await request(server)
         .patch('/api/config')
         .send({
-          runtimes: { claudeCode: { accounts: [{ path: '/Users/me/.claude', label: null }] } },
+          runtimes: {
+            claudeCode: { accounts: [{ id: 'acct-2', path: '/Users/me/.claude', label: null }] },
+          },
         })
         .expect(200);
 
@@ -1336,10 +1344,10 @@ describe('GET /api/config', () => {
       configManager.set('runtimes', {
         ...configManager.get('runtimes'),
         claudeCode: {
-          activeAccount: real,
+          defaultAccount: real,
           accounts: [
-            { path: real, label: 'Acme Corp' },
-            { path: missing, label: null },
+            { id: 'acme-corp', path: real, label: 'Acme Corp' },
+            { id: 'gone', path: missing, label: null },
           ],
           defaultModel: null,
           defaultEffort: null,
@@ -1356,8 +1364,8 @@ describe('GET /api/config', () => {
         resolvedAccount: real,
         inherited: false,
         accounts: [
-          { path: real, label: 'Acme Corp', isAccountRoot: true },
-          { path: missing, label: null, isAccountRoot: false },
+          { id: 'acme-corp', path: real, label: 'Acme Corp', isAccountRoot: true },
+          { id: 'gone', path: missing, label: null, isAccountRoot: false },
         ],
       });
     });

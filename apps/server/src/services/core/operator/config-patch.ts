@@ -15,6 +15,7 @@
 import {
   UserConfigSchema,
   SENSITIVE_CONFIG_KEYS,
+  settleLegacyAccountAlias,
   type UserConfig,
 } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
@@ -370,6 +371,14 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
 
   const current = configManager.getAll();
   const merged = deepMerge(current as unknown as Record<string, unknown>, patchObj);
+  // A patch that NAMES the Claude default account settles the pre-0.65.0 spelling
+  // of it, before the schema's read-time heal can speak for the absent one.
+  // Without this, clearing the account to Default sends `defaultAccount: null` —
+  // indistinguishable, to a heal that only sees the stored block, from a key
+  // nobody has set — and the stored `activeAccount` is resurrected and WRITTEN
+  // BACK, turning "go back to inheriting" into "pin to the old account, for
+  // good". See `settleLegacyAccountAlias`.
+  settleLegacyAccountAlias(merged, patchObj);
   const parseResult = UserConfigSchema.safeParse(merged);
 
   if (!parseResult.success) {

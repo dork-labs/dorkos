@@ -19,7 +19,7 @@
  * one place, DorkOS reads another, and the session 404s despite having run,
  * billed, and streamed successfully (DOR-250).
  *
- * `runtimes.claudeCode.activeAccount` sits IN FRONT of that env var rather than
+ * `runtimes.claudeCode.defaultAccount` sits IN FRONT of that env var rather than
  * behind it, on purpose: inheriting whichever directory the launching terminal
  * exported is exactly the non-determinism this feature removes. With the field at
  * its `null` default the chain is byte-for-byte the SDK's own.
@@ -36,7 +36,8 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import type { UserConfig } from '@dorkos/shared/config-schema';
+import type { ClaudeCodeAccount, UserConfig } from '@dorkos/shared/config-schema';
+import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
@@ -66,18 +67,25 @@ function inheritedClaudeRoot(): string {
  * so every failure is a debug line and an empty answer.
  */
 function readClaudeCodeConfig(config: ConfigReader): {
-  activeAccount: string | null;
-  accounts: readonly { path: string; label: string | null }[];
+  defaultAccount: string | null;
+  accounts: readonly ClaudeCodeAccount[];
 } {
   try {
-    const claudeCode = config.get('runtimes')?.claudeCode;
-    return {
-      activeAccount: claudeCode?.activeAccount ?? null,
-      accounts: claudeCode?.accounts ?? [],
-    };
+    // Through the healing read, NOT straight off the store. `configManager.get`
+    // hands back what conf stored — raw JSON, never a Zod parse — so this is the
+    // one place that can give every reader below it the migrated shape on an
+    // install the `'0.65.0'` migration has not reached (a dev tree never does).
+    //
+    // Both heals matter here and they fail differently. Without the rename, a
+    // stored `activeAccount` is invisible and new work bills whatever the shell
+    // pointed at. Without the ids, every row is unreferenceable and the ladder's
+    // top two rungs are inert — a hint matched by an id no stored row carries.
+    // Neither is a schema concern: `UserConfigSchema` is right either way, and
+    // nothing on this path consults it.
+    return readClaudeAccountSettings(config.get('runtimes')?.claudeCode);
   } catch (err) {
     logger.debug('[claude-config-dir] Claude account config unavailable', { err: String(err) });
-    return { activeAccount: null, accounts: [] };
+    return { defaultAccount: null, accounts: [] };
   }
 }
 
@@ -105,17 +113,79 @@ function isClaudeAccountRoot(dir: string): boolean {
 }
 
 /**
- * Resolve the Claude root a NEW session runs and bills on.
+ * Resolve the Claude root a new session runs and bills on when nothing more
+ * specific names one — the bottom two rungs of the ladder.
  *
- * `runtimes.claudeCode.activeAccount` first, then the SDK's own chain
+ * `runtimes.claudeCode.defaultAccount` first, then the SDK's own chain
  * (`$CLAUDE_CONFIG_DIR`, else `~/.claude`). Never throws: an unreadable config
  * degrades to the inherited default.
+ *
+ * Launch sites want {@link resolveLaunchAccountRoot}, which runs the whole
+ * ladder. This is still the right answer for every READ site (listing, search,
+ * transcript roots), which asks where work goes by default rather than where one
+ * particular launch is going.
  *
  * @param config - Config reader (defaults to the module singleton).
  * @returns The absolute Claude config directory to run in.
  */
 export function resolveActiveClaudeRoot(config: ConfigReader = configManager): string {
-  return readClaudeCodeConfig(config).activeAccount ?? inheritedClaudeRoot();
+  return readClaudeCodeConfig(config).defaultAccount ?? inheritedClaudeRoot();
+}
+
+/**
+ * Resolve the Claude root ONE launch runs and bills on, through the full ladder
+ * (ADR 260821-205323):
+ *
+ * 1. `hintId` — the account a person picked for this session before sending.
+ * 2. `agentAccountId` — the account this agent's manifest pins it to.
+ * 3. `runtimes.claudeCode.defaultAccount` — the operator's server-wide default.
+ * 4. The environment (`$CLAUDE_CONFIG_DIR`, else `~/.claude`).
+ *
+ * **A launch never fails on a bad account reference.** An id that no longer
+ * names a registered account — the operator removed it, an agent manifest was
+ * hand-edited, a client cached a stale list — logs a warning and falls through
+ * to the next rung. The alternative is refusing to run a session over a setting,
+ * which is a worse answer than billing the default and saying so.
+ *
+ * Call this only where a session's account is not already decided: the result
+ * feeds {@link claudeConfigDirEnv}, and once a transcript exists on disk THAT is
+ * the session's account forever (ADR 260801-204127). `launch-resolver.ts` keeps
+ * the `session.accountRoot ??` guard in front of this call for that reason.
+ *
+ * @param opts - The ladder's inputs.
+ * @param opts.hintId - Registry id from this send's launch hint, if any.
+ * @param opts.agentAccountId - Registry id from the agent's manifest, if any.
+ * @param opts.config - Config reader (defaults to the module singleton).
+ * @returns The absolute Claude config directory this launch must use.
+ */
+export function resolveLaunchAccountRoot(
+  opts: {
+    hintId?: string | undefined;
+    agentAccountId?: string | undefined;
+    config?: ConfigReader;
+  } = {}
+): string {
+  const config = opts.config ?? configManager;
+  const { accounts } = readClaudeCodeConfig(config);
+
+  for (const [source, id] of [
+    ['session hint', opts.hintId],
+    ['agent manifest', opts.agentAccountId],
+  ] as const) {
+    // The empty guard is what keeps `undefined === undefined` from matching. A
+    // registry the `'0.65.0'` migration has not reached carries rows with NO
+    // id, so `find(a => a.id === id)` with an absent `id` on both sides would
+    // return the first row and bill an account nobody named.
+    if (!id) continue;
+    const match = accounts.find((account) => account.id === id);
+    if (match) return match.path;
+    logger.warn('[claude-config-dir] account id is not registered; falling through', {
+      source,
+      id,
+    });
+  }
+
+  return resolveActiveClaudeRoot(config);
 }
 
 /**
@@ -235,11 +305,17 @@ export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | 
 export function describeClaudeCodeAccounts(
   config: ConfigReader = configManager
 ): NonNullable<ServerConfig['claudeCode']> {
-  const { activeAccount, accounts } = readClaudeCodeConfig(config);
+  const { defaultAccount, accounts } = readClaudeCodeConfig(config);
   return {
-    resolvedAccount: activeAccount ?? inheritedClaudeRoot(),
-    inherited: activeAccount === null,
+    resolvedAccount: defaultAccount ?? inheritedClaudeRoot(),
+    inherited: defaultAccount === null,
     accounts: accounts.map((account) => ({
+      // The id agents and launch hints reference this account by. Never `null`
+      // for a REGISTERED account, including on a config the migration has not
+      // reached — `readClaudeCodeConfig` heals the id in. `null` on the wire is
+      // reserved for a row a caller synthesizes to describe an unregistered
+      // root, which nothing can point at (`ServerConfigSchema.claudeCode`).
+      id: account.id,
       path: account.path,
       label: account.label,
       // NOT `exists`: this is D4's structural check, so a directory that is

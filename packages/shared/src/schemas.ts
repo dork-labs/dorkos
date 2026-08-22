@@ -592,6 +592,19 @@ export const SendMessageRequestSchema = z
      */
     runtime: z.string().optional(),
     /**
+     * Which Claude Code account this session should run and BILL on — a
+     * registry id (`runtimes.claudeCode.accounts[].id`), never a path.
+     *
+     * A launch hint, on the same lifecycle as `runtime` above: honored only on
+     * the message that CREATES the session, and only for the claude-code
+     * runtime. A later send, another runtime, or an id that is not registered is
+     * ignored with a logged warning — after launch the account is a fact on disk
+     * (ADR 260801-204127) and nothing can move it. Absent means "resolve the
+     * ladder": the agent's own account, else the server default, else the
+     * environment (ADR 260821-205323).
+     */
+    account: z.string().min(1).optional(),
+    /**
      * Path to the agent directory whose `.dork/agent.json` manifest seeded this
      * session. Recorded on first message for provenance. Ignored on subsequent
      * calls (session ownership is immutable).
@@ -3264,6 +3277,10 @@ export const ServerConfigSchema = z
         accounts: z
           .array(
             z.object({
+              id: z.string().nullable().openapi({
+                description:
+                  'The registry id agents and session launch hints reference this account by, or null for a row DorkOS synthesized to describe an unregistered root (the inherited $CLAUDE_CONFIG_DIR, ~/.claude). A null row is display-only — nothing can point at it until the operator registers it',
+              }),
               path: z.string().openapi({
                 description: "Absolute path of the account's Claude config directory",
               }),

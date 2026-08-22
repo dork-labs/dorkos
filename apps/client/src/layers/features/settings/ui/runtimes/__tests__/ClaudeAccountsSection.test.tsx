@@ -125,42 +125,42 @@ describe('ClaudeAccountsSection', () => {
       resolvedAccount: HOME,
       inherited: true,
       accounts: [
-        { path: HOME, label: 'Personal', isAccountRoot: true },
-        { path: WORK, label: 'Acme Corp', isAccountRoot: true },
+        { id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true },
+        { id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true },
       ],
     });
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
 
     await chooseOption(user, 'Acme Corp');
     expect(transport.updateConfig).toHaveBeenCalledWith({
-      runtimes: { claudeCode: { activeAccount: WORK } },
+      runtimes: { claudeCode: { defaultAccount: WORK } },
     });
   });
 
-  it('writes activeAccount: null when Default is chosen', async () => {
+  it('writes defaultAccount: null when Default is chosen', async () => {
     const user = userEvent.setup();
     const transport = renderSection({
       resolvedAccount: WORK,
       inherited: false,
-      accounts: [{ path: WORK, label: 'Acme Corp', isAccountRoot: true }],
+      accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true }],
     });
     await waitFor(() => expect(screen.getByTestId('claude-account-row')).toBeInTheDocument());
 
     await chooseOption(user, 'Default');
     expect(transport.updateConfig).toHaveBeenCalledWith({
-      runtimes: { claudeCode: { activeAccount: null } },
+      runtimes: { claudeCode: { defaultAccount: null } },
     });
   });
 
   it('offers the account in use even when it was never registered', async () => {
-    // `activeAccount` can be set by hand in `~/.dork/config.json` (the
+    // `defaultAccount` can be set by hand in `~/.dork/config.json` (the
     // configuration guide shows exactly that) without appearing under
     // `accounts`. A picker built from the roster alone would then have no option
     // matching its own value and would render blank.
     renderSection({
       resolvedAccount: WORK,
       inherited: false,
-      accounts: [{ path: HOME, label: 'Personal', isAccountRoot: true }],
+      accounts: [{ id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true }],
     });
 
     await waitFor(() =>
@@ -175,7 +175,7 @@ describe('ClaudeAccountsSection', () => {
     const transport = renderSection({
       resolvedAccount: HOME,
       inherited: true,
-      accounts: [{ path: HOME, label: 'Personal', isAccountRoot: true }],
+      accounts: [{ id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true }],
     });
     await waitFor(() => expect(screen.getByText('Personal')).toBeInTheDocument());
 
@@ -189,12 +189,48 @@ describe('ClaudeAccountsSection', () => {
       runtimes: {
         claudeCode: {
           accounts: [
-            { path: HOME, label: 'Personal' },
-            { path: WORK, label: null },
+            { id: 'personal', path: HOME, label: 'Personal' },
+            // The new account's stable reference, minted from its folder name
+            // because the operator typed only whitespace for a label.
+            { id: 'claude2', path: WORK, label: null },
           ],
         },
       },
     });
+  });
+
+  it('never mints an id a LATER row already owns', async () => {
+    // A half-migrated registry: the first row has no id yet, the second already
+    // holds the id that row's label slugifies to. Reserving ids as the walk goes
+    // would hand both rows `acme-corp` — one account unreachable, and a patch
+    // the server now refuses outright.
+    const user = userEvent.setup();
+    const transport = renderSection({
+      resolvedAccount: HOME,
+      inherited: true,
+      accounts: [
+        // Two labels that slugify to the SAME id, only one of which has been
+        // assigned one yet.
+        { id: null, path: HOME, label: 'Acme Corp', isAccountRoot: true },
+        { id: 'acme-corp', path: WORK, label: 'ACME corp', isAccountRoot: true },
+      ],
+    });
+    await waitFor(() => expect(screen.getAllByTestId('claude-account-row')).toHaveLength(2));
+
+    // The add path rewrites the WHOLE list, so both rows go through the mint.
+    await openAddForm(user);
+    await user.type(screen.getByLabelText('Account folder'), '/Users/dev/.claude9');
+    await user.type(screen.getByLabelText('Name'), 'Third');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    const patch = vi.mocked(transport.updateConfig).mock.calls[0]![0] as {
+      runtimes: { claudeCode: { accounts: { id: string }[] } };
+    };
+    const ids = patch.runtimes.claudeCode.accounts.map((a) => a.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    // The row that already owns `acme-corp` keeps it; the un-migrated row takes
+    // the next free spelling rather than colliding with it.
+    expect(ids).toEqual(['acme-corp-2', 'acme-corp', 'third']);
   });
 
   it("refuses a path that is not the folder's full path, and says what to type", async () => {
@@ -236,7 +272,7 @@ describe('ClaudeAccountsSection', () => {
     renderSection({
       resolvedAccount: HOME,
       inherited: true,
-      accounts: [{ path: WORK, label: 'Acme Corp', isAccountRoot: true }],
+      accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true }],
     });
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
 
@@ -253,8 +289,8 @@ describe('ClaudeAccountsSection', () => {
       resolvedAccount: WORK,
       inherited: false,
       accounts: [
-        { path: HOME, label: 'Personal', isAccountRoot: true },
-        { path: WORK, label: 'Acme Corp', isAccountRoot: true },
+        { id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true },
+        { id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true },
       ],
     });
     await waitFor(() => expect(screen.getAllByTestId('claude-account-row')).toHaveLength(2));
@@ -268,7 +304,10 @@ describe('ClaudeAccountsSection', () => {
     expect(transport.updateConfig).toHaveBeenCalledTimes(1);
     expect(transport.updateConfig).toHaveBeenCalledWith({
       runtimes: {
-        claudeCode: { accounts: [{ path: HOME, label: 'Personal' }], activeAccount: null },
+        claudeCode: {
+          accounts: [{ id: 'personal', path: HOME, label: 'Personal' }],
+          defaultAccount: null,
+        },
       },
     });
   });
@@ -279,8 +318,8 @@ describe('ClaudeAccountsSection', () => {
       resolvedAccount: WORK,
       inherited: false,
       accounts: [
-        { path: HOME, label: 'Personal', isAccountRoot: true },
-        { path: WORK, label: 'Acme Corp', isAccountRoot: true },
+        { id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true },
+        { id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true },
       ],
     });
     await waitFor(() => expect(screen.getByText('Personal')).toBeInTheDocument());
@@ -289,7 +328,7 @@ describe('ClaudeAccountsSection', () => {
 
     expect(transport.updateConfig).toHaveBeenCalledTimes(1);
     expect(transport.updateConfig).toHaveBeenCalledWith({
-      runtimes: { claudeCode: { accounts: [{ path: WORK, label: 'Acme Corp' }] } },
+      runtimes: { claudeCode: { accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp' }] } },
     });
   });
 
@@ -300,7 +339,7 @@ describe('ClaudeAccountsSection', () => {
       // `isAccountRoot` is the STRUCTURAL check (spec D4): a folder that really
       // exists but holds no `projects/` reports false, so the copy must not
       // claim the folder is missing.
-      accounts: [{ path: WORK, label: 'Acme Corp', isAccountRoot: false }],
+      accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: false }],
     });
 
     await waitFor(() =>
@@ -314,7 +353,7 @@ describe('ClaudeAccountsSection', () => {
     renderSection({
       resolvedAccount: HOME,
       inherited: true,
-      accounts: [{ path: WORK, label: 'Acme Corp', isAccountRoot: true }],
+      accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true }],
     });
 
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
@@ -334,8 +373,8 @@ describe('ClaudeAccountsSection', () => {
       resolvedAccount: HOME,
       inherited: true,
       accounts: [
-        { path: HOME, label: 'Personal', isAccountRoot: true },
-        { path: WORK, label: 'Acme Corp', isAccountRoot: true },
+        { id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true },
+        { id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true },
       ],
     });
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());

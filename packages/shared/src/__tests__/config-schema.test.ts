@@ -4,6 +4,8 @@ import { PERMISSION_STOPS } from '../permission-semantics.js';
 import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
+  healClaudeAccountRename,
+  settleLegacyAccountAlias,
   SENSITIVE_CONFIG_KEYS,
   LOG_LEVEL_MAP,
   ONBOARDING_STEPS,
@@ -126,7 +128,7 @@ describe('UserConfigSchema', () => {
         default: 'claude-code',
         defaultTrustStop: null,
         claudeCode: {
-          activeAccount: null,
+          defaultAccount: null,
           accounts: [],
           defaultModel: null,
           defaultEffort: null,
@@ -479,7 +481,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         default: 'claude-code',
         defaultTrustStop: null,
         claudeCode: {
-          activeAccount: null,
+          defaultAccount: null,
           accounts: [],
           defaultModel: null,
           defaultEffort: null,
@@ -771,7 +773,7 @@ describe('UserConfigSchema runtimes', () => {
       default: 'claude-code',
       defaultTrustStop: null,
       claudeCode: {
-        activeAccount: null,
+        defaultAccount: null,
         accounts: [],
         defaultModel: null,
         defaultEffort: null,
@@ -805,7 +807,7 @@ describe('UserConfigSchema runtimes', () => {
       default: 'claude-code',
       defaultTrustStop: null,
       claudeCode: {
-        activeAccount: null,
+        defaultAccount: null,
         accounts: [],
         defaultModel: null,
         defaultEffort: null,
@@ -997,7 +999,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     // The default IS today's behavior: nothing selected, so resolution falls
     // through to the inherited environment.
     expect(UserConfigSchema.parse({ version: 1 }).runtimes.claudeCode).toEqual({
-      activeAccount: null,
+      defaultAccount: null,
       accounts: [],
       defaultModel: null,
       defaultEffort: null,
@@ -1014,7 +1016,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       runtimes: { opencode: { enabled: false } },
     });
     expect(result.runtimes.claudeCode).toEqual({
-      activeAccount: null,
+      defaultAccount: null,
       accounts: [],
       defaultModel: null,
       defaultEffort: null,
@@ -1023,30 +1025,153 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     });
   });
 
-  it('keeps an active account and a labelled roster verbatim', () => {
+  it('keeps a default account and a labelled roster verbatim', () => {
     const result = UserConfigSchema.parse({
       version: 1,
       runtimes: {
         claudeCode: {
-          activeAccount: '/Users/me/.claude2',
+          defaultAccount: '/Users/me/.claude2',
           accounts: [
-            { path: '/Users/me/.claude', label: 'Acme Corp' },
-            { path: '/Users/me/.claude2', label: null },
+            { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
+            { id: 'claude2', path: '/Users/me/.claude2', label: null },
           ],
         },
       },
     });
     expect(result.runtimes.claudeCode).toEqual({
-      activeAccount: '/Users/me/.claude2',
+      defaultAccount: '/Users/me/.claude2',
       accounts: [
-        { path: '/Users/me/.claude', label: 'Acme Corp' },
-        { path: '/Users/me/.claude2', label: null },
+        { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
+        { id: 'claude2', path: '/Users/me/.claude2', label: null },
       ],
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
       persistentSession: false,
     });
+  });
+
+  it('heals a registry written before ids existed, rather than refusing it', () => {
+    // Every config file that has ever been written is missing `accounts[].id`
+    // until the `'0.65.0'` migration runs — and a dev tree runs no migrations at
+    // all. Zod parses the whole MERGED config inside `applyConfigPatch`, so a
+    // refusal here is every settings write in the cockpit refused.
+    const parsed = UserConfigSchema.parse({
+      version: 1,
+      runtimes: {
+        claudeCode: {
+          accounts: [
+            { path: '/Users/me/.claude2', label: 'Acme Corp' },
+            { path: '/Users/me/.claude3', label: null },
+          ],
+        },
+      },
+    });
+    expect(parsed.runtimes.claudeCode.accounts).toEqual([
+      { id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' },
+      { id: 'claude3', path: '/Users/me/.claude3', label: null },
+    ]);
+  });
+
+  it('reserves ids a LATER row already owns before minting one', () => {
+    // A half-migrated registry. Seeding the taken set as it walks would let the
+    // first row mint `acme-corp` and collide with the row that already holds it.
+    const parsed = UserConfigSchema.parse({
+      version: 1,
+      runtimes: {
+        claudeCode: {
+          accounts: [
+            { path: '/a/.claude', label: 'Acme Corp' },
+            { id: 'acme-corp', path: '/b/.claude', label: 'Acme Corp' },
+          ],
+        },
+      },
+    });
+    expect(parsed.runtimes.claudeCode.accounts.map((a) => a.id)).toEqual([
+      'acme-corp-2',
+      'acme-corp',
+    ]);
+  });
+
+  it('never invents the same id twice while healing', () => {
+    const parsed = UserConfigSchema.parse({
+      version: 1,
+      runtimes: {
+        claudeCode: {
+          accounts: [
+            { path: '/a/.claude', label: 'Acme Corp' },
+            { path: '/b/.claude', label: 'ACME corp' },
+            { path: '/c/.claude', label: null },
+          ],
+        },
+      },
+    });
+    const ids = parsed.runtimes.claudeCode.accounts.map((a) => a.id);
+    expect(ids).toEqual(['acme-corp', 'acme-corp-2', 'claude']);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('reads a pre-rename default, and answers in ONE spelling', () => {
+    // Two claims, and the second is a contract rather than an observable end to
+    // end: a parse would strip the retired key anyway. Stating it here keeps the
+    // function honest for any caller that does not go through the object schema.
+    const healed = healClaudeAccountRename({
+      activeAccount: '/Users/me/.claude2',
+      accounts: [],
+    }) as Record<string, unknown>;
+
+    expect(healed.defaultAccount).toBe('/Users/me/.claude2');
+    expect(healed).not.toHaveProperty('activeAccount');
+  });
+
+  it('lets a real value under the new name outrank the retired one', () => {
+    const healed = healClaudeAccountRename({
+      activeAccount: '/Users/me/.claude2',
+      defaultAccount: '/Users/me/.claude3',
+    }) as Record<string, unknown>;
+
+    expect(healed.defaultAccount).toBe('/Users/me/.claude3');
+    expect(healed).not.toHaveProperty('activeAccount');
+  });
+
+  it('leaves a block with no retired key completely alone', () => {
+    const block = { defaultAccount: null, accounts: [] };
+    expect(healClaudeAccountRename(block)).toBe(block);
+  });
+
+  it('settles the retired key only when the patch NAMES the new one', () => {
+    // `null` is both "never set" and "go back to inheriting". Only the patch
+    // knows which, so this is where a deliberate clear is protected from the
+    // heal that would otherwise resurrect the old account.
+    const merged = { runtimes: { claudeCode: { activeAccount: '/a', defaultAccount: null } } };
+    settleLegacyAccountAlias(merged, { runtimes: { claudeCode: { defaultAccount: null } } });
+    expect(merged.runtimes.claudeCode).not.toHaveProperty('activeAccount');
+
+    const untouched = { runtimes: { claudeCode: { activeAccount: '/a', defaultAccount: null } } };
+    settleLegacyAccountAlias(untouched, { ui: { theme: 'light' } });
+    expect(untouched.runtimes.claudeCode).toHaveProperty('activeAccount');
+  });
+
+  it('refuses two accounts sharing an id', () => {
+    // An id is a REFERENCE: an agent manifest and a launch hint name an account
+    // by it and the resolver takes the first match, so a duplicate makes one
+    // account unreachable and silently bills every agent naming it to the other
+    // one's subscription. Healing can never produce this; a hand edit can.
+    const result = UserConfigSchema.safeParse({
+      version: 1,
+      runtimes: {
+        claudeCode: {
+          accounts: [
+            { id: 'acme-corp', path: '/a/.claude', label: 'Acme Corp' },
+            { id: 'acme-corp', path: '/b/.claude', label: 'Other' },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain('Duplicate Claude account id');
+    // Named at the row that collides, so an editor can point at it.
+    expect(result.error?.issues[0]?.path).toEqual(['runtimes', 'claudeCode', 'accounts', 1, 'id']);
   });
 
   it('rejects an account with an empty path', () => {

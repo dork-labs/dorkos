@@ -150,6 +150,7 @@ export class AgentRegistry {
         icon: agent.icon ?? null,
         model: agent.model ?? null,
         effort: agent.effort ?? null,
+        account: agent.account ?? null,
         registeredAt: agent.registeredAt,
         updatedAt: now,
       })
@@ -172,6 +173,7 @@ export class AgentRegistry {
           icon: agent.icon ?? null,
           model: agent.model ?? null,
           effort: agent.effort ?? null,
+          account: agent.account ?? null,
           updatedAt: now,
           status: 'active', // Re-registration clears unreachable
         },
@@ -307,6 +309,7 @@ export class AgentRegistry {
         icon: merged.icon ?? null,
         model: merged.model ?? null,
         effort: merged.effort ?? null,
+        account: merged.account ?? null,
         updatedAt: now,
       })
       .where(eq(agents.id, id))
@@ -528,6 +531,10 @@ export class AgentRegistry {
       // means "no preference" rather than travelling into an adapter as a value
       // nothing understands — the same hardening the session settings got.
       effort: EffortLevelSchema.safeParse(row.effort).data,
+      // An empty string would be an id nothing can match, so it reads as "no
+      // preference" rather than travelling into the launch ladder as a
+      // reference that always misses.
+      account: row.account || undefined,
       // enabledToolGroups is not yet persisted in the DB schema — defaults to {} (inherit global).
       // A future migration will add a JSON column; until then, read from the manifest file.
       enabledToolGroups: {},
