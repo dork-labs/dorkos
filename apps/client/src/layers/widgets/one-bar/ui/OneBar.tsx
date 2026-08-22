@@ -131,7 +131,10 @@ export function BarTitle({ children }: BarTitleProps) {
  */
 export function BarFixedCluster() {
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    // `data-slot` so the ordering invariant (I1) is targetable by name: a test
+    // or a browser check asks this element for its children rather than
+    // guessing at the header's last div.
+    <div data-slot="bar-fixed-cluster" className="flex shrink-0 items-center gap-2">
       <CommandPaletteTrigger />
       <InboxBell />
       <RightPanelToggle />
