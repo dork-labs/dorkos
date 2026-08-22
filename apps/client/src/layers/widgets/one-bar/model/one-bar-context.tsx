@@ -1,6 +1,6 @@
 import { createContext, use, type ReactNode } from 'react';
 import type { SessionOrigin } from '@dorkos/shared/types';
-import type { TeamViewMode } from '@/layers/shared/lib';
+import type { AgentVisual, TeamViewMode } from '@/layers/shared/lib';
 
 /**
  * What the shell already knows that a route's bar needs.
@@ -15,12 +15,45 @@ import type { TeamViewMode } from '@/layers/shared/lib';
  * Everything here is read-only and derived. Nothing writes back through it.
  */
 export interface OneBarRouteState {
+  /**
+   * Which session is open, absent when none is.
+   *
+   * The bar does not display it. It scopes what the bar is allowed to remember
+   * across renders — see `useLastKnownAgent`, where it is the difference
+   * between an identity that outlives a deleted agent and one that leaks onto
+   * the next conversation.
+   */
+  sessionId: string | undefined;
   /** Active session's agent name, absent when the session has no agent yet. */
   agentName: string | undefined;
+  /**
+   * The agent's emoji and colour, resolved through `resolveAgentVisual`.
+   *
+   * Absent exactly when {@link agentName} is — a bare directory has no agent to
+   * draw, and the hash-from-cwd face the favicon falls back to would be an
+   * avatar for something that isn't an agent (spec §5.3). The session bar draws
+   * a generic mark there instead.
+   */
+  agentVisual: AgentVisual | undefined;
   /** Active session's resolved origin. Absent or `'user'` shows no chip. */
   origin: SessionOrigin | undefined;
   /** The session's own origin label, preferred over the descriptor's fallback. */
   originLabel: string | undefined;
+  /**
+   * What this conversation is called — the same runtime-owned title the sidebar
+   * session rows render, read from the one session cache every surface shares,
+   * so the bar and the sidebar can never disagree about a session's name.
+   *
+   * Empty or absent until the runtime titles the session after the first turn;
+   * the bar says "New session" meanwhile and swaps in place when the title
+   * arrives (the global session stream patches this cache — no new API).
+   */
+  sessionTitle: string | undefined;
+  /**
+   * The working directory's basename — the identity for a session with no
+   * agent, where there is no name to show and inventing one would be a lie.
+   */
+  sessionDirectoryName: string | undefined;
   /**
    * The open room's spoken name on `/channels`, resolved once by the shell
    * (`useRoomDocumentTitle`) — the same room, resolved the same way the browser
