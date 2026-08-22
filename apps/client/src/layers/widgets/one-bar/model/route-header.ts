@@ -18,10 +18,49 @@ interface HeaderRouteMatch {
 
 /** Which bar to render, and the key the cross-fade animates on. */
 export interface ResolvedRouteHeader {
-  /** `AnimatePresence` key — the route that owns this bar. */
+  /** `AnimatePresence` key — the BAR, not the route (see {@link barKey}). */
   key: string;
   /** The bar itself — never `null`; a chain that declares none resolves to `null` whole. */
   Header: NonNullable<RouteHeader>;
+}
+
+/**
+ * One stable key per bar COMPONENT, so routes that share a bar share its key.
+ *
+ * **Why not the route id, which is what this was.** Four home routes declare the
+ * same `HomeSurfaceBar`. Keyed by route, every tab press gave `AnimatePresence`
+ * a new key — so it faded the whole bar out and a fresh one in, unmounting the
+ * tab strip the person had just pressed. The strip lost its scroll position, the
+ * `layoutId` underline could not slide (the element it would slide from was
+ * gone), and the row dipped to zero opacity on a navigation where nothing in it
+ * changes but which tab is lit. Keyed by the component, the same bar stays
+ * mounted across those four routes and React reconciles it in place: the strip
+ * is the same DOM node before and after, and the underline animates between
+ * tabs the way it was always meant to.
+ *
+ * Routes with DIFFERENT bars still get different keys, so `/channels` → `/team`
+ * cross-fades exactly as before.
+ *
+ * Identity, not name: a `WeakMap` keyed on the component itself. Two bars can
+ * share a display name (and a production build may mangle both), which would
+ * silently collapse two different bars onto one key — the DOR-587 failure mode
+ * wearing a new hat.
+ */
+const BAR_KEYS = new WeakMap<NonNullable<RouteHeader>, string>();
+let nextBarKey = 0;
+
+/**
+ * The cross-fade key for one bar component.
+ *
+ * @param Header - The bar a route declared.
+ * @returns A key that is the same for every route declaring that same bar.
+ */
+function barKey(Header: NonNullable<RouteHeader>): string {
+  const existing = BAR_KEYS.get(Header);
+  if (existing !== undefined) return existing;
+  const key = `bar-${nextBarKey++}`;
+  BAR_KEYS.set(Header, key);
+  return key;
 }
 
 /**
@@ -54,7 +93,7 @@ export function resolveRouteHeader(
     // a chain that declares no bar; throwing on a missing key would turn a
     // shell that draws no header into a shell that draws nothing at all.
     const header = matches[i].staticData?.header;
-    if (header) return { key: matches[i].routeId, Header: header };
+    if (header) return { key: barKey(header), Header: header };
   }
   return null;
 }

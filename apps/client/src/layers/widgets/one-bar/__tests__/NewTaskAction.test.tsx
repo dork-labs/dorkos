@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { TasksHeader } from '../ui/TasksHeader';
+import { NewTaskAction } from '../ui/NewTaskAction';
 import { BarHarness } from './bar-harness';
 
 // The fixed cluster OneBar renders. Both are real widgets with their own data
@@ -53,26 +53,17 @@ beforeAll(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('TasksHeader', () => {
-  it('titles the page "Scheduled", the same word as its tab', () => {
-    // The route is still `/tasks` and the tab bar directly below this header
-    // says "Scheduled". A header reading "Tasks" made one screen disagree with
-    // itself, which is the whole reason this assertion exists.
-    render(
-      <BarHarness>
-        <TasksHeader />
-      </BarHarness>
-    );
-
-    expect(screen.getByText('Scheduled')).toBeInTheDocument();
-  });
+describe('NewTaskAction', () => {
+  // The page's NAME is the tab now — "Scheduled" is drawn by the shared
+  // home-surface strip, and `HomeSurfaceBar.test.tsx` pins that it says so on
+  // this route. What is left here is what Scheduled adds to that bar.
 
   it('still calls the thing you create a task', () => {
     // Renaming the page did not rename the noun: task creation keeps its own
     // vocabulary, here and in the dialogs.
     render(
       <BarHarness>
-        <TasksHeader />
+        <NewTaskAction />
       </BarHarness>
     );
 

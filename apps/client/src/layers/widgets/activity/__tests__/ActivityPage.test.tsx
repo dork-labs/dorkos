@@ -15,6 +15,9 @@ vi.mock('@/layers/features/activity-feed-page', () => ({
   useActivityFilters: () => ({ queryFilters: {}, isFiltered: false }),
   useLastVisitedActivity: () => null,
   ActivitySinceLastVisit: () => null,
+  // The chips are the filter feature's and have their own suite; what this file
+  // asserts is WHERE they are rendered, which is a fact about this page.
+  ActivityFilterBar: () => <div data-testid="activity-filter-bar">filters</div>,
 }));
 
 vi.mock('../ui/ActivityTimeline', () => ({
@@ -42,6 +45,19 @@ describe('ActivityPage', () => {
     useExtensionRegistry.setState({ slots: createInitialSlots() });
     useSessionActivity.mockReset();
     useSessionActivity.mockReturnValue({ dailyCounts: [1, 0, 0, 0, 0, 0, 2], degraded: false });
+  });
+
+  it('opens with the filters — they belong to the feed, not to the header (phase H1)', () => {
+    // They used to ride in the bar's identity zone, which left no room for the
+    // home surface tabs on a phone. A filter toolbar as the page's first row is
+    // the pattern the rest of the cockpit already uses.
+    render(<ActivityPage />);
+
+    const filters = screen.getByTestId('activity-filter-bar');
+    const timeline = screen.getByTestId('activity-timeline');
+    expect(filters.compareDocumentPosition(timeline) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
   });
 
   it('puts the week summary and extension sections above the feed, in that order', () => {

@@ -1,4 +1,23 @@
 /**
+ * How a decided card leaves — the one timing the whole card family shares.
+ *
+ * **Why this is in `shared` and not in `features/ask`.** Three slices now read
+ * this curve: the Ask cards it was written for, the capability-approval card,
+ * and the schedule-approval card, which times its settle hold by it so the hold
+ * and the exit can never disagree. A feature may not import a sibling feature's
+ * model, so a definition parked in `features/ask` is reachable by exactly the
+ * ones willing to reach through its barrel — which is how a fourth card ends up
+ * hard-coding 0.4 and 0.2 and drifting the first time somebody retunes them.
+ * `shared` is the only layer all three can see, and it is a pure function of two
+ * booleans with no feature knowledge in it at all.
+ *
+ * `features/ask` re-exports it, because the Ask cards are still where this curve
+ * is felt and a caller reaching for it through that slice is not wrong to.
+ *
+ * @module shared/lib/ask-exit-transition
+ */
+
+/**
  * How long an answered card holds its receipt before it melts away, in
  * seconds.
  *

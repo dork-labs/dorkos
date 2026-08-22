@@ -185,7 +185,7 @@ test.describe('The moments #team marks @smoke', () => {
 });
 
 test.describe('Home is the #team room @smoke', () => {
-  test('`/` opens the room: its masthead, its feed, its composer', async ({
+  test('`/` opens the room: no masthead, its feed, its composer', async ({
     page,
     basePage,
     homeSurface,
@@ -198,10 +198,19 @@ test.describe('Home is the #team room @smoke', () => {
     await basePage.goto();
     await basePage.waitForAppReady();
 
-    // The masthead is the room's, not a page title: home is addressed by a
-    // well-known key, so what proves it resolved is the room's own chrome.
-    await expect(roomsPage.roomHeading).toContainText('team', { timeout: SERVER_ROUND_TRIP_MS });
-    await expect(homeSurface.composerField).toHaveAttribute('placeholder', /#team/);
+    // **Home draws no room masthead at all** (One Bar, phase H1). It used to
+    // draw one, and that is what this assertion used to check — but Home's
+    // identity is the Home tab in the bar, so a heading naming the room under it
+    // was a second identity row that cost the feed a row on every phone. A count
+    // of zero rather than "not visible": an element that is merely hidden still
+    // matches, and the claim here is that it is not rendered.
+    await expect(roomsPage.roomHeading).toHaveCount(0);
+    // So what proves the room resolved is the box you type into. Home is
+    // addressed by a well-known key rather than a URL, and this is the surface
+    // that names the destination it posts to.
+    await expect(homeSurface.composerField).toHaveAttribute('placeholder', /#team/, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
 
     // The feed is the ROOM's — `room-timeline` only exists once something has
     // been said, so what is asserted here is the surface that is always there.
@@ -209,9 +218,11 @@ test.describe('Home is the #team room @smoke', () => {
     await expect(page.getByRole('heading', { name: /your agents/i })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /system status/i })).toHaveCount(0);
 
-    // And it is the SAME widget under the alias, not a second copy. Both
-    // addresses draw ONE room masthead; a fork would draw two trees, and the
-    // count is what says which happened.
+    // And it is the SAME widget under the alias, not a second copy. `/channels`
+    // still draws the masthead Home does without (phase R1 gives that route a
+    // room bar of its own and retires it), so the alias is where the room's own
+    // chrome can still be pointed at — and ONE of it is what says a fork did not
+    // happen.
     await page.goto(`/channels?id=${team.id}`);
     await basePage.waitForAppReady();
     await expect(roomsPage.roomHeading).toContainText('team', { timeout: SERVER_ROUND_TRIP_MS });

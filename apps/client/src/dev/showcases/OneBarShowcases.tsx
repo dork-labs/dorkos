@@ -1,8 +1,10 @@
 import { Plus } from 'lucide-react';
 import { Badge, BarTabStrip, Button, type BarTab } from '@/layers/shared/ui';
+import { SystemHealthDot } from '@/layers/features/top-nav';
 import {
   OneBar,
   BarTitle,
+  BarMembersChip,
   TitleBar,
   OneBarProvider,
   BarFixedCluster,
@@ -108,7 +110,10 @@ export function OneBarShowcases() {
           </BarFrame>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Tabs in the identity zone — the home surfaces (phase H1)</ShowcaseLabel>
+        <ShowcaseLabel>
+          The home surface bar — tabs are the identity, and the health dot is the last chip on all
+          four surfaces so it never moves as you switch tabs
+        </ShowcaseLabel>
         <ShowcaseDemo>
           <BarFrame>
             <OneBar
@@ -119,6 +124,62 @@ export function OneBarShowcases() {
                   label="Home sections"
                   indicatorLayoutId="playground-home-tabs"
                 />
+              }
+              chips={
+                <>
+                  <BarMembersChip count={12} roomName="#team" onClick={() => {}} />
+                  <SystemHealthDot state="healthy" />
+                </>
+              }
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The same bar on Scheduled — no members chip (that is Home&apos;s room), a page action
+          instead, and the dot stays exactly where it was
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame>
+            <OneBar
+              identity={
+                <BarTabStrip
+                  tabs={HOME_TABS}
+                  activeTabId="scheduled"
+                  label="Home sections, Scheduled"
+                  indicatorLayoutId="playground-home-tabs-scheduled"
+                />
+              }
+              chips={<SystemHealthDot state="degraded" />}
+              actions={
+                <Button variant="outline" size="xs">
+                  <Plus />
+                  New Task
+                </Button>
+              }
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The home surface bar at 390px — the strip scrolls, the chips do not
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame width={390}>
+            <OneBar
+              identity={
+                <BarTabStrip
+                  tabs={HOME_TABS}
+                  activeTabId="home"
+                  label="Home sections, phone"
+                  indicatorLayoutId="playground-home-tabs-phone"
+                />
+              }
+              chips={
+                <>
+                  <BarMembersChip count={46} roomName="#team" onClick={() => {}} />
+                  <SystemHealthDot state="error" />
+                </>
               }
             />
           </BarFrame>
@@ -194,8 +255,9 @@ export function OneBarShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
-          Standalone row (`density="row"`) — 44px touch targets and its own hairline, which is how
-          the home surface wears it today
+          Standalone row (`density=&quot;row&quot;`) — 44px touch targets and its own hairline. No
+          route wears this today: the home surface wore it until its tabs moved into the bar (phase
+          H1), and it is kept for a strip that owns a row of its own inside a page
         </ShowcaseLabel>
         <ShowcaseDemo>
           <div className="bg-background overflow-hidden rounded-md border">

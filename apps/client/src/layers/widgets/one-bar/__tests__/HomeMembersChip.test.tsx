@@ -1,0 +1,155 @@
+// @vitest-environment jsdom
+/**
+ * The one thing Home adds to the shared home-surface bar: #team's head count
+ * (spec `one-bar-header` §3.4, phase H1).
+ *
+ * The bar itself is proven in `HomeSurfaceBar.test.tsx`; what this file asserts
+ * is the chip, because the chip is where a wrong number would be believed. Home IS #team, so it is the count of the room the page below is
+ * already showing, read from the same query — never a second request and never
+ * a placeholder that corrects itself a moment later.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { TooltipProvider } from '@/layers/shared/ui';
+
+/** #team as `useTeamRoom` answers, and its roster as `useRoom` answers. */
+const { room, roster, status, roomAsked } = vi.hoisted(() => ({
+  room: {
+    current: {
+      id: 'team-room',
+      kind: 'channel',
+      slug: 'team',
+      title: '#team',
+      topic: null,
+      archived: false,
+      createdAt: '2026-08-21T00:00:00.000Z',
+      bridge: null,
+    } as Record<string, unknown> | null,
+  },
+  roster: { members: undefined as { members: { authorId: string }[] } | undefined },
+  // What `useTeamRoom` is answering on this render. `ready` unless a test says
+  // otherwise — the archived case is the one that must not draw a chip.
+  status: { current: 'ready' as 'ready' | 'archived' },
+  // Every id `useRoom` is asked for, so a test can prove a request was NOT made.
+  roomAsked: vi.fn(),
+}));
+
+vi.mock('@/layers/entities/room', () => ({
+  useTeamRoom: () => ({
+    status: room.current ? status.current : 'missing',
+    room: room.current,
+  }),
+  useRoom: (roomId: string | null) => {
+    roomAsked(roomId);
+    // The real hook is `enabled` on the id: a `null` room is never fetched, so
+    // it has no data either.
+    return { data: roomId === null ? undefined : roster.members };
+  },
+  roomDisplayTitle: () => '#team',
+}));
+
+const detailsDialog = vi.fn();
+vi.mock('@/layers/features/room-management', () => ({
+  RoomDetailsDialog: (props: { focus: string }) => {
+    detailsDialog(props);
+    return <div data-testid="room-details">{props.focus}</div>;
+  },
+}));
+
+import { HomeMembersChip } from '../ui/HomeMembersChip';
+
+/** Four agents and you, which is what a real #team looks like early on. */
+function members(count: number) {
+  return { members: Array.from({ length: count }, (_, i) => ({ authorId: `author-${i}` })) };
+}
+
+function renderHomeBar() {
+  return render(
+    <TooltipProvider>
+      <HomeMembersChip />
+    </TooltipProvider>
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  status.current = 'ready';
+  roster.members = members(5);
+  room.current = {
+    id: 'team-room',
+    kind: 'channel',
+    slug: 'team',
+    title: '#team',
+    topic: null,
+    archived: false,
+    createdAt: '2026-08-21T00:00:00.000Z',
+    bridge: null,
+  };
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+describe('HomeMembersChip', () => {
+  it('says how many are in #team, and says it as a name a screen reader can use', () => {
+    renderHomeBar();
+
+    const chip = screen.getByRole('button', { name: '5 members' });
+    expect(chip).toHaveTextContent('5');
+  });
+
+  it('counts one member in the singular', () => {
+    roster.members = members(1);
+    renderHomeBar();
+
+    expect(screen.getByRole('button', { name: '1 member' })).toBeInTheDocument();
+  });
+
+  it('draws nothing until the roster has actually arrived', () => {
+    // A chip that opens on `0` and corrects itself has told the reader something
+    // false about their own team, and a wrong number is not one people re-check.
+    roster.members = undefined;
+    renderHomeBar();
+
+    expect(screen.queryByTestId('bar-members-chip')).not.toBeInTheDocument();
+  });
+
+  it('draws nothing for an archived #team, and does not ask for its roster', () => {
+    // Home draws no conversation at all when #team is archived — it offers to
+    // bring the room back instead. A head count beside that offer would be a
+    // control for something that is not on screen, and the sheet behind it would
+    // manage members of a room the owner deliberately put away.
+    status.current = 'archived';
+    renderHomeBar();
+
+    expect(screen.queryByTestId('bar-members-chip')).not.toBeInTheDocument();
+    // And the roster read never runs: the hook is asked for `null`, which is
+    // what disables it. Asserting the request's ABSENCE, not just the chip's,
+    // because a guard that filtered the result afterwards would look identical
+    // on screen while still costing a fetch on every archived load.
+    expect(roomAsked).toHaveBeenCalledWith(null);
+    expect(roomAsked).not.toHaveBeenCalledWith('team-room');
+  });
+
+  it('draws nothing when there is no team room to count', () => {
+    room.current = null;
+    renderHomeBar();
+
+    expect(screen.queryByTestId('bar-members-chip')).not.toBeInTheDocument();
+  });
+
+  it('opens the room’s members when pressed, not some other part of it', async () => {
+    // The focus is the part of this that survives phase R2, when the same press
+    // opens the room right panel instead of the sheet.
+    const user = userEvent.setup();
+    renderHomeBar();
+
+    expect(screen.queryByTestId('room-details')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '5 members' }));
+
+    await waitFor(() => expect(screen.getByTestId('room-details')).toBeInTheDocument());
+    expect(detailsDialog).toHaveBeenCalledWith(expect.objectContaining({ focus: 'members' }));
+  });
+});

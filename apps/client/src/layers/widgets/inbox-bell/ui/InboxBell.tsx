@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Check } from 'lucide-react';
 import {
   Button,
@@ -9,6 +9,7 @@ import {
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
 } from '@/layers/shared/ui';
+import { listWaitingKinds } from '@/layers/shared/lib';
 import { useEventStream } from '@/layers/shared/model';
 import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
 import {
@@ -18,7 +19,10 @@ import {
   type NotificationLens,
 } from '@/layers/entities/notifications';
 import { AskList, useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
-import { ScheduleApprovalRow } from '@/layers/features/dashboard-attention';
+import {
+  ScheduleApprovalCard,
+  useScheduleApprovalCards,
+} from '@/layers/features/schedule-approval';
 import { InboxList } from '@/layers/features/inbox';
 import {
   ApprovalList,
@@ -30,53 +34,15 @@ import {
 import { usePinnedDrainBeat } from '../model/use-pinned-drain-beat';
 import { InboxBellPill, type InboxBellGlyph } from './InboxBellPill';
 
-/** The stagger the schedule rows inherit — the row declares the child half. */
-const staggerContainer = {
-  animate: { transition: { staggerChildren: 0.04 } },
-} as const;
-
 /**
- * The entrance for the "All clear ✓" line — the same fade-and-rise idiom the
- * schedule rows declare for themselves (see `ScheduleApprovalRow`), reused here
+ * The entrance for the "All clear ✓" line — the same fade-and-rise idiom every
+ * card in the Ask family arrives on (see `AskCard`'s `ENTRANCE`), reused here
  * because the beat is exactly that: one row's worth of motion, not a list.
  */
 const allClearVariants = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
 } as const;
-
-/**
- * "1 request", "2 schedules" — one counted noun, correctly pluralized.
- *
- * @param count - How many of this kind are waiting.
- * @param noun - The noun's singular form.
- */
-function countNoun(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
-}
-
-/**
- * Two or three kinds that are actually waiting, at once, named honestly and
- * joined with an Oxford comma — "1 request and 2 schedules", "1 question, 2
- * requests, and 3 schedules". Callers only reach this once more than one kind
- * is nonzero; a single kind gets its own sentence above, in its own words.
- *
- * Order matches the panel's own listing order below: questions first (their
- * window is the shortest), then capability requests, then schedules.
- *
- * @param approvals - Capability approvals waiting.
- * @param schedules - Parked schedules waiting.
- * @param asks - Prompts agents are parked on.
- */
-function listWaitingKinds(approvals: number, schedules: number, asks: number): string {
-  const parts = [
-    asks > 0 ? countNoun(asks, 'question') : null,
-    approvals > 0 ? countNoun(approvals, 'request') : null,
-    schedules > 0 ? countNoun(schedules, 'schedule') : null,
-  ].filter((part): part is string => part !== null);
-  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
-  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
-}
 
 /**
  * The pill's accessible name while something is waiting.
@@ -108,11 +74,15 @@ function waitingLabel(approvals: number, schedules: number, asks: number): strin
       : `${schedules} schedules want your approval. Open to answer them.`;
   }
   if (approvals === 0 && schedules === 0 && asks > 0) {
+    // **Questions, not agents.** One prompt is one entry in this queue whoever
+    // raised it, and two prompts from one agent are two things to answer — so
+    // counting agents here reported a different number than the badge beside it
+    // and than the mixed-state sentence below, which already said "1 question".
     return asks === 1
-      ? '1 agent is waiting on your answer. Open to answer it.'
-      : `${asks} agents are waiting on your answer. Open to answer them.`;
+      ? '1 question needs your answer. Open to answer it.'
+      : `${asks} questions need your answer. Open to answer them.`;
   }
-  return `${listWaitingKinds(approvals, schedules, asks)} are waiting on you. Open to answer them.`;
+  return `${listWaitingKinds(asks, approvals, schedules)} are waiting on you. Open to answer them.`;
 }
 
 /**
@@ -132,10 +102,12 @@ function waitingSummary(approvals: number, schedules: number, asks: number): str
     return `${subject} your approval. Nothing runs until you decide.`;
   }
   if (approvals === 0 && schedules === 0 && asks > 0) {
-    const subject = asks === 1 ? '1 agent is' : `${asks} agents are`;
-    return `${subject} waiting on your answer before carrying on.`;
+    // Same noun as the pill above and the mixed sentence below — one prompt is
+    // one question, however many agents raised them.
+    const subject = asks === 1 ? '1 question is' : `${asks} questions are`;
+    return `${subject} waiting on your answer. Nothing carries on until you answer.`;
   }
-  return `${listWaitingKinds(approvals, schedules, asks)} are waiting on you. Nothing runs until you decide.`;
+  return `${listWaitingKinds(asks, approvals, schedules)} are waiting on you. Nothing runs until you decide.`;
 }
 
 /**
@@ -235,6 +207,10 @@ export function InboxBell() {
   // while one is being said, or the receipt is torn away in the frame it
   // appears and the answer looks like a disappearance.
   const settling = useSettlingAsks();
+  // The same rule for the schedule cards: a just-approved proposal leaves the
+  // server's parked list within a frame, which would take the card AND this
+  // group out of the tree before the receipt could be read.
+  const shownSchedules = useScheduleApprovalCards(schedules);
   // What to call each asking agent. The wire carries ids only, so the roster is
   // joined here — the same join the sidebar's rows make.
   const agentNames = useAskAgentNames(asks);
@@ -315,7 +291,8 @@ export function InboxBell() {
   // the moment the queue drains, whether or not this panel is open, so it hangs
   // off `NotificationCenter` instead (see `usePinnedDrainBeat`).
   const beating = usePinnedDrainBeat(waitingCount + settling.length, open);
-  const showsPinned = waitingCount > 0 || settling.length > 0 || isError;
+  const showsPinned =
+    waitingCount > 0 || settling.length > 0 || shownSchedules.length > 0 || isError;
 
   const pill = resolvePill({
     waitingCount,
@@ -376,12 +353,13 @@ export function InboxBell() {
                   <h2 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
                     Needs You
                   </h2>
-                  {/* While only a receipt is left, the count is zero and the
-                      summary would call `waitingSummary(0, 0, 0)` directly —
-                      which returns ", and undefined are waiting on you.
-                      Nothing runs until you decide." (`listWaitingKinds` has
-                      no guard of its own for the all-zero case). It says what
-                      just happened instead. */}
+                  {/* While only a receipt is left the count is zero, and
+                      `waitingSummary(0, 0, 0)` has nothing to report. It says
+                      what just happened instead of counting nothing.
+                      (`listWaitingKinds` answers `''` for the all-zero case
+                      rather than the ", and undefined are waiting on you" it
+                      used to produce, so this branch is now about SAYING the
+                      right thing rather than about avoiding a broken string.) */}
                   {!unreadable &&
                     (waitingCount === 0 ? (
                       <p className="text-muted-foreground text-xs md:mt-1">Answered.</p>
@@ -419,29 +397,32 @@ export function InboxBell() {
                       is on a clock here — a proposal keeps until it is decided,
                       while a prompt expires in ten minutes and a capability hold
                       in two hours — so it goes under the two that do. */}
-                  {schedules.length > 0 && (
+                  {shownSchedules.length > 0 && (
                     <div className="mt-3">
                       <h3 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
                         Scheduled Runs
                       </h3>
-                      {/* The rows declare entrance `variants` but no `animate` of
-                          their own, so the parent must carry the label or they
-                          render stuck at their initial (invisible) variant. */}
-                      <motion.div
-                        variants={staggerContainer}
-                        initial="initial"
-                        animate="animate"
-                        className="mt-2"
-                      >
-                        {/* Answered in place, with no `onDecided` closing the
-                            panel: an approval card allowed here retires where it
+                      {/* `AnimatePresence` is what keeps a decided card mounted
+                          long enough to say so: `AskCard.Root` declares the
+                          hold-and-melt exit, and an exit nothing is watching for
+                          is an exit that never runs. */}
+                      <AnimatePresence initial={false}>
+                        {/* Answered in place, with no callback closing the
+                            panel: a schedule approved here retires where it
                             stands and the panel shrinks around it. Deciding the
                             last one empties the queue, which unmounts the pill
-                            on its own terms. */}
-                        {schedules.map((task) => (
-                          <ScheduleApprovalRow key={task.id} task={task} />
+                            on its own terms. Navigating IS different — see
+                            `onNavigate` — because the page it opens is behind
+                            this panel. */}
+                        {shownSchedules.map((task) => (
+                          <ScheduleApprovalCard
+                            key={task.id}
+                            task={task}
+                            className="mt-2"
+                            onNavigate={() => setOpen(false)}
+                          />
                         ))}
-                      </motion.div>
+                      </AnimatePresence>
                     </div>
                   )}
                 </div>

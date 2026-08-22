@@ -4,6 +4,7 @@ import {
   useFullActivityFeed,
   useActivityFilters,
   useLastVisitedActivity,
+  ActivityFilterBar,
   ActivitySinceLastVisit,
 } from '@/layers/features/activity-feed-page';
 import { ActivityTimeline } from './ui/ActivityTimeline';
@@ -36,6 +37,12 @@ export function ActivityPage() {
 
   return (
     <PageContainer width="wide" className="space-y-4">
+      {/* The filters, and the first thing on the page rather than a passenger in
+          the header (spec §3.4, phase H1). They belong to what they filter: the
+          bar above is the four home surfaces now, and a row of category chips
+          wedged into it left no room for the tabs on a phone. */}
+      <ActivityFilterBar />
+
       {/* How busy the week has been — zero DOM until the session list answers */}
       <ActivityWeekSummary />
 

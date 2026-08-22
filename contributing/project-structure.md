@@ -108,8 +108,8 @@ src/
 │       │   ├── model/
 │       │   ├── ui/
 │       │   └── index.ts
-│       ├── home/        # HomeSurfaceLayout + HomeTabBar + PinnedTriageHeader — the chrome over /, /activity, /tasks, /workspaces
-│       │   ├── lib/     #   home-tabs.ts: the four tabs and the pathname → active-tab resolver
+│       ├── home/        # HomeSurfaceLayout + PinnedTriageHeader — the chrome over /, /activity, /tasks, /workspaces (their shared tab strip rides in widgets/one-bar)
+│       │   ├── lib/     #   forward-look.ts, starter-chips.ts (the tab table lives in shared/config now)
 │       │   ├── ui/
 │       │   └── index.ts
 │       ├── marketplace/ # MarketplacePage (/marketplace), MarketplaceSourcesPage (/marketplace/sources)

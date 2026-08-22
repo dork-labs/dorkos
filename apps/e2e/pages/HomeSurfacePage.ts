@@ -6,7 +6,7 @@ import type { Locator, Page } from '@playwright/test';
  *
  * The labels and the paths disagree on purpose in one place: "Scheduled"
  * addresses `/tasks`. A URL is a contract, so the page was renamed and the route
- * was not (`widgets/home/lib/home-tabs.ts`). Duplicated here rather than
+ * was not (`layers/shared/config/home-tabs.ts`). Duplicated here rather than
  * imported — this package does not build against the client, and a test that
  * imports the table it is checking asserts nothing about it.
  */
@@ -29,15 +29,21 @@ export const HOME_TABS = [
 export const SIDEBAR_NAV_LABELS = ['Home', 'Team', 'Marketplace', 'Connections'] as const;
 
 /**
- * Page Object for the home surface — the tab bar over `/`, `/activity`,
+ * Page Object for the home surface — the tab strip over `/`, `/activity`,
  * `/tasks` and `/workspaces`, the shrunken sidebar beside it, and the "Jump back
  * in" panel that floats over the home composer.
+ *
+ * The strip rides INSIDE the one header bar since phase H1 — it used to be a
+ * second row under it. The testids did not move with it (`home-tabs` is a tour
+ * anchor), so every locator here still points at the same elements; what changed
+ * is the height they are drawn at, which is the bar's 36px rather than a
+ * standalone row's 44.
  *
  * Home IS the #team room now (spec `team-room-home` D3.2), so the composer here
  * is that room's, and everything below the tab bar is the ordinary room
  * surface.
  *
- * The tabs are links, not ARIA tabs (`HomeTabBar.tsx` explains why), so they are
+ * The tabs are links, not ARIA tabs (`bar-tab-strip.tsx` explains why), so they are
  * located by role `link` and their visible state is read from `data-active`
  * rather than from `aria-current` — `Link` computes the latter itself, so
  * asserting on it would test TanStack Router instead of this repo's resolver.
@@ -45,7 +51,7 @@ export const SIDEBAR_NAV_LABELS = ['Home', 'Team', 'Marketplace', 'Connections']
 export class HomeSurfacePage {
   readonly page: Page;
 
-  /** The tab bar itself. Its testid is a tour anchor (`TOUR_ANCHORS.homeTabs`). */
+  /** The tab strip itself. Its testid is a tour anchor (`TOUR_ANCHORS.homeTabs`). */
   readonly tabBar: Locator;
 
   /** Every tab, in DOM order. */

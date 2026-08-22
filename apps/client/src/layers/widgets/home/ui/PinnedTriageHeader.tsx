@@ -14,6 +14,7 @@ import {
   OfflineAgentDetailSheet,
 } from '@/layers/features/dashboard-attention';
 import { useOpenNotification } from '@/layers/features/inbox';
+import { useScheduleApprovalCards } from '@/layers/features/schedule-approval';
 import { useMarkRead } from '@/layers/entities/notifications';
 import type { HomeSearch } from '@/router';
 import { useShiftReport } from '../model/use-shift-report';
@@ -100,6 +101,11 @@ export function PinnedTriageHeader({
   const search = useSearch({ strict: false }) as Partial<HomeSearch>;
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  // A just-approved proposal drops out of the server's parked list within a
+  // frame. Merged HERE rather than in the view, which stays presentational:
+  // without it the group unmounts around its own receipt (see
+  // `settling-approvals`).
+  const shownSchedules = useScheduleApprovalCards(schedules);
 
   const closeDetail = useCallback(() => {
     void navigate({ to: '/', search: {} });
@@ -119,7 +125,7 @@ export function PinnedTriageHeader({
         // stale cards still on screen are better evidence than an error card.
         approvalsUnavailable={isError && approvals.length === 0}
         onRetryApprovals={retry}
-        scheduleApprovals={schedules}
+        scheduleApprovals={shownSchedules}
         errorSignals={errors}
         activityItems={activity}
         onOpenActivity={openActivity}
