@@ -5,6 +5,9 @@ covers:
   - 'wip(e2e): re-point the room specs at the panel (DOR-1403)'
   - "merge: bring R1's updated branch (and main) under the room panel (DOR-1403)"
   - "feat(client): a one-to-one wears its agent's face again, in the bar and the panel (DOR-1403)"
+  - 'test(e2e): the room specs meet the panel in a browser (DOR-1403)'
+  - "chore(e2e): record the room specs' latest runs (DOR-1403)"
+  - 'fix(client,e2e): answer the R2 review — the missing room, the home indicator, and the doors nobody had tested (DOR-1403)'
 ---
 
 ### Changed
@@ -18,3 +21,6 @@ covers:
 ### Fixed
 
 - A one-to-one shows the agent's own picture again, in the header and beside their name in the panel. For a while it showed nowhere (DOR-1403)
+- Opening a link to a room that has been deleted now says so in the panel, instead of showing a name that never arrives (DOR-1403)
+- Pressing the head count moves the keyboard into the list of members, so you can get there without a mouse (DOR-1403)
+- On a phone, the Archive button no longer sits under the home indicator (DOR-1403)

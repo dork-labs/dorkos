@@ -215,7 +215,11 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
     const first = roster.querySelector<HTMLElement>('button, [href], input, [tabindex="0"]');
     if (first === null && view.isLoading) return;
     wantRosterFocus.current = false;
-    (first ?? roster).focus({ preventScroll: true });
+    // A frame late, for the reason the search field is (below): the sidebar's
+    // "Members…" is a menu item, and Radix hands focus back to the menu's own
+    // trigger a commit after the press. Measured in a browser, where the bar's
+    // chip landed in the roster and the sidebar's menu landed on `<body>`.
+    requestAnimationFrame(() => (first ?? roster).focus({ preventScroll: true }));
     roster.scrollIntoView({ block: 'nearest' });
   });
 
@@ -282,7 +286,19 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
       }
     }
     wantSearchFocus.current = null;
-    field.focus();
+    if (want === 'offered') {
+      field.focus();
+    } else {
+      // **`'asked'` lands a frame late, and that is what makes it land at all.**
+      // Two of the three doors are menu items. Radix closes the menu a commit
+      // AFTER the press and then restores focus to its own trigger, so a cursor
+      // placed in this commit is handed straight back and the reader is left on
+      // the sidebar with an open picker they cannot type into — measured in a
+      // browser, where `document.activeElement` came back `<body>`. A frame's
+      // deferral puts this after the restore. The field is re-read inside the
+      // frame because a fleet landing between the two can replace the node.
+      requestAnimationFrame(() => searchRef.current?.focus());
+    }
     // **No dependency list, deliberately.** The field this is waiting for is
     // not mounted by a render this component controls: the picker's search box
     // arrives with cmdk's own first commit, one tick after the fleet lands and

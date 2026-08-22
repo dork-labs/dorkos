@@ -287,10 +287,10 @@
       "specFile": "tests/rooms/room-sheet-phone.spec.ts",
       "feature": "rooms",
       "description": "the sheet stays on the screen, and its middle is the part that scrolls, exactly one element carries the home-indicator padding, so it cannot double, every control a thumb has to hit is at least 44px tall, dragging the roster scrolls it; dragging the sheet itself puts it away, a long agent description truncates rather than pushing the picker's button away, the header lines up with itself and stays inside the sheet",
-      "lastRun": "2026-08-22T04:45:22.984Z",
+      "lastRun": "2026-08-22T05:37:48.979Z",
       "lastStatus": "passed",
-      "runCount": 20,
-      "passCount": 18,
+      "runCount": 22,
+      "passCount": 20,
       "failCount": 2,
       "relatedCode": [],
       "lastModified": ""
@@ -299,10 +299,10 @@
       "specFile": "tests/rooms/room-sheet.spec.ts",
       "feature": "rooms",
       "description": "the room meter and the pointed-at member move as one, and slide rather than jump, a rung committed moves the member meter and the room meter to the same answer, the roster you open the sheet on does not perform, and an agent you add does, a removed row collapses to nothing while the Undo is still on offer, nothing shaves a focus ring against the row and list clips, a working agent's pulse is not shaved by the row's clip, the segmented control fits its indent without ellipsising a rung, the preview snaps to its answer instead of sliding, and loses nothing",
-      "lastRun": "2026-08-22T05:14:13.835Z",
+      "lastRun": "2026-08-22T05:29:06.914Z",
       "lastStatus": "passed",
-      "runCount": 8,
-      "passCount": 8,
+      "runCount": 9,
+      "passCount": 9,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -1018,24 +1018,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-08T16-08-01",
-      "timestamp": "2026-08-08T16:08:01.847Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 176536
-    },
-    {
-      "id": "2026-08-08T16-19-53",
-      "timestamp": "2026-08-08T16:19:53.977Z",
-      "total": 62,
-      "passed": 62,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 189686
-    },
     {
       "id": "2026-08-08T21-20-59",
       "timestamp": "2026-08-08T21:20:59.547Z",
@@ -1908,6 +1890,33 @@
       "failed": 0,
       "skipped": 0,
       "duration": 88877
+    },
+    {
+      "id": "2026-08-22T05-29-06",
+      "timestamp": "2026-08-22T05:29:06.914Z",
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 73782
+    },
+    {
+      "id": "2026-08-22T05-30-02",
+      "timestamp": "2026-08-22T05:30:02.348Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 23058
+    },
+    {
+      "id": "2026-08-22T05-37-48",
+      "timestamp": "2026-08-22T05:37:48.979Z",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 44510
     }
   ]
 }
