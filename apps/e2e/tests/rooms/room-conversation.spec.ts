@@ -174,7 +174,7 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
 
     // Then the panel's own state, which is a different claim: a roster the
     // server holds and the panel does not draw is still a bug the person sees.
-    await roomsPage.membersButton.click();
+    await roomsPage.membersChip.click();
     const panel = page.getByRole('dialog');
     await expect(panel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     // The sheet is named by the ROOM. Its visible name is a control — press it

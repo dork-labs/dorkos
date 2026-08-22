@@ -266,11 +266,6 @@ export class RoomsPage {
       .click();
   }
 
-  /** The open room's roster in the masthead, which opens the members panel. */
-  get membersButton(): Locator {
-    return this.page.getByRole('button', { name: /^Members of / });
-  }
-
   /** The empty state's own affordance for putting agents in the room. */
   get emptyStateAddAgents(): Locator {
     return this.page.getByRole('button', { name: /^Add (more )?agents$/ });
