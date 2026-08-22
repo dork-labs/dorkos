@@ -48,6 +48,15 @@ import type { RoomsApi } from '../../fixtures/rooms-api';
  * simply loaded, which is the assembling-in-front-of-you D6 removed wearing a
  * nicer animation. The counter is a MAXIMUM over frames rather than a reading at
  * the end, because the attribute lives for 200 ms and a poll would miss it.
+ *
+ * **The two legs watch different windows, and the difference is the property.**
+ * The claim is "the panel's first paint tints nothing", not "nothing ever
+ * tints" — a row that turns up a second after the gate opened IS an arrival and
+ * is supposed to flash. A cold boot can genuinely have one: the gate has a
+ * 1500 ms ceiling, and a source that answers after it opens brings real rows to
+ * a panel that is already up. So the cold leg reads a counter that stops at the
+ * frame the first rows paint, and only the warm leg — which is finished in its
+ * first frame by definition — is held to the whole two-second window.
  */
 
 /** How long to watch after the panel has rows, for anything arriving late. */
@@ -85,6 +94,13 @@ interface BootFilm {
   skeletonDisappeared: number;
   /** The most rows seen wearing `data-arrived` in any single frame. */
   peakArrived: number;
+  /**
+   * The same, but only up to and including the frame the first rows painted.
+   *
+   * This is the cold leg's number: after the panel is up, an arrival is allowed
+   * to be an arrival. See the note in this file's header.
+   */
+  peakArrivedAtFirstPaint: number;
 }
 
 /**
@@ -108,15 +124,19 @@ async function filmBoot(page: Page): Promise<void> {
       skeletonAppeared: number;
       skeletonDisappeared: number;
       peakArrived: number;
+      peakArrivedAtFirstPaint: number;
     } = {
       pictures: [],
       skeletonAppeared: 0,
       skeletonDisappeared: 0,
       peakArrived: 0,
+      peakArrivedAtFirstPaint: 0,
     };
     (window as unknown as { __bootFilm: typeof film }).__bootFilm = film;
 
     let bones = false;
+    // Latched at the first frame that has rows — see `peakArrivedAtFirstPaint`.
+    let painted = false;
     const frame = () => {
       const hasBones = document.querySelector('[data-testid="sidebar-skeleton"]') !== null;
       if (hasBones !== bones) {
@@ -124,14 +144,6 @@ async function filmBoot(page: Page): Promise<void> {
         if (hasBones) film.skeletonAppeared++;
         else film.skeletonDisappeared++;
       }
-
-      // The arrival tint, counted per frame because it only lives for 200 ms.
-      // `[data-arrived]` sits on the row's list item, so this counts items and
-      // not rows — which is the same number, one row per item.
-      const arriving = document.querySelectorAll(
-        'nav[aria-label="Sidebar"] li[data-arrived]'
-      ).length;
-      if (arriving > film.peakArrived) film.peakArrived = arriving;
 
       const found = document.querySelectorAll('nav[aria-label="Sidebar"] [data-sidebar-row]');
       if (found.length > 0) {
@@ -148,6 +160,22 @@ async function filmBoot(page: Page): Promise<void> {
           })
           .join('\n');
         if (film.pictures[film.pictures.length - 1] !== picture) film.pictures.push(picture);
+      }
+
+      // The arrival tint, counted per frame because it only lives for 200 ms.
+      // `[data-arrived]` sits on the row's list item, so this counts items and
+      // not rows — which is the same number, one row per item.
+      //
+      // Counted AFTER the picture above on purpose: `painted` then includes the
+      // very frame the first rows appeared, which is the frame the first-paint
+      // window is about.
+      const arriving = document.querySelectorAll(
+        'nav[aria-label="Sidebar"] li[data-arrived]'
+      ).length;
+      if (arriving > film.peakArrived) film.peakArrived = arriving;
+      if (!painted) {
+        if (arriving > film.peakArrivedAtFirstPaint) film.peakArrivedAtFirstPaint = arriving;
+        if (film.pictures.length > 0) painted = true;
       }
       requestAnimationFrame(frame);
     };
@@ -209,10 +237,12 @@ test.describe('the sidebar’s first paint @smoke', () => {
     expect(cold.skeletonAppeared).toBe(1);
     expect(cold.skeletonDisappeared).toBe(1);
 
-    // (c) Nothing "arrived". Every row in Heads up and Today was part of the
-    // panel loading, and the arrival tint is reserved for a row that turns up
-    // after the boot gate has opened (spec D5).
-    expect(cold.peakArrived).toBe(0);
+    // (c) Nothing "arrived" while the panel was painting. Every row in Heads up
+    // and Today was part of the load, and the arrival tint is reserved for a row
+    // that turns up AFTER the boot gate has opened (spec D5) — which on a cold
+    // boot with a slow source is a legitimate thing to happen, so the window
+    // here stops at first paint rather than running for the whole settle.
+    expect(cold.peakArrivedAtFirstPaint).toBe(0);
 
     // The cold boot has to have left something behind, or the warm leg below
     // would be proving that a cold boot is fast rather than that a warm one is
@@ -248,9 +278,12 @@ test.describe('the sidebar’s first paint @smoke', () => {
     // half-remembered subset of it.
     expect(warm.pictures[0]).toBe(settledPicture);
 
-    // …and a warm boot, which has rows in the very first frame, tinted none of
-    // them either. This is the leg that would go red if `useArrivedRows` ever
-    // seeded itself empty: every row in Today would read as new.
+    // …and a warm boot tinted nothing for the WHOLE two seconds. It can be held
+    // to the wider window precisely because it had its rows in the first frame:
+    // there is no late source left to bring a legitimate arrival. This is the
+    // leg that would go red if `useArrivedRows` ever seeded itself empty —
+    // every row in Today would read as new.
     expect(warm.peakArrived).toBe(0);
+    expect(warm.peakArrivedAtFirstPaint).toBe(0);
   });
 });

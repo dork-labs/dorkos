@@ -11,7 +11,6 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/layers/shared/model';
 import { useSidebarPrefs, useUpdateSidebarPrefs } from '@/layers/entities/config';
@@ -27,7 +26,7 @@ import {
   toDropDescriptor,
   type SidebarDndData,
 } from '../../model/use-sidebar-dnd';
-import { DRAG_LIFT_SCALE, DRAG_LIFT_SECONDS } from '../motion/sidebar-motion';
+import { DragLiftChip } from '../motion/DragLiftChip';
 import { SidebarDndEnabledProvider } from './SidebarDndPrimitives';
 
 interface SidebarDndProps {
@@ -63,21 +62,9 @@ function DragOverlayContent({
       : data.type === 'item'
         ? itemName(data.ref)
         : '';
-  return (
-    // **Lift, ring, settle** (spec D5): the label picks itself up off the panel
-    // by 2% with the floating shadow under it, so what is moving is obviously
-    // the thing under the cursor rather than a copy of it. `MotionConfig
-    // reducedMotion="user"` above drops the scale for a reader who asked for
-    // less, and the shadow stays — it is depth, not movement.
-    <motion.div
-      initial={{ scale: 1 }}
-      animate={{ scale: DRAG_LIFT_SCALE }}
-      transition={{ duration: DRAG_LIFT_SECONDS }}
-      className="bg-sidebar border-sidebar-border text-sidebar-foreground shadow-floating flex items-center rounded-md border px-2.5 py-1.5 text-xs font-medium"
-    >
-      {label}
-    </motion.div>
-  );
+  // The lift itself is `DragLiftChip` — one component, so the Dev Playground
+  // shows the real chip and a retune moves both (spec D5).
+  return <DragLiftChip label={label} />;
 }
 
 /**

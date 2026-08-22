@@ -38,13 +38,7 @@ import { sameTarget } from '../model/rules/targets';
 import { AgentListItem } from './AgentListItem';
 import { RoomRow } from './rooms/RoomRow';
 import { Sortable, sidebarDndData, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
-import {
-  ARRIVE_FROM,
-  ARRIVE_TO,
-  LEAVE_TO,
-  arriveTransition,
-  leaveTransition,
-} from './motion/sidebar-motion';
+import { buildRowMotion } from './motion/sidebar-motion';
 import { useSidebarChrome } from './SidebarChrome';
 
 /**
@@ -180,18 +174,7 @@ export function SidebarModelRow({
   // `RoomRow.render-count.test.tsx` guards. Every dependency here is a primitive,
   // so the object moves only when something about the row's motion moved.
   const rowMotion = useMemo<SidebarRowMotion>(
-    () => ({
-      layout: true,
-      layoutDependency: layoutKey,
-      // A row that was already there has no entrance. `false` is motion's "start
-      // where you are", and it is what every row wears on the frame the panel
-      // first paints — warm boot and cold reveal alike.
-      initial: arrives && arrived ? ARRIVE_FROM : false,
-      animate: arrives ? ARRIVE_TO : undefined,
-      exit: arrives ? LEAVE_TO : undefined,
-      transition: arrived ? arriveTransition(reducedMotion) : leaveTransition(reducedMotion),
-      arrived,
-    }),
+    () => buildRowMotion({ layoutKey, arrives, arrived, reducedMotion }),
     [layoutKey, arrives, arrived, reducedMotion]
   );
   const ref = dragRefOf(row.target);

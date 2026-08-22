@@ -9,16 +9,17 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarSection
  */
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import { useRovingFocus } from '@/layers/shared/model';
 import { SectionHeader, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import type { SidebarSectionModel } from '../model/build-sidebar-model';
 import type { SidebarContainer, UngroupedSectionId } from '../model/use-sidebar-dnd';
-import { useBootState } from '../model/boot/use-boot-state';
 import { Droppable, Sortable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
-import { foldTransition, sectionLayoutKey } from './motion/sidebar-motion';
+import { SidebarFoldBody } from './motion/SidebarFoldBody';
+import { sectionLayoutKey } from './motion/sidebar-motion';
 import { useArrivedRows } from './motion/use-arrived-rows';
+import { useSidebarChrome } from './SidebarChrome';
 import { dragRefOf, SidebarModelRow } from './SidebarModelRow';
 import { useSectionChrome } from './useSectionChrome';
 
@@ -100,7 +101,6 @@ export interface SidebarSectionProps {
  */
 export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
   const chrome = useSectionChrome(section);
-  const reducedMotion = useReducedMotion();
   const roving = useRovingFocus({
     onCollapse: () => section.collapsible && !section.collapsed && chrome.toggleCollapsed(),
     onExpand: () => section.collapsible && section.collapsed && chrome.toggleCollapsed(),
@@ -118,9 +118,11 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
   const layoutKey = sectionLayoutKey(section.rows);
   const announcesArrivals = ANNOUNCES_ARRIVALS.has(section.id);
   // The boot gate, not this component's mount: rows turning up while the panel
-  // is still loading are the panel loading, not arrivals (spec D6).
-  const boot = useBootState();
-  const arrived = useArrivedRows(layoutKey, announcesArrivals && boot.settled);
+  // is still loading are the panel loading, not arrivals (spec D6). Read off the
+  // panel's ONE subscription rather than calling `useBootState` here — see
+  // `SidebarChromeValue.bootSettled` for what a per-section call cost.
+  const { bootSettled } = useSidebarChrome();
+  const arrived = useArrivedRows(layoutKey, announcesArrivals && bootSettled);
 
   const list = section.rows.map((row) => (
     <SidebarModelRow
@@ -217,39 +219,22 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       )}
       {chrome.action}
       {chrome.dialogs}
-      {/* **The fold, as a height spring** (spec D5). `initial={false}` means a
-          section that is already open when the panel paints is simply open —
-          the entrance plays for a press and for nothing else. The body still
-          UNMOUNTS when it is folded, a beat later than it used to: the rows go
-          out of the document, out of the tab order and out of the roving focus
-          ring exactly as before, and `aria-controls` on the header is withdrawn
-          with them. `overflow-hidden` is what makes the height mean anything,
-          and it is why the drop-target rings inside are inset rather than
-          outset — an outer ring is the first thing a clipped box loses. */}
-      <AnimatePresence initial={false}>
-        {!section.collapsed && (
-          <motion.div
-            key="body"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={foldTransition(reducedMotion)}
-            className="overflow-hidden"
-          >
-            <Droppable
-              id={`container::${bodyId}`}
-              data={{ type: 'container', container: sectionContainer(section.id) }}
-            >
-              {draggableIds.length > 0 ? (
-                <SortableList items={draggableIds}>{rows}</SortableList>
-              ) : (
-                rows
-              )}
-              {chrome.footer}
-            </Droppable>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* **The fold, as a height spring** (spec D5) — `SidebarFoldBody` owns the
+          numbers and the unmount, and the Dev Playground draws the same
+          component rather than a copy of it. */}
+      <SidebarFoldBody open={!section.collapsed}>
+        <Droppable
+          id={`container::${bodyId}`}
+          data={{ type: 'container', container: sectionContainer(section.id) }}
+        >
+          {draggableIds.length > 0 ? (
+            <SortableList items={draggableIds}>{rows}</SortableList>
+          ) : (
+            rows
+          )}
+          {chrome.footer}
+        </Droppable>
+      </SidebarFoldBody>
     </SidebarGroup>
   );
 }

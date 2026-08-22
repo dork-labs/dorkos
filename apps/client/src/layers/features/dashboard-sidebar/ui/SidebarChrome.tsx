@@ -52,6 +52,7 @@ import {
 } from '@/layers/entities/session';
 import { useProfileStore } from '@/layers/features/profile';
 import type { SidebarTarget, SuggestionId } from '../model/build-sidebar-model';
+import { useBootState } from '../model/boot/use-boot-state';
 import { useCreateFlowStore, type GroupCreationState } from '../model/create-flow-store';
 import { NOW_OVERFLOW_HREF } from '../model/rules/cap-now-items';
 import { buildRoomVisualIndex, type SidebarItemVisual } from '../model/sidebar-item';
@@ -148,6 +149,21 @@ export interface SidebarChromeValue {
   runtimeOptions: readonly SmartGroupOption[];
   /** The namespaces a smart section's rule editor can offer, from the same walk. */
   namespaceOptions: readonly string[];
+  /**
+   * Whether the boot gate has opened — the one fact the continuity layer needs
+   * (spec D5/D6).
+   *
+   * **Read once for the whole panel, and that is the reason it is here.**
+   * `useBootState` opens ten query subscriptions and starts a 1500 ms timer per
+   * caller, and its own docblock says every consumer latching independently is
+   * only safe while there are a handful of them mounted in one commit. A section
+   * calling it directly made that a per-SECTION cost — ten subscriptions and a
+   * timer times however many sections the operator has — and turned a
+   * whole-panel fact into N latches that could in principle disagree.
+   *
+   * Rows arriving before this is true are the panel loading, not arrivals.
+   */
+  bootSettled: boolean;
   /** What the operator has open, so the matching row (and its Library copy) tints. */
   activeTarget: SidebarTarget | null;
   /**
@@ -252,6 +268,9 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   const { open: openProfile } = useProfileDeepLink();
   const memberIdByPath = useMeshMemberIds();
   const { update } = useUpdateSidebarPrefs();
+  // The panel's ONE boot subscription for the rows below — see
+  // {@link SidebarChromeValue.bootSettled}.
+  const { settled: bootSettled } = useBootState();
 
   const { data: meshData } = useMeshAgentPaths();
   const rawPaths = useMemo(
@@ -544,6 +563,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       unreadRoomIds,
       runtimeOptions,
       namespaceOptions,
+      bootSettled,
       activeTarget,
       homeRoomId,
       openTarget,
@@ -573,6 +593,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       unreadRoomIds,
       runtimeOptions,
       namespaceOptions,
+      bootSettled,
       activeTarget,
       homeRoomId,
       openTarget,

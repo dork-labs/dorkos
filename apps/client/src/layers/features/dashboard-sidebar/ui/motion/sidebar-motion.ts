@@ -17,6 +17,7 @@
  * @module features/dashboard-sidebar/ui/motion/sidebar-motion
  */
 import type { Transition } from 'motion/react';
+import type { SidebarRowMotion } from '@/layers/shared/ui';
 
 /** The fold spring's stiffness — D5's number, which lands it in ≈180 ms. */
 export const FOLD_STIFFNESS = 400;
@@ -130,4 +131,49 @@ export const LAYOUT_KEY_SEPARATOR = '\u0000';
  */
 export function sectionLayoutKey(rows: readonly { key: string }[]): string {
   return rows.map((row) => row.key).join(LAYOUT_KEY_SEPARATOR);
+}
+
+/** Everything {@link buildRowMotion} needs, and every bit of it a primitive. */
+export interface RowMotionInputs {
+  /** The section's row ids, from {@link sectionLayoutKey}. */
+  layoutKey: string | undefined;
+  /** The section announces arrivals — Heads up and Today, and nothing else. */
+  arrives: boolean;
+  /** This row is one of them, so it enters and tints once. */
+  arrived: boolean;
+  /** What `useReducedMotion()` answered. */
+  reducedMotion: boolean | null;
+}
+
+/**
+ * One row's motion, from four primitives.
+ *
+ * **A function rather than three inline object literals**, because the object it
+ * returns is a prop of a `React.memo` row: the caller memoizes it on exactly
+ * these four values, and a second copy of the shape that drifted would be a
+ * fresh object on a render nothing changed — which defeats the memo for every
+ * room in the panel (`RoomRow.render-count.test.tsx` is what catches it). The
+ * Dev Playground's demos call this too, so what the page shows is what the panel
+ * does.
+ *
+ * @param inputs - The four facts about this row's motion.
+ */
+export function buildRowMotion({
+  layoutKey,
+  arrives,
+  arrived,
+  reducedMotion,
+}: RowMotionInputs): SidebarRowMotion {
+  return {
+    layout: true,
+    layoutDependency: layoutKey,
+    // A row that was already there has no entrance. `false` is motion's "start
+    // where you are", and it is what every row wears on the frame the panel
+    // first paints — warm boot and cold reveal alike.
+    initial: arrives && arrived ? ARRIVE_FROM : false,
+    animate: arrives ? ARRIVE_TO : undefined,
+    exit: arrives ? LEAVE_TO : undefined,
+    transition: arrived ? arriveTransition(reducedMotion) : leaveTransition(reducedMotion),
+    arrived,
+  };
 }
