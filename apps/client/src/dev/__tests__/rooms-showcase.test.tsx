@@ -1,11 +1,11 @@
 /**
  * The room showcases, and the fixture backend that makes them reachable.
  *
- * Seven of the sheet's states used to need a live server with the right rows in
+ * Seven of the panel's states used to need a live server with the right rows in
  * it, so nobody ever reviewed six of them. What replaces the server is a
  * transport built in `rooms-showcase-helpers` — and that helper is what this
  * file tests, because it fails silently: if the override stopped reaching the
- * sheet, every state would collapse to the same "room not there" rendering and
+ * panel, every state would collapse to the same "room not there" rendering and
  * the page would look plausible while showing one state seven times.
  *
  * The writes are tested for the same reason. A fixture that accepted a change
@@ -23,12 +23,12 @@ import { PlaygroundSearch } from '../PlaygroundSearch';
 import { getPageFromPath, PAGE_CONFIGS } from '../playground-config';
 import { PLAYGROUND_REGISTRY } from '../playground-registry';
 import { RoomsPage } from '../pages/RoomsPage';
-import { RoomSheetDemo, type RoomSheetDemoProps } from '../showcases/rooms-showcase-helpers';
+import { RoomPanelDemo, type RoomPanelDemoProps } from '../showcases/rooms-showcase-helpers';
 import { ARCHIVED_ROOM, CHANNEL_ROOM, DM_ROOM, EMPTY_ROOM } from '../showcases/rooms-showcase-data';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-// The room sheet reads route state to decide where each member row's face leads
+// The room panel reads route state to decide where each member row's face leads
 // (`useProfileDeepLink`), and the playground mounts it with no router. Where
 // that link goes has its own file —
 // `features/room-management/__tests__/RoomMemberRow.click-to-profile.test.tsx`,
@@ -64,22 +64,25 @@ afterEach(() => vi.unstubAllGlobals());
 afterEach(cleanup);
 
 /**
- * Open one showcase's sheet the way a reader does.
+ * Mount one showcase's panel.
  *
  * The playground supplies the transport at the shell, so the demo mounts its
  * own over the top of it — mirror the shell here so the override is exercised
  * rather than substituted for.
+ *
+ * No trigger to press since phase R2: the panel is not a modal, so the showcase
+ * renders it open. Awaiting the panel's own frame is what replaces waiting for
+ * a dialog to appear.
  */
-async function openSheet(props: RoomSheetDemoProps): Promise<void> {
+async function openSheet(props: RoomPanelDemoProps): Promise<void> {
   render(
     <EventStreamProvider>
       <TransportProvider transport={createPlaygroundTransport()}>
-        <RoomSheetDemo {...props} />
+        <RoomPanelDemo {...props} />
       </TransportProvider>
     </EventStreamProvider>
   );
-  fireEvent.click(screen.getByRole('button', { name: props.label }));
-  await screen.findByRole('dialog');
+  await screen.findByText(props.label);
 }
 
 /** The roster region, whatever it currently holds. */
@@ -94,11 +97,11 @@ async function settle(): Promise<void> {
   });
 }
 
-describe('the room sheet fixture reaches every state', () => {
+describe('the room panel fixture reaches every state', () => {
   it('a read that never lands leaves the roster busy and says nothing about loudness', async () => {
     await openSheet({ label: 'Loading', read: 'loading', holds: CHANNEL_ROOM });
 
-    // Flushed first, and that is the whole test: a sheet one frame old is busy
+    // Flushed first, and that is the whole test: a panel one frame old is busy
     // whatever the fixture is about to do, so asserting straight after the open
     // would pass just as happily against a read that fails a microtask later.
     await settle();
@@ -107,8 +110,10 @@ describe('the room sheet fixture reaches every state', () => {
     // empty one is a real answer, so drawing it during the read would state
     // something false and then correct itself.
     expect(screen.queryByText(/answer you here/)).not.toBeInTheDocument();
-    // The header still draws, from the copy the caller already held.
-    expect(screen.getByRole('button', { name: /Room name.*General/ })).toBeInTheDocument();
+    // And the room's name is withheld for the same reason. The panel is
+    // addressed by id — it is handed no summary the way the modal was, so a name
+    // here before the read lands would be an invention rather than a head start.
+    expect(screen.queryByRole('button', { name: /Room name/ })).not.toBeInTheDocument();
   });
 
   it('a read that fails offers the way out of it', async () => {
@@ -167,7 +172,7 @@ describe('the room sheet fixture reaches every state', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'How loud Mio Clicker PM is here' }));
     const group = await screen.findByRole('radiogroup');
-    // The second agent this sheet offers to add is exactly why `Engaged` has to
+    // The second agent this panel offers to add is exactly why `Engaged` has to
     // be here: the conversation it makes is still a `dm`, and it is the room
     // where an unbounded `Everything` agent is hardest to live with.
     expect(within(group).getAllByRole('radio')).toHaveLength(4);
@@ -205,7 +210,7 @@ describe('the room sheet fixture reaches every state', () => {
   });
 });
 
-describe('the fixture accepts the writes the sheet makes', () => {
+describe('the fixture accepts the writes the panel makes', () => {
   it('a rung survives the re-read that follows it', async () => {
     await openSheet({ label: '#general', read: CHANNEL_ROOM, holds: CHANNEL_ROOM });
 
@@ -270,7 +275,7 @@ describe('the page itself draws every section', () => {
   /**
    * The whole page, once.
    *
-   * The sheet gets its own describe block above because it is the one thing
+   * The panel gets its own describe block above because it is the one thing
    * here with a fake server behind it. The other six sections are plain props
    * — which means nothing would stop one of them throwing on mount, being
    * swallowed by `ShowcaseErrorBoundary`, and shipping as a red box that only
@@ -350,9 +355,9 @@ describe('the rooms page is wired into the playground', () => {
     const onSelect = vi.fn();
     render(<PlaygroundSearch open onOpenChange={vi.fn()} onSelect={onSelect} />);
 
-    fireEvent.click(screen.getByText('Room Sheet'));
+    fireEvent.click(screen.getByText('Room Panel'));
     expect(onSelect).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'room-sheet', page: 'rooms' })
+      expect.objectContaining({ id: 'room-panel', page: 'rooms' })
     );
   });
 

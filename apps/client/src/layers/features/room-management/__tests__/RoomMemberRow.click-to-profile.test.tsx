@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 /**
- * Pressing a member's face and name in the room sheet opens THAT member's
+ * Pressing a member's face and name in the room panel opens THAT member's
  * profile (spec `profile-unification` §3, bug 7).
  *
  * The claim under test is **which id travels**, not that something opened. The
- * sheet holds author ids; the team roster the profile reads is keyed by author
+ * panel holds author ids; the team roster the profile reads is keyed by author
  * id for people and by the id the MESH registered for agents. Passing the id
  * this surface already has would open an empty profile for every agent in every
- * room — so the whole test is mounted through `RoomDetailsDialog`, which owns
+ * room — so the whole test is mounted through `RoomPanelBody`, which owns
  * the join, rather than through the row, which is handed the answer and would
  * agree with anything.
  *
@@ -35,9 +35,9 @@ import {
   buildProfileDeepLinkHarness,
   type ProfileDeepLinkHarness,
 } from '@/test-helpers/profile-deep-link';
-import { RoomDetailsDialog } from '../ui/RoomDetailsDialog';
+import { RoomPanelBody } from '../ui/RoomPanelBody';
 
-/** The fleet the sheet reads for itself, stubbed at the hook it reads it with. */
+/** The fleet the panel reads for itself, stubbed at the hook it reads it with. */
 const { mockRosterRef } = vi.hoisted(() => ({ mockRosterRef: { current: null as unknown } }));
 vi.mock('../model/use-agent-picker-candidates', () => ({
   useAgentPickerCandidates: () => mockRosterRef.current,
@@ -186,16 +186,14 @@ function renderSheet(
     </QueryClientProvider>
   );
 
-  render(<RoomDetailsDialog room={ROOM} open onOpenChange={vi.fn()} focus="members" />, {
-    wrapper,
-  });
+  render(<RoomPanelBody roomId={ROOM.id} />, { wrapper });
   return harness;
 }
 
 /**
  * How long to wait for a member's row to arrive.
  *
- * Generous on purpose. Two async reads stand between mounting the sheet and the
+ * Generous on purpose. Two async reads stand between mounting the panel and the
  * first row — the roster and the mesh — and this file runs alongside ~900 others
  * on a machine that is usually also running other agents. Testing Library's
  * 1000ms default is a statement about a quiet machine, and it made the first

@@ -30,5 +30,11 @@ export { AgentChipPicker } from './ui/AgentChipPicker';
 export { AgentRosterPicker } from './ui/AgentRosterPicker';
 export { ChannelCreateDialog } from './ui/ChannelCreateDialog';
 export { NewDirectMessageMenu } from './ui/NewDirectMessageMenu';
-export { RoomDetailsDialog } from './ui/RoomDetailsDialog';
+export { RoomPanel } from './ui/RoomPanel';
+// The panel for a room somebody else has already resolved. `RoomPanel` is what
+// the right-panel contribution mounts; this is the same surface with the route
+// question answered, which is what the playground's fixtures need.
+export { RoomPanelBody } from './ui/RoomPanelBody';
+export { openRoomPanel, ROOM_PANEL_ID, useRoomPanelFocusStore } from './model/room-panel-focus';
+export { routeShowsRoom } from './model/use-route-room';
 export type { RoomDetailsFocus, RoomDetailsRoom } from './model/room-details';

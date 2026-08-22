@@ -19,7 +19,8 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider, useAgentCreationStore } from '@/layers/shared/model';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import type { RoomDetailsFocus } from '../model/room-details';
-import { RoomDetailsDialog } from '../ui/RoomDetailsDialog';
+import { useRoomPanelFocusStore } from '../model/room-panel-focus';
+import { RoomPanelBody } from '../ui/RoomPanelBody';
 
 /**
  * The fleet this surface reads for itself.
@@ -39,7 +40,7 @@ vi.mock('../model/use-agent-picker-candidates', () => ({
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-// The sheet reads route state to decide where each member row's face leads
+// The panel reads route state to decide where each member row's face leads
 // (`useProfileDeepLink`), and this file mounts it with no router. Where that
 // link goes has its own file — `RoomMemberRow.click-to-profile.test.tsx`, which
 // mounts a real router and asserts the id that travels.
@@ -105,7 +106,7 @@ const HUMAN: RoomRosterEntry = {
 };
 
 /**
- * What `getRoom` answers with. `base` matters: the sheet reads the room's kind
+ * What `getRoom` answers with. `base` matters: the panel reads the room's kind
  * from the SERVER's copy rather than from the prop it was handed, so a fixture
  * that answered "channel" for a direct message would quietly test a channel.
  */
@@ -135,9 +136,13 @@ const FLEET = settled([
 function renderPanel(
   opts: {
     transport?: Transport;
+    /**
+     * The part of the panel a press asked for, as the entry point left it in
+     * the focus store. Omitted is the ordinary case: the panel opened with no
+     * request at all, which is what the right-panel toggle does.
+     */
     focus?: RoomDetailsFocus;
     agents?: ReturnType<typeof settled>;
-    onOpenChange?: (open: boolean) => void;
     /** The room the panel is opened over. Defaults to the channel above. */
     room?: RoomSummary;
   } = {}
@@ -159,15 +164,15 @@ function renderPanel(
   );
   // Set before render: the picker reads the roster on its first pass.
   mockRosterRef.current = opts.agents ?? FLEET;
-  const utils = render(
-    <RoomDetailsDialog
-      room={opts.room ?? ROOM}
-      open
-      onOpenChange={opts.onOpenChange ?? vi.fn()}
-      focus={opts.focus ?? 'members'}
-    />,
-    { wrapper }
-  );
+  const room = opts.room ?? ROOM;
+  // The entry point's press, as it reaches the panel — `openRoomPanel` writes
+  // exactly this before the panel mounts.
+  if (opts.focus !== undefined) {
+    useRoomPanelFocusStore.setState({
+      request: { focus: opts.focus, roomId: room.id, nonce: 1 },
+    });
+  }
+  const utils = render(<RoomPanelBody roomId={room.id} />, { wrapper });
   return { ...utils, transport };
 }
 
@@ -176,7 +181,7 @@ function renderPanel(
  *
  * Deliberately the region and not "the list": there are two of them now, one
  * per group, and a helper that reached for a single list would throw the moment
- * the sheet grouped people apart from agents.
+ * the panel grouped people apart from agents.
  */
 async function rosterSection(): Promise<HTMLElement> {
   const region = await screen.findByRole('region', { name: 'Current members' });
@@ -195,7 +200,7 @@ function addSection() {
 
 /**
  * Open the picker the way a reader does — by pressing the row at the foot of
- * the roster. Not needed when the sheet was opened through "Add agents…",
+ * the roster. Not needed when the panel was opened through "Add agents…",
  * which is the entry point that opens it already expanded.
  */
 function openAddRow(): void {
@@ -286,6 +291,9 @@ beforeEach(() => {
   // A real store, shared by the whole module graph — left open it would leak
   // into the next test's assertion about it.
   useAgentCreationStore.setState({ isOpen: false, seed: null, onCreated: null });
+  // The entry point's request is module state too: left behind, the next
+  // panel would answer a press from the previous test.
+  useRoomPanelFocusStore.setState({ request: null });
 });
 afterEach(() => {
   cleanup();
@@ -296,7 +304,7 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('RoomDetailsDialog', () => {
+describe('RoomPanel', () => {
   it('lists everyone in the room, the reader included', async () => {
     // The panel answers "who is in here?", and a list that omits the person
     // asking describes a room that does not exist. Red if the roster goes back
@@ -319,7 +327,7 @@ describe('RoomDetailsDialog', () => {
   });
 
   it('groups people apart from agents, and counts each group', async () => {
-    // Grouped, not segregated: Slack splits its sheet into a Members tab and an
+    // Grouped, not segregated: Slack splits its own into a Members tab and an
     // "Agents & apps" tab, which is the opposite of treating agents as
     // participants. Red if the two groups collapse back into one list, or if
     // either count stops tracking what is under it.
@@ -376,7 +384,7 @@ describe('RoomDetailsDialog', () => {
   });
 
   it('opens the picker itself for a room with nobody in it, and puts the cursor there', async () => {
-    // The sheet's most consequential moment: a room with no agents does
+    // The panel's most consequential moment: a room with no agents does
     // nothing, and the only useful act on this surface is putting somebody in
     // it. Red if it goes back to a grey line and a button to press first.
     renderPanel({
@@ -390,7 +398,7 @@ describe('RoomDetailsDialog', () => {
 
   it('says the one thing about an empty room the line above it does not', async () => {
     // The loudness line already says "There is nobody here to answer you", so
-    // this line saying it too would be the sheet stating one fact twice. What
+    // this line saying it too would be the panel stating one fact twice. What
     // is left is the part only it has: joining is not starting.
     renderPanel({
       transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roster([HUMAN])) }),
@@ -405,20 +413,19 @@ describe('RoomDetailsDialog', () => {
   it('offers a way to make an agent when there are none to add', async () => {
     // "You have not added any agents yet" is true and is a dead end with
     // nothing to press. Red if the sentence goes back to standing on its own.
-    const onOpenChange = vi.fn();
     renderPanel({
       agents: settled([]),
-      onOpenChange,
       transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roster([HUMAN])) }),
     });
     await screen.findByText(/You have not added any agents yet/i);
 
     fireEvent.click(addSection().getByRole('button', { name: 'Create agent' }));
 
-    // The sheet gets out of the way: the creation dialog is a modal of its own,
-    // and a modal over this one closes both when it is answered.
-    expect(onOpenChange).toHaveBeenCalledWith(false);
+    // The panel stays where it is. It was a modal that had to close for the
+    // creation dialog; a panel is beside it, and the roster it leaves behind is
+    // the one the new agent is about to join.
     expect(useAgentCreationStore.getState().isOpen).toBe(true);
+    expect(screen.getByRole('region', { name: 'Add agents' })).toBeInTheDocument();
   });
 
   it('offers no such way when every agent is already in the room', async () => {
@@ -550,7 +557,7 @@ describe('RoomDetailsDialog', () => {
 
     it('opens one scale at a time', async () => {
       // Four rungs and their consequences is most of a phone screen; two rows
-      // of them is a sheet nobody can find the bottom of.
+      // of them is a panel nobody can find the bottom of.
       renderPanel({
         transport: createMockTransport({
           getRoom: vi
@@ -800,35 +807,27 @@ describe('RoomDetailsDialog', () => {
     });
   });
 
-  describe('on a phone', () => {
+  describe('how tall it is allowed to get', () => {
     /**
-     * Two class contracts and one behaviour.
+     * A class contract, and the honest limit of jsdom.
      *
-     * The classes are the honest limit of jsdom here: it measures every element
-     * as 0 × 0, so nothing about how tall anything actually is, or whether a
-     * drag-to-dismiss fights the roster's own scroll, can be settled short of a
-     * real browser on a real viewport. What a class assertion still catches is
-     * the rule being deleted, which is how both of these went missing.
+     * jsdom measures every element as 0 × 0, so nothing about how tall anything
+     * actually is — or whether the roster scrolls inside the panel rather than
+     * pushing the archive button off the bottom — can be settled short of a real
+     * browser on a real viewport (verified at 1440 and 390). What a class
+     * assertion still catches is the rule being deleted, which is how the
+     * modal's version of it went missing twice.
      */
-    it('caps its own height, because neither shell caps itself', () => {
-      // A drawer is `bottom-0` with `h-auto` and `mt-24` does nothing to it —
-      // a margin-top cannot move a fixed box whose `top` is `auto` — so a
-      // roster of eight agents grows its top off the screen and takes the
-      // room's name with it. A centred dialog does the same at both ends. Every
-      // other dialog in this app caps itself; this one did not. Red if the cap
-      // goes: the body below it is the only scrolling region, and without a
-      // bounded parent it never becomes one.
+    it('scrolls the roster inside itself, leaving the footer put', async () => {
       renderPanel();
+      const roster = await rosterSection();
 
-      const content = document.querySelector('[role="dialog"]');
-      expect(content!.className).toContain('max-h-[85vh]');
-    });
-
-    it('gives the scrolling region a bounded parent to scroll inside', () => {
-      renderPanel();
-
-      const body = document.querySelector('[data-slot="responsive-dialog-body"]');
-      expect(body!.className).toContain('overflow-y-auto');
+      // The one scrolling region: everything above the footer is inside it.
+      const scroller = roster.closest('.overflow-y-auto');
+      expect(scroller).not.toBeNull();
+      // And the footer is NOT — it is the panel's last row, so "Archive" is
+      // reachable without scrolling a roster of forty-six agents to its end.
+      expect(scroller!.contains(screen.getByRole('button', { name: /Archive/ }))).toBe(false);
     });
   });
 
@@ -1003,9 +1002,7 @@ describe('RoomDetailsDialog', () => {
     );
 
     await waitFor(() => expect(transport.removeRoomMember).toHaveBeenCalled());
-    expect(
-      within(screen.getByRole('dialog')).getByRole('region', { name: 'Current members' })
-    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Current members' })).toBeInTheDocument();
   });
 
   it('puts the focus on the confirmation so it can be answered from the keyboard', async () => {
@@ -1038,22 +1035,26 @@ describe('RoomDetailsDialog', () => {
     expect(screen.queryByRole('group', { name: /^Remove Ana/ })).not.toBeInTheDocument();
   });
 
-  it('lets Escape answer the confirmation without closing the panel', async () => {
-    const onOpenChange = vi.fn();
-    renderPanel({ onOpenChange });
+  it('lets Escape answer the confirmation, and stops it there', async () => {
+    renderPanel();
     await rosterSection();
 
+    // Anything else listening for Escape on the document — on a phone the
+    // slide-over the panel rides in, which would otherwise take one press to
+    // mean "close all of this".
+    const layer = vi.fn();
+    document.addEventListener('keydown', layer);
+
     removeThroughMenu();
-    // Radix listens for Escape on the document in the capture phase, which is
-    // where the panel's own handler has to intercept it — so this is dispatched
-    // there rather than at the confirmation.
+    // Dispatched at the document rather than at the confirmation, because that
+    // is where the contest is: the panel's handler takes the capture phase, so
+    // it decides before any layer above it does.
     fireEvent.keyDown(document, { key: 'Escape' });
+    document.removeEventListener('keydown', layer);
 
     expect(screen.queryByRole('group', { name: /^Remove Ana/ })).not.toBeInTheDocument();
-    expect(onOpenChange).not.toHaveBeenCalled();
-    expect(
-      within(screen.getByRole('dialog')).getByRole('region', { name: 'Current members' })
-    ).toBeInTheDocument();
+    expect(layer).not.toHaveBeenCalled();
+    expect(screen.getByRole('region', { name: 'Current members' })).toBeInTheDocument();
   });
 
   describe('what the whole room will do', () => {
@@ -1079,7 +1080,7 @@ describe('RoomDetailsDialog', () => {
     });
 
     it('names the one member the headline does not cover', async () => {
-      // The two questions people open this sheet with are about the ROOM, and
+      // The two questions people open this panel with are about the ROOM, and
       // both used to be answerable only by reading N grey sentences and
       // comparing them yourself.
       renderPanel({
@@ -1214,8 +1215,8 @@ describe('RoomDetailsDialog', () => {
     });
   });
 
-  describe('the foot of the sheet', () => {
-    /** A sheet over a room whose archived flag the fake server really holds. */
+  describe('the foot of the panel', () => {
+    /** A panel over a room whose archived flag the fake server really holds. */
     function renderArchivable(startArchived: boolean, members: RoomRosterEntry[] = [HUMAN]) {
       let archived = startArchived;
       const transport = createMockTransport({
@@ -1233,9 +1234,9 @@ describe('RoomDetailsDialog', () => {
 
     it('says how old the room is, in the cockpit voice every other date uses', async () => {
       // Deliberately not `lastActivityAt`, which the fixture also carries: the
-      // foot of the sheet says when the room was MADE. And through
+      // foot of the panel says when the room was MADE. And through
       // `formatRelativeTime`, so a member row and this line age the same way
-      // rather than the sheet growing a second date vocabulary.
+      // rather than the panel growing a second date vocabulary.
       const born = '2026-07-01T08:00:00.000Z';
       renderPanel({
         room: { ...ROOM, createdAt: born },
@@ -1249,7 +1250,7 @@ describe('RoomDetailsDialog', () => {
     });
 
     it('archives in place, and puts the way back where the action was', async () => {
-      // No alert, deliberately. The sheet you pressed it in redraws with the
+      // No alert, deliberately. The panel you pressed it in redraws with the
       // badge and the undo, which says more than a modal asking "are you
       // sure?" — and a modal over a modal closes both when it is answered
       // (see `RemoveMemberConfirm`). The sidebar row keeps ITS alert, because
@@ -1341,7 +1342,7 @@ describe('RoomDetailsDialog', () => {
       // unguarded — and adding names no `responseMode`, so the server seeds
       // one: `engaged` for a channel. Remove-then-add inside an archived room
       // therefore rewrote a deliberate `Silent` into an agent that answers, in
-      // the one room the sheet claims nothing can be changed in. An archived
+      // the one room the panel claims nothing can be changed in. An archived
       // room is one you are deciding whether to revive, not one you staff.
       //
       // The barrier is bringing it back: both verbs return, so their absence
@@ -1432,7 +1433,7 @@ describe('RoomDetailsDialog', () => {
     });
 
     it('opens with the picker already open for the door that asked to add', async () => {
-      // "Add agents…" and "Members…" land on ONE sheet, so the state it opens
+      // "Add agents…" and "Members…" land on ONE panel, so the state it opens
       // in is the only thing left saying which was pressed.
       renderPanel({ focus: 'add' });
       await rosterSection();
@@ -1544,15 +1545,15 @@ describe('RoomDetailsDialog', () => {
   it('lands on the search field even when the fleet is still being read', async () => {
     // "Add agents…" asks for the picker, and the picker is not there yet when
     // the panel opens on a cold read — it draws a shape while the fleet lands.
-    // `onOpenAutoFocus` fires once, at open, so without a second pass the
-    // reader is left with focus on the dialog and nowhere to type.
+    // The request is answered once, as it arrives, so without a second pass the
+    // reader is left with the picker open and nowhere to type.
     const loading = { candidates: [], isLoading: true, isError: false, retry: vi.fn() };
     const { rerender } = renderPanel({ focus: 'add', agents: loading });
 
     expect(screen.queryByRole('combobox', { name: 'Search agents' })).not.toBeInTheDocument();
 
     mockRosterRef.current = FLEET;
-    rerender(<RoomDetailsDialog room={ROOM} open onOpenChange={vi.fn()} focus="add" />);
+    rerender(<RoomPanelBody roomId={ROOM.id} />);
 
     const search = await screen.findByRole('combobox', { name: 'Search agents' });
     await waitFor(() => expect(search).toHaveFocus());
@@ -1589,7 +1590,11 @@ describe('RoomDetailsDialog', () => {
     });
 
     const search = await screen.findByRole('combobox', { name: 'Search agents' });
-    expect(screen.getByRole('textbox', { name: 'Topic' })).toHaveFocus();
+    // Waited for rather than asserted outright: the editor takes the cursor a
+    // frame after it mounts (see `InlineTextField`), and the picker beside it
+    // can be on screen first. What is under test is which of the two ends up
+    // with it, not which frame it happens in.
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Topic' })).toHaveFocus());
     expect(search).not.toHaveFocus();
   });
 

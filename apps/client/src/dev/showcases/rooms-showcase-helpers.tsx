@@ -23,14 +23,18 @@
  *
  * @module dev/showcases/rooms-showcase-helpers
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RoomRosterEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { Button } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
-import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
+import { PanelErrorBoundary } from '@/layers/features/right-panel';
+import {
+  RoomPanelBody,
+  useRoomPanelFocusStore,
+  type RoomDetailsFocus,
+} from '@/layers/features/room-management';
 import { createPlaygroundTransport } from '../playground-transport';
 import { createAgentAuthor, createRoomMember } from '../mock-factories';
 import { ROOM_FLEET, ROOMS_SERVER_CONFIG } from './rooms-showcase-data';
@@ -153,18 +157,17 @@ function createRoomFixtureTransport(read: RoomRead, fleet: FleetEntry[]): Transp
   });
 }
 
-export interface RoomSheetDemoProps {
-  /** What the button that opens this sheet says. */
+export interface RoomPanelDemoProps {
+  /** What this showcase is showing, printed above the panel. */
   label: string;
   /** What the room read answers with, and what the writes then edit. */
   read: RoomRead;
   /**
-   * The room the caller already holds, drawn before the read lands.
+   * The room this panel is about.
    *
-   * Every real entry point has one — a sidebar summary, or the open room — and
-   * it is what stops the header flickering through a room with no topic. A
-   * loading or failing fixture has nothing else to draw from, so this is the
-   * only way those two states have a name at the top of them.
+   * Only its id reaches the panel. Everything drawn comes from the read, the
+   * way it does on a real route — which is why the loading and failing fixtures
+   * show a skeleton and a retry rather than a name.
    */
   holds: RoomWithRoster;
   /** The agents the picker may offer. The whole cast unless told otherwise. */
@@ -174,25 +177,27 @@ export interface RoomSheetDemoProps {
 }
 
 /**
- * One room sheet, opened by a button, against a fixture that behaves like a
- * server.
+ * One room panel, in a box the size of the right panel, against a fixture that
+ * behaves like a server.
  *
- * A trigger rather than seven sheets rendered open at once: this is a modal, so
- * seven of them would stack seven overlays over the page and only the last
- * would be reachable. It is the same shape `PackageDetailSheetShowcase` uses
- * for the same reason.
+ * Rendered open and side by side rather than behind a trigger: this stopped
+ * being a modal in phase R2, so several of them no longer stack overlays over
+ * the page — they are panels a reviewer can compare at a glance, which is what
+ * a showcase page is for.
+ *
+ * Mounted inside the same `PanelErrorBoundary` the right-panel container wraps
+ * every tab in, so what is on review is the panel as it actually ships.
  *
  * Each demo gets its own `QueryClient` and its own fixture, so a rung changed
  * in one showcase is not visible in the next.
  */
-export function RoomSheetDemo({
+export function RoomPanelDemo({
   label,
   read,
   holds,
   fleet = ROOM_FLEET,
-  focus = 'members',
-}: RoomSheetDemoProps) {
-  const [open, setOpen] = useState(false);
+  focus,
+}: RoomPanelDemoProps) {
   // Built once per mount: a fresh transport would forget every write, and a
   // fresh client would refetch into one that had.
   const transport = useMemo(() => createRoomFixtureTransport(read, fleet), [read, fleet]);
@@ -206,13 +211,28 @@ export function RoomSheetDemo({
     []
   );
 
+  // The press an entry point would have made, as the panel receives it. Named
+  // for this fixture's room, so only this demo answers it — the store is one
+  // module shared by every panel on the page.
+  useEffect(() => {
+    if (focus === undefined) return;
+    useRoomPanelFocusStore.setState({ request: { focus, roomId: holds.id, nonce: Date.now() } });
+  }, [focus, holds.id]);
+
   return (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
-        <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-          {label}
-        </Button>
-        <RoomDetailsDialog room={holds} open={open} onOpenChange={setOpen} focus={focus} />
+        <div className="flex w-[22rem] shrink-0 flex-col gap-2">
+          <p className="text-muted-foreground text-xs">{label}</p>
+          {/* The right panel's own frame: a bordered column on the sidebar's
+              ground, bounded in height so the roster scrolls inside it rather
+              than running down the showcase page. */}
+          <div className="bg-sidebar text-sidebar-foreground h-[30rem] overflow-hidden rounded-lg border">
+            <PanelErrorBoundary tabId="room">
+              <RoomPanelBody roomId={holds.id} />
+            </PanelErrorBoundary>
+          </div>
+        </div>
       </QueryClientProvider>
     </TransportProvider>
   );

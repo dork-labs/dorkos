@@ -11,9 +11,10 @@ import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { agentAuthorRef, type AuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import { toast as mockToast } from 'sonner';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { useRoomWorkingStore } from '@/layers/entities/room';
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
+import { ROOM_PANEL_ID, useRoomPanelFocusStore } from '@/layers/features/room-management';
 import { RoomRow } from '../ui/rooms/RoomRow';
 import type { SidebarItemVisual } from '../model/sidebar-item';
 
@@ -170,6 +171,8 @@ function renderRow(
     onRequestNewGroup?: (ref: SidebarItemRef) => void;
     /** Whether this room is the one open on screen. Defaults to closed. */
     isActive?: boolean;
+    /** Opening the room itself — what pressing the row does. */
+    onSelect?: () => void;
     /**
      * Pre-seed the team roster cache with {@link selfTeamRoster} before the
      * first render, so `canLeave` is `true` from the very first paint instead
@@ -206,7 +209,7 @@ function renderRow(
       room={room}
       visual={opts.visual ?? { kind: 'sigil' }}
       isActive={opts.isActive ?? false}
-      onSelect={vi.fn()}
+      onSelect={opts.onSelect ?? vi.fn()}
       viewAgentProfile={opts.viewAgentProfile ?? (() => vi.fn())}
       onRequestNewGroup={opts.onRequestNewGroup ?? vi.fn()}
     />,
@@ -237,6 +240,10 @@ function itemLabels(menu: HTMLElement): string[] {
 beforeEach(() => {
   vi.clearAllMocks();
   mockRosterRef.current = settled(FLEET);
+  // Both are module state shared by the whole graph: left as one test finished
+  // them, the next would read a door somebody else opened.
+  useRoomPanelFocusStore.setState({ request: null });
+  useAppStore.setState({ rightPanelOpen: false, activeRightPanelTab: null });
 });
 afterEach(cleanup);
 
@@ -331,102 +338,48 @@ describe('RoomRow menus', () => {
   });
 });
 
-describe('RoomRow surfaces opened from the menu', () => {
-  // These cross the menu seam on purpose. A panel that places focus correctly
-  // when rendered on its own still lands in the wrong place through a menu:
-  // the menu closes in a SECOND commit and restores focus to its own trigger,
-  // overwriting whatever the panel just focused. Rendering the panel directly
-  // cannot see that, and once certified it below the seam.
-  it('puts the cursor in the search field when the reader asked to add agents', async () => {
-    renderRow(channel(), {
-      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roomWithRoster()) }),
-    });
-    fireEvent.click(within(openDropdown()).getByText('Add agents…'));
+describe('RoomRow doors into the room panel', () => {
+  /**
+   * Three menu items, one door.
+   *
+   * "Add agents…", "Members…" and "Edit topic…" all open the right panel's Room
+   * tab — the surface that replaced the modal room sheet in phase R2 — and they
+   * differ only in the part of it they ask for. The panel itself is mounted by
+   * the shell and describes whichever room the PAGE is showing, so what a row
+   * owes is exactly two things: open the room, and ask for the right part. Both
+   * are asserted here; what the panel then does with the request is
+   * `RoomPanel.test.tsx`.
+   */
+  function pressed(item: string): void {
+    fireEvent.click(within(openDropdown()).getByText(item));
+  }
 
-    const search = await screen.findByRole('combobox', { name: 'Search agents' });
-    await waitFor(() => expect(search).toHaveFocus());
+  it.each([
+    ['Add agents…', 'add'],
+    ['Members…', 'members'],
+    ['Edit topic…', 'topic'],
+  ])('opens the panel from %s, asking for the %s part', (item, focus) => {
+    renderRow(channel());
+
+    pressed(item);
+
+    const request = useRoomPanelFocusStore.getState().request;
+    expect(request).toMatchObject({ focus, roomId: 'room-1' });
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
+    expect(useAppStore.getState().activeRightPanelTab).toBe(ROOM_PANEL_ID);
   });
 
-  it('leaves the search field alone when the reader asked for the roster', async () => {
-    renderRow(channel(), {
-      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roomWithRoster()) }),
-    });
-    fireEvent.click(within(openDropdown()).getByText('Members…'));
+  it('opens the room too, because the panel follows the page', () => {
+    // The sidebar lists rooms you are NOT looking at. A panel opened over the
+    // room you are still reading would describe the wrong one — so the row does
+    // what pressing the row does first. Red if the navigation is dropped: the
+    // request would name a room the panel never gets to.
+    const onSelect = vi.fn();
+    renderRow(channel(), { onSelect });
 
-    const panel = await screen.findByRole('dialog');
-    await within(panel).findByRole('region', { name: 'Current members' });
-    // Adding is still one row at the foot of the roster: "Members…" asked for
-    // who is in here, so nothing has opened a field to type into.
-    expect(
-      within(panel).queryByRole('combobox', { name: 'Search agents' })
-    ).not.toBeInTheDocument();
-    // …and focus is still inside the panel, not left behind on the sidebar.
-    expect(panel.contains(document.activeElement)).toBe(true);
-  });
+    pressed('Members…');
 
-  it('takes an added agent off the picker rather than offering to add it twice', async () => {
-    // The selection lives in the picker, so only a test that actually picks
-    // somebody and commits can see what happens to it afterwards — calling the
-    // panel's own add handler passes whatever the chips go on to do.
-    const [me, ana] = roomWithRoster().members;
-    let members = [me!];
-    const transport = createMockTransport({
-      getRoom: vi.fn().mockImplementation(() => Promise.resolve({ ...channel(), members })),
-      addRoomMember: vi.fn().mockImplementation(() => {
-        members = [...members, ana!];
-        return Promise.resolve(ana!);
-      }),
-    });
-    mockRosterRef.current = settled([...FLEET, { agentPath: '/repo/bo', displayName: 'Bo' }]);
-    renderRow(channel(), { transport });
-    fireEvent.click(within(openDropdown()).getByText('Add agents…'));
-
-    // Scoped to the add half: once Ana is in the room the roster grows a
-    // "Remove Ana" of its own, and that one is a different verb entirely.
-    const picker = () => within(screen.getByRole('region', { name: 'Add agents' }));
-    fireEvent.click(await picker().findByRole('option', { name: 'Ana' }));
-    expect(picker().getByRole('button', { name: 'Remove Ana' })).toBeInTheDocument();
-
-    fireEvent.click(picker().getByRole('button', { name: 'Add agent' }));
-    await waitFor(() => expect(transport.addRoomMember).toHaveBeenCalledTimes(1));
-
-    // Ana lands, joins the roster, and stops being offerable — so her chip goes
-    // and the button has nothing left to commit.
-    await waitFor(() =>
-      expect(picker().queryByRole('button', { name: 'Remove Ana' })).not.toBeInTheDocument()
-    );
-    expect(picker().getByRole('button', { name: 'Add agent' })).toBeDisabled();
-    fireEvent.click(picker().getByRole('button', { name: 'Add agent' }));
-    expect(transport.addRoomMember).toHaveBeenCalledTimes(1);
-    // Bo was never picked and is still on offer.
-    expect(picker().getAllByRole('option')).toHaveLength(1);
-  });
-});
-
-describe('RoomRow topic', () => {
-  it('opens the room sheet on the topic, cursor already in it', async () => {
-    // "Edit topic…" used to raise a modal holding one text field, over a room
-    // the reader was already looking at. It now opens the sheet with the topic
-    // line already in its editor. Crossing the menu seam matters: the menu
-    // closes a commit later and restores focus to its own trigger, which
-    // overwrites anything the field focused on mount.
-    const { transport } = renderRow(channel(), {
-      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roomWithRoster()) }),
-    });
-    fireEvent.click(within(openDropdown()).getByText('Edit topic…'));
-
-    // The sheet, not a dialog of its own: the roster is right there under it.
-    const panel = await screen.findByRole('dialog');
-    await within(panel).findByRole('region', { name: 'Current members' });
-
-    const input = within(panel).getByRole('textbox', { name: 'Topic' });
-    await waitFor(() => expect(input).toHaveFocus());
-    fireEvent.change(input, { target: { value: 'Clicker planning' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    await waitFor(() =>
-      expect(transport.updateRoom).toHaveBeenCalledWith('room-1', { topic: 'Clicker planning' })
-    );
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 });
 

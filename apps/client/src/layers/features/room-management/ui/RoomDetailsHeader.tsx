@@ -3,10 +3,8 @@
  *
  * @module features/room-management/ui/RoomDetailsHeader
  */
-import type { RefObject } from 'react';
 import type { AuthorRef } from '@dorkos/shared/room-schemas';
 import type { AgentVisual } from '@/layers/shared/lib';
-import { ResponsiveDialogHeader, ResponsiveDialogTitle } from '@/layers/shared/ui';
 import {
   RoomAvatar,
   roomDisplayTitle,
@@ -32,10 +30,12 @@ export interface RoomDetailsHeaderProps {
   /**
    * Open the topic straight into its editor — the entry point that used to
    * raise a modal for this one field.
+   *
+   * Read on mount only, which is what it means for an edit to BEGIN. The panel
+   * remounts this header for each press of "Edit topic…" (see `topicEdits` in
+   * {@link RoomPanelBody}); the field then takes the cursor itself.
    */
   startTopicEditing: boolean;
-  /** The topic editor, so the sheet can place the cursor in it. */
-  topicRef: RefObject<HTMLInputElement | null>;
 }
 
 /**
@@ -67,16 +67,14 @@ export function RoomDetailsHeader({
   participants,
   visuals,
   startTopicEditing,
-  topicRef,
 }: RoomDetailsHeaderProps) {
   const renameRoom = useRenameRoom();
   const setTopic = useSetRoomTopic();
 
   return (
-    // `DrawerHeader` centres itself below 640px, which is wrong for a line you
-    // press to edit: a centred field jumps sideways the moment its text changes.
-    <ResponsiveDialogHeader className="text-left">
-      <ResponsiveDialogTitle className="sr-only">{roomDisplayTitle(room)}</ResponsiveDialogTitle>
+    // Left-aligned at every width, deliberately: a centred field jumps sideways
+    // the moment its text changes, and this whole line is a control.
+    <div className="text-left">
       <div className="flex min-w-0 items-start gap-3">
         <RoomAvatar
           room={room}
@@ -115,7 +113,6 @@ export function RoomDetailsHeader({
               placeholder="Add a topic"
               commitEmpty
               startEditing={startTopicEditing}
-              inputRef={topicRef}
               className="text-muted-foreground text-sm"
             />
           )}
@@ -133,6 +130,6 @@ export function RoomDetailsHeader({
             )}
         </div>
       </div>
-    </ResponsiveDialogHeader>
+    </div>
   );
 }

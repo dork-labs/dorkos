@@ -47,7 +47,7 @@ import {
   MEMBER,
   ROOM_CANDIDATES,
 } from './rooms-showcase-data';
-import { RoomSheetDemo } from './rooms-showcase-helpers';
+import { RoomPanelDemo } from './rooms-showcase-helpers';
 
 /** The engaged window this page describes the `Engaged` rung with. */
 const WINDOW: EngagedWindow = { engagedWindowMinutes: 10, engagedWindowPosts: 5 };
@@ -69,43 +69,43 @@ function Panel({ children }: { children: React.ReactNode }) {
  * not stills: change a rung and it sticks, take an agent out and the row leaves
  * with its own animation and offers the undo.
  */
-function RoomSheetShowcase() {
+function RoomPanelShowcase() {
   return (
     <PlaygroundSection
-      title="Room Sheet"
-      description="One surface for everything about one room. Each button opens the real sheet against its own in-memory room — reads, writes and all — so a rung you change sticks and a removal really offers its undo. Nobody is working in these rooms: the signal rides a room's live stream, which only the room on screen has open."
+      title="Room Panel"
+      description="One surface for everything about one room, docked beside it in the right panel. Each of these is the real panel against its own in-memory room — reads, writes and all — so a rung you change sticks and a removal really offers its undo. Nobody is working in these rooms: the signal rides a room's live stream, which only the room on screen has open."
     >
       <ShowcaseLabel>Reading the room, and a read that failed</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex flex-wrap gap-3">
-          <RoomSheetDemo label="Loading" read="loading" holds={CHANNEL_ROOM} />
-          <RoomSheetDemo label="Roster failed" read="error" holds={CHANNEL_ROOM} />
+          <RoomPanelDemo label="Loading" read="loading" holds={CHANNEL_ROOM} />
+          <RoomPanelDemo label="Roster failed" read="error" holds={CHANNEL_ROOM} />
         </div>
       </ShowcaseDemo>
 
       <ShowcaseLabel>A channel with several agents in it</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomSheetDemo label="#general — four members" read={CHANNEL_ROOM} holds={CHANNEL_ROOM} />
+        <RoomPanelDemo label="#general — four members" read={CHANNEL_ROOM} holds={CHANNEL_ROOM} />
       </ShowcaseDemo>
 
       <ShowcaseLabel>An empty room — the picker opens itself</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomSheetDemo label="#design — nobody in it" read={EMPTY_ROOM} holds={EMPTY_ROOM} />
+        <RoomPanelDemo label="#design — nobody in it" read={EMPTY_ROOM} holds={EMPTY_ROOM} />
       </ShowcaseDemo>
 
       <ShowcaseLabel>A one-to-one, and what a second agent would do</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomSheetDemo label="Direct message" read={DM_ROOM} holds={DM_ROOM} />
+        <RoomPanelDemo label="Direct message" read={DM_ROOM} holds={DM_ROOM} />
       </ShowcaseDemo>
 
       <ShowcaseLabel>Archived — the banner, the dormant meters, the way back</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomSheetDemo label="#old-thing — archived" read={ARCHIVED_ROOM} holds={ARCHIVED_ROOM} />
+        <RoomPanelDemo label="#old-thing — archived" read={ARCHIVED_ROOM} holds={ARCHIVED_ROOM} />
       </ShowcaseDemo>
 
       <ShowcaseLabel>A fleet with nobody in it, and the route out of it</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomSheetDemo
+        <RoomPanelDemo
           label="No agents yet"
           read={EMPTY_ROOM}
           holds={EMPTY_ROOM}
@@ -119,7 +119,7 @@ function RoomSheetShowcase() {
         chat, drifted from the room&apos;s (chats-as-channels §3.4, §4.3, DOR-879)
       </ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomSheetDemo
+        <RoomPanelDemo
           label="#ops-team — bridged"
           read={BRIDGED_CHANNEL_ROOM}
           holds={BRIDGED_CHANNEL_ROOM}
@@ -723,7 +723,7 @@ function BridgeVisibilityBadgeShowcase() {
 export function RoomsShowcases() {
   return (
     <>
-      <RoomSheetShowcase />
+      <RoomPanelShowcase />
       <RoomMemberRowShowcase />
       <RoomAvatarShowcase />
       <BridgeVisibilityBadgeShowcase />
