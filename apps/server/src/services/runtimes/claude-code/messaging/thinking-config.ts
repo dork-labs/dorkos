@@ -63,9 +63,16 @@ export interface ThinkingResolution {
  * makes one word land two ways for the same person, so both sites carry this
  * note and neither mapping moves without the other.
  *
+ * Exported so `launch-fingerprint.ts` can canonicalize two raw `EffortLevel`
+ * inputs to the value the SDK would actually see before deciding whether they
+ * are a real change — two DorkOS settings that map to the same SDK effort
+ * (`minimal` and `low`; `undefined` and `none`) must compare equal, or a
+ * dispatch relaunches a warm process for a setting change with no observable
+ * effect (DOR-1308).
+ *
  * @param effort - The DorkOS session effort level, if set.
  */
-function toSdkEffort(effort: EffortLevel | undefined): SdkEffortLevel | undefined {
+export function toSdkEffort(effort: EffortLevel | undefined): SdkEffortLevel | undefined {
   if (!effort || effort === 'none') return undefined;
   if (effort === 'minimal') return 'low';
   return SDK_EFFORT_LEVELS.has(effort as SdkEffortLevel) ? (effort as SdkEffortLevel) : undefined;
