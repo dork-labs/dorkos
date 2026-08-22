@@ -68,7 +68,14 @@ export function OneBar({ identity, fill, chips, actions }: OneBarProps) {
       {identity}
       {chips ? <div className="flex shrink-0 items-center gap-1.5">{chips}</div> : null}
       {fill ? (
-        <div className="ml-3 flex min-w-0 flex-1 items-center">{fill}</div>
+        // `self-stretch` passes the row's height through to fill content that
+        // asks for it. Without it this wrapper is only as tall as one line of
+        // text, and `/team`'s tab strip — which sizes its tabs with `h-full` —
+        // resolved that to a 20px tap target inside a 36px row (measured in
+        // Chromium at 1440). Stretched, the same tabs measure 35px: the row
+        // less its bottom hairline. `items-center` still centres children that
+        // do not ask to stretch, so filter chips are unaffected.
+        <div className="ml-3 flex min-w-0 flex-1 items-center self-stretch">{fill}</div>
       ) : (
         <div className="flex-1" />
       )}

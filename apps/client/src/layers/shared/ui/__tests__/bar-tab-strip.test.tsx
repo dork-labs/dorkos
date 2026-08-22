@@ -111,6 +111,81 @@ describe('BarTabStrip — links, not tabs', () => {
   });
 });
 
+describe('BarTabStrip — group divider', () => {
+  /** `/team`'s shape: three ways to read the roster, then two rules surfaces. */
+  const GROUPED: BarTab[] = [
+    { id: 'cards', label: 'Cards', to: '/' },
+    { id: 'topology', label: 'Topology', to: '/activity' },
+    { id: 'denied', label: 'Denied', to: '/tasks', dividerBefore: true },
+    { id: 'access', label: 'Access', to: '/workspaces' },
+  ];
+
+  function renderGrouped() {
+    const rootRoute = createRootRoute({
+      staticData: { header: null },
+      component: () => (
+        <>
+          <BarTabStrip
+            tabs={GROUPED}
+            activeTabId="cards"
+            label="Team views"
+            indicatorLayoutId="test-grouped"
+            testId="strip"
+          />
+          <Outlet />
+        </>
+      ),
+    });
+    const leaves = ['/', '/activity', '/tasks', '/workspaces'].map((path) =>
+      createRoute({
+        staticData: { header: null },
+        getParentRoute: () => rootRoute,
+        path,
+        component: () => <div data-testid="page">{path}</div>,
+      })
+    );
+    return render(
+      <RouterProvider
+        router={createRouter({
+          routeTree: rootRoute.addChildren(leaves),
+          history: createMemoryHistory({ initialEntries: ['/'] }),
+        })}
+      />
+    );
+  }
+
+  it('draws a rule immediately before the tab that asks for one', async () => {
+    renderGrouped();
+    await screen.findByTestId('page');
+
+    // Asserting POSITION, not merely presence: a divider rendered at the end of
+    // the strip, or before the wrong tab, would still satisfy a "there is a
+    // divider" check while saying the wrong thing about which views group.
+    const children = [...strip().children];
+    const labels = children.map((el) =>
+      el.getAttribute('data-slot') === 'bar-tab-strip-divider' ? '│' : el.textContent
+    );
+    expect(labels).toEqual(['Cards', 'Topology', '│', 'Denied', 'Access']);
+  });
+
+  it('draws no rule when no tab asks for one', async () => {
+    renderStrip('/', 'home');
+    await screen.findByTestId('page');
+    expect(strip().querySelector('[data-slot="bar-tab-strip-divider"]')).toBeNull();
+  });
+
+  it('keeps the rule out of the accessibility tree — it is not a place to go', async () => {
+    renderGrouped();
+    await screen.findByTestId('page');
+
+    const divider = strip().querySelector('[data-slot="bar-tab-strip-divider"]');
+    expect(divider).not.toBeNull();
+    expect(divider).toHaveAttribute('aria-hidden');
+    // Four labels, four links: the rule adds no fifth destination.
+    expect(screen.getAllByRole('link')).toHaveLength(4);
+  });
+});
+
 describe('BarTabStrip — overflow at a narrow width', () => {
   it('fades only the edge that still has tabs behind it', async () => {
     // jsdom lays nothing out, so every number here is stubbed: what this pins is

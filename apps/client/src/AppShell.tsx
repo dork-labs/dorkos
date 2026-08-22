@@ -564,7 +564,17 @@ export function AppShell() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.1 }}
-                            className="flex min-w-0 flex-1 items-center gap-2"
+                            // `self-stretch` so the row's full height is available
+                            // to a bar that wants it. The header centres its
+                            // children, which left this wrapper only as tall as
+                            // its text — and a tab strip asking for `h-full`
+                            // inside it got 24px, so every tab was a 24px
+                            // target in a 36px row (DOR-1401). Stretched, the
+                            // tabs measure 35px: the header's 36 less the 1px
+                            // that is its bottom hairline. Children still centre
+                            // themselves (`items-center`); only the box they
+                            // measure against changed.
+                            className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
                           >
                             <OneBarProvider value={oneBarState}>
                               <routeHeader.Header />

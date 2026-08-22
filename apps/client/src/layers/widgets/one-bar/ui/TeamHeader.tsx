@@ -1,125 +1,87 @@
 import { Plus } from 'lucide-react';
-import { useNavigate } from '@tanstack/react-router';
-import { Button } from '@/layers/shared/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/layers/shared/ui';
-import { useAgentCreationStore } from '@/layers/shared/model';
-import { useIsMobile } from '@/layers/shared/model';
-import { cn, type TeamViewMode } from '@/layers/shared/lib';
+import { BarTabStrip, Button, type BarTab } from '@/layers/shared/ui';
+import { useAgentCreationStore, useIsMobile } from '@/layers/shared/model';
+import type { TeamViewMode } from '@/layers/shared/lib';
 import { useOneBarState } from '../model/one-bar-context';
 import { BarTitle, OneBar } from './OneBar';
 
-interface ViewTab {
+interface TeamView {
   mode: TeamViewMode;
   label: string;
+  /** Starts the management group — see {@link TEAM_VIEW_TABS}. */
+  startsGroup?: boolean;
 }
 
-/** The two ways to read the roster, plus the map of the fleet. */
-const PRIMARY_TABS: ViewTab[] = [
+/**
+ * The five ways to look at the team, in strip order: three that draw the
+ * roster, then two that are about the rules rather than about who is here.
+ */
+const TEAM_VIEWS: TeamView[] = [
   { mode: 'cards', label: 'Cards' },
   { mode: 'table', label: 'Table' },
   { mode: 'topology', label: 'Topology' },
-];
-
-/** The mesh's management surfaces — about rules, not about who is here. */
-const MANAGEMENT_TABS: ViewTab[] = [
-  { mode: 'denied', label: 'Denied' },
+  { mode: 'denied', label: 'Denied', startsGroup: true },
   { mode: 'access', label: 'Access' },
 ];
 
 /**
- * What the switch offers on a phone.
+ * The team views as bar tabs — links to `/team?view=<mode>`, with a rule drawn
+ * before the first management view.
  *
- * The table is not among them: six columns at 375px is not a view, it is a
- * horizontal scroll bar wearing one, and everything the table says is on the
- * cards, which are built for that width. So the option is absent rather than
- * present-and-bad.
+ * **Every view is here at every width.** The switcher used to be a `<Select>`
+ * below `md` that withheld the table (six columns at 375px is a scroll bar
+ * wearing a table) and then had to smuggle it back in whenever you were
+ * already on it, because a Select whose value matches no item renders blank.
+ * The strip scrolls sideways instead, so the list is one list: nothing is
+ * hidden, nothing has to be conditionally un-hidden, and the phone reaches the
+ * last view the same way the desktop does.
  *
- * **Unless you are already on it.** `/agents?view=list` is a live external
- * address, so a phone can land on the table in one hop, and a Select whose
- * value matches no item renders BLANK — the switch would stop saying where you
- * are at exactly the moment you most need it to. So the current view is always
- * in the list, even when it is one this width does not otherwise offer.
- *
- * @param viewMode - The view showing right now.
+ * Exported so the dev playground shows the tabs the app ships rather than a
+ * copy that can drift from them.
  */
-function mobileTabs(viewMode: TeamViewMode): ViewTab[] {
-  const offered = [...PRIMARY_TABS, ...MANAGEMENT_TABS];
-  return offered.filter((tab) => tab.mode !== 'table' || viewMode === 'table');
-}
-
-const TAB_CLASS = 'text-xs font-medium transition-colors';
-const TAB_ACTIVE = 'bg-background text-foreground rounded-md px-3 py-1 shadow-sm';
-const TAB_IDLE = 'text-muted-foreground hover:text-foreground px-3 py-1';
+export const TEAM_VIEW_TABS: BarTab[] = TEAM_VIEWS.map(({ mode, label, startsGroup }) => ({
+  id: mode,
+  label,
+  to: '/team',
+  // An updater, not a literal: the owner filter and the sort are the same
+  // people asked about a different way, so they survive a change of view.
+  search: (prev: Record<string, unknown>) => ({ ...prev, view: mode }),
+  dividerBefore: startsGroup,
+}));
 
 /**
- * `/team` route bar — title, view switcher, and new agent button.
- *
- * The pill row and the mobile `<Select>` are still here. Phase T1 replaces both
- * with a `BarTabStrip`, which is why they have not been touched by the
- * foundation change beyond the layout they sit in.
+ * `/team` route bar — the title, the view strip, and the way to add an agent.
  */
 export function TeamHeader() {
   const { teamViewMode: viewMode } = useOneBarState();
   const openCreateDialog = useAgentCreationStore((s) => s.open);
-  const navigate = useNavigate();
   const isMobile = useIsMobile();
-
-  function handleViewChange(mode: TeamViewMode) {
-    void navigate({ to: '/team', search: (prev) => ({ ...prev, view: mode }) });
-  }
-
-  const viewSwitcher = (
-    <>
-      {!isMobile && (
-        <div className="bg-muted flex items-center rounded-md p-0.5">
-          {PRIMARY_TABS.map(({ mode, label }) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => handleViewChange(mode)}
-              className={cn(TAB_CLASS, viewMode === mode ? TAB_ACTIVE : TAB_IDLE)}
-            >
-              {label}
-            </button>
-          ))}
-          <div className="mx-1 h-4 border-l" />
-          {MANAGEMENT_TABS.map(({ mode, label }) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => handleViewChange(mode)}
-              className={cn(TAB_CLASS, viewMode === mode ? TAB_ACTIVE : TAB_IDLE)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-      {isMobile && (
-        <Select value={viewMode} onValueChange={(v) => handleViewChange(v as TeamViewMode)}>
-          <SelectTrigger className="w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {mobileTabs(viewMode).map(({ mode, label }) => (
-              <SelectItem key={mode} value={mode}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-    </>
-  );
 
   return (
     <OneBar
       identity={<BarTitle>Team</BarTitle>}
-      fill={viewSwitcher}
+      fill={
+        <BarTabStrip
+          tabs={TEAM_VIEW_TABS}
+          activeTabId={viewMode}
+          label="Team views"
+          indicatorLayoutId="team-view-tabs"
+          testId="team-views"
+        />
+      }
       actions={
-        <Button variant="outline" size="xs" onClick={() => openCreateDialog()}>
+        <Button
+          variant="outline"
+          size="xs"
+          onClick={() => openCreateDialog()}
+          // On a phone the words are the first thing worth spending: five view
+          // tabs and a title already want more than 390px, and `+` beside a
+          // roster is not ambiguous. The label stays on the button either way,
+          // so it is named the same for a screen reader at both widths.
+          aria-label={isMobile ? 'New Agent' : undefined}
+        >
           <Plus />
-          New Agent
+          {!isMobile && 'New Agent'}
         </Button>
       }
     />

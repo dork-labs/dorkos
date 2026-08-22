@@ -13,7 +13,7 @@ export { ActivityHeader } from './ui/ActivityHeader';
 export { TasksHeader } from './ui/TasksHeader';
 export { ChannelsHeader } from './ui/ChannelsHeader';
 export { SessionHeader } from './ui/SessionHeader';
-export { TeamHeader } from './ui/TeamHeader';
+export { TeamHeader, TEAM_VIEW_TABS } from './ui/TeamHeader';
 export { OneBarProvider, useOneBarState } from './model/one-bar-context';
 export type { OneBarRouteState } from './model/one-bar-context';
 export { resolveRouteHeader } from './model/route-header';

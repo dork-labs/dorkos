@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { Fragment, useCallback, useEffect, useRef } from 'react';
 import { Link, type LinkProps } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
@@ -16,6 +16,14 @@ export interface BarTab {
   to: LinkProps['to'];
   /** Search params to carry or rewrite — how `/team`'s views spell `?view=`. */
   search?: LinkProps['search'];
+  /**
+   * Draw a hairline immediately before this tab, splitting the strip into
+   * groups — `/team`'s three ways of reading the roster, then its two rules
+   * surfaces. A property of the tab the group STARTS with rather than a
+   * separate entry in the list, so a group cannot be reordered away from its
+   * own divider and no divider can outlive the tab it introduces.
+   */
+  dividerBefore?: boolean;
 }
 
 interface BarTabStripProps {
@@ -32,8 +40,9 @@ interface BarTabStripProps {
    */
   indicatorLayoutId: string;
   /**
-   * `bar` sits inside the 36px OneBar; `row` is a standalone strip that owns a
-   * full row and its bottom hairline, with 44px touch targets on a phone.
+   * `bar` sits inside the 36px OneBar, sized to its labels so chips can sit
+   * beside them; `row` is a standalone strip that owns a full row and its bottom
+   * hairline, with 44px touch targets on a phone.
    */
   density?: 'bar' | 'row';
   /**
@@ -130,7 +139,32 @@ export function BarTabStrip({
     // pinned to what the strip SHOWS rather than to what it holds — absolutely
     // positioning them inside the scroller would park them at the scrolled
     // content's edges and scroll them away with it.
-    <div className={cn('relative', isRow ? 'shrink-0 border-b' : 'flex min-w-0 flex-1', className)}>
+    // In the bar the strip is IDENTITY, so it takes the width its labels need
+    // and no more (`flex-initial`: size to content, shrink when the row runs
+    // out). Growing to fill the bar — which it did while nothing sat beside it —
+    // left the chips that belong next to the tabs floating in the middle of an
+    // empty row, and it made the strip start scrolling while there was still
+    // free space to its right, because a `flex-1` strip and the bar's `flex-1`
+    // spacer split the slack between them instead of giving it to the tabs.
+    // `min-w-0` is what still lets it shrink and scroll on a phone.
+    <div
+      className={cn(
+        'relative',
+        // `self-stretch` is what makes the tabs a real target. The bar centres
+        // its children, so without it this wrapper is only as tall as one line
+        // of text — the `h-full` on each tab then resolved against a 24px box,
+        // and every tab in the strip was a 24px tap target inside a 36px row
+        // (measured in Chromium at 1440, DOR-1401). Stretched, `h-full` means
+        // the row: 35px of pressable height, the 36px header less the 1px of it
+        // that is the bottom hairline. The active underline lands on that
+        // baseline too, instead of floating above it.
+        //
+        // The shell's cross-fade wrapper has to stretch as well, or this one has
+        // nothing taller to stretch to (`AppShell.tsx`).
+        isRow ? 'shrink-0 border-b' : 'flex min-w-0 flex-initial self-stretch',
+        className
+      )}
+    >
       <nav
         ref={scrollerRef}
         onScroll={edges.onScroll}
@@ -139,57 +173,83 @@ export function BarTabStrip({
         data-testid={testId}
         className={cn(
           'flex items-stretch gap-1 overflow-x-auto',
+          // The native scrollbar is hidden by `data-slot` in `index.css` — the
+          // edge fades below are this strip's affordance, and a reserved
+          // scrollbar was eating 11px of its own tap target. It cannot be a
+          // utility class here: the global `* { scrollbar-width: thin }` it has
+          // to beat is unlayered, so it outranks anything in `utilities`.
           isRow ? 'px-2' : 'min-w-0 flex-1'
         )}
       >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           return (
-            <Link
-              key={tab.id}
-              ref={isActive ? activeRef : undefined}
-              to={tab.to}
-              search={tab.search}
-              data-active={isActive || undefined}
-              className={cn(
-                'relative flex shrink-0 items-center text-sm font-medium whitespace-nowrap transition-colors',
-                // `min-h-11` is the 44px touch target on a phone; the desktop
-                // strip relaxes to the shell's denser rhythm. In the bar the row
-                // height is already the shell's 36px, so the tab just fills it.
-                isRow ? 'min-h-11 px-3 md:min-h-9' : 'h-full px-2.5',
-                // An INSET ring, not the shared `focus-ring` box-shadow. Setting
-                // `overflow-x: auto` computes `overflow-y` to `auto` as well, and
-                // this nav's content box is exactly one tab tall — so a ring drawn
-                // outside the tab's border box falls outside the scroll container
-                // and is clipped top and bottom. A ring painted inside the border
-                // box has nothing to clip against, and the 44px target survives
-                // (padding on the nav would have had to grow the row to keep it).
-                'focus-visible:ring-ring outline-hidden focus-visible:ring-2 focus-visible:ring-inset',
-                isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {tab.label}
-              {isActive && (
-                // Reduced motion is handled once, app-wide: the shell wraps
-                // everything in `<MotionConfig reducedMotion="user">`
-                // (AppShell.tsx), which drops this slide for anyone who asked for
-                // less motion.
-                <motion.span
-                  data-slot="bar-tab-strip-indicator"
-                  layoutId={indicatorLayoutId}
-                  className="bg-primary absolute right-0 bottom-0 left-0 h-0.5"
-                  transition={INDICATOR_SPRING}
+            <Fragment key={tab.id}>
+              {tab.dividerBefore && (
+                // Inset from the row's top and bottom so it reads as a group
+                // break rather than a second hairline competing with the bar's
+                // own. `aria-hidden`: the grouping is visual, and a screen
+                // reader announcing a separator between two links in a
+                // four-link region would be noise, not structure.
+                <div
+                  aria-hidden
+                  data-slot="bar-tab-strip-divider"
+                  className="bg-border my-2 w-px shrink-0 self-stretch"
                 />
               )}
-            </Link>
+              <Link
+                ref={isActive ? activeRef : undefined}
+                to={tab.to}
+                search={tab.search}
+                data-active={isActive || undefined}
+                className={cn(
+                  'relative flex shrink-0 items-center text-sm font-medium whitespace-nowrap transition-colors',
+                  // Two densities, two targets. A standalone row gets `min-h-11`
+                  // — the 44px touch target — relaxing to 36px on a desktop. In
+                  // the bar there is no such room: `h-full` fills the shell's row,
+                  // which measures 35px (the wrapper's `self-stretch` is what
+                  // makes "full" mean the row rather than one line of text).
+                  // That is under the 44px touch guidance, and it is the trade the
+                  // One Bar makes on a phone — one 36px row instead of two rows
+                  // totalling 80px. Flagged at the spec's phone checkpoint, not
+                  // silently absorbed.
+                  isRow ? 'min-h-11 px-3 md:min-h-9' : 'h-full px-2.5',
+                  // An INSET ring, not the shared `focus-ring` box-shadow. Setting
+                  // `overflow-x: auto` computes `overflow-y` to `auto` as well, and
+                  // this nav's content box is exactly one tab tall — so a ring drawn
+                  // outside the tab's border box falls outside the scroll container
+                  // and is clipped top and bottom. A ring painted inside the border
+                  // box has nothing to clip against, and the tab's full-height
+                  // target survives (padding on the nav would have had to grow the
+                  // row to keep it).
+                  'focus-visible:ring-ring outline-hidden focus-visible:ring-2 focus-visible:ring-inset',
+                  isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {tab.label}
+                {isActive && (
+                  // Reduced motion is handled once, app-wide: the shell wraps
+                  // everything in `<MotionConfig reducedMotion="user">`
+                  // (AppShell.tsx), which drops this slide for anyone who asked for
+                  // less motion.
+                  <motion.span
+                    data-slot="bar-tab-strip-indicator"
+                    layoutId={indicatorLayoutId}
+                    className="bg-primary absolute right-0 bottom-0 left-0 h-0.5"
+                    transition={INDICATOR_SPRING}
+                  />
+                )}
+              </Link>
+            </Fragment>
           );
         })}
       </nav>
-      {/* Decorative, and never in the way of the tab underneath: the fade sits
-          over a 44px touch target, so anything that swallowed a tap would cost
-          more than the cue is worth. In `row` density it stops short of the
-          bottom hairline (`bottom-px`) so the border reads as one unbroken line
-          under it. */}
+      {/* Decorative, and never in the way of the tab underneath: the fade covers
+          the full height of whatever target it sits over — the row in the bar,
+          44px in a standalone row — so anything that swallowed a tap would cost more
+          than the cue is worth. In `row` density it stops short of the bottom
+          hairline (`bottom-px`) so the border reads as one unbroken line under
+          it. */}
       {edges.start && (
         <div
           aria-hidden

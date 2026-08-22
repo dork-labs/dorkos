@@ -6,7 +6,10 @@ import {
   TitleBar,
   OneBarProvider,
   BarFixedCluster,
+  TeamHeader,
+  TEAM_VIEW_TABS,
 } from '@/layers/widgets/one-bar';
+import type { TeamViewMode } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -19,14 +22,18 @@ const HOME_TABS: BarTab[] = [
   { id: 'workspaces', label: 'Workspaces', to: '/workspaces' },
 ];
 
-/** The five team views, which is enough labels to overflow a phone. */
-const TEAM_TABS: BarTab[] = [
-  { id: 'cards', label: 'Cards', to: '/team' },
-  { id: 'table', label: 'Table', to: '/team' },
-  { id: 'topology', label: 'Topology', to: '/team' },
-  { id: 'denied', label: 'Denied', to: '/team' },
-  { id: 'access', label: 'Access', to: '/team' },
-];
+/**
+ * The five team views, which is enough labels to overflow a phone — the REAL
+ * tabs `/team` ships, not a copy of them, so a view added to the bar shows up
+ * here without anyone remembering to mirror it.
+ */
+const TEAM_TABS: readonly BarTab[] = TEAM_VIEW_TABS;
+
+/** Every view, so the strip can be seen with each one marked in turn. */
+const TEAM_VIEW_MODES: TeamViewMode[] = ['cards', 'table', 'topology', 'denied', 'access'];
+
+/** The width a phone gives the bar. */
+const PHONE_WIDTH = 390;
 
 const LONG_ROOM_NAME = 'Priya, Kai, Ikechi and 47 others about the quarterly migration plan';
 
@@ -200,6 +207,72 @@ export function OneBarShowcases() {
               density="row"
             />
           </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Team Bar"
+        description="The real /team bar: a title, the five views as one scrolling strip, and the way to add an agent. The pill row and the phone's Select collapse are gone — every view is reachable at every width, by scrolling rather than by being conditionally re-offered."
+      >
+        <ShowcaseLabel>
+          Desktop — three ways to read the roster, a rule, then the two rules surfaces
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame>
+            <TeamHeader />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          At 390px — the strip scrolls, and the end fade says the rules surfaces are still back
+          there
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame width={PHONE_WIDTH}>
+            <TeamHeader />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Each view marked in turn — the strip reads its active tab off the URL, so this is what
+          `?view=` looks like from the bar
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-col gap-2">
+            {TEAM_VIEW_MODES.map((mode) => (
+              <OneBarProvider key={mode} value={{ ...QUIET_BAR_STATE, teamViewMode: mode }}>
+                <BarFrame>
+                  <TeamHeader />
+                </BarFrame>
+              </OneBarProvider>
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The phone's action — `New Agent` becomes a labelled `+`. This one is composed by hand
+          because the collapse follows the VIEWPORT (`useIsMobile`), not the frame: narrow the
+          browser to see the bar above do it for real.
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame width={PHONE_WIDTH}>
+            <OneBar
+              identity={<BarTitle>Team</BarTitle>}
+              fill={
+                <BarTabStrip
+                  tabs={TEAM_TABS}
+                  activeTabId="cards"
+                  label="Team views, phone"
+                  indicatorLayoutId="playground-team-tabs-phone"
+                />
+              }
+              actions={
+                <Button variant="outline" size="xs" aria-label="New Agent">
+                  <Plus />
+                </Button>
+              }
+            />
+          </BarFrame>
         </ShowcaseDemo>
       </PlaygroundSection>
     </OneBarProvider>

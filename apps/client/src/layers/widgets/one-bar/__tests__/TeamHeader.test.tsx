@@ -1,7 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+  type AnyRouter,
+} from '@tanstack/react-router';
+import type { TeamViewMode } from '@/layers/shared/lib';
 import { TeamHeader } from '../ui/TeamHeader';
 import { BarHarness } from './bar-harness';
 
@@ -9,15 +19,19 @@ import { BarHarness } from './bar-harness';
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockNavigate = vi.fn();
+// The router is NOT mocked here. The view switcher is a strip of links now, so
+// what it writes to the URL is only observable through a router that actually
+// serves `/team` — a mocked `useNavigate` would let a strip that navigates
+// nowhere pass.
+
 let mockIsMobile = false;
 
-vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => mockNavigate,
-}));
-
 const mockOpenCreateDialog = vi.fn();
-vi.mock('@/layers/shared/model', () => ({
+// Only the two the bar reads are replaced. The rest of the barrel stays REAL —
+// the strip's overflow and reveal machinery lives there, and stubbing it would
+// mean testing a tab strip this file invented rather than the one that ships.
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useIsMobile: () => mockIsMobile,
   useAgentCreationStore: (selector: (s: { open: () => void }) => unknown) =>
     selector({ open: mockOpenCreateDialog }),
@@ -44,37 +58,56 @@ vi.mock('@/layers/features/right-panel', () => ({
 // ---------------------------------------------------------------------------
 
 beforeAll(() => {
-  // Radix's Select content calls these on mount. jsdom implements no layout,
-  // so it ships neither — without them the dropdown throws before its items
-  // are queryable, and the mobile assertion below could never run.
-  Element.prototype.scrollIntoView = vi.fn();
-  Element.prototype.hasPointerCapture = vi.fn(() => false);
-  Element.prototype.releasePointerCapture = vi.fn();
   globalThis.ResizeObserver ??= class {
     observe() {}
     unobserve() {}
     disconnect() {}
   };
-
-  Object.defineProperty(window, 'matchMedia', {
-    writable: true,
-    value: vi.fn().mockImplementation((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  });
 });
 
 afterEach(() => {
   cleanup();
   mockIsMobile = false;
 });
+
+// ---------------------------------------------------------------------------
+// Harness
+// ---------------------------------------------------------------------------
+
+const VIEW_LABELS = ['Cards', 'Table', 'Topology', 'Denied', 'Access'] as const;
+
+/**
+ * Mount the bar inside a router that really serves `/team`, so the links'
+ * `href`s are the ones the app would build and clicking one moves the URL.
+ */
+function renderTeamBar(viewMode: TeamViewMode = 'cards', initialUrl = '/team'): AnyRouter {
+  const rootRoute = createRootRoute({
+    staticData: { header: null },
+    component: () => (
+      <>
+        <BarHarness teamViewMode={viewMode}>
+          <TeamHeader />
+        </BarHarness>
+        <Outlet />
+      </>
+    ),
+  });
+  const teamRoute = createRoute({
+    staticData: { header: null },
+    getParentRoute: () => rootRoute,
+    path: '/team',
+    validateSearch: (search: Record<string, unknown>) => search,
+    component: () => <div data-testid="page">team</div>,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([teamRoute]),
+    history: createMemoryHistory({ initialEntries: [initialUrl] }),
+  });
+  render(<RouterProvider router={router} />);
+  return router as unknown as AnyRouter;
+}
+
+const strip = () => screen.getByTestId('team-views');
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -85,195 +118,112 @@ describe('TeamHeader', () => {
     vi.clearAllMocks();
   });
 
-  it('titles the page Team', () => {
-    render(
-      <BarHarness teamViewMode="cards">
-        <TeamHeader />
-      </BarHarness>
-    );
+  it('titles the page Team', async () => {
+    renderTeamBar();
+    await screen.findByTestId('page');
     // A <span>, queried as one so it does not collide with a view-switch tab
     // that happens to share a word.
     expect(screen.getByText('Team', { selector: 'span' })).toBeInTheDocument();
   });
 
-  it('renders New Agent button', () => {
-    render(
-      <BarHarness teamViewMode="cards">
-        <TeamHeader />
-      </BarHarness>
-    );
-    expect(screen.getByRole('button', { name: /new agent/i })).toBeInTheDocument();
-  });
-
-  it('clicking New Agent calls useAgentCreationStore.open()', () => {
-    render(
-      <BarHarness teamViewMode="cards">
-        <TeamHeader />
-      </BarHarness>
-    );
+  it('clicking New Agent calls useAgentCreationStore.open()', async () => {
+    renderTeamBar();
+    await screen.findByTestId('page');
     fireEvent.click(screen.getByRole('button', { name: /new agent/i }));
     expect(mockOpenCreateDialog).toHaveBeenCalledTimes(1);
   });
 
-  // The search trigger used to be asserted here, back when each route bar
-  // rendered its own. It belongs to `BarFixedCluster` now — mounted once by the
-  // shell so it does not re-animate on navigation — and is pinned in
-  // `OneBar.test.tsx`. A bar asserting it would be asserting the shell's job.
+  describe('view switcher', () => {
+    it('renders the five views and the group rule, in order', async () => {
+      renderTeamBar();
+      await screen.findByTestId('page');
 
-  describe('view switcher (desktop)', () => {
-    it('offers every view, the table included', () => {
-      mockIsMobile = false;
-      render(
-        <BarHarness teamViewMode="cards">
-          <TeamHeader />
-        </BarHarness>
+      // Six entries: five links and the hairline that splits the three ways of
+      // reading the roster from the two rules surfaces. Asserted as a sequence
+      // so a divider drawn in the wrong place cannot pass.
+      const entries = [...strip().children].map((el) =>
+        el.getAttribute('data-slot') === 'bar-tab-strip-divider' ? '│' : el.textContent
       );
-      for (const label of ['Cards', 'Table', 'Topology', 'Denied', 'Access']) {
-        expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+      expect(entries).toEqual(['Cards', 'Table', 'Topology', '│', 'Denied', 'Access']);
+    });
+
+    it('points every view at /team?view=<mode>', async () => {
+      renderTeamBar();
+      await screen.findByTestId('page');
+
+      for (const label of VIEW_LABELS) {
+        expect(screen.getByRole('link', { name: label })).toHaveAttribute(
+          'href',
+          `/team?view=${label.toLowerCase()}`
+        );
       }
     });
 
-    it('renders separator between primary and management groups', () => {
-      mockIsMobile = false;
-      render(
-        <BarHarness teamViewMode="cards">
-          <TeamHeader />
-        </BarHarness>
-      );
-      expect(document.querySelector('.border-l')).not.toBeNull();
-    });
+    it('clicking a view writes ?view= to the URL', async () => {
+      const router = renderTeamBar('cards');
+      await screen.findByTestId('page');
 
-    it('applies active styling to the current view tab', () => {
-      render(
-        <BarHarness teamViewMode="topology">
-          <TeamHeader />
-        </BarHarness>
-      );
-      expect(screen.getByRole('button', { name: 'Topology' })).toHaveClass('bg-background');
-      expect(screen.getByRole('button', { name: 'Cards' })).not.toHaveClass('bg-background');
-    });
+      fireEvent.click(screen.getByRole('link', { name: 'Topology' }));
 
-    it('applies active styling to the table tab', () => {
-      render(
-        <BarHarness teamViewMode="table">
-          <TeamHeader />
-        </BarHarness>
-      );
-      expect(screen.getByRole('button', { name: 'Table' })).toHaveClass('bg-background');
-      expect(screen.getByRole('button', { name: 'Cards' })).not.toHaveClass('bg-background');
-    });
-
-    it('applies active styling to denied tab when viewMode is denied', () => {
-      render(
-        <BarHarness teamViewMode="denied">
-          <TeamHeader />
-        </BarHarness>
-      );
-      expect(screen.getByRole('button', { name: 'Denied' })).toHaveClass('bg-background');
-      expect(screen.getByRole('button', { name: 'Cards' })).not.toHaveClass('bg-background');
-    });
-
-    it('applies active styling to access tab when viewMode is access', () => {
-      render(
-        <BarHarness teamViewMode="access">
-          <TeamHeader />
-        </BarHarness>
-      );
-      expect(screen.getByRole('button', { name: 'Access' })).toHaveClass('bg-background');
-      expect(screen.getByRole('button', { name: 'Cards' })).not.toHaveClass('bg-background');
-    });
-
-    it('navigates to /team, keeping the rest of the search params', () => {
-      render(
-        <BarHarness teamViewMode="cards">
-          <TeamHeader />
-        </BarHarness>
-      );
-      fireEvent.click(screen.getByRole('button', { name: 'Topology' }));
-
-      expect(mockNavigate).toHaveBeenCalledWith({ to: '/team', search: expect.any(Function) });
-      const searchFn = mockNavigate.mock.calls[0][0].search;
-      // The owner filter survives a view change: the same people are still the
-      // subject, drawn a different way.
-      expect(searchFn({ view: 'cards', owner: 'person-1', sort: 'name:asc' })).toEqual({
-        view: 'topology',
-        owner: 'person-1',
-        sort: 'name:asc',
+      await waitFor(() => {
+        expect(router.state.location.search).toEqual({ view: 'topology' });
       });
     });
 
-    it('reaches the table view', () => {
-      render(
-        <BarHarness teamViewMode="cards">
-          <TeamHeader />
-        </BarHarness>
-      );
-      fireEvent.click(screen.getByRole('button', { name: 'Table' }));
+    it('keeps the rest of the search params when the view changes', async () => {
+      // The owner filter survives a view change: the same people are still the
+      // subject, drawn a different way.
+      const router = renderTeamBar('cards', '/team?view=cards&owner=person-1');
+      await screen.findByTestId('page');
 
-      const searchFn = mockNavigate.mock.calls[0][0].search;
-      expect(searchFn({ view: 'cards' })).toEqual({ view: 'table' });
+      fireEvent.click(screen.getByRole('link', { name: 'Table' }));
+
+      await waitFor(() => {
+        expect(router.state.location.search).toEqual({ view: 'table', owner: 'person-1' });
+      });
+    });
+
+    it.each(VIEW_LABELS)('marks %s active when it is the view showing', async (label) => {
+      renderTeamBar(label.toLowerCase() as TeamViewMode);
+      await screen.findByTestId('page');
+
+      expect(screen.getByRole('link', { name: label })).toHaveAttribute('data-active');
+      for (const other of VIEW_LABELS.filter((l) => l !== label)) {
+        expect(screen.getByRole('link', { name: other })).not.toHaveAttribute('data-active');
+      }
     });
   });
 
-  describe('view switcher (mobile)', () => {
-    it('replaces the tab buttons with a Select', () => {
+  describe('on a phone', () => {
+    it('offers the same five views — no Select, nothing withheld', async () => {
       mockIsMobile = true;
-      render(
-        <BarHarness teamViewMode="cards">
-          <TeamHeader />
-        </BarHarness>
-      );
-      for (const label of ['Cards', 'Table', 'Topology', 'Denied', 'Access']) {
-        expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
+      renderTeamBar();
+      await screen.findByTestId('page');
+
+      // The `<Select>` collapse is gone. It hid the table view behind a width
+      // check and went blank on any view it did not list; the strip scrolls
+      // instead, so every view stays reachable at 390px.
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+      for (const label of VIEW_LABELS) {
+        expect(screen.getByRole('link', { name: label })).toBeInTheDocument();
       }
-      expect(screen.getByRole('combobox')).toBeInTheDocument();
     });
 
-    it('does not offer the table below md', async () => {
+    it('collapses New Agent to a labelled icon', async () => {
       mockIsMobile = true;
-      render(
-        <BarHarness teamViewMode="cards">
-          <TeamHeader />
-        </BarHarness>
-      );
+      renderTeamBar();
+      await screen.findByTestId('page');
 
-      // Open the Select so its items mount — Radix renders them lazily, so an
-      // assertion against the closed trigger would pass no matter what the
-      // option list holds.
-      fireEvent.click(screen.getByRole('combobox'));
-      expect(await screen.findByRole('option', { name: 'Cards' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Topology' })).toBeInTheDocument();
-      // The one that is deliberately absent: six columns at 375px is a scroll
-      // bar wearing a table.
-      expect(screen.queryByRole('option', { name: 'Table' })).not.toBeInTheDocument();
+      const button = screen.getByRole('button', { name: 'New Agent' });
+      // Still reachable by name (the icon carries the aria-label), but the words
+      // are gone — that is the width the phone gets back.
+      expect(button).not.toHaveTextContent('New Agent');
     });
 
-    it('still names the table when that is where you already are', () => {
-      // `/agents?view=list` redirects to `?view=table`, so a phone reaches this
-      // view in one hop. A Select whose value matches no item renders blank —
-      // the switch would go silent about where you are.
-      mockIsMobile = true;
-      render(
-        <BarHarness teamViewMode="table">
-          <TeamHeader />
-        </BarHarness>
-      );
-
-      expect(screen.getByRole('combobox')).toHaveTextContent('Table');
-    });
-
-    it('offers a way off the table once you are on it', async () => {
-      mockIsMobile = true;
-      render(
-        <BarHarness teamViewMode="table">
-          <TeamHeader />
-        </BarHarness>
-      );
-
-      fireEvent.click(screen.getByRole('combobox'));
-      expect(await screen.findByRole('option', { name: 'Table' })).toBeInTheDocument();
-      // The point of keeping it listed is being able to leave.
-      expect(screen.getByRole('option', { name: 'Cards' })).toBeInTheDocument();
+    it('spells the words out on a desktop', async () => {
+      renderTeamBar();
+      await screen.findByTestId('page');
+      expect(screen.getByRole('button', { name: /new agent/i })).toHaveTextContent('New Agent');
     });
   });
 });
