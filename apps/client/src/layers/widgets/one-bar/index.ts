@@ -15,7 +15,7 @@ export { HomeSurfaceBar } from './ui/HomeSurfaceBar';
 export { BarMembersChip } from './ui/BarMembersChip';
 // The room chips, shared by the channel bar and Home's — Home is a room too.
 export { RoomMembersChip } from './ui/RoomMembersChip';
-export { RoomRunState, RoomWorkingChip, RoomHaltButton } from './ui/RoomRunState';
+export { RoomRunState } from './ui/RoomRunState';
 export { ChannelsBar } from './ui/ChannelsBar';
 export { SessionHeader } from './ui/SessionHeader';
 export { TeamHeader } from './ui/TeamHeader';

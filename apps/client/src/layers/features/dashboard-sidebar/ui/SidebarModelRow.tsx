@@ -49,7 +49,24 @@ import { useSidebarChrome } from './SidebarChrome';
  * @param target - The row's target.
  * @param active - What the router says is open, or `null`.
  */
-export function isRowActive(target: SidebarTarget, active: SidebarTarget | null): boolean {
+export function isRowActive(
+  target: SidebarTarget,
+  active: SidebarTarget | null,
+  homeRoomId: string | null = null
+): boolean {
+  // **Home's room, lit without being "active".** `/` draws #team, so its row has
+  // to look open there — but `/` has no active target and deliberately does not
+  // get one (`useActiveTarget` explains what widening it broke). A thread row
+  // carries the same `roomId` as its channel and is excluded, or Home would
+  // light two rows and leave `aria-current="page"` no longer unique.
+  if (
+    homeRoomId !== null &&
+    target.kind === 'room' &&
+    target.roomKind !== 'thread' &&
+    target.roomId === homeRoomId
+  ) {
+    return true;
+  }
   if (active === null) return false;
   if (target.kind === 'session') {
     return active.kind === 'session' && active.sessionId === target.sessionId;
@@ -147,7 +164,7 @@ function SidebarModelRowBody({
 }) {
   const chrome = useSidebarChrome();
   const target = row.target;
-  const isActive = isRowActive(target, chrome.activeTarget);
+  const isActive = isRowActive(target, chrome.activeTarget, chrome.homeRoomId);
 
   if (target.kind === 'agent') {
     return <AgentRowFromModel path={target.path} row={row} isActive={isActive} drag={drag} />;

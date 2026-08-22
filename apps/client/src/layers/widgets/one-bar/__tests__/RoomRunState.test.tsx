@@ -19,7 +19,10 @@ import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomRunState } from '../ui/RoomRunState';
 
-const { working } = vi.hoisted(() => ({ working: { count: 0 } }));
+const { working, mobile } = vi.hoisted(() => ({
+  working: { count: 0 },
+  mobile: { is: false },
+}));
 const halt = vi.hoisted(() => vi.fn());
 const pending = vi.hoisted(() => ({ value: false }));
 
@@ -28,9 +31,14 @@ vi.mock('@/layers/entities/room', () => ({
   useHaltRoom: () => ({ mutate: halt, isPending: pending.value }),
 }));
 
+// The viewport question, stubbed at the hook rather than at `matchMedia` so a
+// test states the width class it means instead of a media-query string.
+vi.mock('@/layers/shared/model', () => ({ useIsMobile: () => mobile.is }));
+
 afterEach(() => {
   cleanup();
   working.count = 0;
+  mobile.is = false;
   pending.value = false;
   vi.clearAllMocks();
 });
@@ -108,6 +116,39 @@ describe('RoomRunState', () => {
 
     await user.click(screen.getByRole('button', { name: 'Stop all agents in #general' }));
     expect(halt).toHaveBeenCalledWith({ roomId: 'room-1' });
+  });
+
+  it('draws nothing at all on a phone, reserving none of its width (spec §4)', () => {
+    // **The one place the reserved slot is the wrong trade.** ~70px of a 390px
+    // bar held open for something usually absent came straight out of the room's
+    // name, which is the whole identity of the surface — measured, it clipped
+    // names that otherwise fit. Nothing is drawn, so nothing can jump either.
+    mobile.is = true;
+    renderRunState();
+
+    expect(screen.queryByTestId('room-run-state')).not.toBeInTheDocument();
+  });
+
+  it('draws nothing on a phone even while agents are working', () => {
+    // The signal is not dropped, it MOVES: the members chip carries a dot and
+    // says so in its accessible name, and the live lane's stop-all above the
+    // composer is the reach that replaces this button.
+    mobile.is = true;
+    working.count = 3;
+    renderRunState();
+
+    expect(screen.queryByTestId('room-run-state')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('room-halt')).not.toBeInTheDocument();
+  });
+
+  it('holds the count box open for two digits, so 9 → 10 moves nothing', () => {
+    // The residual jump the reserved slot would otherwise still have: a chip
+    // sized to one digit widens when the count reaches ten, nudging everything
+    // left of it. A floor on the number's box is what absorbs that.
+    working.count = 9;
+    renderRunState();
+
+    expect(screen.getByText('9')).toHaveClass('min-w-[2ch]', 'tabular-nums');
   });
 
   it('cannot be pressed twice while the halt is still going out', () => {

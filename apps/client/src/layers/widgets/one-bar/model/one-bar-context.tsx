@@ -34,9 +34,15 @@ export interface OneBarRouteState {
    * costs no request of its own (`useRoom` is a TanStack cache read of the query
    * the page below already runs).
    *
-   * `null` off `/channels`, and on it whenever the id is missing, unknown or
-   * archived — which is exactly when the bar falls back to a plain "Channels"
+   * `null` off `/channels`, and on it whenever the id is missing or the room
+   * read fails — which is exactly when the bar falls back to a plain "Channels"
    * title beside the page saying the conversation isn't here (spec §5 case 6).
+   *
+   * An ARCHIVED room is not one of those cases: `GET /api/rooms/:id` returns it
+   * like any other, so an archived channel opened by id arrives here whole and
+   * the bar says so with its badge. Only the room LIST hides archived rooms,
+   * which is a different read and the reason #team's archived state is resolved
+   * separately (`useTeamRoom`).
    */
   room: RoomWithRoster | null;
   /**

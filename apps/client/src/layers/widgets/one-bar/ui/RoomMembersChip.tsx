@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { roomDisplayTitle } from '@/layers/entities/room';
+import { roomDisplayTitle, useOpenRoomWorking } from '@/layers/entities/room';
 import {
   RoomDetailsDialog,
   type RoomDetailsFocus,
@@ -33,12 +33,18 @@ interface RoomMembersChipProps {
  */
 export function RoomMembersChip({ room, count }: RoomMembersChipProps) {
   const [focus, setFocus] = useState<RoomDetailsFocus | null>(null);
+  // Read here so BOTH bars get the phone's working dot from one place. It is a
+  // store read, not a request — the same observer `RoomRunState` mounts, and on
+  // a phone that component draws nothing, so this is the only thing left saying
+  // the room is busy (spec §4).
+  const working = useOpenRoomWorking(room.id);
 
   return (
     <>
       <BarMembersChip
         count={count}
         roomName={roomDisplayTitle(room)}
+        working={working}
         onClick={() => setFocus('members')}
       />
       {focus !== null && (

@@ -1,5 +1,10 @@
 import { AtSign, Hash } from 'lucide-react';
-import { BridgeVisibilityBadge, RoomTitle, roomDisplayTitle } from '@/layers/entities/room';
+import {
+  BridgeVisibilityBadge,
+  RoomTitle,
+  roomDisplayTitle,
+  useTeamRoom,
+} from '@/layers/entities/room';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useOneBarState } from '../model/one-bar-context';
 import { BarTitle, OneBar } from './OneBar';
@@ -9,20 +14,34 @@ import { RoomRunState } from './RoomRunState';
 /**
  * A room's identity in 36px: its mark, its name, and what it is about.
  *
- * **The topic hides first (I2), and it is built to.** It is the one part of this
- * a reader can lose without losing the room, so it carries the `min-w-0` and the
- * truncation while the name keeps its natural width — and below `sm` it is not
- * drawn at all, because a phone's bar is spending every pixel on the name and
- * the chips. Both name and topic keep their full text in a `title`, so a room
- * called something long is still readable by hovering it (spec §5 case 1).
+ * **The topic yields first, and the shrink factors are what make that true
+ * (I2).** Both the name and the topic are flex items, so the naive arrangement —
+ * two items each free to shrink — makes them shrink IN PROPORTION TO THEIR
+ * CONTENT, which is the opposite of the rule: a long topic beside a short name
+ * ate the name first, and `#general` read as `#gen…` beside a topic with room to
+ * spare. Giving the topic an enormous shrink factor makes it absorb essentially
+ * all of the deficit, so it truncates away to nothing before the name gives up a
+ * pixel; the name's `min-w` floor is what still lets it ellipsize as a LAST
+ * resort rather than overflowing the row (spec §5 case 1). Below `sm` the topic
+ * is not drawn at all — a phone's bar spends every pixel on the name.
  *
- * **A glyph, not a face.** The masthead drew a `RoomAvatar` with the fleet's
- * real agent emoji behind it, which this layer cannot reach: the faces come from
- * the room widget's own directory, and a widget may not import another widget.
- * Drawing the avatar anyway would fall back to a hashed letter — the same agent
- * wearing its emoji in the sidebar and a letter up here, which is the exact
- * disagreement the masthead was fixed to remove. So the bar shows no face rather
- * than a wrong one, and says which KIND of room this is instead.
+ * Both keep their full text in a `title`, so nothing is unreadable, only
+ * abbreviated.
+ *
+ * **An `h1`, because this row is now the page's identity.** The masthead that
+ * carried the room's heading is gone, and a page whose only name lives in a
+ * `span` has no heading at all — which is a real regression for anyone
+ * navigating by headings, not merely a selector detail. `RoomTitle` supplies the
+ * accessible name (`#general`) while the eye reads the bare slug.
+ *
+ * **A glyph rather than a face, and that is a trade rather than a rule.** The
+ * fleet's real agent emoji come from the room widget's own directory, which this
+ * layer cannot reach across the widget boundary; drawing `RoomAvatar` without it
+ * falls back to a hashed letter, so the same agent would wear its emoji in the
+ * sidebar and a letter here — the exact disagreement the masthead was fixed to
+ * remove. Showing no face beats showing a wrong one. The cost is real and lands
+ * hardest on DMs, whose identity IS a person: phase R2 can lift the directory to
+ * a shared layer and give this row the true face.
  */
 function RoomIdentity({ room }: { room: RoomWithRoster }) {
   const Mark = room.kind === 'channel' ? Hash : AtSign;
@@ -30,10 +49,12 @@ function RoomIdentity({ room }: { room: RoomWithRoster }) {
   return (
     <div className="flex min-w-0 shrink items-center gap-1.5">
       <Mark aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
-      <RoomTitle room={room} className="text-sm font-medium" />
+      <h1 className="flex min-w-[6ch] shrink items-center text-sm font-medium">
+        <RoomTitle room={room} />
+      </h1>
       {room.topic && (
         <span
-          className="text-muted-foreground hidden min-w-0 truncate text-xs sm:inline"
+          className="text-muted-foreground hidden min-w-0 shrink-[99999] truncate text-xs sm:inline"
           title={room.topic}
         >
           {room.topic}
@@ -66,8 +87,19 @@ function RoomIdentity({ room }: { room: RoomWithRoster }) {
  */
 export function ChannelsBar() {
   const { room } = useOneBarState();
+  const team = useTeamRoom();
 
-  if (room === null) return <OneBar identity={<BarTitle>Channels</BarTitle>} />;
+  // **#team never gets a room bar HERE, because this route never shows it.**
+  // `?id=<team>` redirects to Home (spec §3.5), and while that navigation is in
+  // flight the page below has already stopped drawing the room — so a bar
+  // announcing `#team` sat over an empty pane for those frames, which is the
+  // flash the redirect was added to prevent, relocated to the header. Resolved
+  // from `useTeamRoom` rather than from the page's redirect hook because a
+  // widget may not import another widget; both read the same room list, so they
+  // cannot disagree about which room is #team.
+  const leavingForHome = room !== null && team.room?.id === room.id;
+
+  if (room === null || leavingForHome) return <OneBar identity={<BarTitle>Channels</BarTitle>} />;
 
   const name = roomDisplayTitle(room);
 

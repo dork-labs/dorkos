@@ -714,7 +714,7 @@
         "apps/server/src/services/rooms/room-collect.ts",
         "apps/server/src/services/rooms/room-trigger.ts",
         "apps/server/src/services/rooms/notices/notice-copy.ts",
-        "apps/client/src/layers/widgets/room-view/ui/RoomHeader.tsx",
+        "apps/client/src/layers/widgets/one-bar/ui/RoomRunState.tsx",
         "apps/client/src/layers/widgets/room-view/ui/RoomLiveLane.tsx",
         "apps/client/src/layers/features/conversation/ui/LaneContent.tsx",
         "apps/client/src/layers/entities/room/model/use-halt-room.ts",

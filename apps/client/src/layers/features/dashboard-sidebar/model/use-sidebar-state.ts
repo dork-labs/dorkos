@@ -22,7 +22,6 @@ import { useCallback, useMemo, useRef } from 'react';
 import { useRouterState, useSearch } from '@tanstack/react-router';
 import { useShallow } from 'zustand/shallow';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import { TEAM_ROOM_WELL_KNOWN } from '@dorkos/shared/room-schemas';
 import { useNow } from '@/layers/shared/model';
 import {
   disambiguateDisplayNames,
@@ -102,43 +101,24 @@ function useStableList(value: string[]): string[] {
 }
 
 /**
- * Which room the current address is showing, if it is showing one.
- *
- * Two addresses draw a room: `/channels?id=` names any of them, and `/` is
- * always #team.
- *
- * @param pathname - The route on screen.
- * @param searchId - `?id=`, when the route carries one.
- * @param teamRoomId - #team's id, or `null` before the room list resolves it.
- */
-function resolveOpenRoomId(
-  pathname: string,
-  searchId: string | null,
-  teamRoomId: string | null
-): string | null {
-  if (pathname === '/channels') return searchId;
-  if (pathname === '/') return teamRoomId;
-  return null;
-}
-
-/**
  * The router's answer to "what is on screen", as a {@link SidebarTarget}.
  *
  * Read off the URL rather than out of a store, for the reason every other
  * sidebar surface reads it there: identity travels as a search param, and the
  * URL is the one answer every window agrees on.
  *
- * **Home counts as a room, because Home IS one.** `/` draws #team (spec
- * `one-bar-header` §3.5 made it the room's only address), so the row for #team
- * has to light up there — otherwise pressing it navigates somewhere that looks
- * like nowhere, and the sidebar stops agreeing with the screen.
+ * **`/` is deliberately NOT a room target here**, even though it draws #team.
+ * This value is the sidebar's notion of what is open, and it feeds far more than
+ * a row tint: the scroll anchor, the working rollup, and which rows Today
+ * gathers all read it. Making Home answer "the #team room" pinned #team into
+ * Today and moved the anchor on every visit to the dashboard — a large behaviour
+ * change smuggled in behind a highlight. The highlight is handled on its own,
+ * next to the row that needs it (`SidebarChrome`'s `activeRoomId`).
  *
  * @param roomKindOf - Resolves a room id to its kind, from the room list.
- * @param teamRoomId - Which room `/` is showing, when the list knows yet.
  */
 function useActiveTarget(
-  roomKindOf: (roomId: string) => 'channel' | 'dm' | 'thread',
-  teamRoomId: string | null
+  roomKindOf: (roomId: string) => 'channel' | 'dm' | 'thread'
 ): SidebarTarget | null {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const search = useSearch({ strict: false }) as {
@@ -149,7 +129,7 @@ function useActiveTarget(
   };
   const sessionId = pathname === '/session' ? (search.session ?? null) : null;
   const cwd = pathname === '/session' ? (search.dir ?? null) : null;
-  const roomId = resolveOpenRoomId(pathname, search.id ?? null, teamRoomId);
+  const roomId = pathname === '/channels' ? (search.id ?? null) : null;
   // **`?thread=` is part of what is open, not decoration.** A thread row now
   // navigates to it, so a reader that ignored it would answer "the room" for a
   // click on the thread — and the anchor, the active tint and the scroll would
@@ -338,10 +318,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
     () => (roomId: string) => roomKinds.get(roomId) ?? ('channel' as const),
     [roomKinds]
   );
-  // #team, found the way `useTeamRoom` finds it — by the key the server opened
-  // it under, never by the slug, because the owner may rename the channel.
-  const teamRoomId = rooms.find((room) => room.wellKnown === TEAM_ROOM_WELL_KNOWN)?.id ?? null;
-  const activeTarget = useActiveTarget(roomKindOf, teamRoomId);
+  const activeTarget = useActiveTarget(roomKindOf);
 
   // ── Whether Today's automated runs are unfolded (BC-19) ──
   const todayAutomatedExpanded = useTodayRevealStore((s) => s.automatedExpanded);

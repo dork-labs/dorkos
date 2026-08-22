@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { BarTabStrip, Button, type BarTab } from '@/layers/shared/ui';
-import { useRoomWorkingStore } from '@/layers/entities/room';
+import { PRESENCE_TTL_MS, useRoomWorkingStore } from '@/layers/entities/room';
 import { SystemHealthDot } from '@/layers/features/top-nav';
 import {
   OneBar,
@@ -117,7 +117,23 @@ function ChannelBarFrame({
   width?: number;
 }) {
   useEffect(() => {
-    useRoomWorkingStore.getState().observe({ roomId: room.id, working });
+    if (working === 0) {
+      useRoomWorkingStore.getState().observe({ roomId: room.id, working: 0 });
+      return;
+    }
+    // **Restated on a timer, because a count nobody restates is treated as a
+    // crashed server.** A working count above zero ages out after
+    // `PRESENCE_TTL_MS` and becomes a zero — that is the real fan-out's crash
+    // story, and this store is the real store. Seeding once meant the mid-run
+    // showcases quietly went idle thirty seconds after the page loaded, so
+    // anyone who left `/dev/one-bar` open and came back was looking at a demo
+    // that contradicted its own label. Re-observing inside the TTL is exactly
+    // what a live server does, so the showcase stays lit for the same reason a
+    // real busy room does.
+    const restate = () => useRoomWorkingStore.getState().observe({ roomId: room.id, working });
+    restate();
+    const timer = setInterval(restate, PRESENCE_TTL_MS / 3);
+    return () => clearInterval(timer);
   }, [room.id, working]);
 
   return (

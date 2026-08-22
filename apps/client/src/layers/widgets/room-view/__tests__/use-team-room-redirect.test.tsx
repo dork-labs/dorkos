@@ -64,12 +64,19 @@ describe('useTeamRoomRedirect', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('draws nothing until it knows, rather than a room that may be about to move', () => {
+  it('withholds its answer until it knows, rather than naming a room that may be about to move', () => {
     // The flash this exists to prevent: rendering the channel view first and
     // correcting a frame later shows #team without Home's chrome, then swaps it.
+    //
+    // **`pending` is not `redirecting`, and the page must tell them apart.**
+    // EVERY room takes this branch on a cold load — the answer comes from the
+    // room list, and until it lands nobody can say which room this id is — so a
+    // caller that drew nothing here would blank every deep link for as long as
+    // the list took. `ChannelsPage` draws the room's loading state instead; only
+    // `redirecting` earns a blank.
     team.status = 'loading';
     team.room = null;
-    const { result } = renderHook(() => useTeamRoomRedirect('team-room', undefined));
+    const { result } = renderHook(() => useTeamRoomRedirect('room-other', undefined));
 
     expect(result.current).toBe('pending');
     expect(navigate).not.toHaveBeenCalled();

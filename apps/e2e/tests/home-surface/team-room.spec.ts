@@ -198,9 +198,13 @@ test.describe('Home is the #team room @smoke', () => {
     await basePage.goto();
     await basePage.waitForAppReady();
 
-    // The masthead is the room's, not a page title: home is addressed by a
-    // well-known key, so what proves it resolved is the room's own chrome.
-    await expect(roomsPage.roomHeading).toContainText('team', { timeout: SERVER_ROUND_TRIP_MS });
+    // **What names the room here is the bar's chips and the composer, not a
+    // masthead.** Home's identity is the Home tab (phase H1 removed the second
+    // row that repeated the room's name under it), so what proves the room
+    // resolved is its head count in the bar and the box addressed to it.
+    await expect(page.getByTestId('bar-members-chip')).toBeVisible({
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
     await expect(homeSurface.composerField).toHaveAttribute('placeholder', /#team/);
 
     // The feed is the ROOM's — `room-timeline` only exists once something has
@@ -212,12 +216,17 @@ test.describe('Home is the #team room @smoke', () => {
     // And it is the SAME widget under the alias, not a second copy. Both
     // addresses draw ONE room masthead; a fork would draw two trees, and the
     // count is what says which happened.
+    // **`/channels?id=<team>` is not a second address for this room any more —
+    // it is a redirect to this one** (spec `one-bar-header` §3.5, B1). The room
+    // used to be reachable at two addresses that drew it differently, so which
+    // version you got depended on which link you pressed. Landing back on `/` is
+    // the assertion; the room below is the same one this test just checked.
     await page.goto(`/channels?id=${team.id}`);
     await basePage.waitForAppReady();
-    await expect(roomsPage.roomHeading).toContainText('team', { timeout: SERVER_ROUND_TRIP_MS });
-    // ONE masthead, not two: the sidebar also draws a `room-title` for the
-    // channel row, so the count that means "one room tree" is the masthead's.
-    await expect(roomsPage.roomHeader).toHaveCount(1);
+    await expect(page).toHaveURL(/\/(\?|$)/, { timeout: SERVER_ROUND_TRIP_MS });
+    // And no room masthead came back with it: `/` draws the bar and nothing
+    // that repeats the room's name underneath.
+    await expect(roomsPage.roomHeader).toHaveCount(0);
     // The room's composer, addressed the way every other room spec addresses
     // it. Not `home-composer`: that testid is stamped only where the recents
     // panel is offered, which is the home surface alone (`ChannelComposer`), and

@@ -26,7 +26,12 @@ vi.mock('@/layers/features/right-panel', () => ({
 }));
 
 /** How many agents the room is currently working, as the live count answers. */
-const { working } = vi.hoisted(() => ({ working: { count: 0 } }));
+const { working, teamRoomId } = vi.hoisted(() => ({
+  working: { count: 0 },
+  // Which room is #team. Never `room-1` unless a test says so: the bar refuses
+  // to name Home's room, so a stray match would blank every case below.
+  teamRoomId: { current: 'team-room' as string | null },
+}));
 const halt = vi.hoisted(() => vi.fn());
 
 vi.mock('@/layers/entities/room', async (importOriginal) => {
@@ -37,6 +42,11 @@ vi.mock('@/layers/entities/room', async (importOriginal) => {
     // hook rather than the store so this file states the count it is testing.
     useOpenRoomWorking: () => working.count,
     useHaltRoom: () => ({ mutate: halt, isPending: false }),
+    useTeamRoom: () => ({
+      status: teamRoomId.current === null ? 'missing' : 'ready',
+      room: teamRoomId.current === null ? null : { id: teamRoomId.current },
+      retry: vi.fn(),
+    }),
   };
 });
 
@@ -51,6 +61,7 @@ vi.mock('@/layers/features/room-management', () => ({
 afterEach(() => {
   cleanup();
   working.count = 0;
+  teamRoomId.current = 'team-room';
   vi.clearAllMocks();
 });
 
@@ -156,6 +167,43 @@ describe('ChannelsBar', () => {
     await user.click(chip);
     expect(screen.getByTestId('room-details')).toBeInTheDocument();
     expect(detailsDialog).toHaveBeenCalledWith(expect.objectContaining({ focus: 'members' }));
+  });
+
+  it('refuses to name #team here, because this route redirects it to Home', () => {
+    // `?id=<team>` is a redirect (spec §3.5), and while it is in flight the page
+    // below has already stopped drawing the room. A bar still announcing `#team`
+    // over that empty pane is the same flash the redirect exists to prevent,
+    // moved into the header.
+    teamRoomId.current = 'room-1';
+    renderBar(room());
+
+    expect(screen.getByText('Channels')).toBeInTheDocument();
+    expect(screen.queryByTitle('#general')).not.toBeInTheDocument();
+  });
+
+  it('lets the topic absorb the squeeze so the name keeps its width (I2)', () => {
+    // **The inversion this pins.** Both are flex items, so left to themselves
+    // they shrink in proportion to their content — a long topic beside a short
+    // name ate the NAME first, and `#general` read as `#gen…` while the topic
+    // still had room. jsdom lays nothing out, so what is asserted is the
+    // mechanism: the topic carries the enormous shrink factor, the name carries
+    // a floor it cannot be squeezed below.
+    renderBar(room({ topic: 'Shipping the migration' }));
+
+    const topic = screen.getByText('Shipping the migration');
+    expect(topic).toHaveClass('shrink-[99999]', 'truncate', 'min-w-0');
+
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading).toHaveClass('min-w-[6ch]');
+  });
+
+  it('names the room as the page’s heading, not just as text', () => {
+    // The masthead carried the room's `h1`; with it gone the page had no heading
+    // at all, which is a real loss for heading navigation and not merely a
+    // selector detail. The accessible name is the spoken form.
+    renderBar(room());
+
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('#general');
   });
 
   it('shows what is running, and a Stop that halts this room', async () => {
