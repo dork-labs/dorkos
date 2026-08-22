@@ -304,3 +304,15 @@ vi.mock('@tanstack/react-virtual', () => ({
     isAtEnd: () => true,
   }),
 }));
+
+/**
+ * `scrollIntoView`, which jsdom does not implement at all.
+ *
+ * A fact about the environment rather than about any one suite: the sidebar
+ * positions the open conversation on its first settled model (spec
+ * `sidebar-simplification` D6), so any test that renders the panel reaches it.
+ * A no-op is the honest stand-in — jsdom has no viewport to scroll.
+ */
+if (typeof Element !== 'undefined' && Element.prototype.scrollIntoView === undefined) {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}

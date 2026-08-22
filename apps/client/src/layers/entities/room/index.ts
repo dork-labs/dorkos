@@ -26,6 +26,7 @@ export {
   useRoomPresenceEverywhere,
   useRoomPresenceStore,
   PRESENCE_TICK_MS,
+  PRESENCE_TTL_MS,
 } from './model/use-room-presence';
 export type {
   PresenceScope,
@@ -113,7 +114,7 @@ export {
   platformLabel,
 } from './lib/room-display';
 export { profileMemberIdOf } from './lib/profile-target';
-export { roomIdentityMark, identityMarkFaces, rosterAgentFaces } from './lib/identity-mark';
+export { roomIdentityMark, identityMarkFaces } from './lib/identity-mark';
 export type { IdentityMark, RoomIdentityMarkInput } from './lib/identity-mark';
 export { replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';
 export type { ThreadReplySummary } from './lib/thread';
@@ -143,7 +144,6 @@ export { RoomLoudnessLine } from './ui/RoomLoudnessLine';
 export { ResponseModeControl } from './ui/ResponseModeControl';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';
-export { MemberList } from './ui/MemberList';
 export { OriginMark } from './ui/OriginMark';
 export { BridgeVisibilityBadge } from './ui/BridgeVisibilityBadge';
 export type {

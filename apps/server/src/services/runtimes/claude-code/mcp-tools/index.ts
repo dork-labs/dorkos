@@ -152,6 +152,21 @@ export function handRegisteredInSessionTools(
   const resolveDevtoolsSessionId =
     session || sessionId ? () => session?.sdkSessionId || sessionId || undefined : undefined;
 
+  // Who is proposing a schedule, for `tasks_create` (DOR-1394). Resolved at CALL
+  // time for the same first-turn rekey reason as the DevTools id above, and it
+  // reads the SAME two sources — an approval card that named a session the
+  // person cannot open would be worse than one that names none. The directory is
+  // the agent-identity key, so it is what later resolves the proposer's name.
+  const resolveTaskProvenance =
+    session || sessionId
+      ? () => ({
+          ...(session?.sdkSessionId || sessionId
+            ? { sessionId: session?.sdkSessionId || sessionId }
+            : {}),
+          ...(session?.cwd ? { agentPath: session.cwd } : {}),
+        })
+      : undefined;
+
   // Which tools ride this session's turn-1 prompt (DOR-1337 / F8). The rule
   // lives in `loadsAgentToAgentTools` because `context-builder.ts` reads the
   // same one to decide whether to TELL the agent they are loaded, and the two
@@ -168,7 +183,7 @@ export function handRegisteredInSessionTools(
     gateHandRegisteredMcpTools(
       [
         ...getCoreTools(deps),
-        ...getTasksTools(deps),
+        ...getTasksTools(deps, resolveTaskProvenance),
         ...getRelayTools(deps, relayIdentity),
         ...getAdapterTools(deps),
         ...getBindingTools(deps),

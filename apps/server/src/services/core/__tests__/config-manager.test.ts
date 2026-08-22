@@ -4103,27 +4103,31 @@ describe('a populated pre-redesign sidebar through the real conf load path', () 
   });
 });
 
-describe('a config written before DOR-579 survives the migration being skipped', () => {
-  // The DOR-579 rename is the first non-additive change in CONFIG_MIGRATIONS.
-  // Every additive backfill before it degrades safely when its key falls outside
-  // conf's `(storedVersion, projectVersion]` window — the field is absent and a
-  // Zod default fills in. A rename does not: the OLD encoding becomes
-  // schema-INVALID, `new Conf(...)` throws, and ConfigManager's recovery path
-  // backs the file up and replaces it with defaults. That resets the whole
-  // file, not just the sidebar.
+describe('a pre-DOR-579 sidebar is converted the first time anything reads it (DOR-588)', () => {
+  // DOR-579 renamed how membership is stored. For one release the schema was
+  // widened so the old shape still loaded AND every read converted it, in the
+  // server and again in the cockpit. DOR-588 keeps the widening — without it Ajv
+  // deletes the retired key before anything can look at it — and replaces the
+  // per-read conversion with one that runs once per process, on the first read
+  // of `ui`, and writes itself through.
+  //
+  //   * a section's membership (`groups[].agentPaths`) is the case that made
+  //     this a MAJOR: that file looks perfectly healthy and would otherwise load
+  //     empty and save empty;
+  //   * bare path strings in `pinned` / `muted` are converted the same way, in
+  //     the same pass. They are the visible half — a person would notice pins
+  //     that vanished — but converting them costs nothing extra once the pass
+  //     exists, and losing them would be no better for being noticeable.
   //
   // These boot a REAL ConfigManager over a real file, which is the only way to
-  // cross the conf/Ajv seam where that failure lives. The mock-store tests above
-  // cannot see it, and neither can `UserConfigSchema.parse` — Zod strips unknown
-  // keys where Ajv rejects them.
-  //
-  // SERVER_VERSION resolves to `0.0.0` here (the dev/package.json fallback), so
-  // NO migration runs at all. That is not a contrivance: it is exactly what a
-  // developer's tree does on every `pnpm dev`.
-  const priorShapeConfig = {
+  // cross the conf/Ajv seam. SERVER_VERSION resolves to `0.0.0` here, so NO
+  // migration runs at all — the worst case, on purpose.
+
+  /** Everything old at once: the shape that is now condemned. */
+  const fullyLegacyConfig = {
     version: 1,
     // A privacy choice, deliberately opposite to the defaults on both fields, so
-    // a silent reset is visible rather than coincidentally identical.
+    // the salvage below is visible rather than coincidentally identical.
     telemetry: { userHasDecided: true, install: false, heartbeat: false },
     ui: {
       theme: 'dark',
@@ -4146,116 +4150,104 @@ describe('a config written before DOR-579 survives the migration being skipped',
     },
   };
 
-  function bootOverPriorShape(): { dir: string; configPath: string; manager: ConfigManager } {
+  /**
+   * The shape that made this a MAJOR: everything a reader would look at first is
+   * already canonical, and only the section's membership is not.
+   */
+  const groupOnlyLegacyConfig = {
+    version: 1,
+    ui: {
+      sidebar: {
+        pinned: [{ kind: 'agent', path: '/projects/alpha' }],
+        muted: [{ kind: 'agent', path: '/projects/beta' }],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Clients',
+            agentPaths: ['/projects/alpha', '/projects/gamma'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'manual',
+          },
+        ],
+      },
+    },
+  };
+
+  function bootOver(config: unknown): { dir: string; configPath: string; manager: ConfigManager } {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-pre-579-'));
     const configPath = path.join(dir, 'config.json');
-    fs.writeFileSync(configPath, JSON.stringify(priorShapeConfig));
+    fs.writeFileSync(configPath, JSON.stringify(config));
     return { dir, configPath, manager: new ConfigManager(dir) };
   }
 
-  it('is not condemned — no backup is written and the file is not replaced', () => {
-    const { dir } = bootOverPriorShape();
+  const MEMBERS = [
+    { kind: 'agent', path: '/projects/alpha' },
+    { kind: 'agent', path: '/projects/gamma' },
+  ];
+
+  it('converts a config whose ONLY legacy part is a section’s membership', () => {
+    // **The case a reader would not think to try, and the one that lost data.**
+    // `pinned` and `muted` are already references here, so nothing about the
+    // file looks old — and `agentPaths` loads, reads as an empty section, and is
+    // written back empty by the next config change of any kind. Re-seed by
+    // deleting the `SidebarGroupSchema` branch of `tolerateRetiredSidebarKeys`
+    // (Ajv then strips the key before anything can convert it) or by returning
+    // `ui` unchanged from `canonicalSidebar`; either way this goes red.
+    const { manager } = bootOver(groupOnlyLegacyConfig);
+    expect(manager.getAll().ui.sidebar.groups[0]!.items).toEqual(MEMBERS);
+  });
+
+  it('converts it on the ui section read alone, not just on the whole config', () => {
+    // `GET /api/config` reads `configManager.get('ui')`, a different path from
+    // `getAll()`. Both are read boundaries and both go through the conversion.
+    const { manager } = bootOver(groupOnlyLegacyConfig);
+    expect(manager.get('ui').sidebar.groups[0]!.items).toEqual(MEMBERS);
+  });
+
+  it('writes the conversion through, so the next boot has nothing to do', () => {
+    const { manager, configPath } = bootOver(groupOnlyLegacyConfig);
+    manager.getAll();
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      ui: { sidebar: { groups: Record<string, unknown>[] } };
+    };
+    expect(onDisk.ui.sidebar.groups[0]!.agentPaths).toBeUndefined();
+    expect(onDisk.ui.sidebar.groups[0]!.items).toEqual(MEMBERS);
+  });
+
+  it('keeps the section through a patch that touches ui', () => {
+    // `ok: true` alone would still pass if the members had been emptied on the
+    // way through, which is exactly the failure this whole block is about.
+    const { dir } = bootOver(groupOnlyLegacyConfig);
+    const manager = initConfigManager(dir);
+    expect(applyConfigPatch({ ui: { theme: 'dark' } }).ok).toBe(true);
+    expect(manager.getAll().ui.sidebar.groups[0]!.items).toEqual(MEMBERS);
+    expect(manager.getAll().ui.theme).toBe('dark');
+  });
+
+  it('converts a config where every list is still the old shape', () => {
+    const { dir, manager } = bootOver(fullyLegacyConfig);
+    // Not condemned: nothing about this file is unreadable, only old.
     expect(wasBackedUp(dir)).toBe(false);
+    const sidebar = manager.getAll().ui.sidebar;
+    expect(sidebar.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
+    expect(sidebar.muted).toEqual([{ kind: 'agent', path: '/projects/beta' }]);
+    expect(sidebar.groups[0]!.items).toEqual(MEMBERS);
   });
 
   it('keeps every unrelated section, including a telemetry opt-out', () => {
-    const { manager } = bootOverPriorShape();
+    // A rename must never cost somebody their privacy choice. A whole-file reset
+    // would flip all three of these at once.
+    const { manager } = bootOver(fullyLegacyConfig);
     const telemetry = manager.get('telemetry');
-    // The exact three values the fixture chose. A wipe flips all three at once:
-    // `userHasDecided` to false and the two Tier 1 channels back on.
     expect(telemetry.userHasDecided).toBe(true);
     expect(telemetry.install).toBe(false);
     expect(telemetry.heartbeat).toBe(false);
   });
 
-  it('reads the sidebar back canonical, with the groups intact', () => {
-    const { manager } = bootOverPriorShape();
-    // ConfigManager is the server's read boundary: every consumer sees the
-    // canonical encoding, so the groups are intact rather than empty.
-    const prefs = manager.getAll().ui.sidebar;
-    expect(prefs.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
-    expect(prefs.muted).toEqual([{ kind: 'agent', path: '/projects/beta' }]);
-    expect(prefs.groups).toHaveLength(1);
-    expect(prefs.groups[0]!.items).toEqual([
-      { kind: 'agent', path: '/projects/alpha' },
-      { kind: 'agent', path: '/projects/gamma' },
-    ]);
-    expect(prefs.groups[0]!.name).toBe('Clients');
-  });
-
-  it('normalizes the ui section read on its own, not just the whole config', () => {
-    // `GET /api/config` reads `configManager.get('ui')`, a different path from
-    // `getAll()`. Both are read boundaries and both have to convert.
-    const { manager } = bootOverPriorShape();
-    const sidebar = manager.get('ui').sidebar;
-    expect(sidebar.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
-    expect(sidebar.groups[0]!.items).toEqual([
-      { kind: 'agent', path: '/projects/alpha' },
-      { kind: 'agent', path: '/projects/gamma' },
-    ]);
-  });
-
-  it('converts on READ without rewriting the file', () => {
-    // The conversion is a read boundary, not a hidden migration: the bytes on
-    // disk keep the old encoding until something actually writes.
-    const { configPath } = bootOverPriorShape();
-    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
-      ui: { sidebar: { groups: Record<string, unknown>[] } };
-    };
-    expect(onDisk.ui.sidebar.groups[0]!.agentPaths).toEqual(['/projects/alpha', '/projects/gamma']);
-    expect(onDisk.ui.sidebar.groups[0]!.items).toBeUndefined();
-  });
-
-  // ── The write path (applyConfigPatch) ──
-  //
-  // `applyConfigPatch` reads the current config, deep-merges the patch, and
-  // re-validates the WHOLE result with Zod — which is strict, and deliberately
-  // never widened the way conf's Ajv schema was. So the read boundary above is
-  // what keeps writes working at all on an un-migrated install; without it a
-  // legacy `pinned` refuses every write (the merge carries the untouched
-  // `ui.sidebar` into validation), and a legacy `agentPaths` is silently
-  // stripped by Zod and persisted as an empty group.
-
-  it('accepts a patch that has nothing to do with the sidebar', () => {
-    const { dir } = bootOverPriorShape();
-    initConfigManager(dir);
-    const result = applyConfigPatch({ logging: { level: 'debug' } });
-    expect(result.ok, JSON.stringify('details' in result ? result.details : result)).toBe(true);
-  });
-
-  it('keeps the groups when a patch touches the ui section', () => {
-    // The assertion that matters: `ok: true` alone would still pass if the
-    // groups had been silently emptied on the way through.
-    const { dir } = bootOverPriorShape();
-    const manager = initConfigManager(dir);
-    const result = applyConfigPatch({ ui: { theme: 'dark' } });
-    expect(result.ok).toBe(true);
-    const groups = manager.getAll().ui.sidebar.groups;
-    expect(groups).toHaveLength(1);
-    expect(groups[0]!.items).toEqual([
-      { kind: 'agent', path: '/projects/alpha' },
-      { kind: 'agent', path: '/projects/gamma' },
-    ]);
-    expect(manager.getAll().ui.theme).toBe('dark');
-  });
-
-  it('converges the file to the canonical encoding on the first write', () => {
-    const { dir, configPath } = bootOverPriorShape();
-    initConfigManager(dir);
-    expect(applyConfigPatch({ ui: { theme: 'dark' } }).ok).toBe(true);
-    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
-      ui: { sidebar: { pinned: unknown; groups: Record<string, unknown>[] } };
-    };
-    expect(onDisk.ui.sidebar.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
-    expect(onDisk.ui.sidebar.groups[0]!.agentPaths).toBeUndefined();
-    expect(onDisk.ui.sidebar.groups[0]!.items).toEqual([
-      { kind: 'agent', path: '/projects/alpha' },
-      { kind: 'agent', path: '/projects/gamma' },
-    ]);
-  });
-
-  it('accepts a config already in the canonical encoding too', () => {
-    // The tolerance widens what Ajv accepts; it must not narrow it.
+  it('leaves a config already in the canonical encoding untouched', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-post-579-'));
     const configPath = path.join(dir, 'config.json');
     fs.writeFileSync(
@@ -4279,9 +4271,8 @@ describe('a config written before DOR-579 survives the migration being skipped',
   });
 
   it('still rejects a genuinely invalid sidebar entry', () => {
-    // The widened schema accepts a legacy string or a reference — not anything.
-    // Without this, "tolerate the old encoding" could quietly become "validate
-    // nothing", and the next bad write would land unnoticed.
+    // The conversion handles one known shape. It must not become "accept
+    // anything" — the next bad write would then land unnoticed.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-invalid-579-'));
     const configPath = path.join(dir, 'config.json');
     fs.writeFileSync(

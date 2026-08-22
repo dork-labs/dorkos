@@ -49,6 +49,13 @@ function makeSession(overrides: Partial<Session> & { id: string; title: string }
   } as Session;
 }
 
+// A settled panel, so these cases are about what they are named after rather
+// than about the boot gate. The gate's own behaviour is covered in
+// `model/boot/__tests__` (spec `sidebar-simplification` D6).
+vi.mock('../boot/use-boot-state', () => ({
+  useBootState: () => ({ phase: 'settled', settled: true, fleetKnown: true, startedWarm: false }),
+}));
+
 vi.mock('@tanstack/react-router', () => ({
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: '/' } }),

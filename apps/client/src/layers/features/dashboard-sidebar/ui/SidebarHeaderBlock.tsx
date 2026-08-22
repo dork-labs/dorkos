@@ -35,6 +35,7 @@ import {
   DropdownMenuTrigger,
   SidebarHeader,
   SidebarMenuNodes,
+  Skeleton,
   TOUCH_TARGET_MIN_H,
   useGuardedMenuNodes,
 } from '@/layers/shared/ui';
@@ -42,6 +43,7 @@ import { useTeamRoster } from '@/layers/entities/team';
 import { buildHeaderBlockMenuNodes } from './header-block-menu';
 import { NewMenu } from './NewMenu';
 import { SidebarSearchPill } from './SidebarSearchPill';
+import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
 
 /**
  * What this cockpit is called.
@@ -77,19 +79,33 @@ export function SidebarHeaderBlock() {
 
   const self = roster.data?.members.find((member) => member.isSelf) ?? null;
   const teamName = teamNameFor(self?.displayName ?? null);
+  // **A returning operator is never told their team is "Your team"** (spec D6).
+  // The fallback is the honest answer for an install that has no name to give;
+  // it is the WRONG answer for the second before the roster lands, where the
+  // name is known and simply has not arrived. So the space is reserved until
+  // the roster has answered, and a warm boot paints the cached name in the
+  // first frame.
+  //
+  // **Keyed on the roster alone, not on the boot phase.** Pairing the two put
+  // the placeholder back on the one path that most needs it: the 1500 ms
+  // ceiling opens the gate, the phase leaves `cold`, and a roster still in
+  // flight would then be greeted with "Your team" before the operator's own
+  // name replaced it — a flash on exactly the slow installs the ceiling exists
+  // for.
+  const nameUnknown = roster.isPending;
 
   // The same cache entry the rest of the cockpit reads, so asking here costs
   // nothing extra.
   const { data: serverConfig, refetch } = useQuery({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: CONFIG_STALE_TIME_MS,
   });
 
   const handleCheckForUpdates = useCallback(async () => {
     // The server recomputes `latestVersion` when it answers, so a refetch IS
     // the check — there is no second endpoint to call and no spinner to invent.
-    await queryClient.invalidateQueries({ queryKey: ['config'] });
+    await queryClient.invalidateQueries({ queryKey: configKeys.all });
     const fresh = await refetch();
     const current = fresh.data?.version;
     const latest = fresh.data?.latestVersion ?? null;
@@ -132,13 +148,22 @@ export function SidebarHeaderBlock() {
               // the menu row that names the existing settings surface (§16,
               // R4). A screen reader hears the same vocabulary a sighted
               // reader does.
-              aria-label={`${teamName} — menu`}
+              aria-label={nameUnknown ? 'Team menu' : `${teamName} — menu`}
               className={cn(
                 'text-sidebar-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] font-semibold outline-hidden transition-colors duration-150 focus-visible:ring-2',
                 isMobile && TOUCH_TARGET_MIN_H
               )}
             >
-              <span className="truncate">{teamName}</span>
+              {nameUnknown ? (
+                // Sized to the name it stands in for, on the same 13px line, so
+                // the header does not resize when the roster lands.
+                <Skeleton
+                  className="my-[3px] h-3.5 w-24 rounded-sm"
+                  data-testid="sidebar-team-name-skeleton"
+                />
+              ) : (
+                <span className="truncate">{teamName}</span>
+              )}
               <ChevronDown className="size-3.5 shrink-0 opacity-50" aria-hidden />
             </button>
           </DropdownMenuTrigger>

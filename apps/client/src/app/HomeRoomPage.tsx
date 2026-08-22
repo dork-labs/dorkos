@@ -55,10 +55,15 @@ function HomeNotice({
 /**
  * Home is a room, and the room is #team.
  *
- * Everything below the tab bar is the ordinary room surface — timeline, thread
- * panel, mention picker, halt, the whole `Composer.*` family — reached through
- * a well-known key rather than a URL, so `/channels?id=<team>` still shows the
+ * Everything below the bar is the ordinary room surface — timeline, thread
+ * panel, mention picker, the whole `Composer.*` family — reached through a
+ * well-known key rather than a URL, so `/channels?id=<team>` still shows the
  * same room drawn by the same component.
+ *
+ * **Home wears the room's chips in the bar, like every other room.** No surface
+ * draws a masthead any more (phase R1): what is running here, the room-wide
+ * Stop, and who is in #team are chips beside the Home tab, and the composer's
+ * "Message #team…" says which room you are typing into.
  *
  * Two pieces of home-only chrome ride above the feed. The pinned triage header
  * carries what needs answering, and it is mounted OUTSIDE the room's scroller

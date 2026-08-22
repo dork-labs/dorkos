@@ -270,8 +270,9 @@ function RouteSlot() {
 }
 
 function buildRouter() {
-  const rootRoute = createRootRoute();
+  const rootRoute = createRootRoute({ staticData: { header: null } });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: zodValidator(searchSchema),
@@ -281,6 +282,7 @@ function buildRouter() {
   // the harness registers that route to let the navigation resolve and the
   // assertions read the landing pathname + region.
   const connectionsRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/connections',
     validateSearch: zodValidator(z.object({ region: z.string().optional() })),

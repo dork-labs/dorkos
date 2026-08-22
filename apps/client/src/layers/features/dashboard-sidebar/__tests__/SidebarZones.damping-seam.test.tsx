@@ -25,6 +25,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 
+// A settled panel, so these cases are about what they are named after rather
+// than about the boot gate. The gate's own behaviour is covered in
+// `model/boot/__tests__` (spec `sidebar-simplification` D6).
+vi.mock('../model/boot/use-boot-state', () => ({
+  useBootState: () => ({ phase: 'settled', settled: true, fleetKnown: true, startedWarm: false }),
+}));
+
 vi.mock('@/layers/entities/config', () => ({
   useUpdateSidebarPrefs: () => ({ update: vi.fn() }),
   setSectionCollapsed: (prefs: unknown) => prefs,

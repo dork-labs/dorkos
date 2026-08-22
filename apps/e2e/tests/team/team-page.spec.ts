@@ -315,10 +315,14 @@ test.describe('Team — the roster @smoke', () => {
     await page.goto('/team');
     await basePage.waitForAppReady();
 
-    await page.locator('header').getByRole('button', { name: 'Table' }).click();
+    // The switch is a tab strip of LINKS now, not buttons — each view is an
+    // address, so it can be middle-clicked, copied, and bookmarked.
+    const views = page.getByRole('navigation', { name: 'Team views' });
+
+    await views.getByRole('link', { name: 'Table' }).click();
     await expect(page).toHaveURL(/[?&]view=table/);
 
-    await page.locator('header').getByRole('button', { name: 'Topology' }).click();
+    await views.getByRole('link', { name: 'Topology' }).click();
     await expect(page).toHaveURL(/[?&]view=topology/);
   });
 
@@ -379,15 +383,43 @@ test.describe('Team — on a phone', () => {
     expect(new Set(chipTops).size).toBe(1);
   });
 
-  test('does not offer the table', async ({ page, basePage }) => {
+  test('offers every view, the table included', async ({ page, basePage }) => {
     await page.goto('/team');
     await basePage.waitForAppReady();
 
-    // Below `md` the switch is a Select, and the table is deliberately not in
-    // it: six columns at 375px is a scroll bar wearing a table.
-    await page.locator('header').getByRole('combobox').click();
-    await expect(page.getByRole('option', { name: 'Cards' })).toBeVisible();
-    await expect(page.getByRole('option', { name: 'Topology' })).toBeVisible();
-    await expect(page.getByRole('option', { name: 'Table' })).toHaveCount(0);
+    // This test used to assert the opposite, and the inversion is the point.
+    // Below `md` the switch was a `<Select>` that deliberately withheld the
+    // table — and then had to smuggle it back whenever you were already on it,
+    // because a Select whose value matches no item renders blank. The strip
+    // scrolls sideways instead, so there is one list at every width: nothing
+    // hidden, nothing conditionally un-hidden.
+    await expect(page.locator('header').getByRole('combobox')).toHaveCount(0);
+
+    const views = page.getByRole('navigation', { name: 'Team views' });
+    for (const name of ['Cards', 'Table', 'Topology', 'Denied', 'Access']) {
+      await expect(views.getByRole('link', { name })).toBeVisible();
+    }
+
+    // Present is not the same as reachable at 375px: the last tabs start
+    // outside the strip's box, so this also proves the scroller gets them
+    // under the finger.
+    await views.getByRole('link', { name: 'Table' }).click();
+    await expect(page).toHaveURL(/[?&]view=table/);
+  });
+
+  test('keeps the New Agent action reachable as an icon', async ({ page, basePage }) => {
+    await page.goto('/team');
+    await basePage.waitForAppReady();
+
+    // The words are dropped below `md` to buy the view names their width, but
+    // the bar's only write action keeps its accessible name and stays a target
+    // the size of the tabs beside it.
+    const newAgent = page.locator('header').getByRole('button', { name: 'New Agent' });
+    await expect(newAgent).toBeVisible();
+    await expect(newAgent).toHaveText('');
+
+    const box = await newAgent.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(32);
   });
 });

@@ -10,8 +10,8 @@ interface AgentRosterPickerProps {
   exclude?: (candidate: AgentPickerCandidate) => boolean;
   /** Commit the selection, in the order the agents were picked. */
   onSubmit: (chosen: AgentPickerCandidate[]) => void;
-  /** The commit button's label, given how many agents are selected. */
-  submitLabel: (count: number) => string;
+  /** The commit button's label, given what is selected. */
+  submitLabel: (chosen: readonly AgentPickerCandidate[]) => string;
   /** Shown instead of the field when the fleet is genuinely empty. */
   emptyRosterMessage: string;
   /** A way out of {@link AgentRosterPickerProps.emptyRosterMessage}, when there is one. */

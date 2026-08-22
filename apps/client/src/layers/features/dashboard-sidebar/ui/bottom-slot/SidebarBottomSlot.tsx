@@ -13,7 +13,6 @@
  *
  * @module features/dashboard-sidebar/ui/bottom-slot/SidebarBottomSlot
  */
-import { useConfig } from '@/layers/entities/config';
 import { usePromoCandidate } from '@/layers/features/feature-promos';
 import {
   ProfilePromptCard,
@@ -22,6 +21,7 @@ import {
   useProfilePrompt,
 } from '@/layers/features/onboarding';
 import { BottomSlot, type BottomSlotCandidate } from '@/layers/shared/ui';
+import { useBootState } from '../../model/boot/use-boot-state';
 import { useUpdateReady } from './use-update-ready';
 import { UpdatePill } from './UpdatePill';
 
@@ -33,11 +33,11 @@ import { UpdatePill } from './UpdatePill';
  * panel.
  */
 export function SidebarBottomSlot() {
-  const { shouldShowGettingStarted, dismiss: dismissOnboarding, isLoading } = useOnboarding();
+  const { shouldShowGettingStarted, dismiss: dismissOnboarding } = useOnboarding();
   const update = useUpdateReady();
   const prompt = useProfilePrompt();
   const promo = usePromoCandidate('dashboard-sidebar');
-  const { isLoading: configLoading } = useConfig();
+  const boot = useBootState();
 
   const candidates: BottomSlotCandidate[] = [
     {
@@ -58,8 +58,9 @@ export function SidebarBottomSlot() {
     promo,
   ];
 
-  // Every candidate above is gated on a server read, and all of them ride the
-  // config query. Once it has answered, whatever qualifies is simply there
-  // rather than rising into place mid-paint.
-  return <BottomSlot candidates={candidates} ready={!isLoading && !configLoading} />;
+  // **The same fact the panel above paints on** (spec D6). Every candidate here
+  // is gated on a server read, so a slot that decided for itself when it was
+  // ready could rise into place a beat after the rows it sits under. Keyed off
+  // the boot gate, the card is simply there when the panel is.
+  return <BottomSlot candidates={candidates} ready={boot.settled} />;
 }

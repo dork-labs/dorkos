@@ -102,7 +102,7 @@ export {
   resetSessionStreamBinding,
 } from './model/session-stream-binding';
 export { useGlobalSessionStream } from './model/use-global-session-stream';
-export { useRecentSessions } from './model/use-recent-sessions';
+export { RECENT_SESSIONS_WINDOW, useRecentSessions } from './model/use-recent-sessions';
 
 export { useSessionBorderState } from './model/use-session-border-state';
 export type { SessionBorderKind, SessionBorderState } from './model/use-session-border-state';

@@ -8,7 +8,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { BANNER_PRIORITY, type BannerDescriptor } from '@/layers/widgets/app-banner';
-import { APP_ROUTE_PATHS } from '@/layers/shared/lib';
+import { InboxBell } from '@/layers/widgets/inbox-bell';
 
 // ── Route-aware mock: control the pathname returned by useRouterState ──
 
@@ -18,12 +18,93 @@ let mockPathname = '/';
 // (`ChannelsHeader`). Defaults to no room open; individual tests set it.
 let mockSearch: Record<string, unknown> = {};
 
+// ── Stub route headers, one per pathname this suite drives ──
+//
+// `resolveRouteHeader` (the REAL implementation, mocked in below via
+// `@/layers/widgets/one-bar`) walks a match chain leaf-first looking for the
+// first non-null `staticData.header`. These stubs stand in for the real
+// per-route header components so this suite can assert on the resolver's
+// OUTPUT — which testid ends up on screen — without depending on the real
+// headers' internals (those are unit-tested at
+// `layers/widgets/one-bar/__tests__/*Header.test.tsx`).
+//
+// The stubs render the route's half of the bar and NOTHING ELSE. The fixed
+// cluster is not theirs: the shell mounts `BarFixedCluster` once, as a sibling
+// after the cross-fade, so the bell and the panel toggle stay put while the bar
+// under them changes. The mock below supplies that cluster with the REAL
+// `InboxBell` inside it, which is what lets the "approvals marker placement"
+// suite prove the marker reaches every route.
+function makeHeaderStub(testId: string, label: string) {
+  return function HeaderStub() {
+    return <div data-testid={testId}>{label}</div>;
+  };
+}
+
+const DashboardHeaderStub = makeHeaderStub('dashboard-header', 'Dashboard');
+const SessionHeaderStub = makeHeaderStub('session-header', 'Session');
+const ChannelsHeaderStub = makeHeaderStub('channels-header', 'Channels');
+const MarketplaceHeaderStub = makeHeaderStub('marketplace-header', 'Marketplace');
+const MarketplaceSourcesHeaderStub = makeHeaderStub('marketplace-sources-header', 'Sources');
+const TeamHeaderStub = makeHeaderStub('team-header', 'Team');
+const ActivityHeaderStub = makeHeaderStub('activity-header', 'Activity');
+const TasksHeaderStub = makeHeaderStub('tasks-header', 'Tasks');
+const WorkspacesHeaderStub = makeHeaderStub('workspaces-header', 'Workspaces');
+const ConnectionsHeaderStub = makeHeaderStub('connections-header', 'Connections');
+const FeedbackRequestsHeaderStub = makeHeaderStub('feedback-requests-header', 'Product feedback');
+
+const ROUTE_HEADER_STUBS: Record<string, React.ComponentType> = {
+  '/': DashboardHeaderStub,
+  '/session': SessionHeaderStub,
+  '/channels': ChannelsHeaderStub,
+  '/marketplace': MarketplaceHeaderStub,
+  '/marketplace/sources': MarketplaceSourcesHeaderStub,
+  '/team': TeamHeaderStub,
+  '/activity': ActivityHeaderStub,
+  '/tasks': TasksHeaderStub,
+  '/workspaces': WorkspacesHeaderStub,
+  '/connections': ConnectionsHeaderStub,
+  '/feedback-requests': FeedbackRequestsHeaderStub,
+};
+
+/** A route match, shaped exactly like the resolver's `resolveRouteHeader` wants it. */
+interface MockRouteMatch {
+  routeId: string;
+  staticData: { header: React.ComponentType | null };
+}
+
+/**
+ * A two-level match chain — the pathless shell layout (no header of its own)
+ * under the leaf route for `mockPathname`. Enough for `resolveRouteHeader` to
+ * exercise its leaf-first walk: routes this suite doesn't stub resolve to
+ * `null`, exactly like a real route with no `staticData.header` would.
+ */
+function mockRouteMatches(): MockRouteMatch[] {
+  return [
+    { routeId: '_shell', staticData: { header: null } },
+    { routeId: mockPathname, staticData: { header: ROUTE_HEADER_STUBS[mockPathname] ?? null } },
+  ];
+}
+
+/** `?view=` and friends, serialized from `mockSearch` for `location.searchStr`. */
+function mockSearchStr(): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(mockSearch)) {
+    if (typeof value === 'string') params.set(key, value);
+  }
+  return params.toString();
+}
+
+interface MockRouterState {
+  location: { pathname: string; href: string; searchStr: string };
+  matches: MockRouteMatch[];
+}
+
 vi.mock('@tanstack/react-router', () => ({
-  useRouterState: ({
-    select,
-  }: {
-    select: (s: { location: { pathname: string; href: string } }) => string;
-  }) => select({ location: { pathname: mockPathname, href: mockPathname } }),
+  useRouterState: ({ select }: { select: (s: MockRouterState) => unknown }) =>
+    select({
+      location: { pathname: mockPathname, href: mockPathname, searchStr: mockSearchStr() },
+      matches: mockRouteMatches(),
+    }),
   // The tab strip reads the router directly: `useAppTabsSync` subscribes to
   // history for the action type (only Back/Forward may move focus between
   // tabs), and the tab actions re-read the location once a navigation settles.
@@ -43,6 +124,29 @@ vi.mock('@tanstack/react-router', () => ({
   useLocation: () => ({ pathname: mockPathname }),
   useSearch: () => mockSearch,
 }));
+
+// The shell renders every route's bar through this resolver — the real
+// implementation, so this suite exercises the actual leaf-first walk over the
+// `matches` chain `useRouterState` above serves it. `OneBarProvider` is a bare
+// passthrough here: the fixed cluster and per-route reads it feeds
+// (`useOneBarState`) are covered where the real headers are unit-tested
+// (`layers/widgets/one-bar/__tests__/*Header.test.tsx`), not in this
+// shell-level suite.
+vi.mock('@/layers/widgets/one-bar', async () => {
+  const { resolveRouteHeader } = await import('@/layers/widgets/one-bar/model/route-header');
+  return {
+    resolveRouteHeader,
+    OneBarProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
+    // The real bell, in the shell's own cluster — the one thing this suite needs
+    // from the bar module beyond the resolver, because the approvals marker
+    // rides it and must be reachable from every route.
+    BarFixedCluster: () => (
+      <div data-testid="bar-fixed-cluster">
+        <InboxBell />
+      </div>
+    ),
+  };
+});
 
 // ── Mock child components with identifiable test markers ──
 
@@ -98,22 +202,6 @@ vi.mock('@/layers/features/dashboard-sidebar', async () => {
       count === 0 ? undefined : `${count} agents need you`,
   };
 });
-
-vi.mock('@/layers/features/top-nav', () => ({
-  SessionHeader: () => <div data-testid="session-header">Session</div>,
-  DashboardHeader: () => <div data-testid="dashboard-header">Dashboard</div>,
-  ChannelsHeader: ({ roomTitle }: { roomTitle: string | null }) => (
-    <div data-testid="channels-header">{roomTitle ?? 'Channels'}</div>
-  ),
-  MarketplaceHeader: () => <div data-testid="marketplace-header">Marketplace</div>,
-  MarketplaceSourcesHeader: () => <div data-testid="marketplace-sources-header">Sources</div>,
-  TeamHeader: () => <div data-testid="team-header">Team</div>,
-  ActivityHeader: () => <div data-testid="activity-header">Activity</div>,
-  TasksHeader: () => <div data-testid="tasks-header">Tasks</div>,
-  WorkspacesHeader: () => <div data-testid="workspaces-header">Workspaces</div>,
-  ConnectionsHeader: () => <div data-testid="connections-header">Connections</div>,
-  FeedbackRequestsHeader: () => <div data-testid="feedback-requests-header">Product feedback</div>,
-}));
 
 vi.mock('@/layers/widgets/app-layout', () => ({
   DialogHost: () => null,
@@ -181,6 +269,20 @@ vi.mock('@/layers/entities/attention', () => ({
     retry: vi.fn(),
   }),
   usePendingScheduleApprovals: () => ({ schedules: [], isLoading: false }),
+  // The Inbox popover's own derivation (spec `schedule-approval-experience`
+  // §C4) — mirrors the three stubs above rather than composing them, the same
+  // way the real hook does.
+  useWaitingQueue: () => ({
+    approvals: mockPendingApprovals,
+    asks: [],
+    schedules: [],
+    items: mockPendingApprovals.map((a) => ({
+      id: `approval:${a.approvalId}`,
+      kind: 'permission-prompt' as const,
+    })),
+    isError: mockApprovalsError,
+    retry: vi.fn(),
+  }),
   // The notification center watches these for arrivals to knock about.
   useAttentionSignals: () => [],
   useAttentionSignalsLoading: () => false,
@@ -233,6 +335,9 @@ vi.mock('@/layers/entities/session', () => ({
   // (session-origin-legibility): no active session in this shell-level
   // isolation test, so it always resolves to "no origin".
   useSessionOrigin: () => ({ origin: undefined, originLabel: undefined }),
+  // The session bar's title, read from the shared session cache. No active
+  // session here, so the query is disabled and there is nothing to report.
+  useSessionDetail: () => ({ data: undefined }),
   // The tab strip badges a chat tab off this (DOR-540). Nothing is streaming in
   // a shell-level isolation test, so every tab reads idle.
   useSessionBorderState: () => ({
@@ -796,21 +901,19 @@ describe('AppShell slot integration', () => {
       expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
     });
 
-    it("names the open room in the channels header, not the route's generic name", () => {
-      mockPathname = '/channels';
-      mockSearch = { id: 'room_1' };
-      mockOpenRoom = { kind: 'channel', slug: 'general', title: 'general' };
-      renderAppShell();
-      expect(screen.getByTestId('channels-header')).toHaveTextContent('#general');
-    });
-
-    it('hands a null roomTitle through to ChannelsHeader when no room is open', () => {
-      // The mock above reimplements the fallback, so this test pins only the
-      // shell's null-threading; the real `?? 'Channels'` fallback is pinned in
-      // ChannelsHeader.test.tsx against the real component.
+    // Naming the open room in the channels header ("#general" vs the route's
+    // generic name, and the null-room fallback) used to be asserted here
+    // through a `roomTitle` prop on a stubbed `ChannelsHeader`. The stub above
+    // is zero-prop now — real headers read `useOneBarState()`, and this
+    // suite's `OneBarProvider` mock is a bare passthrough — so that resolution
+    // can no longer be observed from here. It moved to
+    // `layers/widgets/one-bar/__tests__/ChannelsHeader.test.tsx`, which drives
+    // the real component against a real `OneBarProvider`. This suite keeps only
+    // the shell-level claim: `/channels` resolves to the channels header at all.
+    it('resolves the channels header at /channels', () => {
       mockPathname = '/channels';
       renderAppShell();
-      expect(screen.getByTestId('channels-header')).toHaveTextContent('Channels');
+      expect(screen.getByTestId('channels-header')).toBeInTheDocument();
     });
 
     // DOR-919 (sibling of DOR-587): /workspaces, /connections, and
@@ -839,41 +942,11 @@ describe('AppShell slot integration', () => {
     });
   });
 
-  describe('header slot completeness (drift guard)', () => {
-    // DOR-587 and DOR-919 were both the same shape: a route added to the
-    // router with no case in useHeaderSlot's switch, so it fell through to
-    // `default` and silently rendered DashboardHeader instead of its own
-    // header. This iterates the router's real, current route list — the same
-    // source app-route-paths.test.ts checks against — so a future route added
-    // the same way fails here by name instead of waiting for a human to
-    // notice "Dashboard" over the wrong page.
-    // `/agents` is the one route with no header of its own on purpose: it is a
-    // `beforeLoad` redirect to `/team` and renders no page at all, so the shell
-    // never draws a header for it. Excluded by name rather than by loosening
-    // the guard, so a route that genuinely forgets its header still fails.
-    const HEADERLESS_ROUTES: readonly string[] = ['/agents'];
-
-    it('renders a non-dashboard header for every route except /', () => {
-      const nonRootRoutes = APP_ROUTE_PATHS.filter(
-        (path) => path !== '/' && !HEADERLESS_ROUTES.includes(path)
-      );
-      for (const path of nonRootRoutes) {
-        mockPathname = path;
-        renderAppShell();
-        expect(
-          screen.queryByTestId('dashboard-header'),
-          `${path} rendered the dashboard header — give it a case in useHeaderSlot (AppShell.tsx)`
-        ).not.toBeInTheDocument();
-        cleanup();
-      }
-    });
-
-    it('renders DashboardHeader at / — the one route allowed to use it', () => {
-      mockPathname = '/';
-      renderAppShell();
-      expect(screen.getByTestId('dashboard-header')).toBeInTheDocument();
-    });
-  });
+  // The "every route gets a non-dashboard header" drift guard that used to
+  // live here is a type error at the route declaration now (`staticData.header`
+  // is a required `StaticDataRouteOption`, router.tsx) plus a router-level
+  // assertion against the REAL route tree — see 'route headers' in
+  // apps/client/src/__tests__/app-route-paths.test.ts.
 
   describe('global banner placement (DOR-389)', () => {
     afterEach(() => {

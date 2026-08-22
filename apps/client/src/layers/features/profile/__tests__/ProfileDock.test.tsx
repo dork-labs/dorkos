@@ -111,9 +111,10 @@ function renderDock({
   /** Mount an editor holding unsaved text, in the panel named here. */
   unsaved?: false | { home: 'docked' | 'sheet'; memberId?: string };
 } = {}) {
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
   const makeRoute = (path: string) =>
     createRoute({
+      staticData: { header: null },
       getParentRoute: () => rootRoute,
       path,
       validateSearch: zodValidator(testSearchSchema.extend({ dir: z.string().optional() })),

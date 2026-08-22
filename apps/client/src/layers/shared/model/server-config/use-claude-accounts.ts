@@ -1,20 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { claudeAccountName, type ClaudeAccountRef } from '../../lib/claude-accounts';
 import { useTransport } from '../TransportContext';
-
-/**
- * Same cache entry `entities/config`'s `useConfig` writes, so this hook adds a
- * subscriber rather than a second request. Spelled out here because `shared/`
- * cannot import the entity's key factory, and the two must not drift.
- *
- * NOTE the sibling footgun: several settings tabs (and `useFeatureEnabled` next
- * door) read the BARE `['config']` key, which is a different cache entry. Any
- * write that must reach both invalidates the `['config']` PREFIX.
- */
-const CONFIG_QUERY_KEY = ['config', 'current'] as const;
-
-/** Matches `useConfig`'s freshness so both subscribers agree on when to refetch. */
-const CONFIG_STALE_TIME = 30_000;
+import { configKeys, CONFIG_STALE_TIME_MS } from './query-keys';
 
 /** What {@link useClaudeAccounts} reports. */
 export interface ClaudeAccountsView {
@@ -57,9 +44,9 @@ export function useClaudeAccounts(): ClaudeAccountsView {
   const transport = useTransport();
 
   const { data } = useQuery({
-    queryKey: CONFIG_QUERY_KEY,
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
-    staleTime: CONFIG_STALE_TIME,
+    staleTime: CONFIG_STALE_TIME_MS,
   });
 
   const claudeCode = data?.claudeCode;

@@ -12,10 +12,15 @@
  * that named none are not among them. Each rung below is something the prompt
  * actually said, and the last one says only that a tool wants to run.
  *
+ * The local `basename` this used to carry split on `/` only, so a Windows cwd
+ * came back whole and an agent was named `C:\code\dorkos`. It reads the shared
+ * one now — off the barrel by construction, see that module's note.
+ *
  * @module entities/attention/model/describe-interaction
  */
 import type { PendingInteractionDTO } from '@dorkos/shared/types';
 import { getToolLabel } from '@/layers/shared/lib';
+import { basename } from '@/layers/shared/lib/basename';
 
 /**
  * A label that says more than the tool's own name, or nothing.
@@ -48,11 +53,6 @@ function informative(candidate: string | undefined, toolName: string): string | 
  */
 export function agentNameFromCwd(cwd: string): string {
   return basename(cwd);
-}
-
-/** The last segment of a path — what a person calls the file, or the folder. */
-function basename(filePath: string): string {
-  return filePath.split('/').filter(Boolean).pop() ?? filePath;
 }
 
 /** Lower the first letter, so a label reads as the tail of a sentence. */

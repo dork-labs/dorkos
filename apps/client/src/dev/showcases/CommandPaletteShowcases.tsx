@@ -335,7 +335,7 @@ function EdgeCases() {
         </Command>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Untitled session in sub-menu</ShowcaseLabel>
+      <ShowcaseLabel>A session nobody has named yet, in the sub-menu</ShowcaseLabel>
       <ShowcaseDemo>
         <Command className="rounded-lg border">
           <CommandList>

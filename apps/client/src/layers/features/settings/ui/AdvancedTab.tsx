@@ -19,6 +19,7 @@ import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useComposerRichText, useUpdateComposerPrefs } from '@/layers/entities/config';
 import { ResetDialog } from './ResetDialog';
 import { RestartDialog } from './RestartDialog';
+import { configKeys } from '@/layers/entities/config';
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const;
 
@@ -37,7 +38,7 @@ export function AdvancedTab() {
   const { setRichText } = useUpdateComposerPrefs();
 
   const { data: config } = useQuery({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: 30_000,
   });
@@ -48,7 +49,7 @@ export function AdvancedTab() {
     async (patch: Record<string, unknown>) => {
       const current = logging ?? { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 };
       await transport.updateConfig({ logging: { ...current, ...patch } });
-      await queryClient.invalidateQueries({ queryKey: ['config'] });
+      await queryClient.invalidateQueries({ queryKey: configKeys.all });
     },
     [transport, queryClient, logging]
   );

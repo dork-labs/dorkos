@@ -106,7 +106,7 @@ export function useTrustStopWrites(): TrustStopWrites {
   /**
    * Persist one whole-config patch.
    *
-   * Invalidates the `['config']` PREFIX, not just this surface's key: the status
+   * Invalidates the `configKeys.all` PREFIX, not just this surface's key: the status
    * bar, the sidebar badges and `useFeatureEnabled` read config off a broader
    * key set, and the default is applied live by the server, so every reader has
    * to move with the write.

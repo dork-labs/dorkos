@@ -41,6 +41,10 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
 import { useSessionListStore } from '@/layers/entities/session';
+import {
+  discardPendingRejections,
+  discardSettlingSchedules,
+} from '@/layers/features/schedule-approval';
 import { PinnedTriageHeader } from '../ui/PinnedTriageHeader';
 import { PinnedTriageHeaderView, type TriagePresenceSlot } from '../ui/PinnedTriageHeaderView';
 
@@ -208,6 +212,11 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     filePath: '/tmp/nightly-sweep/SKILL.md',
     createdAt: new Date(Date.now() - 20 * 60_000).toISOString(),
     updatedAt: new Date(Date.now() - 20 * 60_000).toISOString(),
+    reason: null,
+    proposedBySessionId: null,
+    proposedByAgentPath: null,
+    proposedByName: null,
+    nextRuns: [],
     ...overrides,
   };
 }
@@ -253,8 +262,9 @@ function renderHeader(
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
 
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: (search: Record<string, unknown>) => search,
@@ -312,8 +322,9 @@ function renderHeaderRerenderable(initial: HeaderProps) {
     return <PinnedTriageHeader {...props} />;
   }
 
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: (search: Record<string, unknown>) => search,
@@ -361,6 +372,8 @@ describe('PinnedTriageHeader while the composer has the caret', () => {
 
   afterEach(() => {
     cleanup();
+    discardPendingRejections();
+    discardSettlingSchedules();
     viewport.mobile = false;
     vi.clearAllMocks();
   });
@@ -428,12 +441,12 @@ describe('PinnedTriageHeader while the composer has the caret', () => {
     // Condensing is a visual condensation, not a content change: announcing it
     // again would report the header's shape as if it were news.
     const { rerender } = renderHeaderRerenderable({ composerFocused: false });
-    await waitFor(() => expect(announcement()).toBe('1 approval is waiting on you.'));
+    await waitFor(() => expect(announcement()).toBe('1 request is waiting on you.'));
 
     rerender({ composerFocused: true });
 
     await screen.findByText('1 waiting');
-    expect(announcement()).toBe('1 approval is waiting on you.');
+    expect(announcement()).toBe('1 request is waiting on you.');
   });
 
   it('condenses to nothing rather than to an empty bar', async () => {
@@ -469,6 +482,11 @@ describe('PinnedTriageHeader at its height cap', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level on purpose (it has to survive the popover
+    // unmounting), so `cleanup()` does not end it — a rejection left pending
+    // here would fire its DELETE in the middle of a later, unrelated case.
+    discardPendingRejections();
+    discardSettlingSchedules();
     vi.clearAllMocks();
   });
 
@@ -609,6 +627,11 @@ describe('PinnedTriageHeader', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level on purpose (it has to survive the popover
+    // unmounting), so `cleanup()` does not end it — a rejection left pending
+    // here would fire its DELETE in the middle of a later, unrelated case.
+    discardPendingRejections();
+    discardSettlingSchedules();
     vi.clearAllMocks();
   });
 
@@ -667,7 +690,7 @@ describe('PinnedTriageHeader', () => {
     });
 
     await waitFor(() =>
-      expect(announcement()).toBe('2 approvals are waiting on you. 1 thing needs attention.')
+      expect(announcement()).toBe('2 requests are waiting on you. 1 thing needs attention.')
     );
   });
 
@@ -789,15 +812,22 @@ describe('PinnedTriageHeader', () => {
     expect(header()).not.toBeNull();
   });
 
-  it('puts a schedule an agent parked under Needs Attention, with both answers on the row', async () => {
+  it('puts a schedule an agent parked under Waiting On You, as a card with all three answers', async () => {
     // The event that most deserved a signal and had none: an agent proposes a
     // scheduled run, it parks because nothing arms itself, and until now the
     // only way to find it was to wander into the Tasks page.
+    //
+    // It sits in Waiting On You rather than Needs Attention since DOR-1398: a
+    // proposal IS a decision waiting on a person, and the group below is a
+    // dense row box built for things that already broke. Seeded defect: put the
+    // card back under `showsAttention` and the group heading assertion reds.
     renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]) });
 
-    expect(await screen.findByText('Needs Attention')).toBeInTheDocument();
+    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
+    expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reject Nightly sweep' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeInTheDocument();
     expect(screen.getByText(/At 03:00 AM/i)).toBeInTheDocument();
   });
 
@@ -810,6 +840,7 @@ describe('PinnedTriageHeader', () => {
 
     await waitFor(() => expect(transport.listTasks).toHaveBeenCalled());
     await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
+    expect(screen.queryByText('Waiting On You')).not.toBeInTheDocument();
     expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
   });
 
@@ -825,13 +856,37 @@ describe('PinnedTriageHeader', () => {
     expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
   });
 
-  it('rejects a parked schedule in place', async () => {
+  it('rejects a parked schedule into a receipt, sending no delete yet', async () => {
+    // Rejecting DELETES a schedule, and a delete has no server-side undo — so
+    // the card offers the undo by simply not sending the request yet. What this
+    // pins is that the header's copy of the card is wired to that machinery at
+    // all: a rejection here produces a receipt and a live offer rather than an
+    // immediate, irreversible DELETE. The clock-crossing half (the delete DOES
+    // fire when the window closes, and Undo stops it) is proven against the
+    // scheduler itself, in `deferred-rejection.test.ts`, where the timers are
+    // fake from the first line.
     const deleteTask = vi.fn().mockResolvedValue(undefined);
     renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]), deleteTask });
 
     await userEvent.click(await screen.findByRole('button', { name: 'Reject Nightly sweep' }));
 
-    expect(deleteTask).toHaveBeenCalledWith('task-1');
+    expect(await screen.findByText('Rejected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(deleteTask).not.toHaveBeenCalled();
+  });
+
+  it('puts the answers back when a rejection is undone', async () => {
+    const deleteTask = vi.fn().mockResolvedValue(undefined);
+    renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]), deleteTask });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Reject Nightly sweep' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    // Answerable again, and still nothing sent — an undo that left the card
+    // saying "Rejected" would be a button that did nothing.
+    expect(await screen.findByRole('button', { name: 'Reject Nightly sweep' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument();
+    expect(deleteTask).not.toHaveBeenCalled();
   });
 
   it('draws an agent waiting on you ONCE — the card, never a second row below it', async () => {

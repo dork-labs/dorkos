@@ -303,7 +303,9 @@ function sectionRollupText(rollup: NonNullable<SidebarSectionModel['rollup']>): 
 }
 
 /**
- * One section of a zone — its header when it has one, its rows, its subsections.
+ * One section of a zone — its header when it has one, and its rows. Hand-made
+ * sections are peers of Channels and Agents now, so there is no nesting to draw
+ * (D3).
  *
  * Collapse is local state seeded from the model, so a reviewer can fold Library
  * open and closed on the page. The model itself never changes: `collapsed` is a
@@ -374,23 +376,6 @@ function ModelSection({
           ))}
         </SidebarMenu>
       )}
-      {!collapsed &&
-        section.subsections?.map((subsection) => (
-          // `--sidebar-nested-x`, the same token `SidebarSection` indents a
-          // real subsection by (D1). It was a literal `pl-3`, which is 12px by
-          // coincidence rather than by derivation — this page's whole job is to
-          // show what the cockpit draws, and a copy that happens to agree today
-          // is what let a contrast defect hide from its own gate once already.
-          <div key={subsection.id} className="pl-[var(--sidebar-nested-x)]">
-            <ModelSection
-              section={subsection}
-              state={state}
-              activeKey={activeKey}
-              showReasons={showReasons}
-              level={4}
-            />
-          </div>
-        ))}
     </div>
   );
 }

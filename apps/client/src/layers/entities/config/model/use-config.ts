@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import type { ServerConfig } from '@dorkos/shared/types';
-import { configKeys } from '../api/query-keys';
+import { configKeys, CONFIG_STALE_TIME_MS } from '../api/query-keys';
 
 /**
  * Read the current server configuration.
@@ -16,6 +16,6 @@ export function useConfig() {
   return useQuery<ServerConfig>({
     queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
-    staleTime: 30_000,
+    staleTime: CONFIG_STALE_TIME_MS,
   });
 }

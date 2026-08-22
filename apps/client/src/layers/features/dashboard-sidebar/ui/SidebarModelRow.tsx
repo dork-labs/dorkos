@@ -48,8 +48,27 @@ import { useSidebarChrome } from './SidebarChrome';
  *
  * @param target - The row's target.
  * @param active - What the router says is open, or `null`.
+ * @param homeRoomId - The room `/` is showing, when `/` is showing — `null`
+ *   everywhere else. Only Home's own row consults it.
  */
-export function isRowActive(target: SidebarTarget, active: SidebarTarget | null): boolean {
+export function isRowActive(
+  target: SidebarTarget,
+  active: SidebarTarget | null,
+  homeRoomId: string | null = null
+): boolean {
+  // **Home's room, lit without being "active".** `/` draws #team, so its row has
+  // to look open there — but `/` has no active target and deliberately does not
+  // get one (`useActiveTarget` explains what widening it broke). A thread row
+  // carries the same `roomId` as its channel and is excluded, or Home would
+  // light two rows and leave `aria-current="page"` no longer unique.
+  if (
+    homeRoomId !== null &&
+    target.kind === 'room' &&
+    target.roomKind !== 'thread' &&
+    target.roomId === homeRoomId
+  ) {
+    return true;
+  }
   if (active === null) return false;
   if (target.kind === 'session') {
     return active.kind === 'session' && active.sessionId === target.sessionId;
@@ -147,7 +166,7 @@ function SidebarModelRowBody({
 }) {
   const chrome = useSidebarChrome();
   const target = row.target;
-  const isActive = isRowActive(target, chrome.activeTarget);
+  const isActive = isRowActive(target, chrome.activeTarget, chrome.homeRoomId);
 
   if (target.kind === 'agent') {
     return <AgentRowFromModel path={target.path} row={row} isActive={isActive} drag={drag} />;
@@ -255,11 +274,30 @@ function GenericRowFromModel({
       <MessageSquare className="text-sidebar-foreground/60 size-3.5" aria-hidden />
     );
 
+  // The one row in the panel that leaves it. `All N agents` opens the Team page,
+  // so it wears the mark every "goes elsewhere" affordance in the cockpit wears
+  // — and wears it `aria-hidden`, because a direction is a picture rather than a
+  // word: "All fifteen agents right arrow" is not a sentence anybody wants read
+  // to them. `titleText` keeps the tooltip and the accessible name as the words.
+  const leavesPanel = row.target.kind === 'command' && row.target.commandId === 'open-team';
+
   return (
     <SidebarRow
       glyph={glyph}
       {...(row.secondary === undefined ? {} : { who: row.primary })}
-      title={row.secondary ?? row.primary}
+      title={
+        leavesPanel ? (
+          <>
+            {row.primary}
+            <span aria-hidden className="text-sidebar-foreground/50 ml-1">
+              →
+            </span>
+          </>
+        ) : (
+          (row.secondary ?? row.primary)
+        )
+      }
+      {...(leavesPanel ? { titleText: row.primary } : {})}
       isActive={isActive}
       // Muted drops every signal the row was using to ask for something — the
       // bold, and the badge below — and keeps the label at full contrast

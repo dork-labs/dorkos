@@ -63,20 +63,23 @@ type HistoryActionType = 'PUSH' | 'REPLACE' | 'GO' | 'FORWARD' | 'BACK';
 const searchSchema = mergeDialogSearch(z.object({}));
 
 function buildHarness(initialUrl: string) {
-  const rootRoute = createRootRoute();
+  const rootRoute = createRootRoute({ staticData: { header: null } });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: zodValidator(searchSchema),
     component: () => <TourHost />,
   });
   const tasksRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/tasks',
     validateSearch: zodValidator(searchSchema),
     component: () => <TourHost />,
   });
   const connectionsRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/connections',
     validateSearch: zodValidator(searchSchema),

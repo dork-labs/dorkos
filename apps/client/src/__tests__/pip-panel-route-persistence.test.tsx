@@ -15,12 +15,41 @@ import { TooltipProvider } from '@/layers/shared/ui';
 
 let mockPathname = '/';
 
+// Stub route headers for the two routes this suite drives — `resolveRouteHeader`
+// (mocked below, the real implementation) walks a `matches` chain leaf-first
+// looking for the first non-null `staticData.header`. Mirrors
+// `apps/client/src/__tests__/app-shell-slots.test.tsx`; this suite only ever
+// visits `/` and `/session`, so it stubs only those two.
+const DashboardHeaderStub = () => <div data-testid="dashboard-header">Dashboard</div>;
+const SessionHeaderStub = () => <div data-testid="session-header">Session</div>;
+const ROUTE_HEADER_STUBS: Record<string, React.ComponentType> = {
+  '/': DashboardHeaderStub,
+  '/session': SessionHeaderStub,
+};
+
+interface MockRouteMatch {
+  routeId: string;
+  staticData: { header: React.ComponentType | null };
+}
+
+function mockRouteMatches(): MockRouteMatch[] {
+  return [
+    { routeId: '_shell', staticData: { header: null } },
+    { routeId: mockPathname, staticData: { header: ROUTE_HEADER_STUBS[mockPathname] ?? null } },
+  ];
+}
+
+interface MockRouterState {
+  location: { pathname: string; href: string; searchStr: string };
+  matches: MockRouteMatch[];
+}
+
 vi.mock('@tanstack/react-router', () => ({
-  useRouterState: ({
-    select,
-  }: {
-    select: (s: { location: { pathname: string; href: string } }) => string;
-  }) => select({ location: { pathname: mockPathname, href: mockPathname } }),
+  useRouterState: ({ select }: { select: (s: MockRouterState) => unknown }) =>
+    select({
+      location: { pathname: mockPathname, href: mockPathname, searchStr: '' },
+      matches: mockRouteMatches(),
+    }),
   // The tab strip reads the router directly: `useAppTabsSync` subscribes to
   // history for the action type (only Back/Forward may move focus between
   // tabs), and the tab actions re-read the location once a navigation settles.
@@ -43,6 +72,19 @@ vi.mock('@tanstack/react-router', () => ({
   // (`useRoomDocumentTitle`). No route under test carries one.
   useSearch: () => ({}),
 }));
+
+// The shell resolves every route's bar through this — the real implementation,
+// so it exercises the same leaf-first walk `useRouterState` above serves it.
+// `OneBarProvider` is a bare passthrough: this suite is about PipHost surviving
+// a route change, not about what a header renders.
+vi.mock('@/layers/widgets/one-bar', async () => {
+  const { resolveRouteHeader } = await import('@/layers/widgets/one-bar/model/route-header');
+  return {
+    resolveRouteHeader,
+    OneBarProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
+    BarFixedCluster: () => <div data-testid="bar-fixed-cluster" />,
+  };
+});
 
 // ── Mock child components with identifiable test markers ──
 
@@ -68,11 +110,6 @@ vi.mock('@/layers/features/dashboard-sidebar', async () => {
     useLegacyPinMigration: () => {},
   };
 });
-
-vi.mock('@/layers/features/top-nav', () => ({
-  SessionHeader: () => <div data-testid="session-header">Session</div>,
-  DashboardHeader: () => <div data-testid="dashboard-header">Dashboard</div>,
-}));
 
 vi.mock('@/layers/widgets/app-layout', () => ({
   DialogHost: () => null,
@@ -136,6 +173,7 @@ vi.mock('@/layers/entities/session', () => ({
   // (session-origin-legibility): no active session in this shell-level
   // isolation test, so it always resolves to "no origin".
   useSessionOrigin: () => ({ origin: undefined, originLabel: undefined }),
+  useSessionDetail: () => ({ data: undefined }),
   // The tab strip badges a chat tab off this (DOR-540). Nothing is streaming in
   // a shell-level isolation test, so every tab reads idle.
   useSessionBorderState: () => ({

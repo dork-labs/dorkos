@@ -18,7 +18,7 @@ import type { ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
-import { SIDEBAR_SECTION_TOGGLE_ATTRIBUTE } from '@/layers/shared/model/use-roving-focus';
+import { SIDEBAR_SECTION_TOGGLE_ATTRIBUTE } from '@/layers/shared/model/interaction/use-roving-focus';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 
 /**
@@ -40,7 +40,7 @@ const SECTION_HEADER_HEIGHT = { fine: 'h-7', coarse: 'h-11' } as const;
  * the remainder. Same arithmetic, same `0.5rem` literal and same browser
  * assertion as `SIDEBAR_ROW_INSET` — see its docblock.
  */
-const SECTION_HEADER_INSET = 'pl-[calc(var(--sidebar-header-x)_-_0.5rem)]';
+export const SECTION_HEADER_INSET = 'pl-[calc(var(--sidebar-header-x)_-_0.5rem)]';
 
 /**
  * The header's right padding, holding its satellites off the label.

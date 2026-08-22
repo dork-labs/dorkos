@@ -11,6 +11,7 @@ import { TasksShowcases } from '../showcases/TasksShowcases';
 import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowcases';
 import { PipPanelShowcases } from '../showcases/PipPanelShowcases';
 import { ApprovalsShowcases } from '../showcases/ApprovalsShowcases';
+import { ScheduleApprovalShowcases } from '../showcases/ScheduleApprovalShowcases';
 import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
 import { InboxShowcases } from '../showcases/InboxShowcases';
 import { PresenceStripShowcases } from '../showcases/PresenceStripShowcases';
@@ -37,6 +38,7 @@ export function FeaturesPage() {
       <TasksShowcases />
       <PipPanelShowcases />
       <ApprovalsShowcases />
+      <ScheduleApprovalShowcases />
       <TriageHeaderShowcases />
       <InboxShowcases />
       <PresenceStripShowcases />

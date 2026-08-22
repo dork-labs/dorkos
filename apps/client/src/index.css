@@ -64,11 +64,13 @@
      same one. */
   --sidebar-header-x: 12px;
   /* Where a row's 18px glyph slot starts. The label follows at
-     20 + 18 + 8 = 46px, for every row type. */
+     20 + 18 + 8 = 46px, for every row type.
+
+     There is no third token. `--sidebar-nested-x` used to add an indent for a
+     hand-made section's members, back when a section rendered inside Agents;
+     sections are peers now (`specs/sidebar-simplification` D3), so the panel is
+     two x values and nothing is nested. */
   --sidebar-row-x: 20px;
-  /* What a section's members add on top of both: header 24, glyph 32,
-     label 58. One level, never two. */
-  --sidebar-nested-x: 12px;
 }
 
 @media (max-width: 767px) {
@@ -652,6 +654,26 @@ body {
   }
 }
 
+/* The in-bar tab strips scroll sideways inside a 36px header row, and their
+   edge fades — not a scrollbar — are the affordance that says so (see
+   `bar-tab-strip.tsx`). The rule above hides scrollbars below 768px, which left
+   a desktop narrow enough to overflow (a small window, or the right panel open)
+   reserving 11px inside the row: the tabs fell from a 35px tap target to 24px
+   and a scrollbar painted itself in the header. Declared here rather than as a
+   utility class on the element because the `*` rule above is unlayered and
+   would win against one.
+
+   The selector is the `data-slot`, so it covers BOTH densities on purpose — the
+   standalone `row` strip scrolls for the same reason and answers it with the
+   same fades, and a scrollbar under a 44px touch row is no more wanted there
+   than in the bar. Measured at /dev/one-bar (DOR-1405). */
+[data-slot='bar-tab-strip'] {
+  scrollbar-width: none;
+}
+[data-slot='bar-tab-strip']::-webkit-scrollbar {
+  display: none;
+}
+
 /* Fallback for older Safari that doesn't support dvh */
 @supports not (height: 100dvh) {
   body {
@@ -1048,45 +1070,6 @@ body {
 @utility animate-count-flip {
   animation: count-flip var(--msg-count-flip) cubic-bezier(0.2, 1.6, 0.4, 1);
   display: inline-block;
-}
-
-/* The welcome-back glow (spec BC-49): the one beat a sidebar row plays when the
-   work on it finished while you were away. An amber ring that fades to nothing
-   over 1.8s, once, on the row's first paint and never again.
-
-   A RING, not a background, and that is structural rather than decorative. The
-   sidebar separates by tint — hover is one step up the `--sidebar-accent` ramp
-   and active is the top of it (spec R1) — so a background animation would fight
-   the row's own state for the second it ran, and a `forwards`/`both` fill mode
-   would go on beating it after the animation ended, because an animated value
-   outranks a stylesheet one for as long as it is applied. A box-shadow touches
-   nothing the ramp owns.
-
-   No fill mode, so when the beat ends the row is back on its stylesheet value
-   with nothing left behind.
-
-   `--status-warning` is the amber the rest of the cockpit spends on "this wants
-   you", and 55% of it at 2px is a glow rather than a border — the row is being
-   pointed at, not selected. It is spelled `hsl(var(--status-warning) / …)`
-   because the token holds HSL COMPONENTS rather than a colour, which is the
-   convention every `--color-*` alias at the top of this file follows.
-
-   Every call site gates this with `motion-safe:`, so under a reduced-motion
-   preference the utility is never applied and NOTHING renders. That is the
-   right reading here: unlike a status dot, this beat carries no standing fact —
-   it is an announcement about the past, and the row's own content still says
-   everything the glow was hinting at. */
-@keyframes welcome-back-glow {
-  from {
-    box-shadow: 0 0 0 2px hsl(var(--status-warning) / 0.55);
-  }
-  to {
-    box-shadow: 0 0 0 2px hsl(var(--status-warning) / 0);
-  }
-}
-
-@utility animate-welcome-back-glow {
-  animation: welcome-back-glow 1.8s ease-out 1;
 }
 
 @keyframes health-pulse {

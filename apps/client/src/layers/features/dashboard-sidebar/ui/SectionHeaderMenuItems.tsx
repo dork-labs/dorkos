@@ -112,14 +112,46 @@ function markAllReadNodes(
   ];
 }
 
-/** Inputs the Channels header's item list is built from. */
-export interface ChannelsHeaderMenuModel {
+/**
+ * "Sort by ▸" for a section of rooms — Name or Recent activity, and no `manual`.
+ *
+ * Channels and Direct messages have no hand-orderable sequence; a section is the
+ * place for that. The two remaining choices are the ones a list of rooms can
+ * honour, and both are performed by `build-library-sections.ts` — a room's
+ * "Recent activity" reads its own `lastActivityAt` (DOR-906).
+ *
+ * @param sortMode - What the section is sorted by right now.
+ * @param onSortModeChange - Write the choice back to `ui.sidebar`.
+ */
+function roomSortNode(
+  sortMode: 'name' | 'recent',
+  onSortModeChange: (mode: 'name' | 'recent') => void
+): SectionHeaderMenuNode {
+  return {
+    kind: 'radio',
+    id: 'sort',
+    label: SORT_MENU_LABEL,
+    icon: ArrowUpDown,
+    value: sortMode,
+    options: SECTION_SORT_OPTIONS.filter((option) => option.value !== 'manual'),
+    // The filter above is what makes the narrowing sound: 'manual' is the one
+    // value this submenu never offers.
+    onChange: (value) => onSortModeChange(value as 'name' | 'recent'),
+  };
+}
+
+/** Inputs a room section's header item list is built from — Channels and Direct messages. */
+export interface RoomSectionHeaderMenuModel {
   /** Whether the section is collapsed, which names the collapse item. */
   collapsed: boolean;
-  /** Whether any channel is behind. Nothing to clear means no "Mark all channels read". */
+  /** Whether anything in it is behind. Nothing to clear means no "Mark all … read". */
   hasUnread: boolean;
-  /** Clear the unread badge on every channel. */
+  /** Clear the unread badge on every room of this kind. */
   onMarkAllRead: () => void;
+  /** How the section orders its rows (`ui.sidebar.sections.<id>.sortMode`). */
+  sortMode: 'name' | 'recent';
+  /** Write the chosen sort mode back to `ui.sidebar`. */
+  onSortModeChange: (mode: 'name' | 'recent') => void;
   /** Flip the section's collapse state. */
   onToggleCollapsed: () => void;
 }
@@ -127,34 +159,22 @@ export interface ChannelsHeaderMenuModel {
 /**
  * Build the Channels header's items, in order.
  *
- * No "Sort ▸" yet, and that is a gap rather than an omission: channels are
- * ordered by name in `useRoomsByKind` with no per-section setting behind it, so
- * offering the submenu would mean adding a persisted preference and its config
- * migration — a change to what the sidebar stores, not to what its headers
- * offer. Filed as DOR-906 rather than smuggled in here (spec `rooms` §14.1
- * lists it).
+ * "Sort by ▸" is here as of DOR-906. It was left out for a release because
+ * channels were ordered by name with no per-section setting behind them; the
+ * setting exists for every section in `SidebarSectionPrefsSchema`, so offering
+ * it needed no new stored field and no migration — only a menu and a sort that
+ * knows what a room's recency is.
  *
  * @param model - The section's state plus the action callbacks.
  */
 export function buildChannelsHeaderMenuNodes(
-  model: ChannelsHeaderMenuModel
+  model: RoomSectionHeaderMenuModel
 ): SectionHeaderMenuNode[] {
   return [
     ...markAllReadNodes(model.hasUnread, 'Mark all channels read', model.onMarkAllRead),
+    roomSortNode(model.sortMode, model.onSortModeChange),
     collapseNode(model.collapsed, model.onToggleCollapsed),
   ];
-}
-
-/** Inputs the Direct messages header's item list is built from. */
-export interface DirectMessagesHeaderMenuModel {
-  /** Whether the section is collapsed, which names the collapse item. */
-  collapsed: boolean;
-  /** Whether any conversation is behind. */
-  hasUnread: boolean;
-  /** Clear the unread badge on every conversation. */
-  onMarkAllRead: () => void;
-  /** Flip the section's collapse state. */
-  onToggleCollapsed: () => void;
 }
 
 /**
@@ -164,10 +184,11 @@ export interface DirectMessagesHeaderMenuModel {
  * @param model - The section's state plus the action callbacks.
  */
 export function buildDirectMessagesHeaderMenuNodes(
-  model: DirectMessagesHeaderMenuModel
+  model: RoomSectionHeaderMenuModel
 ): SectionHeaderMenuNode[] {
   return [
     ...markAllReadNodes(model.hasUnread, 'Mark all read', model.onMarkAllRead),
+    roomSortNode(model.sortMode, model.onSortModeChange),
     collapseNode(model.collapsed, model.onToggleCollapsed),
   ];
 }
@@ -188,17 +209,16 @@ export interface AgentsHeaderMenuModel {
  * Build the Agents (ungrouped) header's items, in order.
  *
  * **Show comes before Sort by**, matching {@link buildGroupHeaderMenuNodes} —
- * the menu this whole family was aligned to. A group section and the ungrouped
- * section are
- * the same kind of list with the same two settings, so the settings sit in the
- * same order in both; the spec's table lists them the other way round and the
+ * the menu this whole family was aligned to. A hand-made section and the
+ * ungrouped Agents section are the same kind of list with the same two
+ * settings, so the settings sit in the same order in both; the spec's table lists them the other way round and the
  * audit rule ("where a verb exists, reuse its exact label and position") wins.
  *
  * The section has no collapse item because it has no collapse control: the
  * ungrouped list is what is left over, and hiding it would leave the sidebar
  * with nothing in it.
  *
- * "New agent" and "New group" are not here: the New menu on the header block
+ * "New agent" and "New section" are not here: the New menu on the header block
  * is the one place either is made, and this section's `+` deep-links into it
  * (BC-45).
  *
@@ -216,7 +236,8 @@ export function buildAgentsHeaderMenuNodes(model: AgentsHeaderMenuModel): Sectio
       icon: ArrowUpDown,
       value: model.sortMode,
       // No 'manual': the ungrouped section has no hand-orderable sequence —
-      // groups are the place for manual curation (`SidebarPrefsSchema`).
+      // hand-made sections are the place for manual curation
+      // (`SidebarPrefsSchema`).
       options: SECTION_SORT_OPTIONS.filter((option) => option.value !== 'manual'),
       // The filter above is what makes the narrowing sound: 'manual' is the one
       // value this submenu never offers, so the value coming back is one of the
@@ -226,52 +247,57 @@ export function buildAgentsHeaderMenuNodes(model: AgentsHeaderMenuModel): Sectio
   ];
 }
 
-/** Inputs a group header's item list is built from. */
+/** Inputs a hand-made section's header item list is built from. */
 export interface GroupHeaderMenuModel {
-  /** The group this header belongs to. */
+  /**
+   * The section this header belongs to.
+   *
+   * Typed as `SidebarGroup` because that is the STORED name and the persisted
+   * shape does not get renamed for a copy change — only what the person reads
+   * does (D3).
+   */
   group: SidebarGroup;
   /** Start the inline rename editor on the header. */
   onRename: () => void;
-  /** Flip the group's collapse state. */
+  /** Flip the section's collapse state. */
   onToggleCollapsed: () => void;
-  /** Write the chosen display filter back to the group. */
+  /** Write the chosen display filter back to the section. */
   onDisplayFilterChange: (filter: string) => void;
-  /** Write the chosen sort mode back to the group. */
+  /** Write the chosen sort mode back to the section. */
   onSortModeChange: (mode: string) => void;
-  /** Flip the group's mute lens. */
+  /** Flip the section's mute lens. Manual sections only — see the builder. */
   onToggleMuted: () => void;
-  /** Open the rule form, prefilled (smart groups only). */
+  /** Open the rule form, prefilled (smart sections only). */
   onEditRules: () => void;
-  /** Freeze the currently-matching members into a hand-tunable manual group. */
+  /** Freeze the currently-matching members into a hand-tunable manual section. */
   onConvertToManual: () => void;
-  /** Ask to delete — which confirms first for a group that has members. */
+  /** Ask to delete — which confirms first for a section that has members. */
   onDelete: () => void;
 }
 
 /**
- * Build a group header's items, in order.
+ * Build a hand-made section header's items, in order.
  *
- * A group is a section, so this list is the section-header list with the nouns
- * changed: what you can make (nothing — a group is already made), then what you
- * can clear, then how this section looks, then the destructive one on its own
- * at the bottom. **Show comes before Sort by**, and the built-in Agents header
- * matches it rather than the other way round.
+ * What you can rename, then what you can clear, then how this section looks,
+ * then the destructive one on its own at the bottom. **Show comes before Sort
+ * by**, and the built-in Agents header matches it rather than the other way
+ * round.
  *
- * Muting a group is a lens over its members (DOR-339): it never writes member
+ * Muting a section is a lens over its members (DOR-339): it never writes member
  * references into `ui.sidebar.muted`, so unmuting restores whatever individual
  * mute state each member already had.
  *
- * Smart groups (DOR-338) add a plain-language rule summary at the top — the
+ * Smart sections (DOR-338) add a plain-language rule summary at the top — the
  * honesty contract, since their membership is not something you can hand-edit —
- * plus "Edit rules" and "Convert to manual group", the escape hatch that freezes
- * the currently-matching members.
+ * plus "Edit rules" and "Convert to manual section", the escape hatch that
+ * freezes the currently-matching members. They offer no Mute: see the item.
  *
- * @param model - The group plus the action callbacks.
+ * @param model - The section plus the action callbacks.
  */
 export function buildGroupHeaderMenuNodes(model: GroupHeaderMenuModel): SectionHeaderMenuNode[] {
   const { group } = model;
   const isSmart = group.kind === 'smart';
-  // Smart groups reject 'manual' sort at the schema level — derived membership
+  // Smart sections reject 'manual' sort at the schema level — derived membership
   // has no hand-orderable sequence, so the option never appears.
   const sortOptions = isSmart
     ? SECTION_SORT_OPTIONS.filter((o) => o.value !== 'manual')
@@ -291,7 +317,7 @@ export function buildGroupHeaderMenuNodes(model: GroupHeaderMenuModel): SectionH
     {
       kind: 'action',
       id: 'rename',
-      label: 'Rename',
+      label: 'Rename section',
       icon: Pencil,
       opensInput: true,
       run: model.onRename,
@@ -307,14 +333,24 @@ export function buildGroupHeaderMenuNodes(model: GroupHeaderMenuModel): SectionH
       options: sortOptions,
       onChange: model.onSortModeChange,
     },
-    {
-      kind: 'action',
-      id: 'mute',
-      label: group.muted ? 'Unmute group' : 'Mute group',
-      icon: group.muted ? Bell : BellOff,
-      opensInput: false,
-      run: model.onToggleMuted,
-    },
+    // **Mute is offered on a manual section only, and that is a fix.**
+    // `apply-mute-rules.ts` skips smart sections on purpose — their membership
+    // is rebuilt every render, so a stored mute over it would apply to a list
+    // nobody chose — but the item was drawn anyway: the label flipped to
+    // "Unmute" and not one row changed (DOR-1371). A control that does nothing
+    // is not offered.
+    ...(isSmart
+      ? []
+      : ([
+          {
+            kind: 'action',
+            id: 'mute',
+            label: group.muted ? 'Unmute section' : 'Mute section',
+            icon: group.muted ? Bell : BellOff,
+            opensInput: false,
+            run: model.onToggleMuted,
+          },
+        ] satisfies SectionHeaderMenuNode[])),
     ...(isSmart
       ? ([
           {
@@ -328,7 +364,7 @@ export function buildGroupHeaderMenuNodes(model: GroupHeaderMenuModel): SectionH
           {
             kind: 'action',
             id: 'convert-to-manual',
-            label: 'Convert to manual group',
+            label: 'Convert to manual section',
             icon: Users,
             opensInput: false,
             run: model.onConvertToManual,
@@ -339,7 +375,7 @@ export function buildGroupHeaderMenuNodes(model: GroupHeaderMenuModel): SectionH
     {
       kind: 'action',
       id: 'delete',
-      label: 'Delete group',
+      label: 'Delete section',
       icon: Trash2,
       opensInput: false,
       destructive: true,

@@ -1,6 +1,5 @@
-import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
-import type { SessionOrigin } from '@dorkos/shared/types';
 import {
   useAppStore,
   useFavicon,
@@ -14,12 +13,15 @@ import { useRoomDocumentTitle } from './app/use-room-document-title';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { getAgentDisplayName, cn, isDesktopShell, normalizeTeamView } from '@/layers/shared/lib';
+// Off the barrel by construction — see the module's own note.
+import { basename } from '@/layers/shared/lib/basename';
 import {
   useSessionId,
   useDefaultCwd,
   useDirectoryState,
   useGlobalSessionStream,
   useSessionOrigin,
+  useSessionDetail,
 } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useCommandsSync } from '@/layers/entities/command';
@@ -30,7 +32,6 @@ import { useTasksSync } from '@/layers/entities/tasks';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
-import { InboxBell } from '@/layers/widgets/inbox-bell';
 import { usePulseFreshness } from '@/layers/widgets/pulse';
 import {
   DashboardSidebar,
@@ -45,18 +46,11 @@ import {
 } from '@/layers/features/onboarding';
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import {
-  SessionHeader,
-  DashboardHeader,
-  ChannelsHeader,
-  TeamHeader,
-  ActivityHeader,
-  TasksHeader,
-  MarketplaceHeader,
-  MarketplaceSourcesHeader,
-  WorkspacesHeader,
-  ConnectionsHeader,
-  FeedbackRequestsHeader,
-} from '@/layers/features/top-nav';
+  BarFixedCluster,
+  OneBarProvider,
+  resolveRouteHeader,
+  type OneBarRouteState,
+} from '@/layers/widgets/one-bar';
 import {
   Toaster,
   TooltipProvider,
@@ -85,7 +79,6 @@ import { ShortcutsPanel, useShortcutsPanel } from '@/layers/features/shortcuts';
 import { PanelGroup, Panel } from 'react-resizable-panels';
 import {
   RightPanelContainer,
-  RightPanelToggle,
   useRightPanelPersistence,
   useRightPanelShortcut,
   RIGHT_PANEL_GROUP_ID,
@@ -115,15 +108,6 @@ interface SidebarSlot {
    * than the mobile layout guessing from a key string.
    */
   isTakeover: boolean;
-}
-
-interface HeaderSlot {
-  /** Stable key for AnimatePresence — triggers cross-fade on route change */
-  key: string;
-  /** The header content to render between SidebarTrigger and edge */
-  content: React.ReactNode;
-  /** Optional colored border style for the session route */
-  borderStyle: React.CSSProperties | undefined;
 }
 
 // ── Private slot hooks ────────────────────────────────────────
@@ -179,82 +163,18 @@ function useSidebarSlot(): SidebarSlot {
 }
 
 /**
- * Returns the header content component keyed to the current route.
+ * The bar for the route that is showing, and the key its cross-fade animates on.
  *
- * All routes use a page-specific header with consistent `PageHeader` layout.
- * The session route includes a breadcrumb with the agent name; the channels
- * route names the open room rather than falling through to the dashboard's
- * (DOR-587). Workspaces, Connections, and Product feedback had the same gap
- * and are fixed the same way (DOR-919).
+ * This used to be a `pathname` switch here in the shell, which meant a new route
+ * silently inherited the `default` branch's header — the defect that had every
+ * channel and every DM reading "Dashboard" (DOR-587) and then had Workspaces,
+ * Connections and Product feedback do the same thing (DOR-919). Routes declare
+ * their own bar in `router.tsx` now, as required `staticData.header`, so a route
+ * with no bar does not compile.
  */
-function useHeaderSlot({
-  agentName,
-  origin,
-  originLabel,
-  roomTitle,
-}: {
-  agentName: string | undefined;
-  origin: SessionOrigin | undefined;
-  originLabel: string | undefined;
-  /** The open room's spoken name on `/channels`, resolved once by the shell
-   * (`useRoomDocumentTitle`) — see {@link ChannelsHeader}. */
-  roomTitle: string | null;
-}): HeaderSlot {
-  const { pathname, searchStr } = useRouterState({
-    select: (s) => ({ pathname: s.location.pathname, searchStr: s.location.searchStr }),
-  });
-  switch (pathname) {
-    case '/':
-      return { key: 'dashboard', content: <DashboardHeader />, borderStyle: undefined };
-    case '/team': {
-      // Read straight off the URL rather than through `useSearch`, so the
-      // header keeps rendering during a route exit animation — and normalized
-      // through the same function the route validates with, so the header and
-      // the page can never disagree about which view is showing.
-      const viewMode = normalizeTeamView(new URLSearchParams(searchStr).get('view') ?? undefined);
-      return {
-        key: 'team',
-        content: <TeamHeader viewMode={viewMode} />,
-        borderStyle: undefined,
-      };
-    }
-    case '/tasks':
-      return { key: 'tasks', content: <TasksHeader />, borderStyle: undefined };
-    case '/activity':
-      return { key: 'activity', content: <ActivityHeader />, borderStyle: undefined };
-    case '/marketplace':
-      return { key: 'marketplace', content: <MarketplaceHeader />, borderStyle: undefined };
-    case '/marketplace/sources':
-      return {
-        key: 'marketplace-sources',
-        content: <MarketplaceSourcesHeader />,
-        borderStyle: undefined,
-      };
-    case '/channels':
-      return {
-        key: 'channels',
-        content: <ChannelsHeader roomTitle={roomTitle} />,
-        borderStyle: undefined,
-      };
-    case '/workspaces':
-      return { key: 'workspaces', content: <WorkspacesHeader />, borderStyle: undefined };
-    case '/connections':
-      return { key: 'connections', content: <ConnectionsHeader />, borderStyle: undefined };
-    case '/feedback-requests':
-      return {
-        key: 'feedback-requests',
-        content: <FeedbackRequestsHeader />,
-        borderStyle: undefined,
-      };
-    case '/session':
-      return {
-        key: 'session',
-        content: <SessionHeader agentName={agentName} origin={origin} originLabel={originLabel} />,
-        borderStyle: undefined,
-      };
-    default:
-      return { key: 'dashboard', content: <DashboardHeader />, borderStyle: undefined };
-  }
+function useRouteHeader() {
+  const matches = useRouterState({ select: (s) => s.matches });
+  return resolveRouteHeader(matches);
 }
 
 // ── AppShell component ────────────────────────────────────────
@@ -304,7 +224,7 @@ export function AppShell() {
   const agentVisual = useAgentVisual(currentAgent ?? null, selectedCwd ?? '');
   // The tab names the room you are reading when there is one, and counts the
   // rooms waiting on you whichever route you are on (spec `rooms` §13.1/§13.3).
-  const { roomTitle, unreadRoomCount } = useRoomDocumentTitle();
+  const { room: openRoom, roomTitle, unreadRoomCount } = useRoomDocumentTitle();
   useFavicon({
     cwd: selectedCwd,
     isStreaming,
@@ -421,12 +341,61 @@ export function AppShell() {
   const sidebarSlot = useSidebarSlot();
   const { origin: activeSessionOrigin, originLabel: activeSessionOriginLabel } =
     useSessionOrigin(activeSessionId);
-  const headerSlot = useHeaderSlot({
-    agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
-    origin: activeSessionOrigin,
-    originLabel: activeSessionOriginLabel,
-    roomTitle,
+  // The session's own name, out of the one session cache the sidebar list, the
+  // recents and every other reader share — so the bar cannot call a session
+  // something the list you picked it from doesn't. `select` narrows the
+  // subscription to the title, so an unrelated settings write to the same row
+  // doesn't re-render the shell.
+  //
+  // `enabled: false` is deliberate and load-bearing. The bar REPORTS a session's
+  // name; it does not own the session. Every route that needs the row already
+  // fetches it, and the global session stream patches this cache directly
+  // (`syncSessionDetailCache`), so the title still arrives and still updates
+  // live. What this rules out is the shell adding a fetch of its own to a key
+  // other surfaces read — the permission control resolves the session's runtime
+  // from this same row, and a shell-initiated request racing session creation
+  // would put a row they then read into the cache. The hook documents exactly
+  // this case: a caller that only reports on a session someone else owns.
+  const { data: activeSessionTitle } = useSessionDetail(activeSessionId, {
+    enabled: false,
+    select: (session) => session.title,
   });
+  const routeHeader = useRouteHeader();
+  const searchStr = useRouterState({ select: (st) => st.location.searchStr });
+  // What every route bar reads but no route resolves for itself — the shell has
+  // these already, and resolving them twice is how two places end up disagreeing
+  // about which room is open.
+  const oneBarState = useMemo<OneBarRouteState>(
+    () => ({
+      sessionId: activeSessionId ?? undefined,
+      agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
+      // Only when there IS an agent. `useAgentVisual` hashes a face out of the
+      // cwd otherwise, which is right for a favicon and wrong for the bar: a
+      // face there says "this is an agent", and a bare directory is not one.
+      agentVisual: currentAgent ? agentVisual : undefined,
+      origin: activeSessionOrigin,
+      originLabel: activeSessionOriginLabel,
+      sessionTitle: activeSessionTitle,
+      sessionDirectoryName: selectedCwd ? basename(selectedCwd) : undefined,
+      room: openRoom,
+      // Read straight off the URL rather than through `useSearch`, so the bar
+      // keeps rendering during a route exit animation — and normalized through
+      // the same function the route validates with, so the bar and the page can
+      // never disagree about which view is showing.
+      teamViewMode: normalizeTeamView(new URLSearchParams(searchStr).get('view') ?? undefined),
+    }),
+    [
+      activeSessionId,
+      currentAgent,
+      agentVisual,
+      activeSessionOrigin,
+      activeSessionOriginLabel,
+      activeSessionTitle,
+      selectedCwd,
+      openRoom,
+      searchStr,
+    ]
+  );
 
   // Eligible global banners, ranked and rendered one-at-a-time by AppBannerSlot
   // (below the header, inside the inset — so the sidebar never paints over them).
@@ -610,8 +579,15 @@ export function AppShell() {
                       // `desktop-darwin:` variant utility — see the
                       // `.app-drag-region` comment in index.css. Inert without
                       // the `.desktop-darwin` ancestor, so it is unconditional.
-                      className="app-drag-region relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
-                      style={headerSlot.borderStyle}
+                      // `@container/bar` makes the row itself the thing bars
+                      // measure against. A bar's crowding is a fact about the
+                      // width it HAS, and that is not the window's: collapsing
+                      // the sidebar takes this row from 524px to 804px at a
+                      // fixed window size (measured). A `sm:` breakpoint keyed
+                      // to the viewport would answer the wrong question — and
+                      // answer it wrongly in the playground too, where a 390px
+                      // bar sits inside a 1440px page.
+                      className="app-drag-region @container/bar relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
                     >
                       {/* A phone has no panel to toggle, so it gets no toggle.
                           A hamburger that opens nothing is worse than no
@@ -623,28 +599,42 @@ export function AppShell() {
                           <Separator orientation="vertical" className="mr-1 h-4" />
                         </>
                       )}
-                      {/* ── Dynamic header content with cross-fade ── */}
+                      {/* ── The route's bar, cross-faded on route change.
+                            ONLY the route's own half fades: identity, chips and
+                            page actions are what differ between routes, so they
+                            are what animates. ── */}
                       <AnimatePresence mode="wait" initial={false}>
-                        <motion.div
-                          key={headerSlot.key}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.1 }}
-                          className="flex min-w-0 flex-1 items-center gap-2"
-                        >
-                          {headerSlot.content}
-                        </motion.div>
+                        {routeHeader && (
+                          <motion.div
+                            key={routeHeader.key}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.1 }}
+                            // `self-stretch` so the row's full height is available
+                            // to a bar that wants it. The header centres its
+                            // children, which left this wrapper only as tall as
+                            // its text — and a tab strip asking for `h-full`
+                            // inside it got 24px, so every home tab was a 24px
+                            // target in a 36px row (DOR-1401). Stretched, the
+                            // tabs measure 35px: the header's 36 less the 1px
+                            // that is its bottom hairline. Children still centre
+                            // themselves (`items-center`); only the box they
+                            // measure against changed.
+                            className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
+                          >
+                            <OneBarProvider value={oneBarState}>
+                              <routeHeader.Header />
+                            </OneBarProvider>
+                          </motion.div>
+                        )}
                       </AnimatePresence>
-                      {/* ── The Inbox — far right, every route. An agent blocked
-                            on a person must be visible from wherever that person
-                            is standing, not only from the dashboard; everything
-                            that already happened sits under it with read marks.
-                            Renders nothing when nothing waits and nothing is
-                            unread. ── */}
-                      <InboxBell />
-                      {/* ── Right panel toggle — far right, always present on every route ── */}
-                      <RightPanelToggle />
+                      {/* ── Search · inbox · right-panel toggle. Outside the
+                            cross-fade and after it, which is both halves of
+                            I1: they stay mounted so the corner never blinks on
+                            navigation, and the route's bar — confined to the
+                            sibling above — cannot render anything past them. ── */}
+                      <BarFixedCluster />
                     </header>
                     {/* ── Global banner slot — one standing banner at a time, ranked
                           by priority. Sits below the header and inside the inset, so the

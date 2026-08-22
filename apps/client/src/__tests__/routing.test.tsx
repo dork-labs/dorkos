@@ -46,17 +46,20 @@ interface RouterContext {
 
 function buildRouteTree() {
   const rootRoute = createRootRouteWithContext<RouterContext>()({
+    staticData: { header: null },
     component: () => <Outlet />,
     notFoundComponent: () => <div data-testid="not-found">404 — Page not found</div>,
   });
 
   const shellRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     id: '_shell',
     component: MockShell,
   });
 
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => shellRoute,
     path: '/',
     component: MockHome,
@@ -73,6 +76,7 @@ function buildRouteTree() {
   });
 
   const sessionRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => shellRoute,
     path: '/session',
     validateSearch: zodValidator(sessionSearchSchema),

@@ -112,15 +112,15 @@ export interface RoomRowMenuModel {
    * second, room-only mute list, so "muted" means one thing across the sidebar.
    */
   isMuted: boolean;
-  /** The group this room currently sits in, or `null` when it is in none. */
+  /** The section this room currently sits in, or `null` when it is in none. */
   currentGroupId: string | null;
   /**
-   * The groups this room can be moved into — MANUAL groups only.
+   * The sections this room can be moved into — MANUAL sections only.
    *
-   * A smart group derives its membership from rules about agents, and its stored
-   * `items` is only the convert-to-manual materialization target. A room filed
-   * into one would be hidden from Channels (it counts as grouped) and drawn by
-   * nobody (the smart group renders its derived members instead) — it would
+   * A smart section derives its membership from rules about agents, and its
+   * stored `items` is only the convert-to-manual materialization target. A room
+   * filed into one would be hidden from Channels (it counts as filed) and drawn
+   * by nobody (the smart section renders its derived members instead) — it would
    * simply vanish. The drag layer already refuses that drop; the menu refuses it
    * by not offering it.
    */
@@ -180,9 +180,9 @@ export interface RoomRowMenuModel {
   onMarkRead: () => void;
   /** Toggle this room's own mute state. */
   onToggleMute: () => void;
-  /** Move the room into a group, or out of every group with `null`. */
+  /** Move the room into a section, or out of every section with `null`. */
   onMoveToGroup: (groupId: string | null) => void;
-  /** Open the inline group-create flow, moving this room into the new group on commit. */
+  /** Open the inline section-create flow, moving this room into it on commit. */
   onNewGroup: () => void;
   /** Open the members panel with the picker focused. */
   onAddAgents: () => void;
@@ -216,16 +216,16 @@ export interface RoomRowMenuModel {
 }
 
 /**
- * The contents of "Move to group ▸": one tickable target per manual group, the
- * way out when the room is already in one, and the door to a brand-new group.
+ * The contents of "Move to section ▸": one tickable target per manual section,
+ * the way out when the room is already in one, and the door to a brand-new one.
  *
  * Mirrors the agent row's submenu exactly (`buildRowMenuNodes`) rather than
  * inventing a room-shaped variant, because the two menus name the same
  * operation on the same stored list — `ui.sidebar.groups[].items`.
  *
- * "New group…" is offered even with no groups yet: an empty submenu holding only
- * a separator would be a dead end, and creating the first group from the row you
- * want in it is the fastest path there is.
+ * "New section…" is offered even with no sections yet: an empty submenu holding
+ * only a separator would be a dead end, and creating the first section from the
+ * row you want in it is the fastest path there is.
  */
 function buildMoveToGroupItems(model: RoomRowMenuModel): RoomRowMenuNode[] {
   const items: RoomRowMenuNode[] = model.groups.map((group) => ({
@@ -240,7 +240,7 @@ function buildMoveToGroupItems(model: RoomRowMenuModel): RoomRowMenuNode[] {
     items.push({
       kind: 'action',
       id: 'remove-from-group',
-      label: 'Remove from group',
+      label: 'Remove from section',
       icon: FolderMinus,
       opensInput: false,
       destructive: false,
@@ -253,7 +253,7 @@ function buildMoveToGroupItems(model: RoomRowMenuModel): RoomRowMenuNode[] {
     {
       kind: 'action',
       id: 'new-group',
-      label: 'New group',
+      label: 'New section',
       icon: FolderPlus,
       // Earns the ellipsis: it mounts the inline name editor rather than
       // creating anything on the spot.
@@ -329,7 +329,7 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
     {
       kind: 'submenu',
       id: 'move-to-group',
-      label: 'Move to group',
+      label: 'Move to section',
       icon: FolderInput,
       items: buildMoveToGroupItems(model),
     },
@@ -446,7 +446,7 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
   nodes.push({
     kind: 'action',
     id: 'archive',
-    // Named like "Delete group" is: the verb plus the noun it acts on, so the
+    // Named like "Delete section" is: the verb plus the noun it acts on, so the
     // item still reads correctly out of context.
     label: isChannel ? 'Archive channel' : 'Archive conversation',
     icon: Archive,

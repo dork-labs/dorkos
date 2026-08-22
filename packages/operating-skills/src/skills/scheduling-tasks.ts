@@ -35,14 +35,25 @@ Read current state before changing anything:
 ## Create a task
 
 - Tool: \`tasks_create\` with \`name\`, \`prompt\` (the instruction the agent runs each
-  time), \`cron\` (required, e.g. \`"0 2 * * *"\` for daily at 2am), and optional
-  \`description\` and \`timezone\` (IANA, e.g. \`"America/New_York"\`). A run-time cap
-  is set with \`tasks_update\`, not here.
+  time), \`cron\` (required, e.g. \`"0 2 * * *"\` for daily at 2am), \`reason\`
+  (required, see below), and optional \`description\` and \`timezone\` (IANA, e.g.
+  \`"America/New_York"\`). A run-time cap is set with \`tasks_update\`, not here.
 - CLI: \`dorkos task create --name <name> --description <text> --prompt <text>
   --target <agent-id-or-global> [--cron <expr>] [--timezone <tz>]\`.
 
 Only the CLI can create a manual-only task: omit \`--cron\` and trigger it by hand.
 The tool requires a cron expression.
+
+### Say why, in your own words
+
+\`reason\` is required and it is not the description. The description says what the
+task does; the reason says why it should exist at all, addressed to the person who
+has to approve it. All they see is your sentence, your name, and the times the
+cron would actually fire, so a blank or padded reason is a task they will reject.
+Write the sentence you would say out loud: "You asked me to keep an eye on the
+overnight builds, and this checks them at 7am so the summary is waiting for you."
+
+An empty or whitespace-only reason is refused and nothing is created.
 
 ### The approval gate
 

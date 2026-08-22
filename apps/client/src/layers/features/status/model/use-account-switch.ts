@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { claudeAccountOptions, type ClaudeAccountRef } from '@/layers/shared/lib';
 import { useClaudeAccounts } from '@/layers/shared/model';
 import { useUpdateConfig } from '@/layers/entities/config';
+import { configKeys } from '@/layers/entities/config';
 
 /**
  * Stands in for "no account chosen", which writes `defaultAccount: null`. Radix
@@ -63,9 +64,9 @@ export function useAccountSwitch(): AccountSwitch {
       { runtimes: { claudeCode: { defaultAccount } } },
       {
         onSuccess: () => {
-          // The `['config']` PREFIX: the settings tabs read the bare key while
-          // this menu and the sidebar badges read `['config','current']`.
-          void queryClient.invalidateQueries({ queryKey: ['config'] });
+          // The `configKeys.all` PREFIX: everything derived from config hangs
+          // off it, and the switch has to reach all of it.
+          void queryClient.invalidateQueries({ queryKey: configKeys.all });
         },
         onError: (err) => {
           // The server's own sentence, same as the settings card's

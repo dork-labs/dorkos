@@ -6,7 +6,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { createAppRouter } from '../router';
-import { HOME_TABS } from '@/layers/widgets/home';
+import { HOME_TABS } from '@/layers/shared/config';
 
 /** The shipped route tree, built the way `main.tsx` builds it. */
 function router() {

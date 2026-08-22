@@ -47,6 +47,11 @@ const activeSchedule: Task = {
   nextRun: new Date(Date.now() + 3600000).toISOString(),
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
+  reason: null,
+  proposedBySessionId: null,
+  proposedByAgentPath: null,
+  proposedByName: null,
+  nextRuns: [],
 };
 
 const scheduleWithOrphanedAgent: Task = {

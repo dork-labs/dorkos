@@ -53,6 +53,19 @@ export interface DeriveAttentionInput {
   liveKinds: LiveBorderKind[];
   /** Latest known session activity (epoch ms), or `null` when the agent has never had one. */
   lastActivityAt: number | null;
+  /**
+   * When the VIEWER last opened this agent (epoch ms), or `null`/absent when
+   * they never have.
+   *
+   * **It only ever holds an agent back from `inactive`.** An agent is also a
+   * project, and one you opened last Tuesday to read is not dormant even if it
+   * ran nothing — so the week-long boundary is measured from the later of the
+   * two facts (spec `sidebar-simplification` D3). The `active` window above is
+   * deliberately NOT measured from it: opening a page is not the agent working,
+   * and a green "active" dot earned by your own click would be a lie about
+   * somebody else.
+   */
+  lastInteractionAt?: number | null;
   /** Caller-supplied clock reading (epoch ms) — kept pure and testable, no `Date.now()` inside. */
   now: number;
   /**
@@ -100,7 +113,8 @@ export function deriveAttention(input: DeriveAttentionInput): AttentionState {
   }
   const elapsed = input.now - input.lastActivityAt;
   if (elapsed <= ATTENTION_THRESHOLDS.activeWithinMs) return 'active';
-  if (elapsed > ATTENTION_THRESHOLDS.inactiveAfterMs) return 'inactive';
+  const lastSeen = Math.max(input.lastActivityAt, input.lastInteractionAt ?? input.lastActivityAt);
+  if (input.now - lastSeen > ATTENTION_THRESHOLDS.inactiveAfterMs) return 'inactive';
   return 'idle';
 }
 
@@ -135,6 +149,15 @@ export function foldLiveKindsByPath(
 }
 
 /**
+ * The empty interaction record, minted once.
+ *
+ * A default parameter is evaluated per call, so `= {}` handed the memo below a
+ * fresh object on every render and rebuilt the whole map on every store tick —
+ * for exactly the callers that pass nothing, which is every one but the sidebar.
+ */
+const NO_INTERACTIONS: Readonly<Record<string, number>> = Object.freeze({});
+
+/**
  * Derive the {@link AttentionState} for every path in `paths` — the single
  * source of attention truth the sidebar's filters, reveal rows, and mute all
  * read. One session-list-store subscription (two raw-property selectors, not
@@ -154,10 +177,15 @@ export function foldLiveKindsByPath(
  *   honored, from `useExecutionExceptions`. Passed in rather than computed here
  *   because that question spans agents, config, and runtimes, and this module
  *   is the session entity — the caller already holds all three.
+ * @param lastInteractionAt - Agent path → when the viewer last opened it, epoch
+ *   ms. Passed in for the same reason: the record lives in
+ *   `entities/interactions`, a sibling entity this one may not import. A caller
+ *   that has no such record omits it and the boundary reads activity alone.
  */
 export function useAgentAttentionMap(
   paths: string[],
-  brokenExecutionPaths: string[] = []
+  brokenExecutionPaths: string[] = [],
+  lastInteractionAt: Readonly<Record<string, number>> = NO_INTERACTIONS
 ): Record<string, AttentionState> {
   const key = paths.join('\n');
   // Joined to a string for the same reason `paths` is: a fresh array every
@@ -180,10 +208,11 @@ export function useAgentAttentionMap(
       result[path] = deriveAttention({
         liveKinds: liveFolded.get(path) ?? [],
         lastActivityAt: iso ? new Date(iso).getTime() : null,
+        lastInteractionAt: lastInteractionAt[path] ?? null,
         now,
         hasBrokenExecutionConfig: broken.has(path),
       });
     }
     return result;
-  }, [key, brokenKey, statusCwds, statuses, agentActivity]);
+  }, [key, brokenKey, statusCwds, statuses, agentActivity, lastInteractionAt]);
 }

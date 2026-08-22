@@ -370,11 +370,11 @@
     "team-page": {
       "specFile": "tests/team/team-page.spec.ts",
       "feature": "team",
-      "description": "the sidebar reaches the Team page, /agents redirects to /team keeping the view, the operator is on the roster drawn as a circle, an agent is drawn as a square with who it belongs to, the Agents chip hides the people, clicking an attribution filters to that owner, Group: manager clusters the roster under a header, a filtered roster survives a reload, the view switch reaches the table and the topology, the Denied view reports having blocked nothing, the Access view renders the cross-project access surface, and on a phone the roster draws one column with no table option",
-      "lastRun": "2026-08-11T22:36:46.593Z",
+      "description": "the sidebar reaches the Team page, /agents redirects to /team keeping the view, the operator is on the roster drawn as a circle, an agent is drawn as a square with who it belongs to, the Agents chip hides the people, clicking an attribution filters to that owner, Group: manager clusters the roster under a header, a filtered roster survives a reload, the view switch reaches the table and the topology, the Denied view reports having blocked nothing, the Access view renders the cross-project access surface, and on a phone the roster draws one column, the view strip offers every view including the table, and New Agent stays reachable as an icon",
+      "lastRun": "2026-08-22T03:50:45.996Z",
       "lastStatus": "passed",
-      "runCount": 7,
-      "passCount": 5,
+      "runCount": 8,
+      "passCount": 6,
       "failCount": 1,
       "relatedCode": [
         "apps/client/src/router.tsx",
@@ -714,7 +714,7 @@
         "apps/server/src/services/rooms/room-collect.ts",
         "apps/server/src/services/rooms/room-trigger.ts",
         "apps/server/src/services/rooms/notices/notice-copy.ts",
-        "apps/client/src/layers/widgets/room-view/ui/RoomHeader.tsx",
+        "apps/client/src/layers/widgets/one-bar/ui/RoomRunState.tsx",
         "apps/client/src/layers/widgets/room-view/ui/RoomLiveLane.tsx",
         "apps/client/src/layers/features/conversation/ui/LaneContent.tsx",
         "apps/client/src/layers/entities/room/model/use-halt-room.ts",
@@ -1018,15 +1018,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-07T02-12-57",
-      "timestamp": "2026-08-07T02:12:57.019Z",
-      "total": 4,
-      "passed": 4,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 24934
-    },
     {
       "id": "2026-08-07T09-53-20",
       "timestamp": "2026-08-07T09:53:20.277Z",
@@ -1917,6 +1908,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 40760
+    },
+    {
+      "id": "2026-08-22T03-50-45",
+      "timestamp": "2026-08-22T03:50:45.996Z",
+      "total": 18,
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 114523
     }
   ]
 }

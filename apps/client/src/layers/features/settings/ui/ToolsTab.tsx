@@ -18,6 +18,7 @@ import { SchedulerSettings } from './tools/SchedulerSettings';
 import { BackgroundSystemsCard } from './tools/BackgroundSystemsCard';
 import { ExternalMcpCard } from './external-mcp/ExternalMcpCard';
 import { ResetToDefaultsButton } from './ResetToDefaultsButton';
+import { configKeys } from '@/layers/entities/config';
 
 /**
  * Header action for the Tools panel — turns every tool group back on.
@@ -38,7 +39,7 @@ export function ToolsResetAction() {
         tasksTools: true,
       },
     });
-    queryClient.invalidateQueries({ queryKey: ['config'] });
+    queryClient.invalidateQueries({ queryKey: configKeys.all });
   }, [transport, queryClient]);
 
   return <ResetToDefaultsButton onClick={() => void handleReset()} />;
@@ -62,7 +63,7 @@ export function ToolsTab() {
   useDeepLinkScroll(section);
 
   const { data: serverConfig } = useQuery({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: 30_000,
   });
@@ -109,7 +110,7 @@ export function ToolsTab() {
     async (patch: Record<string, unknown>) => {
       const current = scheduler ?? { maxConcurrentRuns: 1, timezone: null, retentionCount: 100 };
       await transport.updateConfig({ scheduler: { ...current, ...patch } });
-      await queryClient.invalidateQueries({ queryKey: ['config'] });
+      await queryClient.invalidateQueries({ queryKey: configKeys.all });
     },
     [transport, queryClient, scheduler]
   );
@@ -121,7 +122,7 @@ export function ToolsTab() {
   const setTasksEnabled = useCallback(
     async (enabled: boolean) => {
       await transport.updateConfig({ scheduler: { enabled } });
-      await queryClient.invalidateQueries({ queryKey: ['config'] });
+      await queryClient.invalidateQueries({ queryKey: configKeys.all });
     },
     [transport, queryClient]
   );
@@ -129,7 +130,7 @@ export function ToolsTab() {
   const setRelaySubsystemEnabled = useCallback(
     async (enabled: boolean) => {
       await transport.updateConfig({ relay: { enabled } });
-      await queryClient.invalidateQueries({ queryKey: ['config'] });
+      await queryClient.invalidateQueries({ queryKey: configKeys.all });
     },
     [transport, queryClient]
   );

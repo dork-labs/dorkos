@@ -20,6 +20,7 @@ import {
   Hash,
   Fingerprint,
   PanelLeft,
+  PanelTop,
 } from 'lucide-react';
 import type { PlaygroundSection } from './playground-registry';
 import {
@@ -44,7 +45,9 @@ import {
   GEN_UI_SECTIONS,
   ROOMS_SECTIONS,
   TOUR_SPOTLIGHT_SECTIONS,
+  SIDEBAR_BOOT_SECTIONS,
   SIDEBAR_MODEL_SECTIONS,
+  ONE_BAR_SECTIONS,
 } from './playground-registry';
 
 /** Navigation group a page belongs to in the sidebar. */
@@ -353,6 +356,26 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'app-shell',
     sections: SIDEBAR_MODEL_SECTIONS,
     path: 'sidebar-model',
+  },
+  {
+    id: 'sidebar-boot',
+    label: 'Sidebar Boot',
+    description:
+      'How the panel comes up — warm in its final shape, or cold as bones replaced in one reveal.',
+    icon: PanelLeft,
+    group: 'app-shell',
+    sections: SIDEBAR_BOOT_SECTIONS,
+    path: 'sidebar-boot',
+  },
+  {
+    id: 'one-bar',
+    label: 'One Bar',
+    description:
+      'The one header row every route gets — its identity zone, its state chips, its page actions, and the fixed cluster nothing may render past.',
+    icon: PanelTop,
+    group: 'app-shell',
+    sections: ONE_BAR_SECTIONS,
+    path: 'one-bar',
   },
 ];
 

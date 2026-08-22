@@ -49,11 +49,10 @@ type HistoryActionType = 'PUSH' | 'REPLACE' | 'GO' | 'FORWARD' | 'BACK';
 type SearchRecord = Record<string, unknown>;
 
 function buildHarness(initialUrl = '/') {
-  const rootRoute = createRootRoute({
-    component: () => <Outlet />,
-  });
+  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
 
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: zodValidator(testSearchSchema),
@@ -61,6 +60,7 @@ function buildHarness(initialUrl = '/') {
   });
 
   const connectionsRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/connections',
     validateSearch: zodValidator(testSearchSchema),

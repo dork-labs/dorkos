@@ -34,7 +34,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, render, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRoute,
@@ -42,8 +42,9 @@ import {
   RouterProvider,
 } from '@tanstack/react-router';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
-import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
+
 import { createPlaygroundTransport } from '../playground-transport';
+import { PlaygroundProviders } from '../playground-providers';
 import { PAGE_CONFIGS } from '../playground-config';
 import { PAGE_COMPONENTS } from '../playground-pages';
 
@@ -93,13 +94,20 @@ afterEach(() => {
 /**
  * Render one page inside the same providers the playground shell supplies.
  *
- * Deliberately mirrors `DevPlayground.tsx` rather than importing it: the shell
- * builds its `QueryClient`, transport and router at module scope and owns the
- * page-switching state, so importing it would mount one page and give this
- * sweep no way to ask for the others. The stack itself is small and stable —
- * query client, transport, router context, tooltip and sidebar context — and
- * the drift risk is covered by the fact that a missing provider makes the page
- * throw, which is precisely what this file fails on.
+ * **The provider stack is `PlaygroundProviders`, the one `DevPlayground` itself
+ * mounts — not a copy of it.** This file used to build its own, described as
+ * wrapping "exactly as `main.tsx` wraps the real router". That was true of the
+ * app and false of the playground: `Root()` branches to `DevPlayground` BEFORE
+ * it reaches `EventStreamProvider`, so the bench handed every page a provider
+ * production withheld. `/dev/one-bar` was 100% error cards — `OneBar` mounts
+ * `InboxBell`, which calls `useEventStream()` — and this gate stayed green
+ * through the whole review. A bench that composes its own context can only
+ * prove that SOME composition works.
+ *
+ * The shell is still not imported: it builds its `QueryClient`, transport and
+ * router at module scope and owns the page-switching state, so importing it
+ * would mount one page and give this sweep no way to ask for the others. What
+ * is shared now is the part that drifted.
  *
  * The router is memory-history for the same reason the shell's is: showcases
  * call `useNavigate`/`useSearch` transitively, and those hooks throw outside a
@@ -114,18 +122,16 @@ async function renderPage(pageId: string): Promise<HTMLElement> {
     defaultOptions: { queries: { retry: false, gcTime: 0, refetchOnWindowFocus: false } },
   });
   const rootRoute = createRootRoute({
+    staticData: { header: null },
+    // The shell's own chrome contexts, which sit inside its router exactly as
+    // they do in `DevPlayground`. The data providers are outside the router,
+    // supplied by `PlaygroundProviders` below.
     component: () => (
-      // The global stream, exactly as `main.tsx` wraps the real router: a
-      // showcase that draws a live surface (the room's lane reads what is
-      // waiting on a person) subscribes to it, and a bench without it would be
-      // testing a state the app never puts the component in.
-      <EventStreamProvider>
-        <TooltipProvider>
-          <SidebarProvider defaultOpen>
-            <PageComponent />
-          </SidebarProvider>
-        </TooltipProvider>
-      </EventStreamProvider>
+      <TooltipProvider>
+        <SidebarProvider defaultOpen>
+          <PageComponent />
+        </SidebarProvider>
+      </TooltipProvider>
     ),
     // THE SECOND WAY A SHOWCASE CAN CRASH, and the one that nearly slipped
     // through this gate. `ShowcaseErrorBoundary` sits INSIDE `PlaygroundSection`
@@ -158,11 +164,9 @@ async function renderPage(pageId: string): Promise<HTMLElement> {
   // health for twenty-two pages that never rendered.
   await router.load();
   const { container } = render(
-    <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={createPlaygroundTransport()}>
-        <RouterProvider router={router} />
-      </TransportProvider>
-    </QueryClientProvider>
+    <PlaygroundProviders queryClient={queryClient} transport={createPlaygroundTransport()}>
+      <RouterProvider router={router} />
+    </PlaygroundProviders>
   );
   // Let effects, and anything they resolved synchronously, land before the
   // caller looks at the DOM.

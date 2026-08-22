@@ -333,6 +333,7 @@ describe('MCP Tool Handlers', () => {
         name: 'Nightly',
         prompt: 'Run tests',
         cron: '0 2 * * *',
+        reason: 'Nobody is watching the overnight test run.',
       });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.schedule.status).toBe('pending_approval');
@@ -347,7 +348,12 @@ describe('MCP Tool Handlers', () => {
           getTask: vi.fn().mockReturnValue({ id: 'x', status: 'pending_approval' }),
         })
       );
-      const result = await handler({ name: 'Test', prompt: 'Do stuff', cron: '* * * * *' });
+      const result = await handler({
+        name: 'Test',
+        prompt: 'Do stuff',
+        cron: '* * * * *',
+        reason: 'It needs to run every minute while we watch it.',
+      });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.note).toContain('approve');
       expect(result.isError).toBeUndefined();

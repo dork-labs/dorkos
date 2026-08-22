@@ -25,6 +25,14 @@ import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
+import {
+  ChannelsBar,
+  HomeSurfaceBar,
+  SessionHeader,
+  TeamHeader,
+  TitleBar,
+  type RouteHeader,
+} from '@/layers/widgets/one-bar';
 import { DEFAULT_TEAM_VIEW, LEGACY_TABLE_VIEW, TEAM_VIEWS } from '@/layers/shared/lib';
 import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
 import type { Transport } from '@dorkos/shared/transport';
@@ -46,6 +54,7 @@ interface RouterContext {
 // read and write it from anywhere. Root search params are inherited by every
 // child route, so this never strips a leaf route's own params.
 const rootRoute = createRootRouteWithContext<RouterContext>()({
+  staticData: { header: null },
   validateSearch: zodValidator(onboardingStageSearchSchema),
   component: () => <Outlet />,
   notFoundComponent: NotFoundFallback,
@@ -57,6 +66,7 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 const appShellRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: '_shell',
+  staticData: { header: null },
   component: AppShell,
   /**
    * Retire `?relay=open`.
@@ -226,6 +236,18 @@ const marketplaceRouteSearchSchema = mergeDialogSearch(marketplaceSearchSchema);
 /** Search params available on the `/marketplace` route. */
 export type MarketplaceSearch = z.infer<typeof marketplaceRouteSearchSchema>;
 
+/**
+ * The bars for pages whose identity is just their name.
+ *
+ * Named components rather than inline arrows in `staticData`: an anonymous
+ * function shows up as `<Unknown>` in React DevTools and in a component stack,
+ * which is exactly where you look when the wrong bar is on screen.
+ */
+const ConnectionsBar = () => <TitleBar title="Connections" />;
+const MarketplaceBar = () => <TitleBar title="Marketplace" />;
+const MarketplaceSourcesBar = () => <TitleBar title="Marketplace Sources" />;
+const FeedbackRequestsBar = () => <TitleBar title="Product feedback" />;
+
 // ── Pathless layout route (home surface) ────────────────────
 // Uses `id` not `path` — no URL segment added, so `/`, `/activity`, `/tasks`
 // and `/workspaces` keep the exact addresses they have always had. All this
@@ -236,6 +258,7 @@ export type MarketplaceSearch = z.infer<typeof marketplaceRouteSearchSchema>;
 const homeSurfaceRoute = createRoute({
   getParentRoute: () => appShellRoute,
   id: '_home',
+  staticData: { header: null },
   component: HomeSurfaceLayout,
 });
 
@@ -243,6 +266,9 @@ const homeSurfaceRoute = createRoute({
 const indexRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/',
+  // The same component all four home surfaces declare — see the note on
+  // `/activity` below.
+  staticData: { header: HomeSurfaceBar },
   validateSearch: zodValidator(homeSearchSchema),
   component: HomeRoomPage,
   // Redirect to /session if ?session= param is present (backward compat for old bookmarks)
@@ -362,6 +388,7 @@ export async function sessionRouteLoader({
 const sessionRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/session',
+  staticData: { header: SessionHeader },
   validateSearch: zodValidator(sessionSearchSchema),
   component: SessionPage,
   loaderDeps: sessionLoaderDeps,
@@ -372,6 +399,7 @@ const sessionRoute = createRoute({
 const teamRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/team',
+  staticData: { header: TeamHeader },
   validateSearch: zodValidator(teamSearchSchema),
   component: TeamRoute,
 });
@@ -393,6 +421,8 @@ const teamRoute = createRoute({
 const agentsAliasRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/agents',
+  // Nothing to show: this route only redirects, so it never renders a bar.
+  staticData: { header: null },
   validateSearch: zodValidator(teamSearchSchema),
   beforeLoad: ({ search }) => {
     throw redirect({ to: '/team', search, replace: true });
@@ -403,6 +433,7 @@ const agentsAliasRoute = createRoute({
 const tasksRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/tasks',
+  staticData: { header: HomeSurfaceBar },
   component: TasksPage,
 });
 
@@ -442,6 +473,7 @@ export type ChannelsSearch = z.infer<typeof channelsSearchSchema>;
 const channelsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/channels',
+  staticData: { header: ChannelsBar },
   validateSearch: zodValidator(channelsSearchSchema),
   component: ChannelsPage,
 });
@@ -450,6 +482,7 @@ const channelsRoute = createRoute({
 const workspacesRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/workspaces',
+  staticData: { header: HomeSurfaceBar },
   component: WorkspacesPage,
 });
 
@@ -465,6 +498,7 @@ const connectionsSearchSchema = mergeDialogSearch(
 const connectionsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/connections',
+  staticData: { header: ConnectionsBar },
   validateSearch: zodValidator(connectionsSearchSchema),
   component: ConnectionsPage,
 });
@@ -473,6 +507,7 @@ const connectionsRoute = createRoute({
 const marketplaceRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/marketplace',
+  staticData: { header: MarketplaceBar },
   validateSearch: zodValidator(marketplaceRouteSearchSchema),
   component: MarketplacePage,
 });
@@ -481,6 +516,7 @@ const marketplaceRoute = createRoute({
 const marketplaceSourcesRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/marketplace/sources',
+  staticData: { header: MarketplaceSourcesBar },
   component: MarketplaceSourcesPage,
 });
 
@@ -500,6 +536,15 @@ export type ActivitySearch = z.infer<typeof activitySearchSchema>;
 const activityRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/activity',
+  // Every home surface declares the SAME bar component, and that is deliberate:
+  // the shell keys its cross-fade on the bar rather than the route, so four
+  // routes sharing one bar keep one mounted tab strip — the underline slides
+  // between tabs instead of the whole row blinking out and back (phase H1).
+  // What differs per surface (Home's members chip, Scheduled's New Task) lives
+  // in `SURFACE_EXTRAS` inside the bar. Activity's category filters used to ride
+  // up here in the identity zone; they are the page's first content row now, the
+  // way a filter toolbar belongs to what it filters.
+  staticData: { header: HomeSurfaceBar },
   validateSearch: zodValidator(activitySearchSchema),
   component: ActivityPage,
 });
@@ -508,6 +553,7 @@ const activityRoute = createRoute({
 const feedbackRequestsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/feedback-requests',
+  staticData: { header: FeedbackRequestsBar },
   component: FeedbackRequestsPage,
 });
 
@@ -546,5 +592,23 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
 declare module '@tanstack/react-router' {
   interface Register {
     router: ReturnType<typeof createAppRouter>;
+  }
+
+  /**
+   * Every route says what its bar is.
+   *
+   * TanStack makes `staticData` a REQUIRED route option the moment this
+   * interface has a required member, so a route added without a `header` does
+   * not compile — which is the whole point. Before this, header selection was a
+   * `pathname` switch in `AppShell` that a new route never touched, so a route
+   * with no case silently wore the dashboard's header (DOR-587, DOR-919).
+   *
+   * `null` is the honest answer for the routes that have no bar of their own:
+   * the root, the two pathless layout routes, and `/agents`, which only
+   * redirects. `AppShell` walks the match chain leaf-first and renders the first
+   * non-null one.
+   */
+  interface StaticDataRouteOption {
+    header: RouteHeader;
   }
 }

@@ -31,6 +31,7 @@ import { DuplicateToolWarning } from './DuplicateToolWarning';
 import { EndpointRow } from './EndpointRow';
 import { RateLimitSection } from './RateLimitSection';
 import { SetupInstructions } from './SetupInstructions';
+import { configKeys } from '@/layers/entities/config';
 
 type McpConfig = NonNullable<ServerConfig['mcp']>;
 
@@ -65,7 +66,7 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const invalidateConfig = useCallback(
-    () => queryClient.invalidateQueries({ queryKey: ['config'] }),
+    () => queryClient.invalidateQueries({ queryKey: configKeys.all }),
     [queryClient]
   );
 

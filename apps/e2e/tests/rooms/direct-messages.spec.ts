@@ -27,14 +27,18 @@ function openRoomId(page: Page): string {
 test.describe.configure({ mode: 'default', timeout: 90_000 });
 
 /**
- * Starting a direct message: one agent, or several at once.
+ * One door to an agent: picking one opens its session, picking several starts a
+ * group message (`sidebar-simplification` D2).
  *
- * The picker used to be single-select, and it hid every agent that already had a
- * conversation — which was how a duplicate one-to-one was prevented, and which
- * became wrong the moment a conversation could hold several agents, because Ana
- * alone and Ana + Kai are different conversations (spec `rooms` §12.3). The
- * guarantee moved to the server, which matches a direct message on its exact
- * member set.
+ * A one-to-one direct message used to be the other thing this picker made, and
+ * it was the agent's own session under a second name — same agent, same working
+ * directory, and a log holding the agent's final words and none of its work. So
+ * one agent now goes where its sidebar row goes, and a room is what two or more
+ * make.
+ *
+ * The picker is still multi-select and still hides nobody: the duplicate
+ * guarantee lives on the server, which matches a direct message on its exact
+ * member set (spec `rooms` §12.3).
  *
  * The keyboard is the whole interaction, and every bug this picker has had was
  * two of Enter's three meanings collapsing into each other. The one that shipped
@@ -45,7 +49,7 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * opened here triggers nobody.
  */
 test.describe('Rooms — starting a direct message @smoke', () => {
-  test('picking one agent opens a one-to-one wearing that agent', async ({
+  test('picking one agent opens that agent’s session, not a second conversation', async ({
     page,
     roomsApi,
     roomsPage,
@@ -55,32 +59,25 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await openCockpit(basePage);
 
     await roomsPage.openDirectMessagePicker();
+    // The rule is stated before the button changes its words.
+    await expect(
+      page.getByText('One agent opens a session. Two or more start a group message.')
+    ).toBeVisible();
     await roomsPage.chooseAgent(ana.name);
     await expect(roomsPage.agentChip(ana.name)).toBeVisible();
-    // One agent is a one-to-one, and the action says so.
-    await expect(roomsPage.startConversationButton).toHaveText('Start conversation');
+    // One agent is one door: the agent's own session, exactly where its sidebar
+    // row goes.
+    await expect(roomsPage.startConversationButton).toHaveText(`Open session with ${ana.name}`);
     await roomsPage.startConversationButton.click();
 
-    await expect(page).toHaveURL(/\/channels\?.*id=/, { timeout: SERVER_ROUND_TRIP_MS });
-    roomsApi.track(openRoomId(page));
-
-    // The conversation is named after who is in it, and wears their face.
-    await expect(roomsPage.roomHeading).toHaveAccessibleName(ana.name, {
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
-    await expect(roomsPage.headerMark).toHaveText(ana.emoji);
-    // The roster is a button now (DOR-600), so its name says the action AND
-    // the count — a button named only "2 members" never says what it does.
-    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${ana.name}, 2 members`);
-
-    // And it is a direct message, not a channel: the row is in the other section.
-    const row = roomsPage.rowIn(roomsPage.directMessages, ana.name);
-    await expect(row).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
-    expect(await visibleText(row)).toBe(`${ana.emoji} ${ana.name}`);
+    await expect(page).toHaveURL(/\/session\?.*dir=/, { timeout: SERVER_ROUND_TRIP_MS });
+    // And no second conversation was made anywhere: nothing landed in Direct
+    // messages, and nothing landed in Channels either.
+    await expect(roomsPage.rowIn(roomsPage.directMessages, ana.name)).toHaveCount(0);
     await expect(roomsPage.rowIn(roomsPage.channels, ana.name)).toHaveCount(0);
   });
 
-  test('picking several agents opens one group conversation holding all of them', async ({
+  test('picking several agents opens one group message holding all of them', async ({
     page,
     roomsApi,
     roomsPage,
@@ -97,8 +94,8 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await roomsPage.chooseAgent(kai.name);
     await expect(roomsPage.agentChip(ana.name)).toBeVisible();
     await expect(roomsPage.agentChip(kai.name)).toBeVisible();
-    // Two agents make it a group, and the action changes to say so.
-    await expect(roomsPage.startConversationButton).toHaveText('Start group conversation');
+    // Two agents make it a group message, and the action changes to say so.
+    await expect(roomsPage.startConversationButton).toHaveText('Start group message');
     await roomsPage.startConversationButton.click();
 
     await expect(page).toHaveURL(/\/channels\?.*id=/, { timeout: SERVER_ROUND_TRIP_MS });
@@ -110,13 +107,9 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${title}, 3 members`);
-    for (const agent of [ana, kai]) {
-      const disc = roomsPage.memberList
-        .locator('[data-slot="room-member-avatar"]')
-        .filter({ hasText: agent.name });
-      expect(await visibleText(disc)).toBe(agent.emoji);
-    }
+    // You plus both agents. The roster is a head count in the bar now, not a row
+    // of discs — each agent's own face is proven on the sidebar row just below.
+    await expect(roomsPage.membersChip).toHaveAccessibleName('3 members');
 
     // A group's mark stacks its agents' faces rather than standing in for them
     // with one, in roster order. Read the expected faces from the roster itself
@@ -173,22 +166,24 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${title}, 3 members`);
+    await expect(roomsPage.membersChip).toHaveAccessibleName('3 members');
     // And no one-to-one with the first agent was left behind by the stray Enter.
     await expect(roomsPage.rowIn(roomsPage.directMessages, ana.name)).toHaveCount(0);
   });
 
-  test('asking for the same agent again opens the conversation you already have', async ({
+  test('asking for the same people again opens the conversation you already have', async ({
     page,
     roomsApi,
     roomsPage,
     basePage,
   }) => {
     const ana = await roomsApi.registerAgent(`E2E Ana ${roomsApi.runId}`, '🦊', '#e07b39');
+    const kai = await roomsApi.registerAgent(`E2E Kai ${roomsApi.runId}`, '🦉', '#5b8def');
     await openCockpit(basePage);
 
     await roomsPage.openDirectMessagePicker();
     await roomsPage.chooseAgent(ana.name);
+    await roomsPage.chooseAgent(kai.name);
     await roomsPage.startConversationButton.click();
     await expect(page).toHaveURL(/\/channels\?.*id=/, { timeout: SERVER_ROUND_TRIP_MS });
     const first = openRoomId(page);
@@ -198,17 +193,19 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await page.goto('/channels');
     await expect(page.getByText('Pick a conversation')).toBeVisible();
 
-    // The picker no longer hides an agent that already has a conversation —
-    // that filter was how duplicates were prevented, and it had to go so a
-    // group could include somebody you already talk to on their own.
+    // The picker never hides an agent that already has a conversation — that
+    // filter was how duplicates were prevented, and it had to go so a group
+    // could include somebody you already talk to.
     await roomsPage.openDirectMessagePicker();
     await expect(roomsPage.agentOptions.filter({ hasText: ana.name })).toHaveCount(1);
     await roomsPage.chooseAgent(ana.name);
+    await roomsPage.chooseAgent(kai.name);
     await roomsPage.startConversationButton.click();
 
     // Same people, same conversation — matched on the member set by the server.
     await expect(page).toHaveURL(new RegExp(`id=${first}`), { timeout: SERVER_ROUND_TRIP_MS });
     expect(openRoomId(page)).toBe(first);
-    await expect(roomsPage.rowIn(roomsPage.directMessages, ana.name)).toHaveCount(1);
+    const title = `${ana.name} and ${kai.name}`;
+    await expect(roomsPage.rowIn(roomsPage.directMessages, title)).toHaveCount(1);
   });
 });

@@ -8,12 +8,13 @@
  * @module features/dashboard-sidebar/model/rules/library-rows
  */
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
-import type { SidebarRowModel } from '../build-sidebar-model';
+import { basename } from '@/layers/shared/lib/basename';
+import type { SidebarRowModel, SidebarUnread } from '../build-sidebar-model';
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
 import type { MuteIndex } from './apply-mute-rules';
 import { deriveUnreadSignal } from './derive-unread-signal';
 import { liveSessionIdsForPath } from './live-sessions';
-import { basename, rowKey } from './targets';
+import { rowKey } from './targets';
 
 /**
  * How many concurrent sessions an agent needs before its row says so.
@@ -27,6 +28,23 @@ import { basename, rowKey } from './targets';
  * row draws whatever `liveCount` it is handed.
  */
 export const LIVE_CHIP_MIN = 2;
+
+/**
+ * Everything a Library row needs beyond its own subject and the snapshot.
+ *
+ * One object rather than two parameters, so a row builder's signature does not
+ * grow every time Library learns something new about a row. Both builders take
+ * it; only the agent row reads the second field.
+ */
+export interface LibraryRowContext {
+  /** The resolved mute sets. */
+  mutes: MuteIndex;
+  /**
+   * What each agent's suppressed 1:1 direct message has waiting, by agent path
+   * ({@link indexSuppressedDms}). An agent absent from it has nothing waiting.
+   */
+  dmUnread: ReadonlyMap<string, SidebarUnread>;
+}
 
 /**
  * One agent's Library row.
@@ -44,25 +62,29 @@ export const LIVE_CHIP_MIN = 2;
  *
  * @param agent - The roster entry.
  * @param state - The snapshot.
- * @param mutes - The resolved mute sets.
+ * @param ctx - The mute sets, and what each agent's suppressed DM has waiting.
  * @param reason - Which section this copy of the row belongs to.
  */
 export function agentRow(
   agent: AgentRosterEntry,
   state: SidebarState,
-  mutes: MuteIndex,
+  ctx: LibraryRowContext,
   reason: string
 ): SidebarRowModel {
   const target = { kind: 'agent', path: agent.path } as const;
   const live = liveSessionIdsForPath(state, agent.path).length;
-  const muted = mutes.agents.has(agent.path);
+  const muted = ctx.mutes.agents.has(agent.path);
   return {
     key: rowKey(target),
     target,
     glyph: { kind: 'agent-avatar', agentPath: agent.path },
     primary: state.displayNames[agent.path] ?? basename(agent.path),
     reservesVerbLine: live > 0,
-    unread: { tier: 'none' },
+    // The one thing this row says that is not about its agent's sessions: the
+    // 1:1 direct message Library no longer lists has something for the operator
+    // (`sidebar-simplification` D2). The conversation is gone from the panel;
+    // the fact that it is waiting is not.
+    unread: ctx.dmUnread.get(agent.path) ?? { tier: 'none' },
     ...(live >= LIVE_CHIP_MIN ? { liveCount: live } : {}),
     muted,
     draggable: true,
@@ -75,13 +97,13 @@ export function agentRow(
  *
  * @param room - The room.
  * @param state - The snapshot.
- * @param mutes - The resolved mute sets.
+ * @param ctx - The mute sets, and what each agent's suppressed DM has waiting.
  * @param reason - Which section this copy of the row belongs to.
  */
 export function roomLibraryRow(
   room: RoomSummary,
   state: SidebarState,
-  mutes: MuteIndex,
+  ctx: LibraryRowContext,
   reason: string
 ): SidebarRowModel {
   const target = {
@@ -89,7 +111,7 @@ export function roomLibraryRow(
     roomId: room.id,
     roomKind: room.kind === 'dm' ? 'dm' : 'channel',
   } as const;
-  const muted = mutes.rooms.has(room.id);
+  const muted = ctx.mutes.rooms.has(room.id);
   return {
     key: rowKey(target),
     target,

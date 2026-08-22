@@ -59,15 +59,32 @@ const channel = (id: string, slug: string) => room({ id, kind: 'channel', slug, 
  * stored on its manifest, and drawing this row from them is what DOR-582 was.
  */
 function dmWith(id: string, agentPath: string, title: string): RoomSummary {
+  return groupDmWith(id, [agentPath], title);
+}
+
+/**
+ * A direct message with several agents in it — a GROUP message, which is the
+ * only hand-made direct message Library lists (`sidebar-simplification` D2).
+ *
+ * Most cases here want a DM with a row in Direct messages, and a one-to-one no
+ * longer has one: it is the agent's own session under a second name, so the
+ * agent's row stands for it. {@link dmWith} is what a one-to-one is spelled
+ * with, and it is used where the suppression itself is the subject.
+ *
+ * @param id - The room id.
+ * @param agentPaths - The agents on the roster.
+ * @param title - What the conversation is called.
+ */
+function groupDmWith(id: string, agentPaths: string[], title: string): RoomSummary {
   const participants: AuthorRef[] = [
     { id: `${id}-you`, kind: 'human', displayName: 'You', handle: null },
-    {
-      id: `${id}-agent`,
-      kind: 'agent',
-      displayName: title,
+    ...agentPaths.map((agentPath, index) => ({
+      id: `${id}-agent-${index}`,
+      kind: 'agent' as const,
+      displayName: `${title} ${index}`,
       handle: null,
       agentRef: agentAuthorRef(agentPath),
-    },
+    })),
   ];
   return room({ id, kind: 'dm', title, participants });
 }
@@ -109,6 +126,25 @@ let mockPathname = '/';
  * nothing at all.
  */
 const mockRouterNavigate = vi.fn();
+/**
+ * The panel's boot phase, settled by default so these cases are about what they
+ * are named after rather than about the gate. One case turns it off, because
+ * "pending is not empty" is exactly what it asserts. The gate's own behaviour
+ * is covered in `model/boot/__tests__` (spec `sidebar-simplification` D6).
+ */
+const boot = vi.hoisted(() => ({
+  state: {
+    phase: 'settled' as 'cold' | 'warm' | 'settled',
+    settled: true,
+    fleetKnown: true,
+    startedWarm: false,
+  },
+}));
+vi.mock('../model/boot/use-boot-state', () => ({ useBootState: () => boot.state }));
+afterEach(() => {
+  boot.state = { phase: 'settled', settled: true, fleetKnown: true, startedWarm: false };
+});
+
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
   useRouter: () => ({
@@ -200,6 +236,11 @@ function parkedSchedule(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     filePath: `/tasks/${overrides.id}.json`,
     createdAt: '2026-08-19T09:00:00.000Z',
     updatedAt: '2026-08-19T09:00:00.000Z',
+    reason: null,
+    proposedBySessionId: null,
+    proposedByAgentPath: null,
+    proposedByName: null,
+    nextRuns: [],
     ...overrides,
   };
 }
@@ -396,6 +437,10 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // The query-key factory is the real one: a stub here would let the sidebar
   // read a cache key nothing in the app writes and never say so (DOR-497).
   sessionKeys: (await importOriginal<typeof import('@/layers/entities/session')>()).sessionKeys,
+  // The shared recent-sessions window, real for the same reason: it is half of
+  // the cache key every recents caller shares (spec `sidebar-simplification` D6).
+  RECENT_SESSIONS_WINDOW: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .RECENT_SESSIONS_WINDOW,
   // Real for the same reason: which session a click opens — and which of two
   // competing clicks wins — is the behaviour these cases assert, so a stub
   // would be asserting the stub.
@@ -760,20 +805,37 @@ describe('DashboardSidebar', () => {
   describe('BC-28 — Library’s sections', () => {
     it('reads Pins, Channels, Direct messages, Agents', async () => {
       mockSidebarPrefs.mockReturnValue(makePrefs({ pinned: [agent('/projects/alpha')] }));
-      mockRooms.mockReturnValue([channel('r1', 'general'), dmWith('r2', '/projects/beta', 'beta')]);
+      mockRooms.mockReturnValue([
+        channel('r1', 'general'),
+        groupDmWith('r2', ['/projects/alpha', '/projects/beta'], 'beta'),
+      ]);
       renderWithProviders(<DashboardSidebar />);
       await waitFor(() => expect(libraryHeadings().length).toBe(4));
       expect(libraryHeadings()).toEqual(['Pins', 'Channels', 'Direct messages', 'Agents']);
     });
 
-    it('nests a group inside Agents, one level down, as an <h4>', async () => {
+    it('draws no Direct messages section for a one-to-one, which the agent’s row already is', async () => {
+      // One door to an agent (`sidebar-simplification` D2): a 1:1 direct message
+      // is that agent's session under a second name, so Library lists the agent
+      // and not both.
+      mockRooms.mockReturnValue([channel('r1', 'general'), dmWith('r2', '/projects/beta', 'beta')]);
+      renderWithProviders(<DashboardSidebar />);
+      await waitFor(() => expect(libraryHeadings()).toContain('Channels'));
+      expect(libraryHeadings()).not.toContain('Direct messages');
+    });
+
+    it('draws a hand-made section as a peer, above the fixed four (D3)', async () => {
+      // What this catches: a return to the pre-D3 shape, where the section
+      // rendered as an <h4> nested inside the Agents wrapper.
       mockSidebarPrefs.mockReturnValue(
         makePrefs({ groups: [group({ items: [agent('/projects/alpha')] })] })
       );
       renderWithProviders(<DashboardSidebar />);
-      const heading = await screen.findByRole('heading', { name: /Clients/, level: 4 });
-      expect(sectionHeading('Agents').closest('[data-slot="sidebar-group"]')).toContainElement(
-        heading
+      await waitFor(() => expect(libraryHeadings()).toContain('Clients'));
+      expect(libraryHeadings()[0]).toBe('Clients');
+      expect(screen.queryByRole('heading', { name: /Clients/, level: 4 })).not.toBeInTheDocument();
+      expect(sectionHeading('Agents').closest('[data-slot="sidebar-group"]')).not.toContainElement(
+        screen.getByRole('heading', { name: /Clients/, level: 3 })
       );
     });
   });
@@ -822,7 +884,7 @@ describe('DashboardSidebar', () => {
       );
       mockRooms.mockReturnValue([
         { ...channel('r1', 'general'), unreadCount: 2 },
-        dmWith('r2', '/projects/beta', 'beta'),
+        groupDmWith('r2', ['/projects/alpha', '/projects/beta'], 'beta'),
       ]);
       // Today is recency-driven, so a room has to have been OPENED to be in it.
       useInteractionStore.getState().recordOpened('room', 'r1', Date.now() - 5_000);
@@ -885,7 +947,11 @@ describe('DashboardSidebar', () => {
     // and a "the rows are gone" assertion that matched it would pass on the
     // wrong element.
     mockRooms.mockReturnValue([
-      { ...dmWith('r2', '/projects/beta', 'Quiet chat'), unreadCount: 3, working: 2 },
+      {
+        ...groupDmWith('r2', ['/projects/alpha', '/projects/beta'], 'Quiet chat'),
+        unreadCount: 3,
+        working: 2,
+      },
     ]);
     renderWithProviders(<DashboardSidebar />);
     const heading = await screen.findByRole('heading', { name: /Direct messages/, level: 3 });
@@ -928,11 +994,14 @@ describe('DashboardSidebar', () => {
       // true of an empty document and prove nothing.
       expect(await screen.findByRole('menuitem', { name: /Show/ })).toBeInTheDocument();
       expect(screen.queryByRole('menuitem', { name: /New agent/ })).not.toBeInTheDocument();
-      expect(screen.queryByRole('menuitem', { name: /New group/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: /New section/ })).not.toBeInTheDocument();
     });
 
     it('reveals each section "+" on focus as well as on hover — a keyboard has no hover', async () => {
-      mockRooms.mockReturnValue([channel('r1', 'general'), dmWith('d1', '/a/1', 'Alpha')]);
+      mockRooms.mockReturnValue([
+        channel('r1', 'general'),
+        groupDmWith('d1', ['/a/1', '/a/2'], 'Alpha'),
+      ]);
       renderWithProviders(<DashboardSidebar />);
       await waitFor(() => expect(libraryHeadings()).toContain('Channels'));
 
@@ -1064,18 +1133,18 @@ describe('DashboardSidebar', () => {
       expect(localStorage.getItem('dorkos-pinned-agents')).toBeNull();
     });
 
-    it('renders a group you just made, empty, with somewhere to drop into', async () => {
+    it('renders a section you just made, empty, with somewhere to drop into', async () => {
       // The one section allowed to render empty. Every other one appears
-      // because something is in it — but a group that vanished the instant it
+      // because something is in it — but a section that vanished the instant it
       // was created could never be dragged into, which is exactly how it is
       // filled. The browser spec drives that flow end to end.
       mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [] })] }));
       renderWithProviders(<DashboardSidebar />);
-      await screen.findByRole('heading', { name: /Clients/, level: 4 });
-      expect(screen.getByText(/Drag agents, channels, or conversations here/)).toBeInTheDocument();
+      await screen.findByRole('heading', { name: /Clients/, level: 3 });
+      expect(screen.getByText(/Drag channels, conversations or agents here/)).toBeInTheDocument();
     });
 
-    it('tells a smart group with no matches so, rather than hiding it', async () => {
+    it('tells a smart section with no matches so, rather than hiding it', async () => {
       mockSidebarPrefs.mockReturnValue(
         makePrefs({
           groups: [
@@ -1090,11 +1159,11 @@ describe('DashboardSidebar', () => {
         })
       );
       renderWithProviders(<DashboardSidebar />);
-      await screen.findByRole('heading', { name: /Wedged/, level: 4 });
+      await screen.findByRole('heading', { name: /Wedged/, level: 3 });
       expect(screen.getByText('No agents match these rules')).toBeInTheDocument();
     });
 
-    it('keeps a smart group’s members out of the drag layer', async () => {
+    it('keeps a smart section’s members out of the drag layer', async () => {
       mockSidebarPrefs.mockReturnValue(
         makePrefs({
           groups: [
@@ -1109,10 +1178,10 @@ describe('DashboardSidebar', () => {
         })
       );
       renderWithProviders(<DashboardSidebar />);
-      const heading = await screen.findByRole('heading', { name: /Live now/, level: 4 });
+      const heading = await screen.findByRole('heading', { name: /Live now/, level: 3 });
       // A rule-owned row is not a drag source: dragging one out would ask the
       // operator to hand-edit a list the rules rebuild on the next render. The
-      // group HEADER stays draggable (groups reorder), so the assertion is
+      // section HEADER stays draggable (sections reorder), so the assertion is
       // scoped to the rows.
       const body = heading.closest('[data-slot="sidebar-group"]');
       const rows = body?.querySelectorAll('[data-sidebar-row]') ?? [];
@@ -1412,7 +1481,7 @@ describe('Heads up — the zone that justifies the redesign', () => {
       // zone that promises to hold only what needs you.
       mockRooms.mockReturnValue([
         { ...channel('c1', 'deploys'), unreadCount: 12 },
-        { ...dmWith('d1', '/projects/alpha', 'alpha'), unreadCount: 6 },
+        { ...groupDmWith('d1', ['/projects/alpha', '/projects/beta'], 'alpha'), unreadCount: 6 },
       ]);
       seedSessions([
         {
@@ -1953,6 +2022,9 @@ describe('Getting started — Heads up’s first life stage (BC-4, BC-12 → BC-
     // The loading placeholder says "nothing to suggest" for every fact, which is
     // indistinguishable from an operator finishing all five at once. Retiring on
     // it would erase the whole of Getting started on a cold load, for good.
+    // Since D6 the bit that tells the two apart is the boot gate, so this case
+    // is a cold panel rather than one unanswered query.
+    boot.state = { phase: 'cold', settled: false, fleetKnown: false, startedWarm: false };
     mockRecent.mockReturnValue({ data: undefined, isLoading: true, isSuccess: false });
     await renderSidebarWithNow();
     tick();
@@ -2218,7 +2290,11 @@ describe('Today — what you were doing, and it holds still', () => {
       seedThreeConversations();
       openRoute('ses-a');
       const view = mountSidebar();
-      expect(scrolls, 'arriving on a page is not a switch').toHaveLength(0);
+      // Arriving on a page is not a switch — the panel PLACES the open row on
+      // its first settled model and never travels to it (spec D6).
+      expect(scrolls).toHaveLength(1);
+      expect(scrolls[0]!.options?.behavior).toBe('auto');
+      scrolls.length = 0;
 
       act(() => {
         useSessionListStore.getState().setSessionStatus('ses-b', {
@@ -2289,6 +2365,9 @@ describe('Today — what you were doing, and it holds still', () => {
       seedThreeConversations();
       openRoute('ses-a');
       const view = mountSidebar();
+      // The boot's own positioning, discarded: it is instant by design, and
+      // what this case is about is the switch that follows it.
+      scrolls.length = 0;
       openRoute('ses-b');
       view.refresh();
       expect(scrolls[0]?.options?.behavior).toBe('smooth');
@@ -2305,6 +2384,7 @@ describe('Today — what you were doing, and it holds still', () => {
       openRoute('ses-a');
       const view = mountSidebar();
       expect(sectionToggle('Agents').getAttribute('aria-expanded')).toBe('false');
+      scrolls.length = 0;
 
       openRoute('ses-b');
       view.refresh();
@@ -2640,5 +2720,108 @@ describe('Today — what you were doing, and it holds still', () => {
       expect(keys).toEqual(['dorkos:interactions-v1']);
       expect(JSON.stringify(localStorage)).not.toMatch(/read|unread|cursor|seq|watermark/i);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D6 — a cold boot shows bones, and says so on the landmark
+// ---------------------------------------------------------------------------
+
+describe('the first paint (spec `sidebar-simplification` D6)', () => {
+  it('draws the skeleton and marks the panel busy while the boot gate is shut', () => {
+    boot.state = { phase: 'cold', settled: false, fleetKnown: false, startedWarm: false };
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    mountSidebar();
+
+    expect(screen.getByTestId('sidebar-skeleton')).toBeInTheDocument();
+    // Not one row of the real panel — "pending" and "empty" being the same
+    // value is what made the panel assemble itself in front of the operator.
+    expect(document.querySelectorAll('[data-sidebar-row]')).toHaveLength(0);
+    expect(screen.getByRole('navigation', { name: 'Sidebar' })).toHaveAttribute(
+      'aria-busy',
+      'true'
+    );
+  });
+
+  it('replaces the bones with the panel, and stops saying busy, once it settles', () => {
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    mountSidebar();
+
+    expect(screen.queryByTestId('sidebar-skeleton')).toBeNull();
+    expect(document.querySelectorAll('[data-sidebar-row]').length).toBeGreaterThan(0);
+    expect(screen.getByRole('navigation', { name: 'Sidebar' })).not.toHaveAttribute('aria-busy');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D6 / DOR-1143 — the fleet is withheld, never guessed
+// ---------------------------------------------------------------------------
+
+describe('the fleet waits for its manifests (DOR-1143)', () => {
+  /** Every row the panel painted, as text. */
+  const rowTexts = () =>
+    [...document.querySelectorAll('[data-sidebar-row]')].map((r) => r.textContent ?? '');
+  /** The 1500 ms ceiling fired with the manifests still in flight. */
+  function degradedBoot() {
+    boot.state = { phase: 'settled', settled: true, fleetKnown: false, startedWarm: false };
+  }
+
+  beforeEach(() => {
+    // Two agents, so the direct message below is a GROUP message: a 1:1 DM is
+    // suppressed from the Library by design (D2), and a row that is absent for
+    // another reason would prove nothing here.
+    mockMeshPaths.mockReturnValue(['/projects/alpha', '/projects/beta']);
+    mockResolvedAgents.mockReturnValue({});
+    mockSidebarPrefs.mockReturnValue(makePrefs({ gettingStarted: { retired: ALL_SUGGESTIONS } }));
+  });
+
+  it('paints the panel but no agent row while the manifests are still in flight', async () => {
+    // The regression this pins: mesh and manifests are two SERIAL round trips,
+    // so a slow install reaches the ceiling knowing the DIRECTORIES and not the
+    // manifests. Painting an agent row there means hashing its face out of the
+    // directory — a face that changes the moment the manifest lands, for every
+    // agent at once, which is DOR-1143 exactly.
+    degradedBoot();
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    mountSidebar();
+
+    // The panel itself is up — the timeout is allowed to degrade everything
+    // else, and a channel is not an identity.
+    expect(screen.queryByTestId('sidebar-skeleton')).toBeNull();
+    await waitFor(() => expect(rowTexts().some((t) => t.includes('general'))).toBe(true));
+    // But nothing that would have to guess a face.
+    expect(screen.queryByText('Agents')).toBeNull();
+  });
+
+  it('withholds a direct message too, because its faces are the fleet’s', async () => {
+    // A DM's mark is its agent participants' faces joined through the
+    // manifests. Without them the row falls back to the room's own letter and
+    // grows faces a beat later — the same flip, one row further out.
+    degradedBoot();
+    mockRooms.mockReturnValue([
+      channel('c1', 'general'),
+      groupDmWith('d1', ['/projects/alpha', '/projects/beta'], 'Alpha chat'),
+    ]);
+    mountSidebar();
+
+    await waitFor(() => expect(rowTexts().some((t) => t.includes('general'))).toBe(true));
+    expect(rowTexts().some((t) => t.includes('Alpha chat'))).toBe(false);
+  });
+
+  it('draws both, once, as soon as the manifests answer', async () => {
+    // The other half: withholding is a wait, not a deletion.
+    mockResolvedAgents.mockReturnValue({
+      '/projects/alpha': { id: 'alpha-ulid', name: 'alpha' },
+      '/projects/beta': { id: 'beta-ulid', name: 'beta' },
+    });
+    mockRooms.mockReturnValue([
+      channel('c1', 'general'),
+      groupDmWith('d1', ['/projects/alpha', '/projects/beta'], 'Alpha chat'),
+    ]);
+    mountSidebar();
+
+    await waitFor(() => expect(rowTexts().some((t) => t.includes('general'))).toBe(true));
+    expect(rowTexts().some((t) => t.includes('Alpha chat'))).toBe(true);
+    expect(screen.getByText('Agents')).toBeInTheDocument();
   });
 });

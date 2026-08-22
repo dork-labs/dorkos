@@ -27,6 +27,12 @@ interface MockSchedule {
 let mockAttentionItems: MockAttentionItem[] = [];
 const mockOpenNotification = vi.fn();
 let mockSchedules: MockSchedule[] = [];
+/**
+ * Schedules the hold is still drawing after the server stopped counting them.
+ * Stands in for `useScheduleApprovalCards` reporting a live receipt — the real
+ * registry is exercised in the schedule-approval slice's own suites.
+ */
+let mockSettlingSchedules: MockSchedule[] = [];
 let mockErrors: MockSignal[] = [];
 let mockAttentionLoading = false;
 let mockActivity: { groups: { label: string; items: MockActivityItem[] }[]; isLoading: boolean } = {
@@ -62,9 +68,21 @@ vi.mock('@/layers/features/dashboard-attention', () => ({
   AttentionSignalRow: ({ signal }: { signal: MockSignal }) => (
     <div data-testid="signal-row">{signal.primary}</div>
   ),
-  ScheduleApprovalRow: ({ task }: { task: MockSchedule }) => (
+}));
+
+// The proposed-schedule card moved to its own slice when it stopped being a row
+// (DOR-1398). Stubbed for the same reason as everything else in this suite: the
+// panel's job here is composition and caps, and the real card would drag in the
+// transport, two mutations and a run-history poll.
+vi.mock('@/layers/features/schedule-approval', () => ({
+  ScheduleApprovalCard: ({ task }: { task: MockSchedule }) => (
     <div data-testid="schedule-row">{task.displayName}</div>
   ),
+  // Pass-through: with nothing settling the real hook returns its argument
+  // unchanged, which is the only state these composition-and-cap cases are
+  // about. The hold itself is proven against the real hook in the card's suite.
+  useScheduleApprovalCards: (schedules: MockSchedule[]) =>
+    mockSettlingSchedules.length > 0 ? [...schedules, ...mockSettlingSchedules] : schedules,
 }));
 
 // The Inbox rows the activity teaser now draws. Stubbed for the same reason as
@@ -123,6 +141,7 @@ beforeEach(() => {
   mockAttentionItems = [];
   mockOpenNotification.mockClear();
   mockSchedules = [];
+  mockSettlingSchedules = [];
   mockErrors = [];
   mockAttentionLoading = false;
   mockActivity = { groups: [], isLoading: false };
@@ -196,6 +215,24 @@ describe('PulsePanel', () => {
     // Nothing to view — the overflow link collapses too.
     expect(screen.queryByRole('button', { name: 'View all →' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('attention-row')).not.toBeInTheDocument();
+  });
+
+  it('does not declare all-clear over a schedule still saying it was approved', () => {
+    // The moment after Approve: the server has dropped the proposal from the
+    // parked list, so `useAttentionRows` reports a total of zero — but the card
+    // is still on screen holding its receipt. Swapping to "All quiet" here would
+    // erase the only confirmation the approval gets, which is the whole reason
+    // the hold exists.
+    //
+    // Seeded defect: drop `&& shownSchedules.length === 0` from this section's
+    // `empty` gate and the all-clear line replaces a live receipt.
+    mockAttentionItems = [];
+    mockSettlingSchedules = [{ id: 'task-1', displayName: 'Nightly sweep' }];
+
+    render(<PulsePanel />);
+
+    expect(screen.queryByText('All quiet — nothing needs you.')).not.toBeInTheDocument();
+    expect(screen.getByTestId('schedule-row')).toBeInTheDocument();
   });
 
   it('collapses activity to a calm all-clear line when there is nothing recent', () => {

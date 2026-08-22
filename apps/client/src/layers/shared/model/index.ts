@@ -30,14 +30,18 @@ export {
   type IdleDetectorState,
 } from './use-idle-detector';
 export { useInteractiveShortcuts } from './use-interactive-shortcuts';
-export { useLongPress } from './use-long-press';
-export type { LongPressState } from './use-long-press';
+export { useLongPress } from './interaction/use-long-press';
+export type { LongPressState } from './interaction/use-long-press';
 export {
   useFeatureEnabled,
   useFeatureEnabledState,
   type FeatureEnabledState,
 } from './server-config/use-feature-enabled';
 export { useClaudeAccounts } from './server-config/use-claude-accounts';
+// The one `/config` query key, here rather than in `entities/config` because
+// `shared/` reads config too and may not import an entity. `entities/config`
+// re-exports it, so nothing above changes its import.
+export { configKeys, CONFIG_STALE_TIME_MS } from './server-config/query-keys';
 export { useNow } from './use-now';
 // The WAI-ARIA feed pattern. `Feed` (in `shared/ui`) and `feedArticleProps`
 // are what a surface uses; `useFeedKeyboardNav` and `FEED_ARTICLE_ATTR` are the
@@ -142,8 +146,10 @@ export {
   type InPlaceBaseDestination,
 } from './use-in-place-navigate';
 
-export { useMenuCloseFocusGuard } from './use-menu-close-focus-guard';
-export type { MenuCloseFocusGuard } from './use-menu-close-focus-guard';
+export { useMenuCloseFocusGuard } from './interaction/use-menu-close-focus-guard';
+export type { MenuCloseFocusGuard } from './interaction/use-menu-close-focus-guard';
+export { useInlineEditorSettle } from './interaction/use-inline-editor-settle';
+export type { InlineEditorSettle } from './interaction/use-inline-editor-settle';
 export {
   useRovingFocus,
   SIDEBAR_ACTIONS_ATTRIBUTE,
@@ -152,4 +158,4 @@ export {
   SIDEBAR_SECTION_ACTION_ATTRIBUTE,
   SIDEBAR_SECTION_TOGGLE_ATTRIBUTE,
   SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
-} from './use-roving-focus';
+} from './interaction/use-roving-focus';

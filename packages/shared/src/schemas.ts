@@ -3851,7 +3851,37 @@ export const TaskSchema = z
     filePath: z.string(),
     createdAt: z.string(),
     updatedAt: z.string(),
+    /**
+     * Why this schedule should exist, in the proposer's own words.
+     *
+     * An agent has to give one — a proposal an operator is asked to approve has
+     * to make its own case. A person creating their own schedule owes nobody an
+     * explanation, so their tasks carry `null`.
+     */
+    reason: z.string().nullable().default(null),
+    /** The session an agent proposed this from, so the conversation behind it can be opened. */
+    proposedBySessionId: z.string().nullable().default(null),
+    /** The working directory of the proposing session — the key an agent identity resolves from. */
+    proposedByAgentPath: z.string().nullable().default(null),
+    /**
+     * What to call the proposer, resolved when the task is READ rather than
+     * stored: an agent can be renamed or have its identity revoked, and a name
+     * written into the row at proposal time would outlive both. `null` when
+     * nothing resolves, which is what the "An agent" fallback is for.
+     */
+    proposedByName: z.string().nullable().default(null),
     nextRun: z.string().nullable().optional(),
+    /**
+     * The next few times this cron would fire. ISO 8601 UTC, soonest first.
+     *
+     * **Populated only for a schedule waiting for approval.** That is where the
+     * question lives — the operator is deciding whether a cron they did not
+     * write means what the agent says it means — and it is the one place the
+     * live job cannot answer, because a parked schedule is never registered.
+     * Every other task reports `[]`: reading a cron costs a throwaway job
+     * construction per task per request, and no surface asks for it there.
+     */
+    nextRuns: z.array(z.string()).default([]),
   })
   .openapi('Task');
 
@@ -3917,6 +3947,17 @@ export const CreateTaskRequestSchema = z
     enabled: z.boolean().optional().default(true),
     maxRuntime: z.string().nullable().optional(),
     permissionMode: PermissionModeSchema.optional().default('acceptEdits'),
+    /**
+     * Why this schedule should exist, in the proposer's own words.
+     *
+     * Optional here and REQUIRED by the route for a caller that does not clear
+     * the agent bar, because those are two different questions. A person
+     * creating their own task owes nobody an explanation and sends none; a
+     * caller whose task will park at `pending_approval` is proposing, and a
+     * proposal with nothing to read is one the operator cannot judge. Zod cannot
+     * express "required depending on who is asking", so the route asks.
+     */
+    reason: z.string().optional(),
   })
   .openapi('CreateTaskRequest');
 
@@ -4027,6 +4068,8 @@ export const UpdateTaskRequestSchema = z
     maxRuntime: z.string().nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
     status: SettableTaskStatusSchema.optional(),
+    /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */
+    reason: z.string().optional(),
   })
   .openapi('UpdateTaskRequest');
 

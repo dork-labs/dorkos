@@ -12,7 +12,6 @@
 import { useEffect, type ReactNode } from 'react';
 import type { SessionActivity, SessionLifecycle } from '@dorkos/shared/session-stream';
 import { SessionVerbLine, useSessionListStore } from '@/layers/entities/session';
-import { isWelcomeBackMoment } from '@/layers/shared/lib';
 import { AgentAvatar } from '@/layers/entities/agent';
 import {
   SidebarGroup,
@@ -40,12 +39,6 @@ interface Rung {
   /** Which rung this is, in words, for the label beside it. */
   rung: string;
 }
-
-/**
- * A fixed clock for the welcome-back demo, so the showcase does not re-decide
- * its own story on every render.
- */
-const DEMO_NOW = 1_800_000_000_000;
 
 /**
  * The ladder, top to bottom: a tool it can name, a tool it cannot, no reading at
@@ -144,13 +137,12 @@ function useSeededLadder(): void {
 }
 
 /** One ladder row, in the sidebar's own markup context. */
-function LadderRow({ rung, welcomeBack = false }: { rung: Rung; welcomeBack?: boolean }) {
+function LadderRow({ rung }: { rung: Rung }) {
   return (
     <SidebarRow
       glyph={<AgentAvatar color="#6366f1" emoji="🔍" size="xs" status={rung.status} />}
       who="Scout"
       title={rung.title}
-      welcomeBack={welcomeBack}
       // Lifecycle decides the HEIGHT; the leaf inside decides the WORDS. A row
       // that is neither streaming nor blocked keeps one line, whatever the
       // store still remembers about it.
@@ -226,32 +218,6 @@ export function VerbLadderShowcases() {
             </li>
           ))}
         </ul>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>
-        Welcome back — the one beat a row plays for work that finished while you were away (BC-49)
-      </ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="space-y-1">
-          <p className="text-muted-foreground text-[11px]">
-            Amber, once, on first paint, and never again — a re-render cannot re-arm it. Nothing
-            renders at all under a reduced-motion preference.
-          </p>
-          <Panel>
-            {/* Through the real rule, not a hardcoded `true`: this row's work
-                finished two hours into a four-hour absence, and the threshold
-                is the one the user's own welcome-back setting carries. */}
-            <LadderRow
-              rung={rungById('dev-verb-idle')}
-              welcomeBack={isWelcomeBackMoment({
-                finishedAt: DEMO_NOW - 120 * 60_000,
-                lastSeenAt: DEMO_NOW - 240 * 60_000,
-                absenceThresholdMinutes: 240,
-                now: DEMO_NOW,
-              })}
-            />
-          </Panel>
-        </div>
       </ShowcaseDemo>
     </PlaygroundSection>
   );

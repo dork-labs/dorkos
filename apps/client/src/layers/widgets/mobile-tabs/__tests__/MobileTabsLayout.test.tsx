@@ -101,6 +101,12 @@ vi.mock('@/layers/features/dashboard-sidebar/model/use-sidebar-state', () => ({
       : { ...mockState, coveredSignalIds: options.coveredSignalIds },
   SIDEBAR_CLOCK_TICK_MS: 60_000,
 }));
+// A settled panel: these cases are about which zones each destination draws,
+// not about the boot gate, whose own behaviour is covered in the sidebar
+// feature's `model/boot/__tests__` (spec `sidebar-simplification` D6).
+vi.mock('@/layers/features/dashboard-sidebar/model/boot/use-boot-state', () => ({
+  useBootState: () => ({ phase: 'settled', settled: true, fleetKnown: true, startedWarm: false }),
+}));
 vi.mock('@/layers/features/dashboard-sidebar/model/use-legacy-pin-migration', () => ({
   useLegacyPinMigration: () => {},
 }));
@@ -948,7 +954,6 @@ describe('MobileTabsLayout', () => {
       // the phone rather than a fixture with nothing to drag.
       const draggable = buildSidebarModel(powerFixture)
         .zones.flatMap((zone) => zone.sections)
-        .flatMap((section) => [section, ...(section.subsections ?? [])])
         .flatMap((section) => section.rows)
         .filter((row) => row.draggable);
       expect(draggable.length).toBeGreaterThan(0);

@@ -235,6 +235,26 @@ describe('HomeRoomPage — the room', () => {
     expect(transport.getRoom).toHaveBeenCalledWith(TEAM_ID);
   });
 
+  it('draws no room masthead — the bar above already is one', async () => {
+    // Home IS #team, and the bar names it and carries its chips. The masthead
+    // under it said the same thing a second time and cost the feed a whole row
+    // on every phone. Phase R1 deleted `RoomHeader` outright, so this is no
+    // longer a prop that could be passed and ignored — but only a render of the
+    // real `RoomSurface` can say the row is actually gone.
+    const { container } = renderHome();
+    await screen.findByPlaceholderText('Message #team…');
+
+    // The masthead's own heading. The working chip is NOT asserted here: it
+    // never rendered inside this tree even before R1, so a `queryByTestId` for
+    // it passed no matter what the code did — a test that cannot fail. The bar's
+    // own chips are proven where they render, in `HomeRoomChips.test.tsx`.
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+
+    // And what the host contributes above the feed is untouched — the whole
+    // point of removing a masthead rather than the chrome around it.
+    expect(container.querySelector('[data-slot="pinned-triage-header"]')).not.toBeNull();
+  });
+
   it('mounts the pinned triage header OUTSIDE the feed it sits above', async () => {
     const { container } = renderHome();
     await screen.findByPlaceholderText('Message #team…');

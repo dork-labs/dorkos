@@ -1,6 +1,5 @@
 /**
- * One section of one zone — a header, its rows, and at most one level of
- * sub-headers (BC-28 → BC-31).
+ * One section of one zone — a header and its rows (BC-28 → BC-31).
  *
  * It composes `SectionHeader` and `SidebarModelRow` and decides nothing:
  * membership, order, the rollup arithmetic and whether the section exists at
@@ -23,10 +22,10 @@ import { useSectionChrome } from './useSectionChrome';
  * The ungrouped section a section id names, or `undefined` for one that is not
  * an ungrouped section at all.
  *
- * Three ids and no fallback. Pins is its own container, a group is its own, and
- * Heads up / Today / Getting started are computed — none of them is "ungrouped",
- * so none of them may borrow Agents' name for a drag announcement that would
- * then say "Over Agents." about a row that is nowhere near it.
+ * Three ids and no fallback. Pins is its own container, a hand-made section is
+ * its own, and Heads up / Today / Getting started are computed — none of them is
+ * "ungrouped", so none of them may borrow Agents' name for a drag announcement
+ * that would then say "Over Agents." about a row that is nowhere near it.
  *
  * @param id - The section's id.
  */
@@ -38,9 +37,10 @@ function ungroupedSectionId(id: SidebarSectionModel['id']): UngroupedSectionId |
  * The drag container a section's rows belong to.
  *
  * Pins is its own container; Channels, Direct messages and Agents are all
- * "ungrouped" — landing in any of them takes a row out of its group — and a
- * group is its own. Heads up, Today and Getting started are `computed`, which the
- * drop reducer rejects with a sentence rather than in silence (R3).
+ * "ungrouped" — landing in any of them takes a row out of its section — and a
+ * hand-made section is its own. Heads up, Today and Getting started are
+ * `computed`, which the drop reducer rejects with a sentence rather than in
+ * silence (R3).
  *
  * @param id - The section's id.
  */
@@ -51,10 +51,10 @@ export function sectionContainer(id: SidebarSectionModel['id']): SidebarContaine
     return { kind: 'computed', zone: id };
   }
   const section = ungroupedSectionId(id);
-  // Reached only after pins, groups and the computed zones have been answered
-  // above, so the fallback is unreachable in practice — spelled out rather than
-  // defaulted so a new Library section shows up as a wrong announcement here
-  // instead of silently becoming Agents everywhere.
+  // Reached only after pins, hand-made sections and the computed zones have
+  // been answered above, so the fallback is unreachable in practice — spelled
+  // out rather than defaulted so a new Library section shows up as a wrong
+  // announcement here instead of silently becoming Agents everywhere.
   return { kind: 'ungrouped', section: section ?? 'agents' };
 }
 
@@ -71,12 +71,10 @@ export interface SidebarSectionProps {
   section: SidebarSectionModel;
   /** Fold or unfold every Library section at once — Alt/Option-click (BC-30). */
   onToggleAll: () => void;
-  /** A group sub-header sits one level in: an `<h4>`, indented by 14px. */
-  isSubsection?: boolean;
 }
 
 /**
- * A section's header, its rows, and its groups.
+ * A section's header and its rows.
  *
  * **The whole header row is the toggle** and every destination is a leaf row,
  * so select-versus-expand is never ambiguous (BC-29). A collapsed section keeps
@@ -85,11 +83,7 @@ export interface SidebarSectionProps {
  *
  * @param props - The section and the all-sections toggle.
  */
-export function SidebarSection({
-  section,
-  onToggleAll,
-  isSubsection = false,
-}: SidebarSectionProps) {
+export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
   const chrome = useSectionChrome(section);
   const roving = useRovingFocus({
     onCollapse: () => section.collapsible && !section.collapsed && chrome.toggleCollapsed(),
@@ -127,9 +121,9 @@ export function SidebarSection({
       collapsed={section.collapsed}
       {...(section.collapsible ? { onToggle: chrome.toggleCollapsed, onToggleAll } : {})}
       controlsId={bodyId}
-      level={isSubsection ? 4 : 3}
+      level={3}
       nodes={chrome.menuNodes}
-      actionsLabel={`${section.label ?? 'Section'} ${isSubsection ? 'group' : 'section'} actions`}
+      actionsLabel={`${section.label ?? 'Section'} section actions`}
       {...(chrome.hasSectionAction ? { hasSectionAction: true } : {})}
       {...(chrome.adornment === undefined ? {} : { adornment: chrome.adornment })}
       {...(chrome.editor === undefined ? {} : { editor: chrome.editor })}
@@ -148,23 +142,17 @@ export function SidebarSection({
     <SidebarGroup
       // `group/section` is what the header's `+` hangs its hover reveal on: the
       // `+` is positioned against this box rather than inside the header's own
-      // menu surface, so it needs a named group of its own to watch (R2's
+      // menu surface, so it needs a named CSS group of its own to watch (R2's
       // "nothing renders at rest", with `focus-visible` and touch as the two
       // other paths).
-      className={cn(
-        'group/section px-0',
-        // **One indent level, and it moves the whole section** — header AND
-        // rows. `--sidebar-nested-x` lands a member's header at 24, its glyph at
-        // 32 and its label at 58 (D1). It used to be 14px on the sub-header
-        // alone, with the rows left flush: a nested list that reads as nested
-        // only where nobody is looking.
-        isSubsection && 'pl-[var(--sidebar-nested-x)]'
-      )}
-      // A stable handle for the page objects. `[data-slot="sidebar-group"]`
-      // alone is ambiguous the moment a section nests: a group's wrapper sits
-      // INSIDE the Agents wrapper, so a filter for "the group whose header says
-      // X" matched the ancestor as well as the descendant and tripped strict
-      // mode (the browser suite found this, not a reader).
+      //
+      // **No indent, because there is no nesting left to show.** A hand-made
+      // section used to render inside Agents and wore `--sidebar-nested-x` to
+      // say so; sections are peers now (D3), so every header in the panel sits
+      // on one x and every row on another — the two levels D1 asked for.
+      className="group/section px-0"
+      // A stable handle for the page objects — `[data-slot="sidebar-group"]`
+      // alone names every section in the panel.
       data-sidebar-section={section.id}
       {...roving}
     >
@@ -205,10 +193,6 @@ export function SidebarSection({
           {chrome.footer}
         </Droppable>
       )}
-      {!section.collapsed &&
-        (section.subsections ?? []).map((sub) => (
-          <SidebarSection key={sub.id} section={sub} onToggleAll={onToggleAll} isSubsection />
-        ))}
     </SidebarGroup>
   );
 }

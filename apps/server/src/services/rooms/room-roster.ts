@@ -42,6 +42,21 @@ import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
 
 /**
+ * The agents on a roster, by the names a title would call them.
+ *
+ * Only the agents: a direct message's title names who the operator is talking
+ * TO, so their own membership is not in it — and neither is anybody a bridged
+ * chat projects, because a bridged room's title is the chat's, not a roster's.
+ *
+ * @param members - The roster, in the order the store answered with.
+ */
+export function dmTitleNames(members: readonly RoomRosterEntry[]): string[] {
+  return members
+    .filter((member) => member.author.kind === 'agent')
+    .map((member) => member.author.displayName);
+}
+
+/**
  * The membership seed a channel gets (room-participation spec §9.4).
  *
  * `engaged`, not `mention-only`. The old seed taxed a person with an `@` on

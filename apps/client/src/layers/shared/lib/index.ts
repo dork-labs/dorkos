@@ -114,6 +114,11 @@ export {
 export { playNotificationCue, type NotificationCue } from './notification-sound';
 export { playSliderTick, playCelebration } from './sound';
 export { formatCompactAge } from './format-compact-age';
+export { listWaitingKinds } from './waiting-kinds';
+// Only the function: `RESOLVE_HOLD_S` and `MELT_S` are the curve's own numbers
+// and nothing outside the module reads them (its own test imports the file
+// directly). Putting them on the barrel would be three exports where one is used.
+export { askExitTransition } from './ask-exit-transition';
 export {
   groupSessionsByTime,
   shortenHomePath,
@@ -254,8 +259,6 @@ export {
   WAITING_ON_YOU_VERB,
 } from './activity-verb';
 
-export { isWelcomeBackMoment } from './welcome-back-glow';
-export type { WelcomeBackMomentInput } from './welcome-back-glow';
 export { setAskDorkBotOrigin, takeAskDorkBotOrigin } from './ask-dorkbot-origin';
 // `overnightBoundary` is deliberately NOT re-exported here, for the same reason
 // `row-grammar` is not: one of its two callers is the sidebar model, which a

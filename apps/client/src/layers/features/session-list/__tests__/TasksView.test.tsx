@@ -107,6 +107,11 @@ function makeSchedule(overrides: Partial<Task> & { id: string; name: string }): 
     filePath: '/tmp/tasks/test.md',
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+    reason: null,
+    proposedBySessionId: null,
+    proposedByAgentPath: null,
+    proposedByName: null,
+    nextRuns: [],
     ...overrides,
   };
 }

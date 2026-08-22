@@ -9,7 +9,7 @@ import type { SidebarRowModel } from '../build-sidebar-model';
 import { prefs } from '../fixtures';
 import { applyMuteRules, isMuted, muteIndex } from '../rules/apply-mute-rules';
 import { deriveUnreadSignal } from '../rules/derive-unread-signal';
-import { basename, interactionKeyOf, rowKey } from '../rules/targets';
+import { interactionKeyOf, rowKey } from '../rules/targets';
 
 /** A bare row pointing at one target. */
 function row(target: SidebarRowModel['target'], overrides: Partial<SidebarRowModel> = {}) {
@@ -170,12 +170,5 @@ describe('target vocabulary', () => {
 
   it('gives a rollup no interaction key at all', () => {
     expect(interactionKeyOf({ kind: 'rollup', rollup: 'automated' })).toBeNull();
-  });
-
-  it('reads a basename on either separator', () => {
-    expect(basename('/repos/dorkos')).toBe('dorkos');
-    expect(basename('C:\\code\\dorkos')).toBe('dorkos');
-    expect(basename('/repos/dorkos//')).toBe('dorkos');
-    expect(basename('dorkos')).toBe('dorkos');
   });
 });
