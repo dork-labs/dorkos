@@ -118,7 +118,9 @@ interface Harness {
  * and the accounting seam lands on the session the mapper reads — which is what
  * makes `context_usage` precede `done`.
  */
-function harness(hooks: { onWindowClose?: (window: TurnWindow) => void } = {}): Harness {
+function harness(
+  hooks: { onWindowClose?: (window: TurnWindow) => void; graceMs?: number } = {}
+): Harness {
   const queries: FakeQuery[] = [];
   const opened: TurnWindow[] = [];
   const closedWindows: TurnWindow[] = [];
@@ -170,6 +172,11 @@ function harness(hooks: { onWindowClose?: (window: TurnWindow) => void } = {}): 
     sessionId: SESSION_ID,
     pump,
     usageTimeoutMs: 500,
+    // Injected so the steer-continuation cases are decided by the code under
+    // test rather than by a real-time sleep racing the assertions. A LONG grace
+    // is the sharper instrument in most of them: a window that must close at
+    // once hangs the test if it starts waiting.
+    ...(hooks.graceMs !== undefined ? { continuationGraceMs: hooks.graceMs } : {}),
     onWindowOpen: (window) => {
       opened.push(window);
       projected.push(project(window));
@@ -1027,5 +1034,182 @@ describe('SessionTurnWindows — a late result cannot strand the open window (DO
     // Untouched: the new process never read that id, so it says nothing about
     // the turn it is running now.
     expect(h.windows.openWindow?.ids).toEqual(['m2']);
+  });
+});
+
+describe('a steered window waits for the continuation, and only for that (DOR-1314)', () => {
+  /**
+   * Open a window, steer into it, and let the CLI end the turn naming the
+   * DISPATCHED message — the state every case below starts from. The steer is
+   * still in the CLI's queue, so this window may not close yet.
+   *
+   * Nothing is awaited between the emits: the pump delivers them to the
+   * windower in order, so a case that needs a message to land INSIDE the grace
+   * passes it here rather than racing the clock with a poll.
+   *
+   * @param h - The harness driving it
+   * @param inBurst - Messages to emit immediately behind the closing `result`,
+   *   i.e. inside the grace it opens
+   */
+  async function steeredAndAnswered(h: Harness, inBurst: SDKMessage[] = []): Promise<void> {
+    await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+    h.live().emit(textDeltaMessage('the first answer'));
+    h.live().emit(resultMessage('m1'));
+    for (const message of inBurst) h.live().emit(message);
+  }
+
+  /** Wait until the windower has been handed the `result` that opens the grace. */
+  async function graceIsOpen(h: Harness): Promise<void> {
+    await vi.waitFor(() => expect(h.seen.some((m) => m.type === 'result')).toBe(true));
+  }
+
+  it('is not closed by bookkeeping, and still has a real terminal after it', async () => {
+    // The `system/init` an explicit warm produces, arriving inside the grace,
+    // and then silence. Routine traffic, not a turn — so the clock must not
+    // stop, and even if it did the window must still hold a real terminal.
+    // Clearing the deferred `result` alongside the timer left it holding
+    // nothing, and the window never closed at all: this hangs on that.
+    const h = harness({ graceMs: 60 });
+    await steeredAndAnswered(h, [initMessage()]);
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.types.at(-1)).toBe('turn_end');
+    // Closed on the CLI's own successful `result`, never on the synthetic
+    // "the agent never finished this turn".
+    expect(h.rawStream().some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('does not cut short a continuation that outlasts the grace', async () => {
+    // The wait is for the continuation to BEGIN, never for it to finish. A
+    // 60ms grace against 200ms of work makes that the only reading that
+    // passes: stopping the clock on the first word is what saves the rest.
+    const h = harness({ graceMs: 60 });
+    await steeredAndAnswered(h, [textDeltaMessage('starting on the tests')]);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    h.live().emit(textDeltaMessage('and here is what they say'));
+    h.live().emit(resultMessage('steer-1'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(
+      windows[0]!.events.some(
+        (e) => e.type === 'text_delta' && e.text === 'and here is what they say'
+      )
+    ).toBe(true);
+  });
+
+  it('restarts the wait when a person steers into the grace', async () => {
+    // 400ms of grace, spent in two 200ms halves with a steer between them. The
+    // second half ends 200ms past the ORIGINAL deadline, so only a restarted
+    // clock still has this window open when the answer arrives.
+    const h = harness({ graceMs: 400 });
+    await steeredAndAnswered(h);
+    await graceIsOpen(h);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    // The agent has just gone quiet, which is exactly when a person types.
+    expect(h.windows.steerOpenWindow('steer-2')).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    h.live().emit(textDeltaMessage('answering the second steer'));
+    h.live().emit(resultMessage('steer-2'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(
+      windows[0]!.events.some(
+        (e) => e.type === 'text_delta' && e.text === 'answering the second steer'
+      )
+    ).toBe(true);
+  });
+
+  it('does not wait at all when the result names the steer itself', async () => {
+    // An hour of grace: a window that starts waiting here never closes, so the
+    // drain below hangs. Nothing is outstanding once the steer is named.
+    const h = harness({ graceMs: 3_600_000 });
+    await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+    h.live().emit(textDeltaMessage('both, answered together'));
+    h.live().emit(resultMessage('steer-1'));
+
+    await settled(h, 1);
+    expect(h.windowsOnStream()).toHaveLength(1);
+  });
+
+  it('keeps waiting while a SECOND steer is still unanswered', async () => {
+    const h = harness({ graceMs: 3_600_000 });
+    await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+    expect(h.windows.steerOpenWindow('steer-2')).toBe(true);
+    // One of the two steers is answered; the other is not, so the turn is not
+    // over and the continuation for it may still arrive. An hour of grace means
+    // only the CLI naming `steer-2` can close this.
+    h.live().emit(resultMessage('steer-1'));
+    h.live().emit(textDeltaMessage('now the second one'));
+    h.live().emit(resultMessage('steer-2'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(
+      windows[0]!.events.some((e) => e.type === 'text_delta' && e.text === 'now the second one')
+    ).toBe(true);
+  });
+
+  it('hands a dispatch the real result, not an abandonment', async () => {
+    const h = harness({ graceMs: 3_600_000 });
+    await steeredAndAnswered(h);
+    await graceIsOpen(h);
+
+    // The person gives up waiting and sends the next message. The window in
+    // hand finished its turn — it was only waiting to see whether more was
+    // coming — so it settles on the CLI's own `result`.
+    await h.dispatch([{ content: 'next thing', messageId: 'm2' }]);
+    h.live().emit(resultMessage('m2'));
+    await settled(h, 2);
+
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(2);
+    // No synthetic error anywhere: this is what separates settling on the real
+    // result from abandoning the window, and it is the whole assertion.
+    expect(h.rawStream().some((e) => e.type === 'error')).toBe(false);
+    // The predecessor kept its own answer rather than losing it to the successor.
+    expect(
+      windows[0]!.events.some((e) => e.type === 'text_delta' && e.text === 'the first answer')
+    ).toBe(true);
+  });
+
+  it('settles on the real result when the composer ends the turn, and says so', async () => {
+    const h = harness({ graceMs: 3_600_000 });
+    await steeredAndAnswered(h);
+    await graceIsOpen(h);
+
+    // `settle-open-turn.ts` logs a `true` as "ended a turn that never
+    // finished". This turn finished, so the answer must be `false` — otherwise
+    // a healthy turn is reported as a failed one every time somebody steers.
+    expect(h.windows.abandonOpenWindow()).toBe(false);
+
+    await settled(h, 1);
+    expect(h.rawStream().some((e) => e.type === 'error')).toBe(false);
+    expect(h.windowsOnStream()).toHaveLength(1);
+  });
+
+  it('lets a crash mid-grace close the window once, as a crash', async () => {
+    const h = harness({ graceMs: 3_600_000 });
+    await steeredAndAnswered(h);
+    await graceIsOpen(h);
+
+    h.live().failStream(new Error('the CLI died'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.types.filter((t) => t === 'turn_end')).toHaveLength(1);
+    expect(h.rawStream().some((e) => e.type === 'error')).toBe(true);
   });
 });

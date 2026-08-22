@@ -450,8 +450,14 @@ export class PersistentDispatch {
    * the same reason {@link steer} does: a reaped pump is spent and refuses
    * everything asked of it, and there is no window under it to settle anyway.
    *
+   * A window that is merely waiting to see whether a steer got a turn of its
+   * own (DOR-1314) is settled here too, but on the real `result` it is holding
+   * rather than on a synthetic error — and it answers `false`, because that
+   * turn finished. The caller logs a `true` as "ended a turn that never
+   * finished", and that sentence would not be true of it.
+   *
    * @param sessionId - The session about to open a turn, in any id it answers to
-   * @returns True when a window was open and has been settled
+   * @returns True when a turn that never finished had to be abandoned
    */
   settleOpenTurn(sessionId: string): boolean {
     const key = this.sessionKeyOf(sessionId);

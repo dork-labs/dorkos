@@ -78,12 +78,28 @@
  *
  * So a `result` that names one of a window's ids while a STEERED id of that
  * window is still unanswered does not close it. The close is deferred for
- * {@link CONTINUATION_GRACE_MS}: if the process speaks, the continuation has
- * begun and its text lands in the turn the person is watching, which closes on
- * the `result` that names the steer; if the process stays silent, the deferred
- * `result` closes the window exactly as it would have immediately. The wait is
- * for the continuation to BEGIN, never for it to finish, so a long turn is not
- * cut short and a coalesced steer costs half a second and nothing else.
+ * {@link CONTINUATION_GRACE_MS}, and three things settle it:
+ *
+ * - **The CLI starts a turn** (an `assistant` message or the `stream_event`
+ *   partials of one — {@link beginsATurn}). The clock stops, the continuation's
+ *   text lands in the turn the person is watching, and the window closes on the
+ *   `result` that names the steer. The wait is for the continuation to BEGIN,
+ *   never for it to finish, so a long turn is not cut short.
+ * - **The clock runs out.** The deferred `result` closes the window exactly as
+ *   it would have immediately. A coalesced steer costs half a second, nothing
+ *   more — and only in the shape where the `result` named the DISPATCHED id; a
+ *   `result` naming the steer itself leaves nothing outstanding and closes at
+ *   once.
+ * - **Something else needs the window NOW** — a dispatch, a `settleOpenTurn`, a
+ *   crash. Each takes the deferred `result` with it.
+ *
+ * **The deferred `result` is never dropped while the window lives.** Only the
+ * TIMER is cancellable. That is what keeps every one of those exits honest: a
+ * bookkeeping line arriving mid-grace (a `system/init`, a late tool result from
+ * the turn that just ended) stops nothing, and even if it did, the window would
+ * still hold a real terminal rather than waiting to be stamped "the agent never
+ * finished this turn" — which is what a healthy turn got when the two were
+ * cleared together.
  *
  * ## And a window may not outlive its turn, whatever the ids say
  *
@@ -372,6 +388,30 @@ function crashResult(crash: PumpCrash): SDKMessage {
 }
 
 /**
+ * Whether this message is the CLI STARTING a turn, rather than bookkeeping it
+ * emits between them.
+ *
+ * Only two shapes prove a turn began: `assistant`, and the `stream_event`
+ * partials that carry one. Everything a turn does afterwards is preceded by an
+ * `assistant` — a tool call is an `assistant` message before it is a `user`
+ * tool result — so this cannot miss a continuation it should have caught.
+ *
+ * The two it deliberately EXCLUDES are the ones the module doc already names as
+ * routine between-turn traffic: a `system` line (the `init` an explicit warm
+ * produces), and the `user` tool result of a tool that was still running when
+ * its turn ended. That late tool result belongs to the turn that JUST FINISHED,
+ * not to a new one, so reading it as "the continuation began" would stop the
+ * clock waiting for a turn that is never coming — the DOR-1314 review's first
+ * blocker, in its subtlest shape. Both are still attributed to the open window;
+ * they simply do not answer the question the grace is asking.
+ *
+ * @param message - The message the process just produced
+ */
+function beginsATurn(message: SDKMessage): boolean {
+  return message.type === 'assistant' || message.type === 'stream_event';
+}
+
+/**
  * The `result` a turn never produced, for a window that has to be closed anyway.
  *
  * Same shape and same reasoning as {@link crashResult}: a non-success subtype
@@ -453,15 +493,25 @@ export class SessionTurnWindows {
    * `dispatch` keeps its own backstop: this is a courtesy the composer extends,
    * and the ingress invariant may not depend on every caller extending it.
    *
-   * @returns True when a window was open and has been settled, false when there
-   *   was nothing to settle — which is every ordinary turn
+   * **The return value is about HONESTY, not about whether work happened.** The
+   * caller (`settle-open-turn.ts`) turns a `true` into "ended a turn that never
+   * finished" in the operator's log, so it may only be `true` when that
+   * sentence is TRUE. A window mid-grace has a real `result` in hand — its turn
+   * finished perfectly and DorkOS was merely waiting to see whether a steered
+   * message got a turn of its own (DOR-1314) — so it settles on that result and
+   * answers `false`. The settle still happened; the caller's unconditional wait
+   * on the projection covers it either way.
+   *
+   * @returns True when a turn that never finished had to be abandoned, false
+   *   when there was nothing to settle — which is every ordinary turn — or when
+   *   a finished turn settled on the real `result` it was holding
    */
   abandonOpenWindow(): boolean {
     if (this.current === undefined) return false;
     // A window mid-grace is not stranded — its turn ended, and DorkOS was only
     // waiting to see whether a steer got a turn of its own (DOR-1314). It gets
     // the real `result` it is holding rather than a synthetic error.
-    if (this.settleDeferred(this.current)) return true;
+    if (this.settleDeferredNow(this.current)) return false;
     this.abandonStranded(this.current);
     return true;
   }
@@ -494,6 +544,16 @@ export class SessionTurnWindows {
     // whether a steer joins the running turn or gets one of its own, and this
     // window may not close until it has said which (DOR-1314, {@link onResult}).
     this.current.steered.add(messageId);
+    // A steer that lands DURING the grace restarts it. The grace is exactly
+    // when a person types — the agent has just gone quiet — and letting the
+    // original clock run out under a brand-new steer would close the window and
+    // send that steer's answer into a runtime window nothing projects: the very
+    // loss this mechanism exists to prevent, re-entered through its own repair.
+    //
+    // Only while the timer is still ARMED. Once a continuation has begun the
+    // timer is already stopped, and re-arming it there would put a deadline on
+    // a turn that is actively running.
+    if (this.current.grace !== undefined) this.armGrace(this.current);
     // And remembered beyond this window, because the CLI may not answer a steer
     // inside the turn it joined — the DOR-1294 case, and the one this ledger was
     // built for. Remembered on the TAG rather than on a successful push, exactly
@@ -624,7 +684,7 @@ export class SessionTurnWindows {
     // FIRST, so the wait below covers it and the abandonment below never sees
     // it. The person is sending their next message, which answers the question
     // the grace was asking: no continuation is coming (DOR-1314).
-    if (this.current !== undefined) this.settleDeferred(this.current);
+    if (this.current !== undefined) this.settleDeferredNow(this.current);
     // EVERY close in flight, and looped rather than awaited once: a stray
     // `result` can open and close a runtime window while we wait here, and that
     // close has to be waited for too.
@@ -680,11 +740,14 @@ export class SessionTurnWindows {
       return;
     }
     if (this.current !== undefined) {
-      // The process spoke while this window was waiting to see whether a steer
-      // got a turn of its own: it did, and this is that turn beginning. The
-      // grace is over and the deferred `result` is spent — the window now
-      // closes on the `result` that names the steer (DOR-1314).
-      if (this.current.grace !== undefined) this.clearGrace(this.current);
+      // The process SPOKE while this window was waiting to see whether a steer
+      // got a turn of its own: it did, and this is that turn beginning, so the
+      // clock stops and the window now closes on the `result` that names the
+      // steer (DOR-1314). Only the timer stops — the deferred `result` stays on
+      // as this window's terminal until a better one arrives.
+      if (this.current.grace !== undefined && beginsATurn(message)) {
+        this.stopGrace(this.current);
+      }
       this.current.channel.push(message);
       return;
     }
@@ -729,7 +792,7 @@ export class SessionTurnWindows {
     if (record === undefined) return;
     this.current = undefined;
     // Whatever this window was waiting for, the process that owed it is gone.
-    this.clearGrace(record);
+    this.finalizeGrace(record);
     record.channel.push(crashResult(crash));
     record.channel.end();
     this.opts.onWindowClose?.(record.window);
@@ -757,7 +820,7 @@ export class SessionTurnWindows {
         return;
       }
       this.current = undefined;
-      this.clearGrace(record);
+      this.finalizeGrace(record);
       this.finish(record, result);
       return;
     }
@@ -773,7 +836,7 @@ export class SessionTurnWindows {
         open: record.ids,
       });
       this.current = undefined;
-      this.clearGrace(record);
+      this.finalizeGrace(record);
       this.finish(record, result);
       return;
     }
@@ -805,28 +868,54 @@ export class SessionTurnWindows {
    * never emitted. One turn, one terminal, both answers inside it.
    *
    * The held `result`'s own accounting is the cost of that merge: two CLI turns
-   * become one DorkOS turn, and the `done` carries the LAST result's totals.
-   * Attributing the second turn to nobody was the alternative.
+   * become one DorkOS turn, and the `done` carries the LAST result's totals. So
+   * the first CLI turn's per-turn `modelUsage` token split does not reach the
+   * observability event. Cost is not lost with it — the SDK reports
+   * `total_cost_usd` as a session running total, so the surviving `result`
+   * carries both turns' spend. Attributing the second turn to nobody was the
+   * alternative.
+   *
+   * **The held `result` is never discarded while this window lives.** It is
+   * this window's terminal until something better replaces it, which is what
+   * makes every later close honest: a dispatch, a `settleOpenTurn`, or an
+   * abandonment all settle on the REAL result rather than stamping "the agent
+   * never finished this turn" on a turn that finished perfectly. Only the TIMER
+   * is cancellable ({@link stopGrace}); the terminal is not.
    *
    * @param record - The window whose close is being deferred
    * @param result - The `result` to close it with if nothing more arrives
    */
   private holdForContinuation(record: WindowRecord, result: SDKMessage): void {
-    this.clearGrace(record);
     record.deferred = result;
+    this.armGrace(record);
+  }
+
+  /**
+   * Start (or restart) the wait for a continuation to begin.
+   *
+   * Restartable because a steer that arrives DURING the grace is itself a fresh
+   * reason to expect one (DOR-1314 review, B2): the agent has just gone quiet,
+   * which is exactly when a person types, and letting the original timer run
+   * out under the new steer would close the window and drop that steer's answer
+   * — the very loss this whole mechanism exists to prevent.
+   *
+   * @param record - The window waiting on a continuation
+   */
+  private armGrace(record: WindowRecord): void {
+    this.stopGrace(record);
     record.grace = setTimeout(() => {
       record.grace = undefined;
       // Another path may have settled this window while the timer ran — a
-      // dispatch expiring it, a crash, an abandonment. Whoever got there first
-      // owns the close.
+      // dispatch, a crash, an abandonment. Whoever got there first owns the
+      // close, and each of them takes {@link WindowRecord.deferred} with it.
       if (this.current !== record) return;
       const deferred = record.deferred;
-      record.deferred = undefined;
       if (deferred === undefined) return;
       logger.debug('[SessionTurnWindows] no continuation began; closing the steered turn', {
         sessionId: this.opts.sessionId,
         steered: [...record.steered],
       });
+      record.deferred = undefined;
       this.current = undefined;
       this.finish(record, deferred);
     }, this.opts.continuationGraceMs ?? CONTINUATION_GRACE_MS);
@@ -834,31 +923,63 @@ export class SessionTurnWindows {
     record.grace.unref?.();
   }
 
-  /** Stop a window's grace timer and forget the `result` it was holding. */
-  private clearGrace(record: WindowRecord): void {
+  /**
+   * Stop the grace TIMER and nothing else — {@link WindowRecord.deferred}
+   * survives as this window's terminal.
+   *
+   * The distinction is the DOR-1314 review's first blocker. Dropping the
+   * deferred `result` alongside the timer left the window with no terminal at
+   * all whenever the timer was cancelled by something that turned out not to be
+   * a continuation, so the window stayed open until the next message abandoned
+   * it — a healthy turn stamped as one that never finished.
+   *
+   * @param record - The window whose timer is being stopped
+   */
+  private stopGrace(record: WindowRecord): void {
     if (record.grace !== undefined) clearTimeout(record.grace);
     record.grace = undefined;
+  }
+
+  /**
+   * Let go of a window's grace state entirely, because it is being closed by
+   * something that carries its own terminal.
+   *
+   * @param record - The window being closed
+   */
+  private finalizeGrace(record: WindowRecord): void {
+    this.stopGrace(record);
     record.deferred = undefined;
   }
 
   /**
-   * Close a window that is mid-grace with the `result` it is holding, rather
-   * than leaving it for something coarser to abandon (DOR-1314).
+   * Close a window on the real `result` it is holding, RIGHT NOW, rather than
+   * leaving it for something coarser to abandon (DOR-1314).
    *
-   * A real `result` beats a synthetic error every time: the turn genuinely
-   * ended, DorkOS was only waiting to see whether more was coming. Called
-   * wherever a window in hand has to be settled NOW — a fresh dispatch, or the
-   * composer settling the previous turn.
+   * Shaped like {@link abandonStranded} rather than like a normal close, and
+   * for the same reason: its callers are the ones that must not wait. The
+   * settle-before-dispatch seam (`settle-open-turn.ts`) budgets ~2s for the
+   * terminal to reach the projection, and {@link finish} would spend up to
+   * `WINDOW_USAGE_TIMEOUT_MS` (~8s) on an accounting fetch first — long enough
+   * for the successor's `turn_start` to mint ahead of this window's `turn_end`,
+   * which is precisely the DOR-1295 ordering bug that seam exists to prevent.
+   * So the accounting is sacrificed, exactly as an abandonment sacrifices it,
+   * and the close is synchronous. What is NOT sacrificed is the terminal: a
+   * real `result` beats a synthetic error every time, because this turn
+   * genuinely ended and DorkOS was only waiting to see whether more was coming.
    *
+   * @param record - The window to close
    * @returns True when a deferred close was taken, false when this window was
-   *   not waiting on anything
+   *   not holding one
    */
-  private settleDeferred(record: WindowRecord): boolean {
+  private settleDeferredNow(record: WindowRecord): boolean {
     const deferred = record.deferred;
     if (deferred === undefined) return false;
-    this.clearGrace(record);
+    this.finalizeGrace(record);
     this.current = undefined;
-    this.finish(record, deferred);
+    record.channel.push(deferred);
+    record.channel.end();
+    this.opts.pump.endTurn();
+    this.opts.onWindowClose?.(record.window);
     return true;
   }
 
@@ -956,7 +1077,7 @@ export class SessionTurnWindows {
       ids: record.ids,
     });
     this.current = undefined;
-    this.clearGrace(record);
+    this.finalizeGrace(record);
     // And the ids go with it, exactly as {@link onCrash} drops the ledger:
     // DorkOS has DECLARED this turn over, so a `result` naming one of these
     // arriving later is no longer evidence about anything — least of all about
