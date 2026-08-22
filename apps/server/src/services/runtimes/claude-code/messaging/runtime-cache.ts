@@ -23,7 +23,7 @@ import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { SdkCommandEntry, MessageSenderOpts, SdkReportedModel } from './message-sender.js';
 import type { CommandRegistryService } from '../tooling/command-registry.js';
 import {
-  MODEL_PROBE_ACK_TIMEOUT_MS,
+  LAUNCH_PROBE_ACK_TIMEOUT_MS,
   PLUGIN_RELOAD_ACK_TIMEOUT_MS,
   requestWithinBound,
 } from '../sessions/bounded-control.js';
@@ -241,7 +241,7 @@ export class RuntimeCache {
         try {
           const models = await requestWithinBound(
             () => agentQuery.supportedModels(),
-            MODEL_PROBE_ACK_TIMEOUT_MS,
+            LAUNCH_PROBE_ACK_TIMEOUT_MS,
             'supportedModels'
           );
           this.cachedModels = models.map(mapSdkModelToModelOption);

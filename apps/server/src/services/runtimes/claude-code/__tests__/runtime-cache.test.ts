@@ -29,7 +29,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 import { RuntimeCache, mapSdkModelToModelOption } from '../messaging/runtime-cache.js';
 import {
   ControlRequestTimeoutError,
-  MODEL_PROBE_ACK_TIMEOUT_MS,
+  LAUNCH_PROBE_ACK_TIMEOUT_MS,
   PLUGIN_RELOAD_ACK_TIMEOUT_MS,
 } from '../sessions/bounded-control.js';
 
@@ -1018,7 +1018,7 @@ describe('RuntimeCache', () => {
       cache.setDefaultCwd('/project');
 
       const warming = cache.warmup('/project');
-      await vi.advanceTimersByTimeAsync(MODEL_PROBE_ACK_TIMEOUT_MS);
+      await vi.advanceTimersByTimeAsync(LAUNCH_PROBE_ACK_TIMEOUT_MS);
       await expect(warming).resolves.toBeUndefined();
 
       expect(mockQuery.close).toHaveBeenCalledTimes(1);
@@ -1027,7 +1027,7 @@ describe('RuntimeCache', () => {
     it('lets a later warm-up try again, rather than deduplicating onto a promise that never settles', async () => {
       vi.mocked(query).mockReturnValue(deafQuery() as never);
       const first = cache.warmup('/project');
-      await vi.advanceTimersByTimeAsync(MODEL_PROBE_ACK_TIMEOUT_MS);
+      await vi.advanceTimersByTimeAsync(LAUNCH_PROBE_ACK_TIMEOUT_MS);
       await first;
 
       const answered = {

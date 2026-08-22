@@ -113,19 +113,25 @@ export const LIVE_SETTING_ACK_TIMEOUT_MS = 3_000;
 export const PLUGIN_RELOAD_ACK_TIMEOUT_MS = 8_000;
 
 /**
- * How long the model-cache warm-up may wait on `supportedModels()` before it
- * abandons the throwaway subprocess it started.
+ * How long a probe fired at a freshly launched subprocess — the model list, the
+ * MCP status snapshot, the command and subagent lists, and the model-cache
+ * warm-up's own `supportedModels()` — may go unanswered.
  *
- * Nobody is blocked on this one: the warm-up runs in the background, and the
- * caller-facing read (`getSupportedModels`) already races it on its own 3 s
- * clock and falls through to an empty list. What the bound protects is the
- * warm-up itself — an unanswered probe pins `warmupPromise` for the life of the
- * server, so every later warm-up dedupes onto a promise that will never settle
- * and the temporary query is never closed. Ten seconds because a cold start here
- * pays for spawning a CLI subprocess before the probe is even sent, and being
- * generous costs nothing when no request is waiting.
+ * Nobody is blocked on any of these: they populate caches in the background
+ * while the turn streams, and the caller-facing model read
+ * (`getSupportedModels`) already races the warm-up on its own 3 s clock and
+ * falls through to an empty list. What the bound protects is what an unanswered
+ * probe leaves behind. In the warm-up, that is `warmupPromise` pinned for the
+ * life of the server — every later warm-up deduplicating onto a promise nothing
+ * will settle, with the throwaway subprocess never closed. In
+ * `fireLaunchProbes`, it is one permanently pending promise per probe per
+ * launch, each holding its query and its closures alive.
+ *
+ * Ten seconds because a cold start here pays for spawning a CLI subprocess
+ * before the probe is even sent, and being generous costs nothing when no
+ * request is waiting on the answer.
  */
-export const MODEL_PROBE_ACK_TIMEOUT_MS = 10_000;
+export const LAUNCH_PROBE_ACK_TIMEOUT_MS = 10_000;
 
 /**
  * A control request went unanswered for its whole bound.
