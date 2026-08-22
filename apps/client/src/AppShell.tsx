@@ -568,7 +568,7 @@ export function AppShell() {
                             // to a bar that wants it. The header centres its
                             // children, which left this wrapper only as tall as
                             // its text — and a tab strip asking for `h-full`
-                            // inside it got 24px, so every tab was a 24px
+                            // inside it got 24px, so every home tab was a 24px
                             // target in a 36px row (DOR-1401). Stretched, the
                             // tabs measure 35px: the header's 36 less the 1px
                             // that is its bottom hairline. Children still centre

@@ -26,6 +26,24 @@ import { BarHarness } from './bar-harness';
 
 let mockIsMobile = false;
 
+// Records the layout id each strip is handed, while still rendering the REAL
+// strip. `motion` keeps `layoutId` internal — it reaches no DOM attribute — so
+// this seam is the only place the value is observable without asserting on
+// geometry jsdom does not compute.
+const { capturedIndicatorIds } = vi.hoisted(() => ({ capturedIndicatorIds: [] as string[] }));
+
+vi.mock('@/layers/shared/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/ui')>();
+  const Real = actual.BarTabStrip;
+  return {
+    ...actual,
+    BarTabStrip: (props: React.ComponentProps<typeof Real>) => {
+      capturedIndicatorIds.push(props.indicatorLayoutId);
+      return <Real {...props} />;
+    },
+  };
+});
+
 const mockOpenCreateDialog = vi.fn();
 // Only the two the bar reads are replaced. The rest of the barrel stays REAL —
 // the strip's overflow and reveal machinery lives there, and stubbing it would
@@ -80,13 +98,17 @@ const VIEW_LABELS = ['Cards', 'Table', 'Topology', 'Denied', 'Access'] as const;
  * Mount the bar inside a router that really serves `/team`, so the links'
  * `href`s are the ones the app would build and clicking one moves the URL.
  */
-function renderTeamBar(viewMode: TeamViewMode = 'cards', initialUrl = '/team'): AnyRouter {
+function renderTeamBar(
+  viewMode: TeamViewMode = 'cards',
+  initialUrl = '/team',
+  indicatorLayoutId?: string
+): AnyRouter {
   const rootRoute = createRootRoute({
     staticData: { header: null },
     component: () => (
       <>
         <BarHarness teamViewMode={viewMode}>
-          <TeamHeader />
+          <TeamHeader indicatorLayoutId={indicatorLayoutId} />
         </BarHarness>
         <Outlet />
       </>
@@ -191,6 +213,27 @@ describe('TeamHeader', () => {
       for (const other of VIEW_LABELS.filter((l) => l !== label)) {
         expect(screen.getByRole('link', { name: other })).not.toHaveAttribute('data-active');
       }
+    });
+  });
+
+  describe('the active marker', () => {
+    it('defaults to one layout id, and lets a caller mounting several override it', async () => {
+      // `motion` treats a `layoutId` as global, so two bars sharing one are the
+      // same element to it and their underlines collapse onto a single box —
+      // which is what the dev playground's eight bars did. jsdom cannot measure
+      // the resulting rects, so what is pinned here is the input that decides
+      // them: the id is per-instance and the caller can make it unique.
+      capturedIndicatorIds.length = 0;
+
+      renderTeamBar();
+      await screen.findByTestId('page');
+      cleanup();
+
+      renderTeamBar('cards', '/team', 'playground-team-cards');
+      await screen.findByTestId('page');
+      // Asserted through the prop's observable effect rather than the prop
+      // itself: two renders, two different ids reaching the strip.
+      expect(capturedIndicatorIds).toEqual(['team-view-tabs', 'playground-team-cards']);
     });
   });
 

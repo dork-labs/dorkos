@@ -1,7 +1,7 @@
 import { Plus } from 'lucide-react';
 import { BarTabStrip, Button, type BarTab } from '@/layers/shared/ui';
 import { useAgentCreationStore, useIsMobile } from '@/layers/shared/model';
-import type { TeamViewMode } from '@/layers/shared/lib';
+import { cn, type TeamViewMode } from '@/layers/shared/lib';
 import { useOneBarState } from '../model/one-bar-context';
 import { BarTitle, OneBar } from './OneBar';
 
@@ -49,10 +49,28 @@ export const TEAM_VIEW_TABS: BarTab[] = TEAM_VIEWS.map(({ mode, label, startsGro
   dividerBefore: startsGroup,
 }));
 
+interface TeamHeaderProps {
+  /**
+   * Layout id for the sliding active marker, for the one caller that mounts
+   * more than one of these bars at once.
+   *
+   * `motion` treats a `layoutId` as global: every element sharing one is the
+   * SAME element to it, animating between wherever the copies are. The route
+   * mounts a single bar, so the default is right for the app — but the dev
+   * playground shows eight of them at once to demonstrate each active view,
+   * and with one id between them the underlines collapsed onto whichever
+   * instance mounted last, leaving seven bars with their marker parked under
+   * another bar's tab.
+   */
+  indicatorLayoutId?: string;
+}
+
 /**
  * `/team` route bar — the title, the view strip, and the way to add an agent.
+ *
+ * @param props - See {@link TeamHeaderProps}; the route passes none.
  */
-export function TeamHeader() {
+export function TeamHeader({ indicatorLayoutId = 'team-view-tabs' }: TeamHeaderProps = {}) {
   const { teamViewMode: viewMode } = useOneBarState();
   const openCreateDialog = useAgentCreationStore((s) => s.open);
   const isMobile = useIsMobile();
@@ -65,7 +83,7 @@ export function TeamHeader() {
           tabs={TEAM_VIEW_TABS}
           activeTabId={viewMode}
           label="Team views"
-          indicatorLayoutId="team-view-tabs"
+          indicatorLayoutId={indicatorLayoutId}
           testId="team-views"
         />
       }
@@ -79,6 +97,11 @@ export function TeamHeader() {
           // roster is not ambiguous. The label stays on the button either way,
           // so it is named the same for a screen reader at both widths.
           aria-label={isMobile ? 'New Agent' : undefined}
+          // But it does not get to be the SMALLEST thing in the row. `size="xs"`
+          // is 24px, which left the bar's only write action a shorter target
+          // than the tabs beside it (35px) once it lost its label. Square it to
+          // the tabs' height instead: same row, same reach.
+          className={cn(isMobile && 'h-[35px] w-[35px] p-0')}
         >
           <Plus />
           {!isMobile && 'New Agent'}

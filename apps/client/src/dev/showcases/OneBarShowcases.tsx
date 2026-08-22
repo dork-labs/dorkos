@@ -219,7 +219,10 @@ export function OneBarShowcases() {
         </ShowcaseLabel>
         <ShowcaseDemo>
           <BarFrame>
-            <TeamHeader />
+            {/* Every TeamHeader on this page needs its OWN indicator id: a
+                `layoutId` is global to `motion`, so a shared one makes all eight
+                underlines the same element and animates them onto one box. */}
+            <TeamHeader indicatorLayoutId="playground-team-desktop" />
           </BarFrame>
         </ShowcaseDemo>
 
@@ -229,7 +232,7 @@ export function OneBarShowcases() {
         </ShowcaseLabel>
         <ShowcaseDemo>
           <BarFrame width={PHONE_WIDTH}>
-            <TeamHeader />
+            <TeamHeader indicatorLayoutId="playground-team-phone" />
           </BarFrame>
         </ShowcaseDemo>
 
@@ -242,7 +245,7 @@ export function OneBarShowcases() {
             {TEAM_VIEW_MODES.map((mode) => (
               <OneBarProvider key={mode} value={{ ...QUIET_BAR_STATE, teamViewMode: mode }}>
                 <BarFrame>
-                  <TeamHeader />
+                  <TeamHeader indicatorLayoutId={`playground-team-${mode}`} />
                 </BarFrame>
               </OneBarProvider>
             ))}

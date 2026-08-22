@@ -69,12 +69,20 @@ export function OneBar({ identity, fill, chips, actions }: OneBarProps) {
       {chips ? <div className="flex shrink-0 items-center gap-1.5">{chips}</div> : null}
       {fill ? (
         // `self-stretch` passes the row's height through to fill content that
-        // asks for it. Without it this wrapper is only as tall as one line of
-        // text, and `/team`'s tab strip — which sizes its tabs with `h-full` —
+        // asks for it. Without it this wrapper is only as tall as its own text,
+        // and `/team`'s tab strip — which sizes its tabs with `h-full` —
         // resolved that to a 20px tap target inside a 36px row (measured in
         // Chromium at 1440). Stretched, the same tabs measure 35px: the row
         // less its bottom hairline. `items-center` still centres children that
         // do not ask to stretch, so filter chips are unaffected.
+        //
+        // **Three boxes, three numbers, and they are not the same bug.** The
+        // shell's cross-fade wrapper collapsed to 24px and `bar-tab-strip`'s own
+        // wrapper to 24px (both DOR-1401, both fixed by their own
+        // `self-stretch`); this wrapper collapsed to 20px, because what sets its
+        // height is `/team`'s title text rather than a tab label. All three had
+        // to stretch before `h-full` could mean the row — a strip in `fill` is
+        // three wrappers deep, and any one of them left unstretched caps it.
         <div className="ml-3 flex min-w-0 flex-1 items-center self-stretch">{fill}</div>
       ) : (
         <div className="flex-1" />
