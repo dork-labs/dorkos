@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect } from '../../fixtures';
+import { test, expect, BOOT_CACHE_DISABLED_KEY } from '../../fixtures';
 import type { RoomsApi } from '../../fixtures/rooms-api';
 
 /**
@@ -153,6 +153,20 @@ async function seedChannels(roomsApi: RoomsApi): Promise<void> {
 }
 
 test.describe('the sidebar’s first paint @smoke', () => {
+  /**
+   * The one spec that OPTS IN to the cockpit's local memory.
+   *
+   * The suite disables it on every context (`fixtures/index.ts`), because forty
+   * specs written against a cold first paint should not silently start racing a
+   * warm one. This spec's whole subject is that warm boot, so it turns the
+   * feature back on for itself — deliberately, and only here.
+   */
+  test.beforeEach(async ({ context }) => {
+    await context.addInitScript((key) => {
+      window.localStorage.removeItem(key);
+    }, BOOT_CACHE_DISABLED_KEY);
+  });
+
   test('shows bones once on a cold load, and one finished picture on a warm one', async ({
     page,
     roomsApi,

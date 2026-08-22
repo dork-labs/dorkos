@@ -191,6 +191,7 @@ export {
   isBootQueryKey,
   bootCacheStorageKey,
   BOOT_CACHE_KEY_PREFIX,
+  BOOT_CACHE_DISABLED_KEY,
   BOOT_CACHE_MAX_AGE_MS,
   type BootCache,
 } from './query-persister';

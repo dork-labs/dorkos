@@ -50,6 +50,29 @@ import { HttpTransport } from './transport';
 export const BOOT_CACHE_KEY_PREFIX = 'dorkos:rq:';
 
 /**
+ * The key that turns local memory OFF for a browser session.
+ *
+ * **A determinism seam for the browser suite, and nothing else.** The cockpit's
+ * e2e specs were written against a cold first paint: a fresh context per test,
+ * every load starting from nothing. Local memory changes that *within* a test —
+ * the second `page.goto` in a spec restores what the first one left — so specs
+ * that assert on paint order, scroll anchoring, or a live lane's first frame
+ * start racing a warm boot they were never written for, and a slow CI machine
+ * widens every one of those races.
+ *
+ * Rather than teach forty specs about a cache none of them are testing, the
+ * suite turns it off by default (`fixtures/index.ts` sets this on every context)
+ * and `dashboard-sidebar/boot-stability.spec.ts` — the one spec whose whole
+ * subject is warm boot — opts back in. Every other spec keeps the cold world it
+ * was written against, and the feature is still exercised deliberately where it
+ * is owned.
+ *
+ * Read only at construction, so a real user's session can never reach this: it
+ * requires someone to have written the key into their own `localStorage` first.
+ */
+export const BOOT_CACHE_DISABLED_KEY = 'dorkos:boot-cache-disabled';
+
+/**
  * How long a remembered answer may still be painted.
  *
  * A day, because that is roughly the span over which a person's fleet and
@@ -292,6 +315,10 @@ export function createBootCache(options: {
   if (!(transport instanceof HttpTransport)) return null;
 
   const storage = options.storage ?? window.localStorage;
+  // Switched off for this session — see {@link BOOT_CACHE_DISABLED_KEY}. Checked
+  // before anything is read, written or pruned, so a disabled session leaves the
+  // storage exactly as it found it.
+  if (storage.getItem(BOOT_CACHE_DISABLED_KEY) !== null) return null;
   const key = bootCacheStorageKey(apiBaseUrl);
   pruneForeignBootCaches(key, storage);
 

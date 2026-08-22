@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { dehydrate, QueryClient } from '@tanstack/react-query';
 import { persistQueryClientRestore } from '@tanstack/react-query-persist-client';
 import {
+  BOOT_CACHE_DISABLED_KEY,
   BOOT_CACHE_KEY_PREFIX,
   BOOT_CACHE_MAX_AGE_MS,
   bootCacheStorageKey,
@@ -125,6 +126,33 @@ describe('the sidebar’s local memory', () => {
         storage: fakeStorage(),
       });
       expect(cache).not.toBeNull();
+    });
+
+    it('keeps none when a session has switched local memory off', () => {
+      const storage = fakeStorage({
+        [BOOT_CACHE_DISABLED_KEY]: '1',
+        [`${BOOT_CACHE_KEY_PREFIX}http://other`]: '{}',
+      });
+
+      const cache = createBootCache({
+        transport: new HttpTransport('/api'),
+        apiBaseUrl: '/api',
+        buster: BUSTER,
+        storage,
+      });
+
+      expect(cache).toBeNull();
+      // And it left the storage exactly as it found it — no prune, no write. A
+      // disabled session must be indistinguishable from one that never ran.
+      expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://other`)).toBe('{}');
+    });
+
+    it('spells the opt-out key the browser suite hardcodes', () => {
+      // `apps/e2e/fixtures/index.ts` writes this exact string on every context to
+      // keep the suite's world cold, and `boot-stability.spec.ts` removes it to
+      // opt in. apps/e2e depends on no workspace package, so the two cannot share
+      // a constant — this is the pin that makes a rename loud.
+      expect(BOOT_CACHE_DISABLED_KEY).toBe('dorkos:boot-cache-disabled');
     });
 
     it('keeps none for the Obsidian embed, whose server is in the same process', () => {
