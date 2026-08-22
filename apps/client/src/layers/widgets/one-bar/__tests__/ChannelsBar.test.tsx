@@ -50,16 +50,31 @@ vi.mock('@/layers/entities/room', async (importOriginal) => {
   };
 });
 
-const detailsDialog = vi.fn();
-vi.mock('@/layers/features/room-management', () => ({
-  RoomDetailsDialog: (props: { focus: string }) => {
-    detailsDialog(props);
-    return <div data-testid="room-details">{props.focus}</div>;
-  },
-}));
+// The panel itself is mounted by the shell, not by the bar. What the bar owes
+// is the press: the door, and the part of the panel it asks for.
+const openRoomPanel = vi.fn();
+// The fleet's faces come from the real join in the room-management slice, which
+// reads two queries this bench does not mount — so the map it hands back is
+// stated per test. It is keyed by `agentRef`, and empty means "this cockpit
+// cannot place any of them", which is the honest default and leaves the mark on
+// its glyph. That the map reaches the same agents the panel's roster draws is
+// `room-agent-faces.test.tsx`.
+const faces: { current: Map<string, { emoji: string; color: string; source: string }> } = {
+  current: new Map(),
+};
+vi.mock('@/layers/features/room-management', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/features/room-management')>();
+  return {
+    ...actual,
+    openRoomPanel: (focus: string, roomId: string) => openRoomPanel(focus, roomId),
+    useRoomFaces: () => faces.current,
+  };
+});
 
 afterEach(() => {
   cleanup();
+  openRoomPanel.mockClear();
+  faces.current = new Map();
   working.count = 0;
   teamRoomId.current = 'team-room';
   vi.clearAllMocks();
@@ -150,23 +165,64 @@ describe('ChannelsBar', () => {
     expect(screen.getByText('Archived')).toBeInTheDocument();
   });
 
+  it('wears the agent’s own face for a one-to-one, and a # for a channel', () => {
+    // The gap phase R2 closes. A one-to-one has had no sidebar row since
+    // `sidebar-simplification` D2 and no masthead since phase R1, so between the
+    // two its agent's face was drawn nowhere at all — and R1 could not draw one
+    // here, because the join lived in a layer this widget may not reach. It is a
+    // feature-layer hook now, read rather than re-made.
+    faces.current = new Map([['ref-ana', { emoji: '🦊', color: '#e07b39', source: 'manifest' }]]);
+    const withAna = room({
+      kind: 'dm',
+      slug: null,
+      title: 'Ana',
+      members: [
+        {
+          roomId: 'room-1',
+          authorId: 'author-ana',
+          responseMode: 'always',
+          joinedAt: '2026-08-10T09:00:00.000Z',
+          joinedSeq: 0,
+          lastReadSeq: 0,
+          origin: 'local',
+          author: {
+            id: 'author-ana',
+            kind: 'agent',
+            displayName: 'Ana',
+            handle: 'ana',
+            agentRef: 'ref-ana',
+          },
+        },
+      ] as RoomWithRoster['members'],
+    });
+    const mark = () => document.querySelector('[data-slot="room-avatar"]');
+    const { unmount } = renderBar(withAna);
+    expect(mark()).toHaveTextContent('🦊');
+    unmount();
+
+    // A channel's mark is its `#`, whoever is in it — the face answers "who is
+    // this with", which is a question only a direct message asks.
+    renderBar(room({ members: members(3) }));
+    expect(mark()).not.toHaveTextContent('🦊');
+  });
+
   it('says how a bridged room sees messages', () => {
     renderBar(room({ bridge: { visibility: 'partial', platformTitle: 'Ops' } }));
     expect(screen.getByText('sees mentions only')).toBeInTheDocument();
   });
 
   it('counts the room’s members, and opens them when pressed', async () => {
-    // The focus is the part of this that survives phase R2, when the same press
-    // opens the room right panel instead of the sheet.
+    // Since phase R2 the press opens the right panel's Room tab on the roster.
+    // The chip names what the reader wanted, not which surface answers it —
+    // which is why re-pointing it from the modal to the panel was one line.
     const user = userEvent.setup();
     renderBar(room({ members: members(3) }));
 
     const chip = screen.getByRole('button', { name: '3 members' });
-    expect(screen.queryByTestId('room-details')).not.toBeInTheDocument();
+    expect(openRoomPanel).not.toHaveBeenCalled();
 
     await user.click(chip);
-    expect(screen.getByTestId('room-details')).toBeInTheDocument();
-    expect(detailsDialog).toHaveBeenCalledWith(expect.objectContaining({ focus: 'members' }));
+    expect(openRoomPanel).toHaveBeenCalledWith('members', 'room-1');
   });
 
   it('refuses to name #team here, because this route redirects it to Home', () => {

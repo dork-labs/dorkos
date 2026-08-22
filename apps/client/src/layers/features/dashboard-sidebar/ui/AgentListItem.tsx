@@ -3,7 +3,7 @@ import { BellOff } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { getAgentDisplayName } from '@/layers/shared/lib';
-import { SidebarRow } from '@/layers/shared/ui';
+import { SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
 import { AgentAvatar, type AgentVisual } from '@/layers/entities/agent';
 import { useAgentHottestStatus } from '@/layers/entities/session';
 import { useAgentRowMenuNodes } from './AgentRowMenuItems';
@@ -75,6 +75,8 @@ interface AgentListItemProps {
   onNewSession: () => void;
   /** Drag bindings applied to the row's root when the sidebar drag layer is active. */
   sortable?: SortableBindings;
+  /** Continuity motion for this row's list item (spec D5), passed straight through. */
+  rowMotion?: SidebarRowMotion;
 }
 
 /**
@@ -108,6 +110,7 @@ export function AgentListItem({
   onSessionClick,
   onNewSession,
   sortable,
+  rowMotion,
 }: AgentListItemProps) {
   const displayName =
     displayNameProp ?? getAgentDisplayName(agent, path.split('/').pop() ?? 'Agent');
@@ -205,6 +208,7 @@ export function AgentListItem({
         menuNodes={menuNodes}
         actionsLabel="Agent actions"
         drag={sortable}
+        {...(rowMotion === undefined ? {} : { rowMotion })}
         className="font-medium"
         trailing={
           <>

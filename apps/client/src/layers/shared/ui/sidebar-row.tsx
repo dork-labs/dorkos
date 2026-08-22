@@ -10,8 +10,9 @@
  *
  * @module shared/ui/sidebar-row
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import type { CSSProperties, HTMLAttributes, ReactNode, Ref, RefObject } from 'react';
+import { motion, type MotionProps } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import {
   useIsMobile,
@@ -28,7 +29,7 @@ import {
   hasSecondLine,
 } from '@/layers/shared/lib/row-grammar';
 import { IDENTITY_MARK_GROUP } from './identity-avatar';
-import { SidebarMenuItem } from './sidebar';
+import { SidebarMenuItem, SIDEBAR_MENU_ITEM_ATTRS, SIDEBAR_MENU_ITEM_CLASS } from './sidebar';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 import { TOUCH_TARGET_MIN_H } from './touch-target';
 
@@ -211,6 +212,31 @@ export interface RowDragBindings {
 }
 
 /**
+ * What the sidebar's continuity layer puts on a row's list item (spec
+ * `sidebar-simplification` D5).
+ *
+ * **Passed in rather than decided here**, exactly like {@link RowDragBindings}:
+ * a row has no idea whether it just arrived, whether its section reorders, or
+ * whether anything is holding the order still — those are the panel's facts, and
+ * `shared/` may not reach into `features/` to ask. This component's whole job is
+ * to put them on the right element.
+ */
+export interface SidebarRowMotion extends Pick<
+  MotionProps,
+  'layout' | 'layoutDependency' | 'initial' | 'animate' | 'exit' | 'transition'
+> {
+  /**
+   * The row turned up while the operator was looking, so it tints once.
+   *
+   * Stamped as `data-arrived`, which a `motion-safe:` CSS keyframe reads. It is
+   * an attribute rather than a motion prop because a background colour is the
+   * one thing the FLIP must NOT own — a colour that animated through `layout`
+   * would restart every time the row moved.
+   */
+  arrived?: boolean;
+}
+
+/**
  * The row's menu, and the name its "⋮" answers to.
  *
  * One or the other is not a state this component can render honestly — a menu
@@ -226,8 +252,20 @@ export type SidebarRowMenu =
       actionsLabel: string;
       /** Width class for the menus. */
       menuWidth?: string;
+      /**
+       * The reader has reached for this row's menu — see
+       * {@link SidebarMenuSurfaceProps.onMenuIntent}. A row that passes this may
+       * pass an empty `menuNodes` until it fires, and still keeps its "⋮" and
+       * its right-click target.
+       */
+      onMenuIntent?: () => void;
     }
-  | { menuNodes?: never; actionsLabel?: never; menuWidth?: never };
+  | {
+      menuNodes?: never;
+      actionsLabel?: never;
+      menuWidth?: never;
+      onMenuIntent?: never;
+    };
 
 /** Props for {@link SidebarRow}. */
 export interface SidebarRowProps {
@@ -410,6 +448,14 @@ export interface SidebarRowProps {
    * bindings renders the same wrapper with nothing on it.
    */
   drag?: RowDragBindings;
+  /**
+   * Continuity motion for this row's list item — arrival, departure, and the
+   * FLIP that follows it when the list around it reorders.
+   *
+   * Absent means a plain `<li>` and no motion component at all, which is what
+   * every row outside the sidebar panel gets.
+   */
+  rowMotion?: SidebarRowMotion;
 }
 
 /**
@@ -441,6 +487,7 @@ export function SidebarRow({
   menuNodes = [],
   actionsLabel,
   menuWidth,
+  onMenuIntent,
   isActive = false,
   emphasized = false,
   muted = false,
@@ -452,6 +499,7 @@ export function SidebarRow({
   className,
   buttonRef,
   drag,
+  rowMotion,
 }: SidebarRowProps & SidebarRowMenu) {
   // Read here rather than taken as a prop: "is there a hover to reveal on" is a
   // fact about the device, and every caller was answering it with the same
@@ -590,8 +638,8 @@ export function SidebarRow({
       </button>
     );
 
-  return (
-    <SidebarMenuItem>
+  const inside = (
+    <>
       <div
         ref={drag?.setNodeRef}
         style={drag?.style}
@@ -600,7 +648,10 @@ export function SidebarRow({
           drag !== undefined &&
             'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
           drag?.isDragging && 'opacity-40',
-          drag?.isOver && 'ring-sidebar-ring ring-2'
+          // **An inset ring, not an outer one** (D5): the drop target is inside
+          // the section's own body, which is clipped while it folds, and a ring
+          // drawn outside the border box is the first thing that clipping eats.
+          drag?.isOver && 'sidebar-drop-ring'
         )}
       >
         <SidebarMenuSurface
@@ -608,6 +659,7 @@ export function SidebarRow({
           actionsLabel={actionsLabel ?? ''}
           menuWidth={menuWidth}
           hideActionsTrigger={editor !== undefined}
+          {...(onMenuIntent === undefined ? {} : { onMenuIntent })}
         >
           {row}
           {glyphAction !== undefined && editor === undefined && !isMobile && (
@@ -656,6 +708,40 @@ export function SidebarRow({
         </SidebarMenuSurface>
       </div>
       {expansion}
-    </SidebarMenuItem>
+    </>
+  );
+
+  // **A `motion.li`, written out rather than `motion.create(SidebarMenuItem)`.**
+  // The FLIP has to be on the list item itself — a wrapper inside it travels
+  // WITH the row and measures nothing that moved — and `motion.create` would
+  // have to run at module scope to keep one stable component type. That call
+  // runs the moment anything imports the `shared/ui` barrel, which is most of
+  // the app: measured, it broke 17 test suites that mock `motion/react` without
+  // a `create` and never render a sidebar row. `motion.li` is reached at render
+  // time and only by a row that asked for motion, so nothing else pays. The
+  // item's identity lives in {@link SIDEBAR_MENU_ITEM_ATTRS} so the two `<li>`s
+  // cannot drift into different things that merely look alike.
+  if (rowMotion === undefined) return <SidebarMenuItem>{inside}</SidebarMenuItem>;
+  return (
+    <motion.li
+      {...SIDEBAR_MENU_ITEM_ATTRS}
+      layout={rowMotion.layout}
+      layoutDependency={rowMotion.layoutDependency}
+      initial={rowMotion.initial}
+      animate={rowMotion.animate}
+      exit={rowMotion.exit}
+      transition={rowMotion.transition}
+      // Present or absent, never `false`: the CSS keyframe fires on the
+      // attribute APPEARING, and `data-arrived="false"` would fire it too.
+      {...(rowMotion.arrived === true ? { 'data-arrived': '' } : {})}
+      // The tint that attribute turns on, and the rounding it needs so a 200 ms
+      // wash does not paint a square over a rounded row.
+      className={cn(
+        SIDEBAR_MENU_ITEM_CLASS,
+        'motion-safe:data-arrived:animate-sidebar-row-arrived rounded-md'
+      )}
+    >
+      {inside}
+    </motion.li>
   );
 }

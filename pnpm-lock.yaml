@@ -146,6 +146,9 @@ importers:
       '@reactour/tour':
         specifier: ^3.8.0
         version: 3.8.0(react@19.2.7)
+      '@tanstack/query-sync-storage-persister':
+        specifier: ^5.101.1
+        version: 5.101.1
       '@tanstack/react-form':
         specifier: ^1.33.0
         version: 1.33.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -153,6 +156,9 @@ importers:
         specifier: ^5.101.1
         version: 5.101.1(react@19.2.7)
       '@tanstack/react-query-devtools':
+        specifier: ^5.101.1
+        version: 5.101.1(@tanstack/react-query@5.101.1(react@19.2.7))(react@19.2.7)
+      '@tanstack/react-query-persist-client':
         specifier: ^5.101.1
         version: 5.101.1(@tanstack/react-query@5.101.1(react@19.2.7))(react@19.2.7)
       '@tanstack/react-router':
@@ -7127,6 +7133,18 @@ packages:
         integrity: sha512-37RQ9U2PxlXQiv1era2t+uHgVhmiyvxqTMu30+KoVf0rufiucu6rpGRKFJk61Wh5OAZFKqCQd6lxTzFWfLZiuQ==,
       }
 
+  '@tanstack/query-persist-client-core@5.101.1':
+    resolution:
+      {
+        integrity: sha512-rR5Er6jmdI3Oo8o6Wc0ceM6glDU4umgePu2IxM3Gy2UvPqcQONduxxxSzU1+F17mpS09XHqHKmj0Irhfb2cGYg==,
+      }
+
+  '@tanstack/query-sync-storage-persister@5.101.1':
+    resolution:
+      {
+        integrity: sha512-IBb5oYZ6ZBRz4KiBsqO0ufdZd77Jg91yFswULstGB6fSaAJA2mdwCa5jhfjmPMhVl/hRLstFZLS11CIQVMKjCg==,
+      }
+
   '@tanstack/react-form@1.33.0':
     resolution:
       {
@@ -7143,6 +7161,15 @@ packages:
     resolution:
       {
         integrity: sha512-OXFR9XKdEslraq3cpl3kCUeNvTIq/xGWEZiFZdn2bLB/q4WxSALMEDKYZ5yYjMQytsfnQxwQYqV4qtVEf0nuog==,
+      }
+    peerDependencies:
+      '@tanstack/react-query': ^5.101.1
+      react: ^18 || ^19
+
+  '@tanstack/react-query-persist-client@5.101.1':
+    resolution:
+      {
+        integrity: sha512-bBSne+3+28EZ/Ch5a06J0YQi6d5yaT2G+vyHAyhzwzYA1FAEAFe6Ou6TsNVQaT6ef6pFShU73FL/NB4guTWNng==,
       }
     peerDependencies:
       '@tanstack/react-query': ^5.101.1
@@ -21988,6 +22015,15 @@ snapshots:
 
   '@tanstack/query-devtools@5.101.1': {}
 
+  '@tanstack/query-persist-client-core@5.101.1':
+    dependencies:
+      '@tanstack/query-core': 5.101.1
+
+  '@tanstack/query-sync-storage-persister@5.101.1':
+    dependencies:
+      '@tanstack/query-core': 5.101.1
+      '@tanstack/query-persist-client-core': 5.101.1
+
   '@tanstack/react-form@1.33.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
       '@tanstack/form-core': 1.33.0
@@ -21999,6 +22035,12 @@ snapshots:
   '@tanstack/react-query-devtools@5.101.1(@tanstack/react-query@5.101.1(react@19.2.7))(react@19.2.7)':
     dependencies:
       '@tanstack/query-devtools': 5.101.1
+      '@tanstack/react-query': 5.101.1(react@19.2.7)
+      react: 19.2.7
+
+  '@tanstack/react-query-persist-client@5.101.1(@tanstack/react-query@5.101.1(react@19.2.7))(react@19.2.7)':
+    dependencies:
+      '@tanstack/query-persist-client-core': 5.101.1
       '@tanstack/react-query': 5.101.1(react@19.2.7)
       react: 19.2.7
 
@@ -22851,7 +22893,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.1.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.10)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@7.3.6(@types/node@24.12.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
+      vitest: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.10)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@6.4.2(@types/node@24.12.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
 
   '@vitest/expect@4.1.10':
     dependencies:

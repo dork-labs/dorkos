@@ -409,6 +409,21 @@ function IdentityAvatar({
   return (
     <span
       data-slot="identity-avatar"
+      // Which face this disc settled on, in one readable value.
+      //
+      // **For the tests that have to catch a face CHANGING.** An agent drawn
+      // from its directory's hash and an agent drawn from its manifest are two
+      // different emoji, and the defect that costs (DOR-1143) is the row
+      // swapping one for the other a beat after it painted. Reading that from
+      // the DOM otherwise means reaching into whichever of three branches drew
+      // the face, and the emoji branch is an `aria-hidden` span a query has no
+      // business knowing about. One attribute, always present, so a browser test
+      // can compare first paint against settled without knowing any of that.
+      // `fallback` is a node — usually a letter, sometimes a brand mark — so
+      // only the letter case can name itself here; a mark reads as "glyph".
+      data-face={
+        drawsPhoto ? 'photo' : (emoji ?? (typeof fallback === 'string' ? fallback : 'glyph'))
+      }
       {...props}
       className={cn(
         identityAvatarVariants({ size, shape: drawnShape, variant: drawnVariant }),

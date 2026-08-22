@@ -107,6 +107,14 @@ describe('OneBar — a route bar cannot reach past the cluster (I1)', () => {
       'Inbox',
       'Toggle right panel',
     ]);
+
+    // I1 by name: the cluster is addressable via its slot, and it is the row's
+    // LAST element — a bar that rendered anything after it would make the slot
+    // stop being :last-child. This is the assertion e2e can reuse verbatim.
+    const cluster = document.querySelector('[data-slot="bar-fixed-cluster"]');
+    expect(cluster).not.toBeNull();
+    expect(cluster?.parentElement?.lastElementChild).toBe(cluster);
+    expect(cluster?.querySelectorAll('button')).toHaveLength(3);
   });
 });
 

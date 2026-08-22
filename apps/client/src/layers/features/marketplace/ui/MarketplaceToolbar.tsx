@@ -37,12 +37,12 @@ const SORT_OPTIONS: ReadonlyArray<{ value: MarketplaceSort; label: string }> = [
  * the sort selector.
  *
  * The filter facets (package type and category) now live in the sidebar
- * takeover panel, so this header stays a slim "search + sort" toolbar — the two
+ * takeover panel, so this stays a slim "search + sort" toolbar — the two
  * controls that shape *how* results are found and ordered, separated from the
  * *what-to-filter* facets. Both write to the URL via `useMarketplaceParams`, so
  * the state survives refresh and is shareable as a link.
  */
-export function MarketplaceHeader() {
+export function MarketplaceToolbar() {
   const { sort, setSort } = useMarketplaceParams();
   const { data: packages } = useMarketplacePackages();
 

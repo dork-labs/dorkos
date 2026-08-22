@@ -1,20 +1,36 @@
 ---
 title: Your sidebar
-description: What Heads up, Today and Library are, why things move between them, and what the tabs on your phone do
+description: What Heads up and Today are, why things move between them, how sections work, and what the tabs on your phone do
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
 # Your sidebar
 
-The column down the left of DorkOS has three parts, stacked in this order:
+The column down the left of DorkOS reads as two levels: a heading, and the rows under it. Every
+heading looks the same and every row starts on the same line, so a channel, a conversation and an
+agent all line up.
+
+The headings arrive in this order:
 
 1. **Heads up** is what needs you right now.
 2. **Today** is what you were working on.
-3. **Library** is the structure you built yourself.
+3. **Your own sections**, then **Pins**, **Channels**, **Direct messages** and **Agents**.
 
-They are not three lists of the same things. Each one answers a different question, and a
-conversation can be in more than one of them at the same time.
+The first two are worked out for you. The rest is the structure you built yourself. A conversation
+can appear in more than one place at the same time, because each heading answers a different
+question.
+
+## Every heading folds
+
+Click a heading to hide what is under it. Hold `Alt` (or `Option` on a Mac) while you click and
+the whole panel folds at once.
+
+A folded heading keeps telling you what it is hiding, like "12 · 3 unread". Heads up shows how
+many things still need you, so folding it can never quietly bury something you have to answer.
+
+Getting started is the one heading that does not fold, because it goes away on its own once you
+have done what it suggests.
 
 ## Heads up: what needs you
 
@@ -23,18 +39,17 @@ Only four things are allowed in:
 - an agent asking permission to do something
 - an agent asking you a question
 - a session that stopped with an error
-- one gentle nudge about a session that has gone quiet
+- an agent asking you to approve a schedule it wants to run
 
 That is the whole list. Mentions, unread channels, direct messages and background work never
-appear here. So a Heads up zone with something in it always means something.
+appear here. So a Heads up heading with something under it always means something.
 
 It shows up to three at a time, plus a "+ N more" row that takes you to the home page where the
 full list lives. Agents that are simply busy are summed into one "N working" line rather than a
 row each. When the last thing needing you is done, Heads up says "All clear" for a moment and
 then folds away.
 
-Nothing here snoozes. The one thing you can wave away is the nudge about a session that has gone
-quiet. Everything else leaves when the thing it is about is resolved, and not before.
+Nothing here snoozes. Everything leaves when the thing it is about is resolved, and not before.
 
 <Callout type="info">
   On a fresh install, **Getting started** sits in the same slot and suggests what you have not done
@@ -63,23 +78,43 @@ Anything you have not touched since 4am leaves Today the next morning. The conve
 open stays, and so does anything addressed to you by name. Nothing is deleted: it is all still
 one ⌘K away.
 
-## Library: what you built
+## What you built: sections, pins, channels and agents
 
-Your pins, your channels, your direct messages, your agents and your groups. Nothing here moves on
-its own, and nothing in it moved when the sidebar was redesigned.
+Below Today is the part nothing moves on its own.
 
-Your pins and the groups you make by hand keep the order you put them in. Your channels and direct
-messages are listed by name, and each section's `⋮` menu can sort it differently.
+**Sections** are the groups you make. A section can hold anything you see in the sidebar: a
+channel, a conversation, an agent, or a mix. Your sections sit at the top of this part of the
+list, above Pins and Channels, so the thing you organised is the thing you see first. Make one
+from **New › Section**, or right-click any row and pick **New section**.
 
-This is the calm part of the sidebar. It never asks you for anything, and it never shows a count
-on your phone.
+Some sections fill themselves from a rule you set, like "everything that ran today". The rest you
+fill by hand, by dragging rows into them.
 
-Click a section's name to fold it away. Hold `Alt` (or `Option` on a Mac) while you click and
-every section folds at once. A folded section keeps telling you what is inside it: the unread
-count and the "someone is working" dot move up onto its name.
+**Pins** and the sections you fill by hand keep the order you put them in. **Channels** and
+**Direct messages** are listed by name, and each one remembers if you would rather sort it by
+what happened most recently. That choice lives in the heading's `⋮` menu.
 
-Sections appear when you have something to put in them. There is no "Direct messages" heading
+**Agents** stays short. It shows the agents you have used lately and the ones you pinned, then a
+single **All N agents →** row that opens your team page. An agent you have not touched in a month
+no longer costs a row forever, and "lately" counts the last time you looked at it, not only the
+last time it ran. If you have eight agents or fewer, you still see all of them.
+
+Headings appear when you have something to put under them. There is no "Direct messages" heading
 until you have a conversation, and no "Pins" until you pin something.
+
+## One way in to each agent
+
+Clicking an agent opens your chat with it, and that is the only place that chat lives. An agent
+shows up once in the sidebar, never twice.
+
+The same rule runs the **New › Group message** picker. Pick one agent and you land in that same
+chat. Pick two or more and you start a group message, and its name grows to include whoever you
+add, unless you named the conversation yourself.
+
+Your older one-on-one messages are all still there. Nothing was deleted or moved. Whenever one of
+them has something new for you it shows up under Today, and the agent's own row gets a dot beside
+it. Find any of them with ⌘K or from the agent's profile. Chats connected from Telegram or Slack
+keep their own row, because there is a real person on the other end.
 
 ## Why things move in and out
 
@@ -87,28 +122,39 @@ Heads up and Today are **worked out for you**. DorkOS decides what is in them, f
 you and from what you have been doing. That is why you cannot drag a row into either one. If you
 try, DorkOS says so and tells you what to do instead.
 
-Library is **yours**. Pin things, gather them into groups, and drag them around inside a pin list
-or a group you made by hand. What you arrange there stays arranged.
+Everything below them is **yours**. Pin things, gather them into sections, and drag them around
+inside a pin list or a section you fill by hand. What you arrange there stays arranged.
 
-So the rule is: if you want something to stay in one place, pin it to Library. Everything else
-comes and goes on its own, and nothing is ever lost when it does.
+So the rule is: if you want something to stay in one place, pin it. Everything else comes and
+goes on its own, and nothing is ever lost when it does.
+
+## The card at the bottom
+
+One card sits just above the row of buttons at the bottom, and only ever one. Whatever matters
+most gets the spot: finishing setup, then an update that is ready, then a question about your
+work, then a tip.
+
+Every card has an × and hiding one sticks. Your answer is saved to your account rather than to
+the browser you happened to be using, so a card you hide on your laptop stays hidden on your
+phone.
 
 ## Where the old sidebar's things went
 
 | You used to…                                           | Now                                                                           |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| Hunt for the right `+` to start something              | One **New** button at the top. A section's `+` opens it with that item picked |
+| Hunt for the right `+` to start something              | One **New** button at the top. A heading's `+` opens it with that item picked |
 | Search from memory with ⌘K                             | A "Jump to anything…" pill under the New button opens the same search         |
 | Read a row of icons and a version number at the bottom | One slim strip: Home, Team, Marketplace, Connections, and **✦ Ask DorkBot**   |
 | Open Settings or your profile from two places          | Each has one door. The `…` in the footer strip keeps sign-out, theme and help |
-| Find your pins, channels, agents and groups            | Exactly where you left them, in Library                                       |
+| Find your pins, channels, agents and groups            | Exactly where you left them. Groups are called sections now                   |
+| Read "Library" above your channels and agents          | The word is gone from the screen. Screen readers still hear it                |
 
 Two things worth knowing. The version number is gone from the bottom of the sidebar; it lives in
 the menu at the top now, with a "Check for updates" beside it. When a new version is genuinely
-waiting, an "Update ready" pill appears above the footer strip and goes away once you have it.
+waiting, an "Update ready" card appears above the footer strip and goes away once you have it.
 
 And starting your **first** direct message moved, because the "Direct messages" heading now waits
-until you have one. Use **New › Direct message**. Once you have a conversation, the `+` beside
+until you have one. Use **New › Group message**. Once you have a conversation, the `+` beside
 Direct messages works as it always did.
 
 <Callout type="info">
@@ -123,7 +169,7 @@ bottom instead:
 
 - **Home** is Heads up and Today together. The number on the tab is the same count Heads up
   shows, so it only ever means "this many agents are waiting on you".
-- **Library** is your channels, direct messages, agents and pins. It never shows a number.
+- **All** is your sections, channels, direct messages, agents and pins. It never shows a number.
 - **DorkBot** opens a conversation with the assistant that knows how DorkOS works.
 - **You** holds your account and the rest of the app.
 
@@ -139,3 +185,4 @@ Three things work differently under a thumb:
   clear.
 - **Approvals appear in Home**, with Allow and Don't allow on the card. You can unblock an agent
   without opening the conversation it came from.
+- The card at the bottom of the sidebar appears at the bottom of Home instead.

@@ -134,16 +134,23 @@ export function useUpdateSidebarPrefs(): UpdateSidebarPrefs {
     [queryClient]
   );
 
+  // **Keyed on `mutate`, never on the mutation result.** TanStack returns a
+  // fresh result object on every render but keeps `mutate`/`mutateAsync` stable
+  // for the life of the observer, so depending on the whole result gave these
+  // two a new identity on every render — and every memo that closes over them,
+  // including the sidebar's whole row chrome, rebuilt with them
+  // (`specs/sidebar-simplification` D8).
+  const { mutate, mutateAsync } = mutation;
   const update = useCallback(
     (updater: (prev: SidebarPrefs) => SidebarPrefs) => {
-      mutation.mutate(resolveNext(updater));
+      mutate(resolveNext(updater));
     },
-    [mutation, resolveNext]
+    [mutate, resolveNext]
   );
 
   const updateAsync = useCallback(
-    (updater: (prev: SidebarPrefs) => SidebarPrefs) => mutation.mutateAsync(resolveNext(updater)),
-    [mutation, resolveNext]
+    (updater: (prev: SidebarPrefs) => SidebarPrefs) => mutateAsync(resolveNext(updater)),
+    [mutateAsync, resolveNext]
   );
 
   return { update, updateAsync, isPending: mutation.isPending, isError: mutation.isError };
@@ -568,8 +575,50 @@ export function unmuteItem(prev: SidebarPrefs, ref: SidebarItemRef): SidebarPref
  * muted group dims its rows through the section's own filter, and a room row
  * carries no live activity emphasis to suppress on top of that.
  *
- * @param prefs - Current sidebar prefs.
+ * **Takes the LIST, not the whole prefs.** Every caller memoizes this, and a
+ * memo can only be keyed on what the function actually reads: given the whole
+ * object, folding a section or renaming one produces a new `prefs` and therefore
+ * a new Set, which is a changed prop for everything downstream of it
+ * (`specs/sidebar-simplification` D8).
+ *
+ * @param muted - `ui.sidebar.muted`, the individually-silenced list.
  */
-export function mutedRoomIds(prefs: SidebarPrefs): Set<string> {
-  return new Set(prefs.muted.flatMap((ref) => (ref.kind === 'room' ? [ref.roomId] : [])));
+export function mutedRoomIds(muted: readonly SidebarItemRef[]): Set<string> {
+  return new Set(muted.flatMap((ref) => (ref.kind === 'room' ? [ref.roomId] : [])));
+}
+
+/**
+ * The hand-made section each room is filed into, by room id.
+ *
+ * A room in no section is simply absent. Lives beside the prefs for the reason
+ * {@link mutedRoomIds} does: a row's menu ticks the section it is in, and the
+ * panel that hands it that answer must be reading the same list the drag layer
+ * writes. It takes the list for that function's reason too.
+ *
+ * @param groups - `ui.sidebar.groups`, the stored sections.
+ */
+export function roomSectionIds(groups: readonly SidebarGroup[]): Map<string, string> {
+  const byRoomId = new Map<string, string>();
+  for (const group of groups) {
+    for (const item of group.items) if (item.kind === 'room') byRoomId.set(item.roomId, group.id);
+  }
+  return byRoomId;
+}
+
+/**
+ * The sections "Move to section ▸" may offer, in stored order.
+ *
+ * **Smart sections are left out, and that is a correctness rule rather than a
+ * tidiness one.** A smart section's membership comes from rules about agents and
+ * it draws those derived members instead of its stored `items` — while
+ * `groupedRoomIds` still counts a room filed there as grouped and hides it from
+ * Channels. Offering one would file a room somewhere no section draws it: the
+ * row would simply vanish. The drag layer refuses the same drop.
+ *
+ * @param groups - `ui.sidebar.groups`, the stored sections.
+ */
+export function moveTargetGroups(groups: readonly SidebarGroup[]): { id: string; name: string }[] {
+  return groups
+    .filter((group) => group.kind !== 'smart')
+    .map((group) => ({ id: group.id, name: group.name }));
 }

@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   type CSSProperties,
   type HTMLAttributes,
   type ReactNode,
@@ -105,14 +106,28 @@ function SortableInner({
     },
     [setNodeRef, setActivatorNodeRef]
   );
-  const style: CSSProperties = {
-    transform: transform
-      ? `translate3d(${Math.round(transform.x)}px, ${Math.round(transform.y)}px, 0)`
-      : undefined,
-    transition: transition ?? undefined,
-  };
-  const handleProps = { ...attributes, ...(listeners ?? {}) } as HTMLAttributes<HTMLElement>;
-  return <>{render({ setNodeRef: setCombinedRef, handleProps, style, isDragging, isOver })}</>;
+  // **Memoized, because the row underneath is** (`specs/sidebar-simplification`
+  // D8). `RoomRow` is `React.memo` and takes these as one prop, so a fresh
+  // bindings object on every render of the panel would defeat the memo for every
+  // draggable row — which is all of them in the Library.
+  const style = useMemo<CSSProperties>(
+    () => ({
+      transform: transform
+        ? `translate3d(${Math.round(transform.x)}px, ${Math.round(transform.y)}px, 0)`
+        : undefined,
+      transition: transition ?? undefined,
+    }),
+    [transform, transition]
+  );
+  const handleProps = useMemo(
+    () => ({ ...attributes, ...(listeners ?? {}) }) as HTMLAttributes<HTMLElement>,
+    [attributes, listeners]
+  );
+  const bindings = useMemo<SortableBindings>(
+    () => ({ setNodeRef: setCombinedRef, handleProps, style, isDragging, isOver }),
+    [setCombinedRef, handleProps, style, isDragging, isOver]
+  );
+  return <>{render(bindings)}</>;
 }
 
 /**
@@ -138,7 +153,10 @@ function DroppableInner({ id, data, children }: DroppableProps) {
   return (
     <div
       ref={setNodeRef}
-      className={cn('rounded-md transition-shadow', isOver && 'ring-sidebar-ring ring-2')}
+      // An inset 2px ring at 45% of the ring colour, not a ring drawn outside
+      // the box and not a background wash (spec D5): the section's body is
+      // clipped while it folds, and this container is the first thing inside it.
+      className={cn('rounded-md transition-shadow', isOver && 'sidebar-drop-ring')}
     >
       {children}
     </div>

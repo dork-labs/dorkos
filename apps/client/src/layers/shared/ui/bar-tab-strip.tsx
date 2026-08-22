@@ -40,12 +40,6 @@ interface BarTabStripProps {
    */
   indicatorLayoutId: string;
   /**
-   * `bar` sits inside the 36px OneBar, sized to its labels so chips can sit
-   * beside them; `row` is a standalone strip that owns a full row and its bottom
-   * hairline, with 44px touch targets on a phone.
-   */
-  density?: 'bar' | 'row';
-  /**
    * `data-testid` for the scroller. The edge fades derive theirs from it
    * (`<testId>-fade-start` / `-fade-end`), so a strip that is targeted at all is
    * targeted consistently.
@@ -98,14 +92,12 @@ export function BarTabStrip({
   activeTabId,
   label,
   indicatorLayoutId,
-  density = 'bar',
   testId,
   className,
 }: BarTabStripProps) {
   const scrollerRef = useRef<HTMLElement>(null);
   const activeRef = useRef<HTMLAnchorElement>(null);
   const edges = useScrollOverflow(scrollerRef, 'horizontal');
-  const isRow = density === 'row';
 
   // Reveal on mount and on every change of which tab is active. A click reveals
   // its own tab for free (the browser scrolls what it focuses), so this is for
@@ -161,7 +153,7 @@ export function BarTabStrip({
         //
         // The shell's cross-fade wrapper has to stretch as well, or this one has
         // nothing taller to stretch to (`AppShell.tsx`).
-        isRow ? 'shrink-0 border-b' : 'flex min-w-0 flex-initial self-stretch',
+        'flex min-w-0 flex-initial self-stretch',
         className
       )}
     >
@@ -178,7 +170,7 @@ export function BarTabStrip({
           // scrollbar was eating 11px of its own tap target. It cannot be a
           // utility class here: the global `* { scrollbar-width: thin }` it has
           // to beat is unlayered, so it outranks anything in `utilities`.
-          isRow ? 'px-2' : 'min-w-0 flex-1'
+          'min-w-0 flex-1'
         )}
       >
         {tabs.map((tab) => {
@@ -213,7 +205,7 @@ export function BarTabStrip({
                   // One Bar makes on a phone — one 36px row instead of two rows
                   // totalling 80px. Flagged at the spec's phone checkpoint, not
                   // silently absorbed.
-                  isRow ? 'min-h-11 px-3 md:min-h-9' : 'h-full px-2.5',
+                  'h-full px-2.5',
                   // An INSET ring, not the shared `focus-ring` box-shadow. Setting
                   // `overflow-x: auto` computes `overflow-y` to `auto` as well, and
                   // this nav's content box is exactly one tab tall — so a ring drawn
@@ -245,29 +237,20 @@ export function BarTabStrip({
         })}
       </nav>
       {/* Decorative, and never in the way of the tab underneath: the fade covers
-          the full height of whatever target it sits over — the row in the bar,
-          44px in a standalone row — so anything that swallowed a tap would cost more
-          than the cue is worth. In `row` density it stops short of the bottom
-          hairline (`bottom-px`) so the border reads as one unbroken line under
-          it. */}
+          the full height of the row it sits over, so anything that swallowed a
+          tap would cost more than the cue is worth. */}
       {edges.start && (
         <div
           aria-hidden
           data-testid={testId && `${testId}-fade-start`}
-          className={cn(
-            'from-background via-background/70 pointer-events-none absolute top-0 left-0 w-8 bg-gradient-to-r to-transparent',
-            isRow ? 'bottom-px' : 'bottom-0'
-          )}
+          className="from-background via-background/70 pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r to-transparent"
         />
       )}
       {edges.end && (
         <div
           aria-hidden
           data-testid={testId && `${testId}-fade-end`}
-          className={cn(
-            'from-background via-background/70 pointer-events-none absolute top-0 right-0 w-8 bg-gradient-to-l to-transparent',
-            isRow ? 'bottom-px' : 'bottom-0'
-          )}
+          className="from-background via-background/70 pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l to-transparent"
         />
       )}
     </div>

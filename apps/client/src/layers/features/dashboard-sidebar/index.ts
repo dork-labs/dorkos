@@ -48,6 +48,15 @@ export { useSidebarModel } from './model/use-sidebar-model';
 // a geometry regression shows up there too (spec `sidebar-simplification` D6).
 export { SidebarSkeleton } from './ui/boot/SidebarSkeleton';
 export { REVEAL_CONTAINER, REVEAL_ZONE, revealTransition } from './ui/boot/sidebar-reveal';
+// The continuity layer, for the Dev Playground's "Sidebar Motion" page. Four
+// symbols and no loose constants: the page draws the SHIPPED fold body and the
+// SHIPPED drag chip, and builds its rows' motion through the same builder the
+// panel uses — so a retune moves the page rather than leaving a lookalike that
+// quietly stays right (spec `sidebar-simplification` D5).
+export { buildRowMotion, sectionLayoutKey } from './ui/motion/sidebar-motion';
+export { SidebarFoldBody } from './ui/motion/SidebarFoldBody';
+export { DragLiftChip } from './ui/motion/DragLiftChip';
+export { useArrivedRows } from './ui/motion/use-arrived-rows';
 // One-time migration of pre-redesign pins. `DashboardSidebar` runs it, and on a
 // phone `DashboardSidebar` is never mounted — so the tabs run it instead, or an
 // operator who only ever opens DorkOS on their phone keeps their old pins

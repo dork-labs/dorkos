@@ -79,6 +79,46 @@ describe('registerRightPanelTabs', () => {
     expect(terminal?.visibleWhen?.(ctx(true))).toBe(true); // web transport with a PTY
   });
 
+  it('offers the Room tab on the two routes that show a room, and nowhere else', () => {
+    const { register } = useExtensionRegistry.getState();
+    registerRightPanelTabs(register);
+
+    const room = useExtensionRegistry
+      .getState()
+      .getContributions('right-panel')
+      .find((c) => c.id === 'room');
+    expect(room?.title).toBe('Room');
+    // Contextual, not global: it is the panel's default WHERE it applies, and
+    // absent everywhere else — which is what `isGlobal` would break.
+    expect(room?.isGlobal).toBeUndefined();
+    expect(room?.visibleWhen?.({ ...ctx(true), pathname: '/channels' })).toBe(true);
+    expect(room?.visibleWhen?.({ ...ctx(true), pathname: '/' })).toBe(true);
+    expect(room?.visibleWhen?.(ctx(true))).toBe(false); // /session
+    expect(room?.visibleWhen?.({ ...ctx(true), pathname: '/team' })).toBe(false);
+  });
+
+  it('sorts the Room tab after Pulse but ahead of Profile', () => {
+    // Auto-select takes the first CONTEXTUAL tab in strip order, and Profile is
+    // visible off `/session` as soon as anybody has opened one this session —
+    // so a Room tab sorted after it would lose the room routes to a profile the
+    // reader opened an hour ago. Pulse stays leftmost either way (spec §5 case
+    // 9: its tab is still one press away).
+    const { register } = useExtensionRegistry.getState();
+    registerRightPanelTabs(register);
+
+    // Priority, not registration order: the strip and the auto-select both sort
+    // by it, and `getContributions` hands back the raw list — so an assertion
+    // about the array's order would stay green with the priority wrong.
+    const byId = new Map(
+      useExtensionRegistry
+        .getState()
+        .getContributions('right-panel')
+        .map((c) => [c.id, c.priority])
+    );
+    expect(byId.get('room')).toBeGreaterThan(byId.get('pulse')!);
+    expect(byId.get('room')).toBeLessThan(byId.get('profile')!);
+  });
+
   it('keeps Pulse global and always visible (no visibleWhen)', () => {
     const { register } = useExtensionRegistry.getState();
     registerRightPanelTabs(register);

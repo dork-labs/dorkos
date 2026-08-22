@@ -1,7 +1,7 @@
 ---
 id: 260819-210153
 title: One bottom-slot arbiter chooses among the sidebar's cards; dismissal lives in user config, not localStorage
-status: proposed
+status: accepted
 created: 2026-08-19
 spec: sidebar-simplification
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed.
+Accepted 2026-08-22 — implemented by PR #1137 (task 1.2, DOR-1369).
 
 ## Context
 

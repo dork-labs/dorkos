@@ -26,6 +26,7 @@ import {
   toDropDescriptor,
   type SidebarDndData,
 } from '../../model/use-sidebar-dnd';
+import { DragLiftChip } from '../motion/DragLiftChip';
 import { SidebarDndEnabledProvider } from './SidebarDndPrimitives';
 
 interface SidebarDndProps {
@@ -61,11 +62,9 @@ function DragOverlayContent({
       : data.type === 'item'
         ? itemName(data.ref)
         : '';
-  return (
-    <div className="bg-sidebar border-sidebar-border text-sidebar-foreground shadow-floating flex items-center rounded-md border px-2.5 py-1.5 text-xs font-medium">
-      {label}
-    </div>
-  );
+  // The lift itself is `DragLiftChip` — one component, so the Dev Playground
+  // shows the real chip and a retune moves both (spec D5).
+  return <DragLiftChip label={label} />;
 }
 
 /**
@@ -158,7 +157,12 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
         onDragCancel={() => setActiveData(null)}
       >
         {children}
-        <DragOverlay dropAnimation={null}>
+        {/* **dnd-kit's own settle, restored.** The overlay used to vanish at
+            the instant of the drop (`dropAnimation={null}`), so a row that had
+            travelled the length of the panel simply ceased to exist and the
+            eye had to find where it landed. The default drop animation returns
+            it to the slot it took (D5, "settle with a short spring"). */}
+        <DragOverlay>
           {activeData ? (
             <DragOverlayContent data={activeData} itemName={itemName} groupName={groupName} />
           ) : null}

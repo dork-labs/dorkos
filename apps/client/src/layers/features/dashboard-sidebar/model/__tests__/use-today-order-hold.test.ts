@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { SidebarRowModel } from '../build-sidebar-model';
 import { useTodayOrderHold } from '../holds/use-today-order-hold';
+import { sectionLayoutKey } from '../../ui/motion/sidebar-motion';
 
 /** A Today row, reduced to what the hold reads. */
 function row(key: string): SidebarRowModel {
@@ -131,5 +132,26 @@ describe('a send-driven reorder under a hovering pointer', () => {
       'session:a',
       'session:b',
     ]);
+  });
+
+  it('is what the continuity motion animates against, not the model’s order', () => {
+    // **The hold outranks the FLIP** (spec D5 (f)). `SidebarSection` derives the
+    // rows' `layoutDependency` from the rows it is given, and TodayZone gives it
+    // the HELD ones — so a reorder withheld from the eye is also withheld from
+    // motion. Wire the key off the builder's model instead and the rows would
+    // slide into an order the panel is not showing, which is the one thing worse
+    // than them popping.
+    const { result, rerender } = renderHook(
+      ({ rows }: { rows: SidebarRowModel[] }) => useTodayOrderHold(rows, null),
+      { initialProps: { rows: [A, B, C] } }
+    );
+    const held = sectionLayoutKey(result.current.rows);
+
+    act(() => result.current.handlers.onPointerEnter());
+    rerender({ rows: [C, A, B] });
+    expect(sectionLayoutKey(result.current.rows)).toBe(held);
+
+    act(() => result.current.handlers.onPointerLeave());
+    expect(sectionLayoutKey(result.current.rows)).not.toBe(held);
   });
 });

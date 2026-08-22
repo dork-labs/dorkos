@@ -185,6 +185,16 @@ export { humanizePackageName, packageDisplayLabel, isSingleEmoji } from './human
 export { readableForeground } from './readable-foreground';
 export { truncateMiddle } from './truncate-middle';
 export { queryClient, createQueryClientConfig, isStreamOwnedQuery } from './query-client';
+export {
+  createBootCache,
+  clearBootCache,
+  isBootQueryKey,
+  bootCacheStorageKey,
+  BOOT_CACHE_KEY_PREFIX,
+  BOOT_CACHE_DISABLED_KEY,
+  BOOT_CACHE_MAX_AGE_MS,
+  type BootCache,
+} from './query-persister';
 export { classifyContent, type ContentType } from './classify-content';
 export { resolveAgentVisual } from './resolve-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './resolve-agent-visual';

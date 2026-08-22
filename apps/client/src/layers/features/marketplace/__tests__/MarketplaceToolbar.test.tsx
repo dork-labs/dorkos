@@ -6,7 +6,7 @@ import { render, screen, cleanup, act, fireEvent, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
-import { MarketplaceHeader } from '../ui/MarketplaceHeader';
+import { MarketplaceToolbar } from '../ui/MarketplaceToolbar';
 
 // ---------------------------------------------------------------------------
 // Marketplace packages mock
@@ -39,7 +39,7 @@ function mockPackages(packages: AggregatedPackage[]): void {
 // ---------------------------------------------------------------------------
 // URL params mock
 //
-// MarketplaceHeader reads/writes browse state through `useMarketplaceParams`
+// MarketplaceToolbar reads/writes browse state through `useMarketplaceParams`
 // (URL-backed). Mock the hook so tests can drive the committed values and
 // assert the setters that write to the URL. The type + category filter facets
 // moved to the sidebar takeover panel (see MarketplaceSidebar.test.tsx); this
@@ -101,7 +101,7 @@ beforeAll(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('MarketplaceHeader', () => {
+describe('MarketplaceToolbar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockParams.type = 'all';
@@ -124,7 +124,7 @@ describe('MarketplaceHeader', () => {
   // -------------------------------------------------------------------------
 
   it('renders the search input with an accessible label and the marketplace-search test id', () => {
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     // The search input is labeled by a visually-hidden <Label htmlFor="marketplace-search">.
     const searchInput = screen.getByLabelText('Search packages');
@@ -135,14 +135,14 @@ describe('MarketplaceHeader', () => {
 
   it('seeds the input from the committed URL search on mount', () => {
     mockParams.search = 'reviewer';
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     expect((screen.getByTestId('marketplace-search') as HTMLInputElement).value).toBe('reviewer');
   });
 
   it('debounces search input by 300ms before committing to the URL', () => {
     vi.useFakeTimers();
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     const searchInput = screen.getByTestId('marketplace-search') as HTMLInputElement;
 
@@ -167,7 +167,7 @@ describe('MarketplaceHeader', () => {
 
   it('cancels a pending debounce when the user keeps typing', () => {
     vi.useFakeTimers();
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     const searchInput = screen.getByTestId('marketplace-search') as HTMLInputElement;
 
@@ -196,7 +196,7 @@ describe('MarketplaceHeader', () => {
   // -------------------------------------------------------------------------
 
   it('renders the sort selector reflecting the active sort from the URL', () => {
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     const sort = screen.getByRole('combobox', { name: 'Sort packages' });
     expect(sort).toBeInTheDocument();
@@ -206,7 +206,7 @@ describe('MarketplaceHeader', () => {
 
   it('reflects the "name" sort as the A–Z label', () => {
     mockParams.sort = 'name';
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     expect(screen.getByRole('combobox', { name: 'Sort packages' })).toHaveTextContent('A–Z');
   });
@@ -214,7 +214,7 @@ describe('MarketplaceHeader', () => {
   it('offers the Popular sort as selectable when packages carry install counts', async () => {
     const user = userEvent.setup();
     mockPackages([pkg({ name: 'code-reviewer', installCount: 42 }), pkg({ name: 'flow' })]);
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     await user.click(screen.getByRole('combobox', { name: 'Sort packages' }));
 
@@ -226,7 +226,7 @@ describe('MarketplaceHeader', () => {
   it('grays out the Popular sort when no package carries an install count (offline)', async () => {
     const user = userEvent.setup();
     mockPackages([pkg({ name: 'code-reviewer' }), pkg({ name: 'flow' })]);
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     await user.click(screen.getByRole('combobox', { name: 'Sort packages' }));
 
@@ -241,7 +241,7 @@ describe('MarketplaceHeader', () => {
       pkg({ name: 'code-reviewer', updatedAt: '2026-07-18T17:41:20Z' }),
       pkg({ name: 'flow' }),
     ]);
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     await user.click(screen.getByRole('combobox', { name: 'Sort packages' }));
 
@@ -253,7 +253,7 @@ describe('MarketplaceHeader', () => {
   it('grays out the Recent sort when no package carries an update date (offline)', async () => {
     const user = userEvent.setup();
     mockPackages([pkg({ name: 'code-reviewer' }), pkg({ name: 'flow' })]);
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     await user.click(screen.getByRole('combobox', { name: 'Sort packages' }));
 
@@ -267,7 +267,7 @@ describe('MarketplaceHeader', () => {
   // -------------------------------------------------------------------------
 
   it('no longer renders the type filter tabs (moved to the sidebar facet panel)', () => {
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     expect(screen.queryByRole('tab', { name: 'All' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Agents' })).not.toBeInTheDocument();
@@ -275,7 +275,7 @@ describe('MarketplaceHeader', () => {
   });
 
   it('no longer renders the category facet chips (moved to the sidebar facet panel)', () => {
-    render(<MarketplaceHeader />);
+    render(<MarketplaceToolbar />);
 
     expect(screen.queryByRole('group', { name: 'Filter by category' })).not.toBeInTheDocument();
     expect(screen.queryByText('Category')).not.toBeInTheDocument();

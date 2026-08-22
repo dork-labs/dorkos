@@ -1072,6 +1072,52 @@ body {
   display: inline-block;
 }
 
+/* ── The sidebar's continuity motion (spec `sidebar-simplification` D5) ──
+
+   A row that turned up while you were looking flashes the row tint once and
+   settles. Colour, and only colour: where the row goes is motion's `layout`
+   FLIP, and a background animated through that would restart every time the row
+   moved. Callers apply it `motion-safe:`, so a reduced-motion preference gets no
+   flash rather than a shorter one, and the attribute that triggers it is removed
+   200 ms later so the tint can never become a state a row sits in. */
+@keyframes sidebar-row-arrived {
+  from {
+    background-color: var(--color-sidebar-accent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@utility animate-sidebar-row-arrived {
+  animation: sidebar-row-arrived 200ms ease-out;
+}
+
+/* The quiet count a folded section header grows — "12 · 3 unread". It fades in
+   rather than appearing, because the fold that produced it is a spring and text
+   snapping into place mid-spring reads as a second, unrelated event. */
+@keyframes sidebar-rollup-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@utility animate-sidebar-rollup-in {
+  animation: sidebar-rollup-in 120ms ease-out;
+}
+
+/* What a drop target wears while a drag is over it: a 2px ring drawn INSIDE the
+   box, at 45% of the sidebar's ring colour. Inset rather than outset because a
+   folding section clips its own body, and an outer ring is the first thing that
+   clipping eats; 45% rather than full because this marks where a row would land,
+   which is a quieter claim than "this has focus". */
+@utility sidebar-drop-ring {
+  box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-sidebar-ring) 45%, transparent);
+}
+
 @keyframes health-pulse {
   0%,
   100% {
@@ -1732,6 +1778,15 @@ body {
   }
   [data-vaul-drawer] {
     padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* The room panel's footer — Archive, and the room's age — is pinned to the
+     bottom of a slide-over that fills a phone's screen, so on a notched device
+     it lands exactly where the home indicator does. Same shape as the
+     composer's rule above: the ordinary padding on every other device, the
+     inset where there is one. Nothing inside it pads again, so the gap cannot
+     double. */
+  .room-panel-footer {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 }
 

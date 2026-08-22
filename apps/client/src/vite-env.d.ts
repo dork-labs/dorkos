@@ -2,6 +2,13 @@
 
 declare global {
   /**
+   * The release version this bundle was built from, injected by Vite's `define`
+   * (see `vite.config.ts`). Used as the persisted query cache's buster, so a new
+   * build never paints from a previous build's remembered answers.
+   */
+  const __APP_VERSION__: string;
+
+  /**
    * Native updater lifecycle, mirrored from the desktop main process over the
    * `update:status` IPC channel (see the desktop app's `auto-updater.ts`,
    * where this union is the source of truth as `UpdateStatus`). The client

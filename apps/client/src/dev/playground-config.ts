@@ -359,9 +359,9 @@ export const PAGE_CONFIGS: PageConfig[] = [
   },
   {
     id: 'sidebar-boot',
-    label: 'Sidebar Boot',
+    label: 'Sidebar Boot & Motion',
     description:
-      'How the panel comes up — warm in its final shape, or cold as bones replaced in one reveal.',
+      'How the panel comes up — warm in its final shape, or cold as bones replaced in one reveal — and how it moves once it has.',
     icon: PanelLeft,
     group: 'app-shell',
     sections: SIDEBAR_BOOT_SECTIONS,

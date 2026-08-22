@@ -6,9 +6,10 @@ import { BasePage } from './BasePage';
  * spine tab, and the ambient attention badge.
  *
  * The panel defaults CLOSED on every route; {@link open} reveals it. On routes
- * with no contextual tab (Home, Activity, Scheduled) Pulse fills the panel; on
- * `/session` a contextual tab (Profile) wins the default per the container's
- * auto-select.
+ * with no contextual tab (Activity, Scheduled) Pulse fills the panel; where one
+ * applies it wins the default per the container's auto-select — Profile on
+ * `/session`, and since phase R2 the Room tab on `/` and `/channels`, both of
+ * which show a room.
  */
 export class RightPanelPage {
   readonly page: Page;
@@ -32,6 +33,8 @@ export class RightPanelPage {
   readonly profileTab: Locator;
   /** The Pulse tab in the strip (present alongside contextual tabs on `/session`). */
   readonly pulseTab: Locator;
+  /** The Room contextual tab (visible on the two routes that show a room). */
+  readonly roomTab: Locator;
   /** The tab strip's scroll container — the box the edge fades are measured against. */
   readonly tabScroller: Locator;
   /** The fade over the strip's left edge, drawn only when tabs are behind it. */
@@ -55,6 +58,7 @@ export class RightPanelPage {
     this.singleTabTitle = this.header.getByText('Pulse', { exact: true });
     this.profileTab = this.header.getByRole('tab', { name: 'Profile' });
     this.pulseTab = this.header.getByRole('tab', { name: 'Pulse' });
+    this.roomTab = this.header.getByRole('tab', { name: 'Room' });
     // The scroller is the tablist's parent; there is no test id on it, and adding
     // one would put a test hook in the shell header for a box the DOM already
     // identifies unambiguously.

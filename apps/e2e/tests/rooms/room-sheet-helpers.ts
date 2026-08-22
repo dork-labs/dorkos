@@ -299,30 +299,34 @@ export async function seedRoom(
 }
 
 /**
- * Open a room and then its details sheet, and hand back the sheet once it has
+ * Open a room and then its details panel, and hand back the panel once it has
  * finished arriving.
  *
- * The settle is not politeness: on a phone this is a drawer that slides up, and
- * everything in this file measures.
+ * **Two shapes, one locator** (phase R2, spec `one-bar-header` §3.6). On a
+ * desktop the panel is an inset column beside the room; on a phone it is a
+ * slide-over. Both are the right panel's body, which carries `role="tabpanel"`
+ * whenever more than one tab is visible — and on a room route two always are, so
+ * the one role finds it at either width. The old modal's `role="dialog"` is only
+ * the phone's outer sheet now, and matching on it would have found nothing at
+ * all on a desktop.
+ *
+ * The settle is not politeness: on a phone this still slides in, and everything
+ * in this file measures.
  */
 export async function openSheet(page: Page, roomId: string): Promise<Locator> {
   await page.goto(`/channels?id=${roomId}`);
-  // **The bar's head count, not the masthead's roster button.** That button was
-  // named "Members of #room" and went with the masthead in phase R1; the door is
-  // now a chip in the one bar whose accessible name is the count alone
-  // (`2 members`), because the count is what it says and the room is named by
-  // the heading beside it. Addressed by testid rather than by that name: the
-  // name grows ", N agents working" on a phone, where this chip is also the
-  // room's run-state signal, and a spec that matched the quiet spelling would
-  // fail only when something happened to be running.
+  // The bar's head count, addressed by testid rather than by its accessible
+  // name: that name grows ", N agents working" on a phone, where this chip is
+  // also the room's run-state signal, and a spec that matched the quiet
+  // spelling would fail only when something happened to be running.
   await page.getByTestId('bar-members-chip').click();
-  const sheet = page.getByRole('dialog');
+  const sheet = page.getByRole('tabpanel');
   await expect(sheet).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
   await settled(sheet);
   return sheet;
 }
 
-/** One member's row in the sheet, found by the name it prints. */
+/** One member's row in the panel, found by the name it prints. */
 export function memberRow(sheet: Locator, name: string): Locator {
   return sheet
     .locator('[data-slot="room-member-row"]')

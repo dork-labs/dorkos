@@ -1,7 +1,7 @@
 ---
 id: 260819-210151
 title: The agent row is the one door to an agent; one agent opens a session, two or more open a group message
-status: proposed
+status: accepted
 created: 2026-08-19
 spec: sidebar-simplification
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed.
+Accepted 2026-08-22 — implemented by PR #1159 (task 2.1, DOR-1370).
 
 ## Context
 

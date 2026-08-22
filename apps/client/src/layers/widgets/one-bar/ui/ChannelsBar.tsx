@@ -1,10 +1,11 @@
-import { AtSign, Hash } from 'lucide-react';
 import {
   BridgeVisibilityBadge,
+  RoomAvatar,
   RoomTitle,
   roomDisplayTitle,
   useTeamRoom,
 } from '@/layers/entities/room';
+import { facesOfRoster, useRoomFaces } from '@/layers/features/room-management';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useOneBarState } from '../model/one-bar-context';
 import { BarTitle, OneBar } from './OneBar';
@@ -34,21 +35,30 @@ import { RoomRunState } from './RoomRunState';
  * navigating by headings, not merely a selector detail. `RoomTitle` supplies the
  * accessible name (`#general`) while the eye reads the bare slug.
  *
- * **A glyph rather than a face, and that is a trade rather than a rule.** The
- * fleet's real agent emoji come from the room widget's own directory, which this
- * layer cannot reach across the widget boundary; drawing `RoomAvatar` without it
- * falls back to a hashed letter, so the same agent would wear its emoji in the
- * sidebar and a letter here — the exact disagreement the masthead was fixed to
- * remove. Showing no face beats showing a wrong one. The cost is real and lands
- * hardest on DMs, whose identity IS a person: phase R2 can lift the directory to
- * a shared layer and give this row the true face.
+ * **The real face, and the glyph only where a room HAS no face** (phase R2). R1
+ * drew a glyph for both kinds, because the fleet's agent emoji came from a
+ * directory this layer could not reach — and a hashed letter here would have
+ * contradicted the emoji the sidebar shows two inches away. That cost landed
+ * hardest on a one-to-one, whose identity IS the agent it is with and which the
+ * `sidebar-simplification` work had already taken out of the sidebar: between
+ * the two phases its face was drawn nowhere at all. The join now lives one layer
+ * down, in `room-management`, and is READ here rather than re-made — the same
+ * answer the room panel's roster draws, so the two cannot disagree. A channel is
+ * still a `#`, which is what a channel's mark is.
  */
 function RoomIdentity({ room }: { room: RoomWithRoster }) {
-  const Mark = room.kind === 'channel' ? Hash : AtSign;
+  const faces = useRoomFaces();
+  const visuals = facesOfRoster(room.members, faces);
 
   return (
     <div className="flex min-w-0 shrink items-center gap-1.5">
-      <Mark aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+      <RoomAvatar
+        room={room}
+        participants={room.members.map((member) => member.author)}
+        visuals={visuals}
+        size="xs"
+        className="shrink-0"
+      />
       <h1 className="flex min-w-[6ch] shrink items-center text-sm font-medium">
         <RoomTitle room={room} />
       </h1>

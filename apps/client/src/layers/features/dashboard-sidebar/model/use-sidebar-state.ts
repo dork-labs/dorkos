@@ -79,6 +79,15 @@ const SIDEBAR_RECENT_LIMIT = 10;
 const NO_PATHS: string[] = [];
 
 /**
+ * No @mention counts, as one identity.
+ *
+ * No client source can count them above a read cursor, so the field is always
+ * this — omission, never a guess (BC-40). A shared empty rather than a fresh
+ * `{}`, so it is never the reason a memo below it rebuilds.
+ */
+const NO_MENTIONS: Record<string, number> = {};
+
+/**
  * The sidebar's slice of the shared recent-sessions answer.
  *
  * Module-level so its identity is stable: a `select` declared inside the hook
@@ -298,10 +307,10 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
   // withholding rather than a degradation. Every other boot source may read as
   // empty on the timeout, because a room list that has not answered means "no
   // rooms yet" and a room arriving late is a row appearing. A manifest that has
-  // not answered means something else: `agentSidebarItem` would hash the
-  // DIRECTORY for the face and use the path for the name, and both change the
-  // moment the manifest lands — thirty rows flipping at once, which is the
-  // defect D6 exists to remove. So on a boot that opened on the ceiling with
+  // not answered means something else: an agent row would hash the DIRECTORY for
+  // its face (`useAgentVisual`) and fall back to the path for its name, and both
+  // change the moment the manifest lands — thirty rows flipping at once, which is
+  // the defect D6 exists to remove. So on a boot that opened on the ceiling with
   // manifests still in flight, the agent rows are simply not drawn, and they
   // appear once, correct, when the manifests answer.
   const paths = boot.fleetKnown ? rawPaths : NO_PATHS;
@@ -380,7 +389,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
     () => ({ ...storedModelPrefs, digest: { lastShownDate: digestFacts.lastShownDate } }),
     [storedModelPrefs, digestFacts.lastShownDate]
   );
-  const mutedRooms = useMemo(() => mutedRoomIds(storedPrefs), [storedPrefs]);
+  const mutedRooms = useMemo(() => mutedRoomIds(storedPrefs.muted), [storedPrefs.muted]);
   const jumpBackIn = useJumpBackIn({ mutedRoomIds: mutedRooms });
   // Today derives its OWN membership and order (BC-15, BC-16). What it takes
   // from here is the one-line summary each row already computed, so the sentence
@@ -415,14 +424,33 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
   // empty fleet, and Getting started's whole first suggestion turns on that.
   // It used to ask three of the queries itself; the gate asks all seven (and
   // gives up after 1.5s), so the answer is the same one the panel paints with.
+  //
+  // **Not `settled` on its own** (task 3.2). The gate also waits on Heads up's
+  // three sources, and those are the three the persisted cache deliberately does
+  // NOT keep — a stale "three things need you" that resolves to zero is a
+  // confident lie. So on a warm reload `settled` was still false for a round
+  // trip while every fact THIS question depends on — the roster, the recents,
+  // the rooms — was already in hand, and Getting started grew in at the top of a
+  // panel that had finished painting, pushing everything below it down. A
+  // browser probe caught it (`boot-stability.spec.ts`). `phase !== 'cold'` is
+  // exactly "the seven shape sources have answered, from the network or from
+  // local memory", which is the question `rosterResolved` actually asks.
   const journey = useJourneyFacts({
     agents,
     agentActivity,
     sessionCount: sessions.length,
     rooms,
-    rosterResolved: boot.settled,
+    rosterResolved: boot.phase !== 'cold',
   });
 
+  // **One memo, not a "slow inputs / fast inputs" pair.** `sidebar-simplification`
+  // D8 proposed splitting this in two so a clock tick would not re-derive the
+  // half a query decides. It was built and measured, and it bought nothing: every
+  // field here is already its own memo keyed on its own sources, so the split
+  // allocated one extra object and changed no identity anywhere — and it could
+  // not do more, because `now` is part of the state `buildSidebarModel` takes and
+  // its signature is fixed. The two halves had one consumer, this spread. Dead
+  // structure with a comment claiming a benefit is worse than the plain shape.
   const state = useMemo(
     () => ({
       now,
@@ -441,7 +469,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       userLastMessageAt,
       // No client source counts @mentions above a read cursor. A source that
       // cannot say has no entry — omission, never a guess (BC-40).
-      mentions: {},
+      mentions: NO_MENTIONS,
       ...(coveredSignalIds === undefined ? {} : { coveredSignalIds }),
       todayAutomatedExpanded,
       activeTarget,

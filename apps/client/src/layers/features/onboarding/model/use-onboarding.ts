@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useIsRestoring } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTransport } from '@/layers/shared/model';
 import type { OnboardingState, OnboardingStep } from '@dorkos/shared/config-schema';
@@ -20,11 +20,30 @@ export function useOnboarding() {
   const pendingCompleted = useRef(new Set<OnboardingStep>());
   const pendingSkipped = useRef(new Set<OnboardingStep>());
 
-  const { data: config, isLoading } = useQuery({
+  const { data: config, isLoading: isFetchingConfig } = useQuery({
     queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: CONFIG_STALE_TIME_MS,
   });
+
+  // **"We have not asked yet" is not "there is nothing there"** — and here that
+  // distinction decides whether a returning user is shown the first-run wizard.
+  //
+  // `isLoading` is `isPending && isFetching`. While the persisted cache is being
+  // restored (`shared/lib/query-persister.ts`) TanStack PAUSES every query, so
+  // `isFetching` is false while `data` is still undefined — and `isLoading`
+  // reads FALSE with nothing in hand. `shouldShowOnboarding` below is computed
+  // from an empty config in that window, comes out true, and
+  // `useOnboardingOverlayVisible` latches it permanently. The result was a
+  // cockpit that showed "Welcome to DorkOS" to an install that had dismissed
+  // onboarding weeks ago, and wrote a fresh `startedAt` on its way past.
+  //
+  // Caught in a browser while adding the persisted cache: a warm reload wrote
+  // `startedAt` one second AFTER the `dismissedAt` it should have read.
+  // `useIsRestoring` is false everywhere there is no persister — the Obsidian
+  // embed included — so this costs those surfaces nothing.
+  const isRestoring = useIsRestoring();
+  const isLoading = isFetchingConfig || isRestoring;
 
   const DEFAULT_STATE: OnboardingState = {
     completedSteps: [],

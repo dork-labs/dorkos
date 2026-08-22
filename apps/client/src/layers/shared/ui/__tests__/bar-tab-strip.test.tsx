@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 /** Mount the strip inside a router that actually serves the four paths. */
-function renderStrip(at: string, activeTabId: string | null, density: 'bar' | 'row' = 'bar') {
+function renderStrip(at: string, activeTabId: string | null) {
   const rootRoute = createRootRoute({
     staticData: { header: null },
     component: () => (
@@ -43,7 +43,6 @@ function renderStrip(at: string, activeTabId: string | null, density: 'bar' | 'r
           activeTabId={activeTabId}
           label="Home sections"
           indicatorLayoutId="test-indicator"
-          density={density}
           testId="strip"
         />
         <Outlet />

@@ -9,14 +9,30 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarSection
  */
+import { AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import { useRovingFocus } from '@/layers/shared/model';
 import { SectionHeader, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import type { SidebarSectionModel } from '../model/build-sidebar-model';
 import type { SidebarContainer, UngroupedSectionId } from '../model/use-sidebar-dnd';
 import { Droppable, Sortable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
+import { SidebarFoldBody } from './motion/SidebarFoldBody';
+import { sectionLayoutKey } from './motion/sidebar-motion';
+import { useArrivedRows } from './motion/use-arrived-rows';
+import { useSidebarChrome } from './SidebarChrome';
 import { dragRefOf, SidebarModelRow } from './SidebarModelRow';
 import { useSectionChrome } from './useSectionChrome';
+
+/**
+ * The sections whose membership changes without the operator asking for it, and
+ * which therefore say so when it does (spec D5, "Arrive, settle, no pulse").
+ *
+ * Heads up and Today, and deliberately nothing else. A Library section only ever
+ * changes because somebody dragged, renamed or created something — the act is
+ * its own explanation, and a row announcing an arrival the operator just caused
+ * is the decoration this rule exists to keep out.
+ */
+const ANNOUNCES_ARRIVALS: ReadonlySet<string> = new Set(['now', 'today']);
 
 /**
  * The ungrouped section a section id names, or `undefined` for one that is not
@@ -94,16 +110,39 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
   const sectionId = ungroupedSectionId(section.id);
   const groupId = section.id.startsWith('group:') ? section.id.slice('group:'.length) : null;
 
+  // What this section's rows measure their FLIP against, and what "a row I have
+  // not seen before" is asked of. One string, so both answers come from the same
+  // walk and cannot disagree about what order the section is in — including
+  // while Today's hold has frozen it, since the held rows ARE `section.rows` by
+  // the time they reach here.
+  const layoutKey = sectionLayoutKey(section.rows);
+  const announcesArrivals = ANNOUNCES_ARRIVALS.has(section.id);
+  // The boot gate, not this component's mount: rows turning up while the panel
+  // is still loading are the panel loading, not arrivals (spec D6). Read off the
+  // panel's ONE subscription rather than calling `useBootState` here — see
+  // `SidebarChromeValue.bootSettled` for what a per-section call cost.
+  const { bootSettled } = useSidebarChrome();
+  const arrived = useArrivedRows(layoutKey, announcesArrivals && bootSettled);
+
+  const list = section.rows.map((row) => (
+    <SidebarModelRow
+      key={`${prefix}-${row.key}`}
+      row={row}
+      keyPrefix={prefix}
+      layoutKey={layoutKey}
+      {...(announcesArrivals ? { arrives: true } : {})}
+      {...(arrived.has(row.key) ? { arrived: true } : {})}
+      {...(sectionId === undefined ? {} : { sectionId })}
+    />
+  ));
+
   const rows = (
     <SidebarMenu id={bodyId}>
-      {section.rows.map((row) => (
-        <SidebarModelRow
-          key={`${prefix}-${row.key}`}
-          row={row}
-          keyPrefix={prefix}
-          {...(sectionId === undefined ? {} : { sectionId })}
-        />
-      ))}
+      {/* **`initial={false}`, so boot never animates** (D5). Only the two
+          sections that announce arrivals are wrapped: everywhere else a row has
+          no `exit`, and an `AnimatePresence` around it would be a presence
+          wrapper per row bought for nothing. */}
+      {announcesArrivals ? <AnimatePresence initial={false}>{list}</AnimatePresence> : list}
     </SidebarMenu>
   );
 
@@ -168,7 +207,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
               className={cn(
                 'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
                 b.isDragging && 'opacity-40',
-                b.isOver && 'ring-sidebar-ring ring-2'
+                b.isOver && 'sidebar-drop-ring'
               )}
             >
               {header}
@@ -180,7 +219,10 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       )}
       {chrome.action}
       {chrome.dialogs}
-      {!section.collapsed && (
+      {/* **The fold, as a height spring** (spec D5) — `SidebarFoldBody` owns the
+          numbers and the unmount, and the Dev Playground draws the same
+          component rather than a copy of it. */}
+      <SidebarFoldBody open={!section.collapsed}>
         <Droppable
           id={`container::${bodyId}`}
           data={{ type: 'container', container: sectionContainer(section.id) }}
@@ -192,7 +234,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
           )}
           {chrome.footer}
         </Droppable>
-      )}
+      </SidebarFoldBody>
     </SidebarGroup>
   );
 }

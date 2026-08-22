@@ -4643,7 +4643,7 @@
       "id": "260819-210151",
       "slug": "the-agent-row-is-the-one-door-to-an-agent",
       "title": "The agent row is the one door to an agent; one agent opens a session, two or more open a group message",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-19",
       "extractedFrom": "sidebar-simplification",
       "specSlug": "sidebar-simplification",
@@ -4653,7 +4653,7 @@
       "id": "260819-210153",
       "slug": "one-bottom-slot-arbiter-for-sidebar-cards",
       "title": "One bottom-slot arbiter chooses among the sidebar's cards; dismissal lives in user config, not localStorage",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-19",
       "extractedFrom": "sidebar-simplification",
       "specSlug": "sidebar-simplification",
@@ -4663,7 +4663,7 @@
       "id": "260819-210154",
       "slug": "sidebar-boots-from-a-persisted-query-cache-with-one-reveal",
       "title": "The sidebar boots from a persisted query cache, gated by one boot state and one reveal",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-19",
       "extractedFrom": "sidebar-simplification",
       "specSlug": "sidebar-simplification",
@@ -4720,6 +4720,30 @@
       "specSlug": "schedule-approval-experience",
       "amends": null,
       "supersedes": null
+    },
+    {
+      "id": "260822-083227",
+      "slug": "every-route-declares-its-header-as-typed-staticdata",
+      "title": "Every route declares its header as typed staticData, not a shell-side switch",
+      "status": "accepted",
+      "created": "2026-08-22",
+      "spec": "one-bar-header"
+    },
+    {
+      "id": "260822-083228",
+      "slug": "one-header-row-with-a-shell-owned-fixed-cluster",
+      "title": "One header row per page, with the fixed cluster owned by the shell",
+      "status": "accepted",
+      "created": "2026-08-22",
+      "spec": "one-bar-header"
+    },
+    {
+      "id": "260822-083229",
+      "slug": "room-management-lives-in-the-right-panel",
+      "title": "Room management lives in the right panel's contribution registry, not a modal",
+      "status": "accepted",
+      "created": "2026-08-22",
+      "spec": "one-bar-header"
     },
     {
       "id": "260821-205323",

@@ -11,7 +11,12 @@
  */
 import { useCallback, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { isStreamOwnedQuery, setAuthRequired } from '@/layers/shared/lib';
+import {
+  clearBootCache,
+  isBootQueryKey,
+  isStreamOwnedQuery,
+  setAuthRequired,
+} from '@/layers/shared/lib';
 import { useAuthClient } from './auth-client-context';
 import type { AuthError, AuthSession, AuthUser } from './auth-client';
 
@@ -135,6 +140,14 @@ export function useSignOut(): AuthActionState<[]> {
       return { ok: false, error: err };
     }
     queryClient.setQueryData<AuthSession | null>(authSessionKey, null);
+    // Forget the sidebar's local memory, in the cache and on disk. It holds this
+    // person's channels, agents and today's conversations, and the whole point
+    // of it is that the NEXT load paints from it before the server has said
+    // anything — so leaving it behind would show the signed-out install's panel
+    // to whoever opens the browser next. Dropped from the cache first so the
+    // persister's next save has nothing left to write.
+    queryClient.removeQueries({ predicate: (query) => isBootQueryKey(query.queryKey) });
+    clearBootCache();
     await queryClient.invalidateQueries({ predicate: refetchableOnAuthChange });
     return { ok: true };
   }, [client, queryClient]);
