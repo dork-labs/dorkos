@@ -1,7 +1,7 @@
 ---
 id: 260819-210154
 title: The sidebar boots from a persisted query cache, gated by one boot state and one reveal
-status: proposed
+status: accepted
 created: 2026-08-19
 spec: sidebar-simplification
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed.
+Accepted 2026-08-22 — implemented by PRs #1172 (task 3.1, DOR-1372) and #1179 (task 3.2, DOR-1373).
 
 ## Context
 

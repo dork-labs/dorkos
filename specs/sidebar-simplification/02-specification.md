@@ -20,7 +20,13 @@ Evidence and every citation: `research/20260819_sidebar-simplification-review.md
 
 ## Background / Problem Statement
 
-Measured on the live cockpit (272px panel): zone labels at 16px, section headers at 36px, every row label at 42px — depth is invisible and "Library" names nothing a user recognises. The same agent appears twice (DM room + session) with two click results; a 1:1 DM is a session in disguise that renders final text only. Groups already hold channels and DMs but look agent-only and carry two dead controls. Promos sit inside the scroller with no dismiss control and one that always shows; four cards compete at the bottom on day one. The list grows with the fleet. Initial load pops in from nothing in ~8 beats, flips every face, and restructures the Library a round trip late. Four roll-up rows are pressable and inert; two verbs lie.
+Measured on the live cockpit (272px panel): zone labels at 16px, section headers at 36px, every row label at 42px — depth is invisible and "Library" names nothing a user recognises. The same agent appears twice (DM room + session) with two click results; a 1:1 DM is a session in disguise that renders final text only. Groups already hold channels and DMs but look agent-only and carry two dead controls. Promos sit inside the scroller with no dismiss control and one that always shows; four cards compete at the bottom on day one. The list grows with the fleet. Initial load pops in from nothing in ~8 beats, flips every face, and restructures the Library a round trip late. One roll-up row is pressable and inert; two verbs lie.
+
+> **Corrected 2026-08-22 (DOR-1376 close-out).** This paragraph said "four roll-up rows are
+> pressable and inert". Only `section-count` ("N inactive") was inert; `now-overflow`, `working`
+> and `automated` already navigated or toggled on `main` before this programme
+> (`SidebarChrome.tsx:339-352`, PRs #922/#942). §D3's DOR-1105 sentence carries the same
+> correction. The work shipped is unchanged — the inert row was replaced by `All N agents →`.
 
 ## Goals
 
@@ -104,7 +110,7 @@ The panel's `px-2` (8px) stays; `SIDEBAR_ROW_INSET` becomes the token-derived in
 
 **Honest controls.** `groupSection` applies `group.displayFilter` through `filteredAgentRows` and emits `options` so the header radio reads from the model; the "Mute section" item is **hidden** for smart sections (the evaluator is stale by design) and `apply-mute-rules.ts` keeps skipping them; a mixed section sorted by "Recent activity" uses `room.lastActivityAt` for rooms (resolver returns the room's timestamp, not `null`); stale `filterSidebarItems` doc lines deleted; spec R3 vs code: spec amended to match code (ungrouped Agents has no manual reorder — the list is recency/name sorted).
 
-**Agents = recent + pinned.** The Agents section lists agents whose `attention !== 'inactive'` **or** that are pinned/in a section (unchanged), where `inactive` tightens to **7 days since the viewer's last interaction or the agent's last activity, whichever is later** (`agent-attention.ts` threshold constant → 7 d; currently lenient), with a **floor of 8**: if fewer than 8 agents qualify, the most recently active inactive agents fill up to 8. The reveal row `"N inactive"` is replaced by **`All N agents →`** (`target: { kind: 'command', id: 'open-team' }` → `navigate({ to: '/team' })`), always present when `N > shown`. The dead `section-count` roll-up target is thereby gone; `automated` toggles the Today automated fold (`todayRevealStore.toggle()`), `working` and `now-overflow` navigate to `/` (home is #team, where presence shows) — closes DOR-1105.
+**Agents = recent + pinned.** The Agents section lists agents whose `attention !== 'inactive'` **or** that are pinned/in a section (unchanged), where `inactive` tightens to **7 days since the viewer's last interaction or the agent's last activity, whichever is later** (`agent-attention.ts` threshold constant → 7 d; currently lenient), with a **floor of 8**: if fewer than 8 agents qualify, the most recently active inactive agents fill up to 8. The reveal row `"N inactive"` is replaced by **`All N agents →`** (`target: { kind: 'command', id: 'open-team' }` → `navigate({ to: '/team' })`), always present when `N > shown`. The dead `section-count` roll-up target is thereby gone — closes DOR-1105. (`automated` toggles the Today automated fold, `working` and `now-overflow` navigate; **corrected 2026-08-22, DOR-1376 close-out**: those three already did so on `main` before this programme, `SidebarChrome.tsx:339-352`, PRs #922/#942 — they were verified, not built, here.)
 
 **Channels sort pref** (DOR-906): `SidebarSectionsSchema` per-section `sortMode` already exists for Agents; `channels` and `dms` gain the same (`name | recent`), default `name`; `buildChannelsHeaderMenuNodes` offers Sort; conf migration keyed to the next semver per `adding-config-fields`. Small and adjacent; lands here.
 
@@ -227,7 +233,7 @@ The persisted cache holds room titles, session titles and agent names in `localS
 
 ## Implementation Phases
 
-- **Wave 0 — honesty fixes** (independent, parallel): D7 + DM stack + verbs + DOR-1105 targets (`automated`/`working`/`now-overflow`; `section-count` is replaced in Wave 4) + keyboard `+`.
+- **Wave 0 — honesty fixes** (independent, parallel): D7 + DM stack + verbs + DOR-1105 roll-up targets (`automated`/`working`/`now-overflow` — **corrected 2026-08-22**: already working on `main`, so this wave verified them; `section-count`, the only inert one, is replaced in Wave 4) + keyboard `+`.
 - **Wave 1 — structure (D1)**; **Wave 2 — bottom slot (D4)** — parallel (disjoint files).
 - **Wave 3 — one door (D2)**; **Wave 4 — sections + Agents (D3)** — 3 then 4 (both touch `NewMenu`), or parallel with 4 rebasing.
 - **Wave 5 — initial load (D6)**: 5a one-fetch-per-fact + boot gate + skeleton + reveal + scroll-to-active + BC-49 removal; 5b persisted cache + boot-stability e2e.
