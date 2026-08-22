@@ -32,7 +32,7 @@ Work item: DOR-1399. Decided with Dorian, 2026-08-21.
 ## 6. In-page duplicate H1s
 
 **Screen:** `one-bar-details-v2.html` (Q5)
-**Chosen:** **E1 — drop the in-page H1** on Marketplace, Workspaces, Connections (and any other page that repeats the bar title). The bar owns the name; pages keep their one-line description.
+**Chosen:** **E1 — drop the visual in-page H1** on Marketplace, Workspaces, Connections (and any other page that repeats the bar title). The bar owns the visible name; pages keep their one-line description. Shipped form (program-wide, started in H1): an `sr-only` h1 stays in the DOM so the page keeps a named heading outline for screen readers.
 
 ## Final design summary
 

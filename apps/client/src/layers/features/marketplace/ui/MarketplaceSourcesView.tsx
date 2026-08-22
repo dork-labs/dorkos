@@ -169,7 +169,7 @@ export function MarketplaceSourcesView() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-center justify-between gap-4">
         <div>
           {/* Not drawn (design decision E1): the bar overhead already says
               "Marketplace Sources". Kept for the outline — the bar's title is

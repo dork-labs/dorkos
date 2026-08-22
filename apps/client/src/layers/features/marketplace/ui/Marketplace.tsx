@@ -29,8 +29,8 @@ export function Marketplace() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
           {/* Not drawn (design decision E1): the bar overhead already says
               "Marketplace". Kept for the outline — the bar's title is a `nav`
               landmark, not a heading, and a page with no `h1` leaves its

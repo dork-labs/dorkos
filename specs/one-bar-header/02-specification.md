@@ -118,7 +118,7 @@ Which room does the panel show? The room the current route displays (`/channels?
 ### 3.7 Deletions & renames (leave-it-cleaner riders)
 
 - Delete: `RoomHeader.tsx`, `HomeTabBar.tsx` (post-extraction), `TeamHeader` pills + `<Select>`, `SessionHeader` breadcrumb, `RoomDetailsDialog.tsx`, six title-only header wrapper files, `useHeaderSlot` switch.
-- Drop in-page H1s (E1): `Marketplace` (widget page), `Workspaces`, `Connections` — pages open with their one-line description. Audit other routes for the same pattern while there.
+- Drop visual in-page H1s (E1): `Marketplace` (widget page), `Workspaces`, `Connections`, `Marketplace Sources`, `Product feedback` — pages open with their one-line description, keeping an `sr-only` h1 for the heading outline. Audit other routes for the same pattern while there.
 - Rename `layers/features/marketplace/ui/MarketplaceHeader.tsx` → `MarketplaceToolbar.tsx` (resolves the name collision).
 - `PageHeader`'s consumer-specific TSDoc moves to the truncation policy doc on `OneBar`.
 
