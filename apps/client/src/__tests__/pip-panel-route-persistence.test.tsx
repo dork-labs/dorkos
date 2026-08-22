@@ -173,6 +173,7 @@ vi.mock('@/layers/entities/session', () => ({
   // (session-origin-legibility): no active session in this shell-level
   // isolation test, so it always resolves to "no origin".
   useSessionOrigin: () => ({ origin: undefined, originLabel: undefined }),
+  useSessionDetail: () => ({ data: undefined }),
   // The tab strip badges a chat tab off this (DOR-540). Nothing is streaming in
   // a shell-level isolation test, so every tab reads idle.
   useSessionBorderState: () => ({

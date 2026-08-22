@@ -145,4 +145,13 @@ describe('sessionDisplayTitle', () => {
   it('falls back to the untitled label for a blank title', () => {
     expect(sessionDisplayTitle('')).toBe(UNTITLED_SESSION_LABEL);
   });
+
+  it('treats a whitespace-only title as blank, not as a name', () => {
+    expect(sessionDisplayTitle('   ')).toBe(UNTITLED_SESSION_LABEL);
+    expect(sessionDisplayTitle('\n\t')).toBe(UNTITLED_SESSION_LABEL);
+  });
+
+  it('calls an unnamed session new rather than untitled', () => {
+    expect(UNTITLED_SESSION_LABEL).toBe('New session');
+  });
 });

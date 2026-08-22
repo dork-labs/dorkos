@@ -7,12 +7,13 @@
 import type { RoomSummary, ThreadSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
 import { partitionSessionsByOrigin } from '@/layers/entities/session';
+import { basename } from '@/layers/shared/lib/basename';
 import type { SidebarRowModel } from '../build-sidebar-model';
 import type { SidebarState } from '../sidebar-state';
 import { muteIndex, type MuteIndex } from './apply-mute-rules';
 import { deriveUnreadSignal } from './derive-unread-signal';
 import { indexSuppressedDms } from './hand-made-dm';
-import { anchorKey, basename, rowKey } from './targets';
+import { anchorKey, rowKey } from './targets';
 
 /**
  * The one-line summaries "Jump back in" already computed, by row key.
