@@ -442,6 +442,35 @@ export class RoomTriggerDispatcher {
   private readonly haltedTurns = new Set<string>();
 
   /**
+   * Where Stop is still standing: `(room, agent)` keys whose last turn here was
+   * stopped and which have not been given a new one since (DOR-1313).
+   *
+   * **The dispatch mark above guards what the ROOM delivers; this guards what
+   * the TURN says for itself.** An agent speaks into a room two ways — the
+   * turn's narration, which `deliver` posts and the mark can therefore refuse,
+   * and `post_to_room`, which the model calls by hand mid-turn and which reaches
+   * {@link RoomService.postFromTool} as an ordinary write with no dispatch
+   * anywhere near it. Measured on 2026-08-17: Stop pressed 0.7 s into a turn
+   * that had not started streaming reached a process that was still spawning,
+   * the room released the claim and forgot the dispatch at that turn's terminal,
+   * and twenty-three seconds later the turn that never stopped posted a
+   * seven-thousand-character answer through the tool — before its own window had
+   * even closed, which is why nothing in `deliver` could have dropped it.
+   *
+   * Keyed by `(room, agent)` rather than by dispatch, and it has to be: the tool
+   * call arrives on its own HTTP request, outside every dispatch scope, so the
+   * pair is the only identity both sides share.
+   *
+   * **Cleared by the next CLAIM here, never by a timer** — see
+   * {@link RoomTriggerDispatcher.holdClaim}. That is what keeps it a stop rather
+   * than a mute: the next thing somebody says gives the agent a turn, and the
+   * hand comes back with it, at the claim rather than at the answer because
+   * speaking mid-turn is the whole point of the tool. It also bounds the set:
+   * one small key per pair a person has stopped, replaced by the next turn.
+   */
+  private readonly stoppedHere = new Set<string>();
+
+  /**
    * The republish loop, alive exactly while {@link RoomTriggerDispatcher.claimed}
    * is non-empty.
    *
@@ -2146,6 +2175,25 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * Whether Stop is still standing over this agent in this room — so a post it
+   * makes for itself belongs nowhere either (DOR-1313).
+   *
+   * The counterpart to {@link RoomTriggerDispatcher.wasHalted}, asked by
+   * `post_to_room` rather than by a delivery: the mark that path could use is
+   * keyed by dispatch, and a tool call arrives on its own request with no
+   * dispatch in sight. See {@link RoomTriggerDispatcher.stoppedHere} for why the
+   * two exist side by side and what clears this one.
+   *
+   * @param roomId - The room being posted into.
+   * @param authorId - The agent posting.
+   * @returns Whether that agent's last turn here was stopped and it has not been
+   *   given another one since.
+   */
+  stoppedIn(roomId: string, authorId: string): boolean {
+    return this.stoppedHere.has(agentKey(roomId, authorId));
+  }
+
+  /**
    * Take a claim, and tell the room the agent is on it.
    *
    * The publish is not a courtesy beside the write — it is the write's whole
@@ -2177,6 +2225,10 @@ export class RoomTriggerDispatcher {
     this.notices.workStarted(claim.roomId, claim.authorId);
     const before = this.workingCount(claim.roomId);
     const key = agentKey(claim.roomId, claim.authorId);
+    // The room is asking this agent again, so whatever Stop was standing over it
+    // HERE comes down — including its hand on `post_to_room`. Stop ends a turn;
+    // it never changes a setting (`.claude/rules/room-conduct.md`).
+    this.stoppedHere.delete(key);
     // **Before the `working` publish, so the held line RESOLVES into the working
     // one rather than sitting beside it.** A person watching this room asked a
     // question, was told it was waiting, and is now being told it is running:
@@ -2964,7 +3016,16 @@ export class RoomTriggerDispatcher {
     // prevent — the two-second race measured on 2026-08-15. Nothing after this
     // line can be reached by a turn that started AFTER the halt, because a new
     // turn is a new dispatch id (see {@link RoomTriggerDispatcher.haltedTurns}).
-    for (const claim of claims) this.haltedTurns.add(claim.dispatchId);
+    for (const claim of claims) {
+      this.haltedTurns.add(claim.dispatchId);
+      // And the same statement at the pair, for the half of a turn's voice the
+      // dispatch mark cannot reach: `post_to_room`
+      // ({@link RoomTriggerDispatcher.stoppedHere}). Marked here rather than in
+      // the release loop below for the same reason the dispatch mark is — before
+      // the first `await`, so a turn that is quicker than the interrupt cannot
+      // slip a post through the gap.
+      this.stoppedHere.add(agentKey(room.id, claim.authorId));
+    }
     logger.info('[rooms] a room was halted', { roomId: room.id, stopped: claims.length });
     // **The durable write comes first, and the whole invariant is in that
     // order.** Releasing a claim publishes `done`, so a halt that stopped the
@@ -3100,7 +3161,14 @@ export class RoomTriggerDispatcher {
     // turn whose stream closes while this method is still delivering the
     // interrupt must find the mark already there, or it posts the answer Stop
     // was pressed to prevent.
-    if (claim !== undefined) this.haltedTurns.add(claim.dispatchId);
+    if (claim !== undefined) {
+      this.haltedTurns.add(claim.dispatchId);
+      // The other half of this turn's voice, at the pair rather than at the
+      // dispatch, and scoped to this key like everything else here — stopping
+      // Ana never takes Bo's hand off the tool
+      // ({@link RoomTriggerDispatcher.stoppedHere}).
+      this.stoppedHere.add(key);
+    }
     logger.info('[rooms] an agent was stopped in a room', {
       roomId: room.id,
       authorId,

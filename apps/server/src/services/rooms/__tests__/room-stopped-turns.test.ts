@@ -478,6 +478,114 @@ describe('a room says when a turn has stopped', () => {
       expect(room.wired.service.listRooms(room.wired.human, {})[0].working).toBe(0);
     });
 
+    it('refuses a stopped turn its own post_to_room, however late it gets there', async () => {
+      // **The hole every other test in this file walks past** (DOR-1313, the
+      // live rooms self-test of 2026-08-17). Stop was pressed 0.7 s into a turn
+      // that had not started streaming yet; the interrupt reached a process that
+      // was still spawning, and twenty-three seconds later that turn posted a
+      // seven-thousand-character answer into the room — with no
+      // `dropped a halted turn answer` line anywhere, because it never went
+      // through `deliver` at all. It arrived BEFORE the turn's own window
+      // closed, which is only possible for a post the model made by hand.
+      //
+      // The turn's narration is guarded by the halt mark; `post_to_room` was
+      // guarded by nothing. So a runtime that keeps running after an interrupt —
+      // exactly the one `interruptEndsTurn: false` models — could say whatever
+      // it liked into a room that had just told the person everything here was
+      // stopped.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const room = await roomMidTurn(stubborn);
+      await room.wired.service.haltRoom(room.roomId, room.wired.human);
+
+      // The turn nobody managed to stop, reaching for the tool mid-answer.
+      expect(() =>
+        room.wired.service.postFromTool(room.roomId, {
+          authorId: room.agent,
+          text: 'Here is the essay you asked for, at length.',
+        })
+      ).toThrow(expect.objectContaining({ code: 'TURN_WAS_STOPPED' }));
+
+      expect(room.answers()).toHaveLength(0);
+      // And the room said nothing new about it: the `halted` line is the whole
+      // story, and a second line about a post nobody saw would be the room
+      // narrating its own plumbing.
+      const notices = room.entries().filter((entry) => entry.kind === 'notice');
+      expect(notices).toHaveLength(1);
+      expect(notices[0].body.notice).toBe('halted');
+
+      stubborn.release(room.agent);
+      await room.wired.service.triggersIdle();
+      expect(room.answers()).toHaveLength(0);
+    });
+
+    it('lets that agent post through the tool again the moment it is given a turn here', async () => {
+      // The other half, and the half that keeps the refusal from being a mute:
+      // Stop ends a turn, it does not change a setting (room-conduct). A new
+      // turn in this room is the room asking again, so the hand comes back with
+      // it — and it comes back at the CLAIM, not at the answer, because the
+      // whole point of the tool is speaking mid-turn.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const room = await roomMidTurn(stubborn);
+      await room.wired.service.haltRoom(room.roomId, room.wired.human);
+
+      // Waited for by TURN COUNT: the stopped turn is still being held, so
+      // "somebody is mid-turn" was already true and would wait for nothing.
+      room.wired.service.post(room.roomId, {
+        authorId: room.wired.human,
+        text: '@ana never mind — one line, please',
+      });
+      await settleUntil(() => stubborn.turns.length === 2, 'the follow-up to become a turn');
+
+      const posted = room.wired.service.postFromTool(room.roomId, {
+        authorId: room.agent,
+        text: 'one line, as asked',
+      });
+      expect(posted.body.text).toBe('one line, as asked');
+
+      // Both turns: the stopped one nothing ever landed, and the live one.
+      stubborn.release(room.agent);
+      stubborn.release(room.agent);
+      await room.wired.service.triggersIdle();
+    });
+
+    it('refuses only the agent that was stopped when one agent is stopped alone', async () => {
+      // The per-agent scope, on the tool hand. Stopping Ana must not take Bo's
+      // voice with it — "the others keep working" has to be a property of the
+      // code rather than of the room-wide path never being exercised.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const wired = createRoomHarness({ agents, runner: stubborn });
+      const shared = wired.service.createRoom(
+        {
+          kind: 'channel',
+          title: 'Shared',
+          members: [],
+          agentPaths: ['/agents/ana', '/agents/bo'],
+        },
+        wired.human
+      );
+      const anaId = anaIn(wired);
+      const boId = wired.authors.resolveAgent('/agents/bo', 'Bo').id;
+      for (const authorId of [anaId, boId]) {
+        wired.service.updateMembership(shared.id, wired.human, authorId, 'mention-only');
+      }
+      wired.service.post(shared.id, { authorId: wired.human, text: '@ana @bo take a look' });
+      await settleUntil(() => stubborn.turns.length === 2, 'both agents to be mid-turn');
+
+      await wired.service.haltAgent(shared.id, anaId, wired.human);
+
+      expect(() =>
+        wired.service.postFromTool(shared.id, { authorId: anaId, text: 'still talking' })
+      ).toThrow(expect.objectContaining({ code: 'TURN_WAS_STOPPED' }));
+      expect(
+        wired.service.postFromTool(shared.id, { authorId: boId, text: 'here is what I found' }).body
+          .text
+      ).toBe('here is what I found');
+
+      stubborn.release(anaId);
+      stubborn.release(boId);
+      await wired.service.triggersIdle();
+    });
+
     it('does not let a stopped turn release the claim of the turn that replaced it', async () => {
       // **A claim key is `(room, agent)`; a turn is a DISPATCH — and a halt is
       // the one thing that pulls them apart.** Stop drops the claim, the person

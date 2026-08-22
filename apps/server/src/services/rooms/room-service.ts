@@ -2209,6 +2209,24 @@ export class RoomService {
         'This is a direct message — your reply is posted for you, so there is nothing to post here.'
       );
     }
+    // **A stopped turn says nothing here either** (DOR-1313). The room already
+    // throws away the narration of a turn somebody stopped; this is the same
+    // refusal on the other half of that turn's voice, and it is the half that
+    // measurably got through — an interrupt that reached a process still
+    // spawning left the turn running, and it posted its whole answer by hand
+    // twenty-three seconds after the room said everything had been stopped.
+    // Refused rather than silently dropped: the agent is the one holding the
+    // pen, and telling it beats letting it believe it spoke.
+    if (this.triggers.stoppedIn(roomId, input.authorId)) {
+      logger.info('[rooms] refused a stopped turn a post of its own', {
+        roomId,
+        authorId: input.authorId,
+      });
+      throw new RoomError(
+        'TURN_WAS_STOPPED',
+        'This conversation was stopped, so nothing more from this turn is posted. Wait for the next message before answering here.'
+      );
+    }
     const entry = this.post(roomId, input);
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;

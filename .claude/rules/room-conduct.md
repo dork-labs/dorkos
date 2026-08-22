@@ -231,6 +231,18 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   turn nobody let finish is evidence of nothing. The mark is keyed by dispatch
   and not by `(room, agent)`, because the claim is already gone by then and the
   next turn for that pair is a different dispatch that Stop said nothing about.
+  **A turn speaks TWICE, and the second voice needed its own guard** (DOR-1313).
+  The mark above covers what the ROOM delivers; `post_to_room` is the turn
+  speaking for itself, on its own request, with no dispatch anywhere near it. A
+  Stop pressed 0.7 s into a turn whose process was still spawning left that turn
+  running, and it posted a seven-thousand-character answer by hand twenty-three
+  seconds later — before its own window had closed, which is why no delivery
+  path could have dropped it. So a halt ALSO marks the `(room, agent)` pair
+  (`RoomTriggerDispatcher.stoppedHere`) and `postFromTool` refuses while that
+  mark stands, with `TURN_WAS_STOPPED`. It is cleared by the next CLAIM there,
+  never by a timer: Stop ends a turn and never changes a setting, so the hand
+  comes back the moment the room asks that agent again — at the claim rather
+  than at the answer, because speaking mid-turn is what the tool is for.
   What is NOT discarded is the spend — a turn that ran a model has spent, and
   `tryReserve` still has no counterpart — nor the turn's own session transcript,
   where a person can still read what it was saying.

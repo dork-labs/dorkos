@@ -106,6 +106,21 @@ export type RoomErrorCode =
    */
   | 'TOOL_POST_NOT_IN_DM'
   /**
+   * `post_to_room` was called by an agent whose turn in that room was STOPPED
+   * (DOR-1313).
+   *
+   * An interrupt is delivered, not obeyed: a turn stopped while its process was
+   * still spawning kept running and posted a seven-thousand-character answer
+   * through the tool twenty-three seconds after the room said everything here
+   * had been stopped. The room's own delivery already declines a stopped turn's
+   * narration; this is the same refusal on the half the turn speaks for itself.
+   *
+   * It lasts exactly as long as the stop does — the next turn this agent is
+   * given in this room clears it (`RoomTriggerDispatcher.stoppedHere`) — because
+   * Stop ends a turn and never changes a setting.
+   */
+  | 'TURN_WAS_STOPPED'
+  /**
    * A rooms capability was called on a login-on install by a caller the surface
    * could name neither as an agent nor as a person
    * (`room-capabilities.ts`'s `callerAuthor`).
