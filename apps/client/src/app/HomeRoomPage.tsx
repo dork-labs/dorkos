@@ -55,10 +55,17 @@ function HomeNotice({
 /**
  * Home is a room, and the room is #team.
  *
- * Everything below the tab bar is the ordinary room surface — timeline, thread
- * panel, mention picker, halt, the whole `Composer.*` family — reached through
- * a well-known key rather than a URL, so `/channels?id=<team>` still shows the
+ * Everything below the bar is the ordinary room surface — timeline, thread
+ * panel, mention picker, the whole `Composer.*` family — reached through a
+ * well-known key rather than a URL, so `/channels?id=<team>` still shows the
  * same room drawn by the same component.
+ *
+ * **One thing a channel has that Home does not: the masthead's Stop button.**
+ * Home draws no masthead (`hideHeader` below), and the masthead is where a
+ * channel's "N agents working" chip and its room-wide halt live. What survives
+ * here is the live lane's stop-all under the composer (`RoomLiveLane`), which is
+ * the same reach for the same act — and phase R1 builds the room state chips for
+ * the channel bar, which Home then wears too.
  *
  * Two pieces of home-only chrome ride above the feed. The pinned triage header
  * carries what needs answering, and it is mounted OUTSIDE the room's scroller
@@ -194,6 +201,11 @@ export function HomeRoomPage() {
         threadId={thread}
         threadRoute="/"
         offerJumpBackIn
+        // The Home tab IS this page's identity, and the members chip beside it
+        // plus the composer's "Message #team…" say which room you are in. A
+        // masthead under that bar named the room a second time and cost the feed
+        // a whole row on every phone (spec §3.4, phase H1).
+        hideHeader
         onComposerFocusChange={setComposerFocused}
         aboveTimeline={
           <>

@@ -107,12 +107,17 @@ export function WorkspacesPage() {
     // The route panel clips its overflow, so the page needs its own scroller —
     // PageContainer owns it.
     <PageContainer width="wide">
-      <header className="mb-6">
-        <h1 className="text-xl font-semibold">Workspaces</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Isolated, server-managed checkouts — one per unit of work, bound to sessions via cwd.
-        </p>
-      </header>
+      {/* The heading is still here, just not drawn (design decision E1). Seeing
+          the page's name twice — once in the bar, once as the first line of the
+          page — spent a row saying a word already on screen. But a page with no
+          `h1` at all has no top of its outline, so a screen-reader user
+          navigating by heading finds the page's sections hanging under nothing.
+          The bar's title is a `nav` landmark, not a heading, and cannot stand in
+          for one. */}
+      <h1 className="sr-only">Workspaces</h1>
+      <p className="text-muted-foreground mb-6 text-sm">
+        Isolated, server-managed checkouts — one per unit of work, bound to sessions via cwd.
+      </p>
 
       {isLoading ? (
         <p className="text-muted-foreground text-sm">Loading workspaces…</p>

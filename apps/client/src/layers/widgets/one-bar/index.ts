@@ -8,9 +8,11 @@
  */
 export { OneBar, BarTitle, BarFixedCluster } from './ui/OneBar';
 export { TitleBar } from './ui/TitleBar';
-export { DashboardHeader } from './ui/DashboardHeader';
-export { ActivityHeader } from './ui/ActivityHeader';
-export { TasksHeader } from './ui/TasksHeader';
+// One bar for all four home surfaces — `/`, `/activity`, `/tasks` and
+// `/workspaces` all declare THIS component, which is what keeps its tab strip
+// mounted across a tab press (see `resolveRouteHeader`).
+export { HomeSurfaceBar } from './ui/HomeSurfaceBar';
+export { BarMembersChip } from './ui/BarMembersChip';
 export { ChannelsHeader } from './ui/ChannelsHeader';
 export { SessionHeader } from './ui/SessionHeader';
 export { TeamHeader } from './ui/TeamHeader';

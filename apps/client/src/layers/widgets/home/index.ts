@@ -7,13 +7,11 @@
  *
  * @module widgets/home
  */
-// Exactly what consumers outside this slice use today: the router mounts the
-// layout, and the route-tree guard reads the tab table. `resolveHomeTabId` and
-// the tab types stay internal until something outside needs them — the sidebar
-// will, when Home's active state has to cover all four home paths, and it can
-// export them then.
+// The layout is all this slice owes the router now. The tab table moved down to
+// `shared/config` when the tabs moved INTO the bar (phase H1): the bar is a
+// widget of its own, and a widget may not import another widget, so the four
+// names and the pathname resolver had to live somewhere both can reach.
 export { HomeSurfaceLayout } from './ui/HomeSurfaceLayout';
-export { HOME_TABS } from './lib/home-tabs';
 // The pinned triage header, in two halves: the wired one the Home tab mounts,
 // and the presentational one behind it, which is exported so the Dev Playground
 // can draw states a real cockpit only reaches when something is wrong.

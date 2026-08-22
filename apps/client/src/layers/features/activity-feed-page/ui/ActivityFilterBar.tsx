@@ -1,7 +1,9 @@
+import { useRef } from 'react';
 import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { useScrollOverflow } from '@/layers/shared/model';
 import { CATEGORY_CONFIG } from '@/layers/entities/activity';
 import type { ActivityCategory } from '@/layers/entities/activity';
 import { useActivityFilters } from '../model/use-activity-filters';
@@ -81,6 +83,8 @@ export interface ActivityFilterBarProps {
  */
 export function ActivityFilterBar({ className }: ActivityFilterBarProps) {
   const { filters, isFiltered, toggleCategory, clearAll } = useActivityFilters();
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const edges = useScrollOverflow(scrollerRef, 'horizontal');
 
   /** Active category set derived from the comma-separated URL param. */
   const activeCategories = new Set<ActivityCategory>(
@@ -92,34 +96,65 @@ export function ActivityFilterBar({ className }: ActivityFilterBarProps) {
   };
 
   return (
-    <div data-slot="activity-filter-bar" className={cn('flex items-center gap-1', className)}>
-      <AllChip isActive={!isFiltered} onClick={handleAllClick} />
+    // **The row scrolls itself, or it pushes the page sideways.** Six chips plus
+    // a Clear button want 383px; a phone gives the content column 358px, and
+    // with nowhere to go the overflow escaped the page scroller instead
+    // (documentElement 399 wide in a 390 viewport), so every surface below
+    // drifted under the reader's thumb. It scrolls the way the bar's tab strip
+    // scrolls, and it wears the same cue for the same reason: macOS draws no
+    // scrollbar until you have already scrolled, so an edge with chips behind it
+    // has to say so — and an edge with nothing behind it must not (ADR
+    // 260725-004456).
+    <div className={cn('relative', className)}>
+      <div
+        ref={scrollerRef}
+        onScroll={edges.onScroll}
+        data-slot="activity-filter-bar"
+        className="flex items-center gap-1 overflow-x-auto"
+      >
+        <AllChip isActive={!isFiltered} onClick={handleAllClick} />
 
-      {CATEGORIES.map((category) => (
-        <CategoryChip
-          key={category}
-          category={category}
-          isActive={activeCategories.has(category)}
-          onToggle={() => toggleCategory(category)}
+        {CATEGORIES.map((category) => (
+          <CategoryChip
+            key={category}
+            category={category}
+            isActive={activeCategories.has(category)}
+            onToggle={() => toggleCategory(category)}
+          />
+        ))}
+
+        <AnimatePresence>
+          {isFiltered && (
+            <motion.div
+              key="clear-filters"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+            >
+              <Button variant="ghost" size="xs" className="ml-1" onClick={clearAll}>
+                <X aria-hidden />
+                Clear
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      {/* Decorative and never in the way of the chip underneath. */}
+      {edges.start && (
+        <div
+          aria-hidden
+          data-testid="activity-filter-bar-fade-start"
+          className="from-background via-background/70 pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r to-transparent"
         />
-      ))}
-
-      <AnimatePresence>
-        {isFiltered && (
-          <motion.div
-            key="clear-filters"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.15 }}
-          >
-            <Button variant="ghost" size="xs" className="ml-1" onClick={clearAll}>
-              <X aria-hidden />
-              Clear
-            </Button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      )}
+      {edges.end && (
+        <div
+          aria-hidden
+          data-testid="activity-filter-bar-fade-end"
+          className="from-background via-background/70 pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l to-transparent"
+        />
+      )}
     </div>
   );
 }

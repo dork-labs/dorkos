@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HOME_TABS, resolveHomeTabId, type HomeTabId } from '../lib/home-tabs';
+import { HOME_TABS, resolveHomeTabId, type HomeTabId } from '../home-tabs';
 
 describe('HOME_TABS', () => {
   it('lists the four home surfaces in bar order', () => {

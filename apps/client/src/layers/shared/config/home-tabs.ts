@@ -1,8 +1,4 @@
-import {
-  HOME_SURFACE_PATHS,
-  normalizePathname,
-  type HomeSurfacePath,
-} from '@/layers/shared/config';
+import { HOME_SURFACE_PATHS, normalizePathname, type HomeSurfacePath } from './home-surface';
 
 /** Which tab of the home surface is showing. */
 export type HomeTabId = 'home' | 'activity' | 'scheduled' | 'workspaces';

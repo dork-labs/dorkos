@@ -26,11 +26,9 @@ import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
 import {
-  ActivityHeader,
   ChannelsHeader,
-  DashboardHeader,
+  HomeSurfaceBar,
   SessionHeader,
-  TasksHeader,
   TeamHeader,
   TitleBar,
   type RouteHeader,
@@ -245,7 +243,6 @@ export type MarketplaceSearch = z.infer<typeof marketplaceRouteSearchSchema>;
  * function shows up as `<Unknown>` in React DevTools and in a component stack,
  * which is exactly where you look when the wrong bar is on screen.
  */
-const WorkspacesBar = () => <TitleBar title="Workspaces" />;
 const ConnectionsBar = () => <TitleBar title="Connections" />;
 const MarketplaceBar = () => <TitleBar title="Marketplace" />;
 const MarketplaceSourcesBar = () => <TitleBar title="Marketplace Sources" />;
@@ -269,7 +266,9 @@ const homeSurfaceRoute = createRoute({
 const indexRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/',
-  staticData: { header: DashboardHeader },
+  // The same component all four home surfaces declare — see the note on
+  // `/activity` below.
+  staticData: { header: HomeSurfaceBar },
   validateSearch: zodValidator(homeSearchSchema),
   component: HomeRoomPage,
   // Redirect to /session if ?session= param is present (backward compat for old bookmarks)
@@ -434,7 +433,7 @@ const agentsAliasRoute = createRoute({
 const tasksRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/tasks',
-  staticData: { header: TasksHeader },
+  staticData: { header: HomeSurfaceBar },
   component: TasksPage,
 });
 
@@ -483,7 +482,7 @@ const channelsRoute = createRoute({
 const workspacesRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/workspaces',
-  staticData: { header: WorkspacesBar },
+  staticData: { header: HomeSurfaceBar },
   component: WorkspacesPage,
 });
 
@@ -537,7 +536,15 @@ export type ActivitySearch = z.infer<typeof activitySearchSchema>;
 const activityRoute = createRoute({
   getParentRoute: () => homeSurfaceRoute,
   path: '/activity',
-  staticData: { header: ActivityHeader },
+  // Every home surface declares the SAME bar component, and that is deliberate:
+  // the shell keys its cross-fade on the bar rather than the route, so four
+  // routes sharing one bar keep one mounted tab strip — the underline slides
+  // between tabs instead of the whole row blinking out and back (phase H1).
+  // What differs per surface (Home's members chip, Scheduled's New Task) lives
+  // in `SURFACE_EXTRAS` inside the bar. Activity's category filters used to ride
+  // up here in the identity zone; they are the page's first content row now, the
+  // way a filter toolbar belongs to what it filters.
+  staticData: { header: HomeSurfaceBar },
   validateSearch: zodValidator(activitySearchSchema),
   component: ActivityPage,
 });

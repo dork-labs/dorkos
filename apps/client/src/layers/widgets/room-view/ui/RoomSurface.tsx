@@ -82,6 +82,26 @@ export interface RoomSurfaceProps {
    * panel, which covers the chrome anyway.
    */
   onComposerFocusChange?: (focused: boolean) => void;
+  /**
+   * Draw the room without its masthead, because the host's bar already is one.
+   *
+   * On for Home and Home only (phase H1). Home's identity is the Home tab in
+   * the bar, not the room's name — so the masthead under it was a second
+   * identity row for a page that already had one, and it pushed the feed down a
+   * whole row on every phone. What tells you which room you are in is the
+   * members chip beside the tabs and the composer that says "Message #team…".
+   *
+   * **Two things go with the masthead, and only one comes back here.** The
+   * roster button is the members chip in the bar. The "N agents working" chip
+   * and the room-wide Stop are NOT replaced on Home: the live lane's stop-all
+   * above the composer is the reach that survives, and phase R1 builds the room
+   * state chips the channel bar needs — Home wears them then.
+   *
+   * A prop rather than a deletion: `/channels` still needs the masthead until
+   * phase R1 gives it a room bar of its own, and a room drawn with no identity
+   * anywhere is worse than one drawn with it twice.
+   */
+  hideHeader?: boolean;
 }
 
 /**
@@ -114,6 +134,7 @@ export function RoomSurface({
   aboveComposer,
   offerJumpBackIn,
   onComposerFocusChange,
+  hideHeader = false,
 }: RoomSurfaceProps) {
   const isMobile = useIsMobile();
   // How much of the screen a software keyboard is currently eating. `0`
@@ -295,7 +316,7 @@ export function RoomSurface({
 
   const roomColumn = (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <RoomHeader room={room} onOpenMembers={() => setDetailsFocus('members')} />
+      {!hideHeader && <RoomHeader room={room} onOpenMembers={() => setDetailsFocus('members')} />}
       {/* The host's chrome, between the masthead and the scroller and inside
           neither — see `RoomSurfaceProps.aboveTimeline` for why that placement
           is the whole point. */}
