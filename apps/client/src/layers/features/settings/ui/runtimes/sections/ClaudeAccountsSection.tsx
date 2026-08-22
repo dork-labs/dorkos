@@ -221,14 +221,18 @@ export function ClaudeAccountsSection() {
         </Button>
       </div>
 
+      {/* "Default", not "Account": this is the bottom of a three-rung ladder now
+          (spec `billing-account-ladder`), and an agent or a single session can
+          overrule it. Calling it "Account" would read as the answer when it is
+          only the fallback. */}
       <SettingRow
-        label="Account"
-        description="New sessions run and bill on this account. Sessions you already started stay on the account that created them."
+        label="Default account"
+        description="New sessions bill this account unless the agent or the session picks another."
       >
         <Select value={activeValue} onValueChange={chooseAccount}>
           <SelectTrigger
             className="w-52"
-            aria-label="Claude Code account"
+            aria-label="Default account"
             data-testid="claude-account-select"
           >
             <SelectValue />

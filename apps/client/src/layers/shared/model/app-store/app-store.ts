@@ -143,6 +143,12 @@ export const useAppStore = create<AppState>()(
         pendingRuntime: null,
         setPendingRuntime: (runtime) => set({ pendingRuntime: runtime }),
 
+        // Pending pre-launch billing-account hint — see CoreSlice docs. Transient
+        // and URL-free on purpose: it is spent by the session-creating first send
+        // and cleared whenever the active session changes.
+        pendingAccount: null,
+        setPendingAccount: (accountId) => set({ pendingAccount: accountId }),
+
         requestedTour: null,
         requestTour: (id) => set({ requestedTour: id }),
         clearRequestedTour: () => set({ requestedTour: null }),

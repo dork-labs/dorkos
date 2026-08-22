@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider, useClaudeAccounts } from '@/layers/shared/model';
+import { TransportProvider, useAppStore, useClaudeAccounts } from '@/layers/shared/model';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { ServerConfig } from '@dorkos/shared/types';
 
@@ -181,21 +181,18 @@ beforeAll(() => {
   });
 });
 
-// A refused account switch is reported by toast — the status bar has no room for
-// an inline error.
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
-
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mockRuntimeCapabilities.mockReturnValue({ data: undefined });
   mockRuntimeRequirements.mockReturnValue({ data: undefined });
   mockServerConfig = {};
-  mockUpdateConfig = () => Promise.resolve();
+  // The account pick is shared app state, so a test that leaves one behind would
+  // hand the next one a hint it never made.
+  useAppStore.getState().setPendingAccount(null);
 });
 
 // Import after mocks are set up
-import { toast } from 'sonner';
 import { RuntimeItem } from '../ui/RuntimeItem';
 
 /**
@@ -208,9 +205,6 @@ let mockServerConfig: Partial<ServerConfig> = {};
 /** The transport the most recent {@link render} handed the tree, for write assertions. */
 let lastTransport: ReturnType<typeof createMockTransport>;
 
-/** What `PATCH /api/config` does in the current test. Overridden to assert a refusal. */
-let mockUpdateConfig: () => Promise<void> = () => Promise.resolve();
-
 /**
  * Render with the providers the chip's config read needs. Shadows RTL's `render`
  * so every existing case gets them without repeating the wrapper.
@@ -218,7 +212,10 @@ let mockUpdateConfig: () => Promise<void> = () => Promise.resolve();
 function render(ui: React.ReactElement) {
   const transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue(mockServerConfig),
-    updateConfig: vi.fn(() => mockUpdateConfig()),
+    // Present so a test can assert the picker calls it NOT AT ALL: the account
+    // choice is session-scoped now and writes no config (spec
+    // `billing-account-ladder`).
+    updateConfig: vi.fn(() => Promise.resolve()),
   });
   lastTransport = transport;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -655,7 +652,7 @@ describe('RuntimeItem', () => {
       return groups[groups.length - 1]!;
     }
 
-    it('lists the registered accounts plus the inherited default', async () => {
+    it('lists the registered accounts plus a default that names what it resolves to', async () => {
       mockServerConfig = withAccounts(2);
       everyRuntimeReady();
       render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
@@ -663,33 +660,30 @@ describe('RuntimeItem', () => {
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
       const group = accountGroup();
       expect(group.querySelectorAll('[role="radio"]')).toHaveLength(3);
-      expect(group).toHaveTextContent('Default');
-      expect(group).toHaveTextContent('Personal');
+      // "Default" alone is a choice with no consequence spelled out; naming the
+      // account it resolves to makes picking nothing a legible decision.
+      expect(group).toHaveTextContent('Default — Personal');
+      expect(group).toHaveTextContent('Acme Corp');
       // Nothing chosen yet, so the default option is the selected one.
       expect(group.getAttribute('data-value')).toBe('__default__');
     });
 
-    it('writes the chosen account so the next session bills to it', async () => {
+    it('says the choice is this session only, before offering it', async () => {
       mockServerConfig = withAccounts(2);
       everyRuntimeReady();
-      const user = userEvent.setup();
       render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
-
-      await user.click(screen.getByText('Acme Corp'));
-
-      expect(lastTransport.updateConfig).toHaveBeenCalledWith({
-        runtimes: { claudeCode: { defaultAccount: '/Users/dev/.claude2' } },
-      });
+      expect(screen.getByTestId('account-scope-note')).toHaveTextContent(
+        'This session only. Locked once the first message sends.'
+      );
     });
 
-    it('says so when the write is refused, instead of looking like it worked', async () => {
+    it('holds the pick for THIS session and writes no config at all', async () => {
+      // The whole point of the ladder (spec `billing-account-ladder` D2): this
+      // used to PATCH `defaultAccount`, so a one-off pick silently repointed
+      // every future session's billing. Red the moment that comes back.
       mockServerConfig = withAccounts(2);
-      const refusal = Object.assign(new Error('Only a person can change those settings'), {
-        status: 403,
-        code: 'operator_only_config',
-      });
-      mockUpdateConfig = () => Promise.reject(refusal);
       everyRuntimeReady();
       const user = userEvent.setup();
       render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
@@ -697,11 +691,68 @@ describe('RuntimeItem', () => {
 
       await user.click(screen.getByText('Acme Corp'));
 
-      // Both `runtimes.claudeCode` leaves are operator-only, so under Require
-      // login this 403 is a real outcome. Red when it is swallowed.
-      await waitFor(() =>
-        expect(toast.error).toHaveBeenCalledWith('Only a person can change those settings')
-      );
+      expect(lastTransport.updateConfig).not.toHaveBeenCalled();
+      // The hint is the registry ID, never the path — that is what the server
+      // resolves it against (ADR 260821-205324).
+      expect(useAppStore.getState().pendingAccount).toBe('acme-corp');
+      expect(accountGroup().getAttribute('data-value')).toBe('acme-corp');
+    });
+
+    it('returns to no hint when Default is picked back', async () => {
+      mockServerConfig = withAccounts(2);
+      everyRuntimeReady();
+      const user = userEvent.setup();
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+
+      await user.click(screen.getByText('Acme Corp'));
+      await user.click(screen.getByText('Default — Personal'));
+
+      // Null, not the default account's id: omitting the hint is what leaves the
+      // server's own ladder (the agent's account, then the default) in charge.
+      expect(useAppStore.getState().pendingAccount).toBeNull();
+      expect(lastTransport.updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('never offers a root nobody registered, which no hint could name', async () => {
+      // The in-use-but-unregistered root has no id, so a hint naming it is
+      // unspellable. It is reachable as the default option instead.
+      mockServerConfig = {
+        claudeCode: {
+          resolvedAccount: '/Users/dev/.claude-adhoc',
+          inherited: false,
+          accounts: [
+            { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+            {
+              id: 'acme-corp',
+              path: '/Users/dev/.claude2',
+              label: 'Acme Corp',
+              isAccountRoot: true,
+            },
+            // A row of the synthesized, display-only kind.
+            {
+              id: null,
+              path: '/Users/dev/.claude-adhoc',
+              label: null,
+              isAccountRoot: true,
+            },
+          ],
+        },
+      };
+      everyRuntimeReady();
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+      const group = accountGroup();
+      // Default + the two registered accounts, and nothing for the id-less row.
+      expect(group.querySelectorAll('[role="radio"]')).toHaveLength(3);
+      expect(
+        Array.from(group.querySelectorAll('[role="radio"]')).map((el) =>
+          el.getAttribute('data-radio-value')
+        )
+      ).toEqual(['__default__', 'personal', 'acme-corp']);
+      // It is still what the default resolves to, so it is named there.
+      expect(group).toHaveTextContent('Default — .claude-adhoc');
     });
 
     it('says so when a registered folder is not a usable account, instead of offering it plainly', async () => {
@@ -729,14 +780,14 @@ describe('RuntimeItem', () => {
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
       const marked = screen
         .getAllByRole('radio')
-        .filter((el) => el.getAttribute('data-radio-value') === '/Users/dev/.claude2');
+        .filter((el) => el.getAttribute('data-radio-value') === 'acme-corp');
       expect(marked).toHaveLength(1);
       expect(marked[0]).toHaveTextContent('Does not look like an account folder yet');
       // The usable one carries no such mark.
       expect(
         screen
           .getAllByRole('radio')
-          .find((el) => el.getAttribute('data-radio-value') === '/Users/dev/.claude')
+          .find((el) => el.getAttribute('data-radio-value') === 'personal')
       ).not.toHaveTextContent('Does not look like an account folder yet');
     });
 

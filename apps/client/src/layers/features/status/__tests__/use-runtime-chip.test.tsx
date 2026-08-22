@@ -80,7 +80,7 @@ function TwoConsumers({ sessionId = 'session-1' }: { sessionId?: string }) {
 beforeEach(() => {
   // A non-null cwd makes started-ness resolvable pre-launch; clear any pending
   // selection leaked from a prior test (the store is a module singleton).
-  useAppStore.setState({ selectedCwd: '/test/dir', pendingRuntime: null });
+  useAppStore.setState({ selectedCwd: '/test/dir', pendingRuntime: null, pendingAccount: null });
   window.history.replaceState(null, '', '/');
   mockSessionList.mockReturnValue({ sessions: [], isLoading: false });
 });
@@ -146,5 +146,24 @@ describe('useRuntimeChip — shared pending selection', () => {
     expect(useAppStore.getState().pendingRuntime).toBeNull();
     expect(screen.getByTestId('status-bar-runtime')).toHaveTextContent('claude-code');
     expect(screen.getByTestId('palette-runtime')).toHaveTextContent('claude-code');
+  });
+
+  it('clears the pre-launch billing pick when the active session changes', () => {
+    // "This session only" is a promise about MONEY: a pick that survived into
+    // the next session would bill work the person never chose it for. The first
+    // send also changes the session id (the canonical rekey), so this is the
+    // same effect that spends the hint.
+    const { rerender } = render(<TwoConsumers sessionId="session-1" />);
+    // Set AFTER mount, the way the menu does — the mount pass of the same effect
+    // has already run and cleared.
+    act(() => {
+      useAppStore.setState({ pendingAccount: 'acme-corp' });
+    });
+    expect(useAppStore.getState().pendingAccount).toBe('acme-corp');
+
+    act(() => {
+      rerender(<TwoConsumers sessionId="session-2" />);
+    });
+    expect(useAppStore.getState().pendingAccount).toBeNull();
   });
 });

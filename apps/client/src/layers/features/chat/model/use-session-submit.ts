@@ -65,6 +65,16 @@ interface UseSessionSubmitParams {
   transformContent: ChatSessionOptions['transformContent'];
   /** Launch-time runtime selection (`?runtime=`) — see {@link ChatSessionOptions.launchRuntime}. */
   launchRuntime: ChatSessionOptions['launchRuntime'];
+  /**
+   * Launch-time Claude Code billing selection: a registry id
+   * (`runtimes.claudeCode.accounts[].id`) the status bar is holding for this
+   * session, or `null`/`undefined` for no hint. Sent as `account` on the
+   * session-creating first message ONLY — after launch the account is a fact on
+   * disk (ADR 260801-204127), so a later send carrying it would ask for
+   * something impossible and the server would warn and ignore it. Absent means
+   * the server's ladder decides (the agent's account, then the default).
+   */
+  launchAccount?: string | null;
   /** Background for this turn — see {@link ChatSessionOptions.takeSeedContext}. */
   takeSeedContext: ChatSessionOptions['takeSeedContext'];
   // Store setters (sourced from useSessionStoreActions)
@@ -98,6 +108,7 @@ export function useSessionSubmit({
   onSessionIdChangeReplace,
   transformContent,
   launchRuntime,
+  launchAccount,
   takeSeedContext,
   setInput,
   setError,
@@ -113,6 +124,11 @@ export function useSessionSubmit({
   useEffect(() => {
     launchRuntimeRef.current = launchRuntime;
   }, [launchRuntime]);
+
+  const launchAccountRef = useRef(launchAccount);
+  useEffect(() => {
+    launchAccountRef.current = launchAccount;
+  }, [launchAccount]);
 
   // Server default runtime — seeds the optimistic sidebar row when no launch
   // selection exists. Static for the server's lifetime (staleTime: Infinity).
@@ -347,6 +363,13 @@ export function useSessionSubmit({
         // charge (resolveRuntimeTypeForNewSession priority order).
         if (isNewSession && launchRuntimeRef.current) {
           postOptions.runtime = launchRuntimeRef.current;
+        }
+        // First-turn billing hint, gated on the SAME signal for the same reason:
+        // the account is fixed to the one that created the session (ADR
+        // 260801-204127), so only the creating send can name it. No pick → omit
+        // entirely, leaving the server's ladder (agent, then default) in charge.
+        if (isNewSession && launchAccountRef.current) {
+          postOptions.account = launchAccountRef.current;
         }
 
         // Background a surface attached to this turn (Ask DorkBot, BC-48). Asked

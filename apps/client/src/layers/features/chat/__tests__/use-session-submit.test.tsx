@@ -40,13 +40,23 @@ vi.mock('@/layers/shared/lib/transport', async () => {
   };
 });
 
+/**
+ * The app-store slice the send path reads. Hoisted so a test can set a field —
+ * `pendingAccount`, the status bar's pre-launch billing pick — before rendering,
+ * the way the real store would already be holding one.
+ */
+const mockAppState = vi.hoisted(() => ({
+  selectedCwd: '/test/cwd' as string | null,
+  enableMessagePolling: false,
+  pendingAccount: null as string | null,
+}));
+
 vi.mock('@/layers/shared/model', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/model');
-  const mockState = { selectedCwd: '/test/cwd', enableMessagePolling: false };
   const useAppStore = Object.assign(
     (selector?: (s: Record<string, unknown>) => unknown) =>
-      selector ? selector(mockState) : mockState,
-    { getState: () => mockState }
+      selector ? selector(mockAppState) : mockAppState,
+    { getState: () => mockAppState }
   );
   return { ...actual, useAppStore };
 });
@@ -113,6 +123,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetUuidCounter();
+    mockAppState.pendingAccount = null;
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionListStore.setState({
@@ -434,6 +445,80 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     // No explicit selection → no hint, so the server's own resolution
     // (agent manifest, then default) stays in charge.
     expect(postMessage.mock.calls[0][3]).not.toHaveProperty('runtime');
+  });
+
+  it('passes the billing-account hint on the session-creating first send only', async () => {
+    // The status bar's pick is "this session only" (spec
+    // `billing-account-ladder`). After launch the account is a fact on disk, so
+    // a later send carrying it would ask for something impossible.
+    mockAppState.pendingAccount = 'acme-corp';
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+    // Default gcTime: the sessions list cache must survive between the two
+    // sends, which is what tells the second one the session already exists.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport, queryClient),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    // The registry ID, never a path — that is what the server resolves the hint
+    // against (ADR 260821-205324).
+    expect(postMessage.mock.calls[0][3]).toMatchObject({ account: 'acme-corp' });
+
+    // Settle the turn so a second send is allowed.
+    act(() => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent('s1', { seq: 1, type: 'turn_start' });
+      store.applyEvent('s1', { seq: 2, type: 'turn_end' });
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('Second');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Second'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage.mock.calls[1][3]).not.toHaveProperty('account');
+  });
+
+  it('omits the billing-account hint when no account was picked', async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    // Omitted entirely rather than sent as null: an absent hint is what hands
+    // the ladder back to the server (the agent's account, then the default).
+    expect(postMessage.mock.calls[0][3]).not.toHaveProperty('account');
   });
 
   it('carries Ask DorkBot\u2019s background on the first send and on no send after it (BC-48)', async () => {

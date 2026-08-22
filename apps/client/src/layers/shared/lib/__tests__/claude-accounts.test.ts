@@ -46,27 +46,36 @@ describe('claudeAccountOptions', () => {
     expect(
       claudeAccountOptions(
         [
-          { path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
-          { path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: false },
+          { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+          {
+            id: 'acme-corp',
+            path: '/Users/dev/.claude2',
+            label: 'Acme Corp',
+            isAccountRoot: false,
+          },
         ],
         null
       )
     ).toEqual([
-      { path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
-      { path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: false },
+      { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+      { id: 'acme-corp', path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: false },
     ]);
   });
 
   it('appends the account in use when it was never registered, claiming no verdict about it', () => {
     const options = claudeAccountOptions(
-      [{ path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true }],
+      [{ id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true }],
       '/Users/dev/.claude9'
     );
 
     expect(options).toHaveLength(2);
-    // Not `false`: the server reports the structural check for registered
-    // accounts only, and "unusable" would be a claim nobody made.
+    // `id: null` because nobody registered this root: it can be SHOWN, but
+    // nothing can point at it, so a picker whose value is a reference must leave
+    // it out. And not `isAccountRoot: false`: the server reports the structural
+    // check for registered accounts only, and "unusable" would be a claim nobody
+    // made.
     expect(options[1]).toEqual({
+      id: null,
       path: '/Users/dev/.claude9',
       label: null,
       isAccountRoot: undefined,

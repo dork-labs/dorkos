@@ -88,7 +88,7 @@ describe('Claude accounts showcase states', () => {
     );
 
     const section = screen.getByTestId('runtime-card-section-claude-accounts-claude-code');
-    expect(within(section).getByRole('combobox', { name: 'Claude Code account' })).toBeVisible();
+    expect(within(section).getByRole('combobox', { name: 'Default account' })).toBeVisible();
   });
 
   it('shows the default install with nothing registered', () => {
@@ -100,7 +100,7 @@ describe('Claude accounts showcase states', () => {
       </PlaygroundShell>
     );
 
-    expect(screen.getByRole('combobox', { name: 'Claude Code account' })).toHaveTextContent(
+    expect(screen.getByRole('combobox', { name: 'Default account' })).toHaveTextContent(
       `Default (${MOCK_SERVER_CONFIG.claudeCode!.resolvedAccount.replace('/Users/dev', '~')})`
     );
     expect(screen.queryByTestId('claude-account-row')).not.toBeInTheDocument();
@@ -132,7 +132,7 @@ describe('Claude accounts showcase states', () => {
       </RefusedConfigWriteProvider>
     );
 
-    await user.click(screen.getByRole('combobox', { name: 'Claude Code account' }));
+    await user.click(screen.getByRole('combobox', { name: 'Default account' }));
     const listbox = await screen.findByRole('listbox');
     await user.click(within(listbox).getByRole('option', { name: 'Personal' }));
 

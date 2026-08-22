@@ -75,7 +75,7 @@ function renderSection(claudeCode: ClaudeCodeBlock) {
 
 /** Open the account Select and click one of its options. */
 async function chooseOption(user: ReturnType<typeof userEvent.setup>, name: RegExp | string) {
-  await user.click(screen.getByRole('combobox', { name: 'Claude Code account' }));
+  await user.click(screen.getByRole('combobox', { name: 'Default account' }));
   const listbox = await screen.findByRole('listbox');
   await user.click(within(listbox).getByRole('option', { name }));
 }
@@ -107,13 +107,28 @@ describe('ClaudeAccountsSection', () => {
     expect(screen.queryByLabelText('Account folder')).not.toBeInTheDocument();
   });
 
+  it('calls the select the DEFAULT account, and says what can overrule it', async () => {
+    // The account is a three-rung ladder now (spec `billing-account-ladder`):
+    // an agent or a single session can overrule this. Naming the row "Account"
+    // would present the bottom rung as the answer, which is how an operator ends
+    // up billing the wrong client and never knowing why.
+    renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
+
+    await waitFor(() => expect(screen.getByText('Default account')).toBeInTheDocument());
+    expect(
+      screen.getByText(
+        'New sessions bill this account unless the agent or the session picks another.'
+      )
+    ).toBeInTheDocument();
+  });
+
   it('shows the resolved default rather than a blank field when no account is chosen', async () => {
     renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
 
     // The client cannot compute this: the server's inherited CLAUDE_CONFIG_DIR is
     // invisible to it, so an unset field would otherwise read as empty (AC8).
     await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Claude Code account' })).toHaveTextContent(
+      expect(screen.getByRole('combobox', { name: 'Default account' })).toHaveTextContent(
         'Default (~/.claude)'
       )
     );
@@ -164,7 +179,7 @@ describe('ClaudeAccountsSection', () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Claude Code account' })).toHaveTextContent(
+      expect(screen.getByRole('combobox', { name: 'Default account' })).toHaveTextContent(
         '.claude2'
       )
     );
@@ -237,7 +252,7 @@ describe('ClaudeAccountsSection', () => {
     const user = userEvent.setup();
     const transport = renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
     await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Claude Code account' })).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: 'Default account' })).toBeInTheDocument()
     );
 
     // Nothing between this field and the config file expands `~`, so a shorthand
@@ -257,7 +272,7 @@ describe('ClaudeAccountsSection', () => {
     const user = userEvent.setup();
     renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
     await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Claude Code account' })).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: 'Default account' })).toBeInTheDocument()
     );
 
     await openAddForm(user);

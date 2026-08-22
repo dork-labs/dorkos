@@ -40,6 +40,11 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const queryClient = useQueryClient();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
+  // The status bar's pre-launch billing pick, read from the shared store rather
+  // than passed down like `launchRuntime`: the runtime hint rides the URL, and
+  // this one deliberately does not (a shareable link must not decide whose
+  // subscription a turn spends), so the store is the only channel it has.
+  const pendingAccount = useAppStore((s) => s.pendingAccount);
   const sid = sessionId ?? '';
 
   // Single store subscription for all per-session fields.
@@ -231,6 +236,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     onSessionIdChangeReplace: options.onSessionIdChangeReplace,
     transformContent: options.transformContent,
     launchRuntime: options.launchRuntime,
+    launchAccount: pendingAccount,
     takeSeedContext: options.takeSeedContext,
     setInput,
     setError,

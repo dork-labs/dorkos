@@ -23,7 +23,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from '@/layers/shared/ui';
-import { shortenHomePath } from '@/layers/shared/lib';
+import { claudeAccountName } from '@/layers/shared/lib';
 import { DEFAULT_ACCOUNT_VALUE, useAccountSwitch } from '../model/use-account-switch';
 
 /** The runtime whose sessions belong to a Claude account. */
@@ -82,10 +82,12 @@ type SetupDialogState = { open: boolean; runtime?: string };
  * "Connect" entry that opens the Ready/Connect setup surface (one-click
  * provisioning for OpenCode; the terminal detail lives behind Advanced).
  *
- * On Claude Code the same menu carries the ACCOUNT the next session bills to,
- * once more than one is registered — the choice belongs where a turn is
- * initiated, not only in Settings, because misattributed billing is the failure
- * mode (spec `claude-code-accounts` D6).
+ * On Claude Code the same menu carries the ACCOUNT THIS session bills to, once
+ * more than one is registered — the choice belongs where a turn is initiated,
+ * not only in Settings, because misattributed billing is the failure mode (spec
+ * `claude-code-accounts` D6). It is a launch hint for this session alone and
+ * writes no config; the server default lives in Settings → Runtimes and the
+ * agent's account in its "Runs on" popover (spec `billing-account-ladder`).
  */
 export function RuntimeItem({
   runtime,
@@ -120,9 +122,9 @@ export function RuntimeItem({
   const canChangeRuntime =
     !!onChangeRuntime &&
     (registeredTypes.length > 1 || needsSetupTypes.length > 0 || hasAddableRuntime);
-  // Which Claude account the next session bills to — the same pre-launch window
-  // the runtime choice lives in, and for the same reason: once a session exists
-  // its account is fixed to the one that created it (spec D3), so a switcher on a
+  // Which Claude account THIS session bills to — the same pre-launch window the
+  // runtime choice lives in, and for the same reason: once a session exists its
+  // account is fixed to the one that created it (spec D3), so a switcher on a
   // started session would imply a move that is impossible. A started session's
   // account is legible on its sidebar row instead.
   //
@@ -220,24 +222,30 @@ export function RuntimeItem({
             <>
               {canChangeRuntime && <ResponsiveDropdownMenuSeparator />}
               <ResponsiveDropdownMenuLabel>Account</ResponsiveDropdownMenuLabel>
+              {/* Said before the options, not after: the scope of the choice is
+                  what a person needs to know to make it. Picking here used to
+                  rewrite the server default, so spelling out that it no longer
+                  does is the whole point of the line. */}
+              <p
+                className="text-muted-foreground px-2 pb-1 text-[11px] leading-snug"
+                data-testid="account-scope-note"
+              >
+                This session only. Locked once the first message sends.
+              </p>
               <ResponsiveDropdownMenuRadioGroup
                 value={account.selectedValue}
                 onValueChange={account.choose}
               >
-                <ResponsiveDropdownMenuRadioItem
-                  value={DEFAULT_ACCOUNT_VALUE}
-                  description={
-                    account.inherited && account.resolvedAccount
-                      ? shortenHomePath(account.resolvedAccount)
-                      : undefined
-                  }
-                >
-                  Default
+                <ResponsiveDropdownMenuRadioItem value={DEFAULT_ACCOUNT_VALUE}>
+                  {account.defaultLabel ? `Default — ${account.defaultLabel}` : 'Default'}
                 </ResponsiveDropdownMenuRadioItem>
                 {account.accounts.map((entry) => (
                   <ResponsiveDropdownMenuRadioItem
-                    key={entry.path}
-                    value={entry.path}
+                    key={entry.id}
+                    // The registry id, never the path: an account reference is by
+                    // id everywhere it travels (ADR 260821-205324), and the server
+                    // resolves the hint against `accounts[].id`.
+                    value={entry.id}
                     // The server already checked this folder and could not find an
                     // account in it, so say so here as plainly as the settings
                     // card does on its row. Still selectable, not disabled: an
@@ -250,7 +258,7 @@ export function RuntimeItem({
                         : undefined
                     }
                   >
-                    {account.nameFor(entry.path)}
+                    {claudeAccountName(entry.path, account.accounts)}
                   </ResponsiveDropdownMenuRadioItem>
                 ))}
               </ResponsiveDropdownMenuRadioGroup>

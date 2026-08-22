@@ -102,6 +102,23 @@ export interface CoreSlice {
   setPendingRuntime: (runtime: string | null) => void;
 
   /**
+   * Pending pre-launch BILLING ACCOUNT selection made from the status-bar chip —
+   * a registry id (`runtimes.claudeCode.accounts[].id`), never a path. Sent as
+   * the `account` launch hint on the session-creating first message and nothing
+   * else; null means "no hint", which leaves the server's own ladder (the
+   * agent's account, else the default) in charge.
+   *
+   * Deliberately transient AND deliberately absent from the URL, unlike
+   * {@link pendingRuntime}. Billing is not a deep link: a shared or bookmarked
+   * cockpit URL must never be able to decide whose subscription a stranger's
+   * turn spends. It lives for one session and is cleared the moment the active
+   * session changes (`useRuntimeChip`).
+   */
+  pendingAccount: string | null;
+  /** Set the pending pre-launch account hint (null clears it, meaning "no hint"). */
+  setPendingAccount: (accountId: string | null) => void;
+
+  /**
    * A living tour (DOR-419) requested by name from anywhere in the app — the
    * on-demand "Show me around" doors set it, and the tour host consumes and
    * clears it. A cross-feature request seam so features that cannot import the

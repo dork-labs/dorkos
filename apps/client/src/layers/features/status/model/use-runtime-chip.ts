@@ -133,12 +133,20 @@ export function useResolvedSessionRuntime(sessionId: string): ResolvedSessionRun
 export function useRuntimeChip(sessionId: string): RuntimeChipState {
   const resolved = useResolvedSessionRuntime(sessionId);
   const setPendingRuntime = useAppStore((s) => s.setPendingRuntime);
+  const setPendingAccount = useAppStore((s) => s.setPendingAccount);
 
   // Effect — never a render-time external-store write, which would update the
   // sibling consumer mid-render.
+  //
+  // Both pre-launch picks the chip owns are cleared together. The account hint
+  // especially: it decides whose subscription a turn spends, and a pick that
+  // survived into the NEXT session would bill work the person never chose it
+  // for. "This session only" is the promise the menu makes; this is where it is
+  // kept.
   useEffect(() => {
     setPendingRuntime(null);
-  }, [sessionId, setPendingRuntime]);
+    setPendingAccount(null);
+  }, [sessionId, setPendingRuntime, setPendingAccount]);
 
   const inPlaceNavigate = useInPlaceNavigate();
   const onChangeRuntime = useCallback(
