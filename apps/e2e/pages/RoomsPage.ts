@@ -266,9 +266,56 @@ export class RoomsPage {
       .click();
   }
 
-  /** The open room's roster in the masthead, which opens the members panel. */
-  get membersButton(): Locator {
-    return this.page.getByRole('button', { name: /^Members of / });
+  /**
+   * The right panel's body — the Room tab's content once it is the active one.
+   *
+   * The container gives its body `role="tabpanel"` whenever more than one tab is
+   * visible, which on a room route is always: Pulse is global and the Room tab
+   * is contextual (spec `one-bar-header` §3.6).
+   */
+  get roomPanel(): Locator {
+    return this.page.getByRole('tabpanel');
+  }
+
+  /** The right panel's own tab for this room, whether or not it is showing. */
+  get roomPanelTab(): Locator {
+    return this.page.getByRole('tab', { name: 'Room' });
+  }
+
+  /**
+   * Open the room panel the way a person does — by pressing the head count in
+   * the bar (spec `one-bar-header` §3.6, entry point 1).
+   *
+   * Since phase R2 this is a panel beside the room rather than a modal over it,
+   * so nothing is dismissed by opening it and the room stays readable behind.
+   */
+  async openRoomPanel(): Promise<void> {
+    await this.membersChip.click();
+    await this.roomPanel.waitFor({ state: 'visible' });
+  }
+
+  /**
+   * One roster row in the room panel, found by the member it is about.
+   *
+   * @param name - The member's display name, as the roster prints it.
+   */
+  memberRow(name: string): Locator {
+    return this.roomPanel.locator('[data-slot="room-member-row"]').filter({ hasText: name });
+  }
+
+  /**
+   * The face on one roster row — the agent's own emoji, or the honest letter
+   * for an agent this cockpit's fleet cannot place.
+   *
+   * @param name - The member's display name.
+   */
+  memberFace(name: string): Locator {
+    return this.memberRow(name).locator('[data-slot="identity-avatar"]').first();
+  }
+
+  /** The room's own mark at the top of the panel — a DM wears its agent's face. */
+  get panelRoomMark(): Locator {
+    return this.roomPanel.locator('[data-slot="room-avatar"]').first();
   }
 
   /** The empty state's own affordance for putting agents in the room. */

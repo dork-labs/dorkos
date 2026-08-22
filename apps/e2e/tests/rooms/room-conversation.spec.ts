@@ -174,13 +174,15 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
 
     // Then the panel's own state, which is a different claim: a roster the
     // server holds and the panel does not draw is still a bug the person sees.
-    await roomsPage.membersButton.click();
-    const panel = page.getByRole('dialog');
+    await roomsPage.openRoomPanel();
+    const panel = roomsPage.roomPanel;
     await expect(panel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-    // The sheet is named by the ROOM. Its visible name is a control — press it
-    // and it becomes the rename field — and a control's accessible name says
-    // what pressing it does, so it cannot also be the sheet's.
-    await expect(panel).toHaveAccessibleName(`#${slug}`);
+    // The panel is named by its TAB, which the press above selected. The room's
+    // visible name inside it is a control — press it and it becomes the rename
+    // field — and a control's accessible name says what pressing it does, so it
+    // was never able to name the surface it sits in.
+    await expect(roomsPage.roomPanelTab).toHaveAttribute('aria-selected', 'true');
+    await expect(panel.getByRole('button', { name: `Room name:${name}` })).toBeVisible();
     // Both agents have a row, each with its verbs behind its own "…".
     await expect(panel.getByRole('button', { name: `${ana.name} actions` })).toBeVisible();
     await expect(panel.getByRole('button', { name: `${kai.name} actions` })).toBeVisible();

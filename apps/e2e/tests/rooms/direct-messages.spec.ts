@@ -131,6 +131,16 @@ test.describe('Rooms — starting a direct message @smoke', () => {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(roomsPage.rowMark(title)).toHaveText(agentEmoji.join(''));
+
+    // And each agent wears its own face on its roster row in the room panel —
+    // the discs that went with the masthead in phase R1, back one press away in
+    // phase R2. Asserted per agent rather than as a stack: this is the list
+    // where "who exactly" is the question being answered.
+    await roomsPage.openRoomPanel();
+    await expect(roomsPage.memberFace(ana.name)).toHaveText(ana.emoji, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(roomsPage.memberFace(kai.name)).toHaveText(kai.emoji);
   });
 
   test('a query nobody matches does not open the half-assembled conversation', async ({

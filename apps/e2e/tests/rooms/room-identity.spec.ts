@@ -131,19 +131,26 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     // name. A letter disc renders "E E2E Otter …" here and fails.
     expect(await visibleText(row)).toBe(`${agent.emoji} ${agent.name}`);
 
-    // **The face assertions stop at the sidebar, and that is the product, not a
-    // gap in the test.** The open room's masthead drew this agent's emoji twice
-    // — once as the room's mark, once on a roster disc — and phase R1 replaced
-    // it with the one bar, which draws no face at all: the fleet directory those
-    // faces came from sits in a widget this layer may not import, and a hashed
-    // letter here would contradict the emoji the sidebar shows two inches away.
-    // So what the bar owes this test is the NAME, and the roster as a count.
-    // When phase R2 rebuilds the roster in the room panel, the disc assertions
-    // belong there.
+    // **The bar owes this test the NAME, and the roster as a count.** The
+    // masthead drew this agent's emoji twice — once as the room's mark, once on
+    // a roster disc — and phase R1 replaced it with the one bar, which draws no
+    // face at all: the fleet directory those faces came from sits in a widget
+    // that layer may not import, and a hashed letter there would contradict the
+    // emoji the sidebar shows two inches away.
     await page.goto(`/channels?id=${room.id}`);
     await expect(roomsPage.roomHeading).toHaveAccessibleName(agent.name, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(roomsPage.membersChip).toHaveAccessibleName('2 members');
+
+    // **Both discs are back, one press away** (phase R2, spec §3.6). The panel
+    // reads the fleet itself, so the room's own mark and this agent's roster row
+    // wear the emoji the sidebar wears — the third and fourth places the same
+    // face has to agree, which is the whole point of this file.
+    await roomsPage.openRoomPanel();
+    await expect(roomsPage.memberFace(agent.name)).toHaveText(agent.emoji, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(roomsPage.panelRoomMark).toHaveText(agent.emoji);
   });
 });
