@@ -1,6 +1,6 @@
 ---
 title: Filtering and Muting Your Agent List
-description: Show only the agents that need you, tuck away the quiet ones, and mute the noisy groups without losing them
+description: Show only the agents that need you, keep the list short, and mute the noisy sections without losing them
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -8,97 +8,163 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Filtering and Muting Your Agent List
 
-Once you're running more than a handful of agents, your **Library** — the part of the sidebar holding your channels, direct messages, agents, and the groups you build out of them — gets crowded. Some agents are waiting on you right now. Some are quietly idle. A few might not have done anything in a week. DorkOS gives you three simple controls to cut through that: **show filters**, an **inactive count** you can reveal on demand, and **mute**.
+Once you're running more than a handful of agents, the lower half of your sidebar — your sections,
+pins, channels, direct messages and agents — gets crowded. Some agents are waiting on you right
+now. Some are quietly idle. A few might not have done anything in a week. DorkOS gives you two
+simple controls to cut through that: **show filters** and **mute**. The Agents list also keeps
+itself short on its own.
 
-None of these delete or hide an agent for good. They just change what's on screen, and every one of them is one click away from showing everything again. (They're separate from **Heads up** and **Today**, the two parts of the sidebar above Library that DorkOS fills in for you automatically — those aren't something you filter or group.)
+Neither control deletes or hides an agent for good. They just change what's on screen, and each is
+one click away from showing everything again. They're separate from **Heads up** and **Today**, the
+two parts of the sidebar that DorkOS fills in for you automatically. Those aren't something you
+filter or organise.
+
+<Callout type="info">
+  DorkOS used to call these **groups**. They're called **sections** now, everywhere you read them.
+  Nothing you organised moved or changed.
+</Callout>
+
+## The Agents list stays short on its own
+
+**Agents** shows the agents you have used lately and the ones you pinned, then a single
+**All N agents →** row that opens your team page. "Lately" counts the last time you looked at an
+agent, not only the last time it ran, so an agent you have not touched in a month stops costing a
+row. If you have eight agents or fewer, you still see all of them.
+
+Nothing is hidden by this. Everything you don't see in the sidebar is on the team page, one click
+away, and ⌘K still finds any agent by name.
 
 ## Show only what matters
 
-Every group, and the "Agents" section for agents you haven't grouped, has a **Show** menu with three options:
+Every section, and the "Agents" section itself, has a **Show** menu with three options:
 
-- **All**: everything shows, except agents that have been quiet for a while (see [Inactive agents](#inactive-agents-tuck-themselves-away) below).
+- **All**: every agent in that section.
 - **Active**: only agents that are working right now, or that need your attention.
 - **Needs attention**: only agents waiting on you, like an approval or a failed run.
 
-Open a group's "…" menu, or right-click it, and pick **Show**. Switch a busy "Clients" group to **Needs attention** and it collapses down to just the agents actually waiting on you, no scrolling required.
+Open a section's `⋮` menu, or right-click it, and pick **Show**. Switch a busy "Clients" section to
+**Needs attention** and it drops down to just the agents actually waiting on you, no scrolling
+required.
 
-Filters are per-section: each group remembers its own choice, and the ungrouped "Agents" section has its own too. Switching one group's filter never touches another.
+Filters are per-section: each one remembers its own choice, and the "Agents" section has its own
+too. Switching one section's filter never touches another.
 
 <Callout type="info">
-  Filtering never deletes anything. It's just a different view onto agents that are still there,
-  still running, still one click away.
+  Filtering never deletes anything. It's a different view onto agents that are still there, still
+  running, still one click away.
 </Callout>
 
-## Nothing hides silently
+## Muting an agent or a section
 
-When a filter (or the inactive check below) hides some of a section's agents, DorkOS always leaves a trail back to them: a small row at the bottom of the section that says something like **"3 hidden"** or **"5 inactive agents."** Click it to expand the hidden agents right there, in place. Click again to collapse them back.
+Sometimes an agent, or a whole section, is doing a lot of work you don't need to watch closely
+right now: an experiment, a background job, something you'll check on later. Muting quiets it down
+without removing it from the sidebar.
 
-You'll never wonder "wait, where did that agent go?" It's always one click away.
+Right-click an agent, or open its `⋮` menu, and choose **Mute agent**. A muted agent:
 
-### Inactive agents tuck themselves away
+- Keeps its name just as easy to read, with a small mute icon beside it. Muting drops signals, not
+  legibility.
+- Stops showing its activity badge, the small coloured dot for "working" or "needs you", and stops
+  going bold or carrying an unread count.
+- Never lights up a section's activity dot, even while it's actively working.
+- Stays exactly where it is, and stays fully clickable. Muting is a display choice, not a way to
+  turn an agent off.
 
-With the default **All** filter, agents that haven't had any activity in the last week automatically collapse behind an honest count, like "4 inactive agents." Everything else in the section, active or waiting-on-you, still shows normally. This keeps a section clean as your fleet grows, without you having to filter anything by hand.
-
-## Muting an agent or a group
-
-Sometimes an agent (or a whole group) is doing a lot of work you don't need to watch closely right now, an experiment, a background job, something you'll check on later. Muting quiets it down without removing it from the sidebar.
-
-Right-click an agent (or open its "…" menu) and choose **Mute agent**. A muted agent:
-
-- Renders a little dimmer, with a small mute icon next to its name.
-- Stops showing its activity badge (the small colored dot for "working" or "needs you").
-- Never lights up a group's activity dot, even while it's actively working.
-- Stays exactly where it is, and stays fully clickable. Muting is a display choice, not a way to disable an agent.
-
-Muting a whole **group** works the same way, from the group's "…" menu: every member renders muted while the group stays muted, and the group's own activity dot goes dark too. Unmute the group and every member goes right back to whatever its own mute state was before, muting a group never changes an individual agent's mute setting underneath it.
+Muting a whole **section** works the same way, from the section's `⋮` menu: every member renders
+muted while the section stays muted, and the section's own activity dot goes dark too. Unmute the
+section and every member goes right back to whatever its own mute state was before. Muting a
+section never changes an individual agent's mute setting underneath it.
 
 <Callout type="info">
   Mute is a sidebar display setting only. It doesn't touch notifications, sounds, or anything the
-  agent itself does, it just quiets down what you see in the list.
+  agent itself does. It just quiets down what you see in the list.
 </Callout>
 
-## Smart groups: sections that keep themselves organized
+## Smart sections: lists that keep themselves organized
 
-A regular group is a list you build by hand: you drag agents into it, and they stay there until you move them out. Once you're running a lot of agents, or a mix of runtimes like Claude Code and Codex, hand-tuning that list gets old fast. Agents finish work, go idle, switch projects, and your group falls out of date.
+A regular section is a list you build by hand: you drag things into it, and they stay there until
+you move them out. A section can hold anything you see in the sidebar, so a channel, a conversation
+and an agent can sit side by side in one.
 
-A **smart group** is a section that fills itself in. Instead of a list of agents, it holds a rule, like "agents that are active or need me right now." Every time the sidebar refreshes, DorkOS checks the rule against your fleet and shows whoever matches. Idle agent drops off the list. New agent starts working and joins in. You never touch it.
+Once you're running a lot of agents, or a mix of runtimes like Claude Code and Codex, hand-tuning a
+list of agents gets old fast. Agents finish work, go idle, switch projects, and your section falls
+out of date.
+
+A **smart section** fills itself in. Instead of a list of agents, it holds a rule, like "agents
+that are active or need me right now." Every time the sidebar refreshes, DorkOS checks the rule
+against your fleet and shows whoever matches. An idle agent drops off the list. A new agent starts
+working and joins in. You never touch it.
 
 <Callout type="info">
-  Smart groups only show up once you're running 8 or more agents, or 2 or more runtimes. Below that,
-  a hand-built group is simpler, so DorkOS keeps a plain **New group** action available — from any
-  agent's own "…" menu — exactly as it was.
+  Everyone can make a section, however few agents you have. The one-click smart starters and the
+  custom rule builder show up once you're running 8 or more agents, or 2 or more runtimes, because
+  below that a hand-built section is simpler.
 </Callout>
 
 ### Creating one
 
-Open the **New** menu — the New button at the top of the sidebar, or the **+** on the Agents section in Library — and choose **Agent group**. You'll see one-click starters:
+Open the **New** menu, either the New button at the top of the sidebar or the **+** on a heading,
+and choose **Section**. You'll see one-click starters:
 
 - **Active now**: agents that need you or are actively working.
-- **By runtime**: one starter per runtime you're running, like "By runtime · Codex," for any runtime with two or more agents.
+- **By runtime**: one starter per runtime you're running, like "By runtime · Codex," for any
+  runtime with two or more agents.
 
-Pick one and the group appears instantly, already filled in. Want something more specific? Choose **Custom rules…** to build your own: which runtimes, which namespaces, which status (active, needs attention, idle, or inactive), how recently active, or agents whose folder starts with a certain path. Combine as many of these as you want. Every rule you add narrows the group further.
+Pick one and the section appears instantly, already filled in. Want an empty one to fill yourself?
+Choose **Empty section**. Want something more specific? Choose **Custom rules…** to build your own:
+which runtimes, which namespaces, which status (active, needs attention, idle, or inactive), how
+recently active, or agents whose folder starts with a certain path. Combine as many of these as you
+want. Every rule you add narrows the section further.
+
+Whichever way you start one, and whether you started it from the New button or from a row's
+right-click menu, the name box opens in the same place: the top of the list.
 
 ### Always honest about what it's showing
 
-A smart group tells you exactly what rule it's running. Open its "…" menu and you'll see a plain-English summary, like "Codex · active in the last hour," right above the usual options.
+A smart section tells you exactly what rule it's running. Open its `⋮` menu and you'll see a
+plain-English summary, like "Codex · active in the last hour," right above the usual options.
 
-If nothing matches the rule, the group doesn't disappear. It shows "No agents match these rules," so you always know the group is there and working, just empty for now.
+If nothing matches the rule, the section doesn't disappear. It shows "No agents match these
+rules," so you always know it's there and working, just empty for now.
 
-You can't drag an agent into a smart group. Since its membership comes from the rule, dropping an agent on it does nothing but show a reminder that you'll want to edit the rule instead. An agent that matches a smart group's rule still shows up in its usual group too. Nothing gets moved out from where you put it by hand.
+There's no **Mute** on a smart section. A rule-built list is worked out fresh every time you look
+at it, so muting it could never stick, and an option that quietly does nothing is worse than no
+option.
+
+You can't drag an agent into a smart section either. Its membership comes from the rule, so
+dropping an agent on it shows a reminder to edit the rule instead. An agent that matches a smart
+section's rule still shows up in whatever section you filed it in by hand. Nothing gets moved out
+from where you put it.
 
 ### Editing or converting
 
-Change your mind about the rule any time: open the group's "…" menu and choose **Edit rules**. The same form you used to create it comes back, prefilled with the current rule.
+Change your mind about the rule any time: open the section's `⋮` menu and choose **Edit rules**.
+The same form you used to create it comes back, prefilled with the current rule.
 
-If you'd rather freeze today's members and manage the group by hand from here on, choose **Convert to manual group**. DorkOS takes whoever matches right now, drops them into a regular group with that same name, and you're free to add, remove, and reorder them yourself.
+If you'd rather freeze today's members and manage the list by hand from here on, choose **Convert
+to manual section**. DorkOS takes whoever matches right now, drops them into a regular section with
+that same name, and you're free to add, remove and reorder them yourself.
+
+## Sorting a heading
+
+**Channels** and **Direct messages** each remember how you want them sorted, by name or by what
+happened most recently. That choice lives in the heading's `⋮` menu, and each one keeps its own.
+
+A section you built sorted by **Recent activity** puts channels and conversations in the right
+place alongside your agents, by whatever happened in them last.
 
 ## Where these settings live
 
-Show filters and mute are saved to your account, the same as groups and pinning, so they follow you across the desktop app and the browser. They don't affect anyone else on a shared DorkOS instance.
+Show filters, mute, sort order and your sections are all saved to your account, the same as
+pinning, so they follow you across the desktop app and the browser. They don't affect anyone else
+on a shared DorkOS instance.
 
 ## Next steps
 
 <Cards>
+  <Card title="Your sidebar" href="/docs/concepts/sidebar">
+    What Heads up and Today are, and why things move in and out of them on their own.
+  </Card>
   <Card title="Agent Identity" href="/docs/guides/agents">
     Give your agents a name, color, and emoji so a busy sidebar is still easy to scan.
   </Card>
