@@ -567,8 +567,28 @@ interface SidebarMenuSurfaceProps {
    * The menu, as data. An empty list renders the children bare — no context
    * menu, no "⋮" — because a surface with nothing to offer should not grow a
    * control that opens an empty box.
+   *
+   * The one exception is a caller that passes {@link onMenuIntent}: an empty
+   * list there means "not built yet", not "nothing to offer".
    */
   nodes: SidebarMenuNode[];
+  /**
+   * The reader has reached for this menu — a press anywhere on the surface, a
+   * right-click, or focus landing inside it.
+   *
+   * **For a row whose menu is expensive to build.** A room row's actions are six
+   * mutations and a preferences write; mounting them for every row on screen is
+   * the standing cost D8 removes. A caller that passes this may hand over an
+   * empty {@link nodes} until it fires, and the surface keeps its "⋮" and its
+   * right-click target anyway — the alternative is a row with no menu at all
+   * until someone hovers it.
+   *
+   * It fires on the CAPTURE phase, before the menus' own handlers, so a caller
+   * that builds its nodes synchronously (a `flushSync` latch) has them in place
+   * by the time either menu opens. It may fire many times; latching is the
+   * caller's job.
+   */
+  onMenuIntent?: () => void;
   /** The row or header the menus belong to. */
   children: ReactNode;
   /** Accessible name for the "⋮" trigger, e.g. `"#general actions"`. */
@@ -660,6 +680,7 @@ export function SidebarMenuSurface({
   menuWidth = 'w-48',
   kebabClassName,
   hideActionsTrigger = false,
+  onMenuIntent,
 }: SidebarMenuSurfaceProps) {
   const { nodes: guarded, onCloseAutoFocus } = useGuardedMenuNodes(nodes);
   const isMobile = useIsMobile();
@@ -720,9 +741,27 @@ export function SidebarMenuSurface({
     event.stopPropagation();
   }, []);
 
-  if (nodes.length === 0) {
+  if (nodes.length === 0 && onMenuIntent === undefined) {
     return <Root className={cn('relative', className)}>{children}</Root>;
   }
+
+  /**
+   * The capture-phase handlers that tell a caller its menu is wanted.
+   *
+   * Capture, and on the three gestures that can END in a menu: a press (the
+   * "⋮" opens a dropdown on `pointerdown`, and a long press raises the sheet), a
+   * right-click, and focus arriving in the row (from where `ArrowRight` reaches
+   * the "⋮"). Deliberately NOT `pointerenter` — a mouse crossing the panel would
+   * build every menu it passed over, which is the standing cost this avoids.
+   */
+  const intentProps =
+    onMenuIntent === undefined
+      ? {}
+      : {
+          onPointerDownCapture: onMenuIntent,
+          onContextMenuCapture: onMenuIntent,
+          onFocusCapture: onMenuIntent,
+        };
 
   const kebabTrigger = hideActionsTrigger ? null : (
     <DropdownMenuTrigger asChild>
@@ -795,6 +834,7 @@ export function SidebarMenuSurface({
               'select-none [-webkit-touch-callout:none]',
               className
             )}
+            {...intentProps}
             onPointerDown={onPointerDown}
             onPointerMove={longPress.onPointerMove}
             onPointerUp={longPress.onPointerUp}
@@ -822,7 +862,7 @@ export function SidebarMenuSurface({
     <DropdownMenu>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <Root className={cn('group/sidebar-menu relative', className)}>
+          <Root className={cn('group/sidebar-menu relative', className)} {...intentProps}>
             {children}
             {kebabTrigger}
           </Root>

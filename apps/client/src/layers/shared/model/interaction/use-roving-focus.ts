@@ -241,18 +241,44 @@ export function useRovingFocus(options?: {
     // exception is a mounted form field — see {@link KEEPS_ITS_OWN_TAB_STOP}.
     for (const element of focusablesIn(container)) {
       if (element.matches(KEEPS_ITS_OWN_TAB_STOP)) continue;
-      element.tabIndex = element === roving ? 0 : -1;
+      const wanted = element === roving ? 0 : -1;
+      // Only when it differs. Writing the same value still sets the attribute,
+      // and a 60-row section did 120 of those on every commit of the panel —
+      // several times a minute, for nothing (`specs/sidebar-simplification` D8).
+      if (element.tabIndex !== wanted) element.tabIndex = wanted;
     }
   }, []);
 
-  // After every commit: rows arrive from queries, leave on filter changes, and
-  // the active one moves as the reader navigates. Cheap — a handful of nodes,
-  // and only inside this one container.
-  useEffect(sync);
+  /**
+   * Watch the section for the two things that can invalidate the stamp.
+   *
+   * **Structure, and the active row.** Rows arrive from queries, leave on filter
+   * changes, an inline editor replaces a row and gives it back — all `childList`
+   * — and the row the reader is ON moves as they navigate, which the panel
+   * expresses as `aria-current`. Those are the only two, so those are what is
+   * observed.
+   *
+   * This replaces a `useEffect(sync)` with no dependency list, which re-ran two
+   * `querySelectorAll`s per section on every commit of the sidebar — a clock
+   * tick, a query settling, a tool call. An observer fires when the DOM actually
+   * changes instead, including for changes no commit of this component produced.
+   */
+  const observerRef = useRef<MutationObserver | null>(null);
+  useEffect(() => () => observerRef.current?.disconnect(), []);
 
   const ref = useCallback(
     (element: HTMLElement | null) => {
       containerRef.current = element;
+      observerRef.current?.disconnect();
+      if (element !== null) {
+        const observer = new MutationObserver(sync);
+        observer.observe(element, {
+          childList: true,
+          subtree: true,
+          attributeFilter: ['aria-current'],
+        });
+        observerRef.current = observer;
+      }
       sync();
     },
     [sync]

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import {
   useRovingFocus,
@@ -387,14 +387,18 @@ describe('useRovingFocus — the stop survives', () => {
     expect(tabStops()).toEqual(['three']);
   });
 
-  it('re-homes only when the parked row actually leaves the DOM', () => {
+  it('re-homes only when the parked row actually leaves the DOM', async () => {
     const { rerender } = render(<Section rows={ROWS} />);
     fireEvent.keyDown(screen.getByText('one'), { key: 'End' });
     expect(tabStops()).toEqual(['four']);
 
     // 'four' is filtered out — the stop has to go somewhere real.
     rerender(<Section rows={['one', 'two', 'three']} activeIndex={1} />);
-    expect(tabStops()).toEqual(['two']);
+    // **Awaited, because the re-stamp is driven by a `MutationObserver` now
+    // rather than by every commit** (D8). Its callback is a microtask, so it
+    // runs after this render and before the browser paints — a reader never
+    // sees the intermediate state, but a synchronous assertion does.
+    await waitFor(() => expect(tabStops()).toEqual(['two']));
   });
 
   it('survives a section with no rows at all', () => {

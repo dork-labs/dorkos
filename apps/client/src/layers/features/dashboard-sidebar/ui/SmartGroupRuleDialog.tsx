@@ -62,9 +62,9 @@ interface SmartGroupRuleDialogProps {
   /** Prefilled rules — the preset's rules in create mode, or the group's current rules in edit mode. */
   initialRules?: SmartGroupRules;
   /** Runtimes present in the fleet, for the runtime checkbox set. */
-  runtimeOptions: RuntimeOption[];
+  runtimeOptions: readonly RuntimeOption[];
   /** Distinct namespaces present in the fleet (rendered only when there's more than one). */
-  namespaceOptions: string[];
+  namespaceOptions: readonly string[];
   /** Called with the finished name (create mode only) and rules on submit. */
   onSubmit: (input: { name: string; rules: SmartGroupRules }) => void;
 }
