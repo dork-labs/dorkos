@@ -35,7 +35,7 @@ function AgentRowMenuItems({
 
 // Mock the config surface so rendering needs no transport/QueryClient. Two
 // groups with the agent in g1 makes the Move-to-group submenu fully populated:
-// a checked target, an unchecked target, Remove from group, and New group…
+// a checked target, an unchecked target, Remove from section, and New section…
 const API_SERVER: SidebarItemRef = { kind: 'agent', path: '/agents/api-server' };
 const groups = [
   { id: 'g1', name: 'Clients', items: [API_SERVER] },
@@ -123,7 +123,7 @@ function model(overrides: Partial<RowMenuModel> = {}): RowMenuModel {
   };
 }
 
-/** Find the "Move to group" submenu node. */
+/** Find the "Move to section" submenu node. */
 function moveSub(nodes: ReturnType<typeof buildRowMenuNodes>) {
   const sub = nodes.find((n) => n.kind === 'submenu');
   if (sub?.kind !== 'submenu') throw new Error('no move-to-group submenu');
@@ -147,25 +147,27 @@ describe('buildRowMenuNodes', () => {
     expect(checks.map((c) => (c.kind === 'choice' ? c.checked : null))).toEqual([false, true]);
   });
 
-  it('shows "Remove from group" only when the agent is grouped', () => {
+  it('shows "Remove from section" only when the agent is grouped', () => {
     const grouped = moveSub(buildRowMenuNodes(model({ currentGroupId: 'g1' })));
-    expect(grouped.items.some((n) => n.kind === 'action' && n.label === 'Remove from group')).toBe(
-      true
-    );
+    expect(
+      grouped.items.some((n) => n.kind === 'action' && n.label === 'Remove from section')
+    ).toBe(true);
 
     const ungrouped = moveSub(buildRowMenuNodes(model({ currentGroupId: null })));
     expect(
-      ungrouped.items.some((n) => n.kind === 'action' && n.label === 'Remove from group')
+      ungrouped.items.some((n) => n.kind === 'action' && n.label === 'Remove from section')
     ).toBe(false);
   });
 
-  it('always offers "New group…" in the submenu', () => {
+  it('always offers "New section…" in the submenu', () => {
     const sub = moveSub(buildRowMenuNodes(model()));
     // The label carries no ellipsis — `opensInput` is what earns it, and the
     // renderer is the one place that appends it (asserted end-to-end below,
-    // where "New group…" is what a person actually reads).
+    // where "New section…" is what a person actually reads).
     expect(
-      sub.items.some((n) => n.kind === 'action' && n.label === 'New group' && n.opensInput === true)
+      sub.items.some(
+        (n) => n.kind === 'action' && n.label === 'New section' && n.opensInput === true
+      )
     ).toBe(true);
   });
 
@@ -176,9 +178,9 @@ describe('buildRowMenuNodes', () => {
     const pin = nodes[0];
     if (pin?.kind === 'action') pin.run();
     expect(m.onTogglePin).toHaveBeenCalledOnce();
-    // Remove from group → moveToGroup(null)
+    // Remove from section → moveToGroup(null)
     const remove = moveSub(nodes).items.find(
-      (n) => n.kind === 'action' && n.label === 'Remove from group'
+      (n) => n.kind === 'action' && n.label === 'Remove from section'
     );
     if (remove?.kind === 'action') remove.run();
     expect(m.onMoveToGroup).toHaveBeenCalledWith(null);
@@ -225,7 +227,7 @@ function collectMenuTree(): MenuEntry[] {
 
 /** Open the Move-to-group submenu via the Radix LTR sub-open key. */
 function openMoveSubmenu() {
-  fireEvent.keyDown(screen.getByText('Move to group'), { key: 'ArrowRight' });
+  fireEvent.keyDown(screen.getByText('Move to section'), { key: 'ArrowRight' });
 }
 
 describe('AgentRowMenuItems variant parity', () => {
@@ -267,7 +269,7 @@ describe('AgentRowMenuItems variant parity', () => {
       [
         'Pin agent',
         'Mute agent',
-        'Move to group',
+        'Move to section',
         // The two acts that are satellites of the row on a pointer device — the
         // "N live" chip and the face — and have no target big enough to draw
         // under a thumb, so the menu is where a phone reaches them (P4.2).
@@ -277,8 +279,8 @@ describe('AgentRowMenuItems variant parity', () => {
         // Submenu contents:
         'Clients',
         'Experiments',
-        'Remove from group',
-        'New group…',
+        'Remove from section',
+        'New section…',
       ].sort()
     );
     // The agent's current group carries the checkmark; the other target does not.
@@ -339,33 +341,33 @@ function openRowMenu() {
 }
 
 function openMoveToGroupSubmenu() {
-  fireEvent.keyDown(screen.getByText('Move to group'), { key: 'ArrowRight' });
+  fireEvent.keyDown(screen.getByText('Move to section'), { key: 'ArrowRight' });
 }
 
 describe('agent row menu end-to-end wiring', () => {
   // Regression test for the live-browser bug (DOR-329): Radix closes the menu
   // in a second commit AFTER the inline editor mounts and focuses; the close's
   // focus restore refocused the trigger, blurring the editor, whose blur-cancel
-  // unmounted it — "New group…" appeared to do nothing. jsdom cannot fully
+  // unmounted it — "New section…" appeared to do nothing. jsdom cannot fully
   // reproduce the native focus-restore race, so this asserts the observable
   // outcome (editor survives the menu close AND holds focus); the guard's
   // prevent-once contract is pinned in use-menu-close-focus-guard.test.ts.
-  it('keeps the inline group-create editor alive and focused after "New group…" closes the menu', () => {
+  it('keeps the inline group-create editor alive and focused after "New section…" closes the menu', () => {
     render(<InlineCreateHarness />);
     openRowMenu();
     openMoveToGroupSubmenu();
-    fireEvent.click(screen.getByText('New group…'));
+    fireEvent.click(screen.getByText('New section…'));
 
-    const input = screen.getByLabelText('New group name');
+    const input = screen.getByLabelText('New section name');
     expect(input).toBeInTheDocument();
     // Focus must remain on the editor — a restored-to-trigger focus is exactly
     // the state that killed it (blur-cancel).
     expect(document.activeElement).toBe(input);
     // The menu itself is gone (the guard suppresses focus restore, not closing).
-    expect(screen.queryByText('Move to group')).not.toBeInTheDocument();
+    expect(screen.queryByText('Move to section')).not.toBeInTheDocument();
   });
 
-  it('"Move to group → <other group>" commits moveToGroup(ref, groupId)', () => {
+  it('"Move to section → <other group>" commits moveToGroup(ref, groupId)', () => {
     render(<InlineCreateHarness />);
     openRowMenu();
     openMoveToGroupSubmenu();
@@ -376,11 +378,11 @@ describe('agent row menu end-to-end wiring', () => {
     expect(moveToGroupCalls).toEqual([[{ groups }, API_SERVER, 'g2']]);
   });
 
-  it('"Remove from group" commits moveToGroup(ref, null)', () => {
+  it('"Remove from section" commits moveToGroup(ref, null)', () => {
     render(<InlineCreateHarness />);
     openRowMenu();
     openMoveToGroupSubmenu();
-    fireEvent.click(screen.getByText('Remove from group'));
+    fireEvent.click(screen.getByText('Remove from section'));
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     mockUpdate.mock.calls[0]![0]({ groups });

@@ -106,7 +106,7 @@ export interface SidebarChromeValue {
    */
   viewProfileFor: (agentPath: string) => () => void;
   /**
-   * Begin the inline group-create flow, optionally seeded with a member.
+   * Begin the inline section-create flow, optionally seeded with a member.
    *
    * The flow's state lives in `create-flow-store` rather than here, because the
    * New menu starts it too and that menu is mounted outside this provider —
@@ -114,7 +114,7 @@ export interface SidebarChromeValue {
    * from a row's menu.
    */
   requestNewGroup: (ref?: SidebarItemRef) => void;
-  /** The inline group-create flow, or `null` when it is not running. */
+  /** The inline section-create flow, or `null` when it is not running. */
   groupCreation: GroupCreationState | null;
   /** Commit the inline flow under this name. */
   commitNewGroup: (name: string) => void;
@@ -329,6 +329,9 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           return;
         case 'command':
           if (target.commandId === 'new-session') startNewSession();
+          // The Agents section's last row. It stands for every agent the
+          // section is not drawing (D3), and Team is the page that lists them.
+          if (target.commandId === 'open-team') void navigate({ to: '/team' });
           return;
         case 'suggestion':
           openSuggestion(target.suggestionId);
@@ -346,11 +349,6 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           // stands for open underneath it (BC-19). Pressing it again puts them
           // away.
           if (target.rollup === 'automated') toggleTodayAutomated();
-          // `section-count` ("N inactive") is deliberately not handled: it is
-          // being replaced outright by an `All N agents →` command row that
-          // navigates to /team (spec `sidebar-simplification` §D3, task 2.2).
-          // Wiring it here would be a destination written twice and deleted
-          // once.
           return;
         case 'digest':
           // "While you were away…" is a door into the welcome-back note, and

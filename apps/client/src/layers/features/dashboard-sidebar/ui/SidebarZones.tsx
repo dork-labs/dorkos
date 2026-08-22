@@ -46,12 +46,16 @@ const ALL_CLEAR_ZONE: SidebarZoneModel = {
  * Whether a section is one the fold-all gesture may touch.
  *
  * `collapsible` alone is not enough: Getting started has no persisted key, so
- * folding it would last exactly until the next render.
+ * folding it would last exactly until the next render. A hand-made section HAS
+ * one — its fold lives on the section itself rather than under a section id —
+ * which is why it is named here rather than reached through
+ * {@link persistedSectionId}.
  *
  * @param section - Any section the model emitted.
  */
 function isFoldable(section: SidebarSectionModel): boolean {
-  return section.collapsible && persistedSectionId(section.id) !== null;
+  if (!section.collapsible) return false;
+  return section.id.startsWith('group:') || persistedSectionId(section.id) !== null;
 }
 
 /** Props for {@link SidebarZones}. */
@@ -140,12 +144,16 @@ export function SidebarZones({
     update((prev) => {
       let next = prev;
       for (const section of foldable) {
+        // A hand-made section's fold lives on the section itself; every other
+        // section's lives under its id in `ui.sidebar.sections`. Both are in
+        // this one list now that sections render as peers (D3) — the walk used
+        // to have to descend into `subsections` to reach them.
+        if (section.id.startsWith('group:')) {
+          next = setGroupCollapsed(next, section.id.slice('group:'.length), collapsed);
+          continue;
+        }
         const stored = persistedSectionId(section.id);
         if (stored !== null) next = setSectionCollapsed(next, stored, collapsed);
-        for (const sub of section.subsections ?? []) {
-          if (!sub.id.startsWith('group:')) continue;
-          next = setGroupCollapsed(next, sub.id.slice('group:'.length), collapsed);
-        }
       }
       return next;
     });

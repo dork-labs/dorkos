@@ -948,7 +948,6 @@ describe('MobileTabsLayout', () => {
       // the phone rather than a fixture with nothing to drag.
       const draggable = buildSidebarModel(powerFixture)
         .zones.flatMap((zone) => zone.sections)
-        .flatMap((section) => [section, ...(section.subsections ?? [])])
         .flatMap((section) => section.rows)
         .filter((row) => row.draggable);
       expect(draggable.length).toBeGreaterThan(0);

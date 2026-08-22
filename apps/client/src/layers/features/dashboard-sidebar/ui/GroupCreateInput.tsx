@@ -1,28 +1,32 @@
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
 import { FolderPlus } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { useInlineEditorSettle } from '@/layers/shared/model';
 import { SidebarMenuItem } from '@/layers/shared/ui';
 
-/** Minimum group-name length (trimmed). */
+/** Minimum section-name length (trimmed). */
 const MIN_NAME = 1;
-/** Maximum group-name length (matches `SidebarGroupSchema.name`). */
+/** Maximum section-name length (matches `SidebarGroupSchema.name`). */
 const MAX_NAME = 40;
 
 interface GroupCreateInputProps {
-  /** Commit a valid (1–40 char, trimmed) group name. */
+  /** Commit a valid (1–40 char, trimmed) section name. */
   onCommit: (name: string) => void;
   /** Abandon the create flow (Esc or blur). */
   onCancel: () => void;
 }
 
 /**
- * Inline "new group" row: type a name, Enter commits, Esc (or blur) cancels.
+ * Inline "new section" row: type a name, Enter commits, Esc (or blur) cancels.
  * Names are validated to 1–40 trimmed characters; invalid input never commits.
  */
 export function GroupCreateInput({ onCommit, onCancel }: GroupCreateInputProps) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const committedRef = useRef(false);
+  // The menu that opened this field is still coming apart, and its last focus
+  // restore lands on nothing — see `useInlineEditorSettle`.
+  const settle = useInlineEditorSettle(inputRef);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -60,11 +64,12 @@ export function GroupCreateInput({ onCommit, onCancel }: GroupCreateInputProps) 
           ref={inputRef}
           value={value}
           maxLength={MAX_NAME}
-          placeholder="Group name"
-          aria-label="New group name"
+          placeholder="Section name"
+          aria-label="New section name"
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          onBlur={() => {
+          onBlur={(event) => {
+            if (!settle.shouldHandleBlur(event)) return;
             if (!committedRef.current) onCancel();
           }}
           className={cn(

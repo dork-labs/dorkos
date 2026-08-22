@@ -243,7 +243,13 @@ test.describe('Mobile tabs — 390×844 @smoke', () => {
     roomsApi,
     roomsPage,
   }) => {
+    // TWO agents, because a group message is what this sheet makes now: one
+    // agent opens that agent's session instead (`sidebar-simplification` D2),
+    // which is the case below. The sheet behaviour under test is the same for
+    // both, and this half keeps the name literally true — a conversation is
+    // what starts at the end of it.
     const ana = await roomsApi.registerAgent(`E2E Ana ${roomsApi.runId}`, '🦊', '#e07b39');
+    const kai = await roomsApi.registerAgent(`E2E Kai ${roomsApi.runId}`, '🦉', '#5b8def');
     await basePage.goto();
     await basePage.waitForAppReady();
 
@@ -261,20 +267,67 @@ test.describe('Mobile tabs — 390×844 @smoke', () => {
     await roomsPage.chooseAgent(ana.name);
     await expect(chip).toBeVisible();
     // The pair `main` asserted about the sheet: nothing is dismissed mid-pick.
+    // Asserted after the FIRST pick and again after the second, because the
+    // interesting moment is the one where the button changes its words — a
+    // sheet that survived one pick and closed on the next would pass a check
+    // made only at the end.
+    await expect(page.getByTestId('mobile-tab-panels')).toBeVisible();
+    await expect(roomsPage.agentSearch).toBeVisible();
+    await roomsPage.chooseAgent(kai.name);
+    await expect(roomsPage.agentChip(kai.name)).toBeVisible();
     await expect(page.getByTestId('mobile-tab-panels')).toBeVisible();
     await expect(roomsPage.agentSearch).toBeVisible();
 
     // Starting the conversation is a destination, and lands on it.
+    await expect(roomsPage.startConversationButton).toHaveText('Start group message');
     await roomsPage.startConversationButton.click();
     await expect(page).toHaveURL(/\/channels\?.*id=/, { timeout: SERVER_ROUND_TRIP_MS });
     roomsApi.track(openRoomId(page));
     // …and the other half of the pair: starting the conversation IS a
     // destination, so the layer gets out of its way.
     await expect(page.getByTestId('mobile-tab-panels')).toBeHidden();
-    await expect(roomsPage.roomHeading).toHaveAccessibleName(ana.name, {
+    await expect(roomsPage.roomHeading).toHaveAccessibleName(`${ana.name} and ${kai.name}`, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(page.getByTestId('mobile-tab-bar')).toBeVisible();
+  });
+
+  test('one agent in the New message sheet lands on that agent’s session, and the layer yields', async ({
+    page,
+    basePage,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The other door, on a phone (`sidebar-simplification` D2). It is the one
+    // worth asserting here rather than assuming from the desktop case: the
+    // session path closes the sheet and THEN resolves which conversation to
+    // open, asynchronously, so "the layer gets out of the way" and "it arrived
+    // somewhere" are two facts on this route where the room path has one.
+    const ana = await roomsApi.registerAgent(`E2E Ana ${roomsApi.runId}`, '🦊', '#e07b39');
+    await basePage.goto();
+    await basePage.waitForAppReady();
+
+    await goTo(page, 'home');
+    await roomsPage.newMenu.choose('new-message');
+    await roomsPage.agentSearch.waitFor({ state: 'visible' });
+
+    await roomsPage.chooseAgent(ana.name);
+    await expect(roomsPage.agentChip(ana.name)).toBeVisible();
+    // The button says where it goes before it goes there.
+    await expect(roomsPage.startConversationButton).toHaveText(`Open session with ${ana.name}`);
+    await expect(page.getByTestId('mobile-tab-panels')).toBeVisible();
+
+    await roomsPage.startConversationButton.click();
+
+    // The agent's own session — the same address its Library row opens.
+    await expect(page).toHaveURL(/\/session\?.*dir=/, { timeout: SERVER_ROUND_TRIP_MS });
+    expect(new URL(page.url()).searchParams.get('session')).toBeTruthy();
+    await expect(page.getByTestId('mobile-tab-panels')).toBeHidden();
+    await expect(page.getByTestId('mobile-tab-bar')).toBeVisible();
+    // And no room was made on the way: the one door is a door, not a shortcut
+    // that also leaves a conversation behind it.
+    await goTo(page, 'library');
+    await expect(roomsPage.rowIn(roomsPage.directMessages, ana.name)).toHaveCount(0);
   });
 
   test('Home comes back where you left it after a look at Library (AC-1)', async ({

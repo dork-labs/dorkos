@@ -14,7 +14,7 @@ function renderInput() {
       <GroupCreateInput onCommit={onCommit} onCancel={onCancel} />
     </ul>
   );
-  const input = screen.getByLabelText('New group name');
+  const input = screen.getByLabelText('New section name');
   return { input, onCommit, onCancel };
 }
 
@@ -70,11 +70,26 @@ describe('GroupCreateInput', () => {
     expect(onCommit).not.toHaveBeenCalled();
   });
 
-  it('cancels on blur without committing', () => {
+  it('cancels on a blur that hands focus to something else', () => {
+    // **`relatedTarget` is the whole test.** A blur with nothing taking focus is
+    // the menu that opened this field tearing itself down, and the field takes
+    // its focus back instead of closing (`useInlineEditorSettle`, DOR-1371).
+    // Clicking another control is the reader moving on, and still cancels.
+    const other = document.createElement('button');
+    document.body.append(other);
     const { input, onCommit, onCancel } = renderInput();
     fireEvent.change(input, { target: { value: 'Acme' } });
-    fireEvent.blur(input);
+    fireEvent.blur(input, { relatedTarget: other });
     expect(onCancel).toHaveBeenCalledOnce();
+    expect(onCommit).not.toHaveBeenCalled();
+    other.remove();
+  });
+
+  it('survives the blur its own menu causes on the way out', () => {
+    const { input, onCommit, onCancel } = renderInput();
+    fireEvent.change(input, { target: { value: 'Acme' } });
+    fireEvent.blur(input, { relatedTarget: null });
+    expect(onCancel).not.toHaveBeenCalled();
     expect(onCommit).not.toHaveBeenCalled();
   });
 

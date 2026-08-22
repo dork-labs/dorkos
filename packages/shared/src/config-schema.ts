@@ -250,10 +250,9 @@ export type SidebarItemRef = z.infer<typeof SidebarItemRefSchema>;
  * sidebar then, so every such string IS an agent path and the mapping is total —
  * there is no value that could be misread.
  *
- * This is the single statement of that rule. Both the read path
- * ({@link normalizeSidebarPrefs}) and the config migration that rewrites the
- * file go through it, so the two can never disagree about what a stored string
- * means.
+ * This is the single statement of that rule, and the config migration that
+ * rewrites the file is now its only caller: the read-time conversion beside it
+ * was removed one release on (DOR-588).
  *
  * @param entry - A stored entry: either a reference already, or a legacy path.
  * @returns The entry as a reference; an existing reference passes through.
@@ -412,7 +411,9 @@ export type SidebarSectionId = z.infer<typeof SidebarSectionIdSchema>;
  * `sortMode` and `displayFilter` are optional rather than defaulted because most
  * sections offer neither — an absent value means "this section has no such
  * option", which is a different statement from "the option is set to its
- * default". Only the Agents section carries both today.
+ * default". Agents carries both; Channels and Direct messages carry `sortMode`
+ * as of DOR-906, which needed no schema change because this shape has always
+ * been per-section rather than per-kind.
  */
 export const SidebarSectionPrefsSchema = z.object({
   /** Whether the section is folded shut. */
@@ -525,71 +526,6 @@ export type SidebarPrefs = z.infer<typeof SidebarPrefsSchema>;
  * always renders even before the first user write).
  */
 export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = SidebarPrefsSchema.parse({});
-
-/**
- * One group as it may actually sit on disk before the DOR-579 migration runs.
- *
- * The declared {@link SidebarGroup} type says `items` is present and holds
- * references. A file written by an earlier release says otherwise, and this
- * type is where that gap is stated out loud instead of being cast away.
- */
-interface StoredSidebarGroup extends Omit<SidebarGroup, 'items'> {
-  items?: readonly (SidebarItemRef | string)[];
-  /** Pre-DOR-579 name for `items`, holding bare agent paths. */
-  agentPaths?: readonly string[];
-}
-
-/**
- * Convert one stored membership list, preserving identity when there is nothing
- * to convert (so an already-canonical prefs object is returned unchanged).
- */
-function normalizeItemList(list: readonly (SidebarItemRef | string)[]): SidebarItemRef[] {
-  return list.some((entry) => typeof entry === 'string')
-    ? list.map(toSidebarItemRef)
-    : (list as SidebarItemRef[]);
-}
-
-/**
- * Bring a stored `ui.sidebar` into the canonical shape: every membership entry a
- * {@link SidebarItemRef}, and each group's members under `items`.
- *
- * **Read-time conversion exists so correctness never depends on the migration
- * having run.** `conf` only runs a migration when its key is in
- * `(storedVersion, projectVersion]`, so the DOR-579 rewrite is skipped whenever
- * the app version does not land in that window — most visibly in a dev tree,
- * where the version resolves to `0.0.0` and no migration runs at all. Without
- * this, those installs would read `items` as the schema default `[]` and show
- * empty groups. The migration still runs where it can; it cleans the file up,
- * and this keeps behaviour correct until it does.
- *
- * Returns `stored` itself when it is already canonical, so callers can rely on
- * referential equality to skip work.
- *
- * @param stored - The sidebar prefs as read from config, in either encoding.
- * @returns Canonical prefs.
- */
-export function normalizeSidebarPrefs(stored: SidebarPrefs): SidebarPrefs {
-  const pinned = normalizeItemList(stored.pinned);
-  const muted = normalizeItemList(stored.muted);
-
-  let groupsChanged = false;
-  const groups = stored.groups.map((group) => {
-    const legacy = group as StoredSidebarGroup;
-    // An existing `items` wins over a leftover `agentPaths`: only a file written
-    // before DOR-579 carries the old key, so the two can never hold different
-    // truths, and preferring `items` keeps a half-migrated file from
-    // resurrecting a list the person has since edited.
-    const source = legacy.items ?? legacy.agentPaths ?? [];
-    const items = normalizeItemList(source);
-    if (items === legacy.items && legacy.agentPaths === undefined) return group;
-    groupsChanged = true;
-    const { agentPaths: _legacyKey, ...rest } = legacy;
-    return { ...rest, items } as SidebarGroup;
-  });
-
-  if (pinned === stored.pinned && muted === stored.muted && !groupsChanged) return stored;
-  return { ...stored, pinned, muted, groups };
-}
 
 /**
  * Person-scoped Shape state (`ui.shapes`, DOR-355). Holds the currently-applied

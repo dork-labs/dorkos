@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
-import { DeadLetterQueue } from '../dead-letter-queue.js';
+import { DeadLetterQueue, type DeadLetterNotice } from '../dead-letter-queue.js';
 import { MaildirStore } from '../maildir-store.js';
 import { SqliteIndex } from '../sqlite-index.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -183,6 +183,24 @@ describe('onDeadLetter observer', () => {
       reason: 'budget exceeded',
     });
     expect(notices[0]).toHaveProperty('failedAt');
+  });
+
+  it("carries the rejected envelope's own `from` as `fromSubject`", async () => {
+    const notices: DeadLetterNotice[] = [];
+    const observed = new DeadLetterQueue({
+      maildirStore,
+      sqliteIndex,
+      rootDir: mailboxesDir,
+      onDeadLetter: (n) => notices.push(n),
+    });
+
+    await observed.reject(
+      TEST_ENDPOINT,
+      makeEnvelope({ id: 'DLQ-OBS-FROM', from: 'relay.agent.myproject.agent-1' }),
+      'access denied'
+    );
+
+    expect(notices[0].fromSubject).toBe('relay.agent.myproject.agent-1');
   });
 
   it('does NOT fire on a failed reject (maildir missing)', async () => {

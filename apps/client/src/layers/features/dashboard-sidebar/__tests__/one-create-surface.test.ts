@@ -138,7 +138,7 @@ describe('AC-7 — one create vocabulary', () => {
     const elsewhere = declared.filter((d) => d.file !== 'ui/NewMenu.tsx');
 
     // Observable first: there ARE create ids outside the menu — the agent row's
-    // "New session" and its "Move to group ▸ New group". Without this, the
+    // "New session" and its "Move to section ▸ New section". Without this, the
     // subset check below would pass on an empty list.
     expect(elsewhere.map((d) => `${d.file}: ${d.id}`).sort()).toEqual([
       'ui/AgentRowMenuItems.tsx: new-group',
@@ -192,10 +192,12 @@ describe('AC-7 — one create surface', () => {
     expect(filesMatching(re)).toEqual([...callers].sort());
   });
 
-  it('leaves the inline group editor where the group will live, reached from the menu', () => {
+  it('leaves the inline section editor in ONE place, reached from the menu', () => {
     // BC-45's one survivor: `GroupCreateInput` keeps its editor, but its
-    // trigger is the New menu's item, not a button of its own.
-    expect(filesMatching(/<GroupCreateInput/)).toEqual(['ui/useSectionChrome.tsx']);
+    // trigger is the New menu's item, not a button of its own. It mounts above
+    // the first section rather than under Agents (D3), which is why the one
+    // file naming it is the zone.
+    expect(filesMatching(/<GroupCreateInput/)).toEqual(['ui/SidebarZone.tsx']);
     expect(SOURCE.get('ui/useSectionChrome.tsx')).toMatch(/openNewMenu\(item\)/);
   });
 

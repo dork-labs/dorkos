@@ -172,14 +172,23 @@ export type SuggestionId =
   | 'suggestion:say-hi-team'
   | 'suggestion:ask-dorkbot';
 
-/** The create actions the New menu offers (BC-45), as click targets. */
+/**
+ * What a command row does — the New menu's create actions (BC-45), plus the one
+ * navigation a row asks for by name.
+ *
+ * `open-team` is that one. The Agents section lists what is recent and what is
+ * pinned rather than the whole fleet (D3), so its last row is the door to the
+ * rest. It is a command rather than a route because a row carries what it MEANS
+ * and the address of the page that means "every agent" is the router's business.
+ */
 export type SidebarCommandId =
   | 'new-session'
   | 'new-channel'
   | 'new-dm'
   | 'new-agent'
   | 'new-group'
-  | 'ask-dorkbot';
+  | 'ask-dorkbot'
+  | 'open-team';
 
 /**
  * The semantic icons a row's glyph slot can draw.
@@ -231,7 +240,13 @@ export type SidebarTarget =
     }
   | { kind: 'agent'; path: string }
   | { kind: 'attention'; signalId: string; deepLink: string }
-  | { kind: 'rollup'; rollup: 'now-overflow' | 'working' | 'automated' | 'section-count' }
+  // **Three rollups, and every one of them does something when pressed.** A
+  // fourth used to sit here — `section-count`, the Agents section's "N inactive"
+  // row — with no handler anywhere: it drew like a row, took a click and
+  // answered nothing (DOR-1105). The Agents section says `All N agents →` now
+  // and that row is a command with a destination, so the dead arm is gone rather
+  // than wired up to a page it never meant.
+  | { kind: 'rollup'; rollup: 'now-overflow' | 'working' | 'automated' }
   | { kind: 'suggestion'; suggestionId: SuggestionId }
   | { kind: 'digest' }
   | { kind: 'command'; commandId: SidebarCommandId };
@@ -373,10 +388,16 @@ export interface SidebarSectionModel {
   rollup?: SidebarRollup;
   /** The sort and filter this section is currently under. */
   options?: { sortMode?: 'manual' | 'name' | 'recent'; displayFilter?: SidebarDisplayFilter };
-  /** The rows it holds. */
+  /**
+   * The rows it holds.
+   *
+   * **A section's members are its rows, and there is nothing under them.** The
+   * model used to carry a `subsections` list so a hand-made section could render
+   * as a sub-header inside Agents. Sections are peers of Agents now (D3), so the
+   * one nested level a section ever had IS this row list, and the type no longer
+   * admits anything deeper.
+   */
   rows: SidebarRowModel[];
-  /** One indent level, max — a subsection never has subsections of its own. */
-  subsections?: SidebarSectionModel[];
   /** Provenance. */
   reason: string;
 }
