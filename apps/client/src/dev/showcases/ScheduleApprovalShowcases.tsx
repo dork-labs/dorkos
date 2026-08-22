@@ -1,8 +1,12 @@
-import type { Task } from '@dorkos/shared/types';
+import type { ReactNode } from 'react';
+import type { Transport } from '@dorkos/shared/transport';
+import type { Task, TaskRun, TaskRunStatus } from '@dorkos/shared/types';
+import { TransportProvider } from '@/layers/shared/model';
 import { ScheduleApprovalCard } from '@/layers/features/schedule-approval';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { createPlaygroundTransport } from '../playground-transport';
 
 /**
  * Frozen at module load, not read per render: `Date.now()` during render is
@@ -49,6 +53,61 @@ function proposal(overrides: Partial<Task> = {}): Task {
     nextRuns: [minutesFromLoad(180), minutesFromLoad(1620), minutesFromLoad(3060)],
     ...overrides,
   };
+}
+
+/**
+ * A transport that answers the two calls "Run it once" makes.
+ *
+ * The shared playground transport resolves `null` for everything, which is
+ * right for a bench of props-only showcases and wrong for this one: the card
+ * asks the server to start a run and then reads the run history back, so
+ * against `null` the button was a no-op and the result strip — a third of what
+ * this card is for — could not be seen at all.
+ *
+ * Each demo pins its own OUTCOME rather than simulating a run over time. The
+ * strip's three readings are the thing worth looking at, and waiting out a
+ * fake run to see the third is how a bench stops being used.
+ *
+ * @param outcome - What the history reports for this schedule's run.
+ */
+function testRunTransport(outcome: TaskRunStatus): Transport {
+  const base = createPlaygroundTransport();
+  const run = (scheduleId: string): TaskRun => ({
+    id: `${scheduleId}-run`,
+    scheduleId,
+    status: outcome,
+    startedAt: minutesFromLoad(-2),
+    finishedAt: outcome === 'running' ? null : minutesFromLoad(-1),
+    durationMs: outcome === 'running' ? null : 62_000,
+    outputSummary: null,
+    error: outcome === 'failed' ? 'Command not found: sweep' : null,
+    sessionId: outcome === 'completed' ? `${scheduleId}-session` : null,
+    trigger: 'manual',
+    createdAt: minutesFromLoad(-2),
+  });
+
+  return new Proxy(base, {
+    get: (target, prop, receiver) => {
+      if (prop === 'triggerTask') {
+        return async (id: string) => ({ runId: run(id).id });
+      }
+      if (prop === 'listTaskRuns') {
+        return async (opts?: { scheduleId?: string }) =>
+          opts?.scheduleId ? [run(opts.scheduleId)] : [];
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
+/**
+ * One card wired to a transport that will actually answer its test run.
+ *
+ * @param outcome - What the run history reports.
+ * @param children - The card.
+ */
+function TestRunBench({ outcome, children }: { outcome: TaskRunStatus; children: ReactNode }) {
+  return <TransportProvider transport={testRunTransport(outcome)}>{children}</TransportProvider>;
 }
 
 /**
@@ -161,12 +220,12 @@ export function ScheduleApprovalShowcases() {
         </div>
       </ShowcaseDemo>
 
-      {/* The two transient states. Both are reachable here by pressing the real
-          buttons — the card owns its decision and its run, so a prop that forced
-          them would be a drawing of the card rather than the card. */}
+      {/* The transient states. All reachable here by pressing the real buttons —
+          the card owns its decision and its run, so a prop that forced them
+          would be a drawing of the card rather than the card. */}
       <ShowcaseLabel>
-        Press Approve for the receipt (it names the first run), Reject for the held &ldquo;Rejected
-        · Undo&rdquo;, and Run it once for the test-run strip
+        Press Approve for the receipt (it names the first run), or Reject for the held
+        &ldquo;Rejected · Undo&rdquo; — it takes about five seconds to pass
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex w-full max-w-lg flex-col gap-3">
@@ -179,6 +238,28 @@ export function ScheduleApprovalShowcases() {
               reason: 'The week ends with nobody having read the week.',
             })}
           />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Run it once — press it on each card for the strip&rsquo;s three readings: still going,
+        finished with a way into what it did, and an honest failure
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex w-full max-w-lg flex-col gap-3">
+          <TestRunBench outcome="running">
+            <ScheduleApprovalCard task={proposal({ id: 'task-run-going' })} />
+          </TestRunBench>
+          <TestRunBench outcome="completed">
+            <ScheduleApprovalCard
+              task={proposal({ id: 'task-run-done', displayName: 'Morning standup (finishes)' })}
+            />
+          </TestRunBench>
+          <TestRunBench outcome="failed">
+            <ScheduleApprovalCard
+              task={proposal({ id: 'task-run-failed', displayName: 'Morning standup (fails)' })}
+            />
+          </TestRunBench>
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>

@@ -6,7 +6,12 @@
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { Task } from '@dorkos/shared/types';
-import { cn, permissionModeLabel, formatCompactAge } from '@/layers/shared/lib';
+import {
+  cn,
+  permissionModeLabel,
+  isBypassPermissionMode,
+  formatCompactAge,
+} from '@/layers/shared/lib';
 import { useNow, useSafeNavigate } from '@/layers/shared/model';
 import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import { useDeleteTask, useUpdateTask } from '@/layers/entities/tasks';
@@ -19,6 +24,7 @@ import {
   rejectAfterUndoWindow,
   useRejectionPending,
 } from '../model/deferred-rejection';
+import { holdApprovedSchedule, releaseSettledSchedule } from '../model/settling-approvals';
 import { useScheduleTestRun } from '../model/use-schedule-test-run';
 import { TestRunStrip } from './TestRunStrip';
 
@@ -119,14 +125,27 @@ export function ScheduleApprovalCard({
   const name = task.displayName ?? task.name;
   const proposer = task.proposedByName ?? 'an agent';
   const firstRuns = formatFirstRuns(task.nextRuns, now);
+  const bypasses = isBypassPermissionMode(task.permissionMode);
 
   // The conversation this was proposed in, when there is one to name. Read
   // under the PROPOSING session's directory rather than whatever this window
   // has selected — a session row is addressed by id and directory both.
-  const { data: sessionTitle } = useSessionDetail<string>(task.proposedBySessionId ?? null, {
-    dir: task.proposedByAgentPath ?? undefined,
-    select: (session) => session.title,
-  });
+  //
+  // **Gated on the path, not just the id.** Without a path the `dir` option
+  // falls back to this window's `selectedCwd`, which is the exact wrong-
+  // directory read the option exists to prevent: the same id under a different
+  // agent's directory is a different session, and naming it here would put
+  // somebody else's conversation title on this card. A proposal with no path
+  // also has no `dir` to deep-link with, so the fragment is left off entirely
+  // rather than offered as a link that lands in the wrong place.
+  const canReachProposingSession = task.proposedByAgentPath !== null;
+  const { data: sessionTitle } = useSessionDetail<string>(
+    canReachProposingSession ? (task.proposedBySessionId ?? null) : null,
+    {
+      dir: task.proposedByAgentPath ?? undefined,
+      select: (session) => session.title,
+    }
+  );
 
   // The description, but only when it is telling us something the name does not
   // already say. A task whose description IS its name would otherwise draw the
@@ -140,13 +159,25 @@ export function ScheduleApprovalCard({
   const approve = () => {
     if (answered !== null) return;
     setDecision('approved');
+    // Hold the card on screen BEFORE the mutation settles. The race being lost
+    // is the refetch that drops this task out of the parked list and unmounts
+    // the group around its own receipt — waiting for the mutation would be
+    // waiting for the very thing that ends the card.
+    holdApprovedSchedule(task);
     // Both fields, always: `status` alone leaves a schedule that is approved and
     // still switched off, which is a schedule that will never run.
     updateTask.mutate(
       { id: task.id, status: 'active', enabled: true },
       // A refusal hands the card back rather than leaving a checkmark over a
-      // proposal that is still sitting there answerable.
-      { onError: () => setDecision(null) }
+      // proposal that is still sitting there answerable — and releases the hold,
+      // or the card would be drawn twice: once from the server's list and once
+      // from ours.
+      {
+        onError: () => {
+          releaseSettledSchedule(task.id);
+          setDecision(null);
+        },
+      }
     );
   };
 
@@ -163,8 +194,11 @@ export function ScheduleApprovalCard({
   };
 
   const undo = () => {
-    cancelRejection(task.id);
-    setDecision(null);
+    // Only hand the card back if there was really something to take back. Once
+    // the window has closed the DELETE is already on its way, and clearing the
+    // receipt would draw answerable buttons over a schedule that is being
+    // deleted — the state the deferred delete exists to make impossible.
+    if (cancelRejection(task.id)) setDecision(null);
   };
 
   const goToSession = (sessionId: string) => {
@@ -281,11 +315,24 @@ export function ScheduleApprovalCard({
               {revealed ? 'Hide exact instructions' : 'Show exact instructions'}
             </Button>
           </CollapsibleTrigger>
-          {/* Quiet, and never omitted. How much power a run has is part of what
-              consent is being given to, so it sits beside the instructions
-              rather than behind them. */}
-          <span className="text-muted-foreground text-2xs shrink-0">
+          {/* Never omitted, and never the smallest thing on the card. How much
+              power an unattended run has is the most consequential fact here —
+              it is half of what consent is being given to — so it reads at the
+              card's body size, beside the instructions rather than behind them.
+              A mode that acts without asking says so in words: the mode's NAME
+              is not something a person should have to already know the meaning
+              of. `isBypassPermissionMode` answers from the id, which is all a
+              task row carries (no runtime descriptor is in hand here); it knows
+              every bypass mode the shipped runtimes have. */}
+          <span
+            data-slot="schedule-permission-mode"
+            className={cn(
+              'shrink-0 text-xs',
+              bypasses ? 'text-status-warning-fg' : 'text-muted-foreground'
+            )}
+          >
             Runs as: {permissionModeLabel(task.permissionMode)}
+            {bypasses && ' — acts without asking'}
           </span>
         </div>
         <CollapsibleContent>

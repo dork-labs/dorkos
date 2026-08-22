@@ -41,7 +41,10 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
 import { useSessionListStore } from '@/layers/entities/session';
-import { discardPendingRejections } from '@/layers/features/schedule-approval';
+import {
+  discardPendingRejections,
+  discardSettlingSchedules,
+} from '@/layers/features/schedule-approval';
 import { PinnedTriageHeader } from '../ui/PinnedTriageHeader';
 import { PinnedTriageHeaderView, type TriagePresenceSlot } from '../ui/PinnedTriageHeaderView';
 
@@ -370,6 +373,7 @@ describe('PinnedTriageHeader while the composer has the caret', () => {
   afterEach(() => {
     cleanup();
     discardPendingRejections();
+    discardSettlingSchedules();
     viewport.mobile = false;
     vi.clearAllMocks();
   });
@@ -482,6 +486,7 @@ describe('PinnedTriageHeader at its height cap', () => {
     // unmounting), so `cleanup()` does not end it — a rejection left pending
     // here would fire its DELETE in the middle of a later, unrelated case.
     discardPendingRejections();
+    discardSettlingSchedules();
     vi.clearAllMocks();
   });
 
@@ -626,6 +631,7 @@ describe('PinnedTriageHeader', () => {
     // unmounting), so `cleanup()` does not end it — a rejection left pending
     // here would fire its DELETE in the middle of a later, unrelated case.
     discardPendingRejections();
+    discardSettlingSchedules();
     vi.clearAllMocks();
   });
 

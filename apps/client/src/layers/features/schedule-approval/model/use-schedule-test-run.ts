@@ -69,7 +69,13 @@ export function useScheduleTestRun(taskId: string): ScheduleTestRunState {
   const start = useCallback(() => {
     if (trigger.isPending) return;
     trigger.mutate(taskId, {
-      onSuccess: ({ runId: started }) => setRunId(started),
+      // Guarded, because a transport is free to answer with nothing: the
+      // playground's stub resolves `null`, and destructuring that threw inside
+      // the mutation callback — where it surfaced as a button that silently did
+      // nothing at all rather than as an error anybody could see.
+      onSuccess: (result) => {
+        if (result?.runId) setRunId(result.runId);
+      },
     });
   }, [taskId, trigger]);
 

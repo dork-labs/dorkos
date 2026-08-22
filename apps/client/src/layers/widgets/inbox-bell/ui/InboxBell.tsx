@@ -19,7 +19,7 @@ import {
   type NotificationLens,
 } from '@/layers/entities/notifications';
 import { AskList, useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
-import { ScheduleApprovalCard } from '@/layers/features/schedule-approval';
+import { ScheduleApprovalCard, useScheduleApprovalCards } from '@/layers/features/schedule-approval';
 import { InboxList } from '@/layers/features/inbox';
 import {
   ApprovalList,
@@ -204,6 +204,10 @@ export function InboxBell() {
   // while one is being said, or the receipt is torn away in the frame it
   // appears and the answer looks like a disappearance.
   const settling = useSettlingAsks();
+  // The same rule for the schedule cards: a just-approved proposal leaves the
+  // server's parked list within a frame, which would take the card AND this
+  // group out of the tree before the receipt could be read.
+  const shownSchedules = useScheduleApprovalCards(schedules);
   // What to call each asking agent. The wire carries ids only, so the roster is
   // joined here — the same join the sidebar's rows make.
   const agentNames = useAskAgentNames(asks);
@@ -284,7 +288,7 @@ export function InboxBell() {
   // the moment the queue drains, whether or not this panel is open, so it hangs
   // off `NotificationCenter` instead (see `usePinnedDrainBeat`).
   const beating = usePinnedDrainBeat(waitingCount + settling.length, open);
-  const showsPinned = waitingCount > 0 || settling.length > 0 || isError;
+  const showsPinned = waitingCount > 0 || settling.length > 0 || shownSchedules.length > 0 || isError;
 
   const pill = resolvePill({
     waitingCount,
@@ -389,7 +393,7 @@ export function InboxBell() {
                       is on a clock here — a proposal keeps until it is decided,
                       while a prompt expires in ten minutes and a capability hold
                       in two hours — so it goes under the two that do. */}
-                  {schedules.length > 0 && (
+                  {shownSchedules.length > 0 && (
                     <div className="mt-3">
                       <h3 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
                         Scheduled Runs
@@ -406,7 +410,7 @@ export function InboxBell() {
                             on its own terms. Navigating IS different — see
                             `onNavigate` — because the page it opens is behind
                             this panel. */}
-                        {schedules.map((task) => (
+                        {shownSchedules.map((task) => (
                           <ScheduleApprovalCard
                             key={task.id}
                             task={task}

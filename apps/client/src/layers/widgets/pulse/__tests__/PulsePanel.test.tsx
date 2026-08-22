@@ -72,6 +72,10 @@ vi.mock('@/layers/features/schedule-approval', () => ({
   ScheduleApprovalCard: ({ task }: { task: MockSchedule }) => (
     <div data-testid="schedule-row">{task.displayName}</div>
   ),
+  // Pass-through: with nothing settling the real hook returns its argument
+  // unchanged, which is the only state these composition-and-cap cases are
+  // about. The hold itself is proven against the real hook in the card's suite.
+  useScheduleApprovalCards: (schedules: MockSchedule[]) => schedules,
 }));
 
 // The Inbox rows the activity teaser now draws. Stubbed for the same reason as

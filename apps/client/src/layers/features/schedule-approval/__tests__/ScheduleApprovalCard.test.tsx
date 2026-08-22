@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -28,7 +28,13 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 });
 
 import { TransportProvider } from '@/layers/shared/model';
-import { discardPendingRejections } from '../index';
+import {
+  APPROVAL_SETTLE_MS,
+  REJECTION_UNDO_MS,
+  discardPendingRejections,
+  discardSettlingSchedules,
+  useScheduleApprovalCards,
+} from '../index';
 import { ScheduleApprovalCard } from '../ui/ScheduleApprovalCard';
 
 /** Frozen so a suite that takes a minute cannot age its own fixtures. */
@@ -110,6 +116,25 @@ function slot(name: string): HTMLElement | null {
   return document.querySelector(`[data-slot="${name}"]`);
 }
 
+/**
+ * Wait for one of the card's slots to actually appear.
+ *
+ * `waitFor(() => slot(name))` does NOT wait: `waitFor` resolves as soon as its
+ * callback stops throwing, and returning `null` throws nothing — so it resolved
+ * on the first tick and handed back null, turning an intended wait into a
+ * synchronous read that then failed with "received value must be a Node"
+ * instead of the real reason. Throwing is what makes it retry.
+ *
+ * @param name - The `data-slot` value to wait for.
+ */
+async function findSlot(name: string): Promise<HTMLElement> {
+  return waitFor(() => {
+    const found = slot(name);
+    if (found === null) throw new Error(`no [data-slot="${name}"] on screen yet`);
+    return found;
+  });
+}
+
 beforeEach(() => {
   mockNavigate.mockClear();
 });
@@ -117,6 +142,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   discardPendingRejections();
+  discardSettlingSchedules();
   vi.clearAllMocks();
 });
 
@@ -136,7 +162,7 @@ describe('ScheduleApprovalCard — what it says', () => {
     // element as 0×0).
     renderCard();
 
-    const reason = await waitFor(() => slot('schedule-reason'));
+    const reason = await findSlot('schedule-reason');
     expect(reason).toHaveTextContent(
       'The backlog piles up overnight and nobody sees it until Monday.'
     );
@@ -173,7 +199,7 @@ describe('ScheduleApprovalCard — what it says', () => {
     // the operator is the one who has to know which.
     renderCard();
 
-    const cadence = await waitFor(() => slot('schedule-cadence'));
+    const cadence = await findSlot('schedule-cadence');
     expect(cadence).toHaveTextContent(/At 03:00 AM/i);
     expect(cadence).toHaveTextContent('(UTC)');
   });
@@ -189,7 +215,7 @@ describe('ScheduleApprovalCard — what it says', () => {
   it('lists the first runs the server computed', async () => {
     renderCard();
 
-    const runs = await waitFor(() => slot('schedule-first-runs'));
+    const runs = await findSlot('schedule-first-runs');
     expect(runs).toHaveTextContent(/^First run /);
     expect(runs).toHaveTextContent(/· then /);
   });
@@ -293,7 +319,7 @@ describe('ScheduleApprovalCard — answering it', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    const receipt = await waitFor(() => slot('schedule-receipt'));
+    const receipt = await findSlot('schedule-receipt');
     expect(receipt).toHaveAttribute('data-tone', 'allowed');
     // Not a bare "Approved": the whole point of the card is that a person knows
     // what they just armed, and the first run is the fact they were weighing.
@@ -305,7 +331,7 @@ describe('ScheduleApprovalCard — answering it', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    expect(await waitFor(() => slot('schedule-receipt'))).toHaveTextContent('Approved');
+    expect(await findSlot('schedule-receipt')).toHaveTextContent('Approved');
     expect(slot('schedule-receipt')).not.toHaveTextContent('first run');
   });
 
@@ -328,7 +354,7 @@ describe('ScheduleApprovalCard — answering it', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Reject Nightly sweep' }));
 
-    const receipt = await waitFor(() => slot('schedule-receipt'));
+    const receipt = await findSlot('schedule-receipt');
     expect(receipt).toHaveAttribute('data-tone', 'denied');
     expect(receipt).toHaveTextContent('Rejected');
     expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
@@ -364,7 +390,7 @@ describe('ScheduleApprovalCard — answering it', () => {
 
     renderCard(proposal(), { deleteTask });
 
-    expect(await waitFor(() => slot('schedule-receipt'))).toHaveTextContent('Rejected');
+    expect(await findSlot('schedule-receipt')).toHaveTextContent('Rejected');
     expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve Nightly sweep' })).not.toBeInTheDocument();
   });
@@ -394,7 +420,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     card().focus();
     await userEvent.keyboard('d');
 
-    expect(await waitFor(() => slot('schedule-receipt'))).toHaveTextContent('Rejected');
+    expect(await findSlot('schedule-receipt')).toHaveTextContent('Rejected');
   });
 
   it('stops answering the keys once it has been answered', async () => {
@@ -415,6 +441,175 @@ describe('ScheduleApprovalCard — answering it', () => {
     await userEvent.keyboard('a');
 
     expect(updateTask).not.toHaveBeenCalled();
+  });
+});
+
+describe('ScheduleApprovalCard — the rejection really lands', () => {
+  /**
+   * The hole this closes, found by review: every assertion the card suite made
+   * about rejecting was satisfied by a card that DELETES NOTHING. Replacing the
+   * scheduled `deleteTask.mutateAsync(...)` with a bare `void deleteTask` left
+   * 996 tests green — the receipt appeared, Undo restored the buttons, the
+   * scheduler's own unit tests still passed against their injected spy, and no
+   * test anywhere watched the card's own callback reach the transport.
+   *
+   * These cross that boundary: the real card, the real module timer, a real
+   * transport, and the clock pushed past the window.
+   *
+   * **The clock is switched on only after the card is on screen, and the clicks
+   * are `fireEvent`.** Two other arrangements were tried and both were wrong.
+   * `vi.useFakeTimers({ shouldAdvanceTime: true })` ties fake time to REAL
+   * elapsed time, so the 600ms approval hold expired during a single click on a
+   * loaded machine and the suite reported its own timing as the product's
+   * defect (seen here, intermittently). Plain fake timers with `userEvent` hangs
+   * instead: RTL's `waitFor` does not advance vitest's clock, so `findByRole`
+   * never resolves and every case times out at 5s. Locating on real timers and
+   * then driving a synchronous click leaves the window under this file's
+   * control and nobody else's.
+   */
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('sends the DELETE after the window even though the card is long gone', async () => {
+    const deleteTask = vi.fn().mockResolvedValue({ success: true });
+    const { unmount } = renderCard(proposal(), { deleteTask });
+    const reject = await screen.findByRole('button', { name: 'Reject Nightly sweep' });
+
+    vi.useFakeTimers();
+    fireEvent.click(reject);
+    expect(deleteTask).not.toHaveBeenCalled();
+
+    // The ordinary case: rejecting the last schedule empties the queue and the
+    // popover holding the card goes with it.
+    unmount();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REJECTION_UNDO_MS);
+    });
+
+    expect(deleteTask).toHaveBeenCalledWith('task-1');
+  });
+
+  it('deletes only the schedule that was not taken back', async () => {
+    const deleteTask = vi.fn().mockResolvedValue({ success: true });
+    const transport = createMockTransport({ deleteTask });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <ScheduleApprovalCard task={proposal({ id: 'task-1', displayName: 'First' })} />
+          <ScheduleApprovalCard task={proposal({ id: 'task-2', displayName: 'Second' })} />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    const first = await screen.findByRole('button', { name: 'Reject First' });
+    const second = screen.getByRole('button', { name: 'Reject Second' });
+
+    vi.useFakeTimers();
+    fireEvent.click(first);
+    fireEvent.click(second);
+
+    // Two receipts, two live offers — and taking one back must not spare the
+    // other, which a scheduler holding a single timer would get wrong.
+    const undos = screen.getAllByRole('button', { name: 'Undo' });
+    expect(undos).toHaveLength(2);
+    fireEvent.click(undos[0] as HTMLElement);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REJECTION_UNDO_MS);
+    });
+
+    expect(deleteTask).toHaveBeenCalledTimes(1);
+    expect(deleteTask).toHaveBeenCalledWith('task-2');
+  });
+});
+
+describe('ScheduleApprovalCard — the receipt outlives the refetch', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A host that composes the hold exactly as the three real surfaces do. */
+  function Host({ schedules }: { schedules: readonly Task[] }) {
+    const shown = useScheduleApprovalCards(schedules);
+    return (
+      <>
+        {shown.map((task) => (
+          <ScheduleApprovalCard key={task.id} task={task} />
+        ))}
+      </>
+    );
+  }
+
+  it('holds an approved schedule on screen after the server stops listing it', async () => {
+    // Approving is optimistic, and the refetch that follows drops the task out
+    // of the parked list — which used to take the card and the group around it
+    // out of the tree inside 10-60ms, tearing away the only confirmation an
+    // approval ever gets. The hold is what the consumers merge back in.
+    const transport = createMockTransport({ updateTask: vi.fn().mockResolvedValue(proposal()) });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const wrap = (schedules: readonly Task[]) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <Host schedules={schedules} />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(wrap([proposal()]));
+    const approve = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+
+    vi.useFakeTimers();
+    fireEvent.click(approve);
+    expect(slot('schedule-receipt')).toHaveTextContent('Approved');
+
+    // The refetch lands: the server no longer calls this schedule parked.
+    rerender(wrap([]));
+
+    // Still there, still saying what happened. Seeded defect: drop
+    // `holdApprovedSchedule` from `approve` and the card is gone by this line.
+    expect(slot('schedule-receipt')).toHaveTextContent('Approved');
+
+    // And it does leave, once it has been read — a hold that never released
+    // would pin a decided card to the surface forever.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(APPROVAL_SETTLE_MS + 50);
+    });
+    expect(slot('schedule-receipt')).toBeNull();
+  });
+
+  it('lets go of a schedule the server refused to approve', async () => {
+    // The hold must not outlive the decision it was holding for: a refused
+    // approval hands the card back to the live list, and a stale hold would
+    // draw it twice — once from the server's copy and once from ours.
+    //
+    // Real timers throughout: what has to settle here is a rejected promise,
+    // not a window.
+    const transport = createMockTransport({
+      updateTask: vi.fn().mockRejectedValue(new Error('nope')),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <Host schedules={[proposal()]} />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    // Answerable again, and drawn exactly once.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument()
+    );
+    expect(screen.getAllByTestId('schedule-approval-card')).toHaveLength(1);
   });
 });
 
@@ -550,6 +745,32 @@ describe('ScheduleApprovalCard — running it once', () => {
 
     await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'failed'));
     expect(slot('schedule-test-run')).toHaveTextContent('Tasks are switched off');
+  });
+
+  it('reports the run it started, not whichever run the history lists first', async () => {
+    // The selection, not the query. The existing case above asserts that the
+    // request carries `scheduleId`; that leaves `runs?.[0]` — take the newest
+    // row rather than the one we started — passing, and it is wrong in the way
+    // that matters: a run somebody kicked off from the Tasks page in another
+    // tab lands at the head of this same list, and the card would report ITS
+    // outcome as the evidence for approving.
+    //
+    // The other run FAILED and ours COMPLETED, so the two readings are opposite
+    // and the strip cannot be right by accident.
+    renderCard(proposal(), {
+      triggerTask: vi.fn().mockResolvedValue({ runId: 'run-mine' }),
+      listTaskRuns: vi
+        .fn()
+        .mockResolvedValue([
+          taskRun({ id: 'run-someone-elses', status: 'failed', error: 'not our run' }),
+          taskRun({ id: 'run-mine', status: 'completed', finishedAt: minutesFromLoad(-1) }),
+        ]),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
+
+    await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'finished'));
+    expect(slot('schedule-test-run')).not.toHaveTextContent('not our run');
   });
 
   it('reads only this schedule’s runs', async () => {

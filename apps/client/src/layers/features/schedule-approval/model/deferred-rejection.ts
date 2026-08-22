@@ -24,8 +24,9 @@
  *
  * The same reasoning covers the tab going away: `pagehide` flushes every
  * pending rejection, because a person who rejected something and closed the
- * window meant it. The listener is bound only while something is actually
- * waiting, so an idle cockpit carries no global handler.
+ * window meant it. That flush is best effort rather than a guarantee — see
+ * {@link flushRejections}. The listener is bound only while something is
+ * actually waiting, so an idle cockpit carries no global handler.
  *
  * @module features/schedule-approval/model/deferred-rejection
  */
@@ -129,8 +130,16 @@ export function cancelRejection(taskId: string): boolean {
  * Send every pending rejection now.
  *
  * Bound to `pagehide`: somebody who rejected a schedule and closed the tab made
- * a decision, and silently discarding it would leave the proposal sitting in
+ * a decision, and dropping it on the floor would leave the proposal sitting in
  * their Inbox next time they opened the cockpit.
+ *
+ * **Best effort, and deliberately not claimed as more.** The DELETE goes out
+ * through the ordinary transport, which uses a plain `fetch` — no `keepalive`,
+ * no `sendBeacon` — so a browser tearing the page down is free to cancel the
+ * request in flight. It converts "certainly lost" into "usually sent", which is
+ * worth having; it is not a durability guarantee, and no user-facing copy
+ * promises one. Making it a guarantee would mean a keepalive path through the
+ * transport, which nothing in this repo has yet.
  */
 export function flushRejections(): void {
   if (pending.size === 0) return;

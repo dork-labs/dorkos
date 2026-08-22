@@ -20,10 +20,15 @@
 /**
  * "1 request", "2 schedules" — one counted noun, correctly pluralized.
  *
+ * Deliberately not exported: it is how {@link listWaitingKinds} spells its
+ * parts, not a general pluralizer. Nothing outside this file has ever wanted
+ * one, and exporting it would invite a second counting vocabulary next to the
+ * one this module exists to keep single.
+ *
  * @param count - How many of this kind are waiting.
  * @param noun - The noun's singular form.
  */
-export function countNoun(count: number, noun: string): string {
+function countNoun(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 

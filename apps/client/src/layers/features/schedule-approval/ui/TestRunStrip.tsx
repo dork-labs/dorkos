@@ -7,6 +7,23 @@ import { Loader2, Check, X, CircleSlash } from 'lucide-react';
 import { cn, formatCompactAge } from '@/layers/shared/lib';
 import type { ScheduleTestRunState } from '../model/use-schedule-test-run';
 
+/**
+ * When the run finished, in words.
+ *
+ * A test run is watched, so it settles seconds after it is asked for — and
+ * `formatCompactAge` floors, so the ordinary case read "finished 0m ago". "Just
+ * now" is what a person would say, and it is the only reading this line has for
+ * its first minute of life.
+ *
+ * @param finishedAt - When the run ended, or null when the history has no time
+ *   for it — in which case the line simply says it finished and stops.
+ */
+function finishedWhen(finishedAt: string | null): string {
+  if (finishedAt === null) return '';
+  const age = formatCompactAge(finishedAt);
+  return age === '0m' ? ' just now' : ` ${age} ago`;
+}
+
 /** What {@link TestRunStrip} draws. */
 export interface TestRunStripProps {
   /** The test run's state, straight from `useScheduleTestRun`. */
@@ -57,7 +74,7 @@ export function TestRunStrip({ testRun, onOpenRun, className }: TestRunStripProp
       {phase === 'finished' && (
         <>
           <Check className="text-status-success size-3.5 shrink-0" aria-hidden />
-          <span>Test run finished{finishedAt ? ` ${formatCompactAge(finishedAt)} ago` : ''}</span>
+          <span>Test run finished{finishedWhen(finishedAt)}</span>
           {onOpenRun && (
             // A real button rather than an anchor: the cockpit routes in-process
             // and the Obsidian embed has no router at all, so the caller decides

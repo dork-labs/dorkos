@@ -65,7 +65,10 @@ import { useNotifications } from '@/layers/entities/notifications';
 import { useStandingPermissions } from '@/layers/features/approvals';
 import { useConfig } from '@/layers/entities/config';
 import { clearInboxRequest, requestInbox } from '@/layers/entities/notifications';
-import { discardPendingRejections } from '@/layers/features/schedule-approval';
+import {
+  discardPendingRejections,
+  discardSettlingSchedules,
+} from '@/layers/features/schedule-approval';
 import { InboxBell } from '../ui/InboxBell';
 
 /**
@@ -239,6 +242,7 @@ describe('InboxBell', () => {
     // unmounting, which means `cleanup()` does not end it — a rejection left
     // pending would fire its DELETE inside a later, unrelated case.
     discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -662,6 +666,7 @@ describe('InboxBell — history and read state', () => {
     // unmounting, which means `cleanup()` does not end it — a rejection left
     // pending would fire its DELETE inside a later, unrelated case.
     discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -888,6 +893,7 @@ describe('InboxBell — opening a bell that has nothing to say', () => {
     // unmounting, which means `cleanup()` does not end it — a rejection left
     // pending would fire its DELETE inside a later, unrelated case.
     discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -977,6 +983,7 @@ describe('InboxBell — what the panel says', () => {
     // unmounting, which means `cleanup()` does not end it — a rejection left
     // pending would fire its DELETE inside a later, unrelated case.
     discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });

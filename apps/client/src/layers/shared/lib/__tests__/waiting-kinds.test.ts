@@ -7,22 +7,19 @@
  * now read.
  */
 import { describe, it, expect } from 'vitest';
-import { countNoun, listWaitingKinds } from '../waiting-kinds';
-
-describe('countNoun', () => {
-  it('leaves a singular alone', () => {
-    expect(countNoun(1, 'schedule')).toBe('1 schedule');
-  });
-
-  it('pluralizes everything else, zero included', () => {
-    expect(countNoun(2, 'schedule')).toBe('2 schedules');
-    expect(countNoun(0, 'schedule')).toBe('0 schedules');
-  });
-});
+import { listWaitingKinds } from '../waiting-kinds';
 
 describe('listWaitingKinds', () => {
-  it('names one kind on its own', () => {
+  it('names one kind on its own, singular', () => {
     expect(listWaitingKinds(1, 0, 0)).toBe('1 question');
+  });
+
+  it('pluralizes a kind with more than one waiting', () => {
+    // The pluralization is only reachable through this door now — `countNoun`
+    // is private, because a general pluralizer on the barrel would invite a
+    // second counting vocabulary beside the one this module exists to keep
+    // single.
+    expect(listWaitingKinds(3, 0, 0)).toBe('3 questions');
   });
 
   it('joins two kinds with "and", never with a comma', () => {

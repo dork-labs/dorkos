@@ -354,6 +354,18 @@ export function PinnedTriageHeaderView({
   // still saying how it ended. Without it, answering the LAST prompt unmounts
   // the group around its own receipt, which is the disappearance the design
   // rules out — the same guard the header pill runs.
+  //
+  // **Schedules carry the same guard, and did not until DOR-1398.** The claim
+  // above was true of prompts and false of proposals: approving one dropped it
+  // from the parked list on the next refetch, taking this group with it, and
+  // the receipt was measured living 10-60ms against a local server. Its host
+  // now merges the still-settling ones into `scheduleApprovals` before they get
+  // here (`useScheduleApprovalCards`), so the count below stays above zero for
+  // exactly as long as the card needs to say what happened.
+  //
+  // Capability approvals are the one kind still exposed to it: `approvals`
+  // comes straight off the pending list with no equivalent hold. That is older
+  // than this change and out of its scope.
   const showsWaiting =
     approvals.length > 0 ||
     asks.length > 0 ||
