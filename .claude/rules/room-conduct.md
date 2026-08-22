@@ -239,10 +239,23 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   seconds later — before its own window had closed, which is why no delivery
   path could have dropped it. So a halt ALSO marks the `(room, agent)` pair
   (`RoomTriggerDispatcher.stoppedHere`) and `postFromTool` refuses while that
-  mark stands, with `TURN_WAS_STOPPED`. It is cleared by the next CLAIM there,
-  never by a timer: Stop ends a turn and never changes a setting, so the hand
-  comes back the moment the room asks that agent again — at the claim rather
-  than at the answer, because speaking mid-turn is what the tool is for.
+  mark stands, with `TURN_WAS_STOPPED`. It is cleared by the next CLAIM there —
+  including an aside turn, which is the room asking too — and by `abandonHolds`
+  for a pair that will never claim again. It is deliberately NOT cleared at the
+  stopped turn's own terminal: in the incident the room's frame ended
+  twenty-two seconds before the post, because an interrupt that closes the query
+  settles `run()` while the CLI carries on, so that terminal means "the room
+  stopped listening" and never "the process stopped".
+  **Two limits, and this rule is where they are admitted rather than a place
+  they are implied away.** A stopped agent the room never triggers again cannot
+  post into THAT room by hand, with no expiry — an affordance the `rooms.post`
+  capability advertises, disabled for one pair until the room speaks to it
+  again; it is room-scoped, so every other room that agent is in is untouched.
+  And a halt followed straight away by a new message lifts the mark for the LIVE
+  turn, so an old stopped turn still running can post inside that window.
+  Neither is closable without holding the mark against the live turn as well,
+  which is the mute this must not become. Reactions are outside all of it: a
+  stopped turn can still leave a pill, which writes no entry.
   What is NOT discarded is the spend — a turn that ran a model has spent, and
   `tryReserve` still has no counterpart — nor the turn's own session transcript,
   where a person can still read what it was saying.

@@ -600,6 +600,91 @@ describe('a room says when a turn has stopped', () => {
       ).toBe('the deploy is green');
     });
 
+    it('stops the turn in THIS room only — the same agent still posts in another', async () => {
+      // **The mark is `(room, agent)`, and the room half is the load-bearing
+      // one.** A refusal keyed on the agent alone would be a global gag: Stop
+      // pressed in one channel would take the agent's hand off `post_to_room`
+      // everywhere it works, which is exactly the affordance the `rooms`
+      // capability advertises — an agent working in one room telling another
+      // what it found. Pinned because a mutation to the key that dropped the
+      // room half passed every other test in this file.
+      const elsewhere = service.createRoom(
+        { kind: 'channel', title: 'Frontend', members: [], agentPaths: ['/agents/ana'] },
+        human
+      );
+      service.updateMembership(elsewhere.id, human, ana, 'mention-only');
+      service.post(room.id, { authorId: human, text: '@ana check the build' });
+      await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn');
+
+      await service.haltRoom(room.id, human);
+      await service.triggersIdle();
+
+      expect(
+        service.postFromTool(elsewhere.id, { authorId: ana, text: 'the build is red, by the way' })
+          .body.text
+      ).toBe('the build is red, by the way');
+      // And the room she WAS stopped in is still closed to her.
+      expect(() =>
+        service.postFromTool(room.id, { authorId: ana, text: 'as I was saying' })
+      ).toThrow(expect.objectContaining({ code: 'TURN_WAS_STOPPED' }));
+    });
+
+    it('does not take the hand of an agent whose turn here had not started — a HELD stop marks nothing', async () => {
+      // **`haltAgent` on a held agent stops a WAIT, not a turn** — the case
+      // `room-trigger.ts` supports explicitly and the one the quiet-room test
+      // cannot reach, because `halt()` iterates claims and finds none. Nothing
+      // is running here, so nothing here is stopped: the message waiting is
+      // dropped, the room says `unstarted`, and the agent's hand is untouched —
+      // there is no turn to refuse the words of. Marking the pair anyway would
+      // gag an agent over a turn that never ran.
+      const second = service.createRoom(
+        { kind: 'channel', title: 'Frontend', members: [], agentPaths: ['/agents/ana'] },
+        human
+      );
+      service.updateMembership(second.id, human, ana, 'mention-only');
+      // Busy in the FIRST room, so the second room's message is held rather than
+      // run: one agent is one working directory.
+      service.post(room.id, { authorId: human, text: '@ana check the build' });
+      await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn in the first room');
+      service.post(second.id, { authorId: human, text: '@ana and the styles?' });
+      await settleUntil(
+        () => service.listHolds().some((hold) => hold.roomId === second.id),
+        'the second room to be holding a message for Ana'
+      );
+
+      expect(await service.haltAgent(second.id, ana, human)).toBe(0);
+
+      const said = notices(second.id).filter((entry) => entry.body.notice === 'halted');
+      expect(said).toHaveLength(1);
+      expect(said[0].body.text).toContain('had not started');
+      expect(
+        service.postFromTool(second.id, { authorId: ana, text: 'nothing to report yet' }).body.text
+      ).toBe('nothing to report yet');
+
+      runner.release(ana);
+      await service.triggersIdle();
+    });
+
+    it('forgets the stop when the agent leaves the roster, so being invited back is a clean start', async () => {
+      // The mark is otherwise lifted only by the next CLAIM there, so a pair
+      // that can never claim again — an agent taken out of the room, a room
+      // archived — would carry it for the life of the process. Taking somebody
+      // off the roster and inviting them back is the room asking again in the
+      // plainest way there is, and it must not be answered by a refusal from a
+      // turn nobody remembers.
+      service.post(room.id, { authorId: human, text: '@ana check the build' });
+      await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn');
+      await service.haltRoom(room.id, human);
+      await service.triggersIdle();
+
+      service.removeMember(room.id, human, ana);
+      service.addMember(room.id, human, { authorId: ana });
+
+      expect(
+        service.postFromTool(room.id, { authorId: ana, text: 'back, and here it is' }).body.text
+      ).toBe('back, and here it is');
+    });
+
     it('does not let a stopped turn release the claim of the turn that replaced it', async () => {
       // **A claim key is `(room, agent)`; a turn is a DISPATCH — and a halt is
       // the one thing that pulls them apart.** Stop drops the claim, the person

@@ -461,14 +461,30 @@ export class RoomTriggerDispatcher {
    * call arrives on its own HTTP request, outside every dispatch scope, so the
    * pair is the only identity both sides share.
    *
-   * **Cleared by the next CLAIM here, never by a timer** — see
-   * {@link RoomTriggerDispatcher.holdClaim}. That is what keeps it a stop rather
-   * than a mute: the next thing somebody says gives the agent a turn, and the
-   * hand comes back with it, at the claim rather than at the answer because
-   * speaking mid-turn is the whole point of the tool. It also bounds the set:
-   * one small key per pair a person has stopped, replaced by the next turn.
+   * **Cleared by the next CLAIM here — and NOT at the stopped turn's own
+   * terminal, which is the tempting version and is exactly wrong.** In the
+   * incident above the room's frame ended twenty-two seconds BEFORE the post: an
+   * interrupt that closed the query settled `run()` while the CLI carried on, so
+   * the room's terminal means "the room stopped listening", never "the process
+   * stopped". Releasing on it reopens the bug in the one case it was built for.
+   * The next claim is used instead because it is the room asking again, which
+   * keeps this a stop rather than a mute, and the hand comes back AT the claim
+   * rather than at the answer because speaking mid-turn is the whole point of
+   * the tool. {@link RoomTriggerDispatcher.abandonHolds} drops it too, for the
+   * pair that will never claim again — archived room, agent off the roster.
+   *
+   * **Two limits, and neither is hidden.** A stopped agent that the room never
+   * triggers again cannot post into THAT room by hand, indefinitely — an
+   * advertised affordance (`rooms.post` names cross-room posting) disabled for
+   * one pair with no expiry. It is room-scoped, so the same agent still posts
+   * into every other room it belongs to. And the window this cannot close: a
+   * halt followed immediately by a new message clears the mark for the live
+   * turn, and the old stopped turn — if it is still running — can post inside
+   * it. Both are written down in `.claude/rules/room-conduct.md`; closing the
+   * second would mean holding the mark against the live turn as well, which is
+   * the mute this refuses to be.
    */
-  private readonly stoppedHere = new Set<string>();
+  private readonly stoppedHere = new Map<string, { roomId: string; authorId: string }>();
 
   /**
    * The republish loop, alive exactly while {@link RoomTriggerDispatcher.claimed}
@@ -2704,6 +2720,17 @@ export class RoomTriggerDispatcher {
       if (authorId !== undefined && record.authorId !== authorId) continue;
       this.releaseHold(key, 'left');
     }
+    // And the Stop mark goes too. It is otherwise cleared only by the next claim
+    // there ({@link RoomTriggerDispatcher.stoppedHere}), and a room that has been
+    // archived — or an agent taken off its roster — will never claim again, so
+    // without this the key would outlive everything it is about. Nothing is
+    // weakened by dropping it: the pair has no room to speak into any more, and
+    // an agent added back is being asked to take part again.
+    for (const [key, stopped] of [...this.stoppedHere]) {
+      if (stopped.roomId !== roomId) continue;
+      if (authorId !== undefined && stopped.authorId !== authorId) continue;
+      this.stoppedHere.delete(key);
+    }
   }
 
   /**
@@ -3024,7 +3051,10 @@ export class RoomTriggerDispatcher {
       // the release loop below for the same reason the dispatch mark is — before
       // the first `await`, so a turn that is quicker than the interrupt cannot
       // slip a post through the gap.
-      this.stoppedHere.add(agentKey(room.id, claim.authorId));
+      this.stoppedHere.set(agentKey(room.id, claim.authorId), {
+        roomId: room.id,
+        authorId: claim.authorId,
+      });
     }
     logger.info('[rooms] a room was halted', { roomId: room.id, stopped: claims.length });
     // **The durable write comes first, and the whole invariant is in that
@@ -3167,7 +3197,7 @@ export class RoomTriggerDispatcher {
       // dispatch, and scoped to this key like everything else here — stopping
       // Ana never takes Bo's hand off the tool
       // ({@link RoomTriggerDispatcher.stoppedHere}).
-      this.stoppedHere.add(key);
+      this.stoppedHere.set(key, { roomId: room.id, authorId });
     }
     logger.info('[rooms] an agent was stopped in a room', {
       roomId: room.id,

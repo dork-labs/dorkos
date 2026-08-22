@@ -115,9 +115,14 @@ export type RoomErrorCode =
    * had been stopped. The room's own delivery already declines a stopped turn's
    * narration; this is the same refusal on the half the turn speaks for itself.
    *
-   * It lasts exactly as long as the stop does — the next turn this agent is
-   * given in this room clears it (`RoomTriggerDispatcher.stoppedHere`) — because
-   * Stop ends a turn and never changes a setting.
+   * **It is not absolute, and the two limits belong here rather than in a
+   * commit message.** It lasts until the next turn this agent is given in this
+   * room — the room asking again is what lifts it, so an agent nobody triggers
+   * again is refused here indefinitely, though never in any OTHER room, since
+   * the mark is per `(room, agent)`. And a halt followed straight away by a new
+   * message lifts it for the live turn, so a stopped turn still running can post
+   * inside that window. Holding it against the live turn as well would be a
+   * mute, and Stop ends a turn rather than changing a setting.
    */
   | 'TURN_WAS_STOPPED'
   /**
