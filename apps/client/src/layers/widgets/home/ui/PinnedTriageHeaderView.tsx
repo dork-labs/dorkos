@@ -11,7 +11,8 @@ import { useScrollOverflow } from '@/layers/shared/model';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
 import { AskList } from '@/layers/features/ask';
 import { InboxRow } from '@/layers/features/inbox';
-import { AttentionSignalRow, ScheduleApprovalRow } from '@/layers/features/dashboard-attention';
+import { AttentionSignalRow } from '@/layers/features/dashboard-attention';
+import { ScheduleApprovalCard } from '@/layers/features/schedule-approval';
 import { triageSummary } from '../lib/triage-summary';
 import { ShiftReportCard } from './ShiftReportCard';
 
@@ -271,12 +272,16 @@ export interface PinnedTriageHeaderViewProps {
  * the part that is a queue.
  *
  * **Three groups, and nothing appears in two of them.** "Waiting On You" holds
- * the full cards — capability approvals and the prompts agents are parked on.
- * "Needs Attention" holds the rows for the other two blockages the one engine
- * raises: a schedule an agent proposed, and a session that stopped. It
- * deliberately does NOT repeat permission prompts or questions, even though the
- * engine raises those too — they already have a card three lines above, and one
- * header saying the same thing twice is how a person learns to read neither.
+ * the full cards — capability approvals, the prompts agents are parked on, and
+ * the schedules an agent proposed. A proposed schedule moved up here when it
+ * became a card (DOR-1398): it is a decision waiting on a person in exactly the
+ * sense the group's title claims, and the row box below is built for dense rows,
+ * not for a card carrying a reason, a cadence and three buttons. "Needs
+ * Attention" now holds the one blockage that is not a decision — a session that
+ * stopped. It deliberately does NOT repeat permission prompts or questions, even
+ * though the engine raises those too — they already have a card three lines
+ * above, and one header saying the same thing twice is how a person learns to
+ * read neither.
  * "Recent activity" is the honest bottom group: nothing there is waiting on
  * anybody, it is just what went wrong lately, and the Inbox takes it over
  * (DOR-1384). Between the two, a quiet Shift Report card appears once a day —
@@ -350,8 +355,12 @@ export function PinnedTriageHeaderView({
   // the group around its own receipt, which is the disappearance the design
   // rules out — the same guard the header pill runs.
   const showsWaiting =
-    approvals.length > 0 || asks.length > 0 || settlingAsks.length > 0 || approvalsUnavailable;
-  const showsAttention = scheduleApprovals.length > 0 || errorSignals.length > 0;
+    approvals.length > 0 ||
+    asks.length > 0 ||
+    settlingAsks.length > 0 ||
+    scheduleApprovals.length > 0 ||
+    approvalsUnavailable;
+  const showsAttention = errorSignals.length > 0;
   const showsActivity = activityItems.length > 0;
   const showsShiftReport = shiftReport !== undefined;
   const occupied =
@@ -361,14 +370,18 @@ export function PinnedTriageHeaderView({
     showsShiftReport ||
     presence?.occupied === true;
   const summary = triageSummary({
-    // One count for both, because they are one thing to whoever is being asked:
-    // something is waiting on a person, and the card says which kind.
-    approvals: approvals.length + asks.length,
+    // Counted apart, because the live region says them apart. One number for
+    // the badge and three nouns for the sentence: "1 question and 2 schedules
+    // are waiting on you" is what a person can act on, where "3 approvals" was
+    // a word that fitted none of the three.
+    questions: asks.length,
+    requests: approvals.length,
+    schedules: scheduleApprovals.length,
     approvalsUnavailable,
     // Blockages and after-the-fact rows are one number here on purpose: the
     // condensed line has one screen-width to spend, and "3 need attention" is
     // what a person can act on. Which three is what opening it answers.
-    attention: scheduleApprovals.length + errorSignals.length + activityItems.length,
+    attention: errorSignals.length + activityItems.length,
   });
   // Only where there is something to name. A header held open by the presence
   // strip alone has no counts to condense to, so it stays out of the way by
@@ -479,6 +492,15 @@ export function PinnedTriageHeaderView({
                   {approvals.length === 0 && approvalsUnavailable && (
                     <ApprovalsUnavailable onRetry={onRetryApprovals} />
                   )}
+                  {/* Last of the three, because nothing here is on a clock: a
+                      proposal keeps until it is decided, while a prompt expires
+                      in ten minutes and a capability hold in two hours. Same
+                      order the Inbox panel lists them in. */}
+                  <AnimatePresence initial={false}>
+                    {scheduleApprovals.map((task) => (
+                      <ScheduleApprovalCard key={task.id} task={task} className="mt-2" />
+                    ))}
+                  </AnimatePresence>
                 </TriageGroup>
               )}
 
@@ -486,11 +508,6 @@ export function PinnedTriageHeaderView({
                 <TriageGroup title="Needs Attention">
                   <div className="border-status-warning-border/40 bg-background/60 rounded-lg border p-2">
                     <motion.div variants={staggerContainer} initial="initial" animate="animate">
-                      {/* Schedules first: a proposal is stopping something from
-                          ever running, and a wedged session already stopped. */}
-                      {scheduleApprovals.map((task) => (
-                        <ScheduleApprovalRow key={task.id} task={task} />
-                      ))}
                       {errorSignals.map((signal) => (
                         <AttentionSignalRow key={signal.id} signal={signal} />
                       ))}
