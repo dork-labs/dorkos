@@ -15,15 +15,15 @@ with Sonnet/Opus worktree implementers and Opus reviewers.
 
 ## PR map
 
-| Task | Issue    | PR    | What landed                                                                 |
-| ---- | -------- | ----- | --------------------------------------------------------------------------- |
-| spec | —        | #1157 | Spec, design decisions, ADR 260821-190444                                    |
-| C2   | DOR-1395 | #1158 | Honest popover nouns + the "nothing runs until you decide" promise kept; mobile SR headings; all-clear fade |
+| Task | Issue    | PR    | What landed                                                                                                                                       |
+| ---- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| spec | —        | #1157 | Spec, design decisions, ADR 260821-190444                                                                                                         |
+| C2   | DOR-1395 | #1158 | Honest popover nouns + the "nothing runs until you decide" promise kept; mobile SR headings; all-clear fade                                       |
 | S1   | DOR-1394 | #1160 | Provenance columns + required `reason` (both doors), proposer-titled notifications, run-once on pending, `nextRuns` preview, operating-skills v11 |
-| C3   | DOR-1396 | #1162 | Activity faces + 3+ burst coalescing with ordinal expand keys; link-less rows stop being buttons |
-| C4   | DOR-1397 | #1163 | One signal-id vocabulary; `deriveWaitingItems` + `useWaitingQueue`; agreement test |
-| S2   | DOR-1408 | #1165 | turn.completed / session.error / ask.pending / dead-letter.created stamp `agentId`; escalation relay prefers the ask's own agent |
-| C1   | DOR-1398 | #1168 | `ScheduleApprovalCard`: face, reason, cadence, first runs, prompt reveal, Run-it-once, A/D, receipts, deferred-delete Undo, settling hold |
+| C3   | DOR-1396 | #1162 | Activity faces + 3+ burst coalescing with ordinal expand keys; link-less rows stop being buttons                                                  |
+| C4   | DOR-1397 | #1163 | One signal-id vocabulary; `deriveWaitingItems` + `useWaitingQueue`; agreement test                                                                |
+| S2   | DOR-1408 | #1165 | turn.completed / session.error / ask.pending / dead-letter.created stamp `agentId`; escalation relay prefers the ask's own agent                  |
+| C1   | DOR-1398 | #1168 | `ScheduleApprovalCard`: face, reason, cadence, first runs, prompt reveal, Run-it-once, A/D, receipts, deferred-delete Undo, settling hold         |
 
 ## Deviations from the specification, with reasons
 
