@@ -3,26 +3,30 @@
  * One agent, one face, everywhere in a room (DOR-1002).
  *
  * Four surfaces here could not reach the fleet on their own and each used to
- * decide for itself. Two remain: the message gutter, drawn from
+ * decide for itself. Two are drawn by the timeline: the message gutter, from
  * `toMessageAuthor`, and a mention's hover card. Both fell back to the author
  * row's render cache — which almost no agent fills — so the same agent wore its
  * real face in the sidebar and a bare letter in the room.
  *
  * **The other two moved rather than went** (phase R1, then R2, spec
  * `one-bar-header` §3.4 and §3.6). The masthead's roster stack and the room's
- * own mark left with the masthead: the bar that replaced it draws no face at
- * all rather than a wrong one, because it cannot reach this widget's fleet
- * directory across the layer rule, and a hashed letter beside the sidebar's
- * emoji is the very disagreement this file exists to catch. Both are back in
- * the room right panel, which reads the fleet itself — so they are covered here
- * again, against `RoomPanelBody`.
+ * own mark left with the masthead, and for one phase were drawn nowhere at all.
+ * They are back in the room right panel, which reads the fleet itself, so both
+ * are covered here again — against `RoomPanelBody`, mounted for real.
  *
- * **This file tests the WIRING, which the unit tests cannot see.** The parity
- * test proves `MemberList` uses an override it is handed, and
- * `RoomFlow.test.tsx` proves `toMessageAuthor` does; neither notices if a
- * caller stops handing one over. So nothing here passes a face in by hand: the
- * fleet is mocked at the transport, exactly the two calls the real hook makes,
- * and every assertion is what a person would see on screen.
+ * The one place they are NOT asserted here is the BAR, which draws the room's
+ * mark for a one-to-one from the same join: it is a different widget with a
+ * different bench, so it carries its own real-join file
+ * (`one-bar/__tests__/ChannelsBar.face.test.tsx`). One derivation
+ * (`useRoomFaces`), three surfaces, two files that mock nothing below the
+ * transport.
+ *
+ * **This file tests the WIRING, which the unit tests cannot see.** The panel's
+ * own suite proves its rows draw an override they are handed, and
+ * `RoomFlow.test.tsx` proves `toMessageAuthor` does; neither notices if a caller
+ * stops handing one over. So nothing here passes a face in by hand: the fleet is
+ * mocked at the transport, exactly the two calls the real hook makes, and every
+ * assertion is what a person would see on screen.
  *
  * The manifest names its own icon and colour rather than leaving them hashed,
  * so an assertion can name the glyph it expects — and so each case doubles as

@@ -216,7 +216,7 @@ export function RoomPanelDemo({
   // module shared by every panel on the page.
   useEffect(() => {
     if (focus === undefined) return;
-    useRoomPanelFocusStore.setState({ request: { focus, roomId: holds.id, nonce: Date.now() } });
+    useRoomPanelFocusStore.setState({ request: { focus, roomId: holds.id } });
   }, [focus, holds.id]);
 
   return (

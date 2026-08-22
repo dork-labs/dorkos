@@ -117,11 +117,14 @@ describe('the room panel fixture reaches every state', () => {
   });
 
   it('a read that fails offers the way out of it', async () => {
-    await openSheet({ label: 'Roster failed', read: 'error', holds: CHANNEL_ROOM });
+    await openSheet({ label: 'Room read failed', read: 'error', holds: CHANNEL_ROOM });
 
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/Couldn.t read who is in here\./);
-    expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    // The panel is addressed by id, so a failed read means there is no room on
+    // this surface at all — not a roster it could not fetch under a name that
+    // never arrives. The fixture reaches the state; the sentence and the retry
+    // are `RoomPanel.test.tsx`'s contract.
+    expect(await screen.findByText("That room isn't here")).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
   it('a channel draws its whole roster and what the room does', async () => {

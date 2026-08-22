@@ -17,6 +17,7 @@ import { RoomDetailsFooter } from './RoomDetailsFooter';
 import { RoomDetailsHeader } from './RoomDetailsHeader';
 import { RoomMemberList } from './RoomMemberList';
 import { RoomMemberRow } from './RoomMemberRow';
+import { RoomPanelNotice } from './RoomPanelNotice';
 
 /** Which field a pending focus request is owed, and how firmly. */
 type PendingSearchFocus =
@@ -182,8 +183,63 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
       setTopicEdits((edits) => edits + 1);
       return;
     }
-    rosterRef.current?.scrollIntoView({ block: 'nearest' });
+    // **"Members" moves the keyboard, not only the eye.** The press is often a
+    // keyboard one — the chip is in the bar's tab order — and a panel that
+    // opens off to the right with focus left behind on the chip is a door only
+    // a mouse can walk through. Answered below, once there is something to land
+    // on: the press usually arrives before the roster has been read.
+    wantRosterFocus.current = true;
   }, [request, roomId]);
+
+  /**
+   * Put the keyboard in the roster for the press that asked for it.
+   *
+   * The first control in it, so tabbing carries on through the people the
+   * reader came to see. Waited for while the read is still in flight, because a
+   * roster with no rows yet has nothing to land on — and answered anyway once
+   * the read has landed, on the region itself (`tabIndex={-1}`, never a tab
+   * stop of its own), which is the honest place for a room with nobody in it.
+   *
+   * `preventScroll` because the scroll is the next line's job, and doing both
+   * at once fights.
+   *
+   * No dependency list, for the same reason as the search field below: the
+   * control this waits for is mounted by a read landing, not by a prop here
+   * changing.
+   */
+  const wantRosterFocus = useRef(false);
+  useEffect(() => {
+    if (!wantRosterFocus.current) return;
+    const roster = rosterRef.current;
+    if (roster === null) return;
+    const first = roster.querySelector<HTMLElement>('button, [href], input, [tabindex="0"]');
+    if (first === null && view.isLoading) return;
+    wantRosterFocus.current = false;
+    (first ?? roster).focus({ preventScroll: true });
+    roster.scrollIntoView({ block: 'nearest' });
+  });
+
+  /**
+   * Forget a press that was never answered, once some OTHER room's panel has
+   * opened.
+   *
+   * A request names its room and waits for that room's panel to mount. If it
+   * never does — the navigation failed, the room was gone — nothing was there to
+   * take it, and the next panel to open would otherwise spring its picker open
+   * for a press about a different room entirely.
+   *
+   * On MOUNT rather than on every route change, and that is what makes it safe:
+   * a sidebar press navigates first, so the panel it is leaving is already
+   * mounted and this never runs for it. Only a panel that is genuinely arriving
+   * clears anything, and by then a request for another room is stale by
+   * definition.
+   */
+  useEffect(() => {
+    const pending = useRoomPanelFocusStore.getState().request;
+    if (pending !== null && pending.roomId !== roomId) useRoomPanelFocusStore.getState().consume();
+    // Mount only — see above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Give the search field the cursor as soon as there IS a field, when
@@ -263,9 +319,41 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
     writes.removeMember(member);
   };
 
+  /**
+   * A room that cannot be read is a room, not a roster.
+   *
+   * The modal could say "couldn't read who is in here", because it was handed a
+   * room by whoever opened it and so always had a name at the top. The panel is
+   * addressed by id: when that read fails there is no room on this surface at
+   * all, and the roster's own error would be describing the wrong thing while
+   * the name above it stayed a skeleton forever. So the whole panel says the
+   * true thing, and offers the same way out.
+   *
+   * It covers a deleted room and an `?id=` that was never right, which is what
+   * `GET /api/rooms/:id` answers 404 to — the case spec §5.6 gives the PAGE a
+   * sentence for, said again here rather than left blank.
+   */
+  if (view.isError) {
+    return (
+      <RoomPanelNotice
+        title="That room isn't here"
+        body="It may have been deleted, or the link may be out of date."
+        action={
+          <Button type="button" size="sm" variant="outline" onClick={view.retry}>
+            Try again
+          </Button>
+        }
+      />
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">
+      <div
+        ref={scrollRef}
+        data-slot="room-panel-scroll"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3"
+      >
         {/* The room's own line waits for the read rather than guessing at it.
             The panel has no summary handed to it the way the modal did — it is
             addressed by id — so a name here before the read lands would be an
@@ -310,7 +398,9 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
           <RoomLoudnessLine members={view.members} roomKind={detail.kind} preview={preview} />
         )}
 
-        <div ref={rosterRef}>
+        {/* Focusable, never tabbable: "Members" lands the keyboard here when
+            the roster has no control of its own to land on yet. */}
+        <div ref={rosterRef} tabIndex={-1} className="outline-none">
           <RoomMemberList
             members={view.members}
             isLoading={view.isLoading}

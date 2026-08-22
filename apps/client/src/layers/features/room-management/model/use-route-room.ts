@@ -46,9 +46,13 @@ export type RouteRoom =
  *
  * **An archived #team resolves to no room.** Home draws no conversation for one
  * — it offers to bring it back instead — so a panel for it would be settings for
- * something that is not on screen. A `/channels` id that no longer resolves is
- * the room read's problem, not this hook's: the id is the address, and the panel
- * says so when the read comes back empty.
+ * something that is not on screen.
+ *
+ * **An `?id=` that names no room still resolves here, deliberately.** This hook
+ * cannot tell a deleted room from one whose read has not landed; only the read
+ * can. So the id is taken at its word and the panel says "That room isn't here"
+ * when the read comes back 404 ({@link RoomPanelBody}) — which is the same
+ * sentence, in the same place, as a room that has genuinely gone.
  *
  * Router-free by construction: `useSafePathname`/`useSafeSearch` answer honestly
  * with no router mounted, so this hook — and the panel around it — is safe in the

@@ -28,15 +28,18 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * segmented control, and touch targets at all. The ruler both files share, and
  * the measurement traps they both fell into, are in `room-sheet-helpers.ts`.
  *
- * **Two tests left this file in phase R2, and what went with them is the
- * point.** The surface was a bottom drawer while it was a modal, and two cases
- * here were about that drawer alone: that exactly one rule padded it for the
- * home indicator, and that its own grip — and nothing else — could throw it
- * away. The panel is a slide-over from the right now: nothing pads for the home
- * indicator because nothing sits against that edge, and there is no swipe to
- * dismiss, so both cases asserted chrome that no longer exists. What survived
- * of the second is here: the roster is still the scrolling region, a drag over
- * it still must not throw the panel away, and the panel still has a way out.
+ * **What phase R2 did to the two drawer cases here.** The surface was a bottom
+ * drawer while it was a modal, and two cases were about that drawer alone: that
+ * exactly one rule padded it for the home indicator, and that its own grip — and
+ * nothing else — could throw it away.
+ *
+ * The home-indicator case is still here, aimed at the rule that replaced it: a
+ * slide-over that fills a phone's screen puts its FOOTER where the drawer's
+ * bottom edge used to be, so `.room-panel-footer` carries the inset and this
+ * asserts that nothing else does. The grip case is gone, because a slide-over
+ * has no swipe to dismiss — what survived of it is here: the roster is still the
+ * scrolling region, a drag over it still must not throw the panel away, and the
+ * panel still has a way out.
  */
 test.describe('Room panel on a phone — 390×844 @smoke', () => {
   test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
@@ -59,7 +62,7 @@ test.describe('Room panel on a phone — 390×844 @smoke', () => {
     expect(box.top).toBeGreaterThanOrEqual(0);
     expect(box.bottom).toBeLessThanOrEqual(PHONE.height + 1);
 
-    const body = sheet.locator('.overflow-y-auto').first();
+    const body = sheet.locator('[data-slot="room-panel-scroll"]');
     // **What is pinned has changed, and this is where it shows.** The modal kept
     // the room's name at the top and its footer at the bottom, with only the
     // middle scrolling. The panel pins its TAB STRIP instead — the thing that
@@ -84,6 +87,66 @@ test.describe('Room panel on a phone — 390×844 @smoke', () => {
     // height or more.
     expect((await rectOf(tabs)).top).toBeCloseTo(headerBefore.top, 0);
     expect((await rectOf(footer)).top).toBeCloseTo(footerBefore.top, 0);
+  });
+
+  test('exactly one element pads for the home indicator, so it cannot double', async ({
+    page,
+    basePage,
+    roomsApi,
+  }) => {
+    const { roomId } = await seedRoom(roomsApi, 'safe-area');
+    await openCockpit(basePage);
+    const sheet = await openSheet(page, roomId);
+
+    // **The rule this guards is new, and so is the reason it is needed.** While
+    // the surface was a modal it was a bottom drawer, and `index.css` padded
+    // `[data-vaul-drawer]`. The panel is a slide-over that fills a phone's
+    // screen, so the thing sitting where the home indicator lands is its
+    // FOOTER — Archive, and the room's age — which is why `.room-panel-footer`
+    // carries the inset now.
+    //
+    // The inset itself is 0 in every browser Playwright drives, so the GAP is
+    // not assertable here (see this file's header). What is assertable is the
+    // shape of the rule: exactly one element inside the panel declares that
+    // padding, and a second declaration is how the gap doubles on a real phone.
+    const declarations = await sheet.evaluate((root) => {
+      const found: string[] = [];
+      const walk = (rules: CSSRuleList) => {
+        for (const rule of [...rules]) {
+          // A rule is judged on its selector and recursed into for its
+          // children, and it can be both. Two traps here, each of which cost a
+          // run: `@supports` wraps the rule that matters and has no selector of
+          // its own, and since CSS nesting shipped an ordinary `CSSStyleRule`
+          // ALSO carries a (usually empty) `cssRules`, so treating "has
+          // cssRules" as "is a wrapper" skips every real rule.
+          const selector = (rule as CSSStyleRule).selectorText;
+          if (typeof selector === 'string' && selector !== '') {
+            if (
+              rule.cssText.includes('safe-area-inset-bottom') &&
+              (root.matches(selector) || root.querySelector(selector) !== null)
+            ) {
+              found.push(selector);
+            }
+          }
+          const nested = (rule as CSSRule & { cssRules?: CSSRuleList }).cssRules;
+          if (nested !== undefined && nested.length > 0) walk(nested);
+        }
+      };
+      for (const styleSheet of [...document.styleSheets]) {
+        try {
+          walk(styleSheet.cssRules);
+        } catch {
+          continue; // cross-origin stylesheet; none of ours are
+        }
+      }
+      return found;
+    });
+
+    expect(
+      declarations,
+      `more than one rule pads for the home indicator inside the panel: ${declarations.join(', ')}`
+    ).toHaveLength(1);
+    expect(declarations[0]).toContain('room-panel-footer');
   });
 
   test('every control a thumb has to hit is at least 44px tall', async ({
@@ -179,7 +242,7 @@ test.describe('Room panel on a phone — 390×844 @smoke', () => {
     // in it, and losing the panel loses their place in both.
     await expandScale(sheet, ana.name);
 
-    const body = sheet.locator('.overflow-y-auto').first();
+    const body = sheet.locator('[data-slot="room-panel-scroll"]');
     await body.evaluate((el) => {
       el.scrollTop = el.scrollHeight;
     });

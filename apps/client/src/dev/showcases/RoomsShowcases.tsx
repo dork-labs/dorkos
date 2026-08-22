@@ -79,7 +79,7 @@ function RoomPanelShowcase() {
       <ShowcaseDemo>
         <div className="flex flex-wrap gap-3">
           <RoomPanelDemo label="Loading" read="loading" holds={CHANNEL_ROOM} />
-          <RoomPanelDemo label="Roster failed" read="error" holds={CHANNEL_ROOM} />
+          <RoomPanelDemo label="Room read failed" read="error" holds={CHANNEL_ROOM} />
         </div>
       </ShowcaseDemo>
 

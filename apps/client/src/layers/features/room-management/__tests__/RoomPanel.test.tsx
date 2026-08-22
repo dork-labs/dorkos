@@ -169,7 +169,7 @@ function renderPanel(
   // exactly this before the panel mounts.
   if (opts.focus !== undefined) {
     useRoomPanelFocusStore.setState({
-      request: { focus: opts.focus, roomId: room.id, nonce: 1 },
+      request: { focus: opts.focus, roomId: room.id },
     });
   }
   const utils = render(<RoomPanelBody roomId={room.id} />, { wrapper });
@@ -375,12 +375,69 @@ describe('RoomPanel', () => {
     await waitFor(() => expect(screen.getByText('Ana')).toBeInTheDocument());
   });
 
-  it('says so when the roster could not be read, without claiming anyone left', async () => {
+  it('says the ROOM could not be read, not that its roster is empty', async () => {
+    // **The modal said "couldn't read who is in here"; the panel cannot.** The
+    // modal was handed a room by whoever opened it, so it always had a name at
+    // the top and the only thing missing was the roster. The panel is addressed
+    // by id: when that read fails there is no room on this surface at all, and
+    // the roster's sentence would be describing the wrong thing under a name
+    // that never arrives. Red if the panel goes back to reporting a room that
+    // is not there as a roster it could not fetch.
     renderPanel({
       transport: createMockTransport({ getRoom: vi.fn().mockRejectedValue(new Error('offline')) }),
     });
 
-    expect(await screen.findByText(/Couldn't read who is in here/i)).toBeInTheDocument();
+    expect(await screen.findByText("That room isn't here")).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't read who is in here/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Current members' })).not.toBeInTheDocument();
+  });
+
+  it('lands the keyboard in the roster when "Members" is what was pressed', async () => {
+    // **The chip is a keyboard target, so the panel it opens has to be one.**
+    // The press comes from the bar's tab order as often as from a mouse, and a
+    // panel that opens off to the right with focus left behind on the chip is a
+    // door only a mouse can walk through — the reader would have to tab across
+    // the whole page to reach what they just asked to see.
+    //
+    // The first control in the roster, so tabbing continues through the people
+    // the reader came for. Red if the request stops moving focus at all.
+    renderPanel({ focus: 'members' });
+    const section = await rosterSection();
+
+    await waitFor(() => expect(section.contains(document.activeElement)).toBe(true));
+  });
+
+  it('takes the last agent out and opens the picker, because an empty room does nothing', async () => {
+    // **Intended, and pinned here because it is surprising.** Removing the last
+    // agent leaves a room that answers nothing, and the only useful act on this
+    // surface is putting somebody back in it — so the same rule that greets an
+    // empty room applies to one you have just emptied. It is one-way: adding an
+    // agent does not shut the picker again, and this is the moment the reader
+    // is most likely to want it.
+    //
+    // Red if the auto-open is ever gated on "the room was ALREADY empty when
+    // the panel opened", which is the shape it would take if somebody read the
+    // greeting as a mount-time rule.
+    let members = [HUMAN, agentMember('Ana', '/repo/ana')];
+    const transport = createMockTransport({
+      getRoom: vi.fn().mockImplementation(() => Promise.resolve(roster(members))),
+      removeRoomMember: vi.fn().mockImplementation(() => {
+        members = [HUMAN];
+        return Promise.resolve(undefined);
+      }),
+    });
+    renderPanel({ transport });
+    await rosterSection();
+    expect(screen.queryByRole('combobox', { name: 'Search agents' })).not.toBeInTheDocument();
+
+    removeThroughMenu();
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Remove Ana from #general?' })).getByRole('button', {
+        name: 'Remove',
+      })
+    );
+
+    expect(await screen.findByRole('combobox', { name: 'Search agents' })).toBeInTheDocument();
   });
 
   it('opens the picker itself for a room with nobody in it, and puts the cursor there', async () => {
@@ -444,13 +501,14 @@ describe('RoomPanel', () => {
     expect(addSection().queryByRole('button', { name: 'Create agent' })).not.toBeInTheDocument();
   });
 
-  it('offers to read the roster again rather than asking to be closed and reopened', async () => {
+  it('offers to read again rather than asking to be closed and reopened', async () => {
     // "Close this and open it again to retry" is the retry button, made out of
     // a person. Red if the button goes, or stops actually re-reading.
     const getRoom = vi.fn().mockRejectedValue(new Error('offline'));
     const { transport } = renderPanel({ transport: createMockTransport({ getRoom }) });
-    await screen.findByText(/Couldn't read who is in here/i);
-    expect(screen.getByText(/Everyone is still where they were/i)).toBeInTheDocument();
+    await screen.findByText("That room isn't here");
+    // And it says why it might have happened, rather than only that it did.
+    expect(screen.getByText(/deleted, or the link may be out of date/i)).toBeInTheDocument();
 
     const before = vi.mocked(transport.getRoom).mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));

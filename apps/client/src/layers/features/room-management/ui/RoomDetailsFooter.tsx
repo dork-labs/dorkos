@@ -48,7 +48,13 @@ export function RoomDetailsFooter({ room }: RoomDetailsFooterProps) {
   };
 
   return (
-    <div className="text-muted-foreground flex shrink-0 items-center justify-between gap-3 border-t px-4 py-3 text-xs">
+    // `room-panel-footer` is the safe-area rule (index.css): on a phone this row
+    // is pinned to the bottom of a full-height slide-over, which is exactly
+    // where a notched device puts the home indicator.
+    <div
+      data-slot="room-panel-footer"
+      className="room-panel-footer text-muted-foreground flex shrink-0 items-center justify-between gap-3 border-t px-4 py-3 text-xs"
+    >
       <span>Created {formatRelativeTime(room.createdAt)}</span>
       <Button type="button" size="sm" variant="ghost" disabled={isBusy} onClick={toggle}>
         {room.archived ? 'Bring this room back' : 'Archive room'}

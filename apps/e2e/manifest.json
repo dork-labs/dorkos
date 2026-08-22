@@ -25,9 +25,7 @@
       "runCount": 10,
       "passCount": 9,
       "failCount": 1,
-      "relatedCode": [
-        "apps/client/src/App.tsx"
-      ],
+      "relatedCode": ["apps/client/src/App.tsx"],
       "lastModified": ""
     },
     "send-message": {
@@ -70,9 +68,7 @@
       "runCount": 13,
       "passCount": 10,
       "failCount": 1,
-      "relatedCode": [
-        "apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"
-      ],
+      "relatedCode": ["apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"],
       "lastModified": ""
     },
     "pulse-scheduler": {
@@ -240,11 +236,11 @@
       "specFile": "tests/rooms/room-entry-actions.spec.ts",
       "feature": "rooms",
       "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread’s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and following it lands the reader and the keyboard on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
-      "lastRun": "2026-08-22T04:44:18.577Z",
-      "lastStatus": "failed",
+      "lastRun": "2026-08-22T05:14:13.835Z",
+      "lastStatus": "passed",
       "runCount": 69,
-      "passCount": 37,
-      "failCount": 32,
+      "passCount": 38,
+      "failCount": 31,
       "relatedCode": [
         "apps/client/src/layers/widgets/room-view/ui/RoomThreadPanel.tsx",
         "apps/client/src/layers/features/conversation/ui/rows/ThreadReplyRow.tsx",
@@ -303,11 +299,11 @@
       "specFile": "tests/rooms/room-sheet.spec.ts",
       "feature": "rooms",
       "description": "the room meter and the pointed-at member move as one, and slide rather than jump, a rung committed moves the member meter and the room meter to the same answer, the roster you open the sheet on does not perform, and an agent you add does, a removed row collapses to nothing while the Undo is still on offer, nothing shaves a focus ring against the row and list clips, a working agent's pulse is not shaved by the row's clip, the segmented control fits its indent without ellipsising a rung, the preview snaps to its answer instead of sliding, and loses nothing",
-      "lastRun": "2026-08-22T04:44:18.577Z",
-      "lastStatus": "failed",
+      "lastRun": "2026-08-22T05:14:13.835Z",
+      "lastStatus": "passed",
       "runCount": 8,
-      "passCount": 7,
-      "failCount": 1,
+      "passCount": 8,
+      "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
     },
@@ -356,9 +352,7 @@
       "runCount": 6,
       "passCount": 6,
       "failCount": 0,
-      "relatedCode": [
-        "apps/client/src/layers/shared/ui/navigation-layout.tsx"
-      ],
+      "relatedCode": ["apps/client/src/layers/shared/ui/navigation-layout.tsx"],
       "lastModified": ""
     },
     "adapter-wizard-fields": {
@@ -1024,15 +1018,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-07T23-57-01",
-      "timestamp": "2026-08-07T23:57:01.343Z",
-      "total": 13,
-      "passed": 13,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 31393
-    },
     {
       "id": "2026-08-08T16-08-01",
       "timestamp": "2026-08-08T16:08:01.847Z",
@@ -1907,15 +1892,6 @@
       "duration": 60858
     },
     {
-      "id": "2026-08-22T04-44-18",
-      "timestamp": "2026-08-22T04:44:18.577Z",
-      "total": 72,
-      "passed": 67,
-      "failed": 5,
-      "skipped": 0,
-      "duration": 160640
-    },
-    {
       "id": "2026-08-22T04-45-22",
       "timestamp": "2026-08-22T04:45:22.984Z",
       "total": 12,
@@ -1923,6 +1899,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 60497
+    },
+    {
+      "id": "2026-08-22T05-14-13",
+      "timestamp": "2026-08-22T05:14:13.835Z",
+      "total": 26,
+      "passed": 26,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 88877
     }
   ]
 }

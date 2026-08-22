@@ -33,14 +33,6 @@ export interface RoomPanelFocusRequest {
    * room being opened never gets it.
    */
   roomId: string;
-  /**
-   * Which press this is.
-   *
-   * The focus alone is not enough to act on twice: pressing "Add agents" again
-   * after collapsing the picker is the same `'add'` and has to re-open it, and a
-   * value that has not changed is a value React will not re-run an effect for.
-   */
-  nonce: number;
 }
 
 interface RoomPanelFocusState {
@@ -59,10 +51,14 @@ interface RoomPanelFocusState {
  * container from a lazy contribution, and the three doors that open it are in
  * three different widgets with no shared ancestor below the shell.
  */
-export const useRoomPanelFocusStore = create<RoomPanelFocusState>()((set, get) => ({
+export const useRoomPanelFocusStore = create<RoomPanelFocusState>()((set) => ({
   request: null,
-  ask: (focus, roomId) =>
-    set({ request: { focus, roomId, nonce: (get().request?.nonce ?? 0) + 1 } }),
+  // A fresh object every time, which is what makes a repeated press a NEW
+  // request: "Add agents" pressed again after collapsing the picker names the
+  // same focus and the same room, and the panel has to act on it again. An
+  // effect only re-runs for a value that changed, and the identity IS that
+  // change — which is why there is no counter here to keep in step.
+  ask: (focus, roomId) => set({ request: { focus, roomId } }),
   consume: () => set({ request: null }),
 }));
 

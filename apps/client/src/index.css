@@ -1752,6 +1752,15 @@ body {
   [data-vaul-drawer] {
     padding-bottom: env(safe-area-inset-bottom);
   }
+  /* The room panel's footer — Archive, and the room's age — is pinned to the
+     bottom of a slide-over that fills a phone's screen, so on a notched device
+     it lands exactly where the home indicator does. Same shape as the
+     composer's rule above: the ordinary padding on every other device, the
+     inset where there is one. Nothing inside it pads again, so the gap cannot
+     double. */
+  .room-panel-footer {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
 }
 
 /*
