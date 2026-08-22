@@ -104,7 +104,12 @@ export function useResolvedSessionRuntime(sessionId: string): ResolvedSessionRun
   // The in-session chip override (shared, reactive) wins; otherwise the
   // ?runtime= launch param read straight off the URL — identical for every
   // consumer and router-free, so it never crashes embedded mode.
-  const pendingSelection = pendingRuntime ?? readRuntimeParam();
+  //
+  // The override counts only for the session it was MADE in. The store is a
+  // module global that outlives any mount, so an unkeyed read would let a draft
+  // session's pick decide what the next conversation runs on.
+  const ownPick = pendingRuntime?.sessionId === sessionId ? pendingRuntime.type : null;
+  const pendingSelection = ownPick ?? readRuntimeParam();
   const resolved = sessionRow?.runtime ?? pendingSelection ?? runtimeCaps?.defaultRuntime ?? null;
 
   return {
@@ -121,24 +126,44 @@ export function useResolvedSessionRuntime(sessionId: string): ResolvedSessionRun
  * The status-bar runtime chip: {@link useResolvedSessionRuntime} plus the
  * selection action, and the one effect that discards a stale pending selection.
  *
- * Call this only from a surface that OWNS the chip. A selection belongs to the
- * session it was made in, so the effect clears it whenever the active session
- * changes (switch, agent launch, or the first send binding the canonical id); the
- * new session then resolves from its own `?runtime=` param. A read-only consumer
- * must use {@link useResolvedSessionRuntime} instead — mounting this hook would
- * clear a pre-launch choice the operator had just made.
+ * A selection belongs to the session it was made in, and says so: it is stored
+ * as a {@link PendingLaunchPick} carrying that session's id, so no other session
+ * can read it and a remount of the same one keeps it. The effect below only
+ * sweeps up a pick the operator has left behind.
+ *
+ * Prefer {@link useResolvedSessionRuntime} in a read-only consumer regardless:
+ * this hook's extra work is the selection action, which a readout has no use for.
  *
  * @param sessionId - Active session id (see {@link useResolvedSessionRuntime}).
  */
 export function useRuntimeChip(sessionId: string): RuntimeChipState {
   const resolved = useResolvedSessionRuntime(sessionId);
   const setPendingRuntime = useAppStore((s) => s.setPendingRuntime);
+  const setPendingAccount = useAppStore((s) => s.setPendingAccount);
 
   // Effect — never a render-time external-store write, which would update the
   // sibling consumer mid-render.
+  //
+  // Housekeeping, NOT the safety property. Every reader already ignores a pick
+  // belonging to another session (`PendingLaunchPick`), so leaving one behind
+  // could not leak into this conversation; this just drops what has become
+  // litter once the operator has moved on. That ordering matters: a rule
+  // enforced by the data cannot be undone by a mount that does not happen, which
+  // is exactly how the earlier clear-on-mount and clear-on-transition attempts
+  // each broke in one direction or the other.
+  //
+  // Read through selectors rather than `getState()`: this hook renders under
+  // surfaces whose tests supply a hand-written store, and a snapshot read would
+  // demand a shape they have no reason to provide. Subscribing is also what makes
+  // the sweep react to a pick that arrives after mount.
+  const heldRuntime = useAppStore((s) => s.pendingRuntime);
+  const heldAccount = useAppStore((s) => s.pendingAccount);
   useEffect(() => {
-    setPendingRuntime(null);
-  }, [sessionId, setPendingRuntime]);
+    const foreign = (pick: { sessionId: string } | null | undefined) =>
+      pick != null && pick.sessionId !== sessionId;
+    if (foreign(heldRuntime)) setPendingRuntime(null);
+    if (foreign(heldAccount)) setPendingAccount(null);
+  }, [sessionId, heldRuntime, heldAccount, setPendingRuntime, setPendingAccount]);
 
   const inPlaceNavigate = useInPlaceNavigate();
   const onChangeRuntime = useCallback(
@@ -149,13 +174,13 @@ export function useRuntimeChip(sessionId: string): RuntimeChipState {
       // screen, so it goes in place — a lookup in flight must not read it as a
       // departure (DOR-931). `null` in embedded mode, which has no router — the
       // store alone drives the chip there.
-      setPendingRuntime(type);
+      setPendingRuntime({ type, sessionId });
       inPlaceNavigate?.({
         search: (prev: Record<string, unknown>) => ({ ...prev, runtime: type }),
         replace: true,
       });
     },
-    [inPlaceNavigate, setPendingRuntime]
+    [inPlaceNavigate, setPendingRuntime, sessionId]
   );
 
   return { ...resolved, onChangeRuntime };

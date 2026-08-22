@@ -158,13 +158,18 @@ export function createDirectSessionMethods(
       cwd?: string,
       // `options.runtime` (the first-turn runtime hint) is intentionally not
       // forwarded: DirectTransport embeds exactly one in-process runtime, so
-      // there is never a second runtime to select. `options.disposition` is not
-      // forwarded either: the embedded bridge carries no disposition envelope,
-      // and every disposition resolves to `queue` today anyway.
+      // there is never a second runtime to select. `options.account` (the
+      // first-turn billing hint) is not forwarded for the same reason: the
+      // embedded bridge's turn trigger takes no account, and the status-bar
+      // picker that produces the hint needs a multi-account registry the embedded
+      // host does not report. `options.disposition` is not forwarded either: the
+      // embedded bridge carries no disposition envelope, and every disposition
+      // resolves to `queue` today anyway.
       options?: {
         clientMessageId?: string;
         context?: ClientContext;
         runtime?: string;
+        account?: string;
         seedContext?: string;
         disposition?: MessageDisposition;
       }

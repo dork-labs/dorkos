@@ -140,8 +140,16 @@ export const useAppStore = create<AppState>()(
         // Shared pending pre-launch runtime selection — see CoreSlice docs.
         // Transient: seeded from ?runtime= per session by useRuntimeChip and
         // written by the chip's onChangeRuntime; the URL is the durable channel.
+        // Carries its own session id, so it cannot be inherited by another
+        // conversation (see PendingLaunchPick).
         pendingRuntime: null,
-        setPendingRuntime: (runtime) => set({ pendingRuntime: runtime }),
+        setPendingRuntime: (pick) => set({ pendingRuntime: pick }),
+
+        // Pending pre-launch billing-account hint — see CoreSlice docs. Transient
+        // and URL-free on purpose, and likewise session-keyed: it is shown and
+        // spent only by the session it names.
+        pendingAccount: null,
+        setPendingAccount: (pick) => set({ pendingAccount: pick }),
 
         requestedTour: null,
         requestTour: (id) => set({ requestedTour: id }),

@@ -128,6 +128,8 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       selectedCwd: '/test/dir',
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
+      pendingAccount: null,
+      setPendingAccount: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
     };

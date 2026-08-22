@@ -80,6 +80,8 @@ vi.mock('@/layers/shared/model/app-store', () => ({
     const state: Record<string, unknown> = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
+      pendingAccount: null,
+      setPendingAccount: vi.fn(),
       // A healthy cost and a 20%-full window are quiet by design; pin them so this
       // suite still asserts what it is about — snapshot hydration on cold mount.
       enableMessagePolling: false,

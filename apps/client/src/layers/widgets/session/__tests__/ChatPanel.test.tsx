@@ -159,6 +159,8 @@ vi.mock('@/layers/shared/model/app-store', () => ({
     const state = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
+      pendingAccount: null,
+      setPendingAccount: vi.fn(),
       setIsStreaming: vi.fn(),
       setIsTextStreaming: vi.fn(),
       setIsWaitingForUser: vi.fn(),

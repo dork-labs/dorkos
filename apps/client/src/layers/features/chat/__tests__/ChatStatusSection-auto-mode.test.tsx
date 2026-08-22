@@ -105,6 +105,8 @@ vi.mock('@/layers/shared/model/app-store', () => ({
     const state: Record<string, unknown> = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
+      pendingAccount: null,
+      setPendingAccount: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
     };

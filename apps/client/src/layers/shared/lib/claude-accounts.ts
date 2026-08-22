@@ -13,6 +13,17 @@
 
 /** A registered account as `GET /api/config` reports it. */
 export interface ClaudeAccountRef {
+  /**
+   * The registry id an agent or a session launch hint names this account by
+   * (`runtimes.claudeCode.accounts[].id`, spec `billing-account-ladder`).
+   *
+   * `null` — or absent, on a row this client synthesized — marks a root nobody
+   * registered: the inherited `$CLAUDE_CONFIG_DIR` or `~/.claude`. Such a row is
+   * display-only. Nothing may point at it, so a picker that produces a REFERENCE
+   * must offer only rows with an id; a picker that produces a PATH (the settings
+   * default) may offer them all.
+   */
+  id?: string | null;
   /** Absolute path of the account's Claude config directory. */
   path: string;
   /** What the operator calls this account, or `null` when unnamed. */
@@ -67,14 +78,17 @@ export function claudeAccountOptions(
   inUse: string | undefined | null
 ): ClaudeAccountRef[] {
   const options = accounts.map((account) => ({
+    id: account.id ?? null,
     path: account.path,
     label: account.label,
     isAccountRoot: account.isAccountRoot,
   }));
   if (inUse && !options.some((option) => option.path === inUse)) {
-    // No `isAccountRoot`: the server reports that check for REGISTERED accounts
-    // only, and claiming a verdict nobody made would be worse than saying nothing.
-    options.push({ path: inUse, label: null, isAccountRoot: undefined });
+    // `id: null` because nobody registered this root, so nothing can REFERENCE
+    // it — only a path-valued picker may offer it. No `isAccountRoot` either: the
+    // server reports that check for REGISTERED accounts only, and claiming a
+    // verdict nobody made would be worse than saying nothing.
+    options.push({ id: null, path: inUse, label: null, isAccountRoot: undefined });
   }
   return options;
 }

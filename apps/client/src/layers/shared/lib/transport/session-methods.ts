@@ -187,6 +187,7 @@ export function createSessionMethods(
         clientMessageId?: string;
         context?: ClientContext;
         runtime?: string;
+        account?: string;
         seedContext?: string;
         disposition?: MessageDisposition;
       }
@@ -196,6 +197,7 @@ export function createSessionMethods(
       if (options?.clientMessageId) body.clientMessageId = options.clientMessageId;
       if (options?.context) body.context = options.context;
       if (options?.runtime) body.runtime = options.runtime;
+      if (options?.account) body.account = options.account;
       if (options?.seedContext) body.seedContext = options.seedContext;
       if (options?.disposition) body.disposition = options.disposition;
 

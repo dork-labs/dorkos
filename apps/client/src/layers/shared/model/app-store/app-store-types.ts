@@ -27,6 +27,33 @@ import type { ContextFile, RecentCwd } from './app-store-helpers';
 // Core slice interface (defined here so slice files can use it via AppState)
 // ---------------------------------------------------------------------------
 
+/**
+ * A pre-launch choice, carrying the session it was made in.
+ *
+ * The store is a module global; the surfaces that read it mount and unmount as
+ * the operator moves around the cockpit. A bare value in here therefore outlives
+ * the conversation it was chosen for: pick an account on a draft session, walk to
+ * /tasks, start a different chat, and the new chat inherits a billing choice
+ * nobody made for it — while the menu that took the choice promised "this session
+ * only". Neither clearing on mount nor clearing on a transition can close that:
+ * the first destroys a pick whenever a second surface mounts, the second relies
+ * on instance lifetime the store does not have.
+ *
+ * Pairing the value with its owner makes the promise a property of the DATA, so
+ * every reader enforces it by construction: a pick is shown and sent only to the
+ * session whose id it names, and a remount of that same session keeps it.
+ *
+ * @typeParam ValueKey - Name of the value field, so each pick reads in its own
+ *   vocabulary (`type` for a runtime, `id` for an account) rather than a
+ *   uniform `value` that says nothing at the call site.
+ */
+export type PendingLaunchPick<ValueKey extends string> = {
+  [K in ValueKey]: string;
+} & {
+  /** Session this choice belongs to. No other session may show or send it. */
+  sessionId: string;
+};
+
 export interface CoreSlice {
   sidebarOpen: boolean;
   toggleSidebar: () => void;
@@ -96,10 +123,29 @@ export interface CoreSlice {
    * Null when no in-session override is active; the chip then falls back to the
    * `?runtime=` URL seed and finally the server default. Transient (not
    * persisted) — the URL carries the choice across reloads and deep-links.
+   *
+   * **Carries the session it was made in** — see {@link PendingLaunchPick}.
    */
-  pendingRuntime: string | null;
+  pendingRuntime: PendingLaunchPick<'type'> | null;
   /** Set the shared pending pre-launch runtime selection (null clears it). */
-  setPendingRuntime: (runtime: string | null) => void;
+  setPendingRuntime: (pick: PendingLaunchPick<'type'> | null) => void;
+
+  /**
+   * Pending pre-launch BILLING ACCOUNT selection made from the status-bar chip —
+   * a registry id (`runtimes.claudeCode.accounts[].id`), never a path. Sent as
+   * the `account` launch hint on the session-creating first message and nothing
+   * else; null means "no hint", which leaves the server's own ladder (the
+   * agent's account, else the default) in charge.
+   *
+   * Deliberately transient AND deliberately absent from the URL, unlike
+   * {@link pendingRuntime}. Billing is not a deep link: a shared or bookmarked
+   * cockpit URL must never be able to decide whose subscription a stranger's
+   * turn spends. **And it carries the session it was made in** — see
+   * {@link PendingLaunchPick}, which is what makes "this session only" true.
+   */
+  pendingAccount: PendingLaunchPick<'id'> | null;
+  /** Set the pending pre-launch account hint (null clears it, meaning "no hint"). */
+  setPendingAccount: (pick: PendingLaunchPick<'id'> | null) => void;
 
   /**
    * A living tour (DOR-419) requested by name from anywhere in the app — the
