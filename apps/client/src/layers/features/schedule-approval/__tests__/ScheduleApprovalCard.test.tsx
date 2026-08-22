@@ -769,7 +769,9 @@ describe('ScheduleApprovalCard — running it once', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
 
-    await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'finished'));
+    await waitFor(() =>
+      expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'finished')
+    );
     expect(slot('schedule-test-run')).not.toHaveTextContent('not our run');
   });
 

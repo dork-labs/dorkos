@@ -4,7 +4,10 @@ import { getPlatform } from '@/layers/shared/lib';
 import { useSafePathname } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useAttentionRows, AttentionSignalRow } from '@/layers/features/dashboard-attention';
-import { ScheduleApprovalCard, useScheduleApprovalCards } from '@/layers/features/schedule-approval';
+import {
+  ScheduleApprovalCard,
+  useScheduleApprovalCards,
+} from '@/layers/features/schedule-approval';
 import { InboxRow, useOpenNotification } from '@/layers/features/inbox';
 import { PulseSection } from './PulseSection';
 

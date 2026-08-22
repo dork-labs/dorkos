@@ -19,7 +19,10 @@ import {
   type NotificationLens,
 } from '@/layers/entities/notifications';
 import { AskList, useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
-import { ScheduleApprovalCard, useScheduleApprovalCards } from '@/layers/features/schedule-approval';
+import {
+  ScheduleApprovalCard,
+  useScheduleApprovalCards,
+} from '@/layers/features/schedule-approval';
 import { InboxList } from '@/layers/features/inbox';
 import {
   ApprovalList,
@@ -288,7 +291,8 @@ export function InboxBell() {
   // the moment the queue drains, whether or not this panel is open, so it hangs
   // off `NotificationCenter` instead (see `usePinnedDrainBeat`).
   const beating = usePinnedDrainBeat(waitingCount + settling.length, open);
-  const showsPinned = waitingCount > 0 || settling.length > 0 || shownSchedules.length > 0 || isError;
+  const showsPinned =
+    waitingCount > 0 || settling.length > 0 || shownSchedules.length > 0 || isError;
 
   const pill = resolvePill({
     waitingCount,
