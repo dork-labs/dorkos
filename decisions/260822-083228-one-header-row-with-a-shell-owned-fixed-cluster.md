@@ -20,7 +20,7 @@ The cockpit had four header grammars: a shared one-row bar on most pages, a besp
 
 ## Decision
 
-Every page gets exactly one 36px header row (the "One Bar"), composed as `identity · chips · fill · actions` by the page, with the fixed cluster — search, inbox bell, right-panel toggle — mounted by **AppShell** as a sibling *after* the route cross-fade (`BarFixedCluster`). A route bar's entire subtree is confined to the preceding sibling, so nothing can render past the cluster (invariant I1) and the cluster never re-mounts or flickers on navigation. All in-bar tabs use one component (`BarTabStrip`: links styled as tabs, scroll with edge fades on overflow). Truncation yields in a fixed order: topic first, chips compress to icons, tabs scroll, identity last. Pages that repeated their name as an in-page H1 keep only an `sr-only` h1 for the heading outline.
+Every page gets exactly one 36px header row (the "One Bar"), composed as `identity · chips · fill · actions` by the page, with the fixed cluster — search, inbox bell, right-panel toggle — mounted by **AppShell** as a sibling _after_ the route cross-fade (`BarFixedCluster`). A route bar's entire subtree is confined to the preceding sibling, so nothing can render past the cluster (invariant I1) and the cluster never re-mounts or flickers on navigation. All in-bar tabs use one component (`BarTabStrip`: links styled as tabs, scroll with edge fades on overflow). Truncation yields in a fixed order: topic first, chips compress to icons, tabs scroll, identity last. Pages that repeated their name as an in-page H1 keep only an `sr-only` h1 for the heading outline.
 
 ## Consequences
 

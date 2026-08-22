@@ -20,7 +20,7 @@ Room management (members, add-agents, topic, loudness, archive) lived in a modal
 
 ## Decision
 
-Rooms adopt the session model: a **Room** tab registered as a `RightPanelContribution` (visible on room routes, priority set to beat a lingering Profile tab), hosting the former dialog's composition in panel layout. All doors go through one seam, `openRoomPanel(focus, roomId)` — the bar's members chip, the empty room's add-agents prompt, and the sidebar row menu — and a pending focus request survives in-flight navigation (released only when the on-screen room *changes* to one the request wasn't about). The dialog is deleted.
+Rooms adopt the session model: a **Room** tab registered as a `RightPanelContribution` (visible on room routes, priority set to beat a lingering Profile tab), hosting the former dialog's composition in panel layout. All doors go through one seam, `openRoomPanel(focus, roomId)` — the bar's members chip, the empty room's add-agents prompt, and the sidebar row menu — and a pending focus request survives in-flight navigation (released only when the on-screen room _changes_ to one the request wasn't about). The dialog is deleted.
 
 ## Consequences
 
