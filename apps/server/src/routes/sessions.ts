@@ -399,7 +399,42 @@ router.get('/:id/tasks', async (req, res) => {
   }
 });
 
-// GET /api/sessions/:id/messages - Get message history from SDK transcript
+/**
+ * Resolve the project directory to read a session's messages from, without
+ * requiring the caller to already know it (DOR-1322).
+ *
+ * An explicit `cwdParam` always wins. Otherwise, try the runtime's own LIVE
+ * binding for the session (`getSessionCwd`, live in-process sessions only —
+ * claude-code's is populated by `ensureSession`/`ensureForMessage`). Failing
+ * that, fall back to the server's default project directory, but — unlike the
+ * old unconditional fallback — verify the session actually lives there before
+ * trusting it, so a session from a DIFFERENT directory never reads back as a
+ * silently-empty transcript.
+ *
+ * @param runtime - The resolved runtime for this session
+ * @param internalSessionId - Backend-internal session id
+ * @param cwdParam - The caller-supplied `?cwd=`, if any
+ * @returns The resolved directory, or `null` when none could be confirmed
+ */
+async function resolveMessagesCwd(
+  runtime: AgentRuntime,
+  internalSessionId: string,
+  cwdParam: string | undefined
+): Promise<string | null> {
+  if (cwdParam) return cwdParam;
+
+  const liveCwd = runtime.getSessionCwd?.(internalSessionId);
+  if (liveCwd) return liveCwd;
+
+  const found = await runtime.getSession(vaultRoot, internalSessionId);
+  return found ? vaultRoot : null;
+}
+
+// GET /api/sessions/:id/messages - Get message history from SDK transcript.
+// No `?cwd=` is required for a session the server can already place — see
+// resolveMessagesCwd. A session it genuinely cannot place answers 404 rather
+// than an empty list, so "no messages yet" and "wrong/missing cwd" are never
+// the same response (DOR-1322).
 router.get('/:id/messages', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
@@ -408,11 +443,19 @@ router.get('/:id/messages', async (req, res) => {
 
   if (!(await assertBoundary(cwdParam, res, { allowDorkHome: true }))) return;
 
-  const cwd = cwdParam || vaultRoot;
-
   // Translate client-facing session ID to backend-internal session ID
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
+
+  const cwd = await resolveMessagesCwd(runtime, internalSessionId, cwdParam);
+  if (!cwd) {
+    return sendError(
+      res,
+      404,
+      "Could not determine this session's working directory. Pass ?cwd= with the session's project directory.",
+      'SESSION_CWD_REQUIRED'
+    );
+  }
 
   const etag = await runtime.getSessionETag(cwd, internalSessionId);
   if (etag) {

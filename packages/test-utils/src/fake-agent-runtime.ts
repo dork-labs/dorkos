@@ -195,6 +195,12 @@ export class FakeAgentRuntime implements AgentRuntime {
   getMessageHistory = vi
     .fn<(projectDir: string, sessionId: string) => Promise<HistoryMessage[]>>()
     .mockResolvedValue([]);
+  /**
+   * Defaults to `undefined` — no live binding — matching the honest default
+   * for a double that has never "ensured" any session. Configure a return
+   * value to simulate a session this runtime's in-memory store already knows.
+   */
+  getSessionCwd = vi.fn<(sessionId: string) => string | undefined>(() => undefined);
   getSessionTasks = vi
     .fn<(projectDir: string, sessionId: string) => Promise<TaskItem[]>>()
     .mockResolvedValue([]);

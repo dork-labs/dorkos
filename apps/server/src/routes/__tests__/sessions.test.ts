@@ -1189,6 +1189,9 @@ describe('Sessions Routes', () => {
   describe('session ID translation', () => {
     it('GET /messages uses internal session ID when available', async () => {
       fakeRuntime.getInternalSessionId.mockReturnValue('sdk-uuid-123');
+      // A live cwd binding is what makes the id "known" without a ?cwd= param
+      // (DOR-1322) — without it the route can no longer place the session.
+      fakeRuntime.getSessionCwd.mockReturnValue('/mock/project');
       fakeRuntime.getMessageHistory.mockResolvedValue([]);
 
       await request(server).get(`/api/sessions/${S1}/messages`);
@@ -1201,6 +1204,7 @@ describe('Sessions Routes', () => {
     });
 
     it('returns 500 when getMessageHistory throws', async () => {
+      fakeRuntime.getSessionCwd.mockReturnValue('/mock/project');
       fakeRuntime.getMessageHistory.mockRejectedValueOnce(new Error('I/O error'));
 
       const res = await request(server)
@@ -1213,6 +1217,7 @@ describe('Sessions Routes', () => {
 
     it('GET /messages falls back to URL session ID when not in runtime', async () => {
       fakeRuntime.getInternalSessionId.mockReturnValue(undefined);
+      fakeRuntime.getSessionCwd.mockReturnValue('/mock/project');
       fakeRuntime.getMessageHistory.mockResolvedValue([]);
 
       await request(server).get(`/api/sessions/${S1}/messages`);
@@ -1242,6 +1247,82 @@ describe('Sessions Routes', () => {
       await request(server).get(`/api/sessions/${S1}/tasks`);
 
       expect(fakeRuntime.getSessionTasks).toHaveBeenCalledWith(expect.any(String), 'sdk-uuid-789');
+    });
+  });
+
+  // ---- GET /:id/messages cwd resolution (DOR-1322) ----
+  //
+  // The bug: with no ?cwd= the route always fell back to the server's default
+  // project directory and never checked whether the session actually lived
+  // there, so a session from a different directory read back as a silently
+  // empty transcript — indistinguishable from a session that truly had no
+  // messages yet.
+  describe('GET /:id/messages cwd resolution', () => {
+    it('returns messages for a known session with no ?cwd= param', async () => {
+      // The runtime's own live binding (e.g. an in-memory session store) is
+      // what makes the session "known" without the caller supplying cwd.
+      fakeRuntime.getSessionCwd.mockReturnValue('/live/project');
+      fakeRuntime.getMessageHistory.mockImplementation(async (projectDir) =>
+        projectDir === '/live/project'
+          ? [{ id: 'm1', role: 'user', content: 'hi', timestamp: '2026-01-01T00:00:00Z' }]
+          : []
+      );
+
+      const res = await request(server).get(`/api/sessions/${S1}/messages`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.messages).toHaveLength(1);
+      expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith('/live/project', S1);
+    });
+
+    it('returns 404 naming the missing cwd when the session cannot be placed', async () => {
+      // No live binding, and the session does not live in the default project
+      // directory either (getSession's default mock resolves null).
+      fakeRuntime.getSessionCwd.mockReturnValue(undefined);
+
+      const res = await request(server).get(`/api/sessions/${S1}/messages`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('SESSION_CWD_REQUIRED');
+      expect(res.body.error).toMatch(/cwd/i);
+      expect(fakeRuntime.getMessageHistory).not.toHaveBeenCalled();
+    });
+
+    it('honours an explicit ?cwd= even when the runtime has no live binding', async () => {
+      fakeRuntime.getSessionCwd.mockReturnValue(undefined);
+      fakeRuntime.getMessageHistory.mockResolvedValue([
+        { id: 'm1', role: 'user', content: 'hi', timestamp: '2026-01-01T00:00:00Z' },
+      ]);
+
+      const res = await request(server)
+        .get(`/api/sessions/${S1}/messages`)
+        .query({ cwd: '/explicit/project' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.messages).toHaveLength(1);
+      expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith('/explicit/project', S1);
+      // Explicit cwd is trusted outright — no live-binding or default-project
+      // existence probe needed to honour it.
+      expect(fakeRuntime.getSession).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the default project directory when the session lives there', async () => {
+      fakeRuntime.getSessionCwd.mockReturnValue(undefined);
+      fakeRuntime.getSession.mockResolvedValue({
+        id: S1,
+        title: 'Test',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+        permissionMode: 'default',
+      });
+      fakeRuntime.getMessageHistory.mockResolvedValue([
+        { id: 'm1', role: 'user', content: 'hi', timestamp: '2026-01-01T00:00:00Z' },
+      ]);
+
+      const res = await request(server).get(`/api/sessions/${S1}/messages`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.messages).toHaveLength(1);
     });
   });
 
