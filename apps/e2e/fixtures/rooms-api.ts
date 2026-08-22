@@ -123,19 +123,6 @@ export interface SeededRoom {
 const SILENT = { responseMode: 'silent' } as const;
 
 /**
- * How long a freshly registered agent may take to reach `GET /api/team`.
- *
- * Generous on purpose: it is paid only while the roster is genuinely still
- * catching up, and the alternative — a spec's own 5s assertion racing a cold
- * server's first mesh scan — is the failure this exists to remove. A run that
- * spends the whole budget has a real problem and says so.
- */
-const ROSTER_VISIBLE_TIMEOUT_MS = 20_000;
-
-/** How often to re-ask while waiting. */
-const ROSTER_POLL_MS = 200;
-
-/**
  * How long to give an assertion that cannot pass until the server answers — a
  * room list refetched after a create, an entry delivered over the room's SSE
  * stream, a navigation that waits on a create mutation.
@@ -253,50 +240,7 @@ export class RoomsApi {
     const { agents } = (await paths.json()) as { agents: { id: string; projectPath: string }[] };
     const projectPath = agents.find((a) => a.id === id)?.projectPath;
     if (!projectPath) throw new Error(`Registered ${name} as ${id} but it has no stored path`);
-    await this.waitForRosterEntry(name);
     return { id, path, projectPath, name, emoji };
-  }
-
-  /**
-   * Wait until the roster — not just the registry — knows this agent.
-   *
-   * **The two are different reads, and specs depend on the slower one.**
-   * {@link RoomsApi.registerAgent} already confirms `/api/mesh/agents/paths`
-   * holds the new path, which proves the registry took the write. The Team page
-   * paints from `GET /api/team`, which aggregates over the mesh, and on a
-   * just-booted server that aggregate can still be answering from a scan that
-   * has not caught up. A spec that registers an agent and immediately loads
-   * `/team` is then racing the warm-up, and the failure it produces is
-   * "element(s) not found" for a card that arrives a moment later.
-   *
-   * It surfaced when a spec added to `dashboard-sidebar` shifted the CI shard
-   * boundaries — `--shard` divides by TEST COUNT — and made `team/team-page`
-   * the FIRST spec in its shard, so it stopped inheriting the warm-up that
-   * earlier specs used to pay. Three of its agent-seeded tests went red on CI
-   * while passing locally, where the scan finishes inside the assertion's
-   * timeout. Ordering should not decide whether a fixture's promise holds, so
-   * the promise is made explicit here instead.
-   *
-   * @param name - The agent's display name, as the roster reports it.
-   */
-  private async waitForRosterEntry(name: string): Promise<void> {
-    const deadline = Date.now() + ROSTER_VISIBLE_TIMEOUT_MS;
-    let lastSeen = 'never read the roster';
-    while (Date.now() < deadline) {
-      const res = await this.request.get('/api/team');
-      if (res.ok()) {
-        const { members } = (await res.json()) as { members?: { name?: string }[] };
-        if ((members ?? []).some((member) => member.name === name)) return;
-        lastSeen = `${(members ?? []).length} member(s), none named ${name}`;
-      } else {
-        lastSeen = `GET /api/team -> ${res.status()}`;
-      }
-      await new Promise((resolve) => setTimeout(resolve, ROSTER_POLL_MS));
-    }
-    throw new Error(
-      `Registered ${name}, and the registry has it, but it never reached the roster ` +
-        `within ${ROSTER_VISIBLE_TIMEOUT_MS}ms (${lastSeen}).`
-    );
   }
 
   /**
