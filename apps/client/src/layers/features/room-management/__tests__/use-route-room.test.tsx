@@ -98,7 +98,11 @@ describe('useRouteRoom', () => {
       // Home draws no conversation for any of these — it offers to bring the
       // room back, or says it cannot find it — so a panel about one would be
       // settings for something that is not on screen.
-      team.current = { status, room: status === 'archived' ? { id: 'team-room' } : null, retry: vi.fn() };
+      team.current = {
+        status,
+        room: status === 'archived' ? { id: 'team-room' } : null,
+        retry: vi.fn(),
+      };
 
       expect(renderHook(() => useRouteRoom()).result.current).toEqual({ status: 'none' });
     }
