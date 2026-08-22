@@ -503,6 +503,12 @@ export async function resolveLaunch(args: {
       options: sdkOptions,
       credentialEnv: claudeCredentialEnv,
       ...(agentIdentity !== undefined ? { agentIdentity } : { agentIdentity: undefined }),
+      // The raw setting, plus whether it was resolved against a known model
+      // capability — together they let `compareLaunchFingerprints` tell a
+      // real effort change from the capability cache warming up mid-session
+      // (DOR-1308).
+      effortInput: session.effort,
+      capabilityResolved: opts.modelThinkingCapability !== undefined,
     },
   };
 }

@@ -43,6 +43,8 @@ function params(overrides: Partial<LaunchParams> = {}): LaunchParams {
     options: options(),
     credentialEnv: { ANTHROPIC_API_KEY: 'sk-client' },
     agentIdentity: { agentPath: '/repo', displayName: 'Scout', attributed: true },
+    effortInput: 'high',
+    capabilityResolved: true,
     ...overrides,
   };
 }
@@ -233,8 +235,8 @@ describe('the relaunch pins', () => {
         options: options({ env: { PATH: '/usr/bin', EXTRA: '1', CLAUDE_CONFIG_DIR: CLIENT_ROOT } }),
       },
     ],
-    ['effort', { options: options({ effort: 'low' }) }],
-    ['effort', { options: options({ thinking: { type: 'adaptive', display: 'summarized' } }) }],
+    ['effort', { effortInput: 'low' }],
+    ['effort', { effortInput: undefined }],
     ['fastMode', { options: options({ settings: { fastMode: true } }) }],
   ];
 
@@ -281,6 +283,63 @@ describe('the relaunch pins', () => {
       'cwd',
       'settingSources',
     ]);
+  });
+});
+
+describe('the effort pin and the model-capability cache (DOR-1308)', () => {
+  it('does not relaunch a session-first launch into its own second dispatch once the cache warms', () => {
+    // The regression: launch 1 resolves `thinking-config.ts` against an EMPTY
+    // model-capability cache (`capabilityResolved: false`, `options.thinking`
+    // comes back bare), and dispatch 2 resolves the SAME session setting
+    // against a now-WARM cache (`capabilityResolved: true`, `options.thinking`
+    // gets `{ type: 'adaptive', display: 'summarized' }`). Nothing the user
+    // controls changed, so this must not relaunch.
+    const launch1 = capture({
+      capabilityResolved: false,
+      options: options({ effort: undefined }),
+    });
+    const dispatch2 = capture({
+      capabilityResolved: true,
+      options: options({ thinking: { type: 'adaptive', display: 'summarized' } }),
+    });
+    const decision = compareLaunchFingerprints(launch1, dispatch2);
+    expect(decision.action).toBe('reuse');
+  });
+
+  it('still relaunches when the session effort setting itself changes, cache cold on both sides', () => {
+    // The guard the fix must not break: a REAL effort change is still a pin,
+    // even while the capability cache stays unresolved throughout.
+    const decision = compareLaunchFingerprints(
+      capture({ capabilityResolved: false, effortInput: 'high' }),
+      capture({ capabilityResolved: false, effortInput: 'low' })
+    );
+    expect(decision.action).toBe('relaunch');
+    expect(decision.action === 'relaunch' && decision.changed).toContain('effort');
+  });
+
+  it('still relaunches when the session effort setting itself changes, cache warm on both sides', () => {
+    const decision = compareLaunchFingerprints(
+      capture({ effortInput: 'high' }),
+      capture({ effortInput: 'low' })
+    );
+    expect(decision.action).toBe('relaunch');
+    expect(decision.action === 'relaunch' && decision.changed).toContain('effort');
+  });
+
+  it('relaunches on a capability-driven reasoning change once both sides have a resolved capability', () => {
+    // The invariant `NOTES.md` documents for `setModel`: a live model swap
+    // that would resolve DIFFERENT reasoning options must still relaunch, as
+    // long as the capability is actually known on both sides — the DOR-1308
+    // carve-out only covers the unresolved-capability case above.
+    const decision = compareLaunchFingerprints(
+      capture({ capabilityResolved: true, options: options({ effort: 'high' }) }),
+      capture({
+        capabilityResolved: true,
+        options: options({ thinking: { type: 'adaptive', display: 'summarized' }, effort: 'high' }),
+      })
+    );
+    expect(decision.action).toBe('relaunch');
+    expect(decision.action === 'relaunch' && decision.changed).toContain('effort');
   });
 });
 

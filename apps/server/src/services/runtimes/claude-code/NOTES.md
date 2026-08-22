@@ -65,6 +65,22 @@ LIVE-VERIFY: whether `applyFlagSettings({ effortLevel })` alone takes effect on 
 turn was not watched on a live model. Irrelevant to the verdict — the coupling above decides
 it either way — but it is the thing to check if effort is ever revisited.
 
+**Carve-out added for DOR-1308.** "The selected model's capability" above is read from
+`RuntimeCache.resolveModelCapability`, a cache that starts EMPTY on every server boot and is
+populated by a session's own first turn. That made the pin's own logic self-defeating on the
+very first session after a boot: launch 1 resolved `effort`/`thinking` against an unknown
+capability, and dispatch 2 — landing after turn 1's response had warmed the cache — resolved
+the SAME session setting into a different shape, so the pin read "changed" and relaunched a
+process that had been warm for exactly one turn. Nothing the user had touched actually moved.
+
+`compareLaunchFingerprints`'s `reasoningChanged` helper now carries the session's raw effort
+setting alongside the derived shape (`LaunchFingerprint.reasoning`), and treats a derived-shape
+difference as real only when BOTH sides resolved it against a known capability. A raw setting
+change always relaunches regardless. This keeps the `setModel` guarantee above intact for the
+case that matters — a live model swap once the cache is warm on both sides still relaunches —
+and only stops treating "the cache hadn't finished warming up yet" as a change the user asked
+for.
+
 ### `fastMode` — RELAUNCH
 
 `Settings.fastMode` exists (`sdk.d.ts:6605`) and `applyFlagSettings` accepts any `Settings`

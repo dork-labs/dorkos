@@ -39,6 +39,8 @@ function capture(overrides: Partial<LaunchParams> = {}) {
     options: options(),
     credentialEnv: {},
     agentIdentity: undefined,
+    effortInput: undefined,
+    capabilityResolved: true,
     ...overrides,
   });
 }
