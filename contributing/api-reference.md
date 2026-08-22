@@ -437,6 +437,26 @@ Feature-flag guarded via `DORKOS_TASKS_ENABLED`. Router is mounted at `/api/task
 
 Schedules support an optional `agentId` field for agent-linked scheduling. When `agentId` is set, the schedule's CWD is resolved from the agent's registered project path via MeshCore.
 
+`POST /api/tasks` requires `reason` when the caller does not clear the agent bar (no session cookie, presenting an agent identity or an approval token) — the schedule is a proposal, not a self-arm, so it is parked at `status: 'pending_approval'` instead of created active, and a proposal with no `reason` is refused with `400`. The `tasks_create` MCP tool (both the in-session and external `/mcp` servers) requires `reason` unconditionally, since every call there is by construction an agent asking. A parked schedule's row carries `reason`, `proposedBySessionId`, and `proposedByAgentPath` (DOR-1394; `packages/db/src/schema/tasks.ts`); `GET`/`PATCH` responses additionally resolve `proposedByName` live from agent identity rather than storing it, and populate `nextRuns` (the next three occurrences, from `previewNextRuns`) only for `pending_approval` rows, since that is the only state the live scheduler cannot answer for itself.
+
+## Notifications (`routes/notifications.ts`) and Push (`routes/push.ts`)
+
+Always mounted, no feature flag: `/api/notifications` and `/api/push` (spec `notification-system`, DOR-1383/1385).
+
+| Method | Path                          | Description                                             |
+| ------ | ----------------------------- | ------------------------------------------------------- |
+| GET    | `/api/notifications`          | List notification history, paginated, with unread count |
+| PATCH  | `/api/notifications/:id/read` | Mark one notification read                              |
+| POST   | `/api/notifications/read-all` | Mark every notification read                            |
+| GET    | `/api/push/vapid-public-key`  | The server's VAPID public key, for subscribing          |
+| GET    | `/api/push/subscriptions`     | List this browser's push subscriptions                  |
+| POST   | `/api/push/subscriptions`     | Register a push subscription                            |
+| DELETE | `/api/push/subscriptions/:id` | Remove a push subscription                              |
+
+`GET /api/notifications` and the two mark-read mutations are gated by `notificationEntitlement`, which reads the caller's principal, not a feature flag. A caller that is not the signed-in operator gets `200` with an empty list from the GET (never `403` — the response must not confirm to a machine that notifications about it exist), and a `403 NOTIFICATIONS_OPERATOR_ONLY` from either mutation, since marking something read is a claim only a person looking at a screen can make.
+
+This is the single pipeline every operator-facing message now goes through, including the `schedule.parked` condition a proposed schedule raises (see [Task Scheduler](#task-scheduler-routestasksts) above) — routed, deduped, and recorded here rather than each caller inventing its own alert. See `notifications` in `contributing/configuration.md` for the config section (sounds, escalation timing, away-notification toggle) that decides how loudly a notification is surfaced once it exists.
+
 ## Feature Flags
 
 The Relay route group is guarded by an environment variable feature flag. When disabled, the router is not mounted and all requests to those paths return 404. Mesh routes are always mounted (no feature flag).

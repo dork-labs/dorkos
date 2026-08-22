@@ -120,7 +120,7 @@ curl -X POST http://localhost:4242/api/tasks \
   }'
 ```
 
-`target` is either an agent id (the schedule runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, and `permissionMode` are optional.
+`target` is either an agent id (the schedule runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, `permissionMode`, and `reason` are optional here, with one exception: a caller creating a schedule it can't approve on its own (an agent identity or an approval token, rather than you at the keyboard) must send a `reason`, or the request is rejected with a 400. That schedule then parks at `pending_approval` with the reason attached, the same as one proposed through the MCP tool below.
 
 Pause or resume a schedule:
 
@@ -158,14 +158,17 @@ tasks_create({
   description: "Run the full test suite overnight",
   prompt: "Run the full test suite and report any failures.",
   target: "global",
-  cron: "0 2 * * *"
+  cron: "0 2 * * *",
+  reason: "Catches regressions before the day starts, without anyone waiting on it interactively."
 })
 ```
 
 <Callout type="warn">
   Schedules an agent creates for itself enter the `pending_approval` state and won't run until a
   human approves them. This stops an agent from quietly scheduling recurring work you never asked
-  for.
+  for. `reason` is required: it's the whole reason to make the schedule up front, in the agent's own
+  words, since it's the only thing the person deciding whether to approve it has to go on. The
+  approval card also shows who proposed it and the next few times it would actually run.
 </Callout>
 
 ### Cron Syntax

@@ -80,7 +80,7 @@ SidebarModel
     ├── liveRegionText?               // Heads up only — a count, never a verb
     └── sections: SidebarSectionModel[]
         ├── label: string | null      // null = a headerless body (Heads up and Today)
-        ├── collapsible / collapsed   // only Library sections may fold
+        ├── collapsible / collapsed   // now, today, getting-started, and every Library section may fold
         ├── rollup?                   // the signal that survives folding
         └── rows: SidebarRowModel[]   // a section's members. There is nothing below them
             ├── target                // what clicking it does
