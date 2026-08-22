@@ -164,8 +164,9 @@ function FlowHost({ onComplete }: { onComplete: () => void }) {
 /** Mount the flow at a stage, inside a router that validates the real schema. */
 async function renderFlow(initialUrl: string) {
   const onComplete = vi.fn();
-  const rootRoute = createRootRoute();
+  const rootRoute = createRootRoute({ staticData: { header: null } });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: zodValidator(onboardingStageSearchSchema),

@@ -30,8 +30,9 @@ function HookSlot() {
 }
 
 function buildHarness(initialUrl = '/') {
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: zodValidator(onboardingStageSearchSchema),
@@ -173,8 +174,12 @@ function StripProbe() {
 
 describe('onboarding stage param — config-loading survival race', () => {
   function buildLoadingHarness(getConfig: () => Promise<ServerConfig>) {
-    const rootRoute = createRootRoute({ component: () => <Outlet /> });
+    const rootRoute = createRootRoute({
+      staticData: { header: null },
+      component: () => <Outlet />,
+    });
     const indexRoute = createRoute({
+      staticData: { header: null },
       getParentRoute: () => rootRoute,
       path: '/',
       validateSearch: zodValidator(onboardingStageSearchSchema),

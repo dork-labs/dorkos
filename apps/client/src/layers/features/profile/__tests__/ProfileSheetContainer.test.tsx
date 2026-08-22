@@ -67,14 +67,16 @@ function renderContainer({
   fleet?: typeof FLEET;
   getTeamRoster?: Transport['getTeamRoster'];
 } = {}) {
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: zodValidator(testSearchSchema),
     component: HookSlot,
   });
   const sessionRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/session',
     validateSearch: zodValidator(testSearchSchema.extend({ dir: z.string().optional() })),

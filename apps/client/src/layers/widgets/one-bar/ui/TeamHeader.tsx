@@ -5,7 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAgentCreationStore } from '@/layers/shared/model';
 import { useIsMobile } from '@/layers/shared/model';
 import { cn, type TeamViewMode } from '@/layers/shared/lib';
-import { PageHeader } from './PageHeader';
+import { useOneBarState } from '../model/one-bar-context';
+import { BarTitle, OneBar } from './OneBar';
 
 interface ViewTab {
   mode: TeamViewMode;
@@ -50,13 +51,15 @@ const TAB_CLASS = 'text-xs font-medium transition-colors';
 const TAB_ACTIVE = 'bg-background text-foreground rounded-md px-3 py-1 shadow-sm';
 const TAB_IDLE = 'text-muted-foreground hover:text-foreground px-3 py-1';
 
-interface TeamHeaderProps {
-  /** Current view mode — passed from the shell to avoid useSearch during exit animations. */
-  viewMode: TeamViewMode;
-}
-
-/** Page header for the `/team` route — title, view switcher, and new agent button. */
-export function TeamHeader({ viewMode }: TeamHeaderProps) {
+/**
+ * `/team` route bar — title, view switcher, and new agent button.
+ *
+ * The pill row and the mobile `<Select>` are still here. Phase T1 replaces both
+ * with a `BarTabStrip`, which is why they have not been touched by the
+ * foundation change beyond the layout they sit in.
+ */
+export function TeamHeader() {
+  const { teamViewMode: viewMode } = useOneBarState();
   const openCreateDialog = useAgentCreationStore((s) => s.open);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -65,16 +68,8 @@ export function TeamHeader({ viewMode }: TeamHeaderProps) {
     void navigate({ to: '/team', search: (prev) => ({ ...prev, view: mode }) });
   }
 
-  return (
-    <PageHeader
-      title="Team"
-      actions={
-        <Button variant="outline" size="xs" onClick={() => openCreateDialog()}>
-          <Plus />
-          New Agent
-        </Button>
-      }
-    >
+  const viewSwitcher = (
+    <>
       {!isMobile && (
         <div className="bg-muted flex items-center rounded-md p-0.5">
           {PRIMARY_TABS.map(({ mode, label }) => (
@@ -114,6 +109,19 @@ export function TeamHeader({ viewMode }: TeamHeaderProps) {
           </SelectContent>
         </Select>
       )}
-    </PageHeader>
+    </>
+  );
+
+  return (
+    <OneBar
+      identity={<BarTitle>Team</BarTitle>}
+      fill={viewSwitcher}
+      actions={
+        <Button variant="outline" size="xs" onClick={() => openCreateDialog()}>
+          <Plus />
+          New Agent
+        </Button>
+      }
+    />
   );
 }

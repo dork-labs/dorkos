@@ -135,8 +135,9 @@ function renderStrip(resolved: AgentManifest | null = MANIFEST) {
   } as Partial<Transport>);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
 
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: (search: Record<string, unknown>) => search,
@@ -145,6 +146,7 @@ function renderStrip(resolved: AgentManifest | null = MANIFEST) {
   // Where following a room claim goes — mounted so the press has somewhere real
   // to land and the difference between the two verbs is visible in the URL.
   const channelsRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/channels',
     validateSearch: (search: Record<string, unknown>) => search,

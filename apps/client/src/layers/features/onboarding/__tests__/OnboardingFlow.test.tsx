@@ -75,8 +75,9 @@ import { OnboardingFlow } from '../ui/OnboardingFlow';
 type HistoryActionType = 'PUSH' | 'REPLACE' | 'GO' | 'FORWARD' | 'BACK';
 
 function buildHarness(initialUrl: string, onComplete: () => void) {
-  const rootRoute = createRootRoute();
+  const rootRoute = createRootRoute({ staticData: { header: null } });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: zodValidator(mergeDialogSearch(onboardingStageSearchSchema)),

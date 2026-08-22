@@ -2,7 +2,16 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { TasksHeader } from '../ui/TasksHeader';
-import { TooltipProvider } from '@/layers/shared/ui';
+import { BarHarness } from './bar-harness';
+
+// The fixed cluster OneBar renders. Both are real widgets with their own data
+// needs; this suite is about what the BAR says, so they are stubbed at the seam.
+vi.mock('@/layers/widgets/inbox-bell', () => ({
+  InboxBell: () => <button aria-label="Inbox">Inbox</button>,
+}));
+vi.mock('@/layers/features/right-panel', () => ({
+  RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
+}));
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -50,9 +59,9 @@ describe('TasksHeader', () => {
     // says "Scheduled". A header reading "Tasks" made one screen disagree with
     // itself, which is the whole reason this assertion exists.
     render(
-      <TooltipProvider>
+      <BarHarness>
         <TasksHeader />
-      </TooltipProvider>
+      </BarHarness>
     );
 
     expect(screen.getByText('Scheduled')).toBeInTheDocument();
@@ -62,9 +71,9 @@ describe('TasksHeader', () => {
     // Renaming the page did not rename the noun: task creation keeps its own
     // vocabulary, here and in the dialogs.
     render(
-      <TooltipProvider>
+      <BarHarness>
         <TasksHeader />
-      </TooltipProvider>
+      </BarHarness>
     );
 
     expect(screen.getByRole('button', { name: /new task/i })).toBeInTheDocument();

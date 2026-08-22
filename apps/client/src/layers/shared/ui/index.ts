@@ -17,6 +17,8 @@ export {
   AlertDialogCancel,
 } from './alert-dialog';
 export { Badge, badgeVariants } from './badge';
+export { BarTabStrip } from './bar-tab-strip';
+export type { BarTab } from './bar-tab-strip';
 export { Banner, bannerVariants } from './banner';
 export type { BannerVariant, BannerProps } from './banner';
 export { Button, buttonVariants } from './button';

@@ -220,6 +220,14 @@ export function createPlaygroundTransport(): Transport {
           defaultRuntime: 'claude-code',
         });
       }
+      // The second call that must not resolve `null`. The inbox bell is part of
+      // `OneBar`'s fixed cluster, so it is on screen in every bar showcase — and
+      // its infinite query reads `nextCursor` off the page it is handed, which
+      // threw on `null` and turned every bar into a red error card. An empty
+      // page is the honest answer for a playground with no server: a quiet bell.
+      if (prop === 'listNotifications') {
+        return async () => ({ notifications: [], nextCursor: null, unreadCount: 0 });
+      }
       // Resolve with null — safe for hooks expecting arrays, objects, or primitives
       return async () => null;
     },

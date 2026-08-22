@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { TeamHeader } from '../ui/TeamHeader';
+import { BarHarness } from './bar-harness';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -22,12 +23,20 @@ vi.mock('@/layers/shared/model', () => ({
     selector({ open: mockOpenCreateDialog }),
 }));
 
-vi.mock('../ui/CommandPaletteTrigger', () => ({
+vi.mock('@/layers/features/top-nav', () => ({
   CommandPaletteTrigger: () => (
     <button data-testid="command-palette-trigger" aria-label="Open command palette">
       Cmd
     </button>
   ),
+}));
+// The fixed cluster OneBar renders. Both are real widgets with their own data
+// needs; this suite is about what the BAR says, so they are stubbed at the seam.
+vi.mock('@/layers/widgets/inbox-bell', () => ({
+  InboxBell: () => <button aria-label="Inbox">Inbox</button>,
+}));
+vi.mock('@/layers/features/right-panel', () => ({
+  RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
 }));
 
 // ---------------------------------------------------------------------------
@@ -77,32 +86,48 @@ describe('TeamHeader', () => {
   });
 
   it('titles the page Team', () => {
-    render(<TeamHeader viewMode="cards" />);
+    render(
+      <BarHarness teamViewMode="cards">
+        <TeamHeader />
+      </BarHarness>
+    );
     // A <span>, queried as one so it does not collide with a view-switch tab
     // that happens to share a word.
     expect(screen.getByText('Team', { selector: 'span' })).toBeInTheDocument();
   });
 
   it('renders New Agent button', () => {
-    render(<TeamHeader viewMode="cards" />);
+    render(
+      <BarHarness teamViewMode="cards">
+        <TeamHeader />
+      </BarHarness>
+    );
     expect(screen.getByRole('button', { name: /new agent/i })).toBeInTheDocument();
   });
 
   it('clicking New Agent calls useAgentCreationStore.open()', () => {
-    render(<TeamHeader viewMode="cards" />);
+    render(
+      <BarHarness teamViewMode="cards">
+        <TeamHeader />
+      </BarHarness>
+    );
     fireEvent.click(screen.getByRole('button', { name: /new agent/i }));
     expect(mockOpenCreateDialog).toHaveBeenCalledTimes(1);
   });
 
-  it('renders CommandPaletteTrigger', () => {
-    render(<TeamHeader viewMode="cards" />);
-    expect(screen.getByTestId('command-palette-trigger')).toBeInTheDocument();
-  });
+  // The search trigger used to be asserted here, back when each route bar
+  // rendered its own. It belongs to `BarFixedCluster` now — mounted once by the
+  // shell so it does not re-animate on navigation — and is pinned in
+  // `OneBar.test.tsx`. A bar asserting it would be asserting the shell's job.
 
   describe('view switcher (desktop)', () => {
     it('offers every view, the table included', () => {
       mockIsMobile = false;
-      render(<TeamHeader viewMode="cards" />);
+      render(
+        <BarHarness teamViewMode="cards">
+          <TeamHeader />
+        </BarHarness>
+      );
       for (const label of ['Cards', 'Table', 'Topology', 'Denied', 'Access']) {
         expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
       }
@@ -110,36 +135,60 @@ describe('TeamHeader', () => {
 
     it('renders separator between primary and management groups', () => {
       mockIsMobile = false;
-      render(<TeamHeader viewMode="cards" />);
+      render(
+        <BarHarness teamViewMode="cards">
+          <TeamHeader />
+        </BarHarness>
+      );
       expect(document.querySelector('.border-l')).not.toBeNull();
     });
 
     it('applies active styling to the current view tab', () => {
-      render(<TeamHeader viewMode="topology" />);
+      render(
+        <BarHarness teamViewMode="topology">
+          <TeamHeader />
+        </BarHarness>
+      );
       expect(screen.getByRole('button', { name: 'Topology' })).toHaveClass('bg-background');
       expect(screen.getByRole('button', { name: 'Cards' })).not.toHaveClass('bg-background');
     });
 
     it('applies active styling to the table tab', () => {
-      render(<TeamHeader viewMode="table" />);
+      render(
+        <BarHarness teamViewMode="table">
+          <TeamHeader />
+        </BarHarness>
+      );
       expect(screen.getByRole('button', { name: 'Table' })).toHaveClass('bg-background');
       expect(screen.getByRole('button', { name: 'Cards' })).not.toHaveClass('bg-background');
     });
 
     it('applies active styling to denied tab when viewMode is denied', () => {
-      render(<TeamHeader viewMode="denied" />);
+      render(
+        <BarHarness teamViewMode="denied">
+          <TeamHeader />
+        </BarHarness>
+      );
       expect(screen.getByRole('button', { name: 'Denied' })).toHaveClass('bg-background');
       expect(screen.getByRole('button', { name: 'Cards' })).not.toHaveClass('bg-background');
     });
 
     it('applies active styling to access tab when viewMode is access', () => {
-      render(<TeamHeader viewMode="access" />);
+      render(
+        <BarHarness teamViewMode="access">
+          <TeamHeader />
+        </BarHarness>
+      );
       expect(screen.getByRole('button', { name: 'Access' })).toHaveClass('bg-background');
       expect(screen.getByRole('button', { name: 'Cards' })).not.toHaveClass('bg-background');
     });
 
     it('navigates to /team, keeping the rest of the search params', () => {
-      render(<TeamHeader viewMode="cards" />);
+      render(
+        <BarHarness teamViewMode="cards">
+          <TeamHeader />
+        </BarHarness>
+      );
       fireEvent.click(screen.getByRole('button', { name: 'Topology' }));
 
       expect(mockNavigate).toHaveBeenCalledWith({ to: '/team', search: expect.any(Function) });
@@ -154,7 +203,11 @@ describe('TeamHeader', () => {
     });
 
     it('reaches the table view', () => {
-      render(<TeamHeader viewMode="cards" />);
+      render(
+        <BarHarness teamViewMode="cards">
+          <TeamHeader />
+        </BarHarness>
+      );
       fireEvent.click(screen.getByRole('button', { name: 'Table' }));
 
       const searchFn = mockNavigate.mock.calls[0][0].search;
@@ -165,7 +218,11 @@ describe('TeamHeader', () => {
   describe('view switcher (mobile)', () => {
     it('replaces the tab buttons with a Select', () => {
       mockIsMobile = true;
-      render(<TeamHeader viewMode="cards" />);
+      render(
+        <BarHarness teamViewMode="cards">
+          <TeamHeader />
+        </BarHarness>
+      );
       for (const label of ['Cards', 'Table', 'Topology', 'Denied', 'Access']) {
         expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
       }
@@ -174,7 +231,11 @@ describe('TeamHeader', () => {
 
     it('does not offer the table below md', async () => {
       mockIsMobile = true;
-      render(<TeamHeader viewMode="cards" />);
+      render(
+        <BarHarness teamViewMode="cards">
+          <TeamHeader />
+        </BarHarness>
+      );
 
       // Open the Select so its items mount — Radix renders them lazily, so an
       // assertion against the closed trigger would pass no matter what the
@@ -192,14 +253,22 @@ describe('TeamHeader', () => {
       // view in one hop. A Select whose value matches no item renders blank —
       // the switch would go silent about where you are.
       mockIsMobile = true;
-      render(<TeamHeader viewMode="table" />);
+      render(
+        <BarHarness teamViewMode="table">
+          <TeamHeader />
+        </BarHarness>
+      );
 
       expect(screen.getByRole('combobox')).toHaveTextContent('Table');
     });
 
     it('offers a way off the table once you are on it', async () => {
       mockIsMobile = true;
-      render(<TeamHeader viewMode="table" />);
+      render(
+        <BarHarness teamViewMode="table">
+          <TeamHeader />
+        </BarHarness>
+      );
 
       fireEvent.click(screen.getByRole('combobox'));
       expect(await screen.findByRole('option', { name: 'Table' })).toBeInTheDocument();

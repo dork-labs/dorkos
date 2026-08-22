@@ -118,8 +118,9 @@ async function renderProgressCard() {
   } as unknown as Awaited<ReturnType<typeof mockTransport.getConfig>>);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-  const rootRoute = createRootRoute();
+  const rootRoute = createRootRoute({ staticData: { header: null } });
   const indexRoute = createRoute({
+    staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: zodValidator(searchSchema),
