@@ -594,6 +594,43 @@ describe('InboxBell', () => {
     expect(screen.getByRole('button', { name: 'Approve Weekly digest' })).toBeInTheDocument();
   });
 
+  it('keeps the approved schedule on screen once the server stops listing it', async () => {
+    // The disappearance this closes: approving is optimistic, and the refetch
+    // that follows drops the task out of the parked list — which used to take
+    // the card AND this whole pinned section out of the tree, tearing away the
+    // only confirmation an approval gets (measured at 10-60ms).
+    //
+    // Driven through the REAL hold: nothing about `settling-approvals` is mocked
+    // here, so this fails if the registry stops reporting or the section stops
+    // reading it. Seeded defect: revert `shownSchedules` to `schedules` in
+    // either the section's guard or its map, and the card is gone.
+    const listTasks = vi.fn().mockResolvedValue([parkedSchedule()]);
+    const updateTask = vi.fn().mockImplementation(async () => {
+      // The server now calls it active, so the parked list comes back empty.
+      listTasks.mockResolvedValue([parkedSchedule({ status: 'active', enabled: true })]);
+      return parkedSchedule({ status: 'active', enabled: true });
+    });
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listTasks,
+      updateTask,
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    // Both facts in ONE `waitFor`, which is what makes this honest under a busy
+    // machine: it passes the moment the refetch has landed AND the card is still
+    // drawn, rather than racing a fixed sleep against the hold's own window.
+    await waitFor(() => {
+      expect(listTasks).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId('schedule-approval-card')).toBeInTheDocument();
+    });
+    // Still saying what happened, inside a section that has not collapsed.
+    expect(document.querySelector('[data-slot="schedule-receipt"]')).toHaveTextContent('Approved');
+    expect(screen.getByRole('heading', { name: 'Needs You' })).toBeInTheDocument();
+  });
+
   it('adds the parked schedule to the approvals already waiting', async () => {
     // The discriminating half: one capability approval plus one parked
     // schedule is two, not one. A count that forgot the schedules would still

@@ -111,6 +111,87 @@ describe('the approval settle hold', () => {
     expect(result.current.map((task) => task.id)).toEqual(['task-2']);
   });
 
+  it('gives a re-approved schedule a FULL hold, not the leftovers of the first', () => {
+    // approve → server refuses → approve again. The second hold must run its own
+    // full window. Under a registry that releases the entry but leaves the first
+    // TIMER armed, that timer fires on the old deadline and deletes the new hold
+    // — the receipt vanishes partway through, and the closer the two approvals
+    // are the shorter the second one gets.
+    const { result, rerender } = renderHook(
+      ({ schedules }: { schedules: readonly Task[] }) => useScheduleApprovalCards(schedules),
+      { initialProps: { schedules: [] as readonly Task[] } }
+    );
+
+    act(() => holdApprovedSchedule(proposal('task-1')));
+    act(() => {
+      vi.advanceTimersByTime(APPROVAL_SETTLE_MS / 2);
+    });
+    act(() => releaseSettledSchedule('task-1'));
+    act(() => holdApprovedSchedule(proposal('task-1')));
+    rerender({ schedules: [] });
+
+    // The first hold's deadline passes. The second hold is only halfway through
+    // its own window and must still be drawn.
+    act(() => {
+      vi.advanceTimersByTime(APPROVAL_SETTLE_MS / 2);
+    });
+    expect(result.current).toHaveLength(1);
+
+    // …and it ends on ITS deadline, not late and not never.
+    act(() => {
+      vi.advanceTimersByTime(APPROVAL_SETTLE_MS / 2);
+    });
+    expect(result.current).toHaveLength(0);
+  });
+
+  it('keeps the later deadline when the same schedule is held twice', () => {
+    // Two mounted consumers can both hold the same task — the Inbox popover and
+    // the home header are on screen together. Arming a second timer without
+    // clearing the first lets timer #1 cut hold #2 short.
+    const { result, rerender } = renderHook(
+      ({ schedules }: { schedules: readonly Task[] }) => useScheduleApprovalCards(schedules),
+      { initialProps: { schedules: [] as readonly Task[] } }
+    );
+
+    act(() => holdApprovedSchedule(proposal('task-1')));
+    act(() => {
+      vi.advanceTimersByTime(APPROVAL_SETTLE_MS / 2);
+    });
+    act(() => holdApprovedSchedule(proposal('task-1')));
+    rerender({ schedules: [] });
+
+    act(() => {
+      vi.advanceTimersByTime(APPROVAL_SETTLE_MS / 2);
+    });
+    expect(result.current).toHaveLength(1);
+
+    act(() => {
+      vi.advanceTimersByTime(APPROVAL_SETTLE_MS / 2);
+    });
+    expect(result.current).toHaveLength(0);
+  });
+
+  it('leaves no timer behind when a hold is released', () => {
+    // A released hold that keeps its timer is a timer with nothing to do but
+    // interfere with whatever is holding that id next.
+    holdApprovedSchedule(proposal('task-1'));
+    releaseSettledSchedule('task-1');
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('leaves no timer behind when everything is discarded', () => {
+    // This is the whole reason `discardSettlingSchedules` exists: it is the
+    // suites' teardown, and a hold that survives it fires inside an unrelated
+    // case and deletes whatever that case was holding.
+    holdApprovedSchedule(proposal('task-1'));
+    holdApprovedSchedule(proposal('task-2'));
+
+    discardSettlingSchedules();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('hands back the same array while nothing is settling', () => {
     // Identity matters: this sits in the render path of three surfaces, and a
     // fresh array every render would re-run every memo downstream of it.

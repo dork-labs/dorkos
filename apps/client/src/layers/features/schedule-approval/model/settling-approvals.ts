@@ -28,7 +28,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import type { Task } from '@dorkos/shared/types';
-import { askExitTransition } from '@/layers/features/ask';
+import { askExitTransition } from '@/layers/shared/lib';
 
 /**
  * How long an approved schedule stays drawn, in milliseconds.
@@ -43,6 +43,20 @@ export const APPROVAL_SETTLE_MS = (EXIT.delay + EXIT.duration) * 1000;
 
 /** Approved schedules still saying so, keyed by task id. */
 const settling = new Map<string, Task>();
+
+/**
+ * The timer ending each hold, keyed the same way.
+ *
+ * **Held separately, and every path has to keep it in step.** A timer nobody
+ * tracks cannot be cancelled, and an untracked one does not simply leak — it
+ * fires on a stale deadline and deletes whatever is holding that id by then.
+ * Two ways in: approve → refused → approve again, where the first timer cuts
+ * the second hold short; and the same task held by two mounted consumers at
+ * once (the Inbox popover and the home header are on screen together), where
+ * the earlier timer ends the later hold. `deferred-rejection` does this
+ * bookkeeping for the same reason.
+ */
+const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Everyone who wants to know when that map changes. */
 const listeners = new Set<() => void>();
@@ -71,12 +85,32 @@ function publish(): void {
  * @param task - The schedule that was just approved.
  */
 export function holdApprovedSchedule(task: Task): void {
+  // Whatever was counting down for this id is done: this hold owns the deadline
+  // now. Without this the older timer fires first and ends a window that had
+  // only just started.
+  clearHoldTimer(task.id);
   settling.set(task.id, task);
-  setTimeout(() => {
-    settling.delete(task.id);
-    publish();
-  }, APPROVAL_SETTLE_MS);
+  timers.set(
+    task.id,
+    setTimeout(() => {
+      timers.delete(task.id);
+      settling.delete(task.id);
+      publish();
+    }, APPROVAL_SETTLE_MS)
+  );
   publish();
+}
+
+/**
+ * Cancel and forget the timer ending this schedule's hold, if there is one.
+ *
+ * @param taskId - The schedule whose countdown should stop.
+ */
+function clearHoldTimer(taskId: string): void {
+  const timer = timers.get(taskId);
+  if (timer === undefined) return;
+  clearTimeout(timer);
+  timers.delete(taskId);
 }
 
 /**
@@ -88,6 +122,9 @@ export function holdApprovedSchedule(task: Task): void {
  * @param taskId - The schedule to release.
  */
 export function releaseSettledSchedule(taskId: string): void {
+  // The timer goes with the entry. Left armed it has nothing to end, and would
+  // instead end the next hold this id is given.
+  clearHoldTimer(taskId);
   if (!settling.delete(taskId)) return;
   publish();
 }
@@ -133,11 +170,15 @@ export function useScheduleApprovalCards(schedules: readonly Task[]): readonly T
  * Drop every hold immediately.
  *
  * Test-only teardown: the timers outlive `cleanup()` by design, so a suite that
- * approved something would otherwise carry it into the next case.
+ * approved something would otherwise carry it into the next case. Cancelling
+ * them is the whole point — clearing the entries alone leaves the timers armed,
+ * and each one still fires inside some later, unrelated test.
  *
  * @internal Exported for testing only.
  */
 export function discardSettlingSchedules(): void {
+  for (const timer of timers.values()) clearTimeout(timer);
+  timers.clear();
   settling.clear();
   publish();
 }

@@ -7,6 +7,8 @@ covers:
   - 'refactor(client): one wording for what is waiting, read by both the Inbox and the home header (DOR-1398)'
   - 'refactor(client): split the Features playground registry at its natural seam (DOR-1398)'
   - 'fix(client): an approved schedule holds its receipt long enough to read, and the test-run strip is reachable in the playground (DOR-1398)'
+  - 'fix(client): a re-approved schedule gets its own full receipt, not the leftovers of the last one (DOR-1398)'
+  - 'refactor(client): the card family’s exit timing moves to shared, where all three of its readers can see it (DOR-1398)'
 ---
 
 ### Added
