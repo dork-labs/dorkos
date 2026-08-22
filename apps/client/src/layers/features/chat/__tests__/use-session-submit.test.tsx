@@ -48,7 +48,7 @@ vi.mock('@/layers/shared/lib/transport', async () => {
 const mockAppState = vi.hoisted(() => ({
   selectedCwd: '/test/cwd' as string | null,
   enableMessagePolling: false,
-  pendingAccount: null as string | null,
+  pendingAccount: null as { id: string; sessionId: string } | null,
 }));
 
 vi.mock('@/layers/shared/model', async () => {
@@ -451,7 +451,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     // The status bar's pick is "this session only" (spec
     // `billing-account-ladder`). After launch the account is a fact on disk, so
     // a later send carrying it would ask for something impossible.
-    mockAppState.pendingAccount = 'acme-corp';
+    mockAppState.pendingAccount = { id: 'acme-corp', sessionId: 's1' };
     const postMessage = vi
       .fn()
       .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
@@ -495,6 +495,33 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
 
     expect(postMessage).toHaveBeenCalledTimes(2);
     expect(postMessage.mock.calls[1][3]).not.toHaveProperty('account');
+  });
+
+  it('never sends a billing pick made on a DIFFERENT session', async () => {
+    // The leak no mount-lifetime guard can close: the store is a module global,
+    // so a pick made on an abandoned draft is still sitting there when the next
+    // conversation starts. Only the pick's own session id can refuse it — and
+    // "This session only" is a promise about whose card gets charged.
+    mockAppState.pendingAccount = { id: 'acme-corp', sessionId: 'some-other-session' };
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(postMessage.mock.calls[0][3]).not.toHaveProperty('account');
   });
 
   it('omits the billing-account hint when no account was picked', async () => {

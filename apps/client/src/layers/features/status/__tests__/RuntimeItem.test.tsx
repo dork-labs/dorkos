@@ -202,7 +202,7 @@ afterEach(() => {
   // The account pick is shared app state, so a test that leaves one behind would
   // hand the next one a hint it never made. `selectedCwd` likewise decides
   // whether the agent tier is even consulted.
-  useAppStore.setState({ pendingAccount: null, selectedCwd: null });
+  useAppStore.setState({ pendingAccount: null, pendingRuntime: null, selectedCwd: null });
 });
 
 // Import after mocks are set up
@@ -214,6 +214,12 @@ import { RuntimeItem } from '../ui/RuntimeItem';
  * runtime cases leave it empty, which is a default install.
  */
 let mockServerConfig: Partial<ServerConfig> = {};
+
+/**
+ * The session under test. A pick is stored against it, so a case about leakage
+ * renders a DIFFERENT id and asserts the pick is neither shown nor sent.
+ */
+const SESSION = 'session-a';
 
 /** The transport the most recent {@link render} handed the tree, for write assertions. */
 let lastTransport: ReturnType<typeof createMockTransport>;
@@ -388,7 +394,14 @@ describe('RuntimeItem', () => {
       mockRuntimeCapabilities.mockReturnValue({
         data: capsMap('claude-code', 'claude-code', 'codex'),
       });
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={false} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={false}
+        />
+      );
 
       expect(screen.getByText('Claude Code')).toBeInTheDocument();
       expect(screen.queryByTestId('dropdown-root')).not.toBeInTheDocument();
@@ -405,7 +418,14 @@ describe('RuntimeItem', () => {
       mockRuntimeCapabilities.mockReturnValue({
         data: capsMap('claude-code', 'claude-code', 'codex'),
       });
-      render(<RuntimeItem runtime="codex" onChangeRuntime={vi.fn()} canSelect={false} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="codex"
+          onChangeRuntime={vi.fn()}
+          canSelect={false}
+        />
+      );
 
       expect(screen.getByText('Codex')).toBeInTheDocument();
       expect(screen.queryByText('Claude Code')).not.toBeInTheDocument();
@@ -418,6 +438,7 @@ describe('RuntimeItem', () => {
       });
       render(
         <RuntimeItem
+          sessionId={SESSION}
           runtime="opencode"
           model="ollama/qwen2.5-coder"
           onChangeRuntime={vi.fn()}
@@ -433,7 +454,13 @@ describe('RuntimeItem', () => {
         data: capsMap('claude-code', 'claude-code', 'opencode'),
       });
       render(
-        <RuntimeItem runtime="opencode" model={null} onChangeRuntime={vi.fn()} canSelect={false} />
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="opencode"
+          model={null}
+          onChangeRuntime={vi.fn()}
+          canSelect={false}
+        />
       );
 
       expect(screen.getByText('OpenCode')).toBeInTheDocument();
@@ -450,6 +477,7 @@ describe('RuntimeItem', () => {
       });
       render(
         <RuntimeItem
+          sessionId={SESSION}
           runtime="opencode"
           model="ollama/qwen2.5-coder"
           onChangeRuntime={vi.fn()}
@@ -468,6 +496,7 @@ describe('RuntimeItem', () => {
       });
       render(
         <RuntimeItem
+          sessionId={SESSION}
           runtime="opencode"
           model="ollama/qwen2.5-coder"
           onChangeRuntime={vi.fn()}
@@ -485,7 +514,14 @@ describe('RuntimeItem', () => {
       mockRuntimeCapabilities.mockReturnValue({
         data: capsMap('claude-code', 'claude-code', 'codex'),
       });
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       expect(screen.getByTestId('dropdown-root')).toBeInTheDocument();
       const group = screen.getByRole('radiogroup');
@@ -499,7 +535,14 @@ describe('RuntimeItem', () => {
       mockRuntimeCapabilities.mockReturnValue({
         data: capsMap('claude-code', 'claude-code', 'codex'),
       });
-      render(<RuntimeItem runtime="codex" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="codex"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       // The trigger reflects the SELECTION, not the server default.
       expect(screen.getByTestId('dropdown-trigger')).toHaveTextContent('Codex');
@@ -513,7 +556,12 @@ describe('RuntimeItem', () => {
       const user = userEvent.setup();
       const onChangeRuntime = vi.fn();
       render(
-        <RuntimeItem runtime="claude-code" onChangeRuntime={onChangeRuntime} canSelect={true} />
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={onChangeRuntime}
+          canSelect={true}
+        />
       );
 
       const group = screen.getByRole('radiogroup');
@@ -530,7 +578,14 @@ describe('RuntimeItem', () => {
       // discovery surface for them, so it must not collapse to a quiet chip
       // (spec additional-agent-runtimes, 4.2 reachability fold-in).
       mockRuntimeCapabilities.mockReturnValue({ data: capsMap('claude-code', 'claude-code') });
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       expect(screen.getByTestId('dropdown-root')).toBeInTheDocument();
       // The single registered runtime is the only radio option...
@@ -548,7 +603,14 @@ describe('RuntimeItem', () => {
   describe('unknown runtime type', () => {
     it('degrades to the neutral descriptor fallback (raw type as label)', () => {
       mockRuntimeCapabilities.mockReturnValue({ data: capsMap('claude-code', 'claude-code') });
-      render(<RuntimeItem runtime="mystery-rt" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="mystery-rt"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       expect(screen.getByText('mystery-rt')).toBeInTheDocument();
     });
@@ -556,7 +618,14 @@ describe('RuntimeItem', () => {
 
   describe('loading state (capabilities undefined)', () => {
     it('falls back to the runtime prop and renders read-only while the list loads', () => {
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       expect(screen.getByText('Claude Code')).toBeInTheDocument();
       expect(screen.queryByTestId('dropdown-root')).not.toBeInTheDocument();
@@ -571,7 +640,14 @@ describe('RuntimeItem', () => {
       mockRuntimeRequirements.mockReturnValue({
         data: requirementsFor(['claude-code', 'codex'], ['codex']),
       });
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       // The satisfied runtime stays a selectable radio option...
       const group = screen.getByRole('radiogroup');
@@ -595,7 +671,12 @@ describe('RuntimeItem', () => {
       const user = userEvent.setup();
       const onChangeRuntime = vi.fn();
       render(
-        <RuntimeItem runtime="claude-code" onChangeRuntime={onChangeRuntime} canSelect={true} />
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={onChangeRuntime}
+          canSelect={true}
+        />
       );
 
       const codexItem = screen
@@ -621,7 +702,12 @@ describe('RuntimeItem', () => {
       const user = userEvent.setup();
       const onChangeRuntime = vi.fn();
       render(
-        <RuntimeItem runtime="claude-code" onChangeRuntime={onChangeRuntime} canSelect={true} />
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={onChangeRuntime}
+          canSelect={true}
+        />
       );
 
       // Open the Connect dialog scoped to codex.
@@ -644,7 +730,14 @@ describe('RuntimeItem', () => {
         data: capsMap('claude-code', 'claude-code', 'codex'),
       });
       mockRuntimeRequirements.mockReturnValue({ data: undefined });
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       const group = screen.getByRole('radiogroup');
       expect(group.querySelectorAll('[role="radio"]')).toHaveLength(2);
@@ -666,7 +759,14 @@ describe('RuntimeItem', () => {
         data: requirementsFor(['claude-code', 'codex']),
       });
       const user = userEvent.setup();
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       const addItem = screen
         .getAllByTestId('dropdown-item')
@@ -685,7 +785,14 @@ describe('RuntimeItem', () => {
       mockRuntimeRequirements.mockReturnValue({
         data: requirementsFor(['claude-code', 'codex', 'opencode']),
       });
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       expect(
         screen.queryAllByTestId('dropdown-item').filter((el) => {
@@ -719,7 +826,14 @@ describe('RuntimeItem', () => {
     it('lists the registered accounts plus a default that names what it resolves to', async () => {
       mockServerConfig = withAccounts(2);
       everyRuntimeReady();
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
       const group = accountGroup();
@@ -735,7 +849,14 @@ describe('RuntimeItem', () => {
     it('says the choice is this session only, and says it to a screen reader too', async () => {
       mockServerConfig = withAccounts(2);
       everyRuntimeReady();
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
       expect(screen.getByTestId('account-scope-note')).toHaveTextContent(
@@ -757,7 +878,14 @@ describe('RuntimeItem', () => {
       mockAgent = agentPinnedTo('acme-corp');
       useAppStore.setState({ selectedCwd: '/work/project' });
       everyRuntimeReady();
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       await waitFor(() => expect(accountGroup()).toHaveTextContent('Default — Acme Corp'));
       expect(accountGroup()).not.toHaveTextContent('Default — Personal');
@@ -771,7 +899,14 @@ describe('RuntimeItem', () => {
       mockAgent = agentPinnedTo('retired-client');
       useAppStore.setState({ selectedCwd: '/work/project' });
       everyRuntimeReady();
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
       await waitFor(() => expect(accountGroup()).toHaveTextContent('Default — Personal'));
@@ -786,7 +921,12 @@ describe('RuntimeItem', () => {
       everyRuntimeReady();
       const agentAnswer = createDeferred<AgentManifest | null>();
       renderWithAgent(
-        <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />,
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />,
         () => agentAnswer.promise
       );
 
@@ -809,7 +949,14 @@ describe('RuntimeItem', () => {
       mockServerConfig = withAccounts(2);
       everyRuntimeReady();
       const user = userEvent.setup();
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
 
       await user.click(screen.getByText('Acme Corp'));
@@ -817,7 +964,10 @@ describe('RuntimeItem', () => {
       expect(lastTransport.updateConfig).not.toHaveBeenCalled();
       // The hint is the registry ID, never the path — that is what the server
       // resolves it against (ADR 260821-205324).
-      expect(useAppStore.getState().pendingAccount).toBe('acme-corp');
+      expect(useAppStore.getState().pendingAccount).toEqual({
+        id: 'acme-corp',
+        sessionId: SESSION,
+      });
       expect(accountGroup().getAttribute('data-value')).toBe('acme-corp');
     });
 
@@ -825,7 +975,14 @@ describe('RuntimeItem', () => {
       mockServerConfig = withAccounts(2);
       everyRuntimeReady();
       const user = userEvent.setup();
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
 
       await user.click(screen.getByText('Acme Corp'));
@@ -845,11 +1002,19 @@ describe('RuntimeItem', () => {
       everyRuntimeReady();
       const user = userEvent.setup();
       const { rerender } = render(
-        <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
       );
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
       await user.click(screen.getByText('Acme Corp'));
-      expect(useAppStore.getState().pendingAccount).toBe('acme-corp');
+      expect(useAppStore.getState().pendingAccount).toEqual({
+        id: 'acme-corp',
+        sessionId: SESSION,
+      });
 
       // The operator removes it in Settings; this menu is still mounted, and the
       // config cache every account surface reads moves under it.
@@ -870,7 +1035,14 @@ describe('RuntimeItem', () => {
           },
         });
       });
-      rerender(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      rerender(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       await waitFor(() => expect(useAppStore.getState().pendingAccount).toBeNull());
       // And the radio agrees rather than pointing at something that is gone.
@@ -888,11 +1060,19 @@ describe('RuntimeItem', () => {
       everyRuntimeReady();
       const user = userEvent.setup();
       const { rerender } = render(
-        <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
       );
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
       await user.click(screen.getByText('Acme Corp'));
-      expect(useAppStore.getState().pendingAccount).toBe('acme-corp');
+      expect(useAppStore.getState().pendingAccount).toEqual({
+        id: 'acme-corp',
+        sessionId: SESSION,
+      });
 
       // The registry read comes back with nothing — unreadable, not emptied.
       act(() => {
@@ -900,10 +1080,60 @@ describe('RuntimeItem', () => {
           claudeCode: { resolvedAccount: '/Users/dev/.claude', inherited: true, accounts: [] },
         });
       });
-      rerender(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      rerender(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       await waitFor(() => expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument());
-      expect(useAppStore.getState().pendingAccount).toBe('acme-corp');
+      expect(useAppStore.getState().pendingAccount).toEqual({
+        id: 'acme-corp',
+        sessionId: SESSION,
+      });
+    });
+
+    it('never shows a pick made on another session, and keeps its own across a remount', async () => {
+      // Two directions of one rule. A pick carries the session it was made in,
+      // so a different conversation cannot inherit it (the leak), and the same
+      // conversation does not lose it just because a surface remounted (the
+      // clobber). Neither depends on who happens to be mounted.
+      mockServerConfig = withAccounts(2);
+      everyRuntimeReady();
+      useAppStore.setState({
+        pendingAccount: { id: 'acme-corp', sessionId: 'a-different-session' },
+      });
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+      // Someone else's pick is invisible here.
+      expect(accountGroup().getAttribute('data-value')).toBe('__default__');
+
+      // This session makes its own, then the surface is torn down and rebuilt.
+      const user = userEvent.setup();
+      await user.click(screen.getByText('Acme Corp'));
+      expect(accountGroup().getAttribute('data-value')).toBe('acme-corp');
+      cleanup();
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
+
+      await waitFor(() => expect(accountGroup().getAttribute('data-value')).toBe('acme-corp'));
     });
 
     it('never offers a root nobody registered, which no hint could name', async () => {
@@ -932,7 +1162,14 @@ describe('RuntimeItem', () => {
         },
       };
       everyRuntimeReady();
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
       const group = accountGroup();
@@ -967,7 +1204,14 @@ describe('RuntimeItem', () => {
         },
       };
       everyRuntimeReady();
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={true}
+        />
+      );
 
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
       const marked = screen
@@ -989,7 +1233,12 @@ describe('RuntimeItem', () => {
       render(
         <>
           <AccountsProbe />
-          <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />
+          <RuntimeItem
+            sessionId={SESSION}
+            runtime="claude-code"
+            onChangeRuntime={vi.fn()}
+            canSelect={true}
+          />
         </>
       );
 
@@ -1013,7 +1262,12 @@ describe('RuntimeItem', () => {
       render(
         <>
           <AccountsProbe />
-          <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={false} />
+          <RuntimeItem
+            sessionId={SESSION}
+            runtime="claude-code"
+            onChangeRuntime={vi.fn()}
+            canSelect={false}
+          />
         </>
       );
 
@@ -1031,7 +1285,12 @@ describe('RuntimeItem', () => {
       render(
         <>
           <AccountsProbe />
-          <RuntimeItem runtime="codex" onChangeRuntime={vi.fn()} canSelect={true} />
+          <RuntimeItem
+            sessionId={SESSION}
+            runtime="codex"
+            onChangeRuntime={vi.fn()}
+            canSelect={true}
+          />
         </>
       );
 

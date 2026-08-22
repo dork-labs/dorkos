@@ -53,6 +53,11 @@ interface RuntimeItemProps {
    */
   canSelect: boolean;
   /**
+   * The session this chip belongs to. The account pick is stored WITH it, so a
+   * choice made on one conversation is never shown or sent on another.
+   */
+  sessionId: string;
+  /**
    * Say it in as few pixels as possible — set below the status line's widest
    * tier. Drops the `· <model>` half, which the line's own model item already
    * spells out; the runtime name is what makes this item worth a slot.
@@ -95,10 +100,11 @@ export function RuntimeItem({
   onChangeRuntime,
   canSelect,
   compact,
+  sessionId,
 }: RuntimeItemProps) {
   const { data: capabilityMap } = useRuntimeCapabilities();
   const { data: requirements } = useRuntimeRequirements();
-  const account = useAccountSwitch();
+  const account = useAccountSwitch(sessionId);
   const [setupDialog, setSetupDialog] = useState<SetupDialogState>({ open: false });
   // Generated, not a literal: the status line renders one chip, but the tree can
   // hold more (the dev playground shows several side by side), and a duplicated

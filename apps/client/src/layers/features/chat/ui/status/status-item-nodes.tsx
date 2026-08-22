@@ -159,6 +159,7 @@ export function buildStatusItemNodes(
   if (runtimeChip.runtime !== null) {
     nodes.runtime = (
       <RuntimeItem
+        sessionId={sessionId}
         runtime={runtimeChip.runtime}
         model={runtimeChip.model}
         onChangeRuntime={runtimeChip.onChangeRuntime}

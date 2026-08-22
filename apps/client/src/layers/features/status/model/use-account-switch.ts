@@ -65,6 +65,11 @@ export interface AccountSwitch {
 /**
  * Read the registered Claude accounts and hold which one THIS session launches on.
  *
+ * @param sessionId - The session the pick belongs to. Stored WITH the choice, so
+ *   a pick made on one conversation can never be shown or sent on another — the
+ *   store is a module global that outlives the menu, and "this session only" has
+ *   to be a property of the data rather than of who happens to be mounted.
+ *
  * Writes no config: the pick is client-held state, spent by the first send. There
  * is therefore no refusal to report — the write that could be refused
  * (`runtimes.claudeCode.defaultAccount`, `operator-only`) now happens only in
@@ -80,7 +85,7 @@ export interface AccountSwitch {
  * server default exactly as the server's own tier-2 fallthrough does. Until that
  * read settles the label is `undefined` — silence beats a confident wrong name.
  */
-export function useAccountSwitch(): AccountSwitch {
+export function useAccountSwitch(sessionId: string): AccountSwitch {
   const { accounts, resolvedAccount, isMultiAccount } = useClaudeAccounts();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const pendingAccount = useAppStore((s) => s.pendingAccount);
@@ -110,16 +115,17 @@ export function useAccountSwitch(): AccountSwitch {
   // narrowest available "the registry really is readable" signal, and it stays
   // correct if the wire later grows an explicit unavailable flag — such a
   // response reports no accounts, so this refuses to judge either way.
-  const staleHint =
-    pendingAccount !== null && selectable.length > 0 && !isRegistered(pendingAccount);
+  // Only this session's own pick is ever in play here.
+  const heldId = pendingAccount?.sessionId === sessionId ? pendingAccount.id : null;
+
+  const staleHint = heldId !== null && selectable.length > 0 && !isRegistered(heldId);
   useEffect(() => {
     if (staleHint) setPendingAccount(null);
   }, [staleHint, setPendingAccount]);
 
   return {
     accounts: selectable,
-    selectedValue:
-      pendingAccount && isRegistered(pendingAccount) ? pendingAccount : DEFAULT_ACCOUNT_VALUE,
+    selectedValue: heldId && isRegistered(heldId) ? heldId : DEFAULT_ACCOUNT_VALUE,
     isMultiAccount,
     defaultLabel: resolveDefaultLabel({
       accounts,
@@ -133,7 +139,8 @@ export function useAccountSwitch(): AccountSwitch {
       agentAccountId: selectedCwd ? agentQuery.data?.account : undefined,
       agentKnown: !selectedCwd || agentQuery.isSuccess,
     }),
-    choose: (value: string) => setPendingAccount(value === DEFAULT_ACCOUNT_VALUE ? null : value),
+    choose: (value: string) =>
+      setPendingAccount(value === DEFAULT_ACCOUNT_VALUE ? null : { id: value, sessionId }),
   };
 }
 
@@ -142,6 +149,14 @@ export function useAccountSwitch(): AccountSwitch {
  *
  * Mirrors `resolveLaunchAccountRoot`'s tier order below the hint: the agent's
  * account when it resolves, else the server default.
+ *
+ * **Freshness contract.** The agent half is only as current as the cached
+ * manifest behind `useCurrentAgent` (`agentKeys.byPath`, 60s stale time), so this
+ * label is right exactly as long as every writer of an agent's `account` goes
+ * through `useUpdateAgent`, which invalidates that key. The agent profile's
+ * Account row does. A future writer that patches an agent by some other route
+ * would leave this row naming the previous account until the stale time lapses —
+ * wrong about money, and silently so. Route agent writes through `useUpdateAgent`.
  *
  * @param input.accounts - Every account row the server reported, for naming.
  * @param input.resolvedAccount - The server default's absolute path.

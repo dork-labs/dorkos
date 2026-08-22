@@ -33,7 +33,7 @@
  *
  * @module features/status/model/use-runtime-chip
  */
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useAppStore, useInPlaceNavigate } from '@/layers/shared/model';
 import { useSessions } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
@@ -104,7 +104,12 @@ export function useResolvedSessionRuntime(sessionId: string): ResolvedSessionRun
   // The in-session chip override (shared, reactive) wins; otherwise the
   // ?runtime= launch param read straight off the URL — identical for every
   // consumer and router-free, so it never crashes embedded mode.
-  const pendingSelection = pendingRuntime ?? readRuntimeParam();
+  //
+  // The override counts only for the session it was MADE in. The store is a
+  // module global that outlives any mount, so an unkeyed read would let a draft
+  // session's pick decide what the next conversation runs on.
+  const ownPick = pendingRuntime?.sessionId === sessionId ? pendingRuntime.type : null;
+  const pendingSelection = ownPick ?? readRuntimeParam();
   const resolved = sessionRow?.runtime ?? pendingSelection ?? runtimeCaps?.defaultRuntime ?? null;
 
   return {
@@ -121,11 +126,10 @@ export function useResolvedSessionRuntime(sessionId: string): ResolvedSessionRun
  * The status-bar runtime chip: {@link useResolvedSessionRuntime} plus the
  * selection action, and the one effect that discards a stale pending selection.
  *
- * A selection belongs to the session it was made in, so the effect clears it on
- * an OBSERVED session change (switch, agent launch, or the first send binding the
- * canonical id); the new session then resolves from its own `?runtime=` param.
- * Mounting clears nothing — see the effect for why that distinction is what
- * protects a billing pick.
+ * A selection belongs to the session it was made in, and says so: it is stored
+ * as a {@link PendingLaunchPick} carrying that session's id, so no other session
+ * can read it and a remount of the same one keeps it. The effect below only
+ * sweeps up a pick the operator has left behind.
  *
  * Prefer {@link useResolvedSessionRuntime} in a read-only consumer regardless:
  * this hook's extra work is the selection action, which a readout has no use for.
@@ -137,35 +141,29 @@ export function useRuntimeChip(sessionId: string): RuntimeChipState {
   const setPendingRuntime = useAppStore((s) => s.setPendingRuntime);
   const setPendingAccount = useAppStore((s) => s.setPendingAccount);
 
-  /**
-   * The last session id this instance actually observed. `undefined` means it
-   * has observed none yet, which is the mount pass.
-   */
-  const observedSessionId = useRef<string | undefined>(undefined);
-
   // Effect — never a render-time external-store write, which would update the
   // sibling consumer mid-render.
   //
-  // Both pre-launch picks the chip owns are cleared together. The account hint
-  // especially: it decides whose subscription a turn spends, and a pick that
-  // survived into the NEXT session would bill work the person never chose it
-  // for. "This session only" is the promise the menu makes; this is where it is
-  // kept.
+  // Housekeeping, NOT the safety property. Every reader already ignores a pick
+  // belonging to another session (`PendingLaunchPick`), so leaving one behind
+  // could not leak into this conversation; this just drops what has become
+  // litter once the operator has moved on. That ordering matters: a rule
+  // enforced by the data cannot be undone by a mount that does not happen, which
+  // is exactly how the earlier clear-on-mount and clear-on-transition attempts
+  // each broke in one direction or the other.
   //
-  // **A TRANSITION clears; a mount does not.** The hook's contract says one
-  // owner, but two surfaces call it today (ChatPanel and ChatStatusSection), so
-  // a clear-on-mount discards whatever the other one is holding the moment
-  // either remounts — a person's billing pick deleted by a re-render they never
-  // asked for. Keying on an observed change makes the rule what it always meant:
-  // the pick belongs to the session it was made in, and only leaving that
-  // session ends it.
+  // Read through selectors rather than `getState()`: this hook renders under
+  // surfaces whose tests supply a hand-written store, and a snapshot read would
+  // demand a shape they have no reason to provide. Subscribing is also what makes
+  // the sweep react to a pick that arrives after mount.
+  const heldRuntime = useAppStore((s) => s.pendingRuntime);
+  const heldAccount = useAppStore((s) => s.pendingAccount);
   useEffect(() => {
-    const previous = observedSessionId.current;
-    observedSessionId.current = sessionId;
-    if (previous === undefined || previous === sessionId) return;
-    setPendingRuntime(null);
-    setPendingAccount(null);
-  }, [sessionId, setPendingRuntime, setPendingAccount]);
+    const foreign = (pick: { sessionId: string } | null | undefined) =>
+      pick != null && pick.sessionId !== sessionId;
+    if (foreign(heldRuntime)) setPendingRuntime(null);
+    if (foreign(heldAccount)) setPendingAccount(null);
+  }, [sessionId, heldRuntime, heldAccount, setPendingRuntime, setPendingAccount]);
 
   const inPlaceNavigate = useInPlaceNavigate();
   const onChangeRuntime = useCallback(
@@ -176,13 +174,13 @@ export function useRuntimeChip(sessionId: string): RuntimeChipState {
       // screen, so it goes in place — a lookup in flight must not read it as a
       // departure (DOR-931). `null` in embedded mode, which has no router — the
       // store alone drives the chip there.
-      setPendingRuntime(type);
+      setPendingRuntime({ type, sessionId });
       inPlaceNavigate?.({
         search: (prev: Record<string, unknown>) => ({ ...prev, runtime: type }),
         replace: true,
       });
     },
-    [inPlaceNavigate, setPendingRuntime]
+    [inPlaceNavigate, setPendingRuntime, sessionId]
   );
 
   return { ...resolved, onChangeRuntime };
