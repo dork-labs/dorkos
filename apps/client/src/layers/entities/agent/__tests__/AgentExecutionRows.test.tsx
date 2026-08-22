@@ -496,11 +496,18 @@ describe('AgentExecutionRows — the Account row', () => {
     expect(screen.queryAllByTestId(/^agent-account-row-option-/)).toHaveLength(2);
   });
 
-  // The threshold counts what the picker can offer, so this is the same rule as
-  // "one account is no choice" rather than a separate one — and it is a
-  // deliberate consequence worth pinning: an operator running one registered
-  // account beside an unregistered default gets no row until they register the
-  // second.
+  // NOT because one option plus the restore footer is no choice — it is one:
+  // "bill to Acme Corp" and "go back to the default" are two different
+  // outcomes, and the picker would work.
+  //
+  // It is hidden for consistency. The status bar hides its own account control
+  // on a single-account machine (`isMultiAccount`, `use-claude-accounts.ts`),
+  // and one surface offering a per-agent account while another calls the
+  // machine single-account is two answers to one question. The two thresholds
+  // are not spelled identically — that one counts wire rows, this one counts
+  // rows the registry gave an id — but they agree on every registry the server
+  // actually emits, because it heals an id onto everything it registers.
+  // Pinned deliberately so a change to either has to face the other.
   it('hides the row for a lone registered account beside an id-less root', async () => {
     renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), {
       ...TWO_ACCOUNTS,

@@ -164,7 +164,15 @@ describe('useExecutionExceptions — a billing account nobody registered', () =>
           accounts: { id: string | null; path: string; label: string | null }[];
           accountsUnavailable?: boolean;
         }
-      | undefined
+      | undefined,
+    /**
+     * The server's default runtime. Worth varying for one reason only: it is
+     * the single value in this hook's answer that reads differently before and
+     * after the config query lands, which makes it the only honest thing to
+     * wait on when the assertion is an ABSENCE. `ACCOUNT_AGENT` pins its own
+     * runtime, so changing this moves no account logic.
+     */
+    defaultRuntime = 'claude-code'
   ) {
     const transport: Transport = createMockTransport({
       getConfig: vi.fn().mockResolvedValue({
@@ -178,7 +186,7 @@ describe('useExecutionExceptions — a billing account nobody registered', () =>
         claudeCliPath: null,
         claudeCode,
         executionDefaults: {
-          runtime: 'claude-code',
+          runtime: defaultRuntime,
           trustStop: null,
           perRuntime: [
             {
@@ -250,15 +258,34 @@ describe('useExecutionExceptions — a billing account nobody registered', () =>
     // An empty list that means "nobody knows", not "nothing is registered".
     // Judged as the latter it would light every account-carrying agent in the
     // fleet amber for the length of an outage.
-    const { result } = renderAccounts('retired-client', {
-      resolvedAccount: '/Users/dev/.claude',
-      inherited: true,
-      accounts: [],
-      accountsUnavailable: true,
-    });
-    await waitFor(() => expect(result.current.defaultRuntime).toBe('claude-code'));
+    //
+    // The default runtime is deliberately CODEX here, and it is the whole
+    // reason this test can fail. Every claim below is an absence, and an
+    // absence asserted before the config lands is no claim at all —
+    // `defaultRuntime` reads 'claude-code' on the first render whatever the
+    // server eventually says, so waiting for THAT would certify nothing.
+    // Waiting for it to flip to a value only the response can produce is
+    // waiting for the response.
+    const { result } = renderAccounts(
+      'retired-client',
+      {
+        resolvedAccount: '/Users/dev/.claude',
+        inherited: true,
+        accounts: [],
+        accountsUnavailable: true,
+      },
+      'codex'
+    );
+    await waitFor(() => expect(result.current.defaultRuntime).toBe('codex'));
+
+    // The agent still deviates — it pins claude-code while the fleet default is
+    // codex — so it is in the list, which is what makes the two absences below
+    // absences rather than an empty list nobody populated.
+    expect(result.current.exceptions.flatMap((e) => e.report.deviations)).toEqual([
+      { field: 'runtime', label: 'Claude Code' },
+    ]);
+    expect(result.current.exceptions.flatMap((e) => e.report.breakages)).toEqual([]);
     expect(result.current.brokenPaths).toEqual([]);
-    expect(result.current.exceptions).toEqual([]);
   });
 
   // The discriminator for the flag: the same empty list WITHOUT it is an

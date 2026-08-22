@@ -324,9 +324,11 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   // wrong thing first.
   //
   // The threshold counts REGISTERED accounts — the ones the picker can actually
-  // offer — rather than wire rows. Counting rows would let a single registered
-  // account beside a synthesized unregistered root open a picker holding one
-  // option: a choice between a thing and itself.
+  // offer — rather than wire rows, so an id-less row cannot make a machine look
+  // like it has a choice to make. It deliberately matches what the status bar
+  // means by a multi-account machine (`isMultiAccount`): one surface offering a
+  // per-agent account while the other hides its own account control would be
+  // two answers to one question.
   const showAccountRow =
     runtime === 'claude-code' &&
     knownAccounts !== undefined &&
