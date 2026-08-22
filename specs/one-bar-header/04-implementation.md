@@ -4,7 +4,7 @@
 **Started:** 2026-08-21
 **Last Updated:** 2026-08-21
 **Slug:** one-bar-header
-**Progress:** Tasks Completed: 6 / 7 (W1 sweep in flight)
+**Progress:** Tasks Completed: 7 / 7
 
 ## Execution Plan
 
@@ -41,7 +41,8 @@ _(none yet)_
 
 ## Merged PRs
 
-- F1 → #1161 (DOR-1400) · H1 → #1167 (DOR-1401) · R1 → #1173 (DOR-1402) · R2 → #1174 (DOR-1403) · S1 → #1169 (DOR-1404) · T1 → #1170 (DOR-1405)
+- F1 → #1161 (DOR-1400) · H1 → #1167 (DOR-1401) · R1 → #1173 (DOR-1402) · R2 → #1174 (DOR-1403) · S1 → #1169 (DOR-1404) · T1 → #1170 (DOR-1405) · W1 → #1177 (DOR-1406)
+- Docs: #1175 (program record) · #1178 (three accepted ADRs: 260822-083227/28/29)
 - Every phase passed an adversarial REVIEW.md review by a separate agent before its PR opened; every reviewer finding was fixed with measured evidence before merge.
 - Deviations accepted and recorded: fixed cluster lives in AppShell as `BarFixedCluster` (sibling after the route cross-fade) rather than inside OneBar — I1 held structurally and pinned by tests; OneBar gained a `fill` slot; Room right-panel contribution priority 8 beats a sticky Profile tab.
 - Follow-ups filed: DOR-1409 (merge-tail inert, needs MERGE_TAIL_TOKEN), DOR-1412 (room-entry-actions flake), DOR-1413 (CLI export staging-dir race), DOR-1414 (right-panel tab-strip paint-timing flake).
