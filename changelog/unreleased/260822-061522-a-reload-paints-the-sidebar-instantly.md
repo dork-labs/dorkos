@@ -2,6 +2,8 @@
 covers:
   - 'feat(client): a reload paints the sidebar from local memory, instantly (DOR-1373)'
   - 'fix(client): Getting started no longer grows in at the top of a sidebar that has finished painting (DOR-1373)'
+  - 'test(client): the boot-cache tests spell the config key through its factory (DOR-1373)'
+  - 'fix(client): a change you just made survives the reload that follows it (DOR-1373)'
 ---
 
 ### Changed
@@ -15,6 +17,8 @@ covers:
 
 - The Getting started suggestions appear with the rest of the panel instead of arriving a moment
   later and pushing everything below them down (DOR-1373)
+- Something you just changed — a card you dismissed, a section you made, a room you muted — is
+  what the next load starts from, even if you reload the moment after (DOR-1373)
 
 ### Security
 
