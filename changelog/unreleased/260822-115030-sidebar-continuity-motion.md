@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): the sidebar moves so you can follow it — folds spring, rows arrive and slide, drags lift and settle (DOR-1374)'
+  - 'refactor(client): the motion showcase plays the real one-shot tint (DOR-1374)'
 ---
 
 ### Changed
