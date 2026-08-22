@@ -12,7 +12,8 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarModelRow
  */
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useReducedMotion } from 'motion/react';
 import {
   Bot,
   CalendarClock,
@@ -28,7 +29,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
-import { SidebarRow } from '@/layers/shared/ui';
+import { SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
 import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
 import { SessionVerbLine } from '@/layers/entities/session';
 import type { SidebarIconId, SidebarRowModel, SidebarTarget } from '../model/build-sidebar-model';
@@ -37,6 +38,7 @@ import { sameTarget } from '../model/rules/targets';
 import { AgentListItem } from './AgentListItem';
 import { RoomRow } from './rooms/RoomRow';
 import { Sortable, sidebarDndData, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
+import { buildRowMotion } from './motion/sidebar-motion';
 import { useSidebarChrome } from './SidebarChrome';
 
 /**
@@ -133,6 +135,19 @@ export interface SidebarModelRowProps {
   keyPrefix: string;
   /** The ungrouped section the drag layer announces this row's home as. */
   sectionId?: UngroupedSectionId;
+  /**
+   * The section's row ids, in order — what this row's FLIP measures against
+   * (spec D5). Per section and never per panel: a channel arriving in Today must
+   * not make thirty agent rows re-measure.
+   */
+  layoutKey?: string;
+  /**
+   * The section this row is in announces arrivals — Heads up and Today, the two
+   * zones whose membership changes without the operator asking.
+   */
+  arrives?: boolean;
+  /** This row is one of the arrivals, so it tints once. */
+  arrived?: boolean;
 }
 
 /**
@@ -144,13 +159,30 @@ export interface SidebarModelRowProps {
  *
  * @param props - The row and where it sits.
  */
-export function SidebarModelRow({ row, keyPrefix, sectionId }: SidebarModelRowProps) {
+export function SidebarModelRow({
+  row,
+  keyPrefix,
+  sectionId,
+  layoutKey,
+  arrives = false,
+  arrived = false,
+}: SidebarModelRowProps) {
+  const reducedMotion = useReducedMotion();
+  // **Memoized because the row underneath may be** (D8). `RoomRow` is
+  // `React.memo` and this arrives as one prop, so a fresh object per render
+  // would defeat the memo for every room in the panel — the exact regression
+  // `RoomRow.render-count.test.tsx` guards. Every dependency here is a primitive,
+  // so the object moves only when something about the row's motion moved.
+  const rowMotion = useMemo<SidebarRowMotion>(
+    () => buildRowMotion({ layoutKey, arrives, arrived, reducedMotion }),
+    [layoutKey, arrives, arrived, reducedMotion]
+  );
   const ref = dragRefOf(row.target);
-  const body = <SidebarModelRowBody row={row} />;
+  const body = <SidebarModelRowBody row={row} rowMotion={rowMotion} />;
   if (!row.draggable || ref === null) return body;
   return (
     <Sortable id={sidebarRowDndId(keyPrefix, ref)} data={sidebarDndData(keyPrefix, ref, sectionId)}>
-      {(bindings) => <SidebarModelRowBody row={row} drag={bindings} />}
+      {(bindings) => <SidebarModelRowBody row={row} rowMotion={rowMotion} drag={bindings} />}
     </Sortable>
   );
 }
@@ -158,9 +190,11 @@ export function SidebarModelRow({ row, keyPrefix, sectionId }: SidebarModelRowPr
 /** The row itself, once the drag layer has (or has not) wrapped it. */
 function SidebarModelRowBody({
   row,
+  rowMotion,
   drag,
 }: {
   row: SidebarRowModel;
+  rowMotion: SidebarRowMotion;
   drag?: React.ComponentProps<typeof SidebarRow>['drag'];
 }) {
   const chrome = useSidebarChrome();
@@ -168,7 +202,15 @@ function SidebarModelRowBody({
   const isActive = isRowActive(target, chrome.activeTarget, chrome.homeRoomId);
 
   if (target.kind === 'agent') {
-    return <AgentRowFromModel path={target.path} row={row} isActive={isActive} drag={drag} />;
+    return (
+      <AgentRowFromModel
+        path={target.path}
+        row={row}
+        isActive={isActive}
+        rowMotion={rowMotion}
+        drag={drag}
+      />
+    );
   }
 
   // **A thread is deliberately NOT routed here.** `RoomRow` draws the room —
@@ -182,12 +224,13 @@ function SidebarModelRowBody({
         roomId={target.roomId}
         roomKind={target.roomKind}
         isActive={isActive}
+        rowMotion={rowMotion}
         drag={drag}
       />
     );
   }
 
-  return <GenericRowFromModel row={row} isActive={isActive} drag={drag} />;
+  return <GenericRowFromModel row={row} isActive={isActive} rowMotion={rowMotion} drag={drag} />;
 }
 
 /**
@@ -205,11 +248,13 @@ function RoomRowFromModel({
   roomId,
   roomKind,
   isActive,
+  rowMotion,
   drag,
 }: {
   roomId: string;
   roomKind: 'channel' | 'dm';
   isActive: boolean;
+  rowMotion: SidebarRowMotion;
   drag?: React.ComponentProps<typeof SidebarRow>['drag'];
 }) {
   const chrome = useSidebarChrome();
@@ -234,6 +279,7 @@ function RoomRowFromModel({
       onSelect={onSelect}
       viewAgentProfile={chrome.viewProfileFor}
       onRequestNewGroup={chrome.requestNewGroup}
+      rowMotion={rowMotion}
       {...(drag ? { sortable: drag } : {})}
     />
   );
@@ -244,11 +290,13 @@ function AgentRowFromModel({
   path,
   row,
   isActive,
+  rowMotion,
   drag,
 }: {
   path: string;
   row: SidebarRowModel;
   isActive: boolean;
+  rowMotion: SidebarRowMotion;
   drag?: React.ComponentProps<typeof SidebarRow>['drag'];
 }) {
   const chrome = useSidebarChrome();
@@ -270,6 +318,7 @@ function AgentRowFromModel({
         chrome.openTarget({ kind: 'session', sessionId, agentPath: path, cwd: path })
       }
       onNewSession={() => chrome.newSession(path)}
+      rowMotion={rowMotion}
       {...(drag ? { sortable: drag } : {})}
     />
   );
@@ -285,10 +334,12 @@ function AgentRowFromModel({
 function GenericRowFromModel({
   row,
   isActive,
+  rowMotion,
   drag,
 }: {
   row: SidebarRowModel;
   isActive: boolean;
+  rowMotion: SidebarRowMotion;
   drag?: React.ComponentProps<typeof SidebarRow>['drag'];
 }) {
   const chrome = useSidebarChrome();
@@ -360,6 +411,7 @@ function GenericRowFromModel({
         : {})}
       {...(row.preview === undefined ? {} : { preview: row.preview })}
       onSelect={() => chrome.openTarget(row.target)}
+      rowMotion={rowMotion}
       {...(drag ? { drag } : {})}
       trailing={
         row.unread.tier === 'directed' && row.unread.count !== undefined && !row.muted ? (

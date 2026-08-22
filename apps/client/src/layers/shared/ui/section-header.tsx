@@ -205,7 +205,14 @@ export function SectionHeader({
         // other label in the panel, and `/50` measures 3.2:1 on the light
         // theme's zone tint. It reads as secondary because it is not `medium`
         // and the label is.
-        <span className="text-sidebar-foreground/70 truncate text-[11px] font-normal tabular-nums">
+        <span
+          // It fades in over 120 ms rather than appearing (spec D5). The fold
+          // that produced it is a spring, and a count snapping into existence
+          // halfway through one reads as a second, unrelated event. `motion-safe`
+          // and nothing else: under a reduced-motion preference the count is
+          // simply there, which is the same rule the chevron beside it follows.
+          className="text-sidebar-foreground/70 motion-safe:animate-sidebar-rollup-in truncate text-[11px] font-normal tabular-nums"
+        >
           {trailing}
         </span>
       )}

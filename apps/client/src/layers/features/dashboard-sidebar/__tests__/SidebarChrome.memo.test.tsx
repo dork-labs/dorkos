@@ -25,7 +25,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { TransportProvider } from '@/layers/shared/model';
+import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
 import {
   configKeys,
   muteItem,
@@ -126,7 +126,14 @@ function renderChrome() {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <TooltipProvider>{children}</TooltipProvider>
+        {/* The provider reads the boot gate now — one subscription for the whole
+            panel, so that a SECTION does not open ten of its own (spec D5, and
+            `useBootState`'s own note about consumers latching independently).
+            Several of the queries behind that gate are live ones, so this tree
+            needs the stream they subscribe to. */}
+        <EventStreamProvider>
+          <TooltipProvider>{children}</TooltipProvider>
+        </EventStreamProvider>
       </TransportProvider>
     </QueryClientProvider>
   );

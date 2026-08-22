@@ -11,7 +11,18 @@
  *
  * **What makes it fail.** Drop the `memo()` wrapper, or hand any row a prop
  * built inline (a fresh `onSelect`, a fresh `moveTargetGroups` array, a
- * `visual` rebuilt per render) and the untouched row's count moves.
+ * `visual` rebuilt per render, a fresh `rowMotion`) and the untouched row's
+ * count moves.
+ *
+ * **The rows are drawn through the SHIPPED `SidebarModelRow`**, not by handing
+ * `RoomRow` props this file made up. That is the whole difference between
+ * testing the memo and testing the memo CHAIN: `SidebarModelRow` is where the
+ * continuity layer's `rowMotion` object is built, and a version of this file
+ * that constructed props itself stayed green when that object was rebuilt fresh
+ * on every render — which defeats the memo for every room in the panel. The one
+ * thing standing in is `useSidebarChrome`, because the real provider opens ten
+ * queries and a router; the stub below carries the same identities the real one
+ * memoizes, and `SidebarChrome.memo.test.tsx` is what pins that end.
  */
 import type { ReactNode } from 'react';
 import { useCallback, useMemo } from 'react';
@@ -33,10 +44,27 @@ import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
 } from '@/layers/entities/config';
-import { RoomRow } from '../ui/rooms/RoomRow';
+import type { SidebarRowModel } from '../model/build-sidebar-model';
+import { SidebarModelRow } from '../ui/SidebarModelRow';
+import { sectionLayoutKey } from '../ui/motion/sidebar-motion';
 import type { SidebarItemVisual } from '../model/sidebar-item';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+
+/**
+ * The chrome the rows read, published by `Panel` during its own render.
+ *
+ * A module-level box rather than a context, because the mock below has to answer
+ * `useSidebarChrome()` from inside the same render pass that filled it — React
+ * renders a parent before its children, so the value is always there by the time
+ * a row asks.
+ */
+const { chromeBox } = vi.hoisted(() => ({
+  chromeBox: { current: null as unknown },
+}));
+vi.mock('../ui/SidebarChrome', () => ({
+  useSidebarChrome: () => chromeBox.current,
+}));
 // One navigate, not a fresh one per call: TanStack's own is stable, and a mock
 // that is not hides an update loop this file exists to catch.
 const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }));
@@ -117,15 +145,37 @@ function room(id: string, slug: string): RoomSummary {
 /** Two rooms, held at module level so their identities never move either. */
 const ROOMS: RoomSummary[] = [room('room-a', 'alpha'), room('room-b', 'beta')];
 
+/** The chrome's index, built once for the same reason. */
+const ROOMS_BY_ID = new Map(ROOMS.map((r) => [r.id, r]));
+
 const NOOP = () => {};
-const NOOP_OPENER = () => NOOP;
+
+/** The model rows the panel draws — one per room, exactly as the builder emits them. */
+const MODEL_ROWS: SidebarRowModel[] = ROOMS.map(
+  (r) =>
+    ({
+      key: `room:${r.id}`,
+      target: { kind: 'room', roomId: r.id, roomKind: 'channel' },
+      glyph: { kind: 'hash' },
+      primary: r.slug ?? r.id,
+      reservesVerbLine: false,
+      unread: { tier: 'none' },
+      muted: false,
+      draggable: true,
+      reason: 'library:channels',
+    }) as SidebarRowModel
+);
+
+/** The section's row-id list, stable because the membership never changes here. */
+const LAYOUT_KEY = sectionLayoutKey(MODEL_ROWS);
 
 /**
  * The panel, reduced to the seam under test.
  *
  * It holds the ONE preferences subscription the real `SidebarChrome` holds and
  * derives each row's answer from it the same way, through the same three
- * helpers.
+ * helpers — then publishes the result as the chrome the rows read, and lets
+ * `SidebarModelRow` do the rest.
  */
 function Panel() {
   const prefs = useSidebarPrefs();
@@ -139,6 +189,25 @@ function Panel() {
   const targets = useMemo(() => moveTargetGroups(prefs.groups), [prefs.groups]);
   const viewAgentProfile = useCallback(() => NOOP, []);
   const onRequestNewGroup = useCallback(() => {}, []);
+  const openTarget = useCallback(() => {}, []);
+  const roomVisualOf = useCallback((room: RoomSummary) => SIGIL_FOR[room.id]!, []);
+  chromeBox.current = useMemo(
+    () => ({
+      roomsById: ROOMS_BY_ID,
+      roomVisualOf,
+      mutedRoomIds: muted,
+      roomSectionIds: sections,
+      moveTargetGroups: targets,
+      viewProfileFor: viewAgentProfile,
+      requestNewGroup: onRequestNewGroup,
+      openTarget,
+      activeTarget: null,
+      homeRoomId: null,
+      manifests: {},
+      bootSettled: true,
+    }),
+    [muted, sections, targets, viewAgentProfile, onRequestNewGroup, openTarget, roomVisualOf]
+  );
   return (
     <>
       <button
@@ -147,18 +216,12 @@ function Panel() {
       >
         mute alpha
       </button>
-      {ROOMS.map((r) => (
-        <RoomRow
-          key={r.id}
-          room={r}
-          visual={SIGIL_FOR[r.id]!}
-          isActive={false}
-          isMuted={muted.has(r.id)}
-          currentGroupId={sections.get(r.id) ?? null}
-          moveTargetGroups={targets}
-          onSelect={NOOP}
-          viewAgentProfile={viewAgentProfile}
-          onRequestNewGroup={onRequestNewGroup}
+      {MODEL_ROWS.map((modelRow) => (
+        <SidebarModelRow
+          key={modelRow.key}
+          row={modelRow}
+          keyPrefix="ungrouped"
+          layoutKey={LAYOUT_KEY}
         />
       ))}
     </>
@@ -183,7 +246,13 @@ function renderPanel() {
       </TransportProvider>
     </QueryClientProvider>
   );
-  return render(<Panel />, { wrapper });
+  const rendered = render(<Panel />, { wrapper });
+  // Re-rendered through the same wrapper, so a rerender is a new render of the
+  // panel rather than a new query client and a fresh mount of everything.
+  return {
+    ...rendered,
+    rerender: (ui: ReactNode) => rendered.rerender(<>{ui}</>),
+  };
 }
 
 /** How many times each row has drawn since the counter was cleared. */
@@ -228,6 +297,26 @@ describe('RoomRow render count', () => {
     await waitFor(() => expect(screen.getByLabelText('Muted')).toBeInTheDocument());
     expect(drawsOf('room-a')).toBe(1);
     // Beta's own data did not change, so beta must not have drawn at all.
+    expect(drawsOf('room-b')).toBe(0);
+  });
+
+  it('draws no row again when only the clock moved', async () => {
+    // **The 60 s tick** (spec D5 (c)). `useSidebarState` rebuilds the whole model
+    // every minute so relative times stay honest, and every row's `layout` FLIP
+    // measures against its section's row-id list — which that rebuild does not
+    // touch. Re-rendering the panel with the same rows is what a tick looks like
+    // from here, and not one row may redraw for it.
+    //
+    // Red when `SidebarModelRow` stops memoizing `rowMotion`: a fresh object per
+    // render is a changed prop on a memoized row, so both rows would draw once a
+    // minute, forever.
+    const { rerender } = renderPanel();
+    await screen.findByRole('button', { name: '#alpha' });
+    renderCounts.current = [];
+
+    rerender(<Panel />);
+
+    expect(drawsOf('room-a')).toBe(0);
     expect(drawsOf('room-b')).toBe(0);
   });
 });

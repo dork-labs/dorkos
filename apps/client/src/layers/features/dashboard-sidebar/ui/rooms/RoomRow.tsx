@@ -12,7 +12,12 @@ import { BellOff } from 'lucide-react';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
-import { SidebarRow, statusDotClass, type SidebarMenuNode } from '@/layers/shared/ui';
+import {
+  SidebarRow,
+  statusDotClass,
+  type SidebarMenuNode,
+  type SidebarRowMotion,
+} from '@/layers/shared/ui';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -101,6 +106,16 @@ interface RoomRowProps {
    * source, which renders exactly as before.
    */
   sortable?: SortableBindings;
+  /**
+   * Continuity motion for this row's list item (spec D5) — passed straight
+   * through to {@link SidebarRow}.
+   *
+   * **It must be a stable object**, like every other prop this memoized row
+   * takes: `SidebarModelRow` memoizes it on primitives so a preferences write
+   * cannot move it. A fresh one per render defeats the memo for every room in
+   * the panel, which is exactly what `RoomRow.render-count.test.tsx` catches.
+   */
+  rowMotion?: SidebarRowMotion;
 }
 
 /**
@@ -143,6 +158,7 @@ export const RoomRow = memo(function RoomRow({
   viewAgentProfile,
   onRequestNewGroup,
   sortable = DISABLED_SORTABLE_BINDINGS,
+  rowMotion,
 }: RoomRowProps) {
   const unread = hasUnread(room);
   const working = useRoomWorking(room.id, room.working);
@@ -338,6 +354,7 @@ export const RoomRow = memo(function RoomRow({
         actionsLabel={`${title} actions`}
         menuWidth="w-52"
         drag={sortable}
+        {...(rowMotion === undefined ? {} : { rowMotion })}
         editor={
           isRenaming ? (
             <input

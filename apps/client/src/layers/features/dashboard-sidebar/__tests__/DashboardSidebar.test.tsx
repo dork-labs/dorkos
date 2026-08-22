@@ -2680,7 +2680,7 @@ describe('Today — what you were doing, and it holds still', () => {
       expect(todayOrder()).toContainEqual(expect.stringContaining('+ 1 automated'));
     });
 
-    it('unfolds them where they are, and folds them back', () => {
+    it('unfolds them where they are, and folds them back', async () => {
       seedAutomated();
       mountSidebar();
       const reveal = todayRowNodes().find((row) => row.textContent?.includes('+ 1 automated'));
@@ -2694,7 +2694,13 @@ describe('Today — what you were doing, and it holds still', () => {
 
       const hide = todayRowNodes().find((row) => row.textContent?.includes('Hide automated'));
       fireEvent.click(hide!);
-      expect(todayOrder()).not.toContainEqual(expect.stringContaining('Nightly digest'));
+      // Awaited rather than asserted on the spot: a row leaving Today fades for
+      // 120 ms now (spec D5), so it is still in the document for the frame after
+      // the press. This file runs the REAL motion library, so what it measures
+      // is the row actually going rather than a mock removing it instantly.
+      await waitFor(() =>
+        expect(todayOrder()).not.toContainEqual(expect.stringContaining('Nightly digest'))
+      );
     });
   });
 

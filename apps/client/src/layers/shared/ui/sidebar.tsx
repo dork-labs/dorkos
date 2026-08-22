@@ -458,13 +458,29 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<'ul'>) {
   );
 }
 
+/**
+ * What makes an element the sidebar's menu item, as data.
+ *
+ * Exported because the sidebar ROW draws its own `<li>` when it is carrying
+ * continuity motion (`sidebar-row.tsx`) — a FLIP has to be on the element that
+ * moved, and that is the list item itself. Spelling the identity once is what
+ * keeps the animated item and the plain one from drifting into two different
+ * things that only look alike.
+ */
+export const SIDEBAR_MENU_ITEM_ATTRS = {
+  'data-slot': 'sidebar-menu-item',
+  'data-sidebar': 'menu-item',
+} as const;
+
+/** The classes every sidebar menu item wears, animated or not. */
+export const SIDEBAR_MENU_ITEM_CLASS = 'group/menu-item relative';
+
 /** List item wrapper for a single sidebar menu entry. */
 function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
   return (
     <li
-      data-slot="sidebar-menu-item"
-      data-sidebar="menu-item"
-      className={cn('group/menu-item relative', className)}
+      {...SIDEBAR_MENU_ITEM_ATTRS}
+      className={cn(SIDEBAR_MENU_ITEM_CLASS, className)}
       {...props}
     />
   );
