@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useIsMobile, useVisualViewportBottomInset } from '@/layers/shared/model';
 import {
@@ -12,7 +12,7 @@ import {
   threadRootIdOf,
 } from '@/layers/entities/room';
 import type { ConversationTimelineHandle } from '@/layers/features/conversation';
-import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
+import { openRoomPanel } from '@/layers/features/room-management';
 import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import { useRoomTarget } from '../model/room-target';
@@ -140,13 +140,6 @@ export function RoomSurface({
   const roomQuery = useRoom(roomId);
   const entriesQuery = useRoomEntries(roomId);
   const stream = useRoomStream(roomId, entriesQuery.isSuccess);
-  // One of spec §14.3's entry points is still on this surface: the empty
-  // state's "add agents". The roster door moved to the bar's members chip with
-  // the masthead (phase R1) and opens the same panel from there. The panel reads
-  // its own fleet, which is what lets this page open it without holding one; the
-  // sidebar may be a closed drawer here.
-  const [detailsFocus, setDetailsFocus] = useState<RoomDetailsFocus | null>(null);
-
   const room = roomQuery.data;
   const entries = useMemo(() => entriesQuery.data ?? [], [entriesQuery.data]);
   // Where this room's words go, and the chip bar the send shares with the
@@ -306,7 +299,11 @@ export function RoomSurface({
         streamStalled={stream.stalled}
         isLoading={entriesQuery.isLoading}
         error={entriesQuery.error}
-        onAddAgents={() => setDetailsFocus('add')}
+        // The last of spec §14.3's entry points still on this surface. It opens
+        // the room panel with its picker already expanded — the same panel the
+        // bar's members chip and the sidebar row's menu open, which is what
+        // keeps "add agents" meaning one thing wherever it is pressed.
+        onAddAgents={() => openRoomPanel('add', room.id)}
         openThreadId={openThreadId}
         onOpenThread={onOpenThread}
         resumeRow={resumeRow}
@@ -349,17 +346,6 @@ export function RoomSurface({
         offerJumpBackIn={offerJumpBackIn}
         onFocusChange={onComposerFocusChange}
       />
-
-      {/* Mounted only while open: it reads the room itself, and a closed one
-          would hold a roster from before the last change under it. */}
-      {detailsFocus !== null && (
-        <RoomDetailsDialog
-          room={room}
-          open
-          onOpenChange={(next) => !next && setDetailsFocus(null)}
-          focus={detailsFocus}
-        />
-      )}
     </div>
   );
 

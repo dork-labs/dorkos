@@ -29,8 +29,9 @@ import {
   useRoomOpenThreadStore,
 } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
-import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
+import { EventStreamProvider, TransportProvider, useAppStore } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { ROOM_PANEL_ID, useRoomPanelFocusStore } from '@/layers/features/room-management';
 import { ChannelsPage } from '../ui/ChannelsPage';
 
 const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
@@ -85,6 +86,10 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   toastError.mockClear();
+  // Module state shared by the whole graph: an unanswered request left here
+  // would be read by whatever mounts a room panel next.
+  useRoomPanelFocusStore.setState({ request: null });
+  useAppStore.setState({ rightPanelOpen: false, activeRightPanelTab: null });
   openRoomId = 'room-1';
   phoneViewport = false;
   // The open thread outlives an unmounted page on purpose — it is per-room
@@ -283,9 +288,9 @@ describe('ChannelsPage members-panel entry points', () => {
 
   // **The roster door is not on this page any more.** It moved to the bar's
   // members chip with the masthead (phase R1): `ChannelsBar.test.tsx` proves the
-  // press asks for the members focus, and `RoomDetailsDialog.test.tsx` proves
-  // that focus draws the roster. What remains here is the empty state's door,
-  // which is still this page's own.
+  // press asks for the members focus, and `RoomPanel.test.tsx` proves that focus
+  // draws the roster. What remains here is the empty state's door, which is
+  // still this page's own.
   it('makes the empty state say what is wrong, and gives it the button it promises', async () => {
     // A channel with no agents in it answers nothing. The empty state used to
     // tell you to add some and offer no way to do it.
@@ -300,12 +305,16 @@ describe('ChannelsPage members-panel entry points', () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Add agents' }));
 
-    const panel = await screen.findByRole('dialog', { name: '#general' });
-    // "Add agents…" lands on the picker, already open, so the next keystroke is
-    // a search. Awaited: the sheet reads its own fleet, so the field arrives
-    // with the answer rather than with the dialog.
-    const search = await within(panel).findByLabelText('Search agents');
-    await waitFor(() => expect(search).toHaveFocus());
+    // Since phase R2 the button opens the right panel's Room tab with its
+    // picker already expanded. The panel is mounted by the shell, which this
+    // page test does not render — so what is asserted here is the request that
+    // reaches it, naming this room and the part of the panel the promise was
+    // about. That the request opens the picker is `RoomPanel.test.tsx`.
+    await waitFor(() =>
+      expect(useRoomPanelFocusStore.getState().request).toMatchObject({ focus: 'add' })
+    );
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
+    expect(useAppStore.getState().activeRightPanelTab).toBe(ROOM_PANEL_ID);
   });
 
   it('stops telling a peopled room it is empty of agents', async () => {

@@ -148,18 +148,25 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     // `visibleText` reads one text node at a time.
     expect(await visibleText(row)).toBe(`${agentEmoji.join(' ')} ${title}`);
 
-    // **In the open room, the name and the head count — not the faces.** Phase R1
+    // **In the BAR, the name and the head count — not the faces.** Phase R1
     // replaced the masthead with the one bar, which draws a `#`/`@` glyph rather
     // than a face: the fleet directory those emoji come from lives in a widget
-    // the bar's layer may not import, and a hashed letter here would contradict
-    // the emoji the sidebar row above is showing. For a GROUP message that row
-    // exists and is asserted above, so the faces are still proven — just once,
-    // where they are actually drawn.
+    // the bar's layer may not import, and a hashed letter there would contradict
+    // the emoji the sidebar row above is showing.
     await page.goto(`/channels?id=${room.id}`);
     await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(roomsPage.membersChip).toHaveAccessibleName('3 members');
+
+    // **The faces are one press away** (phase R2, spec §3.6). The panel reads the
+    // fleet itself, so each agent's roster row wears the emoji its sidebar row
+    // wears — which is the agreement this whole file is about.
+    await roomsPage.openRoomPanel();
+    await expect(roomsPage.memberFace(otter.name)).toHaveText(otter.emoji, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(roomsPage.memberFace(heron.name)).toHaveText(heron.emoji);
   });
 
   test('a one-to-one still wears its agent wherever it is drawn, having left the sidebar', async ({
@@ -173,14 +180,12 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     // asked where the room is still drawn. A rule that hid the row AND broke the
     // identity would pass a test that only checked the row was gone.
     //
-    // **What it can ask for has narrowed, and the gap is real.** This room has no
-    // sidebar row (suppressed here) and, since phase R1, no masthead either — so
-    // the agent's FACE is currently drawn nowhere on this surface, and there is
-    // nothing left for a face assertion to hold onto. The room still names itself
-    // correctly, which is what the bar owes and what this now proves. Closing the
-    // gap is phase R2's: the bar can resolve faces from `entities/mesh` the way
-    // the sidebar does, without reaching across the widget boundary that made it
-    // draw a glyph in the first place.
+    // **This was the room with nowhere left to draw a face, and phase R2 is what
+    // gave it one.** It has no sidebar row (suppressed here) and, since phase R1,
+    // no masthead either — so between the two phases the agent's face was drawn
+    // nowhere on this surface at all, and the only honest assertion left was the
+    // name. The room panel closes it: it reads the fleet itself, so both the
+    // room's own mark and the agent's roster row wear the emoji the agent chose.
     const otter = await roomsApi.registerAgent(`E2E Solo Otter ${roomsApi.runId}`, '🦦', '#3b82f6');
     const room = await roomsApi.createDirectMessage(otter.name, [otter]);
     await openCockpit(basePage);
@@ -193,5 +198,15 @@ test.describe('Rooms — how a room names itself @smoke', () => {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(roomsPage.membersChip).toHaveAccessibleName('2 members');
+
+    // **Both discs are back, one press away** (phase R2, spec §3.6). The panel
+    // reads the fleet itself, so the room's own mark and this agent's roster row
+    // wear the emoji the sidebar wears — the third and fourth places the same
+    // face has to agree, which is the whole point of this file.
+    await roomsPage.openRoomPanel();
+    await expect(roomsPage.memberFace(otter.name)).toHaveText(otter.emoji, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(roomsPage.panelRoomMark).toHaveText(otter.emoji);
   });
 });

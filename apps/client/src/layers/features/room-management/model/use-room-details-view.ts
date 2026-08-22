@@ -28,6 +28,7 @@ import { useEngagedWindow } from '@/layers/entities/config';
 import { useMeshMemberIds } from '@/layers/entities/mesh';
 import type { AgentRoster } from '@/layers/entities/agent';
 import { useAgentPickerCandidates } from './use-agent-picker-candidates';
+import { facesOfRoster, useRoomFaces } from './use-room-faces';
 
 /** What the sheet renders from. Nothing here is interaction state. */
 export interface RoomDetailsView {
@@ -147,19 +148,13 @@ export function useRoomDetailsView(roomId: string, open: boolean): RoomDetailsVi
   /**
    * Each agent's real face, keyed by the same stable handle the roster carries.
    *
-   * The fleet is read here anyway to offer the picker, and its candidates hold
-   * the visual `entities/agent` resolves from the manifest — the one the sidebar
-   * and the message gutter draw. Joining on it is what stops this roster
-   * inventing a second appearance for an agent the reader already recognises.
+   * Read from {@link useRoomFaces} rather than joined again here: the bar's room
+   * mark needs the same answer, and two joins are two chances for the same agent
+   * to be drawn two ways — which is the bug `room-agent-faces.test.tsx` exists
+   * for. The fleet underneath is the one this hook already reads to offer the
+   * picker, so it costs a memo rather than a request.
    */
-  const facesByRef = useMemo(() => {
-    const faces = new Map<string, AgentVisual>();
-    for (const candidate of agents.candidates) {
-      if (candidate.visual !== null)
-        faces.set(agentAuthorRef(candidate.agentPath), candidate.visual);
-    }
-    return faces;
-  }, [agents.candidates]);
+  const facesByRef = useRoomFaces();
 
   /**
    * The same join as {@link facesByRef}, read the other way: from the handle a
@@ -195,14 +190,13 @@ export function useRoomDetailsView(roomId: string, open: boolean): RoomDetailsVi
    * The faces of this room's agents, in roster order.
    *
    * Only a direct message's mark draws them, and it is the same join the roster
-   * rows make — so the mark at the top of the sheet is the face the row below it
-   * shows, rather than a letter disc for the agent the reader is looking at.
+   * rows make — so the mark at the top of the panel is the face the row below it
+   * shows, rather than a letter disc for the agent the reader is looking at. The
+   * bar's own room mark reads the same two things (`facesOfRoster`), which is
+   * what keeps all three agreeing.
    */
   const roomVisuals = useMemo(
-    () =>
-      agentMembers
-        .map((member) => (member.author.agentRef ? facesByRef.get(member.author.agentRef) : null))
-        .filter((visual): visual is AgentVisual => visual !== null && visual !== undefined),
+    () => facesOfRoster(agentMembers, facesByRef),
     [agentMembers, facesByRef]
   );
 
