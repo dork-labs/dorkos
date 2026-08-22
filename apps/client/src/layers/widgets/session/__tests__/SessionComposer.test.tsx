@@ -724,3 +724,122 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
     );
   });
 });
+
+describe('SessionComposer — Stop acknowledges instantly and cannot double-fire (DOR-1300)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('goes pending the instant Stop is clicked, and calls interrupt exactly once even if pressed again mid-flight', async () => {
+    let resolveStop!: (v: never[]) => void;
+    const stop = vi.fn(
+      () =>
+        new Promise<never[]>((resolve) => {
+          resolveStop = resolve;
+        })
+    );
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    // The pending flag flips synchronously on the click, before the request
+    // has any chance to settle — this IS the "acknowledges instantly" property.
+    act(() => {
+      lastChatInputProps().onStop!();
+    });
+    expect(lastChatInputProps().stopPending).toBe(true);
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    // A second click while the first interrupt is still in flight is a no-op:
+    // remove the single-flight guard in `handleStop` and this count goes to 2.
+    act(() => {
+      lastChatInputProps().onStop!();
+    });
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveStop([]);
+    });
+  });
+
+  it('clears pending once the turn actually settles (isStreaming flips), independent of when the interrupt response lands', async () => {
+    let resolveStop!: (v: never[]) => void;
+    const stop = vi.fn(
+      () =>
+        new Promise<never[]>((resolve) => {
+          resolveStop = resolve;
+        })
+    );
+    const { rerender } = render(
+      <SessionComposerBench {...baseProps} stop={stop} status="streaming" />
+    );
+
+    act(() => {
+      lastChatInputProps().onStop!();
+    });
+    expect(lastChatInputProps().stopPending).toBe(true);
+
+    // Case: the stream settles BEFORE the interrupt response lands — the
+    // pending state ends with the settle, not the response, and a later
+    // resolve must not flip it back on (no flicker).
+    rerender(<SessionComposerBench {...baseProps} stop={stop} status="idle" />);
+    expect(lastChatInputProps().stopPending).toBe(false);
+
+    await act(async () => {
+      resolveStop([]);
+    });
+    expect(lastChatInputProps().stopPending).toBe(false);
+  });
+
+  it('stays pending after a successful interrupt response until the stream settles', async () => {
+    // Case: the response lands BEFORE turn_end — a successful `stop()` alone
+    // must not clear pending, or a person watches the button go live again
+    // while the agent is still winding down.
+    const stop = vi.fn().mockResolvedValue([]);
+    const { rerender } = render(
+      <SessionComposerBench {...baseProps} stop={stop} status="streaming" />
+    );
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    expect(lastChatInputProps().stopPending).toBe(true);
+
+    rerender(<SessionComposerBench {...baseProps} stop={stop} status="idle" />);
+    expect(lastChatInputProps().stopPending).toBe(false);
+  });
+
+  it('re-enables Stop when the interrupt request itself fails, so the person can retry', async () => {
+    const stop = vi.fn().mockRejectedValue(new Error('network error'));
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+
+    await waitFor(() => expect(lastChatInputProps().stopPending).toBe(false));
+    // Free to retry: a fresh click reaches `stop` again.
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    expect(stop).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts pending on CONFIRM, not on opening the confirm dialog', async () => {
+    seedQueue('one');
+    const stop = vi.fn().mockResolvedValue([]);
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    // The dialog is up, but nothing has been asked of the server yet.
+    expect(screen.getByText(/Stop, and put 1 queued message back\?/)).toBeInTheDocument();
+    expect(stop).not.toHaveBeenCalled();
+    expect(lastChatInputProps().stopPending).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(lastChatInputProps().stopPending).toBe(true);
+  });
+});

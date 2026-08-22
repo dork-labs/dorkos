@@ -87,6 +87,14 @@ export interface ComposerInputProps {
   /** Number of items currently in the message queue (for badge display). */
   queueDepth?: number;
   onStop?: () => void;
+  /**
+   * A Stop this composer already sent has not settled yet. Both stop controls
+   * show a quiet "Stopping…" indicator and take no further clicks while this
+   * is true — the host owns the single-flight guard (it is the one thing that
+   * knows when the request lands and when the turn actually settles); this
+   * component only reflects it.
+   */
+  stopPending?: boolean;
   /** Queue the current input for sending after streaming completes. */
   onQueue?: () => void;
   /**
@@ -246,6 +254,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       editingPosition,
       queueDepth = 0,
       onStop,
+      stopPending = false,
       onQueue,
       onSteer,
       onStage,
@@ -469,6 +478,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
             isTouchOnly={isTouchOnly}
             onSubmit={onSubmit}
             onStop={onStop}
+            stopPending={stopPending}
             onQueue={onQueue}
             onSteer={onSteer}
             onStage={onStage}

@@ -137,6 +137,8 @@ function ComposerDemo({
   note,
   initialValue = '',
   showQueueItems = false,
+  isStreaming = false,
+  stopPending = false,
 }: {
   label: string;
   surface: 'session' | 'room';
@@ -158,6 +160,14 @@ function ComposerDemo({
    * already in it would misdescribe its own label.
    */
   showQueueItems?: boolean;
+  /** A turn is running. Drives the Stop affordance instead of Send/Queue. */
+  isStreaming?: boolean;
+  /**
+   * A Stop this composer already sent has not settled yet (DOR-1300) — both
+   * stop controls read this, so the action button shows the quiet "Stopping…"
+   * progress state instead of a live Stop.
+   */
+  stopPending?: boolean;
 }) {
   const [value, setValue] = useState(initialValue);
   return (
@@ -198,7 +208,11 @@ function ComposerDemo({
                 ),
               })}
             {...(asks !== undefined && { asks })}
-            input={{ placeholder: target.placeholder, isStreaming: false }}
+            input={{
+              placeholder: target.placeholder,
+              isStreaming,
+              stopPending,
+            }}
           />
         </Conversation.Root>
       </ShowcaseDemo>
@@ -407,6 +421,27 @@ export function ComposerShowcases() {
 
       <AttachmentsDemo surface="session" capabilities={SESSION_CAPABILITIES} target={sessionIdle} />
       <AttachmentsDemo surface="room" capabilities={ROOM_CAPABILITIES} target={roomIdle} />
+
+      <ShowcaseLabel>Streaming — Stop, then Stop already sent (DOR-1300)</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <div className="flex flex-col gap-4">
+          <ComposerDemo
+            label="Stop — a turn is running"
+            surface="session"
+            capabilities={SESSION_CAPABILITIES}
+            target={buildSessionTarget()}
+            isStreaming
+          />
+          <ComposerDemo
+            label="Stopping — the click landed; a second press is a no-op until the turn settles"
+            surface="session"
+            capabilities={SESSION_CAPABILITIES}
+            target={buildSessionTarget()}
+            isStreaming
+            stopPending
+          />
+        </div>
+      </ShowcaseDemo>
 
       <MentionPickerDemo />
       <FilePickerDemo />

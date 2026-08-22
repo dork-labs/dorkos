@@ -6,6 +6,7 @@ import { DispositionMenu } from './DispositionMenu';
 type ButtonState =
   | 'send'
   | 'stop'
+  | 'stopping'
   | 'queue'
   | 'update'
   | 'cancel'
@@ -57,6 +58,16 @@ interface InputActionButtonProps {
    * disabled" rule as {@link onSteer}.
    */
   onStage?: () => void;
+  /**
+   * A Stop this composer already sent has not settled yet — the request may
+   * still be in flight, or the server may still be escalating it
+   * (`STOP_ACK_TIMEOUT_MS`, up to ~3s). Both stop controls read this: they show
+   * a quiet "Stopping…" indicator in place of a live button and take no more
+   * clicks, so the turn's own settle (`isStreaming` flipping) or a request
+   * failure is what ends the wait — never a second click racing the first
+   * (DOR-1300).
+   */
+  stopPending?: boolean;
 }
 
 const BUTTON_CONFIG = {
@@ -92,6 +103,13 @@ const BUTTON_CONFIG = {
     className: 'bg-muted text-muted-foreground',
     label: 'Running command',
   },
+  // Quiet on purpose: the button just told the person their click landed, and
+  // a still-red destructive button would read as "press again" rather than
+  // "already handled" — the muted, inert treatment other progress states use.
+  stopping: {
+    className: 'bg-muted text-muted-foreground',
+    label: 'Stopping…',
+  },
 } satisfies Record<ButtonState, { className: string; label: string }>;
 
 /**
@@ -111,6 +129,7 @@ const BUTTON_ICON: Record<ButtonState, React.ElementType> = {
   // the same control, so neither costs the other its place.
   'cancel-upload': Loader2,
   dispatching: Loader2,
+  stopping: Loader2,
 };
 
 function resolveButtonState(
@@ -118,7 +137,8 @@ function resolveButtonState(
   isStreaming: boolean,
   uploadInFlight: boolean,
   editingQueueItem: boolean,
-  commandPending: boolean
+  commandPending: boolean,
+  stopPending: boolean
 ): ButtonState | null {
   // A command already on its way. It goes first because the composer still
   // holds the command's text (so a refusal cannot eat it), which would
@@ -129,6 +149,10 @@ function resolveButtonState(
   // and a phone has no Escape key to rescue it with: the only exit left was the
   // row's X, which deletes the queued message.
   if (editingQueueItem) return hasText ? 'update' : 'cancel';
+  // A Stop already sent owns the slot until the turn settles or the request
+  // errors — ahead of both Queue and Stop themselves, so neither can be
+  // pressed again while one interrupt is still working (DOR-1300).
+  if (stopPending) return 'stopping';
   if (isStreaming && hasText) return 'queue';
   // Only show stop for actual streaming — uploading alone should not show stop
   if (isStreaming) return 'stop';
@@ -166,7 +190,7 @@ function resolveOnClick(
       return handlers.onCancelEdit;
     case 'cancel-upload':
       return handlers.onCancelUpload;
-    // 'dispatching' is a progress indicator, not a control.
+    // 'dispatching' and 'stopping' are progress indicators, not controls.
     default:
       return undefined;
   }
@@ -189,13 +213,15 @@ export function InputActionButton({
   onCancelUpload,
   onSteer,
   onStage,
+  stopPending = false,
 }: InputActionButtonProps) {
   const buttonState = resolveButtonState(
     hasText,
     isStreaming,
     onCancelUpload !== undefined,
     editingQueueItem,
-    commandPending
+    commandPending,
+    stopPending
   );
   // The send action is blocked while the target is not ready yet; other actions
   // are never blocked here.
@@ -224,16 +250,20 @@ export function InputActionButton({
   // entirely and this is the only thing on screen saying the send is already
   // happening. An upload is not here — it is a real button that does something,
   // and it carries its own live region below.
-  const isProgress = buttonState === 'dispatching';
+  const isProgress = buttonState === 'dispatching' || buttonState === 'stopping';
 
   return (
     <>
       {/* Dedicated stop button — visible when streaming + text so the user can
           always stop without clearing input. Hidden when main button is already
-          stop. Wrapped in AnimatePresence so the exit below actually runs; a
-          bare conditional unmounts it instantly and the config was decoration. */}
+          stop, and hidden once the click lands (`stopPending`): the main slot's
+          'stopping' state below becomes the one place the pending state shows,
+          so a person never sees two Stop-shaped controls disagree about whether
+          the click was heard (DOR-1300). Wrapped in AnimatePresence so the exit
+          below actually runs; a bare conditional unmounts it instantly and the
+          config was decoration. */}
       <AnimatePresence>
-        {isStreaming && hasText && (
+        {isStreaming && hasText && !stopPending && (
           <motion.button
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}

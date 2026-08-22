@@ -260,17 +260,50 @@ export function SessionComposer({
     },
     [sessionId, setInput]
   );
+  // A Stop that has to escalate on the server (`STOP_ACK_TIMEOUT_MS`, up to
+  // ~3s) used to leave the button red and clickable for the whole wait, with
+  // the fire-and-forget handler posting a fresh `/interrupt` on every extra
+  // click. This is the acknowledgment: the button goes pending the instant the
+  // click is heard and STAYS pending — not just for the request's own
+  // round-trip — until the turn actually settles, which is what closes the
+  // window a second click could race into (DOR-1300).
+  const [stopPending, setStopPending] = useState(false);
+  // The turn settling — `isStreaming` flipping false on `turn_end` — is what
+  // ends a pending Stop on the happy path. A successful `/interrupt` response
+  // does NOT clear it by itself: the response can land before the settle (stay
+  // pending) or after it (this effect already cleared it, so nothing flickers).
+  /* eslint-disable react-hooks/set-state-in-effect -- sync local pending flag from the external isStreaming signal (turn_end) */
+  useEffect(() => {
+    if (!isStreaming) setStopPending(false);
+  }, [isStreaming]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+  const performStop = useCallback(() => {
+    setStopPending(true);
+    void stop()
+      .then(restoreToComposer)
+      .catch(() => {
+        // The request itself failed (not just "still escalating") — re-enable
+        // so the person can retry, rather than leaving the button stuck
+        // pending on a turn that may never settle.
+        setStopPending(false);
+      });
+  }, [stop, restoreToComposer]);
   const handleStop = useCallback(() => {
+    // Single-flight: a Stop already in flight cannot be re-fired by a second
+    // click, Enter's Escape binding, or a room-style rapid double-press.
+    if (stopPending) return;
     if (waiting.length === 0) {
-      void stop();
+      performStop();
       return;
     }
     setStopConfirmOpen(true);
-  }, [waiting.length, stop]);
+  }, [stopPending, waiting.length, performStop]);
   const confirmStop = useCallback(() => {
+    // Pending starts HERE, on confirm — never on opening the dialog, which
+    // asks a question and stops nothing yet.
     setStopConfirmOpen(false);
-    void stop().then(restoreToComposer);
-  }, [stop, restoreToComposer]);
+    performStop();
+  }, [performStop]);
 
   // Background-task detection reads the hydrated stream-store projection (falling
   // back to the legacy send-path messages until the session hydrates) so it sees
@@ -479,6 +512,7 @@ export function SessionComposer({
         isStreaming,
         commandPending,
         onStop: handleStop,
+        stopPending,
         onEscape: autocomplete.dismissPalettes,
         onClear: () => {
           setInput('');
