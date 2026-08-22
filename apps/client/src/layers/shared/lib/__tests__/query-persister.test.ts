@@ -8,6 +8,12 @@ import {
   createBootCache,
   isBootQueryKey,
 } from '../query-persister';
+// The real factory rather than the literal — the allow-list in
+// `query-persister.ts` has to spell these keys by hand (`shared/` may not import
+// an entity), so the table below is only a drift guard if one side of it is the
+// definition. It is also the rule `__tests__/one-config-query-key.test.ts`
+// enforces: `['config','current']` may be written in exactly one file.
+import { configKeys } from '../../model/server-config/query-keys';
 import { HttpTransport } from '../transport';
 import { DirectTransport } from '../direct-transport';
 import type { Transport } from '@dorkos/shared/transport';
@@ -52,7 +58,7 @@ const BUSTER = '1.2.3';
 describe('the sidebar’s local memory', () => {
   describe('what it is allowed to remember', () => {
     it.each([
-      ['the config the panel is arranged by', ['config', 'current']],
+      ['the config the panel is arranged by', configKeys.current()],
       ['the room list', ['rooms', 'list', null]],
       ['the room list filtered to one kind', ['rooms', 'list', 'channel']],
       ['today’s threads', ['rooms', 'threads']],
@@ -80,7 +86,7 @@ describe('the sidebar’s local memory', () => {
       ['one member’s rooms', ['team', 'rooms', 'm-1']],
       // A prefix that is not a key.
       ['the bare room root', ['rooms']],
-      ['the bare config root', ['config']],
+      ['the bare config root', configKeys.all],
     ])('does not remember %s', (_what, key) => {
       expect(isBootQueryKey(key)).toBe(false);
     });
@@ -150,7 +156,7 @@ describe('the sidebar’s local memory', () => {
       const storage = fakeStorage({
         [KEY]: blob({
           buster: BUSTER,
-          queries: [{ queryKey: ['config', 'current'], data: { version: '1.2.3' } }],
+          queries: [{ queryKey: configKeys.current(), data: { version: '1.2.3' } }],
         }),
       });
       const queryClient = new QueryClient();
@@ -160,21 +166,21 @@ describe('the sidebar’s local memory', () => {
       // No await anywhere above: this is the whole point. `startedWarm` is
       // latched on the mount render, so a restore that resolved a microtask
       // later would arrive after the panel had already decided it came up cold.
-      expect(queryClient.getQueryState(['config', 'current'])?.dataUpdatedAt).toBeGreaterThan(0);
+      expect(queryClient.getQueryState(configKeys.current())?.dataUpdatedAt).toBeGreaterThan(0);
     });
 
     it('throws away a blob from another build rather than painting yesterday’s shape', () => {
       const storage = fakeStorage({
         [KEY]: blob({
           buster: '0.0.1',
-          queries: [{ queryKey: ['config', 'current'], data: { version: '0.0.1' } }],
+          queries: [{ queryKey: configKeys.current(), data: { version: '0.0.1' } }],
         }),
       });
       const queryClient = new QueryClient();
 
       cacheOver(storage).restore(queryClient);
 
-      expect(queryClient.getQueryState(['config', 'current'])).toBeUndefined();
+      expect(queryClient.getQueryState(configKeys.current())).toBeUndefined();
       expect(storage.getItem(KEY)).toBeNull();
     });
 

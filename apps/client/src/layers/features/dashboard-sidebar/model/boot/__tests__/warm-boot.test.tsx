@@ -23,6 +23,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { createBootCache, HttpTransport } from '@/layers/shared/lib';
+import { configKeys } from '@/layers/shared/model';
 import { powerFixture } from '../../fixtures/power';
 // Heads up's three sources are the one part of the gate that is mocked here,
 // and only because they ride a live event stream this harness has no server
@@ -167,7 +168,7 @@ describe('booting the sidebar from local memory', () => {
     // these queries return, so this measures the real blob rather than a guess
     // at one.
     const client = new QueryClient();
-    client.setQueryData(['config', 'current'], { userSettings: powerFixture.prefs });
+    client.setQueryData(configKeys.current(), { userSettings: powerFixture.prefs });
     client.setQueryData(['rooms', 'list', null], powerFixture.rooms);
     client.setQueryData(['rooms', 'threads'], powerFixture.threads);
     client.setQueryData(['mesh', 'agent-paths'], {
