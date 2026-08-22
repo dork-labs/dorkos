@@ -153,6 +153,13 @@ interface RoomRunStateProps {
  * room-wide halt stays reachable through the live lane's stop-all above the
  * composer, which is on screen exactly when something is running.
  *
+ * **"Phone" here means the whole sub-768px band, which is wider than the spec's
+ * words.** Spec §4 frames this case at 390px, the phone it was measured on, but
+ * the reasoning — a bar too narrow to spend ~70px on something usually absent —
+ * holds for every width below the mobile breakpoint, and that breakpoint is the
+ * line the rest of this app already switches layouts on. Splitting the two would
+ * mean a third behaviour between 390 and 768 that nothing asked for.
+ *
  * **`useIsMobile`, not a `sm:` class, and the two are not interchangeable.** The
  * members chip has to make the OPPOSITE decision from the same fact, and part of
  * that decision is its accessible name — which no CSS breakpoint can reach. A

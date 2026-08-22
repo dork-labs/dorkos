@@ -69,7 +69,6 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     // The masthead of the open room, which drew the same doubled name.
     await page.goto(`/channels?id=${room.id}`);
     await expect(roomsPage.roomHeading).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-    await expect(roomsPage.headerMark).toBeVisible();
     expect(await visibleText(roomsPage.roomHeading)).toBe(slug);
     await expect(roomsPage.roomHeading).toHaveAccessibleName(`#${slug}`);
   });
@@ -109,7 +108,7 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     expect(await visibleText(row)).toBe(slug);
   });
 
-  test('a direct message wears the agent it is with, not a letter standing in for one', async ({
+  test('a direct message is named for the agent it is with, in the sidebar and the bar', async ({
     page,
     basePage,
     roomsApi,
@@ -132,16 +131,19 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     // name. A letter disc renders "E E2E Otter …" here and fails.
     expect(await visibleText(row)).toBe(`${agent.emoji} ${agent.name}`);
 
-    // The same face in the open room's masthead and on its roster.
+    // **The face assertions stop at the sidebar, and that is the product, not a
+    // gap in the test.** The open room's masthead drew this agent's emoji twice
+    // — once as the room's mark, once on a roster disc — and phase R1 replaced
+    // it with the one bar, which draws no face at all: the fleet directory those
+    // faces came from sits in a widget this layer may not import, and a hashed
+    // letter here would contradict the emoji the sidebar shows two inches away.
+    // So what the bar owes this test is the NAME, and the roster as a count.
+    // When phase R2 rebuilds the roster in the room panel, the disc assertions
+    // belong there.
     await page.goto(`/channels?id=${room.id}`);
     await expect(roomsPage.roomHeading).toHaveAccessibleName(agent.name, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.headerMark).toHaveText(agent.emoji);
-    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${agent.name}, 2 members`);
-    const agentDisc = roomsPage.memberList
-      .locator('[data-slot="room-member-avatar"]')
-      .filter({ hasText: agent.name });
-    expect(await visibleText(agentDisc)).toBe(agent.emoji);
+    await expect(roomsPage.membersChip).toHaveAccessibleName('2 members');
   });
 });

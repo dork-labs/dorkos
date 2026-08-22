@@ -64,14 +64,15 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await expect(page).toHaveURL(/\/channels\?.*id=/, { timeout: SERVER_ROUND_TRIP_MS });
     roomsApi.track(openRoomId(page));
 
-    // The conversation is named after who is in it, and wears their face.
+    // The conversation is named after who is in it. The agent's FACE is asserted
+    // on the sidebar row below rather than up here: the bar draws no face (see
+    // `room-identity.spec.ts` for why), so the name is what it owes.
     await expect(roomsPage.roomHeading).toHaveAccessibleName(ana.name, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.headerMark).toHaveText(ana.emoji);
-    // The roster is a button now (DOR-600), so its name says the action AND
-    // the count — a button named only "2 members" never says what it does.
-    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${ana.name}, 2 members`);
+    // The roster is a head count you press. Its name is the count alone — the
+    // room it belongs to is named by the heading beside it.
+    await expect(roomsPage.membersChip).toHaveAccessibleName('2 members');
 
     // And it is a direct message, not a channel: the row is in the other section.
     const row = roomsPage.rowIn(roomsPage.directMessages, ana.name);
@@ -110,13 +111,9 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${title}, 3 members`);
-    for (const agent of [ana, kai]) {
-      const disc = roomsPage.memberList
-        .locator('[data-slot="room-member-avatar"]')
-        .filter({ hasText: agent.name });
-      expect(await visibleText(disc)).toBe(agent.emoji);
-    }
+    // You plus both agents. Each agent's own face is proven on its sidebar row
+    // just below — the bar carries a count, not a stack of discs (phase R1).
+    await expect(roomsPage.membersChip).toHaveAccessibleName('3 members');
 
     // A group's mark stacks its agents' faces rather than standing in for them
     // with one, in roster order. Read the expected faces from the roster itself
@@ -173,7 +170,7 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${title}, 3 members`);
+    await expect(roomsPage.membersChip).toHaveAccessibleName('3 members');
     // And no one-to-one with the first agent was left behind by the stray Enter.
     await expect(roomsPage.rowIn(roomsPage.directMessages, ana.name)).toHaveCount(0);
   });

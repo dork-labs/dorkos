@@ -3,6 +3,7 @@ covers:
   - 'feat(client): channels wear the one bar — the room masthead is gone (DOR-1402)'
   - "fix(client): keep the playground's quiet room bars quiet (DOR-1402)"
   - 'fix(client,e2e): answer the R1 review — truncation order, the phone bar, and the ids that moved (DOR-1402)'
+  - 'fix(e2e): retire the last masthead locators from the room specs (DOR-1402)'
 ---
 
 ### Changed

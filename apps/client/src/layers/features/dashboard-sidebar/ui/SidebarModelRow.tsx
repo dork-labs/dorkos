@@ -48,6 +48,8 @@ import { useSidebarChrome } from './SidebarChrome';
  *
  * @param target - The row's target.
  * @param active - What the router says is open, or `null`.
+ * @param homeRoomId - The room `/` is showing, when `/` is showing — `null`
+ *   everywhere else. Only Home's own row consults it.
  */
 export function isRowActive(
   target: SidebarTarget,
