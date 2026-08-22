@@ -34,7 +34,7 @@ import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/a
 import { createGroup, moveToGroup, useUpdateSidebarPrefs } from '@/layers/entities/config';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
-import { useRooms, useRoomOpenThreadStore } from '@/layers/entities/room';
+import { useRooms, useRoomOpenThreadStore, useTeamRoom } from '@/layers/entities/room';
 import {
   beginSessionNavigation,
   notifySessionLookupFailed,
@@ -286,6 +286,10 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
     [dorkBotPath, navigate, startNewSession]
   );
 
+  // Which room is #team, so its row can go to the one address that draws it.
+  // A cache read of the room list this sidebar is already rendering.
+  const teamRoomId = useTeamRoom().room?.id ?? null;
+
   const openTarget = useCallback(
     (target: SidebarTarget) => {
       switch (target.kind) {
@@ -313,6 +317,17 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           // whether a keyboard opens over what you came to look at.
           if (target.rootEntryId !== undefined) {
             useRoomOpenThreadStore.getState().openThread(target.roomId, target.rootEntryId, false);
+          }
+          // **#team's row goes to Home, because Home IS #team** (spec
+          // `one-bar-header` §3.5). `/channels` would redirect here anyway, so
+          // this is not what makes the one door — it is what keeps the door from
+          // being a bounce through an address that no longer draws anything.
+          if (target.roomId === teamRoomId) {
+            void navigate({
+              to: '/',
+              search: target.rootEntryId ? { thread: target.rootEntryId } : {},
+            });
+            return;
           }
           navigate({
             to: '/channels',
@@ -364,7 +379,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           return;
       }
     },
-    [navigate, openAgent, openSession, openSuggestion, router, startNewSession]
+    [navigate, openAgent, openSession, openSuggestion, router, startNewSession, teamRoomId]
   );
 
   const value = useMemo<SidebarChromeValue>(

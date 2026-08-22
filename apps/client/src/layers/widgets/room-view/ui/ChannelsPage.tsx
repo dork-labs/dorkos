@@ -1,5 +1,6 @@
 import { useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
+import { useTeamRoomRedirect } from '../model/use-team-room-redirect';
 import { RoomSurface } from './RoomSurface';
 
 /**
@@ -11,9 +12,20 @@ import { RoomSurface } from './RoomSurface';
  * #team without going through this route (team-room-home spec D3.2), which is
  * why the two halves are apart at all — one room widget, reached from two
  * addresses, never copied.
+ *
+ * **One room #team is NOT reached through: its own.** `?id=<team>` is Home's
+ * room at a second address, so it is sent to Home instead of drawn here — see
+ * {@link useTeamRoomRedirect} for why that is a redirect rather than a duplicate
+ * (spec §3.5). Every other id is unaffected.
  */
 export function ChannelsPage() {
   const { id, thread } = useSearch({ from: '/_shell/channels' });
+  const teamRoom = useTeamRoomRedirect(id, thread);
+
+  // Mid-move, or not yet sure whether this is a move. Either way the honest
+  // thing to draw is nothing: the alternative is this room appearing for a frame
+  // on its way somewhere else.
+  if (teamRoom !== 'show') return null;
 
   if (id === undefined) {
     return (

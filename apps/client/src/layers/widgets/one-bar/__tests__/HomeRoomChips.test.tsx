@@ -1,26 +1,28 @@
 // @vitest-environment jsdom
 /**
- * The one thing Home adds to the shared home-surface bar: #team's head count
- * (spec `one-bar-header` §3.4, phase H1).
+ * What Home's bar says about the room Home IS (spec `one-bar-header` §3.4).
+ *
+ * Home is #team, so it wears the same chips a channel wears — what is running,
+ * and who is in it. Phase H1 shipped the head count; phase R1 adds the working
+ * count and the room-wide Stop, which had gone with the masthead and had no
+ * replacement in between.
  *
  * The bar itself is proven in `HomeSurfaceBar.test.tsx`; what this file asserts
- * is the chip, because the chip is where a wrong number would be believed. Home IS #team, so it is the count of the room the page below is
- * already showing, read from the same query — never a second request and never
- * a placeholder that corrects itself a moment later.
+ * is the chips, because a chip is where a wrong number would be believed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/layers/shared/ui';
 
-/** #team as `useTeamRoom` answers, and its roster as `useRoom` answers. */
-const { room, roster, status, roomAsked } = vi.hoisted(() => ({
+const { room, roster, status, roomAsked, working } = vi.hoisted(() => ({
   room: {
     current: {
       id: 'team-room',
       kind: 'channel',
       slug: 'team',
-      title: '#team',
+      title: 'team',
       topic: null,
       archived: false,
       createdAt: '2026-08-21T00:00:00.000Z',
@@ -29,11 +31,13 @@ const { room, roster, status, roomAsked } = vi.hoisted(() => ({
   },
   roster: { members: undefined as { members: { authorId: string }[] } | undefined },
   // What `useTeamRoom` is answering on this render. `ready` unless a test says
-  // otherwise — the archived case is the one that must not draw a chip.
+  // otherwise — the archived case is the one that must draw no chips at all.
   status: { current: 'ready' as 'ready' | 'archived' },
   // Every id `useRoom` is asked for, so a test can prove a request was NOT made.
   roomAsked: vi.fn(),
+  working: { count: 0 },
 }));
+const halt = vi.hoisted(() => vi.fn());
 
 vi.mock('@/layers/entities/room', () => ({
   useTeamRoom: () => ({
@@ -47,6 +51,8 @@ vi.mock('@/layers/entities/room', () => ({
     return { data: roomId === null ? undefined : roster.members };
   },
   roomDisplayTitle: () => '#team',
+  useOpenRoomWorking: () => working.count,
+  useHaltRoom: () => ({ mutate: halt, isPending: false }),
 }));
 
 const detailsDialog = vi.fn();
@@ -57,17 +63,16 @@ vi.mock('@/layers/features/room-management', () => ({
   },
 }));
 
-import { HomeMembersChip } from '../ui/HomeMembersChip';
+import { HomeRoomChips } from '../ui/HomeRoomChips';
 
-/** Four agents and you, which is what a real #team looks like early on. */
 function members(count: number) {
   return { members: Array.from({ length: count }, (_, i) => ({ authorId: `author-${i}` })) };
 }
 
-function renderHomeBar() {
+function renderChips() {
   return render(
     <TooltipProvider>
-      <HomeMembersChip />
+      <HomeRoomChips />
     </TooltipProvider>
   );
 }
@@ -75,12 +80,13 @@ function renderHomeBar() {
 beforeEach(() => {
   vi.clearAllMocks();
   status.current = 'ready';
+  working.count = 0;
   roster.members = members(5);
   room.current = {
     id: 'team-room',
     kind: 'channel',
     slug: 'team',
-    title: '#team',
+    title: 'team',
     topic: null,
     archived: false,
     createdAt: '2026-08-21T00:00:00.000Z',
@@ -88,22 +94,17 @@ beforeEach(() => {
   };
 });
 
-afterEach(() => {
-  cleanup();
-});
+afterEach(cleanup);
 
-describe('HomeMembersChip', () => {
-  it('says how many are in #team, and says it as a name a screen reader can use', () => {
-    renderHomeBar();
-
-    const chip = screen.getByRole('button', { name: '5 members' });
-    expect(chip).toHaveTextContent('5');
+describe('HomeRoomChips', () => {
+  it('says how many are in #team, as a name a screen reader can use', () => {
+    renderChips();
+    expect(screen.getByRole('button', { name: '5 members' })).toHaveTextContent('5');
   });
 
   it('counts one member in the singular', () => {
     roster.members = members(1);
-    renderHomeBar();
-
+    renderChips();
     expect(screen.getByRole('button', { name: '1 member' })).toBeInTheDocument();
   });
 
@@ -111,20 +112,20 @@ describe('HomeMembersChip', () => {
     // A chip that opens on `0` and corrects itself has told the reader something
     // false about their own team, and a wrong number is not one people re-check.
     roster.members = undefined;
-    renderHomeBar();
-
+    renderChips();
     expect(screen.queryByTestId('bar-members-chip')).not.toBeInTheDocument();
   });
 
   it('draws nothing for an archived #team, and does not ask for its roster', () => {
     // Home draws no conversation at all when #team is archived — it offers to
-    // bring the room back instead. A head count beside that offer would be a
-    // control for something that is not on screen, and the sheet behind it would
-    // manage members of a room the owner deliberately put away.
+    // bring the room back instead. Chips beside that offer would be controls for
+    // something that is not on screen, including a Stop for a room nobody can
+    // post to.
     status.current = 'archived';
-    renderHomeBar();
+    renderChips();
 
     expect(screen.queryByTestId('bar-members-chip')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('room-run-state')).not.toBeInTheDocument();
     // And the roster read never runs: the hook is asked for `null`, which is
     // what disables it. Asserting the request's ABSENCE, not just the chip's,
     // because a guard that filtered the result afterwards would look identical
@@ -133,23 +134,46 @@ describe('HomeMembersChip', () => {
     expect(roomAsked).not.toHaveBeenCalledWith('team-room');
   });
 
-  it('draws nothing when there is no team room to count', () => {
+  it('draws nothing when there is no team room to describe', () => {
     room.current = null;
-    renderHomeBar();
-
+    renderChips();
     expect(screen.queryByTestId('bar-members-chip')).not.toBeInTheDocument();
   });
 
-  it('opens the room’s members when pressed, not some other part of it', async () => {
+  it('opens the room’s members when the count is pressed, not some other part of it', async () => {
     // The focus is the part of this that survives phase R2, when the same press
     // opens the room right panel instead of the sheet.
     const user = userEvent.setup();
-    renderHomeBar();
+    renderChips();
 
     expect(screen.queryByTestId('room-details')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '5 members' }));
 
-    await waitFor(() => expect(screen.getByTestId('room-details')).toBeInTheDocument());
+    expect(screen.getByTestId('room-details')).toBeInTheDocument();
     expect(detailsDialog).toHaveBeenCalledWith(expect.objectContaining({ focus: 'members' }));
+  });
+
+  it('shows what is running in #team, which Home could not say between H1 and R1', () => {
+    working.count = 2;
+    renderChips();
+    expect(screen.getByLabelText('2 agents working')).toHaveTextContent('2');
+  });
+
+  it('stops #team from Home, by the room’s own id', async () => {
+    const user = userEvent.setup();
+    working.count = 2;
+    renderChips();
+
+    await user.click(screen.getByRole('button', { name: 'Stop all agents in #team' }));
+    expect(halt).toHaveBeenCalledWith({ roomId: 'team-room' });
+  });
+
+  it('reserves the run state’s space on Home too, so the health dot never shifts', () => {
+    // Home's chips are left-anchored and the health dot is right-anchored in the
+    // bar's actions, so the dot's x is fixed by the right edge either way — but
+    // the slot is still mounted while idle, which is what keeps the members chip
+    // beside it from moving when an agent starts (I3).
+    renderChips();
+    expect(screen.getByTestId('room-run-state')).toHaveAttribute('data-idle', 'true');
   });
 });

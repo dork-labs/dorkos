@@ -1,6 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Skeleton } from '@/layers/shared/ui';
 import { useIsMobile, useVisualViewportBottomInset } from '@/layers/shared/model';
 import {
   useMarkRoomRead,
@@ -22,7 +21,6 @@ import { useRestoreThreadFocus } from '../model/use-restore-thread-focus';
 import { useThreadUrlSync, type ThreadRoute } from '../model/use-thread-url-sync';
 import { ChannelComposer } from './ChannelComposer';
 import { RoomFlow, RoomHistorySkeleton } from './RoomFlow';
-import { RoomHeader } from './RoomHeader';
 import { RoomLiveLane } from './RoomLiveLane';
 import { RoomThreadPanel } from './RoomThreadPanel';
 
@@ -35,7 +33,7 @@ export interface RoomSurfaceProps {
   /** Which address the open thread is mirrored into. */
   threadRoute: ThreadRoute;
   /**
-   * Chrome this host puts between the room's masthead and its feed.
+   * Chrome this host puts between the bar and this room's feed.
    *
    * **Outside the scroller, deliberately.** The home surface's pinned triage
    * header changes height as approvals are answered, and a height change INSIDE
@@ -82,30 +80,10 @@ export interface RoomSurfaceProps {
    * panel, which covers the chrome anyway.
    */
   onComposerFocusChange?: (focused: boolean) => void;
-  /**
-   * Draw the room without its masthead, because the host's bar already is one.
-   *
-   * On for Home and Home only (phase H1). Home's identity is the Home tab in
-   * the bar, not the room's name — so the masthead under it was a second
-   * identity row for a page that already had one, and it pushed the feed down a
-   * whole row on every phone. What tells you which room you are in is the
-   * members chip beside the tabs and the composer that says "Message #team…".
-   *
-   * **Two things go with the masthead, and only one comes back here.** The
-   * roster button is the members chip in the bar. The "N agents working" chip
-   * and the room-wide Stop are NOT replaced on Home: the live lane's stop-all
-   * above the composer is the reach that survives, and phase R1 builds the room
-   * state chips the channel bar needs — Home wears them then.
-   *
-   * A prop rather than a deletion: `/channels` still needs the masthead until
-   * phase R1 gives it a room bar of its own, and a room drawn with no identity
-   * anywhere is worse than one drawn with it twice.
-   */
-  hideHeader?: boolean;
 }
 
 /**
- * One room, whole: masthead, feed, composer, presence line and thread panel.
+ * One room, whole: feed, composer, presence line and thread panel.
  *
  * The room machinery every surface that shows a room renders — `/channels`
  * addresses one by search param, and the home tab renders #team through this
@@ -134,7 +112,6 @@ export function RoomSurface({
   aboveComposer,
   offerJumpBackIn,
   onComposerFocusChange,
-  hideHeader = false,
 }: RoomSurfaceProps) {
   const isMobile = useIsMobile();
   // How much of the screen a software keyboard is currently eating. `0`
@@ -163,10 +140,11 @@ export function RoomSurface({
   const roomQuery = useRoom(roomId);
   const entriesQuery = useRoomEntries(roomId);
   const stream = useRoomStream(roomId, entriesQuery.isSuccess);
-  // Two of spec §14.3's three entry points are on this surface — the header's
-  // roster and the empty state — and both open the one panel the sidebar's row
-  // menu opens. The panel reads its own fleet, which is what lets this page
-  // open it without holding one; the sidebar may be a closed drawer here.
+  // One of spec §14.3's entry points is still on this surface: the empty
+  // state's "add agents". The roster door moved to the bar's members chip with
+  // the masthead (phase R1) and opens the same panel from there. The panel reads
+  // its own fleet, which is what lets this page open it without holding one; the
+  // sidebar may be a closed drawer here.
   const [detailsFocus, setDetailsFocus] = useState<RoomDetailsFocus | null>(null);
 
   const room = roomQuery.data;
@@ -268,10 +246,6 @@ export function RoomSurface({
   if (roomQuery.isLoading) {
     return (
       <div className="flex h-full flex-col" aria-busy>
-        <div className="flex items-center gap-3 border-b px-4 py-3">
-          <Skeleton className="size-7 rounded-full" />
-          <Skeleton className="h-4 w-40" />
-        </div>
         <RoomHistorySkeleton />
       </div>
     );
@@ -316,8 +290,7 @@ export function RoomSurface({
 
   const roomColumn = (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-      {!hideHeader && <RoomHeader room={room} onOpenMembers={() => setDetailsFocus('members')} />}
-      {/* The host's chrome, between the masthead and the scroller and inside
+      {/* The host's chrome, between the bar and the scroller and inside
           neither — see `RoomSurfaceProps.aboveTimeline` for why that placement
           is the whole point. */}
       {aboveTimeline}

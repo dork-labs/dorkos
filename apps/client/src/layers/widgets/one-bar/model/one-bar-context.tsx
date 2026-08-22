@@ -1,5 +1,6 @@
 import { createContext, use, type ReactNode } from 'react';
 import type { SessionOrigin } from '@dorkos/shared/types';
+import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { TeamViewMode } from '@/layers/shared/lib';
 
 /**
@@ -22,11 +23,22 @@ export interface OneBarRouteState {
   /** The session's own origin label, preferred over the descriptor's fallback. */
   originLabel: string | undefined;
   /**
-   * The open room's spoken name on `/channels`, resolved once by the shell
-   * (`useRoomDocumentTitle`) — the same room, resolved the same way the browser
-   * tab already uses it, so the two can never disagree about what is open.
+   * The open room on `/channels`, roster and all, resolved once by the shell
+   * (`useRoomDocumentTitle`).
+   *
+   * The whole room rather than only its name, because the channel bar says four
+   * more things about it — archived, bridge visibility, how many are working,
+   * how many are in it — and every one of them is a field on this object. One
+   * resolution, shared: the browser tab and the bar read the same room through
+   * the same query, so they can never disagree about what is open, and the bar
+   * costs no request of its own (`useRoom` is a TanStack cache read of the query
+   * the page below already runs).
+   *
+   * `null` off `/channels`, and on it whenever the id is missing, unknown or
+   * archived — which is exactly when the bar falls back to a plain "Channels"
+   * title beside the page saying the conversation isn't here (spec §5 case 6).
    */
-  roomTitle: string | null;
+  room: RoomWithRoster | null;
   /**
    * Which `/team` view is showing. Read off the URL rather than through
    * `useSearch`, so the header keeps rendering during a route exit animation.

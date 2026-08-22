@@ -7,7 +7,7 @@ export const emptyBarState: OneBarRouteState = {
   agentName: undefined,
   origin: undefined,
   originLabel: undefined,
-  roomTitle: null,
+  room: null,
   teamViewMode: 'cards',
 };
 

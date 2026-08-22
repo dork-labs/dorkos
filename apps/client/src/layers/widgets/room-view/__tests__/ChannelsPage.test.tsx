@@ -281,29 +281,11 @@ describe('ChannelsPage members-panel entry points', () => {
     };
   }
 
-  it('opens the panel from the header roster, which used to do nothing at all', async () => {
-    // With an agent in it, deliberately: an EMPTY room opens the sheet's picker
-    // whichever door was used, so it could not tell the two doors apart.
-    renderPage({
-      ...fleet,
-      getRoom: vi.fn((id: string) => Promise.resolve(peopled(id, 'general', true))),
-    });
-
-    // Named for the action and the room, not "2 members" — the roster is what
-    // you press, so it has to say what pressing it does.
-    const roster = await screen.findByRole('button', {
-      name: 'Members of #general, 2 members',
-    });
-    fireEvent.click(roster);
-
-    const panel = await screen.findByRole('dialog', { name: '#general' });
-    await within(panel).findByRole('region', { name: 'Current members' });
-    // The roster half, because that is what the header asked for: adding is
-    // still one row at the foot of the list rather than an open field.
-    expect(within(panel).getByRole('button', { name: 'Add agents' })).toBeInTheDocument();
-    expect(within(panel).queryByLabelText('Search agents')).not.toBeInTheDocument();
-  });
-
+  // **The roster door is not on this page any more.** It moved to the bar's
+  // members chip with the masthead (phase R1): `ChannelsBar.test.tsx` proves the
+  // press asks for the members focus, and `RoomDetailsDialog.test.tsx` proves
+  // that focus draws the roster. What remains here is the empty state's door,
+  // which is still this page's own.
   it('makes the empty state say what is wrong, and gives it the button it promises', async () => {
     // A channel with no agents in it answers nothing. The empty state used to
     // tell you to add some and offer no way to do it.

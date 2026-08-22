@@ -1,14 +1,19 @@
+import { useEffect } from 'react';
 import { Plus } from 'lucide-react';
-import { Badge, BarTabStrip, Button, type BarTab } from '@/layers/shared/ui';
+import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { BarTabStrip, Button, type BarTab } from '@/layers/shared/ui';
+import { useRoomWorkingStore } from '@/layers/entities/room';
 import { SystemHealthDot } from '@/layers/features/top-nav';
 import {
   OneBar,
   BarTitle,
   BarMembersChip,
+  ChannelsBar,
   TitleBar,
   OneBarProvider,
   BarFixedCluster,
 } from '@/layers/widgets/one-bar';
+import { ARCHIVED_ROOM, BRIDGED_CHANNEL_ROOM, CHANNEL_ROOM, DM_ROOM } from './rooms-showcase-data';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -64,9 +69,52 @@ const QUIET_BAR_STATE = {
   agentName: undefined,
   origin: undefined,
   originLabel: undefined,
-  roomTitle: null,
+  room: null,
   teamViewMode: 'cards',
 } as const;
+
+/** A room whose name and topic are both longer than any bar can hold. */
+const WORDY_ROOM: RoomWithRoster = {
+  ...CHANNEL_ROOM,
+  id: 'room-wordy',
+  slug: 'quarterly-migration-planning-and-rollout',
+  title: 'quarterly-migration-planning-and-rollout',
+  topic: 'Everything about moving the last three services off the old cluster before the freeze',
+};
+
+/**
+ * One real {@link ChannelsBar}, for one room, at one width.
+ *
+ * The bar reads its room from `OneBarProvider` exactly as the shell supplies it,
+ * so what renders here is the component the route mounts rather than a mock of
+ * its shape.
+ *
+ * **`working` seeds the live presence store**, which is the only honest way to
+ * show the mid-run state: the count comes from the same store the real fan-out
+ * writes to, so the chip and the Stop beside it are the real ones behaving the
+ * real way. Keyed by room id, so the quiet bars above stay quiet.
+ */
+function ChannelBarFrame({
+  room,
+  working = 0,
+  width,
+}: {
+  room: RoomWithRoster;
+  working?: number;
+  width?: number;
+}) {
+  useEffect(() => {
+    useRoomWorkingStore.getState().observe({ roomId: room.id, working });
+  }, [room.id, working]);
+
+  return (
+    <OneBarProvider value={{ ...QUIET_BAR_STATE, room }}>
+      <BarFrame width={width}>
+        <ChannelsBar />
+      </BarFrame>
+    </OneBarProvider>
+  );
+}
 
 /**
  * The One Bar primitive and the tab strip that fills its identity zone.
@@ -178,25 +226,52 @@ export function OneBarShowcases() {
           </BarFrame>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Chips and actions — a room bar's shape (phase R1)</ShowcaseLabel>
+        <ShowcaseLabel>
+          The channel bar — the room&apos;s only masthead now. Name, topic, and the chips that say
+          what is true of it
+        </ShowcaseLabel>
         <ShowcaseDemo>
-          <BarFrame>
-            <OneBar
-              identity={<BarTitle>#general</BarTitle>}
-              chips={
-                <>
-                  <Badge variant="secondary">Archived</Badge>
-                  <Badge variant="outline">2 working</Badge>
-                </>
-              }
-              actions={
-                <Button variant="outline" size="xs">
-                  <Plus />
-                  New Agent
-                </Button>
-              }
-            />
-          </BarFrame>
+          <ChannelBarFrame room={CHANNEL_ROOM} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          A direct message — no `#`, and the name is whatever the conversation was opened as
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={DM_ROOM} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          An archived room says so, and a bridged one says what it can see
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={ARCHIVED_ROOM} />
+        </ShowcaseDemo>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={BRIDGED_CHANNEL_ROOM} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Mid-run: the working count and Stop light up in space that was already theirs, so nothing
+          beside them moves (I3). Compare the room name&apos;s position with the quiet bar above
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={CHANNEL_ROOM} working={3} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          A long name and a long topic at 420px — the topic goes first, then the name ellipsizes,
+          and the cluster never shrinks (I2)
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={WORDY_ROOM} width={420} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The channel bar at 390px — the topic is gone entirely and Stop keeps only its icon
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={CHANNEL_ROOM} working={2} width={390} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>
