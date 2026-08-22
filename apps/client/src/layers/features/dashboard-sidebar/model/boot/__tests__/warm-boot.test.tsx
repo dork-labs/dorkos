@@ -23,6 +23,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { createBootCache, HttpTransport } from '@/layers/shared/lib';
+import { powerFixture } from '../../fixtures/power';
 // Heads up's three sources are the one part of the gate that is mocked here,
 // and only because they ride a live event stream this harness has no server
 // for. They are also the three the allow-list deliberately EXCLUDES — what
@@ -158,5 +159,50 @@ describe('booting the sidebar from local memory', () => {
     expect(secondMount.result.current.startedWarm).toBe(false);
     expect(secondMount.result.current.phase).toBe('cold');
     secondMount.unmount();
+  });
+
+  it('stays far inside a browser’s storage budget at the busiest scale we design for', () => {
+    // The `power` fixture is the fleet the design has to hold its shape under —
+    // 32 agents, 60 rooms, 40 sessions — and its payloads ARE the wire shapes
+    // these queries return, so this measures the real blob rather than a guess
+    // at one.
+    const client = new QueryClient();
+    client.setQueryData(['config', 'current'], { userSettings: powerFixture.prefs });
+    client.setQueryData(['rooms', 'list', null], powerFixture.rooms);
+    client.setQueryData(['rooms', 'threads'], powerFixture.threads);
+    client.setQueryData(['mesh', 'agent-paths'], {
+      agents: powerFixture.agents.map((entry) => ({
+        agentId: entry.path,
+        projectPath: entry.path,
+      })),
+    });
+    client.setQueryData(
+      ['agents', 'resolved', ...powerFixture.agents.map((entry) => entry.path)],
+      Object.fromEntries(powerFixture.agents.map((entry) => [entry.path, entry]))
+    );
+    client.setQueryData(['recent-sessions', 24], powerFixture.sessions);
+    client.setQueryData(['team'], powerFixture.agents);
+
+    const cache = createBootCache({
+      transport: new HttpTransport('/api'),
+      apiBaseUrl: '/api',
+      buster: '1.0.0',
+      storage: fakeStorage(),
+    })!;
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({
+        buster: '1.0.0',
+        timestamp: Date.now(),
+        clientState: dehydrate(client, cache.persistOptions.dehydrateOptions),
+      })
+    ).length;
+
+    // Measured at 46,653 bytes — about 46 KB for the busiest fleet the design
+    // covers. A browser gives an origin roughly 5 MB of `localStorage`, shared
+    // with everything else the cockpit keeps there, so a quarter of a megabyte
+    // is the line: five times the real figure, and low enough that crossing it
+    // means something got into the allow-list that does not belong — a
+    // transcript, a room's history — rather than that a person's fleet grew.
+    expect(bytes).toBeLessThan(256 * 1024);
   });
 });

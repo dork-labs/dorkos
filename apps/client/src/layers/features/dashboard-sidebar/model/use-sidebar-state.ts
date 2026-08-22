@@ -406,12 +406,23 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
   // empty fleet, and Getting started's whole first suggestion turns on that.
   // It used to ask three of the queries itself; the gate asks all seven (and
   // gives up after 1.5s), so the answer is the same one the panel paints with.
+  //
+  // **Not `settled` on its own** (task 3.2). The gate also waits on Heads up's
+  // three sources, and those are the three the persisted cache deliberately does
+  // NOT keep — a stale "three things need you" that resolves to zero is a
+  // confident lie. So on a warm reload `settled` was still false for a round
+  // trip while every fact THIS question depends on — the roster, the recents,
+  // the rooms — was already in hand, and Getting started grew in at the top of a
+  // panel that had finished painting, pushing everything below it down. A
+  // browser probe caught it (`boot-stability.spec.ts`). `phase !== 'cold'` is
+  // exactly "the seven shape sources have answered, from the network or from
+  // local memory", which is the question `rosterResolved` actually asks.
   const journey = useJourneyFacts({
     agents,
     agentActivity,
     sessionCount: sessions.length,
     rooms,
-    rosterResolved: boot.settled,
+    rosterResolved: boot.phase !== 'cold',
   });
 
   const state = useMemo(
