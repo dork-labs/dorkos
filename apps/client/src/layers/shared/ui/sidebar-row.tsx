@@ -175,18 +175,6 @@ function useReservationGuard(
 }
 
 /**
- * The welcome-back beat, as a class (BC-49).
- *
- * A constant rather than a literal for one reason: `animate-welcome-back-glow`
- * is a Tailwind `@utility` declared in `index.css`, and a class name that does
- * not match one is silently nothing at all. This repo has shipped exactly that
- * bug before — ~20 call sites wore `animate-tasks` for months while no keyframe
- * by that name existed — so the name lives in one place, and a test reads
- * `index.css` to prove the utility and its keyframes are really there.
- */
-export const WELCOME_BACK_GLOW = 'motion-safe:animate-welcome-back-glow';
-
-/**
  * The second line's own height, held whether or not there are words in it.
  *
  * `min-h-4` with `leading-4`, so a reserved-but-silent verb line is exactly as
@@ -363,21 +351,6 @@ export interface SidebarRowProps {
    * pointer (BC-24).
    */
   reservesVerbLine?: boolean;
-  /**
-   * This row's work finished while you were away — glow amber once, then never
-   * again (BC-49).
-   *
-   * **Read once, at mount.** "On first paint" is the whole of the moment: a
-   * glow that could be re-armed by a prop flipping back and forth would be a
-   * row that pulses at you every time the model rebuilds. So the value is
-   * latched when the row mounts and every later change to it is ignored.
-   *
-   * `motion-safe` only, and gated at the class rather than inside the
-   * animation: under a reduced-motion preference the utility is never applied
-   * and nothing renders at all. Nothing is lost by that — the beat is an
-   * announcement about the past, not a fact the row would otherwise be missing.
-   */
-  welcomeBack?: boolean;
   /** One line about the last thing that happened here, or `null` for none. */
   preview?: string | null;
   /** This row is the thing currently on screen. */
@@ -464,7 +437,6 @@ export function SidebarRow({
   trailingAction,
   secondLine,
   reservesVerbLine,
-  welcomeBack = false,
   preview,
   menuNodes = [],
   actionsLabel,
@@ -505,12 +477,6 @@ export function SidebarRow({
   // A verb node when there is one, the preview otherwise.
   const previewLine = preview?.trim() ? preview : null;
   const second = reservesVerbLine === true ? (secondLine ?? previewLine) : previewLine;
-  // Latched, never watched. A `useState` initializer rather than a ref written
-  // during render: React invokes it twice under StrictMode and keeps the first
-  // result, where a ref mutated mid-render would be set on the first pass and
-  // read as already-played on the second, and the glow would never appear in
-  // development. See {@link SidebarRowProps.welcomeBack}.
-  const [glowOnce] = useState(() => welcomeBack);
   // The reservation, watched in development for the one thing it must not
   // contain. See {@link useReservationGuard}.
   const reservationRef = useRef<HTMLSpanElement>(null);
@@ -546,9 +512,6 @@ export function SidebarRow({
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
             : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground',
           emphasized && !isActive && !muted && 'text-sidebar-foreground font-medium',
-          // BC-49. `motion-safe:` is the whole reduced-motion contract — the
-          // utility is not applied at all, so there is no glow to suppress.
-          glowOnce && WELCOME_BACK_GLOW,
           className,
           // LAST, deliberately — after the caller's `className` too. This is the
           // one property a call site may not have: the gutter is what holds the

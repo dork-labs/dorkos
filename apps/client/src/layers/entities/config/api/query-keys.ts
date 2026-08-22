@@ -1,13 +1,11 @@
 /**
- * Query key factory for the config entity. Centralizing keys here lets
- * mutation hooks invalidate every query that depends on `/config` without
- * each callsite needing to know the literal key.
+ * The config entity's query key — re-exported from `shared/`, where it now
+ * lives so that every layer can reach it (`shared/model/server-config/query-keys`).
+ *
+ * Kept as a re-export rather than deleted: `@/layers/entities/config` is where
+ * the rest of the app already imports `configKeys` from, and the key belonging
+ * to the entity is still the right story to tell at this layer.
  *
  * @module entities/config/api/query-keys
  */
-export const configKeys = {
-  /** Root key for all config queries. */
-  all: ['config'] as const,
-  /** Current server config (version, ports, features, telemetry consent). */
-  current: () => [...configKeys.all, 'current'] as const,
-};
+export { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/shared/model';

@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
+import { configKeys } from '@/layers/shared/model';
 
 /**
  * Manage mesh scan roots — reads from server config with boundary fallback,
@@ -11,7 +12,7 @@ export function useMeshScanRoots() {
   const queryClient = useQueryClient();
 
   const { data: config } = useQuery({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: 5 * 60 * 1000,
   });
@@ -27,7 +28,7 @@ export function useMeshScanRoots() {
       await transport.updateConfig({ mesh: { scanRoots: newRoots } });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['config'] });
+      queryClient.invalidateQueries({ queryKey: configKeys.all });
     },
   });
 

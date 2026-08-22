@@ -58,6 +58,17 @@ export interface UseDigestFactsInput {
   interactions: InteractionTimestamps;
   /** The stored `lastShownDate`, as prefs currently report it. */
   storedLastShownDate: string | undefined;
+  /**
+   * Whether the panel's boot gate has opened.
+   *
+   * **The latch below is worthless without it.** Prefs arrive from the config
+   * query, so at mount `storedLastShownDate` is `undefined` no matter what is
+   * on disk — and a latch taken there records "never shown", which defeats the
+   * once-a-day rule the latch exists to enforce: the row could appear a second
+   * time the same day, and the write that says so fires again with it. So the
+   * latch waits for the first settled model (spec `sidebar-simplification` D6).
+   */
+  settled: boolean;
 }
 
 /** What {@link useDigestFacts} answers with. */
@@ -245,14 +256,34 @@ function countIdleWhileAway(
  * @param input - The clock, the sessions, the interactions and stored prefs.
  */
 export function useDigestFacts(input: UseDigestFactsInput): DigestFacts {
-  const { now, sessions, workingSessionIds, sessionStatuses, interactions, storedLastShownDate } =
-    input;
+  const {
+    now,
+    sessions,
+    workingSessionIds,
+    sessionStatuses,
+    interactions,
+    storedLastShownDate,
+    settled,
+  } = input;
   const welcomeBack = useWelcomeBack();
   const { update } = useUpdateSidebarPrefs();
 
-  // Latched at mount. Reading the live pref would make the row erase itself
-  // the moment it recorded that it had appeared.
-  const [lastShownDate] = useState(() => storedLastShownDate);
+  // Latched at the first SETTLED model, not at mount. Reading the live pref
+  // would make the row erase itself the moment it recorded that it had
+  // appeared; latching at mount would read the pref before the config query has
+  // answered, which is `undefined` on every load and means "never shown".
+  //
+  // **In an effect, and `null` means "not yet".** A latch written during render
+  // would take its value from whichever render happened to be the first settled
+  // one, which under StrictMode's double invocation is not a stable thing to
+  // hang a persisted write on. The cost is one frame in which the date is
+  // unknown, and `showing` below refuses to fire during it — the row waits a
+  // frame rather than spending the day's one showing on a guess.
+  const [latched, setLatched] = useState<{ value: string | undefined } | null>(null);
+  useEffect(() => {
+    if (settled && latched === null) setLatched({ value: storedLastShownDate });
+  }, [settled, latched, storedLastShownDate]);
+  const lastShownDate = latched?.value;
 
   // "Opened any conversation" — the dissolve (BC-22). Compared by VALUE, not by
   // the map's identity: identity happens to be stable in the running app
@@ -298,7 +329,13 @@ export function useDigestFacts(input: UseDigestFactsInput): DigestFacts {
   // write lives. A third spelling of them would be a third thing to keep in
   // step; a call into the rule would need a whole snapshot to answer one bit.
   const today = localDateKey(now);
-  const showing = digest.finishedWhileAwayCount > 0 && lastShownDate !== today;
+  // The latch is the third condition, and it guards the WRITE as much as the
+  // row: firing the once-a-day memory off a pref nobody has read yet spends the
+  // day's one showing on a frame the operator never saw. Asked as "has the
+  // latch closed" rather than "is the panel settled", because those differ by
+  // exactly the one frame between the settled render and the effect that reads
+  // the pref — and that frame is when the pref is still unknown.
+  const showing = latched !== null && digest.finishedWhileAwayCount > 0 && lastShownDate !== today;
   const written = useRef(false);
   useEffect(() => {
     if (!showing || written.current) return;

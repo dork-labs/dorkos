@@ -45,6 +45,7 @@ import {
   GEN_UI_SECTIONS,
   ROOMS_SECTIONS,
   TOUR_SPOTLIGHT_SECTIONS,
+  SIDEBAR_BOOT_SECTIONS,
   SIDEBAR_MODEL_SECTIONS,
   ONE_BAR_SECTIONS,
 } from './playground-registry';
@@ -355,6 +356,16 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'app-shell',
     sections: SIDEBAR_MODEL_SECTIONS,
     path: 'sidebar-model',
+  },
+  {
+    id: 'sidebar-boot',
+    label: 'Sidebar Boot',
+    description:
+      'How the panel comes up — warm in its final shape, or cold as bones replaced in one reveal.',
+    icon: PanelLeft,
+    group: 'app-shell',
+    sections: SIDEBAR_BOOT_SECTIONS,
+    path: 'sidebar-boot',
   },
   {
     id: 'one-bar',

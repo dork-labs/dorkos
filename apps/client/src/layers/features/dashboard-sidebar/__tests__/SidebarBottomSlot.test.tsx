@@ -23,6 +23,13 @@ let updateReady = false;
 let profileVisible = false;
 let promoQualifies = false;
 
+// A settled panel, so these cases are about what they are named after rather
+// than about the boot gate. The gate's own behaviour is covered in
+// `model/boot/__tests__` (spec `sidebar-simplification` D6).
+vi.mock('../model/boot/use-boot-state', () => ({
+  useBootState: () => ({ phase: 'settled', settled: true, fleetKnown: true, startedWarm: false }),
+}));
+
 vi.mock('@/layers/features/onboarding', () => ({
   useOnboarding: () => ({
     shouldShowGettingStarted: gettingStarted,

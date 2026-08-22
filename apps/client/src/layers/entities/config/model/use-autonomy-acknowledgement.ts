@@ -7,7 +7,7 @@
  * autonomy change instead of stopping to ask, and Settings, which shows the date
  * back with a way to reset it.
  *
- * The read rides {@link useConfig}, the shared `['config']` query the cockpit
+ * The read rides {@link useConfig}, the one config query the cockpit
  * already subscribes to, so nothing here adds a request.
  *
  * @module entities/config/model/use-autonomy-acknowledgement

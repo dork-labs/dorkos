@@ -18,6 +18,7 @@ import {
   MOCK_SERVER_CONFIG,
   type RuntimeCardShowcaseOptions,
 } from './settings-mock-data';
+import { configKeys } from '@/layers/entities/config';
 
 /**
  * Wraps children in a fresh `QueryClient` prepopulated with mock query data so
@@ -25,11 +26,10 @@ import {
  * network calls. Query keys are kept in sync with the actual hooks in
  * `apps/client/src/layers/features/settings/ui/*` — verified via grep.
  *
- * The config is seeded under BOTH `['config']` and `['config','current']`: the
- * settings tabs and `useFeatureEnabled` read the bare key while
- * `entities/config`'s `useConfig` (and the Claude accounts card and status-bar
- * switcher through it) read the nested one. Seeding one leaves the other empty
- * and the showcase renders a loading branch nobody asked for.
+ * The config is seeded under `configKeys.current()` and nothing else — every
+ * reader in the cockpit is on that one key now (spec `sidebar-simplification`
+ * D6, "one fetch per fact"), and a showcase that seeded a second one would keep
+ * a dead entry alive.
  *
  * @param children - Showcase content to render.
  * @param config - Server config to seed; defaults to {@link MOCK_SERVER_CONFIG}.
@@ -45,8 +45,7 @@ export function MockedQueryProvider({
     const c = new QueryClient({
       defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
     });
-    c.setQueryData(['config'], config);
-    c.setQueryData(['config', 'current'], config);
+    c.setQueryData(configKeys.current(), config);
     c.setQueryData(['mesh', 'agents'], MOCK_MESH_AGENTS);
     return c;
   });
