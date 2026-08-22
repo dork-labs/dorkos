@@ -1,7 +1,7 @@
 ---
 id: 260821-205323
 title: The billing account resolves through a launch-time ladder; disk stays per-session truth
-status: draft
+status: proposed
 created: 2026-08-21
 spec: billing-account-ladder
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: billing-account-ladder)
+Proposed (implemented by spec billing-account-ladder, shipped 2026-08-22 in PRs #1166/#1183/#1185)
 
 ## Context
 

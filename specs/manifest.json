@@ -2715,7 +2715,7 @@
       "slug": "billing-account-ladder",
       "title": "Billing Account Ladder: default → per-agent → per-session",
       "created": "2026-08-21",
-      "status": "specified"
+      "status": "implemented"
     }
   ]
 }
