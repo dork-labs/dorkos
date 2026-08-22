@@ -127,6 +127,29 @@ export const PLUGIN_RELOAD_ACK_TIMEOUT_MS = 8_000;
  */
 export const MODEL_PROBE_ACK_TIMEOUT_MS = 10_000;
 
+/**
+ * A control request went unanswered for its whole bound.
+ *
+ * Its own class so a caller can tell "the CLI could not hear us" apart from "the
+ * CLI answered with a failure" — the two deserve different logs, and only the
+ * first says anything about the health of the channel.
+ */
+export class ControlRequestTimeoutError extends Error {
+  /**
+   * Name the request that went unanswered and the bound it outlived.
+   *
+   * @param request - The control call, e.g. `reloadPlugins`
+   * @param timeoutMs - The bound it was held to
+   */
+  constructor(
+    readonly request: string,
+    readonly timeoutMs: number
+  ) {
+    super(`the CLI did not answer ${request} within ${timeoutMs}ms`);
+    this.name = 'ControlRequestTimeoutError';
+  }
+}
+
 /** What a bounded control request concluded. */
 export type ControlAck =
   /** The CLI answered: the stop was delivered. */
@@ -175,5 +198,48 @@ export async function awaitControlAck(
     return await Promise.race([settled, expiry]);
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Make one control request against a wall clock, and keep its answer.
+ *
+ * The sibling of {@link awaitControlAck}, for the requests whose VALUE the
+ * caller needs — the model list, the reload report — where an ack alone says
+ * nothing. Same two load-bearing details as its sibling: the request is invoked
+ * here, so a synchronous throw is just a rejection; and the losing promise keeps
+ * a rejection handler, so a request that fails after the bound expired does not
+ * surface as an unhandled rejection.
+ *
+ * Failure is a rejection, not a sentinel, because every caller of this form
+ * already has a catch that treats "no answer" as "no fresh data". A timeout
+ * rejects with {@link ControlRequestTimeoutError}; a refusal rejects with
+ * whatever the SDK threw.
+ *
+ * @param request - The control call to make, e.g. `() => query.reloadPlugins()`.
+ * @param timeoutMs - The bound to hold it to, from the table above.
+ * @param name - What to call the request in the timeout message.
+ * @returns What the request answered.
+ * @throws ControlRequestTimeoutError When nothing answered inside the bound.
+ */
+export async function requestWithinBound<T>(
+  request: () => Promise<T>,
+  timeoutMs: number,
+  name: string
+): Promise<T> {
+  const settled: Promise<T> = (async () => request())();
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const expiry = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new ControlRequestTimeoutError(name, timeoutMs)), timeoutMs);
+      timer.unref?.();
+    });
+    return await Promise.race([settled, expiry]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    // The request may still fail long after the bound took the decision away
+    // from it. Nobody is waiting on it by then, so without this its rejection
+    // is unhandled.
+    settled.catch(() => {});
   }
 }

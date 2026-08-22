@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   ModelOption,
   SubagentInfo,
@@ -26,6 +27,11 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 
 import { RuntimeCache, mapSdkModelToModelOption } from '../messaging/runtime-cache.js';
+import {
+  ControlRequestTimeoutError,
+  MODEL_PROBE_ACK_TIMEOUT_MS,
+  PLUGIN_RELOAD_ACK_TIMEOUT_MS,
+} from '../sessions/bounded-control.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -972,6 +978,67 @@ describe('RuntimeCache', () => {
       expect(cache.getMcpStatus('/projectB')![0].name).toBe('mcp-b');
       expect(cache.getSupportedSubagents('/projectA')[0].name).toBe('agent-a');
       expect(cache.getSupportedSubagents('/projectB')[0].name).toBe('agent-b');
+    });
+  });
+
+  // =========================================================================
+  // Bounded control requests (DOR-1301)
+  // =========================================================================
+
+  describe('control requests are bounded (DOR-1301)', () => {
+    /** A query that hears nothing — the SDK's answer on an ended stdin. */
+    const deafQuery = () => ({
+      reloadPlugins: vi.fn(() => new Promise<never>(() => {})),
+      supportedModels: vi.fn(() => new Promise<never>(() => {})),
+      close: vi.fn(),
+    });
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('gives up on a plugin reload the CLI never answers, instead of waiting for ever', async () => {
+      const mockQuery = deafQuery();
+
+      const reloading = cache.reloadPlugins(mockQuery as never, '/project', '/default');
+      const settled = reloading.catch((err: unknown) => err);
+      await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_ACK_TIMEOUT_MS);
+
+      expect(await settled).toBeInstanceOf(ControlRequestTimeoutError);
+      // Nothing was learned, so nothing is cached as if it had been.
+      expect(cache.getMcpStatus('/project')).toBeNull();
+    });
+
+    it('abandons a warm-up whose model probe never answers, closing the process it started', async () => {
+      const mockQuery = deafQuery();
+      vi.mocked(query).mockReturnValue(mockQuery as never);
+      cache.setDefaultCwd('/project');
+
+      const warming = cache.warmup('/project');
+      await vi.advanceTimersByTimeAsync(MODEL_PROBE_ACK_TIMEOUT_MS);
+      await expect(warming).resolves.toBeUndefined();
+
+      expect(mockQuery.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets a later warm-up try again, rather than deduplicating onto a promise that never settles', async () => {
+      vi.mocked(query).mockReturnValue(deafQuery() as never);
+      const first = cache.warmup('/project');
+      await vi.advanceTimersByTimeAsync(MODEL_PROBE_ACK_TIMEOUT_MS);
+      await first;
+
+      const answered = {
+        supportedModels: vi.fn().mockResolvedValue([{ value: 'claude-opus-4-6', displayName: 'Opus', description: 'the big one' }]),
+        close: vi.fn(),
+      };
+      vi.mocked(query).mockReturnValue(answered as never);
+      await cache.warmup('/project');
+
+      expect(answered.supportedModels).toHaveBeenCalledTimes(1);
+      expect(await cache.getSupportedModels()).toHaveLength(1);
     });
   });
 });
