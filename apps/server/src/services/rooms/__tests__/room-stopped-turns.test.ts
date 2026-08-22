@@ -586,6 +586,20 @@ describe('a room says when a turn has stopped', () => {
       await wired.service.triggersIdle();
     });
 
+    it('leaves an agent that was not running anything free to post here', async () => {
+      // The refusal is aimed at a TURN somebody stopped, never at a member of
+      // the room. Stop pressed in a quiet channel stops nothing, so an agent
+      // that later reaches for the tool from a turn in another room — the one
+      // thing `post_to_room` is for — must still be able to speak here. Marking
+      // the roster instead of the claims would silence it until somebody
+      // triggered it, which is the mute this mechanism must never become.
+      expect(await service.haltRoom(room.id, human)).toBe(0);
+
+      expect(
+        service.postFromTool(room.id, { authorId: ana, text: 'the deploy is green' }).body.text
+      ).toBe('the deploy is green');
+    });
+
     it('does not let a stopped turn release the claim of the turn that replaced it', async () => {
       // **A claim key is `(room, agent)`; a turn is a DISPATCH — and a halt is
       // the one thing that pulls them apart.** Stop drops the claim, the person
