@@ -2,6 +2,7 @@
 covers:
   - 'feat(client,shared): pick the billing account for a single chat (DOR-1407)'
   - 'fix(client): the account picker tells the truth about what it will bill (DOR-1407)'
+  - 'fix(client): only a positive registry read may end a billing pick (DOR-1407)'
 ---
 
 ### Added
