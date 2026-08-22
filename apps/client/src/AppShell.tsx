@@ -224,7 +224,7 @@ export function AppShell() {
   const agentVisual = useAgentVisual(currentAgent ?? null, selectedCwd ?? '');
   // The tab names the room you are reading when there is one, and counts the
   // rooms waiting on you whichever route you are on (spec `rooms` §13.1/§13.3).
-  const { roomTitle, unreadRoomCount } = useRoomDocumentTitle();
+  const { room: openRoom, roomTitle, unreadRoomCount } = useRoomDocumentTitle();
   useFavicon({
     cwd: selectedCwd,
     isStreaming,
@@ -377,7 +377,7 @@ export function AppShell() {
       originLabel: activeSessionOriginLabel,
       sessionTitle: activeSessionTitle,
       sessionDirectoryName: selectedCwd ? basename(selectedCwd) : undefined,
-      roomTitle,
+      room: openRoom,
       // Read straight off the URL rather than through `useSearch`, so the bar
       // keeps rendering during a route exit animation — and normalized through
       // the same function the route validates with, so the bar and the page can
@@ -392,7 +392,7 @@ export function AppShell() {
       activeSessionOriginLabel,
       activeSessionTitle,
       selectedCwd,
-      roomTitle,
+      openRoom,
       searchStr,
     ]
   );

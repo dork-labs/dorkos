@@ -101,7 +101,7 @@ const COLLECT_WINDOW_DEFAULT_MS = 500;
  * moment it is raised, every `long-turn` finishes at its first heartbeat, which
  * is what a test watching something drain actually wants. The cost is that the
  * next test to need a turn that STAYS running silently gets one that does not —
- * and the way that shows up is `room-header-halt` never rendering, which reads
+ * and the way that shows up is the room never reporting itself busy, which reads
  * as "the Stop button is broken" rather than "there was nothing to stop". That
  * cost a debugging cycle here.
  *
@@ -135,7 +135,7 @@ async function requireTestModeLeg(request: APIRequestContext): Promise<void> {
  * server-global, so a neighbour that resets it between this call and the turn
  * that needs it leaves the test driving a runtime it did not choose — and the
  * two ways that shows up both read as product bugs: an instant turn means
- * `room-header-halt` never renders ("the Stop button is broken"), and an
+ * the room never reports itself busy ("the Stop button is broken"), and an
  * unexpected `long-turn` means a reply says `Working on it` instead of echoing
  * ("the room answered the wrong message"). Both happened here before this file
  * was made serial. Serial fixes it TODAY; this is what will name the cause if
@@ -220,6 +220,57 @@ async function openRoom(
   await page.goto(`/channels?id=${roomId}`);
   await basePage.waitForAppReady();
   await expect(roomsPage.roomHeader).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+}
+
+/**
+ * Wait until the bar says this room is busy.
+ *
+ * **Not `toBeVisible()` on the Stop button, and that distinction is the whole
+ * reason this helper exists.** Since phase R1 the working chip and Stop are
+ * mounted at ALL times and merely faded out while the room is idle (spec I3, so
+ * they cannot shove the room's name sideways when a turn starts). Playwright
+ * counts an `opacity: 0` element with a box as visible, so the old barrier —
+ * "wait for Stop to appear" — passed instantly on an idle room and let every
+ * test below it run before the turn had started. `data-idle` is the state
+ * itself rather than a proxy for it.
+ *
+ * @param page - The page under test.
+ */
+async function expectRoomBusy(page: Page): Promise<void> {
+  await expect(page.getByTestId('room-run-state')).toHaveAttribute('data-idle', 'false', {
+    timeout: SERVER_ROUND_TRIP_MS,
+  });
+}
+
+/**
+ * Wait until the bar says nothing is running here.
+ *
+ * The counterpart to {@link expectRoomBusy}, and the reason a halt can still be
+ * observed: the controls do not leave the DOM when the work stops, so their
+ * ABSENCE is no longer the signal. Their idle state is.
+ *
+ * @param page - The page under test.
+ */
+async function expectRoomIdle(page: Page): Promise<void> {
+  await expect(page.getByTestId('room-run-state')).toHaveAttribute('data-idle', 'true', {
+    timeout: SERVER_ROUND_TRIP_MS,
+  });
+}
+
+/**
+ * Assert how many agents the bar says are working here.
+ *
+ * The chip shows the bare count and carries the sentence in its accessible name
+ * (the 36px bar has no room for "2 agents working"), so this reads the name
+ * rather than the text — which is also what a screen reader would hear.
+ *
+ * @param page - The page under test.
+ * @param label - The sentence to expect, e.g. `2 agents working`.
+ */
+async function expectWorkingCount(page: Page, label: string): Promise<void> {
+  await expect(page.getByTestId('room-working-chip')).toHaveAttribute('aria-label', label, {
+    timeout: SERVER_ROUND_TRIP_MS,
+  });
 }
 
 /**
@@ -337,9 +388,7 @@ test.describe('A room gathers what is said at once @smoke', () => {
       // room's working count is above zero, so it appearing IS the turn having
       // started. Waiting on it rather than on a stopwatch is what makes the
       // next line reliably mid-turn.
-      await expect(page.getByTestId('room-header-halt')).toBeVisible({
-        timeout: SERVER_ROUND_TRIP_MS,
-      });
+      await expectRoomBusy(page);
 
       await roomsApi.postEntries(room.id, [`second ${tag}`]);
       // Let the first turn end. The held message runs off the CLAIM's release,
@@ -424,9 +473,7 @@ test.describe('A room gathers what is said at once @smoke', () => {
       // The agent takes a turn in the OTHER room and stays in it.
       await openRoom(page, basePage, roomsPage, busy.id);
       await roomsApi.postEntries(busy.id, [`over here ${tag}`]);
-      await expect(page.getByTestId('room-header-halt')).toBeVisible({
-        timeout: SERVER_ROUND_TRIP_MS,
-      });
+      await expectRoomBusy(page);
 
       // Now ask it something in a room it is not working in.
       await openRoom(page, basePage, roomsPage, asking.id);
@@ -539,13 +586,11 @@ test.describe('Stopping a room @smoke', () => {
       // makes "every in-flight turn" a claim with a number in it.
       await roomsApi.postEntries(room.id, [`everyone look at this ${tag}`]);
 
-      const stop = page.getByTestId('room-header-halt');
-      await expect(stop).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+      const stop = page.getByTestId('room-halt');
+      await expectRoomBusy(page);
       // Both of them, before the press. A Stop pressed while only one had
       // started would prove nothing about "every".
-      await expect(page.getByTestId('room-header-working')).toHaveText(/2 agents working/, {
-        timeout: SERVER_ROUND_TRIP_MS,
-      });
+      await expectWorkingCount(page, '2 agents working');
 
       await stop.click();
 
@@ -557,9 +602,11 @@ test.describe('Stopping a room @smoke', () => {
       await expect(halted).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
       await expect(halted).toContainText('2 agents were working');
 
-      // The indicator goes with it — the button is drawn only while something is
-      // working, so its absence is the working count reaching zero.
-      await expect(stop).toHaveCount(0, { timeout: SERVER_ROUND_TRIP_MS });
+      // The indicator goes with it. Since R1 the controls keep their place in
+      // the row when the work stops (they are reserved space, not conditional
+      // chrome), so what says the count reached zero is the slot going idle —
+      // never `toHaveCount(0)`, which these elements can no longer reach.
+      await expectRoomIdle(page);
 
       // In the room, not just on the screen: exactly one halted row was stored.
       const stored = await roomsApi.listEntries(room.id);
@@ -604,9 +651,7 @@ test.describe('Stopping a room @smoke', () => {
     await useScenario(request, 'long-turn');
     try {
       await roomsApi.postEntries(room.id, [`everyone look at this ${tag}`]);
-      await expect(page.getByTestId('room-header-working')).toHaveText(/2 agents working/, {
-        timeout: SERVER_ROUND_TRIP_MS,
-      });
+      await expectWorkingCount(page, '2 agents working');
 
       await page.getByRole('button', { name: 'Show who is working' }).click();
       // **The assertion that fails against the old build**, and therefore the
@@ -624,10 +669,8 @@ test.describe('Stopping a room @smoke', () => {
       await expect(halted).toContainText('has been interrupted');
 
       // **The whole claim, in one pair**: one stopped, one still going.
-      await expect(page.getByTestId('room-header-working')).toHaveText(/1 agent working/, {
-        timeout: SERVER_ROUND_TRIP_MS,
-      });
-      await expect(page.getByTestId('room-header-halt')).toBeVisible();
+      await expectWorkingCount(page, '1 agent working');
+      await expectRoomBusy(page);
 
       // In the room, not just on the screen. A rendered string can be fooled;
       // the stored row's `subjectAuthorId` cannot.

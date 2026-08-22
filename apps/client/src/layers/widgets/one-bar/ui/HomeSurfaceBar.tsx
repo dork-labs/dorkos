@@ -4,7 +4,7 @@ import { HOME_TABS, TOUR_ANCHORS, resolveHomeTabId, type HomeTabId } from '@/lay
 import { BarTabStrip, type BarTab } from '@/layers/shared/ui';
 import { SystemHealthDot, useSystemHealth } from '@/layers/features/top-nav';
 import { OneBar } from './OneBar';
-import { HomeMembersChip } from './HomeMembersChip';
+import { HomeRoomChips } from './HomeRoomChips';
 import { NewTaskAction } from './NewTaskAction';
 
 /**
@@ -27,7 +27,7 @@ interface SurfaceExtras {
 }
 
 const SURFACE_EXTRAS: Record<HomeTabId, SurfaceExtras> = {
-  home: { Chips: HomeMembersChip },
+  home: { Chips: HomeRoomChips },
   activity: {},
   scheduled: { Actions: NewTaskAction },
   workspaces: {},

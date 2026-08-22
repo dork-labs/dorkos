@@ -11,7 +11,7 @@ export const emptyBarState: OneBarRouteState = {
   originLabel: undefined,
   sessionTitle: undefined,
   sessionDirectoryName: undefined,
-  roomTitle: null,
+  room: null,
   teamViewMode: 'cards',
 };
 

@@ -567,7 +567,7 @@ Plus two colour steps: `--identity-border-mix` (35%) and `--identity-ring-mix` (
 | **Mark**    | an avatar that is itself the target or trigger     | a ring in its **own** identity colour, `ring-0` → `ring-2`            |
 | **Chip**    | an inline control — a pill, an attribution         | a tint step (colour surfaces) or colour + underline (text surfaces)   |
 
-The Mark tier ships as `identityMarkRing` from `shared/ui` — `.self` for a disc that is the hover target itself, `.group` for a disc inside a control marked `IDENTITY_MARK_GROUP`. Apply it **at the call site, never inside `AgentAvatar`**: the disc does not know whether anything around it is pressable. Shipped Mark surfaces today are the sidebar agent face, the account face, and `MemberList`'s list form (no live caller yet — `RoomHeader` renders the button form, which takes no per-disc response).
+The Mark tier ships as `identityMarkRing` from `shared/ui` — `.self` for a disc that is the hover target itself, `.group` for a disc inside a control marked `IDENTITY_MARK_GROUP`. Apply it **at the call site, never inside `AgentAvatar`**: the disc does not know whether anything around it is pressable. Shipped Mark surfaces today are the sidebar agent face and the account face. (The room masthead's disc stack was the third until phase R1 replaced the masthead with the one bar, whose members chip is a head count rather than a row of faces.)
 
 **One collision the grammar resolves, rather than ignores** (there were two — mesh health used to spend the same 2px ring, so a pressable disc carrying health took no hover ring and fell back to a neutral `hover:bg-accent`. The health ring is gone, and nothing competes for the slot now):
 

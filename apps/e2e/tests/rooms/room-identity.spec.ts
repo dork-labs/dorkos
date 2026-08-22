@@ -69,7 +69,6 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     // The masthead of the open room, which drew the same doubled name.
     await page.goto(`/channels?id=${room.id}`);
     await expect(roomsPage.roomHeading).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-    await expect(roomsPage.headerMark).toBeVisible();
     expect(await visibleText(roomsPage.roomHeading)).toBe(slug);
     await expect(roomsPage.roomHeading).toHaveAccessibleName(`#${slug}`);
   });
@@ -149,19 +148,18 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     // `visibleText` reads one text node at a time.
     expect(await visibleText(row)).toBe(`${agentEmoji.join(' ')} ${title}`);
 
-    // The same faces in the open room's masthead and on its roster.
+    // **In the open room, the name and the head count — not the faces.** Phase R1
+    // replaced the masthead with the one bar, which draws a `#`/`@` glyph rather
+    // than a face: the fleet directory those emoji come from lives in a widget
+    // the bar's layer may not import, and a hashed letter here would contradict
+    // the emoji the sidebar row above is showing. For a GROUP message that row
+    // exists and is asserted above, so the faces are still proven — just once,
+    // where they are actually drawn.
     await page.goto(`/channels?id=${room.id}`);
     await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.headerMark).toHaveText(agentEmoji.join(''));
-    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${title}, 3 members`);
-    for (const agent of [otter, heron]) {
-      const disc = roomsPage.memberList
-        .locator('[data-slot="room-member-avatar"]')
-        .filter({ hasText: agent.name });
-      expect(await visibleText(disc)).toBe(agent.emoji);
-    }
+    await expect(roomsPage.membersChip).toHaveAccessibleName('3 members');
   });
 
   test('a one-to-one still wears its agent wherever it is drawn, having left the sidebar', async ({
@@ -172,9 +170,17 @@ test.describe('Rooms — how a room names itself @smoke', () => {
   }) => {
     // The suppression is about WHERE a one-to-one is listed, never about what it
     // looks like (`sidebar-simplification` D2). So the identity question stands,
-    // asked where the room is still drawn: its masthead and its roster. A rule
-    // that hid the row AND broke the face would pass a test that only checked
-    // the row was gone.
+    // asked where the room is still drawn. A rule that hid the row AND broke the
+    // identity would pass a test that only checked the row was gone.
+    //
+    // **What it can ask for has narrowed, and the gap is real.** This room has no
+    // sidebar row (suppressed here) and, since phase R1, no masthead either — so
+    // the agent's FACE is currently drawn nowhere on this surface, and there is
+    // nothing left for a face assertion to hold onto. The room still names itself
+    // correctly, which is what the bar owes and what this now proves. Closing the
+    // gap is phase R2's: the bar can resolve faces from `entities/mesh` the way
+    // the sidebar does, without reaching across the widget boundary that made it
+    // draw a glyph in the first place.
     const otter = await roomsApi.registerAgent(`E2E Solo Otter ${roomsApi.runId}`, '🦦', '#3b82f6');
     const room = await roomsApi.createDirectMessage(otter.name, [otter]);
     await openCockpit(basePage);
@@ -186,11 +192,6 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     await expect(roomsPage.roomHeading).toHaveAccessibleName(otter.name, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.headerMark).toHaveText(otter.emoji);
-    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${otter.name}, 2 members`);
-    const disc = roomsPage.memberList
-      .locator('[data-slot="room-member-avatar"]')
-      .filter({ hasText: otter.name });
-    expect(await visibleText(disc)).toBe(otter.emoji);
+    await expect(roomsPage.membersChip).toHaveAccessibleName('2 members');
   });
 });

@@ -26,7 +26,7 @@ import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
 import {
-  ChannelsHeader,
+  ChannelsBar,
   HomeSurfaceBar,
   SessionHeader,
   TeamHeader,
@@ -473,7 +473,7 @@ export type ChannelsSearch = z.infer<typeof channelsSearchSchema>;
 const channelsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/channels',
-  staticData: { header: ChannelsHeader },
+  staticData: { header: ChannelsBar },
   validateSearch: zodValidator(channelsSearchSchema),
   component: ChannelsPage,
 });

@@ -197,11 +197,6 @@ export class RoomsPage {
     return this.row(spokenName).getByRole('img', { name: /agents? working$/ });
   }
 
-  /** The mark drawn beside the open room's name in its masthead. */
-  get headerMark(): Locator {
-    return this.roomHeader.locator('[data-slot="room-avatar"]');
-  }
-
   /**
    * The open bridged channel's visibility badge in the masthead — "sees
    * mentions only" or "sees everything", read off the bridge row's platform-
@@ -222,9 +217,18 @@ export class RoomsPage {
     return this.page.getByTestId('origin-mark');
   }
 
-  /** Everyone on the open room's roster, as the masthead draws them. */
-  get memberList(): Locator {
-    return this.page.locator('[data-slot="room-member-list"]');
+  /**
+   * The open room's head count in the bar — the roster, as one chip you press.
+   *
+   * **This replaces the masthead's stack of faces** (phase R1, spec
+   * `one-bar-header` §3.4). The 36px row has no space for overlapping discs and
+   * #team on a real machine holds 46 agents, so the roster is a number here and
+   * "who exactly" is the question the panel behind it answers. Its accessible
+   * name is the count alone — `2 members` — because the count IS the content;
+   * the room it belongs to is named by the heading beside it.
+   */
+  get membersChip(): Locator {
+    return this.page.getByTestId('bar-members-chip');
   }
 
   /**
@@ -260,11 +264,6 @@ export class RoomsPage {
         name: agents.length === 0 ? 'Create it without agents' : /^Create channel with /,
       })
       .click();
-  }
-
-  /** The open room's roster in the masthead, which opens the members panel. */
-  get membersButton(): Locator {
-    return this.page.getByRole('button', { name: /^Members of / });
   }
 
   /** The empty state's own affordance for putting agents in the room. */

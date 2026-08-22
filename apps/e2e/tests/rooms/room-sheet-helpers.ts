@@ -307,7 +307,15 @@ export async function seedRoom(
  */
 export async function openSheet(page: Page, roomId: string): Promise<Locator> {
   await page.goto(`/channels?id=${roomId}`);
-  await page.getByRole('button', { name: /^Members of / }).click();
+  // **The bar's head count, not the masthead's roster button.** That button was
+  // named "Members of #room" and went with the masthead in phase R1; the door is
+  // now a chip in the one bar whose accessible name is the count alone
+  // (`2 members`), because the count is what it says and the room is named by
+  // the heading beside it. Addressed by testid rather than by that name: the
+  // name grows ", N agents working" on a phone, where this chip is also the
+  // room's run-state signal, and a spec that matched the quiet spelling would
+  // fail only when something happened to be running.
+  await page.getByTestId('bar-members-chip').click();
   const sheet = page.getByRole('dialog');
   await expect(sheet).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
   await settled(sheet);
