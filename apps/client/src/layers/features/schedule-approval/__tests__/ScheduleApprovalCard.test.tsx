@@ -1,0 +1,598 @@
+/**
+ * The approval card: what it says about a proposal, and what each answer does.
+ *
+ * The card exists because the row it replaced asked people to arm an unattended
+ * cron on the strength of a name and a cadence. So most of what is pinned here
+ * is that the card says the things it has and stays silent about the things it
+ * does not — a card that invented a first run, or quietly dropped the agent's
+ * stated reason, would be worse than the row.
+ *
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { ReactNode } from 'react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Transport } from '@dorkos/shared/transport';
+import type { Session, Task, TaskRun } from '@dorkos/shared/types';
+import { createMockTransport } from '@dorkos/test-utils';
+
+/** Where the card said to go, if anywhere. */
+const mockNavigate = vi.fn();
+
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return { ...actual, useSafeNavigate: () => mockNavigate };
+});
+
+import { TransportProvider } from '@/layers/shared/model';
+import { discardPendingRejections } from '../index';
+import { ScheduleApprovalCard } from '../ui/ScheduleApprovalCard';
+
+/** Frozen so a suite that takes a minute cannot age its own fixtures. */
+const LOADED_AT = Date.now();
+
+/** An ISO timestamp `minutes` either side of load. */
+function minutesFromLoad(minutes: number): string {
+  return new Date(LOADED_AT + minutes * 60_000).toISOString();
+}
+
+/** A schedule an agent proposed, carrying everything the server can send. */
+function proposal(overrides: Partial<Task> = {}): Task {
+  return {
+    id: 'task-1',
+    name: 'nightly-sweep',
+    displayName: 'Nightly sweep',
+    description: null,
+    prompt: 'Sweep the backlog and file anything stale.',
+    cron: '0 3 * * *',
+    timezone: 'UTC',
+    agentId: null,
+    enabled: false,
+    maxRuntime: null,
+    permissionMode: 'acceptEdits',
+    status: 'pending_approval',
+    filePath: '/tmp/nightly-sweep/SKILL.md',
+    createdAt: minutesFromLoad(-20),
+    updatedAt: minutesFromLoad(-20),
+    reason: 'The backlog piles up overnight and nobody sees it until Monday.',
+    proposedBySessionId: 'ses-42',
+    proposedByAgentPath: '/Users/dev/agents/dorkbot',
+    proposedByName: 'DorkBot',
+    nextRuns: [minutesFromLoad(120), minutesFromLoad(1560), minutesFromLoad(3000)],
+    ...overrides,
+  };
+}
+
+/** A run of that schedule. */
+function taskRun(overrides: Partial<TaskRun> = {}): TaskRun {
+  return {
+    id: 'run-1',
+    scheduleId: 'task-1',
+    status: 'running',
+    startedAt: minutesFromLoad(-1),
+    finishedAt: null,
+    durationMs: null,
+    outputSummary: null,
+    error: null,
+    sessionId: null,
+    trigger: 'manual',
+    createdAt: minutesFromLoad(-1),
+    ...overrides,
+  };
+}
+
+/** Render one card over a mock transport. */
+function renderCard(task: Task = proposal(), overrides: Partial<Transport> = {}) {
+  const transport = createMockTransport(overrides);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+  }
+  return { transport, ...render(<ScheduleApprovalCard task={task} />, { wrapper: Wrapper }) };
+}
+
+/** The card element itself. */
+function card(): HTMLElement {
+  return screen.getByTestId('schedule-approval-card');
+}
+
+/** One of the card's own slots, or null when it drew none. */
+function slot(name: string): HTMLElement | null {
+  return document.querySelector(`[data-slot="${name}"]`);
+}
+
+beforeEach(() => {
+  mockNavigate.mockClear();
+});
+
+afterEach(() => {
+  cleanup();
+  discardPendingRejections();
+  vi.clearAllMocks();
+});
+
+describe('ScheduleApprovalCard — what it says', () => {
+  it('names the schedule, its proposer, and how long it has waited', async () => {
+    renderCard();
+
+    expect(await screen.findByText('Nightly sweep')).toBeInTheDocument();
+    expect(slot('ask-detail')).toHaveTextContent('Proposed by DorkBot');
+    expect(slot('ask-detail')).toHaveTextContent('waiting 20m');
+  });
+
+  it('quotes the agent’s reason in full, never clamped', async () => {
+    // The reason is the case being made. Seeded defect: add `line-clamp-2` and
+    // this still passes on text content — so the assertion is on the CLASS, the
+    // only thing jsdom can actually see (it lays nothing out and reports every
+    // element as 0×0).
+    renderCard();
+
+    const reason = await waitFor(() => slot('schedule-reason'));
+    expect(reason).toHaveTextContent(
+      'The backlog piles up overnight and nobody sees it until Monday.'
+    );
+    expect(reason?.className).not.toMatch(/line-clamp|truncate/);
+  });
+
+  it('falls back to the description when a legacy proposal carries no reason', async () => {
+    // Rows created before `reason` existed, and the sessionless external `/mcp`
+    // registration, both arrive with it null. The card degrades to whatever the
+    // task does say rather than drawing an empty quotation mark.
+    renderCard(proposal({ reason: null, description: 'Weekly backlog sweep' }));
+
+    expect(await screen.findByText(/Weekly backlog sweep/)).toBeInTheDocument();
+  });
+
+  it('draws no reason line at all when a description would only repeat the name', async () => {
+    // A description that IS the name says nothing, and quoting it would put the
+    // same words on the card twice under a quotation mark.
+    renderCard(proposal({ reason: null, description: 'Nightly sweep' }));
+
+    await screen.findByText('Nightly sweep');
+    expect(slot('schedule-reason')).toBeNull();
+  });
+
+  it('draws no reason line when there is neither a reason nor a description', async () => {
+    renderCard(proposal({ reason: null, description: null }));
+
+    await screen.findByText('Nightly sweep');
+    expect(slot('schedule-reason')).toBeNull();
+  });
+
+  it('says the cadence in words, with the timezone it is anchored to', async () => {
+    // "every day at 3:00 AM" is a different promise in UTC than in Chicago, and
+    // the operator is the one who has to know which.
+    renderCard();
+
+    const cadence = await waitFor(() => slot('schedule-cadence'));
+    expect(cadence).toHaveTextContent(/At 03:00 AM/i);
+    expect(cadence).toHaveTextContent('(UTC)');
+  });
+
+  it('falls back to the raw expression for a cron nothing can read', async () => {
+    // A string somebody can paste into a cron checker beats a card that refuses
+    // to say when it fires.
+    renderCard(proposal({ cron: 'not a cron', timezone: null }));
+
+    expect(await screen.findByText('not a cron')).toBeInTheDocument();
+  });
+
+  it('lists the first runs the server computed', async () => {
+    renderCard();
+
+    const runs = await waitFor(() => slot('schedule-first-runs'));
+    expect(runs).toHaveTextContent(/^First run /);
+    expect(runs).toHaveTextContent(/· then /);
+  });
+
+  it('says nothing about first runs when the server sent none', async () => {
+    // `nextRuns` is empty for an unparseable cron. Inventing a time here is the
+    // one thing this card must never do — it is the evidence somebody approves on.
+    renderCard(proposal({ nextRuns: [] }));
+
+    await screen.findByText('Nightly sweep');
+    expect(slot('schedule-first-runs')).toBeNull();
+  });
+
+  it('keeps the exact instructions behind a disclosure, and says what power they run with', async () => {
+    renderCard();
+
+    // Collapsed by default: a wall of prompt on every card is what stops anybody
+    // reading any of them.
+    expect(slot('schedule-prompt')).toBeNull();
+    expect(await screen.findByText(/Runs as: Accept Edits/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Show exact instructions/ }));
+
+    expect(slot('schedule-prompt')).toHaveTextContent('Sweep the backlog and file anything stale.');
+  });
+
+  it('says a proposal has no agent identity rather than inventing one', async () => {
+    // The sessionless external `/mcp` registration stamps no path. A disc and a
+    // name invented from nothing would put a request under a mark it never earned.
+    renderCard(proposal({ proposedByAgentPath: null, proposedByName: null }));
+
+    expect(await screen.findByText('Requested without an agent identity')).toBeInTheDocument();
+    expect(slot('ask-detail')).toHaveTextContent('Proposed by an agent');
+  });
+});
+
+describe('ScheduleApprovalCard — the conversation behind it', () => {
+  it('links to the session that proposed it, by its real title', async () => {
+    renderCard(proposal(), {
+      getSession: vi.fn().mockResolvedValue({ title: 'Fixing the flaky test' } as Session),
+    });
+
+    const link = await screen.findByRole('button', { name: /Fixing the flaky test/ });
+    await userEvent.click(link);
+
+    // The directory travels with the id: a session row is addressed by both, and
+    // the proposing session is usually not the one this window has open.
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { session: 'ses-42', dir: '/Users/dev/agents/dorkbot' },
+    });
+  });
+
+  it('reads the proposing session under ITS directory, not this window’s', async () => {
+    const getSession = vi.fn().mockResolvedValue({ title: 'Fixing the flaky test' } as Session);
+    renderCard(proposal(), { getSession });
+
+    // Seeded defect: drop the `dir` option from `useSessionDetail` and this is
+    // called with the app store's `selectedCwd` (null here), so the query never
+    // runs at all and the title never appears.
+    await waitFor(() =>
+      expect(getSession).toHaveBeenCalledWith('ses-42', '/Users/dev/agents/dorkbot')
+    );
+  });
+
+  it('omits the fragment silently when the lookup fails', async () => {
+    // Never block the card on it: the decision is about the schedule, and a
+    // session that cannot be read is not a reason to withhold the buttons.
+    renderCard(proposal(), { getSession: vi.fn().mockRejectedValue(new Error('gone')) });
+
+    expect(
+      await screen.findByRole('button', { name: 'Approve Nightly sweep' })
+    ).toBeInTheDocument();
+    expect(slot('schedule-proposing-session')).toBeNull();
+  });
+
+  it('omits the fragment when the proposal names no session', async () => {
+    const getSession = vi.fn();
+    renderCard(proposal({ proposedBySessionId: null }), { getSession });
+
+    await screen.findByText('Nightly sweep');
+    expect(slot('schedule-proposing-session')).toBeNull();
+    expect(getSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('ScheduleApprovalCard — answering it', () => {
+  it('approves with both the status and the enabled flag', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(proposal(), { updateTask });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    // Sending only one of them leaves a schedule that is approved and will never
+    // fire — the exact half-armed state the Tasks page's mutation guards against.
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+  });
+
+  it('says when the first run will be, in the receipt', async () => {
+    renderCard(proposal(), { updateTask: vi.fn().mockResolvedValue(proposal()) });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    const receipt = await waitFor(() => slot('schedule-receipt'));
+    expect(receipt).toHaveAttribute('data-tone', 'allowed');
+    // Not a bare "Approved": the whole point of the card is that a person knows
+    // what they just armed, and the first run is the fact they were weighing.
+    expect(receipt).toHaveTextContent(/^Approved — first run /);
+  });
+
+  it('says only "Approved" when there was no first run to promise', async () => {
+    renderCard(proposal({ nextRuns: [] }), { updateTask: vi.fn().mockResolvedValue(proposal()) });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    expect(await waitFor(() => slot('schedule-receipt'))).toHaveTextContent('Approved');
+    expect(slot('schedule-receipt')).not.toHaveTextContent('first run');
+  });
+
+  it('hands the card back when the server refuses the approval', async () => {
+    // A checkmark over a proposal that is still sitting there answerable is a
+    // lie about something a person cares about.
+    renderCard(proposal(), { updateTask: vi.fn().mockRejectedValue(new Error('nope')) });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument()
+    );
+    expect(slot('schedule-receipt')).toBeNull();
+  });
+
+  it('rejects into a receipt with a live undo, and sends no delete yet', async () => {
+    const deleteTask = vi.fn().mockResolvedValue({ success: true });
+    renderCard(proposal(), { deleteTask });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Reject Nightly sweep' }));
+
+    const receipt = await waitFor(() => slot('schedule-receipt'));
+    expect(receipt).toHaveAttribute('data-tone', 'denied');
+    expect(receipt).toHaveTextContent('Rejected');
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(deleteTask).not.toHaveBeenCalled();
+  });
+
+  it('puts the answers back when the rejection is undone', async () => {
+    const deleteTask = vi.fn().mockResolvedValue({ success: true });
+    renderCard(proposal(), { deleteTask });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Reject Nightly sweep' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    expect(
+      await screen.findByRole('button', { name: 'Approve Nightly sweep' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject Nightly sweep' })).toBeInTheDocument();
+    expect(slot('schedule-receipt')).toBeNull();
+    expect(deleteTask).not.toHaveBeenCalled();
+  });
+
+  it('comes back showing its receipt when the card is drawn again mid-window', async () => {
+    // The popover closing is the ordinary case: rejecting the last schedule
+    // empties the queue and unmounts the panel. The decision belongs to the
+    // module, so the next card drawn for the same schedule picks it back up.
+    // Seeded defect: hold the undo window in component state and the remounted
+    // card draws answerable buttons over a DELETE that is already on its way.
+    const deleteTask = vi.fn().mockResolvedValue({ success: true });
+    const { unmount } = renderCard(proposal(), { deleteTask });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Reject Nightly sweep' }));
+    unmount();
+
+    renderCard(proposal(), { deleteTask });
+
+    expect(await waitFor(() => slot('schedule-receipt'))).toHaveTextContent('Rejected');
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve Nightly sweep' })).not.toBeInTheDocument();
+  });
+
+  it('answers A and D from the keyboard, but only while focus is inside it', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal());
+    renderCard(proposal(), { updateTask });
+    await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+
+    // Nothing focused: the letter must go nowhere. Without this half the test
+    // could not tell a card-scoped handler from a document-level hotkey, which
+    // is the whole promise `AskCard.Root` makes.
+    await userEvent.keyboard('a');
+    expect(updateTask).not.toHaveBeenCalled();
+
+    card().focus();
+    await userEvent.keyboard('a');
+
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+  });
+
+  it('denies on D', async () => {
+    const deleteTask = vi.fn().mockResolvedValue({ success: true });
+    renderCard(proposal(), { deleteTask });
+    await screen.findByRole('button', { name: 'Reject Nightly sweep' });
+
+    card().focus();
+    await userEvent.keyboard('d');
+
+    expect(await waitFor(() => slot('schedule-receipt'))).toHaveTextContent('Rejected');
+  });
+
+  it('stops answering the keys once it has been answered', async () => {
+    // A decided card that still took `A` would re-arm a schedule somebody just
+    // rejected, from a keystroke aimed at the card behind it.
+    const updateTask = vi.fn().mockResolvedValue(proposal());
+    renderCard(proposal(), {
+      updateTask,
+      deleteTask: vi.fn().mockResolvedValue({ success: true }),
+    });
+    await screen.findByRole('button', { name: 'Reject Nightly sweep' });
+
+    card().focus();
+    await userEvent.keyboard('d');
+    await waitFor(() => expect(slot('schedule-receipt')).not.toBeNull());
+
+    card().focus();
+    await userEvent.keyboard('a');
+
+    expect(updateTask).not.toHaveBeenCalled();
+  });
+});
+
+describe('ScheduleApprovalCard — running it once', () => {
+  it('triggers a supervised run without arming anything', async () => {
+    const triggerTask = vi.fn().mockResolvedValue({ runId: 'run-1' });
+    const updateTask = vi.fn();
+    renderCard(proposal(), {
+      triggerTask,
+      updateTask,
+      listTaskRuns: vi.fn().mockResolvedValue([]),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
+
+    expect(triggerTask).toHaveBeenCalledWith('task-1');
+    // Nothing about a test run approves the proposal, arms the cron, or changes
+    // its status. Seeded defect: have the button also call `useUpdateTask` and
+    // this reds.
+    expect(updateTask).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument();
+  });
+
+  it('reports a run in progress, and refuses to fire a second one', async () => {
+    renderCard(proposal(), {
+      triggerTask: vi.fn().mockResolvedValue({ runId: 'run-1' }),
+      listTaskRuns: vi.fn().mockResolvedValue([taskRun()]),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
+
+    await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'running'));
+    expect(slot('schedule-test-run')).toHaveTextContent('Test run in progress…');
+    expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeDisabled();
+  });
+
+  it('counts a run it has an id for but no row yet as running', async () => {
+    // The second between the trigger answering and the history refetching.
+    // Reporting `idle` there would blink the button back and invite a second run.
+    renderCard(proposal(), {
+      triggerTask: vi.fn().mockResolvedValue({ runId: 'run-1' }),
+      listTaskRuns: vi.fn().mockResolvedValue([]),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
+
+    await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'running'));
+  });
+
+  it('offers a way into what the finished run actually did', async () => {
+    renderCard(proposal(), {
+      triggerTask: vi.fn().mockResolvedValue({ runId: 'run-1' }),
+      listTaskRuns: vi
+        .fn()
+        .mockResolvedValue([
+          taskRun({ status: 'completed', finishedAt: minutesFromLoad(-1), sessionId: 'ses-run-1' }),
+        ]),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
+
+    await waitFor(() =>
+      expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'finished')
+    );
+    expect(slot('schedule-test-run')).toHaveTextContent(/Test run finished 1m ago/);
+
+    await userEvent.click(screen.getByRole('button', { name: /view what it did/ }));
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { session: 'ses-run-1', dir: '/Users/dev/agents/dorkbot' },
+    });
+  });
+
+  it('points at the run history when the run left no session behind', async () => {
+    renderCard(proposal(), {
+      triggerTask: vi.fn().mockResolvedValue({ runId: 'run-1' }),
+      listTaskRuns: vi
+        .fn()
+        .mockResolvedValue([
+          taskRun({ status: 'completed', finishedAt: minutesFromLoad(-1), sessionId: null }),
+        ]),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
+    await waitFor(() =>
+      expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'finished')
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /view what it did/ }));
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/tasks' });
+  });
+
+  it('says a failed run failed, and quotes the reason', async () => {
+    // The card exists to produce evidence. A strip that reported "finished" over
+    // a failure would produce the opposite — somebody arming a nightly cron on
+    // the strength of a run that did not work.
+    renderCard(proposal(), {
+      triggerTask: vi.fn().mockResolvedValue({ runId: 'run-1' }),
+      listTaskRuns: vi
+        .fn()
+        .mockResolvedValue([taskRun({ status: 'failed', error: 'Command not found: sweep' })]),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
+
+    await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'failed'));
+    expect(slot('schedule-test-run')).toHaveTextContent(
+      'Test run failed — Command not found: sweep'
+    );
+    // And it offers no "view what it did" over a failure with no session.
+    expect(screen.queryByRole('button', { name: /view what it did/ })).not.toBeInTheDocument();
+  });
+
+  it('says a cancelled run was stopped, which is neither success nor fault', async () => {
+    renderCard(proposal(), {
+      triggerTask: vi.fn().mockResolvedValue({ runId: 'run-1' }),
+      listTaskRuns: vi.fn().mockResolvedValue([taskRun({ status: 'cancelled' })]),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
+
+    await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'stopped'));
+    expect(slot('schedule-test-run')).toHaveTextContent('Test run was stopped before it finished.');
+  });
+
+  it('reports a refused trigger rather than sitting there looking idle', async () => {
+    renderCard(proposal(), {
+      triggerTask: vi.fn().mockRejectedValue(new Error('Tasks are switched off')),
+      listTaskRuns: vi.fn().mockResolvedValue([]),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
+
+    await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'failed'));
+    expect(slot('schedule-test-run')).toHaveTextContent('Tasks are switched off');
+  });
+
+  it('reads only this schedule’s runs', async () => {
+    // Attaching the strip to "the newest manual run" would report an outcome
+    // that belonged to a run somebody started from the Tasks page in another tab.
+    const listTaskRuns = vi.fn().mockResolvedValue([]);
+    renderCard(proposal(), {
+      triggerTask: vi.fn().mockResolvedValue({ runId: 'run-1' }),
+      listTaskRuns,
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
+
+    await waitFor(() =>
+      expect(listTaskRuns).toHaveBeenCalledWith(expect.objectContaining({ scheduleId: 'task-1' }))
+    );
+  });
+
+  it('asks for no run history at all until a test run exists', async () => {
+    // One card per parked schedule on three surfaces; polling a run list for
+    // every one of them, forever, to draw nothing is the cost this avoids.
+    const listTaskRuns = vi.fn().mockResolvedValue([]);
+    renderCard(proposal(), { listTaskRuns });
+
+    await screen.findByRole('button', { name: 'Run Nightly sweep once' });
+    expect(listTaskRuns).not.toHaveBeenCalled();
+    expect(slot('schedule-test-run')).toBeNull();
+  });
+
+  it('keeps Approve and Reject answerable throughout a test run', async () => {
+    // Approval by demonstration: the evidence arrives and the decision is still
+    // there to make, now backed by it.
+    const updateTask = vi.fn().mockResolvedValue(proposal());
+    renderCard(proposal(), {
+      triggerTask: vi.fn().mockResolvedValue({ runId: 'run-1' }),
+      listTaskRuns: vi.fn().mockResolvedValue([taskRun()]),
+      updateTask,
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
+    await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'running'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+  });
+});

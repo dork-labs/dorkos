@@ -13,7 +13,6 @@
  * @module features/dashboard-attention
  */
 export { AttentionSignalRow } from './ui/AttentionSignalRow';
-export { ScheduleApprovalRow } from './ui/ScheduleApprovalRow';
 export { useAttentionRows } from './model/use-attention-rows';
 export type { AttentionRows } from './model/use-attention-rows';
 export { useActivityNotifications } from './model/use-activity-notifications';

@@ -24,6 +24,20 @@ export interface UseSessionDetailOptions<T> {
    * all of them.
    */
   select?: (session: Session) => T;
+  /**
+   * Read a session belonging to a DIFFERENT working directory than the one this
+   * window has selected.
+   *
+   * A session row is addressed by id **and** directory — the server resolves the
+   * transcript under the agent's project path — so the id alone is not enough
+   * for a caller talking about somebody else's session. Almost every caller is
+   * reporting on the session the person is currently inside, which is what the
+   * default (this window's `selectedCwd`) is for. A parked schedule is the
+   * exception: it names the session that PROPOSED it, which is usually not the
+   * one on screen, and without its own directory the lookup would either miss or
+   * — worse — read a different agent's session that happens to share the id.
+   */
+  dir?: string;
 }
 
 /**
@@ -36,7 +50,8 @@ export interface UseSessionDetailOptions<T> {
  *   When null the query is disabled and no request is made. The same holds
  *   while the working directory is still resolving — see
  *   {@link isSessionRequestReady}.
- * @param options - Fetch gate and field selector; see {@link UseSessionDetailOptions}.
+ * @param options - Fetch gate, field selector and directory override; see
+ *   {@link UseSessionDetailOptions}.
  */
 export function useSessionDetail<T = Session>(
   sessionId: string | null,
@@ -44,12 +59,16 @@ export function useSessionDetail<T = Session>(
 ) {
   const transport = useTransport();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
+  // The caller's directory wins when it named one. Both paths land in the same
+  // key factory, so a session read under an explicit directory shares its cache
+  // entry with the same session read while that directory is selected.
+  const cwd = options?.dir ?? selectedCwd;
 
   return useQuery({
-    queryKey: sessionKeys.detail(sessionId, selectedCwd),
-    queryFn: () => transport.getSession(sessionId!, selectedCwd!),
+    queryKey: sessionKeys.detail(sessionId, cwd),
+    queryFn: () => transport.getSession(sessionId!, cwd!),
     staleTime: 30_000,
-    enabled: isSessionRequestReady(sessionId, selectedCwd) && (options?.enabled ?? true),
+    enabled: isSessionRequestReady(sessionId, cwd) && (options?.enabled ?? true),
     select: options?.select,
   });
 }

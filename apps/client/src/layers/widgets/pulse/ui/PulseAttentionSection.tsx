@@ -1,13 +1,10 @@
 import { useNavigate } from '@tanstack/react-router';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { getPlatform } from '@/layers/shared/lib';
 import { useSafePathname } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
-import {
-  useAttentionRows,
-  AttentionSignalRow,
-  ScheduleApprovalRow,
-} from '@/layers/features/dashboard-attention';
+import { useAttentionRows, AttentionSignalRow } from '@/layers/features/dashboard-attention';
+import { ScheduleApprovalCard } from '@/layers/features/schedule-approval';
 import { InboxRow, useOpenNotification } from '@/layers/features/inbox';
 import { PulseSection } from './PulseSection';
 
@@ -77,10 +74,16 @@ export function PulseAttentionSection() {
         ) : undefined
       }
     >
-      <motion.div variants={staggerContainer} initial="initial" animate="animate">
+      {/* The schedules are CARDS, and sit above the rows in their own presence
+          group: `AskCard.Root` declares a hold-and-melt exit, and an exit with
+          no `AnimatePresence` watching for it never runs — a decided card would
+          vanish under its own receipt. */}
+      <AnimatePresence initial={false}>
         {shownSchedules.map((task) => (
-          <ScheduleApprovalRow key={task.id} task={task} />
+          <ScheduleApprovalCard key={task.id} task={task} className="mb-2" />
         ))}
+      </AnimatePresence>
+      <motion.div variants={staggerContainer} initial="initial" animate="animate">
         {shownErrors.map((signal) => (
           <AttentionSignalRow key={signal.id} signal={signal} />
         ))}
