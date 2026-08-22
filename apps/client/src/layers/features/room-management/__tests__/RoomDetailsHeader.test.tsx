@@ -6,7 +6,6 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import { ResponsiveDialog, ResponsiveDialogContent } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import type { RoomDetailsRoom } from '../model/room-details';
 import { RoomDetailsHeader } from '../ui/RoomDetailsHeader';

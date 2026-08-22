@@ -3,10 +3,10 @@
  * change about one afterwards: who is in it, and how each agent behaves there.
  *
  * One slice rather than a corner of the sidebar, because the surfaces here are
- * reached from three places that are not the sidebar: the open room's header,
- * its empty state, and the sidebar row's menu (spec `rooms` §14.3). A shared
- * panel that lived inside one of its callers would make the other two import
- * the sidebar to open it.
+ * reached from three places that are not each other: the bar's members chip, an
+ * empty room's offer to fill it, and the sidebar row's menu (spec `rooms` §14.3,
+ * `one-bar-header` §3.6). A panel that lived inside one of its callers would
+ * make the other two import that caller to open it.
  *
  * **Creating and managing stay in one slice**, even though they read as two
  * verbs. They share `AgentChipPicker` and `useAgentPickerCandidates`, and a

@@ -55,12 +55,11 @@ vi.mock('@/layers/entities/room', () => ({
   useHaltRoom: () => ({ mutate: halt, isPending: false }),
 }));
 
-const detailsDialog = vi.fn();
+// The panel is mounted by the shell, not by the chips. What Home's bar owes is
+// the press: the door, and the part of the panel it asks for.
+const openRoomPanel = vi.fn();
 vi.mock('@/layers/features/room-management', () => ({
-  RoomDetailsDialog: (props: { focus: string }) => {
-    detailsDialog(props);
-    return <div data-testid="room-details">{props.focus}</div>;
-  },
+  openRoomPanel: (focus: string, roomId: string) => openRoomPanel(focus, roomId),
 }));
 
 import { HomeRoomChips } from '../ui/HomeRoomChips';
@@ -141,16 +140,16 @@ describe('HomeRoomChips', () => {
   });
 
   it('opens the room’s members when the count is pressed, not some other part of it', async () => {
-    // The focus is the part of this that survives phase R2, when the same press
-    // opens the room right panel instead of the sheet.
+    // Since phase R2 the press opens the right panel's Room tab on the roster —
+    // and names #team, so the panel can tell this press from one made about a
+    // room the reader is navigating away from.
     const user = userEvent.setup();
     renderChips();
 
-    expect(screen.queryByTestId('room-details')).not.toBeInTheDocument();
+    expect(openRoomPanel).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: '5 members' }));
 
-    expect(screen.getByTestId('room-details')).toBeInTheDocument();
-    expect(detailsDialog).toHaveBeenCalledWith(expect.objectContaining({ focus: 'members' }));
+    expect(openRoomPanel).toHaveBeenCalledWith('members', 'team-room');
   });
 
   it('shows what is running in #team, which Home could not say between H1 and R1', () => {

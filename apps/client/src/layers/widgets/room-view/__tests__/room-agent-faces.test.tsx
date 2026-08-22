@@ -8,13 +8,14 @@
  * row's render cache — which almost no agent fills — so the same agent wore its
  * real face in the sidebar and a bare letter in the room.
  *
- * **The other two went with the masthead** (phase R1, spec `one-bar-header`
- * §3.4): its roster stack and the room's own mark. The bar that replaced it
- * draws no face at all rather than a wrong one — it cannot reach this widget's
- * fleet directory across the layer rule, and a hashed letter beside the
- * sidebar's emoji is the very disagreement this file exists to catch. When phase
- * R2 rebuilds the roster in the room right panel, its member list needs a case
- * here again.
+ * **The other two moved rather than went** (phase R1, then R2, spec
+ * `one-bar-header` §3.4 and §3.6). The masthead's roster stack and the room's
+ * own mark left with the masthead: the bar that replaced it draws no face at
+ * all rather than a wrong one, because it cannot reach this widget's fleet
+ * directory across the layer rule, and a hashed letter beside the sidebar's
+ * emoji is the very disagreement this file exists to catch. Both are back in
+ * the room right panel, which reads the fleet itself — so they are covered here
+ * again, against `RoomPanelBody`.
  *
  * **This file tests the WIRING, which the unit tests cannot see.** The parity
  * test proves `MemberList` uses an override it is handed, and
@@ -40,6 +41,7 @@ import { agentAuthorRef, type RoomEntry, type RoomRosterEntry } from '@dorkos/sh
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { Conversation } from '@/layers/features/conversation';
+import { RoomPanelBody } from '@/layers/features/room-management';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { RoomFlow } from '../ui/RoomFlow';
 
@@ -110,6 +112,33 @@ function agentMember(id: string, displayName: string, path: string): RoomRosterE
 
 const KAI_MEMBER = agentMember('author-kai', 'Kai', KAI_PATH);
 const GHOST_MEMBER = agentMember('author-ghost', 'Ghost', GHOST_PATH);
+
+/**
+ * The room the panel reads, holding these members.
+ *
+ * The panel is addressed by id and reads everything else — including the room's
+ * KIND — from the server's copy, so a direct message has to be answered as one
+ * here rather than asserted about a channel.
+ */
+function roomHolding(members: RoomRosterEntry[], kind: 'channel' | 'dm' = 'channel') {
+  return {
+    id: 'room-1',
+    kind,
+    slug: kind === 'dm' ? null : 'general',
+    title: kind === 'dm' ? 'Kai' : 'General',
+    topic: null,
+    workspaceId: null,
+    archived: false,
+    ambientMaxEntries: 30,
+    createdAt: '2026-08-10T09:00:00.000Z',
+    lastActivityAt: '2026-08-10T10:00:00.000Z',
+    unreadCount: 0,
+    participants: null,
+    members,
+    viewerAuthorId: 'author-you',
+    reactionFrequents: [],
+  };
+}
 
 /** A post by Kai that also mentions Kai, spanned exactly as the server spans it. */
 const MENTION_TEXT = 'ask @kai about it';
@@ -266,5 +295,53 @@ describe('an agent wears its own face across a room', () => {
 
     await waitFor(() => expect(glyphsOf('message-author-avatar')[0]).toBe(KAI_ICON));
     expect(glyphsOf('message-author-avatar')[1]).toBe('G');
+  });
+
+  it('draws the same manifest face on the roster row in the room panel', async () => {
+    // The roster that went with the masthead, rebuilt in the right panel (phase
+    // R2). The panel reads the fleet itself, which is what lets it draw a real
+    // face again — and what makes it able to draw a WRONG one, which is the
+    // thing this asserts against. Nothing is handed in by hand: the fleet is
+    // mocked at the transport, and the panel is addressed only by room id.
+    renderIn(<RoomPanelBody roomId="room-1" />, {
+      ...fleetAnswering(),
+      getRoom: vi.fn().mockResolvedValue(roomHolding([KAI_MEMBER])),
+    });
+
+    await screen.findByText('Kai');
+    await waitFor(() => expect(glyphsOf('identity-avatar')).toEqual([KAI_ICON]));
+  });
+
+  it('keeps the honest letter on a roster row the fleet cannot place', async () => {
+    // The other half of the same rule: a face this cockpit cannot resolve stays
+    // a letter rather than becoming a hash that looks like somebody's choice.
+    renderIn(<RoomPanelBody roomId="room-1" />, {
+      ...fleetAnswering(),
+      getRoom: vi.fn().mockResolvedValue(roomHolding([KAI_MEMBER, GHOST_MEMBER])),
+    });
+
+    await screen.findByText('Ghost');
+    await waitFor(() => expect(glyphsOf('identity-avatar')[0]).toBe(KAI_ICON));
+    expect(glyphsOf('identity-avatar')[1]).toBe('G');
+  });
+
+  it('gives a direct message the face of the agent it is with', async () => {
+    // The room's own mark, which also went with the masthead. A DM is about who
+    // is in it, so its mark is that agent's face — the same join the row below
+    // it makes, rather than a letter disc for the agent the reader is looking
+    // at.
+    renderIn(<RoomPanelBody roomId="room-1" />, {
+      ...fleetAnswering(),
+      getRoom: vi.fn().mockResolvedValue(roomHolding([KAI_MEMBER], 'dm')),
+    });
+
+    // "Kai" is on screen twice in a one-to-one — it names the room AND the one
+    // agent in it — so the wait is on the roster row's own control, which is
+    // what has to have landed before the mark can be read.
+    await screen.findByRole('button', { name: 'How loud Kai is here' });
+    await waitFor(() => {
+      const mark = document.querySelector('[data-slot="room-avatar"]');
+      expect(mark?.textContent).toContain(KAI_ICON);
+    });
   });
 });

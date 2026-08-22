@@ -1,16 +1,11 @@
 /**
- * The room sheet's masthead — its mark, its name, what it is about.
+ * The room panel's masthead — its mark, its name, what it is about.
  *
  * @module features/room-management/ui/RoomDetailsHeader
  */
 import type { AuthorRef } from '@dorkos/shared/room-schemas';
 import type { AgentVisual } from '@/layers/shared/lib';
-import {
-  RoomAvatar,
-  roomDisplayTitle,
-  useRenameRoom,
-  useSetRoomTopic,
-} from '@/layers/entities/room';
+import { RoomAvatar, useRenameRoom, useSetRoomTopic } from '@/layers/entities/room';
 import type { RoomDetailsRoom } from '../model/room-details';
 import { InlineTextField } from './InlineTextField';
 
@@ -21,7 +16,7 @@ const MAX_NAME = 200;
 const MAX_TOPIC = 500;
 
 export interface RoomDetailsHeaderProps {
-  /** The room this sheet is about. */
+  /** The room this panel is about. */
   room: RoomDetailsRoom;
   /** The roster's authors, when it has been read — only a DM's mark reads them. */
   participants: readonly AuthorRef[] | null;
@@ -51,11 +46,11 @@ export interface RoomDetailsHeaderProps {
  * a subject; a DM is about who is in it (spec `rooms` §14.4), which is also why
  * a DM has no slug.
  *
- * **The sheet is named by the sr-only title, not by the visible name.** Radix
- * takes the dialog's accessible name from its `Title`, and the visible name here
- * is a *control* — its name has to say what pressing it does. Left as the title,
- * the whole sheet would announce as "Room name: general", which describes a
- * button rather than a sheet.
+ * **The surface is named one level up, not by this line.** The visible name is a
+ * *control* — its name has to say what pressing it does — so it never named the
+ * surface it sits in. In the modal that meant an sr-only title beside it; in the
+ * panel it means nothing at all, because the panel's own "Room" tab is what
+ * names it.
  *
  * The visible name is the stored `title` rather than the `#slug` the sidebar
  * draws, because this is the field that edits it: a line reading `general` that

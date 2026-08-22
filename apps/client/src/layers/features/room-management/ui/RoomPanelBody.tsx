@@ -17,7 +17,6 @@ import { RoomDetailsFooter } from './RoomDetailsFooter';
 import { RoomDetailsHeader } from './RoomDetailsHeader';
 import { RoomMemberList } from './RoomMemberList';
 import { RoomMemberRow } from './RoomMemberRow';
-import { RoomPanelNotice } from './RoomPanelNotice';
 
 /** Which field a pending focus request is owed, and how firmly. */
 type PendingSearchFocus =
@@ -136,10 +135,17 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
    * then spring it open on a reader who only asked for the room back.
    */
   const wantSearchFocus = useRef<PendingSearchFocus>(null);
+  const [pickerOpenedItself, setPickerOpenedItself] = useState(false);
   if (detail !== null && !detail.archived && view.agentCount === 0 && !addExpanded) {
     setAddExpanded(true);
-    wantSearchFocus.current = 'offered';
+    setPickerOpenedItself(true);
   }
+  // The cursor half of the same decision, in an effect because a ref may not be
+  // written during render. `??=`: a door that ASKED for the picker outranks a
+  // picker that opened itself, and this must not quietly downgrade it.
+  useEffect(() => {
+    if (pickerOpenedItself) wantSearchFocus.current ??= 'offered';
+  }, [pickerOpenedItself]);
   /**
    * The banner that says why an archived room's roster and settings are on
    * hold. Every dormant scale points at it, so the sentence is written once and
@@ -177,7 +183,7 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
       return;
     }
     rosterRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [request]);
+  }, [request, roomId]);
 
   /**
    * Give the search field the cursor as soon as there IS a field, when

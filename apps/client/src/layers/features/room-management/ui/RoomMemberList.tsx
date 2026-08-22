@@ -22,7 +22,7 @@ export interface RoomMemberListProps {
    *
    * The list decides where a member goes and what it is counted as; everything
    * a ROW does — its loudness, its menu, its confirmation — belongs to whatever
-   * owns the writes, which is the sheet. Passing the row in keeps the grouping
+   * owns the writes, which is the panel. Passing the row in keeps the grouping
    * here from acquiring sixteen props it only forwards.
    */
   children: (member: RoomRosterEntry) => ReactNode;
@@ -60,7 +60,7 @@ function GroupHeading({ label, count }: { label: string; count: number }) {
  * add: today an agent vanishes silently from the picker and appears silently
  * here, which reads as loss rather than as success.
  *
- * `initial={false}` is what keeps the roster you OPEN the sheet on from
+ * `initial={false}` is what keeps the roster you OPEN the panel on from
  * performing: those rows were already there. It is read from React context, so
  * it reaches the wash inside each row as well as the row itself.
  *
@@ -125,7 +125,7 @@ function MemberGroup({
 /**
  * The roster, grouped rather than segregated.
  *
- * **One list, two headings.** Slack splits its sheet into a Members tab and an
+ * **One list, two headings.** Slack splits its own into a Members tab and an
  * "Agents & apps" tab — mixing them where it matters and segregating them where
  * it shows. Grouping keeps agents participants: the difference is carried at row
  * level by the bot glyph and by whether the row has a loudness at all, and both
@@ -142,7 +142,7 @@ function MemberGroup({
  *
  * Order inside each group is the server's — oldest membership first
  * (`RoomStore.listMembers`), which puts whoever opened the room at the top.
- * Nothing re-sorts here, so the sidebar and this sheet name the same people in
+ * Nothing re-sorts here, so the sidebar and this panel name the same people in
  * the same order because neither of them decides one.
  */
 export function RoomMemberList({
@@ -192,7 +192,7 @@ export function RoomMemberList({
             // Deliberately NOT "there is nobody here to answer you", which is
             // the true and consequential thing about an empty room — the
             // loudness line above this one already says exactly that, and a
-            // sheet that says it twice is a sheet that has stopped counting.
+            // panel that says it twice is a panel that has stopped counting.
             // What is left is the fact only this line has: joining is not
             // starting, so whoever arrives can read what was said before them.
             <p className="text-muted-foreground text-sm">

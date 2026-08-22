@@ -50,16 +50,16 @@ vi.mock('@/layers/entities/room', async (importOriginal) => {
   };
 });
 
-const detailsDialog = vi.fn();
+// The panel itself is mounted by the shell, not by the bar. What the bar owes
+// is the press: the door, and the part of the panel it asks for.
+const openRoomPanel = vi.fn();
 vi.mock('@/layers/features/room-management', () => ({
-  RoomDetailsDialog: (props: { focus: string }) => {
-    detailsDialog(props);
-    return <div data-testid="room-details">{props.focus}</div>;
-  },
+  openRoomPanel: (focus: string, roomId: string) => openRoomPanel(focus, roomId),
 }));
 
 afterEach(() => {
   cleanup();
+  openRoomPanel.mockClear();
   working.count = 0;
   teamRoomId.current = 'team-room';
   vi.clearAllMocks();
@@ -156,17 +156,17 @@ describe('ChannelsBar', () => {
   });
 
   it('counts the room’s members, and opens them when pressed', async () => {
-    // The focus is the part of this that survives phase R2, when the same press
-    // opens the room right panel instead of the sheet.
+    // Since phase R2 the press opens the right panel's Room tab on the roster.
+    // The chip names what the reader wanted, not which surface answers it —
+    // which is why re-pointing it from the modal to the panel was one line.
     const user = userEvent.setup();
     renderBar(room({ members: members(3) }));
 
     const chip = screen.getByRole('button', { name: '3 members' });
-    expect(screen.queryByTestId('room-details')).not.toBeInTheDocument();
+    expect(openRoomPanel).not.toHaveBeenCalled();
 
     await user.click(chip);
-    expect(screen.getByTestId('room-details')).toBeInTheDocument();
-    expect(detailsDialog).toHaveBeenCalledWith(expect.objectContaining({ focus: 'members' }));
+    expect(openRoomPanel).toHaveBeenCalledWith('members', 'room-1');
   });
 
   it('refuses to name #team here, because this route redirects it to Home', () => {
