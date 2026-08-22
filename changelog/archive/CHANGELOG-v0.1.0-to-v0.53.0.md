@@ -1,7 +1,25 @@
-# Changelog archive: v0.1.0 – v0.52.0
+# Changelog archive: v0.1.0 – v0.53.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.53.0] - 2026-07-20
+
+### Added
+
+- **The right-side panel now opens to Pulse — a quick read on what needs you.** On the dashboard, agents, tasks, and every page away from a chat, the inspector panel used to sit empty; now it shows Pulse: a short list of anything that needs attention (a stalled chat, a failed run, an undelivered message, an agent that dropped offline) and a peek at recent activity, each linking through to the full view. When there's nothing to report, it says so calmly instead of going blank. In a chat, your last-used tab still opens first, exactly as before — Pulse just waits as the first tab in the strip. Open a panel where an agent you were inspecting has since been deleted and its profile tab now quietly steps aside rather than lingering on a "not found" message.
+
+### Changed
+
+- **The sidebar in the web cockpit is now just your list of agents — the old per-chat "session" view and its row of sidebar tabs have been retired.** Opening a chat keeps your agent list in place; everything about that chat lives in the inspector panel on the right, so the sidebar never swaps out from under you. Agents that drive the interface get an honest answer now, too: the web cockpit has no sidebar tabs, so asking to switch one does nothing there — and the agent is told that, instead of it quietly pretending to work. (The tab strip still lives in the Obsidian plugin, where those requests keep working.)
+
+### Fixed
+
+- **The inspector panel on the right no longer disappears, and no longer shows an agent you never picked.** Its toggle now stays in the top bar on every page — including the Marketplace, where it used to vanish. Open it anywhere and there's always something worth seeing — the new Pulse tab keeps it from ever being a blank gap. Away from a chat, the Agent Profile tab only appears once you actually open an agent, so the panel never fills itself with the ambient project it happened to start in. And a panel tab added by an extension that ships no icon now falls back to a default icon instead of breaking the whole panel.
+- Stopped a confusing sign-in advisory from printing on every server start.
+- Directory-boundary messages now tell the truth about folders outside your home directory, instead of mislabeling them.
+- Docker packaging is more reliable: the release tarball is guarded against missing files, `docker:run` works out of the box, and `smoke:npm` can be pinned to a specific version.
+- Fixed a blank cockpit when the host port is remapped (Docker `-p`, an SSH tunnel, or a reverse proxy).
 
 ## [0.52.0] - 2026-07-20
 

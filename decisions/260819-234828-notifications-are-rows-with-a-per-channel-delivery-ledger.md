@@ -1,7 +1,7 @@
 ---
 id: 260819-234828
 title: Activity notifications are SQLite rows with a per-channel delivery ledger; standing attention stays derived and is stored only on resolution
-status: proposed
+status: accepted
 created: 2026-08-19
 spec: notification-system
 superseded-by: null
@@ -11,7 +11,10 @@ superseded-by: null
 
 ## Status
 
-Proposed. Implemented across DOR-1383..DOR-1391 (2026-08-20); accept via /adr:review.
+Accepted 2026-08-22 — implemented across DOR-1383..DOR-1391 (PRs #1146–#1155).
+The `notifications` and `notification_deliveries` tables live in
+`packages/db/src/schema/notifications.ts`; the service in
+`apps/server/src/services/notifications/`.
 
 ## Context
 

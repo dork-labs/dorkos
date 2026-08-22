@@ -64,6 +64,13 @@ didn't get to do that one thing.
 A scheduled task is the one exception. Nobody is sitting there watching it, so there is nobody to
 wait for: its questions are refused after ten minutes and the run carries on.
 
+If you've set up a way for DorkOS to reach you elsewhere, it doesn't just wait quietly in the
+meantime. After a short delay you choose, it can also ping your phone's browser and any chat apps
+you've connected, so a long meeting doesn't mean an agent sits blocked for hours before you happen
+to look. This only fires for something actually stopped and waiting: an agent holding a question,
+a scheduled task waiting for approval, or a session that stopped on an error. A finished turn never
+follows you around. Turn it on, and set the delay, in Settings → Notifications.
+
 Once an Ask is answered, one way or another, it leaves behind a short record: what you chose,
 or that it was already answered and when, or that time ran out. You can always find that record
 later, in the same place the question first appeared.
@@ -105,9 +112,10 @@ itself, and cutting it off would break your own integrations for no gain. It can
 Answering is for a person signed in to DorkOS.
 
 <Callout title="What DorkOS doesn't do yet">
-  An Ask only reaches you while your DorkOS cockpit is open, unless a named approver is on a chat
-  connection. Nothing is pushed to your phone when the cockpit is closed. A request raised while you
-  are away waits for you, for up to four hours, and still takes your answer when you come back; only
-  after that does the agent give up and say so. The approver list is per chat connection, not per
-  agent, and DorkOS does not record which of them answered.
+  A notification that reaches your phone or a chat app is a nudge, not an answer: it links back to
+  DorkOS, where you actually decide it, except for a named approver in a one-to-one chat, who gets
+  real Allow and Deny buttons right there. A request raised while you are away still waits for you,
+  for up to four hours, and still takes your answer when you come back; only after that does the
+  agent give up and say so. The approver list is per chat connection, not per agent, and DorkOS does
+  not record which of them answered.
 </Callout>

@@ -589,6 +589,27 @@ export const features: Feature[] = [
     relatedFeatures: ['chat-interface', 'canvas'],
     sortOrder: 9,
   },
+  {
+    slug: 'notifications',
+    name: 'Notifications',
+    product: 'console',
+    category: 'agent-control',
+    tagline: 'Get pinged when an agent needs you, and answer from the alert itself',
+    description:
+      "An agent waiting on you in another tab is easy to miss. Notifications sound a soft knock, alert your desktop, and escalate to your phone if you don't answer.",
+    status: 'ga',
+    benefits: [
+      'One Inbox in the top right holds every alert, read or not',
+      'A soft knock sound plays the moment an agent needs you',
+      'Answer right from the desktop notification banner on Mac',
+      'No response in a couple minutes escalates to your phone',
+      'A daily Shift Report catches you up on what you missed',
+    ],
+    moment:
+      'You come back from lunch to a Shift Report on Home summing up what happened while you were away. Later, an agent proposes a new schedule on a card showing who asked, why, and the exact times, with a test run before you approve it.',
+    relatedFeatures: ['team-room', 'tool-approval', 'task-scheduler', 'question-prompts'],
+    sortOrder: 10,
+  },
 
   // === TASKS ===
   {
