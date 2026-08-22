@@ -1396,6 +1396,35 @@ describe('a steer the CLI answers in a turn of its own (DOR-1314)', () => {
     expect(cli.launches).toBe(1);
   });
 
+  it('waits out a continuation that takes its time', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, 'do the thing');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    await runtime.deliverIntoTurn(sessionId, 'also check the tests', {
+      mode: 'steer',
+      messageId: 'steer-1',
+    });
+    await vi.waitFor(() => expect(process.received).toHaveLength(3));
+
+    process.answer(process.received[1]!, 'the first answer');
+    // The continuation BEGINS promptly and then works for a while — a real
+    // turn, not a burst. The wait is for the first word, never for the last, so
+    // the turn must not be cut short behind it.
+    process.say('starting on the tests');
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    process.answer('steer-1', 'and here is what they say');
+
+    const events = await running;
+    const said = spokenText(events);
+    expect(said).toContain('starting on the tests');
+    expect(said).toContain('and here is what they say');
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
   it('closes on the steer’s own result when the CLI coalesced it after all', async () => {
     const sessionId = nextSession();
     await turn(sessionId);
@@ -1441,5 +1470,65 @@ describe('a steer the CLI answers in a turn of its own (DOR-1314)', () => {
     const events = await running;
     expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
     expect(spokenText(events)).toContain('the only answer');
+  });
+});
+
+describe('what a drained runtime window is reported as (DOR-1314)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  it('says nothing louder than debug when the CLI only volunteered bookkeeping', async () => {
+    const { logger } = await import('../../../../../lib/logger.js');
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    vi.mocked(logger.debug).mockClear();
+    vi.mocked(logger.error).mockClear();
+
+    // A `result` for a message nobody in this session ever sent, with nothing
+    // held behind it: the window it opens carries the result and not one word.
+    process.emit(resultMessage('a-message-nobody-dispatched'));
+
+    await vi.waitFor(() => {
+      expect(
+        vi
+          .mocked(logger.debug)
+          .mock.calls.some((call) => String(call[0]).includes('content-free turn nobody asked for'))
+      ).toBe(true);
+    });
+    // A warning here is noise that trains people to ignore the log.
+    expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
+  });
+
+  it('reports dropped model speech as an error, with a census of what it was', async () => {
+    const { logger } = await import('../../../../../lib/logger.js');
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    vi.mocked(logger.error).mockClear();
+
+    // The CLI speaks between turns and then names a message nobody sent. Those
+    // words have no window to land in, so they are dropped — and dropping words
+    // a person might have been owed is not a debug-level event.
+    process.say('a continuation nobody asked for');
+    process.emit(resultMessage('a-message-nobody-dispatched'));
+
+    await vi.waitFor(() => {
+      expect(
+        vi
+          .mocked(logger.error)
+          .mock.calls.some((call) => String(call[0]).includes('dropped model output'))
+      ).toBe(true);
+    });
+    const call = vi
+      .mocked(logger.error)
+      .mock.calls.find((entry) => String(entry[0]).includes('dropped model output'))!;
+    expect(call[1]).toMatchObject({
+      sessionId,
+      dropped: 2,
+      content: 1,
+      census: { stream_event: 1, result: 1 },
+    });
   });
 });
