@@ -17,7 +17,7 @@
  *
  * @module features/dashboard-sidebar/ui/useSectionChrome
  */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ListFilter, Plus } from 'lucide-react';
 import type { SidebarGroup, SmartGroupRules } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
@@ -37,7 +37,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   SidebarGroupAction,
-  SidebarMenu,
   type SidebarMenuNode,
 } from '@/layers/shared/ui';
 import {
@@ -55,12 +54,9 @@ import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
 } from '@/layers/entities/config';
-import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { hasUnread } from '@/layers/entities/room';
 import { persistedSectionId, type SidebarSectionModel } from '../model/build-sidebar-model';
 import { useCreateFlowStore, type NewMenuItemId } from '../model/create-flow-store';
 import { useMarkRoomsRead } from '../model/use-mark-rooms-read';
-import { GroupCreateInput } from './GroupCreateInput';
 import {
   buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
@@ -147,53 +143,11 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     update((prev) => setSectionCollapsed(prev, stored, !section.collapsed));
   };
 
-  // "Mark all … read" means every room of that kind, including the ones filed
-  // into a section and drawn somewhere else entirely — so the list it works from
-  // is the whole kind, never the section's own rows.
-  const unreadIds = useMemo(() => {
-    const rooms = [...chrome.roomsById.values()];
-    return {
-      channels: rooms.filter((room) => room.kind !== 'dm' && hasUnread(room)).map((r) => r.id),
-      dms: rooms.filter((room) => room.kind === 'dm' && hasUnread(room)).map((r) => r.id),
-    };
-  }, [chrome.roomsById]);
-
-  // Built from the ROSTER, with manifests looked up — never from the manifest
-  // map's own keys. That map is a separate query and answers `{}` until it
-  // lands, so keying off it reports an empty fleet on the first paint and
-  // withdraws chrome that should be there (BC-32).
-  const smartGroupCandidates = useMemo(
-    () =>
-      chrome.agentPaths.map((path) => {
-        const manifest = chrome.manifests[path] ?? null;
-        return {
-          projectPath: path,
-          runtime: manifest?.runtime ?? 'claude-code',
-          namespace: manifest?.namespace ?? null,
-          attention: 'inactive' as const,
-          lastActivityAt: null,
-        };
-      }),
-    [chrome.agentPaths, chrome.manifests]
-  );
-  const runtimeOptions = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const candidate of smartGroupCandidates) {
-      if (!seen.has(candidate.runtime)) {
-        seen.set(candidate.runtime, getRuntimeDescriptor(candidate.runtime).label);
-      }
-    }
-    return Array.from(seen, ([value, label]) => ({ value, label })).sort((a, b) =>
-      a.label.localeCompare(b.label)
-    );
-  }, [smartGroupCandidates]);
-  const namespaceOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const candidate of smartGroupCandidates) {
-      if (candidate.namespace) set.add(candidate.namespace);
-    }
-    return Array.from(set).sort();
-  }, [smartGroupCandidates]);
+  // The unread lists and the rule editor's option lists are the SAME answer for
+  // every section, so they are worked out once for the whole panel and read off
+  // the chrome. Deriving them here ran one walk of the room list and two of the
+  // fleet per section, on every render of the sidebar (D8).
+  const unreadIds = chrome.unreadRoomIds;
 
   /**
    * A section's `+`: the deep link into the one New menu, on the item that
@@ -417,15 +371,19 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          {isSmart && (
+          {/* Mounted only while open, like the room sheet a row owns: a closed
+              rule editor still holds a form seeded from the rules as they were
+              when it last closed, and a Library of smart sections would carry
+              one apiece. */}
+          {isSmart && smartDialogOpen && (
             <SmartGroupRuleDialog
-              open={smartDialogOpen}
+              open
               onOpenChange={setSmartDialogOpen}
               mode="edit"
               initialName={group.name}
               initialRules={group.rules}
-              runtimeOptions={runtimeOptions}
-              namespaceOptions={namespaceOptions}
+              runtimeOptions={chrome.runtimeOptions}
+              namespaceOptions={chrome.namespaceOptions}
               onSubmit={({ rules }: { rules: SmartGroupRules }) =>
                 update((prev) => setGroupRules(prev, groupId, rules))
               }

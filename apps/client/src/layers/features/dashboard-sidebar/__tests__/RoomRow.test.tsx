@@ -12,6 +12,7 @@ import { agentAuthorRef, type AuthorRef, type RoomSummary } from '@dorkos/shared
 import { toast as mockToast } from 'sonner';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
+import { configKeys, useSidebarPrefs } from '@/layers/entities/config';
 import { useRoomWorkingStore } from '@/layers/entities/room';
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 import { RoomRow } from '../ui/rooms/RoomRow';
@@ -159,6 +160,18 @@ function selfTeamRoster() {
   };
 }
 
+/**
+ * The one preferences subscription the real panel holds — `SidebarChrome`.
+ *
+ * Mounted here because the row no longer holds one (D8) and a write composes
+ * onto whatever the config cache has: with no observer at all, `gcTime: 0`
+ * collects a seeded cache before the click that reads it.
+ */
+function PrefsPrimer() {
+  useSidebarPrefs();
+  return null;
+}
+
 function renderRow(
   room: RoomSummary,
   opts: {
@@ -181,6 +194,22 @@ function renderRow(
      * screen from the first tick, roster or no roster.
      */
     selfKnownFromStart?: boolean;
+    /** Whether the panel says this room is silenced in its own right. */
+    isMuted?: boolean;
+    /** The hand-made section the panel says this room is filed into. */
+    currentGroupId?: string | null;
+    /** The sections the panel offers as move targets. */
+    moveTargetGroups?: readonly { id: string; name: string }[];
+    /**
+     * Seed the config cache before the first render.
+     *
+     * A preferences WRITE composes onto whatever the cache holds, and this row
+     * no longer subscribes to preferences itself (D8) — so nothing here would
+     * put the stored sections in front of `moveToGroup` otherwise, and the write
+     * would compose onto the defaults. Seeding is deterministic where waiting on
+     * the query to settle is a race.
+     */
+    config?: unknown;
   } = {}
 ) {
   // Mesh is always answered: the row maps a 1:1's `agentRef` back to a path
@@ -191,13 +220,19 @@ function renderRow(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
+  if (opts.config !== undefined) {
+    queryClient.setQueryData(configKeys.current(), opts.config);
+  }
   if (opts.selfKnownFromStart === true) {
     queryClient.setQueryData([...TEAM_ROSTER_KEY], selfTeamRoster());
   }
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <TooltipProvider>{children}</TooltipProvider>
+        <TooltipProvider>
+          <PrefsPrimer />
+          {children}
+        </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -206,6 +241,9 @@ function renderRow(
       room={room}
       visual={opts.visual ?? { kind: 'sigil' }}
       isActive={opts.isActive ?? false}
+      isMuted={opts.isMuted ?? false}
+      currentGroupId={opts.currentGroupId ?? null}
+      moveTargetGroups={opts.moveTargetGroups ?? []}
       onSelect={vi.fn()}
       viewAgentProfile={opts.viewAgentProfile ?? (() => vi.fn())}
       onRequestNewGroup={opts.onRequestNewGroup ?? vi.fn()}
@@ -813,8 +851,7 @@ async function openMoveToGroup(): Promise<HTMLElement> {
 describe('RoomRow organization', () => {
   it('mutes a room into the SHARED muted list, as a room reference', async () => {
     const transport = transportWithGroups();
-    renderRow(channel(), { transport });
-    await screen.findByRole('button', { name: '#general' });
+    renderRow(channel(), { transport, config: configWithGroups() });
 
     fireEvent.pointerDown(screen.getByLabelText('#general actions'));
     fireEvent.click(screen.getByText('Mute channel'));
@@ -824,18 +861,20 @@ describe('RoomRow organization', () => {
     expect(lastSidebarWrite(transport).muted).toEqual([{ kind: 'room', roomId: 'room-1' }]);
   });
 
-  it('reads its own mute state back: the item says Unmute and the row is marked', async () => {
-    const transport = transportWithGroups({ muted: [{ kind: 'room', roomId: 'room-1' }] });
-    renderRow(channel(), { transport });
+  it('draws the mute it is TOLD about, and offers the way back out of it', () => {
+    // The row no longer reads preferences for itself (D8): the panel holds the
+    // one subscription and hands each row its answer. Red when the row starts
+    // deriving mute from anywhere but this prop.
+    renderRow(channel(), { transport: transportWithGroups(), isMuted: true });
 
-    await waitFor(() => expect(screen.getByLabelText('Muted')).toBeInTheDocument());
+    expect(screen.getByLabelText('Muted')).toBeInTheDocument();
     expect(itemLabels(openDropdown())).toContain('Unmute channel');
   });
 
   it('unmutes by removing the reference rather than writing a false', async () => {
-    const transport = transportWithGroups({ muted: [{ kind: 'room', roomId: 'room-1' }] });
-    renderRow(channel(), { transport });
-    await waitFor(() => expect(screen.getByLabelText('Muted')).toBeInTheDocument());
+    const muted: Partial<SidebarPrefs> = { muted: [{ kind: 'room', roomId: 'room-1' }] };
+    const transport = transportWithGroups(muted);
+    renderRow(channel(), { transport, isMuted: true, config: configWithGroups(muted) });
 
     fireEvent.pointerDown(screen.getByLabelText('#general actions'));
     fireEvent.click(screen.getByText('Unmute channel'));
@@ -844,28 +883,32 @@ describe('RoomRow organization', () => {
     expect(lastSidebarWrite(transport).muted).toEqual([]);
   });
 
-  it('offers only MANUAL groups as move targets — a room in a smart group vanishes', async () => {
-    // A smart group derives its members from rules about agents and draws those
-    // instead of its stored `items`, while `groupedRoomIds` still counts the
-    // room as grouped and hides it from Channels. Offering it would file the
-    // room somewhere no section draws it.
-    const transport = transportWithGroups();
-    renderRow(channel(), { transport });
-    await screen.findByRole('button', { name: '#general' });
+  it('offers exactly the sections it was handed, and ticks the one it is in', async () => {
+    // Which sections may be offered at all is the panel's answer now — smart
+    // ones are filtered out in `moveTargetGroups`, pinned by
+    // `use-sidebar-prefs.test.tsx`. What this pins is that the row offers that
+    // list and nothing it invented.
+    renderRow(channel(), {
+      transport: transportWithGroups(),
+      moveTargetGroups: [{ id: 'g-manual', name: 'Clients' }],
+      currentGroupId: 'g-manual',
+    });
 
     // A group target is a tickable choice, so it reads as `menuitemcheckbox` —
     // asserting over exactly those is what makes "not offered" mean it.
     const submenu = await openMoveToGroup();
-    const targets = within(submenu)
-      .getAllByRole('menuitemcheckbox')
-      .map((item) => item.textContent ?? '');
-    expect(targets).toEqual(['Clients']);
+    const targets = within(submenu).getAllByRole('menuitemcheckbox');
+    expect(targets.map((item) => item.textContent ?? '')).toEqual(['Clients']);
+    expect(targets[0]).toHaveAttribute('aria-checked', 'true');
   });
 
   it('files the room into the group that was picked', async () => {
     const transport = transportWithGroups();
-    renderRow(channel(), { transport });
-    await screen.findByRole('button', { name: '#general' });
+    renderRow(channel(), {
+      transport,
+      config: configWithGroups(),
+      moveTargetGroups: [{ id: 'g-manual', name: 'Clients' }],
+    });
 
     const submenu = await openMoveToGroup();
     fireEvent.click(within(submenu).getByText('Clients'));

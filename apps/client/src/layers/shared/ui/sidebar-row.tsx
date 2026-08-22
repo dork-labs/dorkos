@@ -10,7 +10,7 @@
  *
  * @module shared/ui/sidebar-row
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import type { CSSProperties, HTMLAttributes, ReactNode, Ref, RefObject } from 'react';
 import { cn } from '@/layers/shared/lib';
 import {
@@ -226,8 +226,20 @@ export type SidebarRowMenu =
       actionsLabel: string;
       /** Width class for the menus. */
       menuWidth?: string;
+      /**
+       * The reader has reached for this row's menu — see
+       * {@link SidebarMenuSurfaceProps.onMenuIntent}. A row that passes this may
+       * pass an empty `menuNodes` until it fires, and still keeps its "⋮" and
+       * its right-click target.
+       */
+      onMenuIntent?: () => void;
     }
-  | { menuNodes?: never; actionsLabel?: never; menuWidth?: never };
+  | {
+      menuNodes?: never;
+      actionsLabel?: never;
+      menuWidth?: never;
+      onMenuIntent?: never;
+    };
 
 /** Props for {@link SidebarRow}. */
 export interface SidebarRowProps {
@@ -441,6 +453,7 @@ export function SidebarRow({
   menuNodes = [],
   actionsLabel,
   menuWidth,
+  onMenuIntent,
   isActive = false,
   emphasized = false,
   muted = false,
@@ -608,6 +621,7 @@ export function SidebarRow({
           actionsLabel={actionsLabel ?? ''}
           menuWidth={menuWidth}
           hideActionsTrigger={editor !== undefined}
+          {...(onMenuIntent === undefined ? {} : { onMenuIntent })}
         >
           {row}
           {glyphAction !== undefined && editor === undefined && !isMobile && (

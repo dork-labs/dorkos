@@ -31,10 +31,19 @@ import {
   useTransport,
 } from '@/layers/shared/model';
 import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
-import { createGroup, moveToGroup, useUpdateSidebarPrefs } from '@/layers/entities/config';
+import {
+  createGroup,
+  moveTargetGroups,
+  moveToGroup,
+  mutedRoomIds,
+  roomSectionIds,
+  useSidebarPrefs,
+  useUpdateSidebarPrefs,
+} from '@/layers/entities/config';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
-import { useRooms, useRoomOpenThreadStore } from '@/layers/entities/room';
+import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { hasUnread, useRooms, useRoomOpenThreadStore } from '@/layers/entities/room';
 import {
   beginSessionNavigation,
   notifySessionLookupFailed,
@@ -45,8 +54,32 @@ import { useProfileStore } from '@/layers/features/profile';
 import type { SidebarTarget, SuggestionId } from '../model/build-sidebar-model';
 import { useCreateFlowStore, type GroupCreationState } from '../model/create-flow-store';
 import { NOW_OVERFLOW_HREF } from '../model/rules/cap-now-items';
-import { buildSidebarItems, type SidebarItemVisual } from '../model/sidebar-item';
+import { buildRoomVisualIndex, type SidebarItemVisual } from '../model/sidebar-item';
 import { toggleTodayAutomated } from '../model/today-reveal-store';
+
+/**
+ * The mark a room draws when the index has no answer for it — a room the list
+ * query dropped between the model's build and this render. A module constant so
+ * the fallback keeps one identity: a fresh object here would change a memoized
+ * row's `visual` prop on every render for the one room that hit it.
+ */
+const NO_MARK: SidebarItemVisual = { kind: 'sigil' };
+
+/** Every unread room id, split by the two "Mark all … read" commands. */
+export interface SidebarUnreadRoomIds {
+  /** Channels — every room that is not a direct message. */
+  channels: readonly string[];
+  /** Direct messages, group conversations included. */
+  dms: readonly string[];
+}
+
+/** One choice in a smart section's rule editor. */
+export interface SmartGroupOption {
+  /** The stored value the rule matches on. */
+  value: string;
+  /** What the reader sees. */
+  label: string;
+}
 
 /** Everything a row needs that the model does not carry. */
 export interface SidebarChromeValue {
@@ -68,6 +101,53 @@ export interface SidebarChromeValue {
   roomsById: Map<string, RoomSummary>;
   /** The mark a room draws, resolved in the one place that resolves faces. */
   roomVisualOf: (room: RoomSummary) => SidebarItemVisual;
+  /**
+   * Rooms the operator has silenced in their own right (`ui.sidebar.muted`),
+   * NOT counting the ones a muted section is dimming.
+   *
+   * **The one prefs subscription a row's mute reads through** (D8). Every room
+   * row used to call `useSidebarPrefs()` for this, so writing any preference —
+   * folding a section, renaming one, muting something else — re-rendered all
+   * sixty of them. Group mute is deliberately excluded: it is a lens the model
+   * applies to a row's `muted` flag, while the bell on the row and the
+   * Mute/Unmute item in its menu are about the room's own setting.
+   */
+  mutedRoomIds: ReadonlySet<string>;
+  /**
+   * The hand-made section each room is filed into, for the rows that offer
+   * "Move to section ▸". Absent from the map means "not in one".
+   */
+  roomSectionIds: ReadonlyMap<string, string>;
+  /**
+   * The sections a row may be moved INTO.
+   *
+   * Smart sections are left out: their membership comes from rules about
+   * agents, so a room filed into one would be counted as grouped (and hidden
+   * from Channels) while that section drew its derived members instead — the
+   * row would vanish. The drag layer refuses the same drop; this refuses to
+   * offer it.
+   */
+  moveTargetGroups: readonly { id: string; name: string }[];
+  /**
+   * Every unread room, walked once for the whole panel.
+   *
+   * "Mark all … read" means every room of that kind, including the ones filed
+   * into a section and drawn somewhere else entirely — so the list is the whole
+   * kind, never a section's own rows. Computed here because a section that
+   * worked it out for itself walked the room list once per section.
+   */
+  unreadRoomIds: SidebarUnreadRoomIds;
+  /**
+   * The runtimes a smart section's rule editor can offer, from the fleet.
+   *
+   * Built from the ROSTER with manifests looked up — never from the manifest
+   * map's own keys. That map is a separate query and answers `{}` until it
+   * lands, so keying off it reports an empty fleet on the first paint and
+   * withdraws chrome that should be there (BC-32).
+   */
+  runtimeOptions: readonly SmartGroupOption[];
+  /** The namespaces a smart section's rule editor can offer, from the same walk. */
+  namespaceOptions: readonly string[];
   /** What the operator has open, so the matching row (and its Library copy) tints. */
   activeTarget: SidebarTarget | null;
   /** Open whatever a row points at, and remember that it was opened (BC-16). */
@@ -181,25 +261,61 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   // own face, which only a layer that can see both the room and the fleet can
   // work out (sidebar-groups §3.1) — resolving it twice is what let a DM row and
   // its agent row disagree (DOR-582).
-  const itemIndex = useMemo(
+  const roomVisuals = useMemo(
     () =>
-      buildSidebarItems({
+      buildRoomVisualIndex({
         agentPaths: rawPaths,
         agentsByPath: manifests ?? {},
-        displayNames,
-        attention: {},
-        agentActivity: {},
         rooms: roomsQuery.data ?? [],
-        mutedAgentPaths: new Set<string>(),
-        mutedRoomIds: new Set<string>(),
       }),
-    [rawPaths, manifests, displayNames, roomsQuery.data]
+    [rawPaths, manifests, roomsQuery.data]
   );
   const roomVisualOf = useCallback(
-    (room: RoomSummary): SidebarItemVisual =>
-      itemIndex.byRoomId.get(room.id)?.visual ?? { kind: 'sigil' },
-    [itemIndex]
+    (room: RoomSummary): SidebarItemVisual => roomVisuals.get(room.id) ?? NO_MARK,
+    [roomVisuals]
   );
+
+  // ── The three fleet-and-room walks the sections used to make one apiece ──
+  //
+  // `useSectionChrome` runs per section, so each of these was N walks over the
+  // whole fleet or the whole room list on every render of the panel. They are
+  // the same answer for every section, so they are worked out once here (D8).
+  const prefs = useSidebarPrefs();
+  // **Keyed on the LIST each one reads, never on the whole prefs object.** Every
+  // preferences write produces a new `prefs` — muting one room, folding a
+  // section — and a memo keyed on the whole of it hands all sixty rows a fresh
+  // `moveTargetGroups` array, which is a changed prop and a defeated memo. The
+  // stored lists keep their identity across a write that did not touch them.
+  const mutedRooms = useMemo(() => mutedRoomIds(prefs), [prefs.muted]);
+  const roomSections = useMemo(() => roomSectionIds(prefs), [prefs.groups]);
+  const moveTargets = useMemo(() => moveTargetGroups(prefs), [prefs.groups]);
+  const unreadRoomIds = useMemo<SidebarUnreadRoomIds>(() => {
+    const channels: string[] = [];
+    const dms: string[] = [];
+    for (const room of roomsQuery.data ?? []) {
+      if (!hasUnread(room)) continue;
+      (room.kind === 'dm' ? dms : channels).push(room.id);
+    }
+    return { channels, dms };
+  }, [roomsQuery.data]);
+  const runtimeOptions = useMemo<SmartGroupOption[]>(() => {
+    const seen = new Map<string, string>();
+    for (const path of rawPaths) {
+      const runtime = manifests?.[path]?.runtime ?? 'claude-code';
+      if (!seen.has(runtime)) seen.set(runtime, getRuntimeDescriptor(runtime).label);
+    }
+    return Array.from(seen, ([value, label]) => ({ value, label })).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    );
+  }, [rawPaths, manifests]);
+  const namespaceOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const path of rawPaths) {
+      const namespace = manifests?.[path]?.namespace;
+      if (namespace) set.add(namespace);
+    }
+    return Array.from(set).sort();
+  }, [rawPaths, manifests]);
 
   const groupCreation = useCreateFlowStore((s) => s.groupCreation);
   const requestNewGroup = useCreateFlowStore((s) => s.requestNewGroup);
@@ -365,6 +481,24 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
     [navigate, openAgent, openSession, openSuggestion, router, startNewSession]
   );
 
+  // Sheet when the fleet can name the agent, docked panel when it cannot. Never
+  // a no-op — but the second branch opens a panel that says the agent is gone,
+  // not a profile. See `viewProfileFor`'s docs.
+  //
+  // A `useCallback` of its own rather than a closure inside the value below,
+  // because a memoized row takes it as a prop: the value's own identity moves
+  // whenever anything in the panel changes, and a row that re-rendered for that
+  // is a row that did not have to.
+  const viewProfileFor = useCallback(
+    (agentPath: string) => {
+      const memberId = memberIdByPath.get(agentPath);
+      return memberId === undefined
+        ? () => useProfileStore.getState().openProfileDocked(agentPath)
+        : () => openProfile(memberId);
+    },
+    [memberIdByPath, openProfile]
+  );
+
   const value = useMemo<SidebarChromeValue>(
     () => ({
       agentPaths: rawPaths,
@@ -372,18 +506,16 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       displayNames,
       roomsById,
       roomVisualOf,
+      mutedRoomIds: mutedRooms,
+      roomSectionIds: roomSections,
+      moveTargetGroups: moveTargets,
+      unreadRoomIds,
+      runtimeOptions,
+      namespaceOptions,
       activeTarget,
       openTarget,
       newSession: (dir?: string) => startNewSession(dir),
-      // Sheet when the fleet can name the agent, docked panel when it cannot.
-      // Never a no-op — but the second branch opens a panel that says the agent
-      // is gone, not a profile. See `viewProfileFor`'s docs.
-      viewProfileFor: (agentPath: string) => {
-        const memberId = memberIdByPath.get(agentPath);
-        return memberId === undefined
-          ? () => useProfileStore.getState().openProfileDocked(agentPath)
-          : () => openProfile(memberId);
-      },
+      viewProfileFor,
       requestNewGroup,
       groupCreation,
       commitNewGroup: (name: string) => {
@@ -402,11 +534,16 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       displayNames,
       roomsById,
       roomVisualOf,
+      mutedRooms,
+      roomSections,
+      moveTargets,
+      unreadRoomIds,
+      runtimeOptions,
+      namespaceOptions,
       activeTarget,
       openTarget,
       startNewSession,
-      memberIdByPath,
-      openProfile,
+      viewProfileFor,
       groupCreation,
       requestNewGroup,
       endNewGroup,

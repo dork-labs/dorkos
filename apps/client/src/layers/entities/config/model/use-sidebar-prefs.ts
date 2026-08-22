@@ -134,16 +134,23 @@ export function useUpdateSidebarPrefs(): UpdateSidebarPrefs {
     [queryClient]
   );
 
+  // **Keyed on `mutate`, never on the mutation result.** TanStack returns a
+  // fresh result object on every render but keeps `mutate`/`mutateAsync` stable
+  // for the life of the observer, so depending on the whole result gave these
+  // two a new identity on every render — and every memo that closes over them,
+  // including the sidebar's whole row chrome, rebuilt with them
+  // (`specs/sidebar-simplification` D8).
+  const { mutate, mutateAsync } = mutation;
   const update = useCallback(
     (updater: (prev: SidebarPrefs) => SidebarPrefs) => {
-      mutation.mutate(resolveNext(updater));
+      mutate(resolveNext(updater));
     },
-    [mutation, resolveNext]
+    [mutate, resolveNext]
   );
 
   const updateAsync = useCallback(
-    (updater: (prev: SidebarPrefs) => SidebarPrefs) => mutation.mutateAsync(resolveNext(updater)),
-    [mutation, resolveNext]
+    (updater: (prev: SidebarPrefs) => SidebarPrefs) => mutateAsync(resolveNext(updater)),
+    [mutateAsync, resolveNext]
   );
 
   return { update, updateAsync, isPending: mutation.isPending, isError: mutation.isError };
@@ -572,4 +579,40 @@ export function unmuteItem(prev: SidebarPrefs, ref: SidebarItemRef): SidebarPref
  */
 export function mutedRoomIds(prefs: SidebarPrefs): Set<string> {
   return new Set(prefs.muted.flatMap((ref) => (ref.kind === 'room' ? [ref.roomId] : [])));
+}
+
+/**
+ * The hand-made section each room is filed into, by room id.
+ *
+ * A room in no section is simply absent. Lives beside the prefs for the reason
+ * {@link mutedRoomIds} does: a row's menu ticks the section it is in, and the
+ * panel that hands it that answer must be reading the same list the drag layer
+ * writes.
+ *
+ * @param prefs - Current sidebar prefs.
+ */
+export function roomSectionIds(prefs: SidebarPrefs): Map<string, string> {
+  const byRoomId = new Map<string, string>();
+  for (const group of prefs.groups) {
+    for (const item of group.items) if (item.kind === 'room') byRoomId.set(item.roomId, group.id);
+  }
+  return byRoomId;
+}
+
+/**
+ * The sections "Move to section ▸" may offer, in stored order.
+ *
+ * **Smart sections are left out, and that is a correctness rule rather than a
+ * tidiness one.** A smart section's membership comes from rules about agents and
+ * it draws those derived members instead of its stored `items` — while
+ * `groupedRoomIds` still counts a room filed there as grouped and hides it from
+ * Channels. Offering one would file a room somewhere no section draws it: the
+ * row would simply vanish. The drag layer refuses the same drop.
+ *
+ * @param prefs - Current sidebar prefs.
+ */
+export function moveTargetGroups(prefs: SidebarPrefs): { id: string; name: string }[] {
+  return prefs.groups
+    .filter((group) => group.kind !== 'smart')
+    .map((group) => ({ id: group.id, name: group.name }));
 }

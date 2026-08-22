@@ -79,6 +79,15 @@ const SIDEBAR_RECENT_LIMIT = 10;
 const NO_PATHS: string[] = [];
 
 /**
+ * No @mention counts, as one identity.
+ *
+ * No client source can count them above a read cursor, so the field is always
+ * this — omission, never a guess (BC-40). A shared empty rather than a fresh
+ * `{}`, so it is never the reason a memo below it rebuilds.
+ */
+const NO_MENTIONS: Record<string, number> = {};
+
+/**
  * The sidebar's slice of the shared recent-sessions answer.
  *
  * Module-level so its identity is stable: a `select` declared inside the hook
@@ -414,9 +423,23 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
     rosterResolved: boot.settled,
   });
 
-  const state = useMemo(
+  // ── The snapshot, in two halves (spec `sidebar-simplification` D8) ──
+  //
+  // **What the panel IS, and where the panel is RIGHT NOW.** The slow half is
+  // everything a query or a preference decides — it moves when a fetch settles
+  // or the operator writes something. The fast half is the clock, what needs
+  // attention, and what is on screen; those move on their own, several times a
+  // minute, with the slow half untouched.
+  //
+  // **What the split buys, stated exactly.** The slow object keeps ONE identity
+  // across a clock tick, so anything downstream that only needs "what the panel
+  // contains" can memoize on it. It does NOT stop `buildSidebarModel` running:
+  // `now` is part of the state the builder takes, its signature is unchanged,
+  // and a tick is a real input change for the two rules that read time (the
+  // 04:00 boundary, the once-a-day digest). Do not describe it as a rebuild the
+  // clock no longer triggers.
+  const slowInputs = useMemo(
     () => ({
-      now,
       sessions,
       workingSessionIds,
       liveSessionCwds,
@@ -425,23 +448,16 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       threads,
       agents,
       displayNames,
-      attention,
       recents,
       prefs,
       interactions,
       userLastMessageAt,
       // No client source counts @mentions above a read cursor. A source that
       // cannot say has no entry — omission, never a guess (BC-40).
-      mentions: {},
-      ...(coveredSignalIds === undefined ? {} : { coveredSignalIds }),
-      todayAutomatedExpanded,
-      activeTarget,
+      mentions: NO_MENTIONS,
       journey: journey.facts,
-      digest: digestFacts.digest,
     }),
     [
-      coveredSignalIds,
-      now,
       sessions,
       workingSessionIds,
       liveSessionCwds,
@@ -450,17 +466,27 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       threads,
       agents,
       displayNames,
-      attention,
       recents,
       prefs,
       interactions,
       userLastMessageAt,
-      todayAutomatedExpanded,
-      activeTarget,
       journey.facts,
-      digestFacts.digest,
     ]
   );
+
+  const fastInputs = useMemo(
+    () => ({
+      now,
+      attention,
+      activeTarget,
+      todayAutomatedExpanded,
+      digest: digestFacts.digest,
+      ...(coveredSignalIds === undefined ? {} : { coveredSignalIds }),
+    }),
+    [now, attention, activeTarget, todayAutomatedExpanded, digestFacts.digest, coveredSignalIds]
+  );
+
+  const state = useMemo(() => ({ ...slowInputs, ...fastInputs }), [slowInputs, fastInputs]);
 
   // **A write, inside the hook that gathers reads — deliberately.** Retirement
   // is permanent (BC-13), so its writer needs both the facts and the one bit

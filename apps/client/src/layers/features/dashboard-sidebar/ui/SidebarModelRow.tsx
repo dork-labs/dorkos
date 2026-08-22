@@ -12,6 +12,7 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarModelRow
  */
+import { useCallback } from 'react';
 import {
   Bot,
   CalendarClock,
@@ -126,11 +127,11 @@ export interface SidebarModelRowProps {
  */
 export function SidebarModelRow({ row, keyPrefix, sectionId }: SidebarModelRowProps) {
   const ref = dragRefOf(row.target);
-  const body = <SidebarModelRowBody row={row} keyPrefix={keyPrefix} />;
+  const body = <SidebarModelRowBody row={row} />;
   if (!row.draggable || ref === null) return body;
   return (
     <Sortable id={sidebarRowDndId(keyPrefix, ref)} data={sidebarDndData(keyPrefix, ref, sectionId)}>
-      {(bindings) => <SidebarModelRowBody row={row} keyPrefix={keyPrefix} drag={bindings} />}
+      {(bindings) => <SidebarModelRowBody row={row} drag={bindings} />}
     </Sortable>
   );
 }
@@ -138,11 +139,9 @@ export function SidebarModelRow({ row, keyPrefix, sectionId }: SidebarModelRowPr
 /** The row itself, once the drag layer has (or has not) wrapped it. */
 function SidebarModelRowBody({
   row,
-  keyPrefix,
   drag,
 }: {
   row: SidebarRowModel;
-  keyPrefix: string;
   drag?: React.ComponentProps<typeof SidebarRow>['drag'];
 }) {
   const chrome = useSidebarChrome();
@@ -159,25 +158,66 @@ function SidebarModelRowBody({
   // nowhere on the row. It goes to the generic row instead, which draws what
   // the model actually gave it: `general › Anything else to check?` (BC-23).
   if (target.kind === 'room' && target.roomKind !== 'thread') {
-    const room = chrome.roomsById.get(target.roomId);
-    // The index and this map are built from the same query, so a room row
-    // always has its room. Drawing nothing rather than throwing keeps a torn
-    // render from taking the whole sidebar down with it.
-    if (room === undefined) return null;
     return (
-      <RoomRow
-        room={room}
-        visual={chrome.roomVisualOf(room)}
+      <RoomRowFromModel
+        roomId={target.roomId}
+        roomKind={target.roomKind}
         isActive={isActive}
-        onSelect={() => chrome.openTarget(target)}
-        viewAgentProfile={chrome.viewProfileFor}
-        onRequestNewGroup={chrome.requestNewGroup}
-        {...(drag ? { sortable: drag } : {})}
+        drag={drag}
       />
     );
   }
 
   return <GenericRowFromModel row={row} isActive={isActive} drag={drag} />;
+}
+
+/**
+ * A room row: the memoized row, handed only what it draws.
+ *
+ * **Every prop here has to survive a render the row does not care about** (D8).
+ * `RoomRow` is `React.memo`, and a preferences write rebuilds the whole model —
+ * so a callback closed over `target` (a fresh object per build) would change
+ * identity on every one of them and the memo would never hold. The two ids are
+ * primitives, so the handler below is stable for the life of the row, and every
+ * other prop comes from a memo in `SidebarChrome` that only moves when its own
+ * data does.
+ */
+function RoomRowFromModel({
+  roomId,
+  roomKind,
+  isActive,
+  drag,
+}: {
+  roomId: string;
+  roomKind: 'channel' | 'dm';
+  isActive: boolean;
+  drag?: React.ComponentProps<typeof SidebarRow>['drag'];
+}) {
+  const chrome = useSidebarChrome();
+  const { openTarget } = chrome;
+  const onSelect = useCallback(
+    () => openTarget({ kind: 'room', roomId, roomKind }),
+    [openTarget, roomId, roomKind]
+  );
+  const room = chrome.roomsById.get(roomId);
+  // The index and this map are built from the same query, so a room row always
+  // has its room. Drawing nothing rather than throwing keeps a torn render from
+  // taking the whole sidebar down with it.
+  if (room === undefined) return null;
+  return (
+    <RoomRow
+      room={room}
+      visual={chrome.roomVisualOf(room)}
+      isActive={isActive}
+      isMuted={chrome.mutedRoomIds.has(roomId)}
+      currentGroupId={chrome.roomSectionIds.get(roomId) ?? null}
+      moveTargetGroups={chrome.moveTargetGroups}
+      onSelect={onSelect}
+      viewAgentProfile={chrome.viewProfileFor}
+      onRequestNewGroup={chrome.requestNewGroup}
+      {...(drag ? { sortable: drag } : {})}
+    />
+  );
 }
 
 /** An agent row: the existing roster row, told what the model decided. */
