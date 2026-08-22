@@ -3,16 +3,15 @@ import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 
 /**
- * The empty-group placeholder, matched as a PATTERN rather than a literal.
+ * The empty-section placeholder, matched as a PATTERN rather than a literal.
  *
- * The subject here is "this group has nothing in it", not the exact wording.
- * The literal `'Drag agents here'` broke when DOR-581 widened the copy to
- * "Drag agents, channels, or conversations here", and that failure sat on
- * `main` for days because neither `test` nor `browser-test` is a required
- * check. A pattern survives the next thing that becomes droppable, while still
- * asserting the placeholder is the thing on screen.
+ * The subject here is "this section has nothing in it", not the exact wording.
+ * The literal `'Drag agents here'` broke when DOR-581 widened the copy, and that
+ * failure sat on `main` for days because neither `test` nor `browser-test` is a
+ * required check. A pattern survives the next rewording — DOR-1371 was one —
+ * while still asserting the placeholder is the thing on screen.
  *
- * Source of truth: `useSectionChrome.tsx`, the group branch's `footer` — the
+ * Source of truth: `useSectionChrome.tsx`, the section branch's `footer` — the
  * one section allowed to render with no rows, because the operator made it.
  */
 const EMPTY_GROUP_PLACEHOLDER = /Drag .*here/;
@@ -21,7 +20,7 @@ const EMPTY_GROUP_PLACEHOLDER = /Drag .*here/;
  * What one of the sidebar's geometry tokens resolves to, in pixels.
  *
  * The same reader `sidebar-row-gutter.spec.ts` uses, and for the same reason:
- * `--sidebar-header-x` / `--sidebar-row-x` / `--sidebar-nested-x` are the one
+ * `--sidebar-header-x` and `--sidebar-row-x` are the one
  * place the panel's indents are decided (`specs/sidebar-simplification` D1), so
  * a spec that restated their values would be pinning a copy.
  *
@@ -42,13 +41,13 @@ async function token(page: Page, name: string): Promise<number> {
  * live verification pass was a one-off script run outside the repo, and it
  * caught two real pointer-only bugs jsdom's unit suite could not (one fixed
  * via `use-menu-close-focus-guard`). This spec is the committed replacement:
- * group create → drag-into-group → reload persistence, driven by real
+ * section create → drag-into-section → reload persistence, driven by real
  * pointer events against the actual dnd-kit `PointerSensor`.
  *
  * No Claude SDK / API key involved — sidebar organization is pure `ui.sidebar`
  * config plus mesh registration, so this stays a fast `@smoke` test.
  */
-test.describe('Dashboard Sidebar — Groups @smoke', () => {
+test.describe('Dashboard Sidebar — Sections @smoke', () => {
   // **Serial, because these tests share one `ui.sidebar`.** The config is a
   // single file on a single server, and `fullyParallel` would otherwise put the
   // drag test and the density measurements on concurrent workers writing to it
@@ -62,11 +61,10 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
   /**
    * A second agent, on a second runtime.
    *
-   * **Grouping is offered by data volume, not by a setting** (BC-32): a cockpit
-   * with one agent on one runtime has nothing to organize, so "New group…" is
-   * not in its menus at all. Two distinct runtimes is the cheaper of the two
-   * bars — the other is eight agents — and it exercises the real rule rather
-   * than working around it.
+   * Making a section by hand is offered to everybody now (D3), so this is no
+   * longer what unlocks the menu. It stays because the SMART presets are still
+   * gated on two runtimes or eight agents, and because a second agent is what
+   * makes "the one that was dragged" a real distinction rather than a tautology.
    */
   const secondAgentName = `E2E Sidebar Codex ${runId}`;
   const groupName = `E2E Group ${runId}`;
@@ -125,26 +123,21 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
     await expect(group).toContainText(agentName);
     await expect(group).not.toContainText(EMPTY_GROUP_PLACEHOLDER);
 
-    // …and it sits one `--sidebar-nested-x` deeper than a row at the top level
-    // (`specs/sidebar-simplification` D1). **Asserted HERE, in the one test that
-    // is guaranteed to have a nested row**, and against a real `SidebarSection`
-    // rendered with `isSubsection` rather than against the Dev Playground's
-    // hand-written padding — a copy that happens to agree is what let a contrast
-    // defect hide from its own gate once already.
-    //
-    // The indent moves the header AND the rows. It used to be 14px on the
-    // sub-header alone, with its members left flush: a nested list that reads as
-    // nested only where nobody is looking.
-    const nestedX = await token(page, '--sidebar-nested-x');
+    // …and it sits on the SAME x as a row in Channels. Sections are peers now
+    // (D3), so the panel is two levels — one header x, one row x — and a
+    // member's row is not indented at all. **Asserted HERE, in the one test
+    // guaranteed to have a member**, against the real `SidebarSection` rather
+    // than the Dev Playground's hand-written padding: a copy that happens to
+    // agree is what let a contrast defect hide from its own gate once already.
+    const rowX = await token(page, '--sidebar-row-x');
     const memberInset = await dashboardSidebar.rowInset(
       group.locator('[data-sidebar-row]').filter({ hasText: agentName }).first()
     );
     const topLevelInset = await dashboardSidebar.rowInset(
       dashboardSidebar.panel.locator('[data-sidebar-section="channels"] [data-sidebar-row]').first()
     );
-    expect(memberInset - topLevelInset, 'a section’s member is not one indent deeper').toBe(
-      nestedX
-    );
+    expect(memberInset, 'a section’s member is off the row token').toBe(rowX);
+    expect(memberInset, 'a section’s member is indented from a top-level row').toBe(topLevelInset);
 
     // Server: the drop persisted the whole `ui.sidebar` section (PATCH
     // /api/config), independent of DOM re-render timing.
@@ -168,15 +161,116 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
     await expect(groupAfterReload).toContainText(agentName);
   });
 
+  test('takes a CHANNEL into a section, and files it there', async ({
+    request,
+    roomsApi,
+    basePage,
+    dashboardSidebar,
+  }) => {
+    // A section has held rooms since DOR-581 and looked agent-only the whole
+    // time; D3 is what says otherwise on screen, so the browser suite has to
+    // drag one.
+    const slug = `e2e-sec-${runId}`;
+    await roomsApi.createChannel(slug);
+    await basePage.goto();
+    await basePage.waitForAppReady();
+    await basePage.ensureSidebarOpen();
+
+    await dashboardSidebar.createGroup(groupName);
+    const group = dashboardSidebar.groupContainer(groupName);
+    await expect(group).toBeVisible();
+
+    // **Scoped to Channels, not to the panel.** The same room also draws a row
+    // in Today once anything happens in it, and a Today row is not a drag source
+    // (R3) — a press on that copy arms nothing and the drop reports "never came
+    // to rest", which reads as a DnD regression and is not one.
+    const channels = dashboardSidebar.panel.locator('[data-sidebar-section="channels"]');
+    const channel = channels.locator('[data-sidebar-row]').filter({ hasText: slug });
+    await expect(channel).toBeVisible();
+    await dashboardSidebar.dragRowIntoGroup(channel, groupName);
+
+    await expect(group).toContainText(slug);
+    await expect(group).not.toContainText(EMPTY_GROUP_PLACEHOLDER);
+
+    // …and it left Channels rather than being drawn in both places: a section's
+    // members leave their home list, which is the membership rule the sidebar
+    // has always had.
+    await expect(channels.locator('[data-sidebar-row]').filter({ hasText: slug })).toHaveCount(0);
+
+    // The stored membership, independent of DOM timing: one ROOM reference.
+    const config = (await (await request.get('/api/config')).json()) as {
+      ui: { sidebar: { groups: { name: string; items: { kind: string }[] }[] } };
+    };
+    const persisted = config.ui.sidebar.groups.find((g) => g.name === groupName);
+    expect(persisted?.items.map((item) => item.kind)).toEqual(['room']);
+  });
+
+  test('lands "New section…" from a ROOM row above the first section', async ({
+    page,
+    roomsApi,
+    basePage,
+    dashboardSidebar,
+  }) => {
+    // Defect #9: the name field mounted under Agents wherever the flow was
+    // started from, so asking for a section from a channel put a focused text
+    // box below thirty agent rows, off the bottom of a 272px panel. It mounts at
+    // the top of Library now, which is one predictable place (D3).
+    const slug = `e2e-menu-${runId}`;
+    await roomsApi.createChannel(slug);
+    await basePage.goto();
+    await basePage.waitForAppReady();
+    await basePage.ensureSidebarOpen();
+
+    await dashboardSidebar.createGroup(groupName);
+    // Scoped to the LIBRARY zone: Getting started is a section too, and it sits
+    // at the top of the panel on a day-one install.
+    const firstSection = dashboardSidebar.panel
+      .locator('[data-sidebar-zone="library"] [data-sidebar-section]')
+      .first();
+    await expect(firstSection).toHaveAttribute('data-sidebar-section', /^group:/);
+
+    const channel = dashboardSidebar.panel
+      .locator('[data-sidebar-section="channels"] [data-sidebar-row]')
+      .filter({ hasText: slug });
+    await expect(channel).toBeVisible();
+
+    // **The RIGHT-CLICK path, on purpose.** The two menus are one node list, so
+    // this looks like a detail — and it is the path that was broken for a
+    // release: Radix restores focus as it closes, the name field mounted and
+    // blur-cancelled itself in the same frame, and the item read as inert while
+    // the "⋮" beside it worked (DOR-1371). Only a browser can see that. The
+    // submenu is opened with the keyboard rather than a hover, which has its own
+    // delay and races.
+    await channel.click({ button: 'right' });
+    const moveTo = page.getByRole('menuitem', { name: 'Move to section' });
+    await moveTo.waitFor({ state: 'visible' });
+    await moveTo.press('ArrowRight');
+    await page.getByRole('menuitem', { name: 'New section…' }).click();
+
+    const input = page.getByRole('textbox', { name: 'New section name' });
+    await expect(input).toBeFocused();
+    // Still there a beat later: the defect was a field that existed for less
+    // than one frame, which an immediate assertion could have caught by luck.
+    await page.waitForTimeout(400);
+    await expect(input).toBeFocused();
+
+    // Above the first section, measured rather than assumed: the field's box
+    // starts before the first section header's does.
+    const inputBox = await input.boundingBox();
+    const headerBox = await dashboardSidebar.groupHeader(groupName).boundingBox();
+    expect(inputBox!.y).toBeLessThan(headerBox!.y);
+
+    await input.press('Escape');
+  });
+
   test('measures 272px wide, puts every row on its geometry token, and draws no hairlines', async ({
     page,
     dashboardSidebar,
   }) => {
     // **D1's geometry, measured in a real browser rather than asserted from
     // classes.** The density is the visible half of this redesign: 272px of
-    // panel, every row's glyph slot on `--sidebar-row-x` and a section's
-    // members exactly one `--sidebar-nested-x` deeper, and separation by tint
-    // rather than by a 1px line (spec R1).
+    // panel, every row's glyph slot on `--sidebar-row-x` whatever section it is
+    // in, and separation by tint rather than by a 1px line (spec R1).
     //
     // **Read out of the live document, never restated here.** This used to
     // assert a bare `16`, the number design-decisions §11 fixed before
@@ -217,13 +311,10 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
     expect(await dashboardSidebar.optedOutRowControls()).toEqual([]);
     expect(await dashboardSidebar.rows.count()).toBe(controlCount);
 
-    // …and every one of them starts on the token its level owes: `row-x` for a
-    // top-level row, `row-x + nested-x` for a section's member. Asserted per
-    // row against its OWN nesting depth rather than as a set of allowed
-    // numbers, so a top-level row that drifted into the nested inset (or the
-    // reverse) is still a failure.
+    // …and every one of them starts on `--sidebar-row-x`. One number, because
+    // there is one row level: a section's members are rows of a peer section
+    // rather than of a nested one (D3), so nothing in the panel is indented.
     const rowX = await token(page, '--sidebar-row-x');
-    const nestedX = await token(page, '--sidebar-nested-x');
 
     // **Every row read in ONE page evaluation, not a round trip each.** A
     // per-row `nth(i).evaluate()` loop re-resolves the locator against a live
@@ -250,18 +341,10 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
     expect(measured.length).toBe(controlCount);
 
     for (const row of measured) {
-      const isNested = row.section.startsWith('group:');
       expect(row.inset, `a row in "${row.section || 'the panel'}" is off its geometry token`).toBe(
-        isNested ? rowX + nestedX : rowX
+        rowX
       );
     }
-
-    // **The nested branch is proved in the DRAG test, not here.** Whether a
-    // group still has a member by the time this test runs depends on what every
-    // other spec sharing this server did to `ui.sidebar` — so a floor here would
-    // be a flake, and one that reads as a geometry regression. The drag test
-    // owns that claim: it has a nested row by construction, one line after
-    // putting it there.
 
     // No `border-b` / `border-t` anywhere in the sidebar tree. The header's
     // underline and the footer's overline are the two that went; the assertion

@@ -664,29 +664,12 @@ function createHarness(transport: Transport) {
   return { queryClient, wrapper };
 }
 
-describe('useSidebarPrefs reading a config the migration has not touched', () => {
-  // `conf` runs a migration only when its key lands in
-  // `(storedVersion, projectVersion]`, so a dev tree (version `0.0.0`) runs none
-  // at all and the file keeps its pre-DOR-579 encoding. The cockpit still has to
-  // show the person's groups.
-  const legacySidebar = {
-    ...structuredClone(SIDEBAR_PREFS_DEFAULTS),
-    pinned: ['/projects/alpha'],
-    muted: ['/projects/beta'],
-    groups: [
-      {
-        id: 'g1',
-        name: 'Clients',
-        agentPaths: ['/projects/alpha'],
-        sortMode: 'manual',
-        collapsed: false,
-        displayFilter: 'all',
-        muted: false,
-        kind: 'manual',
-      },
-    ],
-  } as unknown as SidebarPrefs;
-
+describe('useSidebarPrefs hands the stored section over as it is (DOR-588)', () => {
+  // It used to convert the pre-DOR-579 encoding — bare agent paths,
+  // `groups[].agentPaths` — behind a `WeakMap` that kept the result stable for
+  // the memos downstream. That rename shipped a release ago with its migration
+  // and the server no longer accepts the old encoding either, so this is a
+  // straight read and referential stability comes for free.
   function renderPrefs(sidebar: SidebarPrefs) {
     const transport = createMockTransport({});
     const { queryClient, wrapper } = createHarness(transport);
@@ -694,27 +677,20 @@ describe('useSidebarPrefs reading a config the migration has not touched', () =>
     return renderHook(() => useSidebarPrefs(), { wrapper });
   }
 
-  it('reads a legacy config back in the canonical encoding', () => {
-    const { result } = renderPrefs(legacySidebar);
-    expect(result.current.pinned).toEqual([agent('/projects/alpha')]);
-    expect(result.current.muted).toEqual([agent('/projects/beta')]);
-    expect(result.current.groups[0]!.items).toEqual([agent('/projects/alpha')]);
-  });
-
-  it('returns a referentially stable object across re-renders', () => {
-    // Every consumer memoizes on `prefs.pinned` / `prefs.groups` identity, so
-    // converting into a fresh object per read would invalidate those memos on
-    // every render.
-    const { result, rerender } = renderPrefs(legacySidebar);
-    const first = result.current;
-    rerender();
-    expect(result.current).toBe(first);
-  });
-
-  it('passes an already-canonical config straight through', () => {
+  it('passes the stored section through by reference', () => {
     const canonical = prefs({ pinned: [agent('/projects/alpha')] });
     const { result } = renderPrefs(canonical);
     expect(result.current).toBe(canonical);
+  });
+
+  it('stays referentially stable across re-renders', () => {
+    // Every consumer memoizes on `prefs.pinned` / `prefs.groups` identity, so a
+    // fresh object per read would invalidate those memos on every render.
+    const canonical = prefs({ pinned: [agent('/projects/alpha')] });
+    const { result, rerender } = renderPrefs(canonical);
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
   });
 });
 

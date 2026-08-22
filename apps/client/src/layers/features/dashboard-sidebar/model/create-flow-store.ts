@@ -5,7 +5,8 @@
  * `AppShell` mounts OUTSIDE the `sidebar.body` swap region so a marketplace
  * takeover cannot take the way to make things with it (spec
  * `sidebar-now-today-library` R2, P2 AC-8). Everything that deep-links into it
- * — a Library section's hover `+`, an agent row's "Move to group ▸ New group" —
+ * — a Library section's hover `+`, an agent row's "Move to section ▸ New
+ * section" —
  * lives *inside* that body, under a different React tree. A context could not
  * span the two, so the state that both halves share lives here.
  *
@@ -13,9 +14,9 @@
  *
  * - **which item the menu opens on** (`preselect`), so a section's `+` is a
  *   deep link into the one menu rather than a second handler (BC-45);
- * - **the inline group-create editor** (`groupCreation`), which the menu starts
- *   and Library ▸ Agents draws, because a group's name belongs where the group
- *   will be.
+ * - **the inline section-create editor** (`groupCreation`), which the menu
+ *   starts and Library draws at the top, because a section's name belongs where
+ *   the section will be (D3).
  *
  * @module features/dashboard-sidebar/model/create-flow-store
  */
@@ -40,14 +41,14 @@ export const NEW_MENU_ITEM_IDS = [
 /** One of the New menu's items. */
 export type NewMenuItemId = (typeof NEW_MENU_ITEM_IDS)[number];
 
-/** The inline group-create flow, while it is running. */
+/** The inline section-create flow, while it is running. */
 export interface GroupCreationState {
   /**
    * What started the flow, and what lands in the new group on commit.
    *
-   * A reference rather than an agent path, because "New group" is offered from
-   * a room row's menu too (rooms-in-groups, DOR-581), and `null` when the New
-   * menu started it with nothing to file.
+   * A reference rather than an agent path, because "New section" is offered
+   * from a room row's menu too (rooms-in-sections, DOR-581), and `null` when the
+   * New menu started it with nothing to file.
    */
   pendingRef: SidebarItemRef | null;
 }
@@ -58,7 +59,7 @@ interface CreateFlowState {
   menuOpen: boolean;
   /** The item the menu should land on when it opens, or `null` for the top. */
   preselect: NewMenuItemId | null;
-  /** The inline group-create flow, or `null` when it is not running. */
+  /** The inline section-create flow, or `null` when it is not running. */
   groupCreation: GroupCreationState | null;
   /**
    * Open the New menu, optionally on one item.
@@ -77,9 +78,9 @@ interface CreateFlowState {
    */
   setMenuOpen: (open: boolean) => void;
   /**
-   * Begin the inline group-create flow, optionally seeded with a member.
+   * Begin the inline section-create flow, optionally seeded with a member.
    *
-   * @param ref - The row that started it, which lands in the group on commit.
+   * @param ref - The row that started it, which lands in the section on commit.
    */
   requestNewGroup: (ref?: SidebarItemRef) => void;
   /** End the flow — committed or abandoned, the editor closes either way. */

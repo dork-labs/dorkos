@@ -29,7 +29,6 @@ import type {
   SidebarSectionId,
   SidebarSectionPrefs,
 } from '@dorkos/shared/config-schema';
-import { normalizeSidebarPrefs } from '@dorkos/shared/config-schema';
 
 /**
  * What the sidebar model is allowed to know about the person's stored prefs.
@@ -56,28 +55,22 @@ export interface SidebarModelPrefs {
  * Project stored sidebar prefs onto the view the model reads.
  *
  * Pure and total: every field of the result is present whatever the input was
- * missing. Membership lists are normalized first, so the model never has to know
- * that a config written before DOR-579 stores bare agent paths.
+ * missing. It used to convert the pre-DOR-579 encoding on the way through; that
+ * rename shipped a release ago with its migration, so the conversion is gone
+ * (DOR-588) and the `??` floors below are all that remains.
  *
  * @param prefs - Sidebar prefs as read from config.
  * @returns The model's view of them.
  */
 export function toSidebarModelPrefs(prefs: SidebarPrefs): SidebarModelPrefs {
-  // The lists are filled BEFORE normalizing, not after — `normalizeSidebarPrefs`
-  // reads each one and would throw on an absent `pinned`. See the module note on
-  // why every `??` here is a floor rather than a case that actually occurs.
-  const canonical = normalizeSidebarPrefs({
-    ...prefs,
+  // See the module note on why every `??` here is a floor rather than a case
+  // that actually occurs.
+  return {
     pinned: prefs.pinned ?? [],
     groups: prefs.groups ?? [],
     muted: prefs.muted ?? [],
-  });
-  return {
-    pinned: canonical.pinned,
-    groups: canonical.groups,
-    muted: canonical.muted,
-    sections: canonical.sections ?? {},
-    gettingStarted: { retired: canonical.gettingStarted?.retired ?? [] },
-    digest: { lastShownDate: canonical.digest?.lastShownDate },
+    sections: prefs.sections ?? {},
+    gettingStarted: { retired: prefs.gettingStarted?.retired ?? [] },
+    digest: { lastShownDate: prefs.digest?.lastShownDate },
   };
 }

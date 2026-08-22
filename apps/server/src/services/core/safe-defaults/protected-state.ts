@@ -15,9 +15,11 @@
  * whenever a renaming migration is skipped, and migrations are skipped often —
  * `conf` runs a key only when `key > storedVersion && key <= projectVersion`, so
  * a dev tree (`SERVER_VERSION` resolves to `0.0.0`) runs none of them, and
- * shipping a schema below its migration key skips it for every user. See
- * `tolerateLegacySidebarEncoding` in `config-manager.ts` for the DOR-579
- * instance that made this concrete.
+ * shipping a schema below its migration key skips it for every user. DOR-579's
+ * sidebar rename is the instance that made this concrete: for one release
+ * `config-manager.ts` widened the schema so such a file still loaded, and now
+ * that the tolerance is gone (DOR-588) this salvage is the whole of what stands
+ * between a stale file and a person's privacy choice.
  *
  * The observed damage was a telemetry opt-out reverting to the opt-out-tier
  * defaults: `telemetry.userHasDecided` went `true` -> `false` while `install`

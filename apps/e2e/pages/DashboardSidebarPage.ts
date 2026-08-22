@@ -224,11 +224,10 @@ export class DashboardSidebarPage {
    * The wrapper (header + member rows) for one user-defined group.
    *
    * **Scoped by `data-sidebar-section`, not by `data-slot="sidebar-group"`.**
-   * A group renders as a section INSIDE the Agents section, so filtering every
-   * `sidebar-group` by "contains this header" matched the ancestor as well as
-   * the descendant and tripped Playwright's strict mode — which killed the
-   * spec before it reached the drag. The section stamps its own model id, so
-   * `group:` prefixes exactly the one wrapper meant here.
+   * The section stamps its own model id and `group:` prefixes exactly the one
+   * wrapper meant here. It mattered more when a section rendered INSIDE Agents
+   * and a `sidebar-group` filter matched the ancestor as well as the descendant
+   * — sections are peers now (D3) — and it is still the precise handle.
    */
   groupContainer(name: string): Locator {
     return this.page
@@ -258,16 +257,15 @@ export class DashboardSidebarPage {
   }
 
   /**
-   * Create a new top-level group via the "+" menu's inline create flow (Enter
-   * commits; the input never blurs during this sequence, which would cancel
-   * it instead).
+   * Create a new section via the "+" menu's inline create flow (Enter commits;
+   * the input never blurs during this sequence, which would cancel it instead).
    */
   async createGroup(name: string) {
-    // Two steps now, and they are the product's: the New menu's "Agent group"
-    // is a submenu — by hand, or from rules — and "Empty group" is the by-hand
-    // entry that mounts the inline editor Library ▸ Agents draws (BC-45).
+    // Two steps, and they are the product's: the New menu's "Section" is a
+    // submenu — by hand, or from rules — and "Empty section" is the by-hand
+    // entry that mounts the inline editor at the top of Library (BC-45, D3).
     await this.newMenu.chooseGroupSubmenu('new-group-empty');
-    const input = this.page.getByRole('textbox', { name: 'New group name' });
+    const input = this.page.getByRole('textbox', { name: 'New section name' });
     await input.fill(name);
     await input.press('Enter');
     await this.groupHeader(name).waitFor({ state: 'visible' });
@@ -343,7 +341,21 @@ export class DashboardSidebarPage {
    * here, saying which one it was.
    */
   async dragAgentIntoGroup(agentDisplayName: string, groupName: string) {
-    const source = this.agentRow(agentDisplayName);
+    await this.dragRowIntoGroup(this.agentRow(agentDisplayName), groupName);
+  }
+
+  /**
+   * Drag ANY Library row onto a section header — the same gesture, without an
+   * opinion about what is being dragged.
+   *
+   * A section holds channels and conversations as well as agents (DOR-581), and
+   * D3 is what finally says so on screen, so the page object stops naming one
+   * kind. {@link dragAgentIntoGroup} is the agent-shaped caller.
+   *
+   * @param source - The row to pick up.
+   * @param groupName - The section header to drop it on.
+   */
+  async dragRowIntoGroup(source: Locator, groupName: string) {
     const target = this.groupHeader(groupName);
     await target.scrollIntoViewIfNeeded();
     await source.scrollIntoViewIfNeeded();
@@ -384,7 +396,7 @@ export class DashboardSidebarPage {
     // press. Re-reading the target's CURRENT box and moving again converges on
     // the row wherever it has gone, instead of trusting one stale guess.
     const liveRegion = this.page.locator('[id^="DndLiveRegion"]');
-    const overGroup = `Over group ${groupName}`;
+    const overGroup = `Over ${groupName}`;
     for (let attempt = 0; attempt < REAIM_ATTEMPTS; attempt++) {
       if ((await liveRegion.textContent())?.includes(overGroup)) break;
       const box = await target.boundingBox();

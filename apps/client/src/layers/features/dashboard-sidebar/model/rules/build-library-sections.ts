@@ -8,7 +8,7 @@
  *
  * @module features/dashboard-sidebar/model/rules/build-library-sections
  */
-import type { SidebarGroup } from '@dorkos/shared/config-schema';
+import type { SidebarDisplayFilter, SidebarGroup } from '@dorkos/shared/config-schema';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { evaluateSmartGroup } from '@dorkos/shared/smart-groups';
 import {
@@ -17,6 +17,7 @@ import {
   type SidebarRowModel,
   type SidebarSectionModel,
 } from '../build-sidebar-model';
+import type { SidebarSortMode } from '../section-sort-options';
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
 import { muteIndex } from './apply-mute-rules';
 import { indexSuppressedDms } from './hand-made-dm';
@@ -26,32 +27,40 @@ import { rollUpCollapsedSection } from './roll-up-collapsed-section';
 import { rowKey } from './targets';
 
 /**
- * When group affordances appear: eight agents, or two runtimes.
+ * When the SMART-section affordances appear: eight agents, or two runtimes.
  *
  * Chrome appears by data volume rather than by a settings toggle
- * (design-meta rule 8) — somebody with three agents has nothing to organize,
- * and somebody running Claude Code beside Codex already has a reason to.
+ * (design-meta rule 8) — somebody with three agents has nothing to sort into
+ * runtime presets, and somebody running Claude Code beside Codex already has a
+ * reason to.
  */
 export const GROUP_AFFORDANCE_MIN_AGENTS = 8;
 
 /**
- * Whether the Agents section offers grouping at all (BC-32).
+ * How many agent rows the Agents section draws before it will hide any (D3).
  *
- * Exported because it gates real chrome — the New menu's "Agent group" item
- * and the smart-group presets inside it (`ui/NewMenu.tsx`) — and the decision
- * is a rule, so it belongs here rather than in JSX.
+ * The section lists what is recent and what is pinned, which on a quiet morning
+ * is nothing at all — a panel whose Agents section is one "All 31 agents →" row
+ * has hidden the product. The floor is what keeps a usable list there: if fewer
+ * than this many agents qualify, the most recently active of the rest fill up to
+ * it.
+ */
+export const AGENT_ROW_FLOOR = 8;
+
+/**
+ * Whether a fleet is offered SMART sections — rule-based membership and the
+ * runtime presets that seed it.
  *
- * **It is the only gate.** `smart-group-presets.ts` used to carry a second one
- * under the name `meetsSmartGroupDisclosureThreshold`, with its own pair of
- * constants holding the same two numbers. Once P2.4 put grouping and its
- * presets behind the one "Agent group" item, two names for one predicate was
- * just two places to disagree, so the copy is gone.
+ * **It no longer gates sections themselves.** Making a section by hand is
+ * offered to everybody (D3): a person with three agents still has channels, a
+ * conversation and a project to file together, and the old gate is why grouping
+ * read as an agent-only, large-fleet feature. What is still gated is the part
+ * that only means something with a fleet — "Active now", the per-runtime presets
+ * and `Custom rules…`, all of which match on agent fields.
  *
  * **It takes the fleet rather than the snapshot**, because that is all it
  * reads, and because its caller is a component that has the roster and not a
- * `SidebarState`. A rule that demanded the whole snapshot would have been
- * unreachable from the only place it matters — which is how it spent P2.1
- * exported, unit-tested and called by nothing, before P2.4 wired it up.
+ * `SidebarState`.
  *
  * @param agents - The fleet, or anything carrying each agent's runtime.
  */
@@ -94,24 +103,33 @@ function rowIsWorking(
 }
 
 /**
- * The reveal row that stands for rows a filter hid, or `null` when it hid none.
+ * The door to the whole fleet, at the bottom of the Agents section (D3).
  *
- * @param count - How many rows are behind it.
- * @param label - What they have in common, e.g. `'inactive'`.
+ * It replaces the "N inactive" reveal row this file used to emit, and the
+ * difference is that this one goes somewhere: the reveal was a `section-count`
+ * rollup with no handler anywhere in the app — pressable, and inert (DOR-1105).
+ * Everything the Agents section is not showing is on the Team page, so the row
+ * says how many there are in total and opens it.
+ *
+ * @param total - How many agents the roster holds, all told.
  */
-function revealRow(count: number, label: string): SidebarRowModel | null {
-  if (count === 0) return null;
-  const target = { kind: 'rollup', rollup: 'section-count' } as const;
+function allAgentsRow(total: number): SidebarRowModel {
+  const target = { kind: 'command', commandId: 'open-team' } as const;
   return {
-    key: `${rowKey(target)}:${label}`,
+    key: rowKey(target),
     target,
-    glyph: { kind: 'icon', icon: 'overflow' },
-    primary: `${count} ${label}`,
+    glyph: { kind: 'icon', icon: 'team' },
+    // **The words only. The arrow is the renderer's**, drawn `aria-hidden`
+    // beside them (`SidebarModelRow`). It used to be part of this string, so a
+    // screen reader read "All fifteen agents right arrow" — a direction spoken
+    // as if it were a noun. The model carries meaning; the mark that says
+    // "this leaves the panel" is a rendering.
+    primary: `All ${total} agents`,
     reservesVerbLine: false,
     unread: { tier: 'none' },
     muted: false,
     draggable: false,
-    reason: 'library:reveal',
+    reason: 'library:all-agents',
   };
 }
 
@@ -130,46 +148,28 @@ function effectiveAttention(agent: AgentRosterEntry, muted: boolean) {
 }
 
 /**
- * Agent rows split into what a section's display filter shows and what it hides.
+ * Whether one agent survives a section's display filter.
  *
- * Three branches over rows: `'all'` tucks never-active agents behind a reveal,
- * `'active'` and `'attention'` hide everything below their bar.
+ * **`'all'` means all.** It used to mean "everything except what has been quiet
+ * for a week", with the remainder tucked behind a reveal row — a filter named
+ * for showing everything that hid things. What keeps the Agents list short is
+ * the recent-and-pinned rule below, which is a separate decision with its own
+ * floor and its own door to the rest; a section the operator filled by hand
+ * shows what they put in it.
  *
- * @param agents - The agents in this section, in their pre-filter order.
- * @param state - The snapshot.
- * @param ctx - What every row here is built with ({@link LibraryRowContext}).
- * @param filter - The section's display filter.
- * @param reason - The reason to stamp on each row.
+ * @param agent - The roster entry.
+ * @param muted - Whether it renders muted.
+ * @param filter - The section's display filter, absent meaning `'all'`.
  */
-function filteredAgentRows(
-  agents: readonly AgentRosterEntry[],
-  state: SidebarState,
-  ctx: LibraryRowContext,
-  filter: string | undefined,
-  reason: string
-): { rows: SidebarRowModel[]; hidden: number; hiddenLabel: string } {
-  const rows: SidebarRowModel[] = [];
-  let hidden = 0;
-  for (const agent of agents) {
-    const muted = ctx.mutes.agents.has(agent.path);
-    const attention = effectiveAttention(agent, muted);
-    const keep =
-      filter === 'attention'
-        ? attention === 'needs-attention' && !muted
-        : filter === 'active'
-          ? attention === 'needs-attention' || attention === 'active'
-          : attention !== 'inactive';
-    if (!keep) {
-      hidden += 1;
-      continue;
-    }
-    rows.push(agentRow(agent, state, ctx, reason));
-  }
-  return {
-    rows,
-    hidden,
-    hiddenLabel: filter === 'active' || filter === 'attention' ? 'hidden' : 'inactive',
-  };
+function passesDisplayFilter(
+  agent: AgentRosterEntry,
+  muted: boolean,
+  filter: SidebarDisplayFilter | undefined
+): boolean {
+  const attention = effectiveAttention(agent, muted);
+  if (filter === 'attention') return attention === 'needs-attention' && !muted;
+  if (filter === 'active') return attention === 'needs-attention' || attention === 'active';
+  return true;
 }
 
 /**
@@ -203,7 +203,54 @@ function orderLibraryRows(
 }
 
 /**
- * One Library section, or `null` when it holds nothing.
+ * When each row's subject was last active, epoch ms, for either kind of row.
+ *
+ * **A room answers with its own timestamp, and that is a fix rather than a
+ * detail.** It used to answer `null` for everything that was not an agent, which
+ * `orderLibraryRows` reads as `-Infinity`: a section holding a channel and an
+ * agent, sorted by "Recent activity", sank every channel to the bottom in
+ * whatever order their keys happened to fall. The menu offered a sort it did not
+ * perform.
+ *
+ * @param byPath - The roster, by path.
+ * @param rooms - Every non-archived room, by id.
+ */
+function recencyResolver(
+  byPath: Map<string, AgentRosterEntry>,
+  rooms: Map<string, RoomSummary>
+): (row: SidebarRowModel) => number | null {
+  return (row) => {
+    if (row.target.kind === 'agent') return byPath.get(row.target.path)?.lastActivityAt ?? null;
+    if (row.target.kind === 'room') {
+      const iso = rooms.get(row.target.roomId)?.lastActivityAt;
+      if (iso === undefined) return null;
+      const at = Date.parse(iso);
+      return Number.isNaN(at) ? null : at;
+    }
+    return null;
+  };
+}
+
+/**
+ * The `options` a section publishes so its header's radios read from the model
+ * rather than from a second read of prefs, or `undefined` when it has none.
+ *
+ * @param sortMode - The stored sort, if any.
+ * @param displayFilter - The stored filter, if any.
+ */
+function sectionOptions(
+  sortMode: SidebarSortMode | undefined,
+  displayFilter: SidebarDisplayFilter | undefined
+): SidebarSectionModel['options'] | undefined {
+  if (!sortMode && !displayFilter) return undefined;
+  return {
+    ...(sortMode ? { sortMode } : {}),
+    ...(displayFilter ? { displayFilter } : {}),
+  };
+}
+
+/**
+ * One fixed Library section, or `null` when it holds nothing.
  *
  * Chrome appears by data volume: no Direct messages section until a DM exists,
  * no Pins section until something is pinned (BC-32). Returning `null` is how
@@ -212,12 +259,11 @@ function orderLibraryRows(
  * @param id - Which Library section this is. Narrower than
  *   `SidebarSectionModel['id']` on purpose: this helper reads the section's
  *   STORED collapse and options, and only a persisted Library section has any.
- *   Heads up, Today, Getting started and group sub-headers never reach here.
+ *   Heads up, Today, Getting started and hand-made sections never reach here.
  * @param label - Its heading.
  * @param rows - Its rows.
  * @param state - The snapshot.
  * @param reason - Its provenance.
- * @param subsections - Its group sub-headers, when it has any.
  * @param isWorking - Whether a row's subject is streaming ({@link rowIsWorking}).
  */
 function section(
@@ -226,52 +272,50 @@ function section(
   rows: SidebarRowModel[],
   state: SidebarState,
   reason: string,
-  isWorking: (row: SidebarRowModel) => boolean,
-  subsections?: SidebarSectionModel[]
+  isWorking: (row: SidebarRowModel) => boolean
 ): SidebarSectionModel | null {
-  if (rows.length === 0 && (subsections?.length ?? 0) === 0) return null;
+  if (rows.length === 0) return null;
   const prefs = state.prefs.sections[id];
   const collapsed = prefs?.collapsed ?? false;
-  const all = [...rows, ...(subsections ?? []).flatMap((sub) => sub.rows)];
-  const rollup = collapsed ? rollUpCollapsedSection(all, isWorking) : undefined;
+  const rollup = collapsed ? rollUpCollapsedSection(rows, isWorking) : undefined;
+  const options = sectionOptions(prefs?.sortMode, prefs?.displayFilter);
   return {
     id,
     label,
     collapsible: true,
     collapsed,
     ...(rollup ? { rollup } : {}),
-    ...(prefs?.sortMode || prefs?.displayFilter
-      ? {
-          options: {
-            ...(prefs.sortMode ? { sortMode: prefs.sortMode } : {}),
-            ...(prefs.displayFilter ? { displayFilter: prefs.displayFilter } : {}),
-          },
-        }
-      : {}),
+    ...(options ? { options } : {}),
     rows,
-    ...(subsections && subsections.length > 0 ? { subsections } : {}),
     reason,
   };
 }
 
 /**
- * One group as a sub-header inside Agents — one indent level, and no deeper.
+ * One hand-made section — a peer of Channels, Direct messages and Agents (D3).
  *
- * A smart group's membership is evaluated live and never persisted, so its
- * stored `items` are ignored here, exactly as the grouped-membership pass in
+ * A smart section's membership is evaluated live and never persisted, so its
+ * stored `items` are ignored here, exactly as the membership pass in
  * {@link buildLibrarySections} ignores them.
  *
  * **This is the one section that renders while empty**, and the exception is
  * deliberate: every other section in this file appears because something is in
- * it (BC-32), while a group appears because the operator made it. A group that
- * vanished the moment it was created could never be dragged into.
+ * it (BC-32), while a section appears because the operator made it. A section
+ * that vanished the moment it was created could never be dragged into.
  *
- * @param group - The group.
+ * **Its display filter is applied here.** For three releases the filter was
+ * stored, offered in the header menu, ticked, and read by nobody — the only
+ * list it ever narrowed was ungrouped Agents (DOR-1371). The header radio now
+ * reads back from `options`, so what the menu says and what the section shows
+ * are one fact.
+ *
+ * @param group - The section, as stored.
  * @param state - The snapshot.
  * @param ctx - What every row here is built with ({@link LibraryRowContext}).
  * @param byPath - The roster, by path.
  * @param rooms - Every room, by id.
  * @param isWorking - Whether a row's subject is streaming ({@link rowIsWorking}).
+ * @param recencyOf - When a row's subject was last active ({@link recencyResolver}).
  */
 function groupSection(
   group: SidebarGroup,
@@ -279,9 +323,17 @@ function groupSection(
   ctx: LibraryRowContext,
   byPath: Map<string, AgentRosterEntry>,
   rooms: Map<string, RoomSummary>,
-  isWorking: (row: SidebarRowModel) => boolean
+  isWorking: (row: SidebarRowModel) => boolean,
+  recencyOf: (row: SidebarRowModel) => number | null
 ): SidebarSectionModel {
   const rows: SidebarRowModel[] = [];
+  /** One agent's row, or nothing when the section's filter hides it. */
+  const pushAgent = (agent: AgentRosterEntry, draggable: boolean) => {
+    if (!passesDisplayFilter(agent, ctx.mutes.agents.has(agent.path), group.displayFilter)) return;
+    const row = agentRow(agent, state, ctx, 'library:group-member');
+    rows.push(draggable ? row : { ...row, draggable: false });
+  };
+
   if (group.kind === 'smart' && group.rules) {
     const matched = evaluateSmartGroup(
       group.rules,
@@ -296,33 +348,32 @@ function groupSection(
     );
     for (const path of matched) {
       const agent = byPath.get(path);
-      // A smart group's members are rule-owned, so they are not drag sources:
+      // A smart section's members are rule-owned, so they are not drag sources:
       // dragging one out would ask the operator to hand-edit a list the rules
       // rebuild on the next render. `classifySidebarDrop` refuses a drop INTO
       // one for the same reason; this is the other half of it.
-      if (agent)
-        rows.push({ ...agentRow(agent, state, ctx, 'library:group-member'), draggable: false });
+      if (agent) pushAgent(agent, false);
     }
   } else {
     for (const ref of group.items) {
       if (ref.kind === 'agent') {
         const agent = byPath.get(ref.path);
-        if (agent) rows.push(agentRow(agent, state, ctx, 'library:group-member'));
+        if (agent) pushAgent(agent, true);
       } else {
         const room = rooms.get(ref.roomId);
+        // A room has no attention state, so no display filter can judge one:
+        // "Needs attention" is an agent question, and a channel the operator
+        // filed here stays filed here whatever the radio says.
         if (room) rows.push(roomLibraryRow(room, state, ctx, 'library:group-member'));
       }
     }
   }
-  // An empty group still renders, and it is the ONE section that may. Every
-  // other section in this file exists because something is in it (BC-32); a
-  // group exists because the operator MADE it, and a group that vanished the
-  // moment it was created could never be dragged into. The renderer fills it
-  // with a hint — "drag things here", or "no agents match these rules" —
-  // which is information rather than disappearance.
-  const ordered = orderLibraryRows(rows, group.sortMode, (row) =>
-    row.target.kind === 'agent' ? (byPath.get(row.target.path)?.lastActivityAt ?? null) : null
-  );
+  const ordered = orderLibraryRows(rows, group.sortMode, recencyOf);
+  // **No `options` here, and that is not an oversight.** A fixed section
+  // publishes them because its header has nowhere else to read them from; a
+  // hand-made section's header already holds the whole `SidebarGroup` — sort,
+  // filter, mute, rules — and `useSectionChrome` builds its menu from that.
+  // Emitting a second copy would be one more place for the two to disagree.
   return {
     id: `group:${group.id}`,
     label: group.name,
@@ -334,7 +385,7 @@ function groupSection(
   };
 }
 
-/** What one Library section holds, before {@link section} decides it exists. */
+/** What one fixed Library section holds, before {@link section} decides it exists. */
 interface LibrarySectionContent {
   /** Its heading. */
   label: string;
@@ -342,16 +393,82 @@ interface LibrarySectionContent {
   rows: SidebarRowModel[];
   /** Its provenance. */
   reason: string;
-  /** Its group sub-headers — Agents only. */
-  subsections?: SidebarSectionModel[];
 }
 
 /**
- * Library's sections, in their fixed order: Pins, Channels, Direct messages,
- * Agents.
+ * Whether an agent is quiet enough for the Agents section to leave out.
+ *
+ * **Two ways to be quiet, and reading only the first is the bug this exists to
+ * name.** `attention` answers `'inactive'` for an agent that RAN and then went
+ * silent for a week; an agent that has never run at all answers `'fresh'`, which
+ * is deliberate — a DorkBot somebody set up ten seconds ago should read as new
+ * rather than dormant, and its dot and its Team-page row still say so. But
+ * `'fresh'` is not `'inactive'`, so a rule that asked only that question trimmed
+ * nobody on a fresh install: fifteen registered-and-never-run agents all
+ * qualified as "recent", the floor never bit, and `All N agents →` never
+ * appeared. A never-run agent you have also never opened is the emptiest row the
+ * panel can draw.
+ *
+ * The floor above is what keeps this from being harsh: a day-one cockpit with
+ * three agents still shows all three, because there are fewer than eight of
+ * them.
+ *
+ * @param agent - The roster entry.
+ */
+function isQuiet(agent: AgentRosterEntry): boolean {
+  if (agent.attention === 'inactive') return true;
+  return agent.lastActivityAt === null && agent.lastInteractionAt === null;
+}
+
+/**
+ * Which ungrouped agents the Agents section draws (D3).
+ *
+ * Recent and pinned, with a floor. An agent is also a project, so a fleet grows
+ * a row per project and never gives one back — a cockpit that has been used for
+ * six months lists thirty agents, most of them cold, and the four the operator
+ * is actually working with are somewhere in the middle. What is left off is not
+ * hidden: `All N agents →` is the last row, and the Team page lists every one.
+ *
+ * The floor is what stops the rule from emptying the section on a quiet morning.
+ *
+ * @param candidates - The ungrouped agents that survived the display filter.
+ * @param pinnedPaths - Which agent paths are pinned.
+ */
+function agentsToShow(
+  candidates: readonly AgentRosterEntry[],
+  pinnedPaths: ReadonlySet<string>
+): AgentRosterEntry[] {
+  const kept: AgentRosterEntry[] = [];
+  const rest: AgentRosterEntry[] = [];
+  for (const agent of candidates) {
+    if (pinnedPaths.has(agent.path) || !isQuiet(agent)) kept.push(agent);
+    else rest.push(agent);
+  }
+  if (kept.length >= AGENT_ROW_FLOOR) return kept;
+  // Most recently active first — the ones closest to coming back. An agent
+  // nobody has ever run or opened has no instant of either kind and fills last,
+  // in path order so the choice is at least stable between renders.
+  const at = (agent: AgentRosterEntry) =>
+    Math.max(
+      agent.lastActivityAt ?? Number.NEGATIVE_INFINITY,
+      agent.lastInteractionAt ?? Number.NEGATIVE_INFINITY
+    );
+  const fill = [...rest].sort((a, b) => at(b) - at(a) || a.path.localeCompare(b.path));
+  return [...kept, ...fill.slice(0, AGENT_ROW_FLOOR - kept.length)];
+}
+
+/**
+ * Library's sections: the operator's own sections first, then Pins, Channels,
+ * Direct messages and Agents.
+ *
+ * **Sections lead, and they are peers rather than children** (D3). They used to
+ * render as sub-headers inside Agents, which said "these are for agents" about a
+ * list that has held channels and conversations since DOR-581, and buried the
+ * one part of the panel the operator built themselves under the one part that
+ * grows on its own.
  *
  * A pinned item keeps its row in its home section too — pinning is a shortcut,
- * not a move — while a manual group's members leave the ungrouped list, which
+ * not a move — while a manual section's members leave the ungrouped list, which
  * is the membership rule the sidebar has always had.
  *
  * @param state - The snapshot.
@@ -367,6 +484,7 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
   const rooms = new Map(
     state.rooms.filter((room) => !room.archived).map((room) => [room.id, room])
   );
+  const recencyOf = recencyResolver(byPath, rooms);
 
   const groupedAgents = new Set<string>();
   const groupedRooms = new Set<string>();
@@ -379,8 +497,10 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
   }
 
   const pinnedRows: SidebarRowModel[] = [];
+  const pinnedAgentPaths = new Set<string>();
   for (const ref of state.prefs.pinned) {
     if (ref.kind === 'agent') {
+      pinnedAgentPaths.add(ref.path);
       const agent = byPath.get(ref.path);
       if (agent) pinnedRows.push(agentRow(agent, state, ctx, 'library:pinned'));
     } else {
@@ -413,30 +533,35 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
   // A second composition lives inside this one, and it is worth saying so:
   // from the entry point above this reads as a single rule, while Agents is
   // actually four steps in a fixed order — who is ungrouped, then what the
-  // display filter shows (`filteredAgentRows`), then what order they come in
-  // (`orderLibraryRows`), then one `revealRow` standing for whatever the filter
-  // hid. Filter BEFORE sort, matching how a group section has always ordered
-  // its own two, and the reveal row is appended last so it never sorts into the
-  // middle of the list it is summarizing.
-  const ungrouped = state.agents.filter((agent) => !groupedAgents.has(agent.path));
+  // display filter shows, then which of those the recent-and-pinned rule draws
+  // ({@link agentsToShow}), then what order they come in. Filter BEFORE the
+  // visibility rule, so a filter the operator chose is never overruled by the
+  // floor; sort last, so the `All N agents →` row appended after it can never
+  // sort into the middle of the list it is standing at the end of.
   const agentPrefs = state.prefs.sections.agents;
-  const filtered = filteredAgentRows(
-    ungrouped,
-    state,
-    ctx,
-    agentPrefs?.displayFilter,
-    'library:agent'
+  const candidates = state.agents.filter(
+    (agent) =>
+      !groupedAgents.has(agent.path) &&
+      passesDisplayFilter(agent, ctx.mutes.agents.has(agent.path), agentPrefs?.displayFilter)
   );
-  const agentRows = orderLibraryRows(filtered.rows, agentPrefs?.sortMode, (row) =>
-    row.target.kind === 'agent' ? (byPath.get(row.target.path)?.lastActivityAt ?? null) : null
+  const shown = agentsToShow(candidates, pinnedAgentPaths);
+  const agentRows = orderLibraryRows(
+    shown.map((agent) => agentRow(agent, state, ctx, 'library:agent')),
+    agentPrefs?.sortMode,
+    recencyOf
   );
-  const reveal = revealRow(filtered.hidden, filtered.hiddenLabel);
-  const isWorking = rowIsWorking(state, rooms);
-  const groups = state.prefs.groups.map((group) =>
-    groupSection(group, state, ctx, byPath, rooms, isWorking)
-  );
+  // **What is on screen is `shown` PLUS whatever the operator filed into a
+  // section**, because those rows are drawn too — a few inches higher up. A
+  // guard that compared the roster with `shown` alone offered "All 3 agents →"
+  // to somebody who could see all three of them, which is a door to nowhere new.
+  const drawnElsewhere = groupedAgents.size;
+  if (state.agents.length > shown.length + drawnElsewhere) {
+    agentRows.push(allAgentsRow(state.agents.length));
+  }
 
-  // What each of the four sections holds, keyed by id. A `Record` over
+  const isWorking = rowIsWorking(state, rooms);
+
+  // What each of the four fixed sections holds, keyed by id. A `Record` over
   // `LibrarySectionId` rather than a list, so adding an id to
   // `SIDEBAR_LIBRARY_SECTION_IDS` fails to compile here until it is given
   // content — which is what makes that tuple's docblock true.
@@ -447,33 +572,26 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
       rows: orderLibraryRows(
         channelRows,
         state.prefs.sections.channels?.sortMode ?? 'name',
-        () => null
+        recencyOf
       ),
       reason: 'library:channels',
     },
     dms: {
       label: 'Direct messages',
-      rows: orderLibraryRows(dmRows, state.prefs.sections.dms?.sortMode ?? 'name', () => null),
+      rows: orderLibraryRows(dmRows, state.prefs.sections.dms?.sortMode ?? 'name', recencyOf),
       reason: 'library:dms',
     },
-    agents: {
-      label: 'Agents',
-      rows: reveal ? [...agentRows, reveal] : agentRows,
-      reason: 'library:agents',
-      subsections: groups,
-    },
+    agents: { label: 'Agents', rows: agentRows, reason: 'library:agents' },
   };
 
-  // The tuple IS the order, so this walks it rather than repeating the four ids.
-  return SIDEBAR_LIBRARY_SECTION_IDS.map((id) =>
-    section(
-      id,
-      content[id].label,
-      content[id].rows,
-      state,
-      content[id].reason,
-      isWorking,
-      content[id].subsections
-    )
-  ).filter((entry): entry is SidebarSectionModel => entry !== null);
+  // The tuple IS the order of the four fixed sections; the operator's own come
+  // first, in the order they stored them.
+  return [
+    ...state.prefs.groups.map((group) =>
+      groupSection(group, state, ctx, byPath, rooms, isWorking, recencyOf)
+    ),
+    ...SIDEBAR_LIBRARY_SECTION_IDS.map((id) =>
+      section(id, content[id].label, content[id].rows, state, content[id].reason, isWorking)
+    ).filter((entry): entry is SidebarSectionModel => entry !== null),
+  ];
 }

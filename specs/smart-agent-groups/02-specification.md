@@ -151,3 +151,20 @@ None blocking. Watch-items: status-flicker UX at the `active/idle` boundary (inh
 
 - `specs/agent-sidebar-organization/` (DOR-329); `specs/agent-list-settings/` (DOR-339, dependency).
 - `research/20260716_cross_app_sidebar_organization_patterns.md` §4 (Telegram), §9.
+
+---
+
+> **Amended 2026-08-21 — "smart group" reads as "smart section"** (DOR-1371,
+> `specs/sidebar-simplification` D3). Every user-facing string in this feature changes noun:
+> `Section ▸ Custom rules`, `Convert to manual section`, `Delete section`, and the rule summary's
+> place in the header menu is unchanged. `kind: 'smart'`, the `rules` object and
+> `evaluateSmartGroup` keep their names — the schema is persisted.
+>
+> One control is **withdrawn** rather than renamed: a smart section's header no longer offers
+> **Mute**. `apply-mute-rules.ts` skips smart groups on purpose — their membership is rebuilt every
+> render, so a stored mute over one would apply to a list nobody chose — and the item was drawn
+> anyway, flipping its own label while not one row changed. A control that does nothing is not
+> offered.
+>
+> The rule presets and `Custom rules…` remain gated on `offersGroupAffordances` (≥8 agents or ≥2
+> runtimes); only the by-hand entry became unconditional, because a section holds rooms too.

@@ -18,7 +18,7 @@ import type { ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
-import { SIDEBAR_SECTION_TOGGLE_ATTRIBUTE } from '@/layers/shared/model/use-roving-focus';
+import { SIDEBAR_SECTION_TOGGLE_ATTRIBUTE } from '@/layers/shared/model/interaction/use-roving-focus';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 
 /**

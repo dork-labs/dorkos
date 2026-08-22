@@ -134,12 +134,6 @@ function* walk(state: (typeof SIDEBAR_FIXTURES)[number]['state']) {
       for (const row of section.rows) {
         yield { kind: 'row' as const, reason: row.reason, zone, section, row };
       }
-      for (const sub of section.subsections ?? []) {
-        yield { kind: 'section' as const, reason: sub.reason, zone, section: sub };
-        for (const row of sub.rows) {
-          yield { kind: 'row' as const, reason: row.reason, zone, section: sub, row };
-        }
-      }
     }
   }
 }
@@ -377,23 +371,16 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
     for (const node of walk(state)) {
       if (node.kind === 'zone') {
         expect(node.zone.sections.length).toBeGreaterThan(0);
-        const rows = node.zone.sections.flatMap((section) => [
-          ...section.rows,
-          ...(section.subsections ?? []).flatMap((sub) => sub.rows),
-        ]);
+        const rows = node.zone.sections.flatMap((section) => section.rows);
         expect(rows.length, `zone ${node.zone.id} is empty`).toBeGreaterThan(0);
       }
-      // One exception, and only one: a group the operator MADE. Everything
+      // One exception, and only one: a section the operator MADE. Everything
       // else here appears because something is in it, so an empty one is a box
-      // with nothing to say — but a group that disappeared the instant it was
+      // with nothing to say — but a section that disappeared the instant it was
       // created could never be dragged into, and Library's whole promise is
       // that the structure you built stays where you put it.
-      if (
-        node.kind === 'section' &&
-        node.section.rows.length === 0 &&
-        node.section.reason !== 'library:group'
-      ) {
-        expect(node.section.subsections?.length ?? 0).toBeGreaterThan(0);
+      if (node.kind === 'section' && node.section.reason !== 'library:group') {
+        expect(node.section.rows.length, `empty section ${node.section.id}`).toBeGreaterThan(0);
       }
     }
   });
@@ -437,12 +424,12 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
     }
   });
 
-  it('BC-28 — one indent level: no subsection has subsections', () => {
+  it('BC-28 — two levels: a zone holds sections, and a section holds rows', () => {
+    // The model no longer has a place to nest a section, so this asserts the
+    // shape rather than a depth limit: every section a zone emits is a peer.
     for (const zone of buildSidebarModel(state).zones) {
       for (const section of zone.sections) {
-        for (const sub of section.subsections ?? []) {
-          expect(sub.subsections).toBeUndefined();
-        }
+        expect(section).not.toHaveProperty('subsections');
       }
     }
   });
@@ -458,11 +445,7 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
     // and the anchor renders in Today AND in Library (BC-33 — dual presence is
     // intentional). React keys only have to be unique among siblings.
     for (const zone of buildSidebarModel(state).zones) {
-      const sections = zone.sections.flatMap((section) => [
-        section,
-        ...(section.subsections ?? []),
-      ]);
-      for (const section of sections) {
+      for (const section of zone.sections) {
         const keys = section.rows.map((row) => row.key);
         expect(new Set(keys).size, `duplicate key in ${zone.id}/${section.id}`).toBe(keys.length);
       }
