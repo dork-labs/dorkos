@@ -175,12 +175,45 @@ describe('the panel answering a request', () => {
     expect(useRoomPanelFocusStore.getState().request).toEqual({ focus: 'add', roomId: 'room-2' });
   });
 
-  it('forgets a press whose room never opened, once another panel does', async () => {
-    // The failure this closes: a press for a room that never arrives — the
-    // navigation failed, the room was gone — used to sit in the store forever,
-    // and the next room whose panel opened sprang its picker open for it.
+  it('delivers a press made while its room was still arriving', async () => {
+    // **The press that a mount-time release used to swallow.** `openRoomPanel`
+    // switches to the Room tab in the same press that navigates, so whenever the
+    // tab was NOT already active the panel mounts fresh for the room being LEFT
+    // while the request for the room being opened is still in flight. A panel
+    // that released stale-looking requests on mount ate exactly the press that
+    // had just been made — every sidebar door, silently, from a Pulse start.
+    //
+    // Red if the release moves back to mount: the picker never opens.
+    route.search = { id: 'room-1' };
+    useRoomPanelFocusStore.setState({ request: { focus: 'add', roomId: 'room-2' } });
+    const { rerender } = renderPanel();
+
+    // Mounted for room-1, which is not the room the press was about. It must
+    // keep its hands off.
+    await screen.findByRole('region', { name: 'Current members' });
+    expect(useRoomPanelFocusStore.getState().request).toEqual({ focus: 'add', roomId: 'room-2' });
+
+    // Now the navigation lands, and the panel for room-2 answers it.
+    route.search = { id: 'room-2' };
+    rerender(<RoomPanel />);
+
+    expect(await screen.findByRole('combobox', { name: 'Search agents' })).toBeInTheDocument();
+    expect(useRoomPanelFocusStore.getState().request).toBeNull();
+  });
+
+  it('forgets a press once the reader moves somewhere else entirely', async () => {
+    // The other half: a press for a room that never arrives — the navigation
+    // failed, the room was gone — must not sit in the store waiting to spring
+    // some later room's picker open. Moving to a THIRD room is what says the
+    // reader is somewhere else now, and is unambiguous in a way a mount is not.
+    route.search = { id: 'room-1' };
     useRoomPanelFocusStore.setState({ request: { focus: 'add', roomId: 'gone' } });
-    renderPanel();
+    const { rerender } = renderPanel();
+    await screen.findByRole('region', { name: 'Current members' });
+    expect(useRoomPanelFocusStore.getState().request).not.toBeNull();
+
+    route.search = { id: 'room-3' };
+    rerender(<RoomPanel />);
 
     await waitFor(() => expect(useRoomPanelFocusStore.getState().request).toBeNull());
     expect(screen.queryByRole('combobox', { name: 'Search agents' })).not.toBeInTheDocument();

@@ -19,6 +19,14 @@ import { RoomMemberList } from './RoomMemberList';
 import { RoomMemberRow } from './RoomMemberRow';
 import { RoomPanelNotice } from './RoomPanelNotice';
 
+/**
+ * What the keyboard can land on inside the roster.
+ *
+ * A member row's own controls — its profile button, its loudness pill — so
+ * tabbing carries on through the people the reader came to see.
+ */
+const FOCUSABLE = 'button, [href], input, [tabindex="0"]';
+
 /** Which field a pending focus request is owed, and how firmly. */
 type PendingSearchFocus =
   /** A press named the picker — take the cursor whatever else has it. */
@@ -212,38 +220,26 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
     if (!wantRosterFocus.current) return;
     const roster = rosterRef.current;
     if (roster === null) return;
-    const first = roster.querySelector<HTMLElement>('button, [href], input, [tabindex="0"]');
+    const first = roster.querySelector<HTMLElement>(FOCUSABLE);
     if (first === null && view.isLoading) return;
     wantRosterFocus.current = false;
     // A frame late, for the reason the search field is (below): the sidebar's
     // "Members…" is a menu item, and Radix hands focus back to the menu's own
     // trigger a commit after the press. Measured in a browser, where the bar's
     // chip landed in the roster and the sidebar's menu landed on `<body>`.
-    requestAnimationFrame(() => (first ?? roster).focus({ preventScroll: true }));
+    //
+    // The row is re-read inside the frame rather than captured: a roster that
+    // lands in that frame — or a removal that takes the row with it — replaces
+    // the node, and focusing the one this closure saw would focus something no
+    // longer on screen.
+    requestAnimationFrame(() => {
+      const node = rosterRef.current;
+      if (node === null) return;
+      const target = node.querySelector<HTMLElement>(FOCUSABLE) ?? node;
+      target.focus({ preventScroll: true });
+    });
     roster.scrollIntoView({ block: 'nearest' });
   });
-
-  /**
-   * Forget a press that was never answered, once some OTHER room's panel has
-   * opened.
-   *
-   * A request names its room and waits for that room's panel to mount. If it
-   * never does — the navigation failed, the room was gone — nothing was there to
-   * take it, and the next panel to open would otherwise spring its picker open
-   * for a press about a different room entirely.
-   *
-   * On MOUNT rather than on every route change, and that is what makes it safe:
-   * a sidebar press navigates first, so the panel it is leaving is already
-   * mounted and this never runs for it. Only a panel that is genuinely arriving
-   * clears anything, and by then a request for another room is stale by
-   * definition.
-   */
-  useEffect(() => {
-    const pending = useRoomPanelFocusStore.getState().request;
-    if (pending !== null && pending.roomId !== roomId) useRoomPanelFocusStore.getState().consume();
-    // Mount only — see above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   /**
    * Give the search field the cursor as soon as there IS a field, when

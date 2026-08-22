@@ -3,7 +3,9 @@
  *
  * @module features/room-management/ui/RoomPanel
  */
+import { useEffect, useRef } from 'react';
 import { Skeleton } from '@/layers/shared/ui';
+import { useRoomPanelFocusStore } from '../model/room-panel-focus';
 import { useRouteRoom } from '../model/use-route-room';
 import { RoomPanelBody } from './RoomPanelBody';
 import { RoomPanelNotice } from './RoomPanelNotice';
@@ -26,6 +28,38 @@ import { RoomPanelNotice } from './RoomPanelNotice';
  */
 export function RoomPanel() {
   const route = useRouteRoom();
+  const shown = route.status === 'ready' ? route.roomId : null;
+
+  /**
+   * Let go of a press whose room the reader has moved away from without ever
+   * opening it.
+   *
+   * A request names its room and waits for that room's panel. If the room never
+   * arrives — the navigation failed, the room was gone — nothing takes it, and
+   * the next panel to open would spring its picker for a press about a room
+   * nobody is looking at any more.
+   *
+   * **Released when the ROUTE moves, never when a panel mounts.** Mounting
+   * cannot tell the two apart: `openRoomPanel` switches to this tab in the same
+   * press, so on a route showing room A the panel mounts fresh for A while a
+   * request for B is still in flight behind a navigation — and a mount-time
+   * release swallowed exactly the press that had just been made (all three
+   * sidebar doors, silently, whenever the Room tab was not already the active
+   * one). A route move is unambiguous: it means the reader is somewhere else
+   * now, and a request for a third room is stale by then.
+   *
+   * The first render is not a move, so the `null` on mount is skipped. It lives
+   * here rather than in the body because the body is keyed on the room, so it
+   * unmounts before the move it would have to notice.
+   */
+  const shownBefore = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = shownBefore.current;
+    shownBefore.current = shown;
+    if (previous === null || previous === shown) return;
+    const pending = useRoomPanelFocusStore.getState().request;
+    if (pending !== null && pending.roomId !== shown) useRoomPanelFocusStore.getState().consume();
+  }, [shown]);
 
   if (route.status === 'loading') {
     return (
