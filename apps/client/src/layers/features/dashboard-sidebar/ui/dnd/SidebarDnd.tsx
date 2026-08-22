@@ -11,6 +11,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/layers/shared/model';
 import { useSidebarPrefs, useUpdateSidebarPrefs } from '@/layers/entities/config';
@@ -26,6 +27,7 @@ import {
   toDropDescriptor,
   type SidebarDndData,
 } from '../../model/use-sidebar-dnd';
+import { DRAG_LIFT_SCALE, DRAG_LIFT_SECONDS } from '../motion/sidebar-motion';
 import { SidebarDndEnabledProvider } from './SidebarDndPrimitives';
 
 interface SidebarDndProps {
@@ -62,9 +64,19 @@ function DragOverlayContent({
         ? itemName(data.ref)
         : '';
   return (
-    <div className="bg-sidebar border-sidebar-border text-sidebar-foreground shadow-floating flex items-center rounded-md border px-2.5 py-1.5 text-xs font-medium">
+    // **Lift, ring, settle** (spec D5): the label picks itself up off the panel
+    // by 2% with the floating shadow under it, so what is moving is obviously
+    // the thing under the cursor rather than a copy of it. `MotionConfig
+    // reducedMotion="user"` above drops the scale for a reader who asked for
+    // less, and the shadow stays — it is depth, not movement.
+    <motion.div
+      initial={{ scale: 1 }}
+      animate={{ scale: DRAG_LIFT_SCALE }}
+      transition={{ duration: DRAG_LIFT_SECONDS }}
+      className="bg-sidebar border-sidebar-border text-sidebar-foreground shadow-floating flex items-center rounded-md border px-2.5 py-1.5 text-xs font-medium"
+    >
       {label}
-    </div>
+    </motion.div>
   );
 }
 
@@ -158,7 +170,12 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
         onDragCancel={() => setActiveData(null)}
       >
         {children}
-        <DragOverlay dropAnimation={null}>
+        {/* **dnd-kit's own settle, restored.** The overlay used to vanish at
+            the instant of the drop (`dropAnimation={null}`), so a row that had
+            travelled the length of the panel simply ceased to exist and the
+            eye had to find where it landed. The default drop animation returns
+            it to the slot it took (D5, "settle with a short spring"). */}
+        <DragOverlay>
           {activeData ? (
             <DragOverlayContent data={activeData} itemName={itemName} groupName={groupName} />
           ) : null}

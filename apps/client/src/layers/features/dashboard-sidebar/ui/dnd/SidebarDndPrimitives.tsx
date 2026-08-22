@@ -153,7 +153,10 @@ function DroppableInner({ id, data, children }: DroppableProps) {
   return (
     <div
       ref={setNodeRef}
-      className={cn('rounded-md transition-shadow', isOver && 'ring-sidebar-ring ring-2')}
+      // An inset 2px ring at 45% of the ring colour, not a ring drawn outside
+      // the box and not a background wash (spec D5): the section's body is
+      // clipped while it folds, and this container is the first thing inside it.
+      className={cn('rounded-md transition-shadow', isOver && 'sidebar-drop-ring')}
     >
       {children}
     </div>

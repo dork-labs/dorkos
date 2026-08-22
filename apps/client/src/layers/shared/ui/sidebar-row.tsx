@@ -12,6 +12,7 @@
  */
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, HTMLAttributes, ReactNode, Ref, RefObject } from 'react';
+import { motion, type MotionProps } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import {
   useIsMobile,
@@ -208,6 +209,41 @@ export interface RowDragBindings {
   isDragging: boolean;
   /** Whether a drag is currently hovering this row as a drop target. */
   isOver: boolean;
+}
+
+/**
+ * The list item, animated — the one element a row's continuity motion lands on.
+ *
+ * It has to be the `<li>` itself: a FLIP measures the box that moved, and a
+ * wrapper inside the item would move with the row rather than being what moved.
+ * `SidebarMenuItem` spreads every prop it is given onto its `<li>`, ref
+ * included, so `motion.create` can drive it directly.
+ */
+const MotionMenuItem = motion.create(SidebarMenuItem);
+
+/**
+ * What the sidebar's continuity layer puts on a row's list item (spec
+ * `sidebar-simplification` D5).
+ *
+ * **Passed in rather than decided here**, exactly like {@link RowDragBindings}:
+ * a row has no idea whether it just arrived, whether its section reorders, or
+ * whether anything is holding the order still — those are the panel's facts, and
+ * `shared/` may not reach into `features/` to ask. This component's whole job is
+ * to put them on the right element.
+ */
+export interface SidebarRowMotion extends Pick<
+  MotionProps,
+  'layout' | 'layoutDependency' | 'initial' | 'animate' | 'exit' | 'transition'
+> {
+  /**
+   * The row turned up while the operator was looking, so it tints once.
+   *
+   * Stamped as `data-arrived`, which a `motion-safe:` CSS keyframe reads. It is
+   * an attribute rather than a motion prop because a background colour is the
+   * one thing the FLIP must NOT own — a colour that animated through `layout`
+   * would restart every time the row moved.
+   */
+  arrived?: boolean;
 }
 
 /**
@@ -422,6 +458,14 @@ export interface SidebarRowProps {
    * bindings renders the same wrapper with nothing on it.
    */
   drag?: RowDragBindings;
+  /**
+   * Continuity motion for this row's list item — arrival, departure, and the
+   * FLIP that follows it when the list around it reorders.
+   *
+   * Absent means a plain `<li>` and no motion component at all, which is what
+   * every row outside the sidebar panel gets.
+   */
+  rowMotion?: SidebarRowMotion;
 }
 
 /**
@@ -465,6 +509,7 @@ export function SidebarRow({
   className,
   buttonRef,
   drag,
+  rowMotion,
 }: SidebarRowProps & SidebarRowMenu) {
   // Read here rather than taken as a prop: "is there a hover to reveal on" is a
   // fact about the device, and every caller was answering it with the same
@@ -603,8 +648,36 @@ export function SidebarRow({
       </button>
     );
 
+  // The list item, with or without motion on it. A row that was handed none
+  // renders the plain `<li>` it always did — the motion component is not merely
+  // idle in that case, it is not in the tree at all.
+  const Item = rowMotion === undefined ? SidebarMenuItem : MotionMenuItem;
+  const itemProps =
+    rowMotion === undefined
+      ? {}
+      : {
+          layout: rowMotion.layout,
+          layoutDependency: rowMotion.layoutDependency,
+          initial: rowMotion.initial,
+          animate: rowMotion.animate,
+          exit: rowMotion.exit,
+          transition: rowMotion.transition,
+          // Present or absent, never `false`: the CSS keyframe fires on the
+          // attribute appearing, and `data-arrived="false"` would fire it too.
+          ...(rowMotion.arrived === true ? { 'data-arrived': '' } : {}),
+        };
+
   return (
-    <SidebarMenuItem>
+    <Item
+      {...itemProps}
+      // The tint the arrival attribute above turns on, and the rounding it needs
+      // so a 200 ms wash does not paint a square over a rounded row.
+      className={
+        rowMotion === undefined
+          ? undefined
+          : 'motion-safe:data-arrived:animate-sidebar-row-arrived rounded-md'
+      }
+    >
       <div
         ref={drag?.setNodeRef}
         style={drag?.style}
@@ -613,7 +686,10 @@ export function SidebarRow({
           drag !== undefined &&
             'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
           drag?.isDragging && 'opacity-40',
-          drag?.isOver && 'ring-sidebar-ring ring-2'
+          // **An inset ring, not an outer one** (D5): the drop target is inside
+          // the section's own body, which is clipped while it folds, and a ring
+          // drawn outside the border box is the first thing that clipping eats.
+          drag?.isOver && 'sidebar-drop-ring'
         )}
       >
         <SidebarMenuSurface
@@ -670,6 +746,6 @@ export function SidebarRow({
         </SidebarMenuSurface>
       </div>
       {expansion}
-    </SidebarMenuItem>
+    </Item>
   );
 }

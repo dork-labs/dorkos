@@ -18,7 +18,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
-vi.mock('motion/react', () => ({ useReducedMotion: () => true }));
+// `create` is here because `shared/ui` builds one motion component at module
+// load (the sidebar row's animated `<li>`), and this file's mock replaces the
+// whole module. It is never rendered here — the identity function is enough to
+// let the barrel import.
+vi.mock('motion/react', () => ({
+  useReducedMotion: () => true,
+  motion: { create: (component: unknown) => component },
+}));
 
 import {
   ZONE_LABEL,

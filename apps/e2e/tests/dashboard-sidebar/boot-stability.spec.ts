@@ -40,12 +40,14 @@ import type { RoomsApi } from '../../fixtures/rooms-api';
  * dot. None of those are what D6 is about, but none of them are covered here
  * either, and a later author should not read "one picture" as "nothing changed".
  *
- * **So one assertion D6 asks for is deliberately absent**: "no `data-arrived`
- * rows on boot". That attribute is task 4.1's arrive animation; it does not
- * exist in the tree yet, and it drives a background-colour keyframe — precisely
- * the opacity/colour class this sampler is blind to. Asserting it counts to zero
- * today would be a green check proving nothing twice over. **Task 4.1 owns it
- * and must add its own assertion**, as its task text already says.
+ * **The `data-arrived` assertion D6 asks for is here now** (task 4.1). The row
+ * sampler above cannot see it — it is a background-colour keyframe, and a
+ * picture is titles, faces and boxes — so it is watched by its own per-frame
+ * counter instead: every frame, how many rows are wearing the attribute. A boot
+ * that tinted its rows would be the panel announcing arrivals for a list that
+ * simply loaded, which is the assembling-in-front-of-you D6 removed wearing a
+ * nicer animation. The counter is a MAXIMUM over frames rather than a reading at
+ * the end, because the attribute lives for 200 ms and a poll would miss it.
  */
 
 /** How long to watch after the panel has rows, for anything arriving late. */
@@ -81,6 +83,8 @@ interface BootFilm {
   /** How many times the bones came and went. */
   skeletonAppeared: number;
   skeletonDisappeared: number;
+  /** The most rows seen wearing `data-arrived` in any single frame. */
+  peakArrived: number;
 }
 
 /**
@@ -99,10 +103,16 @@ interface BootFilm {
  */
 async function filmBoot(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    const film: { pictures: string[]; skeletonAppeared: number; skeletonDisappeared: number } = {
+    const film: {
+      pictures: string[];
+      skeletonAppeared: number;
+      skeletonDisappeared: number;
+      peakArrived: number;
+    } = {
       pictures: [],
       skeletonAppeared: 0,
       skeletonDisappeared: 0,
+      peakArrived: 0,
     };
     (window as unknown as { __bootFilm: typeof film }).__bootFilm = film;
 
@@ -114,6 +124,14 @@ async function filmBoot(page: Page): Promise<void> {
         if (hasBones) film.skeletonAppeared++;
         else film.skeletonDisappeared++;
       }
+
+      // The arrival tint, counted per frame because it only lives for 200 ms.
+      // `[data-arrived]` sits on the row's list item, so this counts items and
+      // not rows — which is the same number, one row per item.
+      const arriving = document.querySelectorAll(
+        'nav[aria-label="Sidebar"] li[data-arrived]'
+      ).length;
+      if (arriving > film.peakArrived) film.peakArrived = arriving;
 
       const found = document.querySelectorAll('nav[aria-label="Sidebar"] [data-sidebar-row]');
       if (found.length > 0) {
@@ -191,6 +209,11 @@ test.describe('the sidebar’s first paint @smoke', () => {
     expect(cold.skeletonAppeared).toBe(1);
     expect(cold.skeletonDisappeared).toBe(1);
 
+    // (c) Nothing "arrived". Every row in Heads up and Today was part of the
+    // panel loading, and the arrival tint is reserved for a row that turns up
+    // after the boot gate has opened (spec D5).
+    expect(cold.peakArrived).toBe(0);
+
     // The cold boot has to have left something behind, or the warm leg below
     // would be proving that a cold boot is fast rather than that a warm one is
     // warm.
@@ -224,5 +247,10 @@ test.describe('the sidebar’s first paint @smoke', () => {
     // …and the picture it painted is the one the last load ended on, not some
     // half-remembered subset of it.
     expect(warm.pictures[0]).toBe(settledPicture);
+
+    // …and a warm boot, which has rows in the very first frame, tinted none of
+    // them either. This is the leg that would go red if `useArrivedRows` ever
+    // seeded itself empty: every row in Today would read as new.
+    expect(warm.peakArrived).toBe(0);
   });
 });

@@ -27,6 +27,9 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
 
 vi.mock('motion/react', () => ({
   motion: {
+    // The sidebar row builds one motion component at module load, and this file
+    // replaces the whole module; nothing here renders it.
+    create: (component: unknown) => component,
     div: React.forwardRef(
       (
         {

@@ -361,7 +361,12 @@ export type {
 } from './sidebar-menu-node';
 export { SidebarRow, SIDEBAR_ROW_INSET } from './sidebar-row';
 export { TOUCH_TARGET_MIN_H } from './touch-target';
-export type { RowDragBindings, SidebarRowMenu, SidebarRowProps } from './sidebar-row';
+export type {
+  RowDragBindings,
+  SidebarRowMenu,
+  SidebarRowMotion,
+  SidebarRowProps,
+} from './sidebar-row';
 export { SectionHeader, SECTION_HEADER_INSET, SIDEBAR_HOVER_REVEAL } from './section-header';
 // The one pinned card at the bottom of a sidebar. The arbiter is here rather
 // than in the panel because its candidates come from three different features

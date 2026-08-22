@@ -48,6 +48,19 @@ export { useSidebarModel } from './model/use-sidebar-model';
 // a geometry regression shows up there too (spec `sidebar-simplification` D6).
 export { SidebarSkeleton } from './ui/boot/SidebarSkeleton';
 export { REVEAL_CONTAINER, REVEAL_ZONE, revealTransition } from './ui/boot/sidebar-reveal';
+// The continuity layer's numbers, for the Dev Playground's "Sidebar Motion"
+// page — which drives the REAL constants, so a retune shows up there rather than
+// in a lookalike that quietly stays right (spec `sidebar-simplification` D5).
+export {
+  ARRIVE_FROM,
+  ARRIVE_TO,
+  DRAG_LIFT_SCALE,
+  LEAVE_TO,
+  arriveTransition,
+  foldTransition,
+  leaveTransition,
+  sectionLayoutKey,
+} from './ui/motion/sidebar-motion';
 // One-time migration of pre-redesign pins. `DashboardSidebar` runs it, and on a
 // phone `DashboardSidebar` is never mounted — so the tabs run it instead, or an
 // operator who only ever opens DorkOS on their phone keeps their old pins
