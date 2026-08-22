@@ -117,8 +117,11 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     await basePage.goto(`/channels?id=${room.id}`);
     await basePage.waitForAppReady();
 
-    // Archived, still open, still readable — the state the rest of this depends on.
-    await expect(page.getByText('Archived', { exact: true })).toBeVisible({
+    // Archived, still open, still readable — the state the rest of this depends
+    // on. Scoped to the BAR, which is where the badge that means "this room is
+    // archived" lives: the room panel says it a second time about the same room
+    // (phase R2), and an unscoped match now resolves to both.
+    await expect(roomsPage.roomHeader.getByText('Archived', { exact: true })).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
 
@@ -182,7 +185,9 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     // field — and a control's accessible name says what pressing it does, so it
     // was never able to name the surface it sits in.
     await expect(roomsPage.roomPanelTab).toHaveAttribute('aria-selected', 'true');
-    await expect(panel.getByRole('button', { name: `Room name:${name}` })).toBeVisible();
+    const nameLine = panel.getByRole('button', { name: /^Room name/ });
+    await expect(nameLine).toBeVisible();
+    await expect(nameLine).toContainText(name);
     // Both agents have a row, each with its verbs behind its own "…".
     await expect(panel.getByRole('button', { name: `${ana.name} actions` })).toBeVisible();
     await expect(panel.getByRole('button', { name: `${kai.name} actions` })).toBeVisible();
@@ -225,9 +230,11 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     });
     await roomsPage.emptyStateAddAgents.click();
 
-    // Lands on the picker, because "Add agents" is what was asked for — the
-    // next keystroke is a search rather than a hunt for the field.
-    const panel = page.getByRole('dialog');
+    // Lands on the picker in the room panel, because "Add agents" is what was
+    // asked for — the next keystroke is a search rather than a hunt for the
+    // field. The panel is the right panel's Room tab since phase R2, so the
+    // press opens the panel as well as the picker inside it.
+    const panel = roomsPage.roomPanel;
     await expect(panel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(panel.getByRole('combobox', { name: 'Search agents' })).toBeFocused();
   });

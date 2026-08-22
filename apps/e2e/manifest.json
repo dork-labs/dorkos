@@ -25,7 +25,9 @@
       "runCount": 10,
       "passCount": 9,
       "failCount": 1,
-      "relatedCode": ["apps/client/src/App.tsx"],
+      "relatedCode": [
+        "apps/client/src/App.tsx"
+      ],
       "lastModified": ""
     },
     "send-message": {
@@ -68,7 +70,9 @@
       "runCount": 13,
       "passCount": 10,
       "failCount": 1,
-      "relatedCode": ["apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"],
+      "relatedCode": [
+        "apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"
+      ],
       "lastModified": ""
     },
     "pulse-scheduler": {
@@ -147,11 +151,11 @@
       "specFile": "tests/rooms/room-conversation.spec.ts",
       "feature": "rooms",
       "description": "create a channel from the sidebar, post to it, and read the post back, switching rooms swaps the history, the masthead and the browser tab, an arriving message does not yank a reader back from history, a room whose stream has died says so and comes back on its own",
-      "lastRun": "2026-08-11T22:28:59.005Z",
-      "lastStatus": "passed",
-      "runCount": 16,
+      "lastRun": "2026-08-22T04:41:16.174Z",
+      "lastStatus": "failed",
+      "runCount": 18,
       "passCount": 15,
-      "failCount": 0,
+      "failCount": 2,
       "relatedCode": [
         "apps/client/src/layers/widgets/room-view/ui/ChannelsPage.tsx",
         "apps/client/src/layers/widgets/room-view/ui/ChannelComposer.tsx",
@@ -166,10 +170,10 @@
       "specFile": "tests/rooms/direct-messages.spec.ts",
       "feature": "rooms",
       "description": "picking one agent opens a one-to-one wearing that agent, picking several agents opens one group conversation holding all of them, a query nobody matches does not open the half-assembled conversation, asking for the same agent again opens the conversation you already have",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-22T04:37:02.844Z",
       "lastStatus": "passed",
-      "runCount": 15,
-      "passCount": 14,
+      "runCount": 16,
+      "passCount": 15,
       "failCount": 1,
       "relatedCode": [
         "apps/client/src/layers/features/room-management/ui/NewDirectMessageMenu.tsx",
@@ -182,10 +186,10 @@
       "specFile": "tests/rooms/room-identity.spec.ts",
       "feature": "rooms",
       "description": "a channel wears its # as a mark, and spells it out only to a screen reader, an unread channel row names itself once, and stops counting once read, a direct message wears the agent it is with, not a letter standing in for one",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-22T04:35:08.863Z",
       "lastStatus": "passed",
-      "runCount": 14,
-      "passCount": 13,
+      "runCount": 15,
+      "passCount": 14,
       "failCount": 1,
       "relatedCode": [
         "apps/client/src/layers/entities/room/ui/RoomTitle.tsx",
@@ -287,11 +291,11 @@
       "specFile": "tests/rooms/room-sheet-phone.spec.ts",
       "feature": "rooms",
       "description": "the sheet stays on the screen, and its middle is the part that scrolls, exactly one element carries the home-indicator padding, so it cannot double, every control a thumb has to hit is at least 44px tall, dragging the roster scrolls it; dragging the sheet itself puts it away, a long agent description truncates rather than pushing the picker's button away, the header lines up with itself and stays inside the sheet",
-      "lastRun": "2026-08-11T22:44:33.756Z",
-      "lastStatus": "passed",
-      "runCount": 16,
+      "lastRun": "2026-08-22T04:41:16.174Z",
+      "lastStatus": "failed",
+      "runCount": 18,
       "passCount": 16,
-      "failCount": 0,
+      "failCount": 2,
       "relatedCode": [],
       "lastModified": ""
     },
@@ -299,10 +303,10 @@
       "specFile": "tests/rooms/room-sheet.spec.ts",
       "feature": "rooms",
       "description": "the room meter and the pointed-at member move as one, and slide rather than jump, a rung committed moves the member meter and the room meter to the same answer, the roster you open the sheet on does not perform, and an agent you add does, a removed row collapses to nothing while the Undo is still on offer, nothing shaves a focus ring against the row and list clips, a working agent's pulse is not shaved by the row's clip, the segmented control fits its indent without ellipsising a rung, the preview snaps to its answer instead of sliding, and loses nothing",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-22T04:37:02.844Z",
       "lastStatus": "passed",
-      "runCount": 6,
-      "passCount": 6,
+      "runCount": 7,
+      "passCount": 7,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -352,7 +356,9 @@
       "runCount": 6,
       "passCount": 6,
       "failCount": 0,
-      "relatedCode": ["apps/client/src/layers/shared/ui/navigation-layout.tsx"],
+      "relatedCode": [
+        "apps/client/src/layers/shared/ui/navigation-layout.tsx"
+      ],
       "lastModified": ""
     },
     "adapter-wizard-fields": {
@@ -1018,33 +1024,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-07T02-12-57",
-      "timestamp": "2026-08-07T02:12:57.019Z",
-      "total": 4,
-      "passed": 4,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 24934
-    },
-    {
-      "id": "2026-08-07T09-53-20",
-      "timestamp": "2026-08-07T09:53:20.277Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 49814
-    },
-    {
-      "id": "2026-08-07T11-13-21",
-      "timestamp": "2026-08-07T11:13:21.004Z",
-      "total": 5,
-      "passed": 0,
-      "failed": 5,
-      "skipped": 0,
-      "duration": 62497
-    },
     {
       "id": "2026-08-07T11-23-48",
       "timestamp": "2026-08-07T11:23:48.016Z",
@@ -1917,6 +1896,33 @@
       "failed": 0,
       "skipped": 0,
       "duration": 40760
+    },
+    {
+      "id": "2026-08-22T04-35-08",
+      "timestamp": "2026-08-22T04:35:08.863Z",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 50983
+    },
+    {
+      "id": "2026-08-22T04-37-02",
+      "timestamp": "2026-08-22T04:37:02.844Z",
+      "total": 24,
+      "passed": 21,
+      "failed": 3,
+      "skipped": 0,
+      "duration": 102662
+    },
+    {
+      "id": "2026-08-22T04-41-16",
+      "timestamp": "2026-08-22T04:41:16.174Z",
+      "total": 12,
+      "passed": 10,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 60858
     }
   ]
 }

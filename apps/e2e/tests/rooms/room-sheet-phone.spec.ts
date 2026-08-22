@@ -60,13 +60,17 @@ test.describe('Room panel on a phone — 390×844 @smoke', () => {
     expect(box.bottom).toBeLessThanOrEqual(PHONE.height + 1);
 
     const body = sheet.locator('.overflow-y-auto').first();
-    // The room's name, which is a control rather than a heading — the panel is
-    // named by its tab (phase R2).
-    const header = sheet.getByRole('button', { name: /^Room name/ });
+    // **What is pinned has changed, and this is where it shows.** The modal kept
+    // the room's name at the top and its footer at the bottom, with only the
+    // middle scrolling. The panel pins its TAB STRIP instead — the thing that
+    // says which panel you are in, and the way back to Pulse — and lets the
+    // room's name scroll with the roster it belongs to. The footer is still
+    // pinned, because Archive must not be forty-six rows away.
+    const tabs = page.getByRole('tab', { name: 'Room' });
     const footer = sheet.getByRole('button', { name: 'Archive room' });
     await expect(footer).toBeVisible();
 
-    const headerBefore = await rectOf(header);
+    const headerBefore = await rectOf(tabs);
     const footerBefore = await rectOf(footer);
 
     const scrolled = await body.evaluate((el) => {
@@ -75,10 +79,10 @@ test.describe('Room panel on a phone — 390×844 @smoke', () => {
     });
     expect(scrolled, 'the panel body has nothing to scroll').toBeGreaterThan(0);
 
-    // Pinned: the room's name and the way out of the room do not scroll away.
-    // A pixel of tolerance is sub-pixel layout; a scrolled-away header moves by
-    // its own height or more.
-    expect((await rectOf(header)).top).toBeCloseTo(headerBefore.top, 0);
+    // Pinned: which panel you are in, and the way out of the room. A pixel of
+    // tolerance is sub-pixel layout; a scrolled-away element moves by its own
+    // height or more.
+    expect((await rectOf(tabs)).top).toBeCloseTo(headerBefore.top, 0);
     expect((await rectOf(footer)).top).toBeCloseTo(footerBefore.top, 0);
   });
 
