@@ -286,6 +286,16 @@ const bootCache = createBootCache({
   buster: __APP_VERSION__,
 });
 
+// Write the memory before the page goes away. The ordinary save is throttled to
+// one a second, which is right for a boot and wrong for the last second before a
+// reload: dismiss a card or create a section and reload straight away, and the
+// next load would paint the state from BEFORE the change and then take it back
+// when the server answered. `pagehide` is the browser saying it is leaving, and
+// it fires for a reload, a navigation and a close alike.
+if (bootCache !== null) {
+  window.addEventListener('pagehide', () => bootCache.flush(queryClient));
+}
+
 // Router at module scope — creating it inside Root() caused StrictMode to
 // remount the entire provider tree (including EventStreamProvider) on every
 // render, producing duplicate SSE connections. Built after the transport

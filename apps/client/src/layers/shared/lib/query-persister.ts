@@ -29,7 +29,12 @@
  * @module shared/lib/query-persister
  */
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
-import { defaultShouldDehydrateQuery, hydrate, type QueryClient } from '@tanstack/react-query';
+import {
+  defaultShouldDehydrateQuery,
+  dehydrate,
+  hydrate,
+  type QueryClient,
+} from '@tanstack/react-query';
 import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client';
 
 import type { Transport } from '@dorkos/shared/transport';
@@ -175,6 +180,19 @@ function readPersistedClient(storage: Storage, key: string): PersistedClient | u
   }
 }
 
+/**
+ * The dehydrate rule: in the allow-list, and holding an answer worth keeping.
+ *
+ * One function so the throttled save and the `pagehide` flush cannot come to
+ * disagree about what may be written.
+ */
+function shouldPersist(query: { queryKey: readonly unknown[] }): boolean {
+  return (
+    isBootQueryKey(query.queryKey) &&
+    defaultShouldDehydrateQuery(query as Parameters<typeof defaultShouldDehydrateQuery>[0])
+  );
+}
+
 /** Whether a remembered blob is still one this build may paint. */
 function isUsable(persisted: PersistedClient, buster: string): boolean {
   if (typeof persisted.timestamp !== 'number') return false;
@@ -196,6 +214,23 @@ export interface BootCache {
    * @param queryClient - The client the app renders against.
    */
   restore(queryClient: QueryClient): void;
+  /**
+   * Write the cache to storage now, without waiting for the throttle.
+   *
+   * **What makes the memory safe to paint from.** The ordinary save runs on a
+   * one-second throttle, which is right for a boot that fires dozens of cache
+   * events — and wrong for the last second before a reload. Dismiss a card,
+   * create a section, mute a room and reload straight away, and the blob still
+   * held the state from BEFORE the change: the panel painted the card you just
+   * dismissed, then took it away again when the server answered. Two browser
+   * specs caught exactly that (`sidebar-bottom-slot`, `sidebar-groups`).
+   *
+   * Wired to `pagehide`, which is the browser saying it is leaving — the one
+   * moment where a synchronous write is both cheap and necessary.
+   *
+   * @param queryClient - The client whose current answers to write.
+   */
+  flush(queryClient: QueryClient): void;
   /** What `PersistQueryClientProvider` needs to keep writing the blob. */
   persistOptions: {
     persister: Persister;
@@ -259,14 +294,25 @@ export function createBootCache(options: {
       }
       hydrate(queryClient, firstRead.clientState);
     },
+    flush(queryClient) {
+      try {
+        storage.setItem(
+          key,
+          JSON.stringify({
+            buster,
+            timestamp: Date.now(),
+            clientState: dehydrate(queryClient, { shouldDehydrateQuery: shouldPersist }),
+          })
+        );
+      } catch {
+        // A full quota on the way out of the page is not worth a thrown error
+        // nobody can see. The next load reads whatever the throttled save left.
+      }
+    },
     persistOptions: {
       maxAge: BOOT_CACHE_MAX_AGE_MS,
       buster,
-      dehydrateOptions: {
-        shouldDehydrateQuery: (query) =>
-          isBootQueryKey(query.queryKey) &&
-          defaultShouldDehydrateQuery(query as Parameters<typeof defaultShouldDehydrateQuery>[0]),
-      },
+      dehydrateOptions: { shouldDehydrateQuery: shouldPersist },
       persister: {
         persistClient: (client) => persister.persistClient(client),
         removeClient: () => persister.removeClient(),

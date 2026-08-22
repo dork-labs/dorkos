@@ -273,6 +273,25 @@ describe('the sidebar’s local memory', () => {
       );
     });
 
+    it('writes on the way out of the page, without waiting for the throttle', () => {
+      const storage = fakeStorage();
+      const cache = createBootCache({
+        transport: new HttpTransport('/api'),
+        apiBaseUrl: '/api',
+        buster: BUSTER,
+        storage,
+      })!;
+      const queryClient = new QueryClient();
+      queryClient.setQueryData(configKeys.current(), { promosDismissed: ['mobile'] });
+
+      // No `await`, no timer. This is the difference: a person who dismisses a
+      // card and reloads within the second must not be shown the card again.
+      cache.flush(queryClient);
+
+      const written = storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`);
+      expect(written).toContain('promosDismissed');
+    });
+
     it('forgets every cockpit when asked', () => {
       const storage = fakeStorage({
         [`${BOOT_CACHE_KEY_PREFIX}http://a`]: '{}',
