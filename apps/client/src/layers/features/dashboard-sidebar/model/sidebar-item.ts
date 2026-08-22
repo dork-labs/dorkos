@@ -110,12 +110,17 @@ export interface AgentSidebarItemInput {
 /**
  * The view model for one agent row.
  *
- * The face is resolved here, client-side, from the manifest — `resolveAgentVisual`
- * hashes emoji and colour out of the agent's id whenever it has no stored
- * override, which is the case for most of a real fleet. Falling back to
- * `resolveAgentVisual({ id: path })` when there is no manifest is the same
- * expression `useAgentVisual` uses for an unregistered directory, so a row's
- * face never changes as its manifest loads.
+ * The face is resolved here, client-side, from the manifest —
+ * `resolveAgentVisual` hashes emoji and colour out of the agent's id whenever it
+ * has no stored override, which is the case for most of a real fleet.
+ *
+ * **The path-hash fallback is for directories that have no manifest, and it is
+ * final for them.** It is NOT a placeholder to paint while manifests load: the
+ * two hashes disagree (id vs path), so a row painted before its manifest landed
+ * changed its face and its name a beat later, on every cold load, for the whole
+ * fleet at once (DOR-1143). The panel's boot gate is what stops that — no agent
+ * row paints before the manifests answer — and this expression only ever runs
+ * for a directory the roster genuinely cannot name.
  *
  * @param input - The agent and its live state.
  */

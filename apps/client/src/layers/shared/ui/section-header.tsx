@@ -40,7 +40,7 @@ const SECTION_HEADER_HEIGHT = { fine: 'h-7', coarse: 'h-11' } as const;
  * the remainder. Same arithmetic, same `0.5rem` literal and same browser
  * assertion as `SIDEBAR_ROW_INSET` — see its docblock.
  */
-const SECTION_HEADER_INSET = 'pl-[calc(var(--sidebar-header-x)_-_0.5rem)]';
+export const SECTION_HEADER_INSET = 'pl-[calc(var(--sidebar-header-x)_-_0.5rem)]';
 
 /**
  * The header's right padding, holding its satellites off the label.

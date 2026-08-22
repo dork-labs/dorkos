@@ -123,6 +123,45 @@ describe('BottomSlot', () => {
     });
   });
 
+  describe('it paints with the panel, not before it', () => {
+    it('draws nothing while the panel is not ready, however well a card qualifies', () => {
+      // Spec `sidebar-simplification` D6 item 9. A browser test found a promo
+      // card sitting under eight skeleton bones: the slot had its answer before
+      // the panel had its rows, so the sidebar arrived in pieces, bottom first.
+      // `ready` gates the card's PRESENCE, not only its entrance animation.
+      //
+      // Red when: the winner is picked without consulting `ready`.
+      render(<BottomSlot candidates={[candidate('progress', true)]} ready={false} />);
+      expect(screen.queryByTestId('card-progress')).toBeNull();
+      expect(slot().children.length).toBe(0);
+    });
+
+    it('keeps its box either way, so nothing below it moves when the card lands', () => {
+      // The container is always in the DOM (`empty:p-0`), so withholding the
+      // card cannot be what shifts the footer.
+      const { rerender } = render(
+        <BottomSlot candidates={[candidate('progress', true)]} ready={false} />
+      );
+      expect(slot()).not.toBeNull();
+      rerender(<BottomSlot candidates={[candidate('progress', true)]} ready />);
+      expect(screen.getByTestId('card-progress')).toBeInTheDocument();
+    });
+
+    it('does not ask the card it was holding back for an entrance', () => {
+      // The card was withheld, not "arriving later": it is what the panel came
+      // up with, so it is simply there on the frame the panel is.
+      const { rerender } = render(
+        <BottomSlot candidates={[candidate('progress', true)]} ready={false} />
+      );
+      rerender(<BottomSlot candidates={[candidate('progress', true)]} ready />);
+
+      expect(screen.getByTestId('card-progress').parentElement).toHaveAttribute(
+        'data-initial',
+        'false'
+      );
+    });
+  });
+
   describe('the entrance never plays on boot', () => {
     it('does not animate a card that already qualifies when the facts land', () => {
       // Defect #9 in the load trace: the cards faded up in the footer at

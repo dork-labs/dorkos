@@ -35,11 +35,14 @@ import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useJumpBackIn } from '@/layers/entities/recents';
 import { useRooms, useThreads } from '@/layers/entities/room';
 import {
+  RECENT_SESSIONS_WINDOW,
   useAgentAttentionMap,
   useRecentSessions,
   useSessionListStore,
 } from '@/layers/entities/session';
+import type { RecentSessionsResponse } from '@dorkos/shared/types';
 import type { SidebarTarget } from './build-sidebar-model';
+import { useBootState } from './boot/use-boot-state';
 import { useDigestFacts } from './use-digest-facts';
 import { useGettingStartedRetirement } from './use-getting-started-retirement';
 import { useJourneyFacts } from './use-journey-facts';
@@ -54,6 +57,39 @@ import type { AgentRosterEntry, SidebarModelPrefs, SidebarState } from './sideba
  * would rebuild the whole tree for an answer that did not change.
  */
 export const SIDEBAR_CLOCK_TICK_MS = 60_000;
+
+/**
+ * How many recent sessions the model reads.
+ *
+ * Fewer than the cockpit fetches ({@link RECENT_SESSIONS_WINDOW}) on purpose:
+ * Today is a short list and the rules that read this array are O(n). The wider
+ * window is what "Jump back in" and the attention list need, and asking for a
+ * narrower one here would be a second request for the same fact — so the panel
+ * narrows the shared answer instead (spec `sidebar-simplification` D6).
+ */
+const SIDEBAR_RECENT_LIMIT = 10;
+
+/**
+ * No fleet, as one identity.
+ *
+ * A shared empty rather than a fresh `[]`, because it is what the roster reads
+ * as while its manifests are still in flight and a new array each render would
+ * rebuild the whole model on every tick of that wait.
+ */
+const NO_PATHS: string[] = [];
+
+/**
+ * The sidebar's slice of the shared recent-sessions answer.
+ *
+ * Module-level so its identity is stable: a `select` declared inside the hook
+ * would re-run on every render and hand the memo below a fresh object each time.
+ *
+ * @param data - The shared answer, at the full window.
+ */
+function sidebarRecentWindow(data: RecentSessionsResponse): RecentSessionsResponse {
+  if (data.sessions.length <= SIDEBAR_RECENT_LIMIT) return data;
+  return { ...data, sessions: data.sessions.slice(0, SIDEBAR_RECENT_LIMIT) };
+}
 
 /**
  * The previous value, whenever the new one is shallow-equal to it.
@@ -166,13 +202,17 @@ export interface UseSidebarStateOptions {
 export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarState {
   const { coveredSignalIds } = options;
   const now = useNow(SIDEBAR_CLOCK_TICK_MS);
+  // Where this mount is in its first paint. Two rules below need to tell
+  // "pending" from "empty" — Getting started, which retires permanently, and
+  // the digest's once-a-day latch — and this is the one place that can.
+  const boot = useBootState();
 
   // ── Sessions and their coarse lifecycle ──
   // Lifecycle ONLY, never `activity` — the standing rule the whole design rests
   // on. `useShallow` is what makes that true in practice as well as in type: the
   // status objects in the store carry the verb, so selecting them raw would put
   // a new identity in front of the memo on every tool call.
-  const recentQuery = useRecentSessions();
+  const recentQuery = useRecentSessions(RECENT_SESSIONS_WINDOW, { select: sidebarRecentWindow });
   const sessions = useMemo(() => recentQuery.data?.sessions ?? [], [recentQuery.data]);
   const sessionStatuses = useSessionListStore(
     useShallow((s): Record<string, SessionLifecycle> => {
@@ -196,8 +236,19 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
   const liveSessionCwds = useSessionListStore(useCallback((s) => s.statusCwds, []));
 
   // ── Rooms and threads ──
+  //
+  // **Direct messages wait for the fleet** (DOR-1143). A DM's face is its
+  // agent participants' faces, joined through the manifests — so on a boot that
+  // opened on the 1500 ms ceiling with manifests still in flight, a DM row would
+  // paint with the room's own letter and grow faces a moment later. Channels,
+  // threads and sessions have no such dependency and paint immediately. See
+  // `fleetKnown`.
   const roomsQuery = useRooms();
-  const rooms = useMemo(() => roomsQuery.data ?? [], [roomsQuery.data]);
+  const rooms = useMemo(() => {
+    const all = roomsQuery.data ?? [];
+    if (boot.fleetKnown) return all;
+    return all.filter((room) => room.kind !== 'dm');
+  }, [roomsQuery.data, boot.fleetKnown]);
   const threadsQuery = useThreads();
   const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data]);
 
@@ -234,9 +285,20 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
     useAgentAttentionMap(rawPaths, brokenPaths, agentInteractionAt)
   );
   const agentActivity = useMemo(() => recentQuery.data?.agentActivity ?? {}, [recentQuery.data]);
+  // **The fleet is empty until its manifests are in** (DOR-1143), and that is a
+  // withholding rather than a degradation. Every other boot source may read as
+  // empty on the timeout, because a room list that has not answered means "no
+  // rooms yet" and a room arriving late is a row appearing. A manifest that has
+  // not answered means something else: `agentSidebarItem` would hash the
+  // DIRECTORY for the face and use the path for the name, and both change the
+  // moment the manifest lands — thirty rows flipping at once, which is the
+  // defect D6 exists to remove. So on a boot that opened on the ceiling with
+  // manifests still in flight, the agent rows are simply not drawn, and they
+  // appear once, correct, when the manifests answer.
+  const paths = boot.fleetKnown ? rawPaths : NO_PATHS;
   const agents = useMemo<readonly AgentRosterEntry[]>(
     () =>
-      rawPaths.map((path) => {
+      paths.map((path) => {
         const manifest = manifests?.[path] ?? null;
         const activityIso = agentActivity[path];
         const lastActivityAt = activityIso === undefined ? NaN : Date.parse(activityIso);
@@ -250,11 +312,11 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
           attention: attentionMap[path] ?? 'inactive',
         };
       }),
-    [rawPaths, manifests, agentActivity, attentionMap, agentInteractionAt]
+    [paths, manifests, agentActivity, attentionMap, agentInteractionAt]
   );
   const displayNames = useMemo(
-    () => disambiguateDisplayNames(rawPaths, manifests ?? {}),
-    [rawPaths, manifests]
+    () => disambiguateDisplayNames(paths, manifests ?? {}),
+    [paths, manifests]
   );
 
   // ── When the operator last WROTE, the server's half of Today's key ──
@@ -298,6 +360,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
     sessionStatuses,
     interactions,
     storedLastShownDate: storedModelPrefs.digest.lastShownDate,
+    settled: boot.settled,
   });
   // **The one field of prefs the model does not read live.** Everything else
   // here is the stored value; `digest.lastShownDate` is the value this tab
@@ -338,20 +401,17 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
   const attention = useAttentionSignals();
 
   // ── How far along this operator is (BC-12) ──
-  // `rosterResolved` is what keeps the loading placeholder out of permanent
+  // The boot gate is what keeps the loading placeholder out of permanent
   // retirement: a roster query that has not answered looks exactly like an
   // empty fleet, and Getting started's whole first suggestion turns on that.
-  // An empty roster is `isSuccess` with no paths, in which case there are no
-  // manifests to wait for and the manifests query stays disabled forever.
+  // It used to ask three of the queries itself; the gate asks all seven (and
+  // gives up after 1.5s), so the answer is the same one the panel paints with.
   const journey = useJourneyFacts({
     agents,
     agentActivity,
     sessionCount: sessions.length,
     rooms,
-    rosterResolved:
-      meshQuery.isSuccess &&
-      recentQuery.isSuccess &&
-      (rawPaths.length === 0 || manifestsQuery.isSuccess),
+    rosterResolved: boot.settled,
   });
 
   const state = useMemo(

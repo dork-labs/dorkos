@@ -123,6 +123,10 @@ vi.mock('@/layers/entities/mesh', () => ({
 vi.mock('@/layers/entities/attention', () => ({
   useAttentionSignals: () => ATTENTION,
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
+  // Heads up's other two sources, settled — they are boot-gate members since
+  // D6, and a panel whose gate never opens draws no Today rows to assert on.
+  usePendingApprovals: () => ({ approvals: [], isLoading: false }),
+  usePendingScheduleApprovals: () => ({ schedules: [], isLoading: false }),
 }));
 vi.mock('@/layers/entities/agent', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/agent')>()),

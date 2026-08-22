@@ -7,7 +7,7 @@
  * @module entities/config
  */
 
-export { configKeys } from './api/query-keys';
+export { configKeys, CONFIG_STALE_TIME_MS } from './api/query-keys';
 export { useConfig } from './model/use-config';
 export { useEngagedWindow } from './model/use-engaged-window';
 export { useDefaultAgentSession, resolveDefaultAgentDir } from './model/use-default-agent-session';

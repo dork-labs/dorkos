@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
+import { configKeys } from '@/layers/entities/config';
 
 interface AgentContextConfig {
   relayTools: boolean;
@@ -19,7 +20,7 @@ const DEFAULTS: AgentContextConfig = {
 /**
  * Read and update the agentContext section of the user config.
  *
- * Uses the shared `['config']` query key so all config consumers
+ * Uses the shared `configKeys.current()` query key so all config consumers
  * stay in sync after mutations.
  */
 export function useAgentContextConfig() {
@@ -27,7 +28,7 @@ export function useAgentContextConfig() {
   const queryClient = useQueryClient();
 
   const { data } = useQuery({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: 30_000,
   });
@@ -41,7 +42,7 @@ export function useAgentContextConfig() {
     mutationFn: (patch: Partial<AgentContextConfig>) =>
       transport.updateConfig({ agentContext: { ...config, ...patch } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['config'] });
+      queryClient.invalidateQueries({ queryKey: configKeys.all });
     },
   });
 

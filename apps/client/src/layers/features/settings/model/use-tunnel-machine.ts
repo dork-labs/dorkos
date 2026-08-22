@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { useTransport } from '@/layers/shared/model';
+import { configKeys } from '@/layers/entities/config';
 import {
   type TunnelState,
   type ViewState,
@@ -60,7 +61,7 @@ export interface TunnelMachine {
 export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   const transport = useTransport();
   const { data: serverConfig } = useQuery({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: 5 * 60 * 1000,
   });

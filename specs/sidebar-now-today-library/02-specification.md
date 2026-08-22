@@ -738,9 +738,9 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
 
 #### Moments (§10)
 
-- **BC-49 — Welcome-back glow.** A row whose work finished while the user was away glows amber
-  once on first paint (`motion-safe` only; nothing under reduced motion). Absence threshold
-  reuses team-room-home's `welcomeBack.absenceThresholdMinutes`.
+- **BC-49 — Welcome-back glow. REMOVED** (2026-08-21, `sidebar-simplification` D6). The digest
+  row already carries "while you were away", and nothing should glow on first paint. The prop,
+  its latch and the CSS utility are gone.
 - **BC-50 — The all-clear beat.** When the last Heads up item resolves, the zone shows "All clear ✓"
   for 2.5s and then folds away. Under `prefers-reduced-motion` the zone simply disappears.
 - **BC-51 — No tour.** No tour component, no tour anchors added, no "meet your new sidebar"
@@ -811,9 +811,8 @@ showcase page, which fails on contrast violations rather than being eyeballed.
   agents would otherwise turn a screen reader into a siren.
 - **Motion.** Only "working" animates. The dot uses the shared
   `STATUS_DOT_PULSE = 'motion-safe:animate-pulse'`; the ping halo carries `motion-reduce:hidden`.
-  Scroll-to-active uses `behavior: 'auto'` under `prefers-reduced-motion` (BC-36). The
-  welcome-back glow and the all-clear beat do not render at all under reduced motion (BC-49,
-  BC-50).
+  Scroll-to-active uses `behavior: 'auto'` under `prefers-reduced-motion` (BC-36). The all-clear
+  beat does not render at all under reduced motion (BC-50).
 - **Hover-revealed chrome always has two other paths**: `focus-visible` reveals it on the
   keyboard, and on touch it is either always visible or reachable by long-press (design-system
   §Hover Pattern Mobile Alternatives).

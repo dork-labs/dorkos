@@ -27,6 +27,7 @@ import { narrowAgentsByRoster } from '../lib/roster-narrowing';
 import type { AgentTableRow } from '../lib/agent-columns';
 import { AgentEmptyFilterState, AgentRosterFilterEmpty } from './AgentEmptyFilterState';
 import { AgentFleetTable } from './AgentFleetTable';
+import { configKeys } from '@/layers/entities/config';
 
 interface AgentsListProps {
   agents: TopologyAgent[];
@@ -125,7 +126,7 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
 
   // Fetch config once for default-agent badge
   const { data: config } = useQuery({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: 30_000,
   });

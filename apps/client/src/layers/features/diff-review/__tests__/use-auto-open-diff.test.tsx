@@ -28,9 +28,14 @@ vi.mock('@/layers/shared/lib', () => ({
   executeUiCommand: mocks.executeUiCommand,
 }));
 
-vi.mock('@/layers/shared/model', () => ({
+vi.mock('@/layers/shared/model', async () => ({
   useAppStore: { getState: () => ({}) },
   useTransport: () => ({ getConfig: mocks.getConfig }),
+  // Real, and taken from the leaf rather than through `importOriginal`: the one
+  // `/config` cache key lives here so every layer can reach it, and a stub
+  // would let this hook read an entry nothing in the app writes (spec
+  // `sidebar-simplification` D6).
+  configKeys: (await import('@/layers/shared/model/server-config/query-keys')).configKeys,
 }));
 
 import { useAutoOpenDiff } from '../model/use-auto-open-diff';
