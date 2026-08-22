@@ -61,6 +61,8 @@ export {
   muteItem,
   unmuteItem,
   mutedRoomIds,
+  moveTargetGroups,
+  roomSectionIds,
 } from './model/use-sidebar-prefs';
 export type { UpdateSidebarPrefs } from './model/use-sidebar-prefs';
 export { toSidebarModelPrefs } from './model/sidebar-model-prefs';
