@@ -37,5 +37,8 @@ export { RoomPanel } from './ui/RoomPanel';
 export { RoomPanelBody } from './ui/RoomPanelBody';
 export { openRoomPanel, ROOM_PANEL_ID, useRoomPanelFocusStore } from './model/room-panel-focus';
 export { routeShowsRoom } from './model/use-route-room';
+// The fleet's faces, for the one surface outside this slice that draws a room's
+// mark: the bar. Exported rather than re-derived there — see `use-room-faces`.
+export { useRoomFaces, facesOfRoster } from './model/use-room-faces';
 export { ONE_DOOR_HINT, oneDoorSubmitLabel, opensAgentSession } from './lib/one-door';
 export type { RoomDetailsFocus, RoomDetailsRoom } from './model/room-details';

@@ -53,13 +53,28 @@ vi.mock('@/layers/entities/room', async (importOriginal) => {
 // The panel itself is mounted by the shell, not by the bar. What the bar owes
 // is the press: the door, and the part of the panel it asks for.
 const openRoomPanel = vi.fn();
-vi.mock('@/layers/features/room-management', () => ({
-  openRoomPanel: (focus: string, roomId: string) => openRoomPanel(focus, roomId),
-}));
+// The fleet's faces come from the real join in the room-management slice, which
+// reads two queries this bench does not mount — so the map it hands back is
+// stated per test. It is keyed by `agentRef`, and empty means "this cockpit
+// cannot place any of them", which is the honest default and leaves the mark on
+// its glyph. That the map reaches the same agents the panel's roster draws is
+// `room-agent-faces.test.tsx`.
+const faces: { current: Map<string, { emoji: string; color: string; source: string }> } = {
+  current: new Map(),
+};
+vi.mock('@/layers/features/room-management', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/features/room-management')>();
+  return {
+    ...actual,
+    openRoomPanel: (focus: string, roomId: string) => openRoomPanel(focus, roomId),
+    useRoomFaces: () => faces.current,
+  };
+});
 
 afterEach(() => {
   cleanup();
   openRoomPanel.mockClear();
+  faces.current = new Map();
   working.count = 0;
   teamRoomId.current = 'team-room';
   vi.clearAllMocks();
@@ -148,6 +163,47 @@ describe('ChannelsBar', () => {
   it('says an archived room is archived', () => {
     renderBar(room({ archived: true }));
     expect(screen.getByText('Archived')).toBeInTheDocument();
+  });
+
+  it('wears the agent’s own face for a one-to-one, and a # for a channel', () => {
+    // The gap phase R2 closes. A one-to-one has had no sidebar row since
+    // `sidebar-simplification` D2 and no masthead since phase R1, so between the
+    // two its agent's face was drawn nowhere at all — and R1 could not draw one
+    // here, because the join lived in a layer this widget may not reach. It is a
+    // feature-layer hook now, read rather than re-made.
+    faces.current = new Map([['ref-ana', { emoji: '🦊', color: '#e07b39', source: 'manifest' }]]);
+    const withAna = room({
+      kind: 'dm',
+      slug: null,
+      title: 'Ana',
+      members: [
+        {
+          roomId: 'room-1',
+          authorId: 'author-ana',
+          responseMode: 'always',
+          joinedAt: '2026-08-10T09:00:00.000Z',
+          joinedSeq: 0,
+          lastReadSeq: 0,
+          origin: 'local',
+          author: {
+            id: 'author-ana',
+            kind: 'agent',
+            displayName: 'Ana',
+            handle: 'ana',
+            agentRef: 'ref-ana',
+          },
+        },
+      ] as RoomWithRoster['members'],
+    });
+    const mark = () => document.querySelector('[data-slot="room-avatar"]');
+    const { unmount } = renderBar(withAna);
+    expect(mark()).toHaveTextContent('🦊');
+    unmount();
+
+    // A channel's mark is its `#`, whoever is in it — the face answers "who is
+    // this with", which is a question only a direct message asks.
+    renderBar(room({ members: members(3) }));
+    expect(mark()).not.toHaveTextContent('🦊');
   });
 
   it('says how a bridged room sees messages', () => {
