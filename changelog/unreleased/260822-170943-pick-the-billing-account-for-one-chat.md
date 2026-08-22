@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'feat(client): pick the billing account for a single chat, and stop the status bar rewriting the default (DOR-1407)'
+  - 'feat(client,shared): pick the billing account for a single chat (DOR-1407)'
 ---
 
 ### Added
