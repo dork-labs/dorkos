@@ -416,30 +416,16 @@ export function createRuntimeCardProps(
 }
 
 /**
- * A fleet that does not run on the defaults — one row per breakage kind, plus a
- * healthy deviation, in the order the strip's own hook would emit them.
+ * A fleet that does not run on the defaults — one row per breakage kind, plus
+ * healthy deviations, in the order the strip's own hook would emit them.
  *
  * The ordering is the caller's, and that is worth showing: the strip renders
  * what it is handed, so broken rows come first because
  * `useExecutionExceptions` sorted them there, not because the strip re-sorts.
+ * Which means this array has to BE that order — broken first, then by name —
+ * or the showcase demonstrates a sort the hook does not perform.
  */
 export const MOCK_EXECUTION_EXCEPTIONS: ExecutionException[] = [
-  {
-    path: '/Users/dev/projects/legacy-api',
-    agent: {
-      ...MOCK_AGENT_MANIFEST,
-      id: 'exception-01',
-      name: 'legacy-api',
-      icon: '🗄️',
-      color: '#f97316',
-    },
-    report: {
-      breakages: [{ kind: 'runtime-not-connected', message: 'Codex is not connected.' }],
-      deviations: [{ field: 'runtime', label: 'Codex' }],
-      isException: true,
-      isBroken: true,
-    },
-  },
   {
     path: '/Users/dev/projects/data-pipeline',
     agent: {
@@ -484,10 +470,64 @@ export const MOCK_EXECUTION_EXCEPTIONS: ExecutionException[] = [
     },
   },
   {
-    path: '/Users/dev/projects/marketing',
+    path: '/Users/dev/projects/legacy-api',
+    agent: {
+      ...MOCK_AGENT_MANIFEST,
+      id: 'exception-01',
+      name: 'legacy-api',
+      icon: '🗄️',
+      color: '#f97316',
+    },
+    report: {
+      breakages: [{ kind: 'runtime-not-connected', message: 'Codex is not connected.' }],
+      deviations: [{ field: 'runtime', label: 'Codex' }],
+      isException: true,
+      isBroken: true,
+    },
+  },
+  {
+    path: '/Users/dev/projects/retired-client',
     agent: {
       ...MOCK_AGENT_MANIFEST,
       id: 'exception-04',
+      name: 'retired-client',
+      icon: '🧾',
+      color: '#ef4444',
+    },
+    report: {
+      breakages: [
+        {
+          kind: 'account-unregistered',
+          message:
+            'The account “acme-legacy” isn’t registered on this machine, so this agent bills to the default.',
+        },
+      ],
+      deviations: [{ field: 'account', label: 'acme-legacy' }],
+      isException: true,
+      isBroken: true,
+    },
+  },
+  {
+    path: '/Users/dev/projects/client-work',
+    agent: {
+      ...MOCK_AGENT_MANIFEST,
+      id: 'exception-06',
+      name: 'client-work',
+      icon: '💼',
+      color: '#eab308',
+    },
+    report: {
+      breakages: [],
+      deviations: [{ field: 'account', label: 'Acme Corp' }],
+      isException: true,
+      isBroken: false,
+    },
+  },
+  {
+    path: '/Users/dev/projects/marketing',
+    agent: {
+      ...MOCK_AGENT_MANIFEST,
+      id: 'exception-05',
       name: 'marketing',
       icon: '📣',
       color: '#22c55e',

@@ -72,12 +72,32 @@ const CAPABILITIES = {
   defaultRuntime: 'claude-code',
 };
 
+/**
+ * One registered account, beside an id-less row.
+ *
+ * `describeClaudeCodeAccounts` heals an id onto every registered account, so
+ * this server never actually emits the id-less row — but the wire type permits
+ * one (it is reserved for a row a caller synthesizes to describe an unregistered
+ * root, which nothing may reference, ADR 260821-205324). It is here so the
+ * client's filter is exercised as the defensiveness it is, rather than being
+ * dead code nobody would notice breaking.
+ */
+const ACCOUNTS = {
+  resolvedAccount: '/Users/dev/.claude',
+  inherited: true,
+  accounts: [
+    { id: null, path: '/Users/dev/.claude', label: null, isAccountRoot: true },
+    { id: 'work', path: '/Users/dev/.claude-work', label: 'Acme Corp', isAccountRoot: true },
+  ],
+};
+
 function renderStrip(
   agents: Record<string, AgentManifest>,
   opts: {
     models?: typeof CATALOG;
     perRuntimeModel?: string | null;
     capabilities?: typeof CAPABILITIES;
+    claudeCode?: typeof ACCOUNTS;
   } = {}
 ) {
   const models = opts.models ?? CATALOG;
@@ -91,6 +111,7 @@ function renderStrip(
       platform: 'linux-x64',
       runtimes: ['claude-code'],
       claudeCliPath: null,
+      claudeCode: opts.claudeCode,
       executionDefaults: {
         runtime: 'claude-code',
         perRuntime: [
@@ -294,5 +315,56 @@ describe('ExecutionExceptionsStrip', () => {
     // Clamped to two lines rather than one, so the pair fits without a tooltip
     // at every width the strip is drawn at.
     expect(reason).toHaveClass('line-clamp-2');
+  });
+});
+
+describe('ExecutionExceptionsStrip — billing overrides', () => {
+  it('names an agent that bills to another account', async () => {
+    renderStrip({ '/a': agent('alpha', { account: 'work' }) }, { claudeCode: ACCOUNTS });
+    // The registry's label, not the raw id — the strip sits under cards that
+    // call the same account "Acme Corp".
+    expect(await screen.findByTestId('execution-exception')).toHaveTextContent(
+      'bills to Acme Corp'
+    );
+    expect(screen.queryByTestId('execution-exception-broken')).toBeNull();
+  });
+
+  it('calls an account nobody registered broken, and puts it above a plain deviation', async () => {
+    renderStrip(
+      {
+        '/a': agent('alpha', { model: 'opus' }),
+        '/b': agent('zeta', { account: 'retired-client' }),
+      },
+      { claudeCode: ACCOUNTS }
+    );
+    const broken = await screen.findByTestId('execution-exception-broken');
+    expect(broken).toHaveTextContent('isn’t registered');
+    // Broken first, however the fleet came back and whatever the names sort to:
+    // "zeta" would follow "alpha" on name alone.
+    const rows = screen.getAllByRole('button');
+    expect(rows[0]).toHaveTextContent('zeta');
+    expect(rows[1]).toHaveTextContent('alpha');
+  });
+
+  it('says nothing about any account until the registry has been read', async () => {
+    // No `claudeCode` on the config at all — the same silence a cold model
+    // catalog keeps. The override is still named; only the verdict waits.
+    renderStrip({ '/a': agent('alpha', { account: 'retired-client' }) });
+    expect(await screen.findByTestId('execution-exception')).toHaveTextContent(
+      'bills to retired-client'
+    );
+    expect(screen.queryByTestId('execution-exception-broken')).toBeNull();
+  });
+
+  it('leaves an agent that inherits its account out of the strip entirely', async () => {
+    // Two agents, so the absence below is waited out on an observable event
+    // rather than on a timer: once zeta's row is on screen the whole pipeline
+    // has run, and alpha is missing because it was excluded.
+    renderStrip(
+      { '/a': agent('alpha'), '/b': agent('zeta', { account: 'work' }) },
+      { claudeCode: ACCOUNTS }
+    );
+    await waitFor(() => expect(screen.getAllByRole('button')).toHaveLength(1));
+    expect(screen.getByRole('button')).toHaveTextContent('zeta');
   });
 });

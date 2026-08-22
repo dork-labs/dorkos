@@ -211,3 +211,129 @@ describe('describeAgentExecution', () => {
     expect(report.breakages.map((b) => b.kind)).toEqual(['runtime-not-connected']);
   });
 });
+
+describe('describeAgentExecution — the billing account', () => {
+  const REGISTRY = [
+    { id: 'work', label: 'Acme Corp' },
+    { id: 'personal', label: '.claude' },
+  ];
+
+  it('names the account by its registry label, not by its id', () => {
+    const report = describeAgentExecution({
+      agent: { runtime: 'claude-code', account: 'work' },
+      defaultRuntime: 'claude-code',
+      knownRuntimes: ['claude-code'],
+      knownAccounts: REGISTRY,
+    });
+    expect(report.deviations).toEqual([{ field: 'account', label: 'Acme Corp' }]);
+    expect(report.isException).toBe(true);
+    expect(report.isBroken).toBe(false);
+  });
+
+  it('calls an id nobody registered broken, and still says which id', () => {
+    const report = describeAgentExecution({
+      agent: { runtime: 'claude-code', account: 'retired-client' },
+      defaultRuntime: 'claude-code',
+      knownRuntimes: ['claude-code'],
+      knownAccounts: REGISTRY,
+    });
+    expect(report.isBroken).toBe(true);
+    expect(report.breakages).toEqual([
+      {
+        kind: 'account-unregistered',
+        message:
+          'The account “retired-client” isn’t registered on this machine, so this agent bills to the default.',
+      },
+    ]);
+    // The row a person has to fix must still name the thing to fix.
+    expect(report.deviations).toEqual([{ field: 'account', label: 'retired-client' }]);
+  });
+
+  it('reads a registry nobody has read yet as no evidence at all', () => {
+    const report = describeAgentExecution({
+      agent: { runtime: 'claude-code', account: 'work' },
+      defaultRuntime: 'claude-code',
+      knownRuntimes: ['claude-code'],
+      // The config query has not answered — the same silence a cold model
+      // catalog keeps.
+      knownAccounts: undefined,
+    });
+    expect(report.isBroken).toBe(false);
+    expect(report.deviations).toEqual([{ field: 'account', label: 'work' }]);
+  });
+
+  it('reads an EMPTY registry as an answer, unlike an empty model catalog', () => {
+    // The registry is local config the server reads off disk, so "nothing is
+    // registered" is a fact rather than a cache still warming.
+    const report = describeAgentExecution({
+      agent: { runtime: 'claude-code', account: 'work' },
+      defaultRuntime: 'claude-code',
+      knownRuntimes: ['claude-code'],
+      knownAccounts: [],
+    });
+    expect(report.breakages.map((b) => b.kind)).toEqual(['account-unregistered']);
+  });
+
+  it('says nothing at all when the registry could not be READ', () => {
+    // `accountsUnavailable` is the server admitting its empty list is an
+    // absence of knowledge. Judged as an absence of accounts it would call
+    // every account-carrying agent on the machine broken at once.
+    const report = describeAgentExecution({
+      agent: { runtime: 'claude-code', account: 'work' },
+      defaultRuntime: 'claude-code',
+      knownRuntimes: ['claude-code'],
+      knownAccounts: [],
+      accountsUnavailable: true,
+    });
+    expect(report.isException).toBe(false);
+    expect(report.deviations).toEqual([]);
+    expect(report.breakages).toEqual([]);
+  });
+
+  // The discriminator: the same empty list without the flag IS an answer.
+  it('still judges a registered-nowhere account against a registry it could read', () => {
+    const report = describeAgentExecution({
+      agent: { runtime: 'claude-code', account: 'work' },
+      defaultRuntime: 'claude-code',
+      knownRuntimes: ['claude-code'],
+      knownAccounts: [],
+      accountsUnavailable: false,
+    });
+    expect(report.breakages.map((b) => b.kind)).toEqual(['account-unregistered']);
+  });
+
+  it('says nothing at all about an account on a runtime that has none', () => {
+    // Codex does not bill to a Claude config directory, so the setting cannot
+    // apply — and the Runs on picker draws no row for it either. Naming it
+    // would put a fix in front of a person for a field they cannot see.
+    const report = describeAgentExecution({
+      agent: { runtime: 'codex', account: 'retired-client' },
+      defaultRuntime: 'claude-code',
+      knownRuntimes: ['claude-code', 'codex'],
+      knownAccounts: REGISTRY,
+    });
+    expect(report.deviations.map((d) => d.field)).toEqual(['runtime']);
+    expect(report.breakages).toEqual([]);
+  });
+
+  it('reads the wire null as "back to inheriting", not as an account named null', () => {
+    const report = describeAgentExecution({
+      agent: { runtime: 'claude-code', account: null },
+      defaultRuntime: 'claude-code',
+      knownRuntimes: ['claude-code'],
+      knownAccounts: REGISTRY,
+    });
+    expect(report.isException).toBe(false);
+    expect(report.breakages).toEqual([]);
+  });
+
+  it('says only that the runtime is missing, not what its account would bill', () => {
+    const report = describeAgentExecution({
+      agent: { runtime: 'claude-code', account: 'retired-client' },
+      defaultRuntime: 'claude-code',
+      knownRuntimes: ['codex'],
+      knownAccounts: REGISTRY,
+    });
+    expect(report.breakages.map((b) => b.kind)).toEqual(['runtime-not-connected']);
+  });
+});

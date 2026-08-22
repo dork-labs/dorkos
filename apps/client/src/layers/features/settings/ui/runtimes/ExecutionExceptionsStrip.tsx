@@ -9,7 +9,7 @@
  * @module features/settings/ui/runtimes/ExecutionExceptionsStrip
  */
 import { TriangleAlert } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn, type ExecutionDeviation } from '@/layers/shared/lib';
 import {
   useExecutionExceptions,
   AgentAvatar,
@@ -18,9 +18,18 @@ import {
 import { useSettingsDeepLink } from '@/layers/shared/model';
 import { useProfileStore } from '@/layers/features/profile';
 
-/** How one deviation is worded in a row's summary. */
-function deviationText(field: 'runtime' | 'model' | 'effort', label: string): string {
-  return field === 'effort' ? `effort ${label}` : `${field} ${label}`;
+/**
+ * How one deviation is worded in a row's summary.
+ *
+ * Most fields read as themselves — "runtime Codex", "model Sonnet 4.5". Effort
+ * and account get the article-free forms a person would say out loud: "effort
+ * Low", and "bills to Work", because "account Work" reads as a name rather than
+ * as where the money goes.
+ */
+function deviationText(field: ExecutionDeviation['field'], label: string): string {
+  if (field === 'effort') return `effort ${label}`;
+  if (field === 'account') return `bills to ${label}`;
+  return `${field} ${label}`;
 }
 
 /** The one thing the strip can be told rather than look up for itself. */

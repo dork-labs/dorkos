@@ -42,9 +42,11 @@ import { useQueries } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { ModelOption } from '@dorkos/shared/types';
 import {
+  claudeAccountName,
   describeAgentExecution,
   knownModelsFrom,
   type AgentExecutionReport,
+  type KnownAccount,
 } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { useConfig } from '@/layers/entities/config';
@@ -96,8 +98,10 @@ const EMPTY: readonly ExecutionException[] = [];
  *   **The divergence this creates is a decision, not an oversight.** The rules
  *   are one implementation, but the EVIDENCE differs by surface, so the two
  *   surfaces can honestly disagree: the sidebar's Needs-attention group sees the
- *   two catalog-free breakages — a runtime this machine has not connected, and
- *   an effort on a runtime whose API has none — while a model that is gone, and
+ *   three catalog-free breakages — a runtime this machine has not connected, an
+ *   effort on a runtime whose API has none, and a billing account nobody has
+ *   registered (the account registry rides the same config every surface already
+ *   holds) — while a model that is gone, and
  *   an effort on a model that does not take one, need a catalog and so appear
  *   only in the Settings strip and the agent's own Runs on picker. The trade was
  *   made in favor of the sidebar staying free: making Needs-attention complete
@@ -117,6 +121,23 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
   const defaultRuntime = config?.executionDefaults?.runtime ?? 'claude-code';
   const knownRuntimes = capabilityMap ? Object.keys(capabilityMap.capabilities) : undefined;
   const perRuntime = config?.executionDefaults?.perRuntime;
+
+  // The billing registry, named the way the settings cards name it. `undefined`
+  // until the config answers — an account is never called unregistered on a
+  // registry nobody has read yet — and judged not at all when the server says it
+  // could not read one (`accountsUnavailable`), where an empty list means the
+  // opposite of what it looks like.
+  //
+  // The id filter is defensive rather than load-bearing: `describeClaudeCodeAccounts`
+  // heals an id onto every registered account, so this path has none to drop. The
+  // wire type permits `null` for rows a caller synthesizes to describe an
+  // unregistered root, and nothing may reference one (ADR 260821-205324), so the
+  // filter states that rule where the rule is used.
+  const accountRows = config?.claudeCode?.accounts;
+  const accountsUnavailable = config?.claudeCode?.accountsUnavailable;
+  const knownAccounts: KnownAccount[] | undefined = accountRows?.flatMap((row) =>
+    row.id === null ? [] : [{ id: row.id, label: claudeAccountName(row.path, accountRows) }]
+  );
 
   /** The model the server default supplies for one runtime, if it supplies one. */
   const serverModelFor = (runtime: string) =>
@@ -186,11 +207,21 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
     const effectiveModel = agent.model ?? serverDefaultModel;
     const effective = effectiveModel ? catalog?.find((m) => m.value === effectiveModel) : undefined;
     const report = describeAgentExecution({
-      agent: { runtime: agent.runtime, model: agent.model, effort: agent.effort },
+      agent: {
+        runtime: agent.runtime,
+        model: agent.model,
+        effort: agent.effort,
+        account: agent.account,
+      },
       defaultRuntime,
       serverDefaultModel,
       knownRuntimes,
       knownModels: knownModelsFrom(catalog),
+      // Read on BOTH surfaces, unlike the catalogs above: the registry is
+      // already in hand from `GET /api/config`, so a billing override costs no
+      // request and the sidebar can see it too.
+      knownAccounts,
+      accountsUnavailable,
       // Only a model actually found in the catalog can say whether it takes an
       // effort. A model that is missing is already reported as missing, and
       // guessing at its capabilities would say the same thing twice.

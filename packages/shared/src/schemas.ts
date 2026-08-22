@@ -3294,6 +3294,10 @@ export const ServerConfigSchema = z
             })
           )
           .openapi({ description: 'The Claude accounts the operator has registered' }),
+        accountsUnavailable: z.boolean().optional().openapi({
+          description:
+            'True when the account registry could NOT be read (the config store threw, or was consulted before it was initialized), so `accounts` is empty because nothing could be learned rather than because nothing is registered. Absent means the list is an answer. A client must not judge an agent or session account reference against an unavailable registry — an override that cannot be verified is unknown, never wrong',
+        }),
       })
       .optional()
       .openapi({

@@ -85,12 +85,21 @@ export function knownModelsFrom(
   return models && models.length > 0 ? models.map((m) => m.value) : undefined;
 }
 
+/**
+ * The one runtime that bills to a Claude account. Accounts are Claude config
+ * directories, so no other runtime has them (spec `billing-account-ladder`,
+ * Non-Goals) — and a setting that cannot apply is not reasoned about at all.
+ */
+const ACCOUNT_RUNTIME = 'claude-code';
+
 /** Why an agent's execution settings cannot be honored as written. */
 export type ExecutionBreakageKind =
   /** The agent names a runtime this machine has not connected. */
   | 'runtime-not-connected'
   /** The agent pins a model its runtime no longer offers. */
   | 'model-unavailable'
+  /** The agent bills to an account nobody has registered. */
+  | 'account-unregistered'
   /** The agent sets an effort on a runtime whose API has none. */
   | 'effort-unsupported-runtime'
   /** The agent sets an effort on a model that does not take one. */
@@ -106,8 +115,16 @@ export interface ExecutionBreakage {
 /** One way an agent departs from the server's defaults, already worded. */
 export interface ExecutionDeviation {
   /** Which setting departs. */
-  field: 'runtime' | 'model' | 'effort';
+  field: 'runtime' | 'model' | 'effort' | 'account';
   /** The value the agent carries, written for a person. */
+  label: string;
+}
+
+/** A billing account this machine has registered, as the rules need to see it. */
+export interface KnownAccount {
+  /** The registry id an agent references the account by. */
+  id: string;
+  /** What to call it in a sentence a person reads. */
   label: string;
 }
 
@@ -122,7 +139,13 @@ export interface DescribeAgentExecutionInput {
    * that `null` as a value is how "no longer offers null." reaches a screen, so
    * every check below is `!= null` rather than `!== undefined`.
    */
-  agent: { runtime?: string | null; model?: string | null; effort?: EffortLevel | null };
+  agent: {
+    runtime?: string | null;
+    model?: string | null;
+    effort?: EffortLevel | null;
+    /** The billing account's registry id — never a path (ADR 260821-205324). */
+    account?: string | null;
+  };
   /** The runtime a new session starts on when nothing else picks one. */
   defaultRuntime: string;
   /**
@@ -144,6 +167,34 @@ export interface DescribeAgentExecutionInput {
    * catalog is unknown or still loading.
    */
   knownModels?: readonly string[];
+  /**
+   * The billing accounts this machine has registered, or `undefined` while the
+   * server config has not answered yet.
+   *
+   * Unlike a model catalog, an EMPTY list here is real evidence rather than a
+   * warming cache: the registry is local config the server reads off disk, so
+   * "no accounts are registered" is an answer, and an agent naming one is
+   * genuinely pointing at nothing. Only the unanswered case is silent.
+   *
+   * Rows the server synthesized for unregistered roots carry no id and are
+   * simply absent from this list — nothing can reference them (ADR
+   * 260821-205324).
+   */
+  knownAccounts?: readonly KnownAccount[];
+  /**
+   * True when the server could not READ the account registry, so its empty
+   * `accounts` list is an absence of knowledge rather than an absence of
+   * accounts (`ServerConfigSchema.claudeCode.accountsUnavailable`).
+   *
+   * It suppresses every account judgment — the breakage AND the deviation.
+   * That is stronger than the loading case above, and deliberately so: while
+   * the registry is merely unread, "this agent bills somewhere other than the
+   * default" is still true and worth saying. When the read has FAILED, an
+   * override nobody can resolve is not a fact about the agent, it is a fact
+   * about the outage, and putting the whole account-carrying fleet in the
+   * exceptions strip would say the wrong one.
+   */
+  accountsUnavailable?: boolean;
   /**
    * Whether the agent's EFFECTIVE model — its own pin, else the server default
    * for its runtime — takes an effort setting, or `undefined` while unknown.
@@ -214,6 +265,8 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
     serverDefaultModel,
     knownRuntimes,
     knownModels,
+    knownAccounts,
+    accountsUnavailable,
     modelSupportsEffort,
     runtimeSupportsEffort,
     runtimeLabel = runtimeDisplayName,
@@ -223,6 +276,15 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
 
   const runtime = agent.runtime ?? defaultRuntime;
   const effectiveModel = agent.model ?? serverDefaultModel ?? null;
+  // A stored account is read as nothing at all in two cases. On any runtime but
+  // Claude Code it is a setting that cannot apply — the same silence the Runs on
+  // picker keeps by not drawing the row, because naming it would put a fix in
+  // front of a person for a field they have no way to see. And when the registry
+  // could not be READ, nothing about the reference can be said honestly at all.
+  const accountIsKnowable = runtime === ACCOUNT_RUNTIME && accountsUnavailable !== true;
+  const account = accountIsKnowable ? (agent.account ?? null) : null;
+  const registeredAccount =
+    account !== null ? knownAccounts?.find((a) => a.id === account) : undefined;
 
   if (agent.runtime != null && agent.runtime !== defaultRuntime) {
     deviations.push({ field: 'runtime', label: runtimeLabel(agent.runtime) });
@@ -231,20 +293,31 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
   if (agent.effort != null) {
     deviations.push({ field: 'effort', label: effortLabel(agent.effort) });
   }
+  if (account !== null) {
+    // The registry's own name for it where there is one; the raw id where there
+    // is not, so a row about a broken reference still says which reference.
+    deviations.push({ field: 'account', label: registeredAccount?.label ?? account });
+  }
 
   if (knownRuntimes !== undefined && !knownRuntimes.includes(runtime)) {
     breakages.push({
       kind: 'runtime-not-connected',
       message: `${runtimeLabel(runtime)} is not connected on this machine.`,
     });
-  } else if (agent.model != null && knownModels !== undefined) {
-    // Only asked when the runtime IS connected: a catalog for a runtime that is
-    // not there says nothing about a model, and reporting both would be one
-    // problem told twice.
-    if (!knownModels.includes(agent.model)) {
+  } else {
+    // Both of these are only asked when the runtime IS connected: a catalog and
+    // a registry for a runtime that is not there say nothing about anything, and
+    // reporting them alongside would be one problem told twice.
+    if (agent.model != null && knownModels !== undefined && !knownModels.includes(agent.model)) {
       breakages.push({
         kind: 'model-unavailable',
         message: `${runtimeLabel(runtime)} no longer offers ${agent.model}.`,
+      });
+    }
+    if (account !== null && knownAccounts !== undefined && !registeredAccount) {
+      breakages.push({
+        kind: 'account-unregistered',
+        message: `The account “${account}” isn’t registered on this machine, so this agent bills to the default.`,
       });
     }
   }

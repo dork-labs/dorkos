@@ -306,6 +306,27 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       { id: 'gone', path: missing, label: null, isAccountRoot: false },
     ]);
   });
+
+  // An empty `accounts` list has two opposite meanings and the wire has to tell
+  // them apart. Read as "nothing is registered", a failed read would make every
+  // agent with an account reference look broken at once, on every surface, for
+  // the length of the outage.
+  it('flags a registry it could not READ, so an empty list is not read as an answer', () => {
+    process.env.CLAUDE_CONFIG_DIR = '/tmp/inherited-claude';
+    expect(describeClaudeCodeAccounts(brokenConfig)).toEqual({
+      resolvedAccount: '/tmp/inherited-claude',
+      inherited: true,
+      accounts: [],
+      accountsUnavailable: true,
+    });
+  });
+
+  // The discriminator: a registry that really is empty carries no flag at all,
+  // so the key's mere presence is the claim and nothing else has to be read.
+  it('sends no flag at all when the registry is genuinely empty', () => {
+    process.env.CLAUDE_CONFIG_DIR = '/tmp/inherited-claude';
+    expect(describeClaudeCodeAccounts(fakeConfig())).not.toHaveProperty('accountsUnavailable');
+  });
 });
 
 describe('claudeConfigDirEnv (spec claude-code-accounts D8)', () => {

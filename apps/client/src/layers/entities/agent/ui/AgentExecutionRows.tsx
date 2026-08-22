@@ -3,7 +3,15 @@ import { ChevronDown } from 'lucide-react';
 import type { AgentManifest, AgentManifestUpdate } from '@dorkos/shared/mesh-schemas';
 import type { EffortLevel } from '@dorkos/shared/types';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
-import { cn, describeAgentExecution, effortLabel, knownModelsFrom } from '@/layers/shared/lib';
+import {
+  claudeAccountName,
+  cn,
+  describeAgentExecution,
+  effortLabel,
+  knownModelsFrom,
+  shortenHomePath,
+  type KnownAccount,
+} from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 import {
   ProvenanceChip,
@@ -52,6 +60,7 @@ function ExecutionRow({
   onInherit,
   testId,
   showHeader = true,
+  className,
 }: {
   label: string;
   valueLabel: string;
@@ -63,6 +72,8 @@ function ExecutionRow({
   onSelect: (value: string) => void;
   onInherit: () => void;
   testId: string;
+  /** Extra classes for the row's wrapper — how a caller spans it across the grid. */
+  className?: string;
   /**
    * Draw the label and chip. Off when the caller already drew them because it
    * has to choose between this row and a truth sentence, and the label belongs
@@ -79,7 +90,7 @@ function ExecutionRow({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="space-y-1">
+    <div className={cn('space-y-1', className)}>
       {showHeader && (
         <div className="flex items-center gap-1.5">
           <span className={LABEL_CLASS}>{label}</span>
@@ -126,6 +137,7 @@ function ExecutionRow({
               <button
                 key={option.value}
                 type="button"
+                data-testid={`${testId}-option-${option.value}`}
                 onClick={() => {
                   onSelect(option.value);
                   setOpen(false);
@@ -181,8 +193,8 @@ export interface AgentExecutionRowsProps {
 }
 
 /**
- * An agent's Model and Effort rows — the two settings that join the Runtime
- * choice beside them (spec `execution-defaults` §2).
+ * An agent's Model, Effort and Account rows — the settings that join the Runtime
+ * choice beside them (spec `execution-defaults` §2, `billing-account-ladder` §2).
  *
  * Three rows rather than one summary row opening a shared popover: each setting
  * has its own provenance, and provenance is the thing worth seeing at a glance.
@@ -194,6 +206,11 @@ export interface AgentExecutionRowsProps {
  * inline choice where the runtime and model can honor it, a plain sentence where
  * the runtime has none at all, and a plain sentence where the model does not
  * take one. None of the three is a hidden row (§3.4).
+ *
+ * Account is the one row that IS sometimes hidden, and for the opposite reason:
+ * a runtime that has no such thing as an account, or a machine with only one, is
+ * not a setting waiting to be explained — it is not a setting at all. It appears
+ * the moment there is a choice, or the moment this agent has already made one.
  *
  * @param props - See {@link AgentExecutionRowsProps}.
  */
@@ -238,13 +255,47 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   const runtimeHasEffort = declaredEffortSupport !== false;
   const modelTakesEffort = selectedModel ? (selectedModel.supportsEffort ?? false) : undefined;
 
+  // Billing accounts belong to Claude Code alone, so everything below is read
+  // from the server's account registry and only ever drawn for that runtime.
+  //
+  // The id filter is defensive rather than load-bearing: the server heals an id
+  // onto every registered account before it reaches the wire, so this path has
+  // none to drop. The wire type permits `null` for a row a caller synthesizes to
+  // describe an unregistered root, and nothing may point at one (ADR
+  // 260821-205324) — so the filter states that rule at the place it matters,
+  // which is the list of things a person can choose.
+  const accountRows = config?.claudeCode?.accounts;
+  const knownAccounts: (KnownAccount & { path: string })[] | undefined = accountRows?.flatMap(
+    (row) =>
+      row.id === null
+        ? []
+        : [{ id: row.id, label: claudeAccountName(row.path, accountRows), path: row.path }]
+  );
+  // `?? null`, not `!= null` alone: an in-flight optimistic reset carries the
+  // wire's `null`, and every provenance read below has to see that as "back to
+  // inheriting" rather than as a value (same rule as model and effort above).
+  const accountId = agent.account ?? null;
+  const accountIsSetHere = accountId !== null;
+  // The account a new session would bill to with nothing set here — already
+  // resolved by the server, because the client cannot compute it.
+  const serverDefaultAccount = config?.claudeCode
+    ? claudeAccountName(config.claudeCode.resolvedAccount, accountRows ?? [])
+    : null;
+
   // One report, the same rules the exceptions strip and the sidebar read, so a
   // row that wears a warning chip here is a row that is named there.
   const report = describeAgentExecution({
-    agent: { runtime: agent.runtime, model: agent.model, effort: agent.effort },
+    agent: {
+      runtime: agent.runtime,
+      model: agent.model,
+      effort: agent.effort,
+      account: agent.account,
+    },
     defaultRuntime,
     serverDefaultModel,
     knownModels: knownModelsFrom(models),
+    knownAccounts,
+    accountsUnavailable: config?.claudeCode?.accountsUnavailable,
     modelSupportsEffort: modelTakesEffort,
     runtimeSupportsEffort: declaredEffortSupport,
     runtimeLabel: (type) => getRuntimeDescriptor(type).label,
@@ -258,6 +309,31 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   const effortIsChoosable = !effortSupportUnknown && runtimeHasEffort && modelTakesEffort !== false;
   const effectiveEffort = agent.effort ?? serverForRuntime?.effort ?? null;
   const runtimeLabel = getRuntimeDescriptor(runtime).label;
+
+  // The Account row is the one row that is sometimes not a row at all.
+  //
+  // On any runtime but Claude Code there is no such thing as a billing account,
+  // and on a machine that knows of only one there is nothing to choose — a
+  // control whose every use is a no-op is worse than no control, because it
+  // implies a decision a person does not have. It comes back for an agent that
+  // HAS an account set, whatever the registry now holds, because that is
+  // precisely the agent whose setting has to be visible to be cleared.
+  //
+  // Nothing is drawn until the config answers: a row that offered no accounts
+  // for one round-trip and then offered three would have told a person the
+  // wrong thing first.
+  //
+  // The threshold counts REGISTERED accounts — the ones the picker can actually
+  // offer — rather than wire rows, so an id-less row cannot make a machine look
+  // like it has a choice to make. It deliberately matches what the status bar
+  // means by a multi-account machine (`isMultiAccount`): one surface offering a
+  // per-agent account while the other hides its own account control would be
+  // two answers to one question.
+  const showAccountRow =
+    runtime === 'claude-code' &&
+    knownAccounts !== undefined &&
+    (knownAccounts.length > 1 || accountIsSetHere);
+  const accountWarning = breakageFor(['account-unregistered']);
 
   return (
     <div className={cn('grid grid-cols-2 gap-3', className)}>
@@ -337,6 +413,35 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
           />
         )}
       </div>
+
+      {showAccountRow && (
+        <ExecutionRow
+          label="Account"
+          valueLabel={
+            accountId !== null
+              ? // The registry's name where the id still resolves, the raw id
+                // where it does not — a row about a broken reference that hid
+                // the reference would be unfixable.
+                (knownAccounts?.find((a) => a.id === accountId)?.label ?? accountId)
+              : (serverDefaultAccount ?? 'Default account')
+          }
+          options={(knownAccounts ?? []).map((account) => ({
+            value: account.id,
+            label: account.label,
+            // The folder under the name: two accounts an operator labelled
+            // similarly are told apart by where they live, and nowhere else.
+            hint: shortenHomePath(account.path),
+          }))}
+          selected={accountId}
+          isSetHere={accountIsSetHere}
+          serverDefault={serverDefaultAccount}
+          warning={accountWarning}
+          onSelect={(value) => onUpdate({ account: value })}
+          onInherit={() => onUpdate({ account: null })}
+          testId="agent-account-row"
+          className="col-span-full"
+        />
+      )}
     </div>
   );
 }

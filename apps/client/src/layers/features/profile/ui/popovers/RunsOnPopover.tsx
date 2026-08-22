@@ -1,10 +1,11 @@
 /**
- * Runs on — the runtime, the model and the effort an agent starts a turn with
- * (spec `profile-unification` §1.4).
+ * Runs on — the runtime, the model, the effort and the billing account an agent
+ * starts a turn with (spec `profile-unification` §1.4,
+ * `billing-account-ladder` §2).
  *
- * The panel this replaced spread these across a Config tab as three separate fields. They
- * are one answer to one question, so they are one popover: which engine, which
- * model on it, and how hard it thinks.
+ * The panel this replaced spread these across a Config tab as separate fields.
+ * They are one answer to one question, so they are one popover: which engine,
+ * which model on it, how hard it thinks, and whose subscription pays for it.
  *
  * @module features/profile/ui/popovers/RunsOnPopover
  */
@@ -24,16 +25,21 @@ import { getRuntimeDescriptor, useRuntimeCapabilities } from '@/layers/entities/
 import { useProfileAgent } from '../../model/use-profile-agent';
 import type { ProfilePickContentProps } from './types';
 
-/** The field-label style the three settings share. */
+/** The field-label style the settings share. */
 const LABEL_CLASS = 'text-muted-foreground text-[10px] font-medium tracking-wider uppercase';
 
 /**
  * Change what an agent runs on.
  *
- * The runtime is a plain select and the other two are provenance-bearing rows,
+ * The runtime is a plain select and the rest are provenance-bearing rows,
  * because they are different kinds of fact: a runtime is either connected here
- * or it is not, while a model and an effort can each be set here, inherited from
- * the server, or set to something the runtime no longer offers.
+ * or it is not, while a model, an effort and an account can each be set here,
+ * inherited from the server, or left pointing at something that is no longer
+ * there.
+ *
+ * The Account row is the only one that comes and goes — it appears where the
+ * choice is real (Claude Code, more than one account registered) or where this
+ * agent has already made one. {@link AgentExecutionRows} owns that rule.
  */
 export function RunsOnPopover({ member }: ProfilePickContentProps) {
   const { agent, projectPath, isPending, update } = useProfileAgent(member);
@@ -74,8 +80,8 @@ export function RunsOnPopover({ member }: ProfilePickContentProps) {
         </Select>
       </div>
 
-      {/* Stacked, not side by side: at a popover's width the model and
-          effort chips have nowhere to sit beside their labels. */}
+      {/* Stacked, not side by side: at a popover's width the provenance chips
+          have nowhere to sit beside their labels. */}
       <AgentExecutionRows agent={agent} onUpdate={update} className="grid-cols-1" />
 
       {/* Where it runs, as a fact rather than a control — the folder is what an
