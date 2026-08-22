@@ -4720,6 +4720,30 @@
       "specSlug": "schedule-approval-experience",
       "amends": null,
       "supersedes": null
+    },
+    {
+      "id": "260822-083227",
+      "slug": "every-route-declares-its-header-as-typed-staticdata",
+      "title": "Every route declares its header as typed staticData, not a shell-side switch",
+      "status": "accepted",
+      "created": "2026-08-22",
+      "spec": "one-bar-header"
+    },
+    {
+      "id": "260822-083228",
+      "slug": "one-header-row-with-a-shell-owned-fixed-cluster",
+      "title": "One header row per page, with the fixed cluster owned by the shell",
+      "status": "accepted",
+      "created": "2026-08-22",
+      "spec": "one-bar-header"
+    },
+    {
+      "id": "260822-083229",
+      "slug": "room-management-lives-in-the-right-panel",
+      "title": "Room management lives in the right panel's contribution registry, not a modal",
+      "status": "accepted",
+      "created": "2026-08-22",
+      "spec": "one-bar-header"
     }
   ]
 }
