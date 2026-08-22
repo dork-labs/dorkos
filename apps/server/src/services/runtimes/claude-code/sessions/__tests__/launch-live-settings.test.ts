@@ -6,7 +6,7 @@
  * `fake-pump-query.ts` does and for the same reason: a setter that is fired but
  * never awaited passes against a synchronous double and fails against this one.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import {
   captureLaunchFingerprint,
@@ -14,6 +14,8 @@ import {
   type LaunchParams,
 } from '../launch-fingerprint.js';
 import { applyLiveChanges, prepareDispatch } from '../launch-live-settings.js';
+import { decideProcessReuse } from '../pump-launch.js';
+import { LIVE_SETTING_ACK_TIMEOUT_MS, PLUGIN_RELOAD_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import type { PumpControlQuery } from '../session-pump-contract.js';
 
 const CLIENT_ROOT = '/staged/claude-client';
@@ -133,6 +135,116 @@ describe('applyLiveChanges', () => {
 
     await expect(applyLiveChanges(query, forged)).rejects.toBeInstanceOf(AccountPinViolationError);
     expect(calls).toEqual([]);
+  });
+});
+
+/**
+ * A control channel where the named setters never answer — the wind-down shape,
+ * where DorkOS has ended the CLI's stdin and the SDK drops the write in silence.
+ * Everything not named answers immediately.
+ */
+function deafControlQuery(
+  deaf: ReadonlyArray<'model' | 'permissionMode' | 'mcpServers' | 'plugins'>
+) {
+  const calls: string[] = [];
+  const answer = (name: string, pin: (typeof deaf)[number]) => {
+    calls.push(name);
+    if (deaf.includes(pin)) return new Promise<never>(() => {});
+    return Promise.resolve();
+  };
+  const query = {
+    getContextUsage: vi.fn(),
+    usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: vi.fn(),
+    setModel: vi.fn((model?: string) => answer(`setModel:${model ?? '<default>'}`, 'model')),
+    setPermissionMode: vi.fn((mode: string) =>
+      answer(`setPermissionMode:${mode}`, 'permissionMode')
+    ),
+    setMcpServers: vi.fn(() => answer('setMcpServers', 'mcpServers').then(() => ({}))),
+    reloadPlugins: vi.fn(() => answer('reloadPlugins', 'plugins').then(() => ({}))),
+  } as unknown as PumpControlQuery;
+  return { query, calls };
+}
+
+describe('applyLiveChanges is bounded (DOR-1301)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('applies the settings that answered when one setter never does, instead of wedging the dispatch', async () => {
+    vi.useFakeTimers();
+    const { query, calls } = deafControlQuery(['model']);
+    const decision = prepareDispatch(
+      capture(),
+      capture({ options: options({ model: 'sonnet', permissionMode: 'plan' }) })
+    );
+    if (decision.action !== 'reuse') throw new Error('expected a reuse');
+
+    const applying = applyLiveChanges(query, decision);
+    await vi.advanceTimersByTimeAsync(LIVE_SETTING_ACK_TIMEOUT_MS);
+    const outcome = await applying;
+
+    expect(calls.sort()).toEqual(['setModel:sonnet', 'setPermissionMode:plan']);
+    expect(outcome.applied).toEqual(['permissionMode']);
+    expect(outcome.unapplied).toEqual([{ pin: 'model', ack: 'unacked' }]);
+    // The fingerprint is what the process HOLDS: the new mode, the old model.
+    expect(outcome.fingerprint.live.permissionMode).toBe('plan');
+    expect(outcome.fingerprint.live.model).toBe('claude-opus-4-6');
+  });
+
+  it('reports a refused setter the same way, without waiting on the clock', async () => {
+    const { query } = deafControlQuery([]);
+    vi.mocked(query.setModel).mockImplementation(() => Promise.reject(new Error('refused')));
+    const decision = prepareDispatch(capture(), capture({ options: options({ model: 'sonnet' }) }));
+    if (decision.action !== 'reuse') throw new Error('expected a reuse');
+
+    const outcome = await applyLiveChanges(query, decision);
+
+    expect(outcome.applied).toEqual([]);
+    expect(outcome.unapplied).toEqual([{ pin: 'model', ack: 'refused' }]);
+    expect(outcome.fingerprint.live.model).toBe('claude-opus-4-6');
+  });
+
+  it('gives a plugin reload the longer bound, because it re-reads plugins from disk', async () => {
+    vi.useFakeTimers();
+    const { query } = deafControlQuery(['plugins']);
+    const decision = prepareDispatch(
+      capture(),
+      capture({ options: options({ plugins: [{ type: 'local', path: '/plugins/flow' }] }) })
+    );
+    if (decision.action !== 'reuse') throw new Error('expected a reuse');
+
+    let settled = false;
+    const applying = applyLiveChanges(query, decision).then((outcome) => {
+      settled = true;
+      return outcome;
+    });
+
+    await vi.advanceTimersByTimeAsync(LIVE_SETTING_ACK_TIMEOUT_MS);
+    // Still waiting: the field-flip bound must not be the one governing this.
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_ACK_TIMEOUT_MS - LIVE_SETTING_ACK_TIMEOUT_MS);
+    const outcome = await applying;
+    expect(outcome.unapplied).toEqual([{ pin: 'plugins', ack: 'unacked' }]);
+  });
+
+  it('hands the dispatch the fingerprint the process really holds, so the stale pin is retried next time', async () => {
+    vi.useFakeTimers();
+    const { query } = deafControlQuery(['model']);
+    const live = capture();
+    const wanted = capture({ options: options({ model: 'sonnet' }) });
+    const reuse = decideProcessReuse(live, wanted);
+    if (reuse.action !== 'adjust') throw new Error('expected an adjust');
+
+    const applying = reuse.apply(query);
+    await vi.advanceTimersByTimeAsync(LIVE_SETTING_ACK_TIMEOUT_MS);
+    await applying;
+
+    // `persistent-dispatch` stores `reuse.to` as the live fingerprint. It must
+    // not claim the model moved, or the next dispatch rides a stale process.
+    expect(reuse.to.live.model).toBe('claude-opus-4-6');
+    const next = decideProcessReuse(reuse.to, wanted);
+    expect(next.action).toBe('adjust');
   });
 });
 
