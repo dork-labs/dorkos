@@ -47,7 +47,11 @@ import {
   resetMessageDispatcher,
   sweepOrphanedMessageQueues,
 } from '../message-dispatcher.js';
-import { resetStagedContextStore } from '../staged-context-store.js';
+import {
+  StagedContextStore,
+  resetStagedContextStore,
+  setStagedContextStore,
+} from '../staged-context-store.js';
 import { assembleAdditionalContext } from '../context-assembler.js';
 import { logger } from '../../../lib/logger.js';
 import type { DispatchContext } from '../../../lib/dispatch-context.js';
@@ -154,6 +158,7 @@ beforeEach(() => {
   db = createTestDb();
   store = new MessageQueueStore(db);
   setMessageQueueStore(store);
+  setStagedContextStore(new StagedContextStore(db));
   runtime = new FakeAgentRuntime();
   runtime.getInternalSessionId.mockReturnValue(undefined);
 });
@@ -165,6 +170,7 @@ afterEach(async () => {
   await settle();
   resetMessageDispatcher();
   resetStagedContextStore();
+  setStagedContextStore(undefined);
   setMessageQueueStore(undefined);
   disposeProjector(session);
   for (const id of extraProjectors) disposeProjector(id);
@@ -1230,7 +1236,7 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
   it('folds a declared-but-undeliverable stage exactly once (no double-fold)', async () => {
     // The adapter-bug path: the runtime DECLARES staging but its deliverIntoTurn
     // comes back `unsupported`. deliverStage folds internally and reports
-    // viaFallback; the ladder must NOT fold a second time.
+    // folded already; the ladder must NOT fold a second time.
     withCapabilities({ supportsContextStaging: true });
     runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'unsupported' });
     const projector = getOrCreateProjector(session);
@@ -1317,6 +1323,69 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
       scope: 'per-turn',
       data: { text: 'use the staging bucket' },
     });
+  });
+
+  // DOR-1324. The receipt above is written to the DURABLE stream, so what it
+  // points at has to be durable too — otherwise a restart in the gap leaves a
+  // permanent "Added context for the next reply" over words nobody will ever get.
+  it('still carries the folded words after a restart (DOR-1324)', async () => {
+    withCapabilities({ supportsContextStaging: true });
+    Object.assign(runtime, { canStageSession: vi.fn(() => false) });
+
+    await send('remember the deploy key is rotated', { disposition: 'stage' });
+
+    // The restart: process memory goes, and a new store opens over the same
+    // database. Nothing else about the session is re-created, because nothing
+    // else about it was ever in memory to begin with.
+    resetStagedContextStore();
+    setStagedContextStore(new StagedContextStore(db));
+
+    runtime.withScenarios([quickTurn()]);
+    await send('now ship it');
+    await settle();
+    const call = runtime.sendMessage.mock.calls.find(([, content]) => content === 'now ship it');
+    expect(call?.[2]?.additionalContext).toContainEqual({
+      kind: 'staged_context',
+      scope: 'per-turn',
+      data: { text: 'remember the deploy key is rotated' },
+    });
+  });
+
+  // DOR-1325. `canStageSession` is read BEFORE `deliverStage` takes the dispatch
+  // mutex, and the idle reaper does not take that mutex at all — so a reap can
+  // land in between and turn a yes into a no. The fold that follows is the one
+  // the design intends; calling it an adapter bug both lies in the log and buries
+  // the real bugs under noise from every install that ever reaps a process.
+  it('does not call a reap between the gate and the delivery an adapter bug (DOR-1325)', async () => {
+    withCapabilities({ supportsContextStaging: true });
+    // Yes to the router's gate, no by the time the mutex is held: exactly what
+    // an idle reap does to a warm process in that window.
+    const canStage = vi.fn(() => canStage.mock.calls.length === 1);
+    Object.assign(runtime, { canStageSession: canStage });
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'unsupported' });
+    const logged = vi.spyOn(logger, 'error');
+
+    const result = await send('the reaper got here first', { disposition: 'stage' });
+
+    expect(logged).not.toHaveBeenCalledWith(ADAPTER_BUG_LOG, expect.anything());
+    // And the receipt says what actually happened: the seam went away, which is
+    // `not-stageable` — never `unsupported`, which would contradict a capability
+    // the runtime openly declares.
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'stage',
+      applied: 'stage',
+      degradedBecause: 'not-stageable',
+    });
+    // The words are held exactly once, and ride the next turn.
+    runtime.withScenarios([quickTurn()]);
+    await send('carry on');
+    await settle();
+    const call = runtime.sendMessage.mock.calls.find(([, content]) => content === 'carry on');
+    const staged = (call?.[2]?.additionalContext ?? []).filter((e) => e.kind === 'staged_context');
+    expect(staged).toEqual([
+      { kind: 'staged_context', scope: 'per-turn', data: { text: 'the reaper got here first' } },
+    ]);
   });
 
   it('takes the native path when the session says it can stage', async () => {
@@ -1678,7 +1747,13 @@ describe('deliverStage — a stage is a write, and folds into the next when unsu
       messageId: 'stage-1',
       runtime,
     });
-    expect(staged).toEqual({ authorized: true, delivered: true, viaFallback: true });
+    // `unsupported` and not `not-stageable`: this runtime never claimed a
+    // per-session seam, so nothing about it went away mid-flight (DOR-1325).
+    expect(staged).toEqual({
+      authorized: true,
+      delivered: true,
+      foldedBecause: 'unsupported',
+    });
 
     // The fallback emits the SAME context_staged receipt the native path does —
     // a silent hold is indistinguishable from a dropped message, and the person
