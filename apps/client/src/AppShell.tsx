@@ -346,7 +346,18 @@ export function AppShell() {
   // something the list you picked it from doesn't. `select` narrows the
   // subscription to the title, so an unrelated settings write to the same row
   // doesn't re-render the shell.
+  //
+  // `enabled: false` is deliberate and load-bearing. The bar REPORTS a session's
+  // name; it does not own the session. Every route that needs the row already
+  // fetches it, and the global session stream patches this cache directly
+  // (`syncSessionDetailCache`), so the title still arrives and still updates
+  // live. What this rules out is the shell adding a fetch of its own to a key
+  // other surfaces read — the permission control resolves the session's runtime
+  // from this same row, and a shell-initiated request racing session creation
+  // would put a row they then read into the cache. The hook documents exactly
+  // this case: a caller that only reports on a session someone else owns.
   const { data: activeSessionTitle } = useSessionDetail(activeSessionId, {
+    enabled: false,
     select: (session) => session.title,
   });
   const routeHeader = useRouteHeader();
