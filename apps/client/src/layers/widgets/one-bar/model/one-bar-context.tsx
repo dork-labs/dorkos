@@ -15,6 +15,15 @@ import type { AgentVisual, TeamViewMode } from '@/layers/shared/lib';
  * Everything here is read-only and derived. Nothing writes back through it.
  */
 export interface OneBarRouteState {
+  /**
+   * Which session is open, absent when none is.
+   *
+   * The bar does not display it. It scopes what the bar is allowed to remember
+   * across renders — see `useLastKnownAgent`, where it is the difference
+   * between an identity that outlives a deleted agent and one that leaks onto
+   * the next conversation.
+   */
+  sessionId: string | undefined;
   /** Active session's agent name, absent when the session has no agent yet. */
   agentName: string | undefined;
   /**

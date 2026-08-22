@@ -356,6 +356,7 @@ export function AppShell() {
   // about which room is open.
   const oneBarState = useMemo<OneBarRouteState>(
     () => ({
+      sessionId: activeSessionId ?? undefined,
       agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
       // Only when there IS an agent. `useAgentVisual` hashes a face out of the
       // cwd otherwise, which is right for a favicon and wrong for the bar: a
@@ -373,6 +374,7 @@ export function AppShell() {
       teamViewMode: normalizeTeamView(new URLSearchParams(searchStr).get('view') ?? undefined),
     }),
     [
+      activeSessionId,
       currentAgent,
       agentVisual,
       activeSessionOrigin,
@@ -566,7 +568,14 @@ export function AppShell() {
                       // `desktop-darwin:` variant utility — see the
                       // `.app-drag-region` comment in index.css. Inert without
                       // the `.desktop-darwin` ancestor, so it is unconditional.
-                      className="app-drag-region relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
+                      // `@container/bar` makes the row itself the thing bars
+                      // measure against. A bar's crowding is a fact about the
+                      // width it actually has — which the right panel opening
+                      // changes without the window moving at all (spec §5.5) —
+                      // so a `sm:` breakpoint keyed to the viewport would answer
+                      // the wrong question, and answer it wrongly in the
+                      // playground, where a 390px bar sits inside a 1440px page.
+                      className="app-drag-region @container/bar relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
                     >
                       {/* A phone has no panel to toggle, so it gets no toggle.
                           A hamburger that opens nothing is worse than no

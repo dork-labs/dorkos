@@ -51,7 +51,9 @@ function BarFrame({ children, width }: { children: React.ReactNode; width?: numb
       className="bg-background overflow-hidden rounded-md border"
       style={width ? { maxWidth: width } : undefined}
     >
-      <header className="relative flex h-9 items-center gap-2 border-b px-2">
+      {/* `@container/bar` exactly as the shell spells it — the frame is only
+          honest if a bar measures the same thing here that it measures live. */}
+      <header className="@container/bar relative flex h-9 items-center gap-2 border-b px-2">
         {children}
         <BarFixedCluster />
       </header>
@@ -60,7 +62,8 @@ function BarFrame({ children, width }: { children: React.ReactNode; width?: numb
 }
 
 /** Nothing open, nothing running — showcases override only what they demonstrate. */
-const QUIET_BAR_STATE = {
+const QUIET_BAR_STATE: OneBarRouteState = {
+  sessionId: undefined,
   agentName: undefined,
   agentVisual: undefined,
   origin: undefined,
@@ -69,10 +72,19 @@ const QUIET_BAR_STATE = {
   sessionDirectoryName: undefined,
   roomTitle: null,
   teamViewMode: 'cards',
-} as const;
+};
 
 /** A stand-in face — the real one comes from `resolveAgentVisual`. */
 const DEMO_AGENT_VISUAL = { color: 'hsl(210 70% 55%)', emoji: '🤖' };
+
+/**
+ * An origin label nobody on this team chose the length of.
+ *
+ * `originLabel` is whatever the bridged room calls itself, so it arrives from
+ * Telegram or Slack at whatever length someone there typed. This is the case
+ * that made the chip paint over the identity when it could not shrink.
+ */
+const LONG_ORIGIN_LABEL = 'Deploys, incidents and the Tuesday migration standup';
 
 const LONG_SESSION_TITLE =
   'Investigate why the nightly deploy pipeline stalls on the migration step and propose a fix';
@@ -239,6 +251,40 @@ export function OneBarShowcases() {
               sessionTitle: 'Ship the changelog',
               origin: 'channel',
               originLabel: 'Telegram',
+            }}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          A long origin label — a bridged room names itself, and the name is as long as whoever made
+          it decided
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <SessionBarDemo
+            width={620}
+            state={{
+              agentName: 'DorkBot',
+              agentVisual: DEMO_AGENT_VISUAL,
+              sessionTitle: LONG_SESSION_TITLE,
+              origin: 'channel',
+              originLabel: LONG_ORIGIN_LABEL,
+            }}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The same label at 390px — the chip is down to its icon, and the tooltip still says which
+          room it was
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <SessionBarDemo
+            width={390}
+            state={{
+              agentName: 'DorkBot',
+              agentVisual: DEMO_AGENT_VISUAL,
+              sessionTitle: LONG_SESSION_TITLE,
+              origin: 'channel',
+              originLabel: LONG_ORIGIN_LABEL,
             }}
           />
         </ShowcaseDemo>
