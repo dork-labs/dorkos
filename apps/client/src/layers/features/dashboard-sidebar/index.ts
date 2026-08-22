@@ -61,6 +61,7 @@ export {
   leaveTransition,
   sectionLayoutKey,
 } from './ui/motion/sidebar-motion';
+export { useArrivedRows } from './ui/motion/use-arrived-rows';
 // One-time migration of pre-redesign pins. `DashboardSidebar` runs it, and on a
 // phone `DashboardSidebar` is never mounted — so the tabs run it instead, or an
 // operator who only ever opens DorkOS on their phone keeps their old pins

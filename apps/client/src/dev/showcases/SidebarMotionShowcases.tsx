@@ -11,6 +11,7 @@ import {
   foldTransition,
   leaveTransition,
   sectionLayoutKey,
+  useArrivedRows,
 } from '@/layers/features/dashboard-sidebar';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -81,6 +82,9 @@ function ArriveDemo() {
   const reducedMotion = useReducedMotion();
   const present = rows.some((row) => row.key === NEWCOMER.key);
   const layoutKey = sectionLayoutKey(rows);
+  // The shipped hook, so the tint here is the same one-shot the panel plays —
+  // on for 200 ms and then gone, rather than an attribute the demo leaves on.
+  const arrived = useArrivedRows(layoutKey, true);
   return (
     <div className="space-y-2">
       <Button
@@ -101,14 +105,13 @@ function ArriveDemo() {
                 rowMotion={{
                   layout: true,
                   layoutDependency: layoutKey,
-                  initial: row.key === NEWCOMER.key ? ARRIVE_FROM : false,
+                  initial: arrived.has(row.key) ? ARRIVE_FROM : false,
                   animate: ARRIVE_TO,
                   exit: LEAVE_TO,
-                  transition:
-                    row.key === NEWCOMER.key
-                      ? arriveTransition(reducedMotion)
-                      : leaveTransition(reducedMotion),
-                  arrived: row.key === NEWCOMER.key,
+                  transition: arrived.has(row.key)
+                    ? arriveTransition(reducedMotion)
+                    : leaveTransition(reducedMotion),
+                  arrived: arrived.has(row.key),
                 }}
               />
             ))}
