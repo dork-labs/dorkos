@@ -3794,6 +3794,10 @@
           "runtime": {
             "type": "string"
           },
+          "account": {
+            "type": "string",
+            "minLength": 1
+          },
           "agentPath": {
             "type": "string"
           },
@@ -5034,6 +5038,11 @@
             "description": "Reasoning effort new sessions for this agent start at. Absent = inherit the server default.",
             "example": "high"
           },
+          "account": {
+            "type": "string",
+            "description": "Claude Code account new sessions for this agent run and bill on, as a registry id (runtimes.claudeCode.accounts[].id). Absent = inherit the server default. Operator-only: agents cannot set this on themselves or on each other.",
+            "example": "acme-corp"
+          },
           "enabledToolGroups": {
             "$ref": "#/components/schemas/EnabledToolGroups"
           },
@@ -5387,6 +5396,11 @@
                 "description": "Reasoning effort new sessions for this agent start at. Absent = inherit the server default.",
                 "example": "high"
               },
+              "account": {
+                "type": "string",
+                "description": "Claude Code account new sessions for this agent run and bill on, as a registry id (runtimes.claudeCode.accounts[].id). Absent = inherit the server default. Operator-only: agents cannot set this on themselves or on each other.",
+                "example": "acme-corp"
+              },
               "enabledToolGroups": {
                 "$ref": "#/components/schemas/EnabledToolGroups"
               },
@@ -5496,6 +5510,13 @@
               "xhigh",
               null
             ]
+          },
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
           },
           "enabledToolGroups": {
             "$ref": "#/components/schemas/EnabledToolGroups"
