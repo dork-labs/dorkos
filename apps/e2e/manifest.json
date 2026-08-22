@@ -425,10 +425,10 @@
       "specFile": "tests/pulse/pulse-panel.spec.ts",
       "feature": "pulse",
       "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Profile), not Pulse, the attention badge is honest — hidden when nothing needs the operator",
-      "lastRun": "2026-08-12T11:54:32.659Z",
+      "lastRun": "2026-08-22T06:45:19.092Z",
       "lastStatus": "passed",
-      "runCount": 7,
-      "passCount": 7,
+      "runCount": 8,
+      "passCount": 8,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -449,11 +449,11 @@
       "specFile": "tests/pulse/right-panel-tab-strip.spec.ts",
       "feature": "pulse",
       "description": "brings a tab selected without a click into view, and fades the edges hiding tabs, advertises nothing when every tab fits",
-      "lastRun": "2026-08-12T11:54:32.659Z",
+      "lastRun": "2026-08-22T06:47:11.112Z",
       "lastStatus": "passed",
-      "runCount": 7,
-      "passCount": 7,
-      "failCount": 0,
+      "runCount": 10,
+      "passCount": 8,
+      "failCount": 2,
       "relatedCode": [],
       "lastModified": ""
     },
@@ -1018,33 +1018,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-08T21-20-59",
-      "timestamp": "2026-08-08T21:20:59.547Z",
-      "total": 2,
-      "passed": 2,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 56312
-    },
-    {
-      "id": "2026-08-08T21-22-25",
-      "timestamp": "2026-08-08T21:22:25.053Z",
-      "total": 2,
-      "passed": 1,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 70879
-    },
-    {
-      "id": "2026-08-08T21-24-21",
-      "timestamp": "2026-08-08T21:24:21.469Z",
-      "total": 63,
-      "passed": 63,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 104614
-    },
     {
       "id": "2026-08-08T21-25-32",
       "timestamp": "2026-08-08T21:25:32.483Z",
@@ -1917,6 +1890,33 @@
       "failed": 0,
       "skipped": 0,
       "duration": 44510
+    },
+    {
+      "id": "2026-08-22T06-45-19",
+      "timestamp": "2026-08-22T06:45:19.092Z",
+      "total": 6,
+      "passed": 5,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 36208
+    },
+    {
+      "id": "2026-08-22T06-46-21",
+      "timestamp": "2026-08-22T06:46:21.243Z",
+      "total": 2,
+      "passed": 1,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 34250
+    },
+    {
+      "id": "2026-08-22T06-47-11",
+      "timestamp": "2026-08-22T06:47:11.112Z",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 29477
     }
   ]
 }
