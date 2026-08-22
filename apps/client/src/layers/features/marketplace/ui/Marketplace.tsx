@@ -1,5 +1,5 @@
 import { Tabs, TabsList, TabsTrigger } from '@/layers/shared/ui';
-import { MarketplaceHeader } from './MarketplaceHeader';
+import { MarketplaceToolbar } from './MarketplaceToolbar';
 import { FeaturedRail } from './FeaturedRail';
 import { PackageGrid } from './PackageGrid';
 import { PackageDetailSheet } from './PackageDetailSheet';
@@ -11,7 +11,7 @@ import type { MarketplaceView } from '../model/marketplace-search';
 /**
  * Root Marketplace experience with two URL-driven views.
  *
- * `browse` (default) composes `MarketplaceHeader` (search + sort), `FeaturedRail`,
+ * `browse` (default) composes `MarketplaceToolbar` (search + sort), `FeaturedRail`,
  * and `PackageGrid`. The type and category filter facets live in the sidebar
  * takeover panel (`MarketplaceSidebar`), not here. `installed` renders
  * `InstalledPackagesView` — every installation across scopes with per-scope
@@ -31,7 +31,11 @@ export function Marketplace() {
     <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Marketplace</h1>
+          {/* Not drawn (design decision E1): the bar overhead already says
+              "Marketplace". Kept for the outline — the bar's title is a `nav`
+              landmark, not a heading, and a page with no `h1` leaves its
+              sections hanging under nothing. */}
+          <h1 className="sr-only">Marketplace</h1>
           <p className="text-muted-foreground text-sm">
             {view === 'installed'
               ? 'Manage every package installed across your global and per-agent scopes.'
@@ -52,7 +56,7 @@ export function Marketplace() {
         </section>
       ) : (
         <>
-          <MarketplaceHeader />
+          <MarketplaceToolbar />
           <FeaturedRail />
           <section aria-label="All packages">
             <PackageGrid />

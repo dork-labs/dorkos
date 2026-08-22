@@ -10,8 +10,11 @@ export function FeedbackRequestsPage() {
   return (
     <PageContainer width="wide" scroll={false}>
       <header className="mb-6 shrink-0">
-        <h1 className="text-xl font-semibold">Product feedback</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
+        {/* Not drawn (design decision E1): the bar overhead already says
+            "Product feedback". Kept for the outline — the bar's title is a
+            `nav` landmark, not a heading. */}
+        <h1 className="sr-only">Product feedback</h1>
+        <p className="text-muted-foreground text-sm">
           What you&apos;ve sent the DorkOS team, and where it stands.
         </p>
       </header>

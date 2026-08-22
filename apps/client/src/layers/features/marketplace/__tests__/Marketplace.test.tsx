@@ -37,8 +37,8 @@ vi.mock('../model/use-marketplace-params', () => ({
 }));
 
 // Stub the heavy children so the test isolates the view-switch logic.
-vi.mock('../ui/MarketplaceHeader', () => ({
-  MarketplaceHeader: () => <div data-testid="browse-header" />,
+vi.mock('../ui/MarketplaceToolbar', () => ({
+  MarketplaceToolbar: () => <div data-testid="browse-header" />,
 }));
 vi.mock('../ui/FeaturedRail', () => ({
   FeaturedRail: () => <div data-testid="featured-rail" />,

@@ -171,8 +171,11 @@ export function MarketplaceSourcesView() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Marketplace Sources</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
+          {/* Not drawn (design decision E1): the bar overhead already says
+              "Marketplace Sources". Kept for the outline — the bar's title is
+              a `nav` landmark, not a heading. */}
+          <h1 className="sr-only">Marketplace Sources</h1>
+          <p className="text-muted-foreground text-sm">
             Git registries that publish marketplace packages.
           </p>
         </div>

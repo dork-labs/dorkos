@@ -20,6 +20,11 @@ export class ConnectionsPage {
 
   constructor(page: Page) {
     this.page = page;
+    // The page's `h1` is `sr-only` (design decision E1): the one bar overhead
+    // already says "Connections", so the heading exists for the outline, not
+    // for the eye. Assert it is attached, never that it is visible — a 1px
+    // clipped box satisfies Playwright's visibility check either way, which
+    // would make a "visible" assertion here pass without meaning anything.
     this.heading = page.getByRole('heading', { name: 'Connections', level: 1 });
     this.messaging = page.getByRole('region', { name: 'Messaging' });
     this.accounts = page.getByRole('region', { name: 'Accounts' });
@@ -28,13 +33,15 @@ export class ConnectionsPage {
   /** Go straight to the page. */
   async goto() {
     await this.page.goto('/connections');
-    await this.heading.waitFor({ state: 'visible' });
+    await this.heading.waitFor({ state: 'attached' });
+    await this.messaging.waitFor({ state: 'visible' });
   }
 
   /** Reach the page the way a person would, through the command palette. */
   async openFromPalette() {
     await openFromCommandPalette(this.page, 'Connections');
-    await this.heading.waitFor({ state: 'visible' });
+    await this.heading.waitFor({ state: 'attached' });
+    await this.messaging.waitFor({ state: 'visible' });
   }
 
   /** The messaging region's honest empty state when the server flag is off. */
