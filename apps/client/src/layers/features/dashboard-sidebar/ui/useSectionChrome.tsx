@@ -110,6 +110,17 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
   const isMobile = useIsMobile();
 
   const [smartDialogOpen, setSmartDialogOpen] = useState(false);
+  // **Has this section's rule editor ever been opened.** The editor itself is
+  // heavy — a form seeded from the rules, one per smart section, all of them
+  // holding state nobody asked for (D8) — so it is not mounted until it is
+  // wanted. The latch rather than `smartDialogOpen` alone is what keeps its
+  // CLOSING animation: unmounting on `open: false` would snatch the panel away
+  // mid-fade. Same shape a room row uses to wake its menu.
+  const [smartDialogEverOpened, setSmartDialogEverOpened] = useState(false);
+  const openSmartDialog = () => {
+    setSmartDialogEverOpened(true);
+    setSmartDialogOpen(true);
+  };
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
@@ -291,7 +302,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
         onSortModeChange: (mode) =>
           update((prev) => setGroupSortMode(prev, groupId, mode as SidebarGroup['sortMode'])),
         onToggleMuted: () => update((prev) => setGroupMuted(prev, groupId, !group.muted)),
-        onEditRules: () => setSmartDialogOpen(true),
+        onEditRules: openSmartDialog,
         onConvertToManual: () =>
           update((prev) =>
             convertSmartGroupToManual(
@@ -371,13 +382,12 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          {/* Mounted only while open, like the room sheet a row owns: a closed
-              rule editor still holds a form seeded from the rules as they were
-              when it last closed, and a Library of smart sections would carry
-              one apiece. */}
-          {isSmart && smartDialogOpen && (
+          {/* Not mounted until it has been asked for once — see
+              `smartDialogEverOpened`. `open` stays the live flag from there on,
+              so closing still fades out rather than vanishing. */}
+          {isSmart && smartDialogEverOpened && (
             <SmartGroupRuleDialog
-              open
+              open={smartDialogOpen}
               onOpenChange={setSmartDialogOpen}
               mode="edit"
               initialName={group.name}

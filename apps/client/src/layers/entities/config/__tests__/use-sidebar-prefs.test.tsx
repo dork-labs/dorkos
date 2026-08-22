@@ -794,21 +794,18 @@ describe('useUpdateSidebarPrefs optimistic behavior', () => {
  */
 describe('mutedRoomIds', () => {
   it('reads only the room members of the muted list', () => {
-    expect([...mutedRoomIds(prefs({ muted: [agent('/a'), room('r1'), room('r2')] }))]).toEqual([
-      'r1',
-      'r2',
-    ]);
+    expect([...mutedRoomIds([agent('/a'), room('r1'), room('r2')])]).toEqual(['r1', 'r2']);
   });
 
   it('is empty when nothing is muted, and when only agents are', () => {
-    expect(mutedRoomIds(prefs()).size).toBe(0);
-    expect(mutedRoomIds(prefs({ muted: [agent('/a')] })).size).toBe(0);
+    expect(mutedRoomIds([]).size).toBe(0);
+    expect(mutedRoomIds([agent('/a')]).size).toBe(0);
   });
 
   it('answers for what mute wrote, so a muted room is dropped by whoever reads it', () => {
     const muted = muteItem(prefs(), room('r9'));
-    expect(mutedRoomIds(muted).has('r9')).toBe(true);
-    expect(mutedRoomIds(unmuteItem(muted, room('r9'))).has('r9')).toBe(false);
+    expect(mutedRoomIds(muted.muted).has('r9')).toBe(true);
+    expect(mutedRoomIds(unmuteItem(muted, room('r9')).muted).has('r9')).toBe(false);
   });
 });
 
@@ -839,14 +836,10 @@ describe('roomSectionIds / moveTargetGroups', () => {
     }) as SidebarPrefs['groups'][number];
 
   it('says which section each room is filed into, and nothing about agents', () => {
-    const map = roomSectionIds(
-      prefs({
-        groups: [
-          section('clients', 'manual', [room('r1'), agent('/a')]),
-          section('archive', 'manual', [room('r2')]),
-        ],
-      })
-    );
+    const map = roomSectionIds([
+      section('clients', 'manual', [room('r1'), agent('/a')]),
+      section('archive', 'manual', [room('r2')]),
+    ]);
     expect(map.get('r1')).toBe('clients');
     expect(map.get('r2')).toBe('archive');
     // An agent is filed the same way but is not a room, and reading it here
@@ -855,23 +848,22 @@ describe('roomSectionIds / moveTargetGroups', () => {
   });
 
   it('leaves a room in no section absent rather than answering null', () => {
-    expect(roomSectionIds(prefs()).size).toBe(0);
+    expect(roomSectionIds([]).size).toBe(0);
   });
 
   it('never offers a SMART section as a move target', () => {
     // Red when the filter goes: a room filed into a smart section is counted as
     // grouped and hidden from Channels, while that section draws its
     // rule-derived members instead — so the row vanishes entirely.
-    const targets = moveTargetGroups(
-      prefs({ groups: [section('clients', 'manual'), section('active-now', 'smart')] })
-    );
+    const targets = moveTargetGroups([
+      section('clients', 'manual'),
+      section('active-now', 'smart'),
+    ]);
     expect(targets).toEqual([{ id: 'clients', name: 'CLIENTS' }]);
   });
 
   it('offers manual sections in stored order', () => {
-    const targets = moveTargetGroups(
-      prefs({ groups: [section('b', 'manual'), section('a', 'manual')] })
-    );
+    const targets = moveTargetGroups([section('b', 'manual'), section('a', 'manual')]);
     expect(targets.map((t) => t.id)).toEqual(['b', 'a']);
   });
 });

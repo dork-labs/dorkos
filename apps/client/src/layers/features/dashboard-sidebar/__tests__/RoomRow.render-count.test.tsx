@@ -130,12 +130,13 @@ const NOOP_OPENER = () => NOOP;
 function Panel() {
   const prefs = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
-  // Keyed on the stored list each one reads, exactly as `SidebarChrome` keys
-  // them: on the whole `prefs` object, every write hands every row a fresh
-  // `moveTargetGroups` array and the memo below can never hold.
-  const muted = useMemo(() => mutedRoomIds(prefs), [prefs.muted]);
-  const sections = useMemo(() => roomSectionIds(prefs), [prefs.groups]);
-  const targets = useMemo(() => moveTargetGroups(prefs), [prefs.groups]);
+  // Handed the stored list each one reads, exactly as `SidebarChrome` hands
+  // them: given the whole `prefs` object, every write produces a fresh
+  // `moveTargetGroups` array for every row and the memo below can never hold.
+  // That seam has its own test — `SidebarChrome.memo.test.tsx`.
+  const muted = useMemo(() => mutedRoomIds(prefs.muted), [prefs.muted]);
+  const sections = useMemo(() => roomSectionIds(prefs.groups), [prefs.groups]);
+  const targets = useMemo(() => moveTargetGroups(prefs.groups), [prefs.groups]);
   const viewAgentProfile = useCallback(() => NOOP, []);
   const onRequestNewGroup = useCallback(() => {}, []);
   return (
@@ -207,14 +208,12 @@ describe('RoomRow render count', () => {
     // Pressing the "⋮" is the earliest a menu can open, and the surface reports
     // the intent on the capture phase of that same press.
     fireEvent.pointerDown(screen.getByLabelText('#alpha actions'));
-    expect(actsMounts.current).toBeGreaterThan(0);
-
-    // …and ONLY that row's. Beta is on screen with a menu of its own and is
-    // still asleep. A woken row's bearer renders twice — once on mount, once
-    // after it publishes its acts — so two is one row's worth and a second woken
-    // row would double it.
+    // Exactly two, and both are alpha's: the bearer renders on mount and once
+    // more after it publishes its acts into the row's state. Beta is on screen
+    // with a menu of its own and is still asleep — waking it too would make this
+    // four.
     expect(screen.getByLabelText('#beta actions')).toBeInTheDocument();
-    expect(actsMounts.current).toBeLessThan(3);
+    expect(actsMounts.current).toBe(2);
   });
 
   it('re-renders only the row a preferences write changed', async () => {
@@ -224,9 +223,10 @@ describe('RoomRow render count', () => {
 
     fireEvent.click(screen.getByText('mute alpha'));
 
-    // Alpha is now muted, so it must redraw — that is the write landing.
+    // Alpha is now muted, so it must redraw — that is the write landing. Once:
+    // the optimistic write is one commit, and nothing else about the row moved.
     await waitFor(() => expect(screen.getByLabelText('Muted')).toBeInTheDocument());
-    expect(drawsOf('room-a')).toBeGreaterThan(0);
+    expect(drawsOf('room-a')).toBe(1);
     // Beta's own data did not change, so beta must not have drawn at all.
     expect(drawsOf('room-b')).toBe(0);
   });

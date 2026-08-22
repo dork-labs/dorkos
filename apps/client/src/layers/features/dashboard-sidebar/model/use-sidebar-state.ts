@@ -298,10 +298,10 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
   // withholding rather than a degradation. Every other boot source may read as
   // empty on the timeout, because a room list that has not answered means "no
   // rooms yet" and a room arriving late is a row appearing. A manifest that has
-  // not answered means something else: `agentSidebarItem` would hash the
-  // DIRECTORY for the face and use the path for the name, and both change the
-  // moment the manifest lands — thirty rows flipping at once, which is the
-  // defect D6 exists to remove. So on a boot that opened on the ceiling with
+  // not answered means something else: an agent row would hash the DIRECTORY for
+  // its face (`useAgentVisual`) and fall back to the path for its name, and both
+  // change the moment the manifest lands — thirty rows flipping at once, which is
+  // the defect D6 exists to remove. So on a boot that opened on the ceiling with
   // manifests still in flight, the agent rows are simply not drawn, and they
   // appear once, correct, when the manifests answer.
   const paths = boot.fleetKnown ? rawPaths : NO_PATHS;
@@ -380,7 +380,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
     () => ({ ...storedModelPrefs, digest: { lastShownDate: digestFacts.lastShownDate } }),
     [storedModelPrefs, digestFacts.lastShownDate]
   );
-  const mutedRooms = useMemo(() => mutedRoomIds(storedPrefs), [storedPrefs]);
+  const mutedRooms = useMemo(() => mutedRoomIds(storedPrefs.muted), [storedPrefs.muted]);
   const jumpBackIn = useJumpBackIn({ mutedRoomIds: mutedRooms });
   // Today derives its OWN membership and order (BC-15, BC-16). What it takes
   // from here is the one-line summary each row already computed, so the sentence
@@ -423,23 +423,17 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
     rosterResolved: boot.settled,
   });
 
-  // ── The snapshot, in two halves (spec `sidebar-simplification` D8) ──
-  //
-  // **What the panel IS, and where the panel is RIGHT NOW.** The slow half is
-  // everything a query or a preference decides — it moves when a fetch settles
-  // or the operator writes something. The fast half is the clock, what needs
-  // attention, and what is on screen; those move on their own, several times a
-  // minute, with the slow half untouched.
-  //
-  // **What the split buys, stated exactly.** The slow object keeps ONE identity
-  // across a clock tick, so anything downstream that only needs "what the panel
-  // contains" can memoize on it. It does NOT stop `buildSidebarModel` running:
-  // `now` is part of the state the builder takes, its signature is unchanged,
-  // and a tick is a real input change for the two rules that read time (the
-  // 04:00 boundary, the once-a-day digest). Do not describe it as a rebuild the
-  // clock no longer triggers.
-  const slowInputs = useMemo(
+  // **One memo, not a "slow inputs / fast inputs" pair.** `sidebar-simplification`
+  // D8 proposed splitting this in two so a clock tick would not re-derive the
+  // half a query decides. It was built and measured, and it bought nothing: every
+  // field here is already its own memo keyed on its own sources, so the split
+  // allocated one extra object and changed no identity anywhere — and it could
+  // not do more, because `now` is part of the state `buildSidebarModel` takes and
+  // its signature is fixed. The two halves had one consumer, this spread. Dead
+  // structure with a comment claiming a benefit is worse than the plain shape.
+  const state = useMemo(
     () => ({
+      now,
       sessions,
       workingSessionIds,
       liveSessionCwds,
@@ -448,6 +442,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       threads,
       agents,
       displayNames,
+      attention,
       recents,
       prefs,
       interactions,
@@ -455,9 +450,15 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       // No client source counts @mentions above a read cursor. A source that
       // cannot say has no entry — omission, never a guess (BC-40).
       mentions: NO_MENTIONS,
+      ...(coveredSignalIds === undefined ? {} : { coveredSignalIds }),
+      todayAutomatedExpanded,
+      activeTarget,
       journey: journey.facts,
+      digest: digestFacts.digest,
     }),
     [
+      coveredSignalIds,
+      now,
       sessions,
       workingSessionIds,
       liveSessionCwds,
@@ -466,27 +467,17 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       threads,
       agents,
       displayNames,
+      attention,
       recents,
       prefs,
       interactions,
       userLastMessageAt,
+      todayAutomatedExpanded,
+      activeTarget,
       journey.facts,
+      digestFacts.digest,
     ]
   );
-
-  const fastInputs = useMemo(
-    () => ({
-      now,
-      attention,
-      activeTarget,
-      todayAutomatedExpanded,
-      digest: digestFacts.digest,
-      ...(coveredSignalIds === undefined ? {} : { coveredSignalIds }),
-    }),
-    [now, attention, activeTarget, todayAutomatedExpanded, digestFacts.digest, coveredSignalIds]
-  );
-
-  const state = useMemo(() => ({ ...slowInputs, ...fastInputs }), [slowInputs, fastInputs]);
 
   // **A write, inside the hook that gathers reads — deliberately.** Retirement
   // is permanent (BC-13), so its writer needs both the facts and the one bit

@@ -575,10 +575,16 @@ export function unmuteItem(prev: SidebarPrefs, ref: SidebarItemRef): SidebarPref
  * muted group dims its rows through the section's own filter, and a room row
  * carries no live activity emphasis to suppress on top of that.
  *
- * @param prefs - Current sidebar prefs.
+ * **Takes the LIST, not the whole prefs.** Every caller memoizes this, and a
+ * memo can only be keyed on what the function actually reads: given the whole
+ * object, folding a section or renaming one produces a new `prefs` and therefore
+ * a new Set, which is a changed prop for everything downstream of it
+ * (`specs/sidebar-simplification` D8).
+ *
+ * @param muted - `ui.sidebar.muted`, the individually-silenced list.
  */
-export function mutedRoomIds(prefs: SidebarPrefs): Set<string> {
-  return new Set(prefs.muted.flatMap((ref) => (ref.kind === 'room' ? [ref.roomId] : [])));
+export function mutedRoomIds(muted: readonly SidebarItemRef[]): Set<string> {
+  return new Set(muted.flatMap((ref) => (ref.kind === 'room' ? [ref.roomId] : [])));
 }
 
 /**
@@ -587,13 +593,13 @@ export function mutedRoomIds(prefs: SidebarPrefs): Set<string> {
  * A room in no section is simply absent. Lives beside the prefs for the reason
  * {@link mutedRoomIds} does: a row's menu ticks the section it is in, and the
  * panel that hands it that answer must be reading the same list the drag layer
- * writes.
+ * writes. It takes the list for that function's reason too.
  *
- * @param prefs - Current sidebar prefs.
+ * @param groups - `ui.sidebar.groups`, the stored sections.
  */
-export function roomSectionIds(prefs: SidebarPrefs): Map<string, string> {
+export function roomSectionIds(groups: readonly SidebarGroup[]): Map<string, string> {
   const byRoomId = new Map<string, string>();
-  for (const group of prefs.groups) {
+  for (const group of groups) {
     for (const item of group.items) if (item.kind === 'room') byRoomId.set(item.roomId, group.id);
   }
   return byRoomId;
@@ -609,10 +615,10 @@ export function roomSectionIds(prefs: SidebarPrefs): Map<string, string> {
  * Channels. Offering one would file a room somewhere no section draws it: the
  * row would simply vanish. The drag layer refuses the same drop.
  *
- * @param prefs - Current sidebar prefs.
+ * @param groups - `ui.sidebar.groups`, the stored sections.
  */
-export function moveTargetGroups(prefs: SidebarPrefs): { id: string; name: string }[] {
-  return prefs.groups
+export function moveTargetGroups(groups: readonly SidebarGroup[]): { id: string; name: string }[] {
+  return groups
     .filter((group) => group.kind !== 'smart')
     .map((group) => ({ id: group.id, name: group.name }));
 }

@@ -281,14 +281,15 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   // whole fleet or the whole room list on every render of the panel. They are
   // the same answer for every section, so they are worked out once here (D8).
   const prefs = useSidebarPrefs();
-  // **Keyed on the LIST each one reads, never on the whole prefs object.** Every
+  // **Each one is handed the LIST it reads, never the whole prefs object.** Any
   // preferences write produces a new `prefs` — muting one room, folding a
-  // section — and a memo keyed on the whole of it hands all sixty rows a fresh
-  // `moveTargetGroups` array, which is a changed prop and a defeated memo. The
-  // stored lists keep their identity across a write that did not touch them.
-  const mutedRooms = useMemo(() => mutedRoomIds(prefs), [prefs.muted]);
-  const roomSections = useMemo(() => roomSectionIds(prefs), [prefs.groups]);
-  const moveTargets = useMemo(() => moveTargetGroups(prefs), [prefs.groups]);
+  // section — and a memo that took the whole of it would hand all sixty rows a
+  // fresh `moveTargetGroups` array on every one of them: a changed prop, and a
+  // defeated memo. The stored lists keep their identity across a write that did
+  // not touch them, so these do too (`SidebarChrome.memo.test.tsx`).
+  const mutedRooms = useMemo(() => mutedRoomIds(prefs.muted), [prefs.muted]);
+  const roomSections = useMemo(() => roomSectionIds(prefs.groups), [prefs.groups]);
+  const moveTargets = useMemo(() => moveTargetGroups(prefs.groups), [prefs.groups]);
   const unreadRoomIds = useMemo<SidebarUnreadRoomIds>(() => {
     const channels: string[] = [];
     const dms: string[] = [];

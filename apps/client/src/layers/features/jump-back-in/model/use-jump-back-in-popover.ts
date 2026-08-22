@@ -255,7 +255,7 @@ export function useJumpBackInPopover({
   );
 
   // The reader both surfaces share, from the prefs entity — see `mutedRoomIds`.
-  const muted = useMemo(() => mutedRoomIds(sidebarPrefs), [sidebarPrefs]);
+  const muted = useMemo(() => mutedRoomIds(sidebarPrefs.muted), [sidebarPrefs.muted]);
 
   const { items } = useJumpBackIn({ mutedRoomIds: muted, enabled });
   const rows = useMemo(() => items.slice(0, JUMP_BACK_IN_POPOVER_ROWS), [items]);
