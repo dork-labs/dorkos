@@ -257,10 +257,13 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
 
   // Billing accounts belong to Claude Code alone, so everything below is read
   // from the server's account registry and only ever drawn for that runtime.
-  // The wire's `id: null` rows describe roots nobody registered — display-only,
-  // and never something an agent can point at (ADR 260821-205324) — so they are
-  // filtered out of the options while still counting as accounts a person knows
-  // about.
+  //
+  // The id filter is defensive rather than load-bearing: the server heals an id
+  // onto every registered account before it reaches the wire, so this path has
+  // none to drop. The wire type permits `null` for a row a caller synthesizes to
+  // describe an unregistered root, and nothing may point at one (ADR
+  // 260821-205324) — so the filter states that rule at the place it matters,
+  // which is the list of things a person can choose.
   const accountRows = config?.claudeCode?.accounts;
   const knownAccounts: (KnownAccount & { path: string })[] | undefined = accountRows?.flatMap(
     (row) =>
@@ -292,6 +295,7 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
     serverDefaultModel,
     knownModels: knownModelsFrom(models),
     knownAccounts,
+    accountsUnavailable: config?.claudeCode?.accountsUnavailable,
     modelSupportsEffort: modelTakesEffort,
     runtimeSupportsEffort: declaredEffortSupport,
     runtimeLabel: (type) => getRuntimeDescriptor(type).label,
@@ -318,10 +322,15 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   // Nothing is drawn until the config answers: a row that offered no accounts
   // for one round-trip and then offered three would have told a person the
   // wrong thing first.
+  //
+  // The threshold counts REGISTERED accounts — the ones the picker can actually
+  // offer — rather than wire rows. Counting rows would let a single registered
+  // account beside a synthesized unregistered root open a picker holding one
+  // option: a choice between a thing and itself.
   const showAccountRow =
     runtime === 'claude-code' &&
-    accountRows !== undefined &&
-    (accountRows.length > 1 || accountIsSetHere);
+    knownAccounts !== undefined &&
+    (knownAccounts.length > 1 || accountIsSetHere);
   const accountWarning = breakageFor(['account-unregistered']);
 
   return (

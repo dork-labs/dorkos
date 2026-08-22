@@ -115,6 +115,8 @@ interface ClaudeCodeConfig {
   resolvedAccount: string;
   inherited: boolean;
   accounts: { id: string | null; path: string; label: string | null; isAccountRoot: boolean }[];
+  /** The server admitting it could not read the registry at all. */
+  accountsUnavailable?: boolean;
 }
 
 /** Two registered accounts — the smallest registry that offers a real choice. */
@@ -475,20 +477,42 @@ describe('AgentExecutionRows — the Account row', () => {
 
   it('never offers a synthesized root as a choice — nothing can point at it', async () => {
     renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), {
-      resolvedAccount: '/Users/dev/.claude',
+      ...TWO_ACCOUNTS,
       inherited: true,
       accounts: [
         // The inherited root the operator never registered: display-only,
-        // carrying no id (ADR 260821-205324).
-        { id: null, path: '/Users/dev/.claude', label: null, isAccountRoot: true },
-        { id: 'work', path: '/Users/dev/.claude-work', label: 'Acme Corp', isAccountRoot: true },
+        // carrying no id (ADR 260821-205324). The server heals an id onto
+        // everything it registers, so it does not really emit this row — the
+        // wire type permits it, and the filter that drops it is defensiveness
+        // this case keeps honest.
+        { id: null, path: '/Users/dev/.claude-ambient', label: null, isAccountRoot: true },
+        ...TWO_ACCOUNTS.accounts,
       ],
     });
     await userEvent.click(await screen.findByTestId('agent-account-row'));
     await screen.findByTestId('agent-account-row-option-work');
-    // The registered account is the ONLY option; the only way back to the
-    // unregistered root is the inherit footer below them.
-    expect(screen.queryAllByTestId(/^agent-account-row-option-/)).toHaveLength(1);
+    // The two REGISTERED accounts are the only options; the only way back to
+    // the id-less root is the inherit footer below them.
+    expect(screen.queryAllByTestId(/^agent-account-row-option-/)).toHaveLength(2);
+  });
+
+  // The threshold counts what the picker can offer, so this is the same rule as
+  // "one account is no choice" rather than a separate one — and it is a
+  // deliberate consequence worth pinning: an operator running one registered
+  // account beside an unregistered default gets no row until they register the
+  // second.
+  it('hides the row for a lone registered account beside an id-less root', async () => {
+    renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), {
+      ...TWO_ACCOUNTS,
+      accounts: [
+        { id: null, path: '/Users/dev/.claude', label: null, isAccountRoot: true },
+        TWO_ACCOUNTS.accounts[1]!,
+      ],
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
+    );
+    expect(screen.queryByTestId('agent-account-row')).toBeNull();
   });
 
   it('turns amber for an id nobody registered, and still says which id', async () => {
@@ -503,7 +527,7 @@ describe('AgentExecutionRows — the Account row', () => {
     expect(chip).toHaveTextContent('set here');
     // The warning is appended to the chip's accessible name, so it is never
     // only a color.
-    expect(screen.getByRole('button', { name: /no longer registered/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /isn’t registered/i })).toBeInTheDocument();
     expect(screen.getByTestId('agent-account-row')).toHaveTextContent('retired-client');
   });
 
@@ -518,6 +542,32 @@ describe('AgentExecutionRows — the Account row', () => {
     await waitFor(() =>
       expect(screen.getByTestId('agent-account-row-chip')).toHaveTextContent('server default')
     );
-    expect(screen.queryByRole('button', { name: /no longer registered/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /isn’t registered/i })).toBeNull();
+  });
+});
+
+describe('AgentExecutionRows — a registry the server could not read', () => {
+  /** An empty list that means "nobody knows", not "nothing is registered". */
+  const UNAVAILABLE: ClaudeCodeConfig = {
+    resolvedAccount: '/Users/dev/.claude',
+    inherited: true,
+    accounts: [],
+    accountsUnavailable: true,
+  };
+
+  it('still shows the stored account, and does not call it broken', async () => {
+    renderRows(manifest({ account: 'work' }), DEFAULTS, MODELS, capabilityMap(false), UNAVAILABLE);
+    // The value stays visible — it is what a person came to see, and clearing
+    // it is still possible — but nothing on screen claims it is wrong.
+    expect(await screen.findByTestId('agent-account-row')).toHaveTextContent('work');
+    expect(screen.queryByRole('button', { name: /isn’t registered/i })).toBeNull();
+  });
+
+  it('offers no picker to an agent with nothing set — there is nothing to offer', async () => {
+    renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), UNAVAILABLE);
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
+    );
+    expect(screen.queryByTestId('agent-account-row')).toBeNull();
   });
 });

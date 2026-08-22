@@ -122,12 +122,19 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
   const knownRuntimes = capabilityMap ? Object.keys(capabilityMap.capabilities) : undefined;
   const perRuntime = config?.executionDefaults?.perRuntime;
 
-  // The billing registry, named the way the settings cards name it. Rows the
-  // server synthesized for unregistered roots carry no id and drop out here:
-  // nothing can reference them, so an agent's id never matches one (ADR
-  // 260821-205324). `undefined` until the config answers — an account is never
-  // called unregistered on a registry nobody has read yet.
+  // The billing registry, named the way the settings cards name it. `undefined`
+  // until the config answers — an account is never called unregistered on a
+  // registry nobody has read yet — and judged not at all when the server says it
+  // could not read one (`accountsUnavailable`), where an empty list means the
+  // opposite of what it looks like.
+  //
+  // The id filter is defensive rather than load-bearing: `describeClaudeCodeAccounts`
+  // heals an id onto every registered account, so this path has none to drop. The
+  // wire type permits `null` for rows a caller synthesizes to describe an
+  // unregistered root, and nothing may reference one (ADR 260821-205324), so the
+  // filter states that rule where the rule is used.
   const accountRows = config?.claudeCode?.accounts;
+  const accountsUnavailable = config?.claudeCode?.accountsUnavailable;
   const knownAccounts: KnownAccount[] | undefined = accountRows?.flatMap((row) =>
     row.id === null ? [] : [{ id: row.id, label: claudeAccountName(row.path, accountRows) }]
   );
@@ -214,6 +221,7 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
       // already in hand from `GET /api/config`, so a billing override costs no
       // request and the sidebar can see it too.
       knownAccounts,
+      accountsUnavailable,
       // Only a model actually found in the catalog can say whether it takes an
       // effort. A model that is missing is already reported as missing, and
       // guessing at its capabilities would say the same thing twice.

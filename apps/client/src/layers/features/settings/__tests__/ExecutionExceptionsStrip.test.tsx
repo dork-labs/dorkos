@@ -72,7 +72,16 @@ const CAPABILITIES = {
   defaultRuntime: 'claude-code',
 };
 
-/** Two registered accounts, plus the unregistered root the server synthesizes. */
+/**
+ * One registered account, beside an id-less row.
+ *
+ * `describeClaudeCodeAccounts` heals an id onto every registered account, so
+ * this server never actually emits the id-less row — but the wire type permits
+ * one (it is reserved for a row a caller synthesizes to describe an unregistered
+ * root, which nothing may reference, ADR 260821-205324). It is here so the
+ * client's filter is exercised as the defensiveness it is, rather than being
+ * dead code nobody would notice breaking.
+ */
 const ACCOUNTS = {
   resolvedAccount: '/Users/dev/.claude',
   inherited: true,
@@ -329,7 +338,7 @@ describe('ExecutionExceptionsStrip — billing overrides', () => {
       { claudeCode: ACCOUNTS }
     );
     const broken = await screen.findByTestId('execution-exception-broken');
-    expect(broken).toHaveTextContent('no longer registered');
+    expect(broken).toHaveTextContent('isn’t registered');
     // Broken first, however the fleet came back and whatever the names sort to:
     // "zeta" would follow "alpha" on name alone.
     const rows = screen.getAllByRole('button');
@@ -348,8 +357,14 @@ describe('ExecutionExceptionsStrip — billing overrides', () => {
   });
 
   it('leaves an agent that inherits its account out of the strip entirely', async () => {
-    renderStrip({ '/a': agent('alpha') }, { claudeCode: ACCOUNTS });
-    await new Promise((r) => setTimeout(r, 20));
-    expect(screen.queryByTestId('execution-exceptions-strip')).toBeNull();
+    // Two agents, so the absence below is waited out on an observable event
+    // rather than on a timer: once zeta's row is on screen the whole pipeline
+    // has run, and alpha is missing because it was excluded.
+    renderStrip(
+      { '/a': agent('alpha'), '/b': agent('zeta', { account: 'work' }) },
+      { claudeCode: ACCOUNTS }
+    );
+    await waitFor(() => expect(screen.getAllByRole('button')).toHaveLength(1));
+    expect(screen.getByRole('button')).toHaveTextContent('zeta');
   });
 });

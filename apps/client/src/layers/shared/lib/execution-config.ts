@@ -182,6 +182,20 @@ export interface DescribeAgentExecutionInput {
    */
   knownAccounts?: readonly KnownAccount[];
   /**
+   * True when the server could not READ the account registry, so its empty
+   * `accounts` list is an absence of knowledge rather than an absence of
+   * accounts (`ServerConfigSchema.claudeCode.accountsUnavailable`).
+   *
+   * It suppresses every account judgment — the breakage AND the deviation.
+   * That is stronger than the loading case above, and deliberately so: while
+   * the registry is merely unread, "this agent bills somewhere other than the
+   * default" is still true and worth saying. When the read has FAILED, an
+   * override nobody can resolve is not a fact about the agent, it is a fact
+   * about the outage, and putting the whole account-carrying fleet in the
+   * exceptions strip would say the wrong one.
+   */
+  accountsUnavailable?: boolean;
+  /**
    * Whether the agent's EFFECTIVE model — its own pin, else the server default
    * for its runtime — takes an effort setting, or `undefined` while unknown.
    * Only consulted when the runtime supports effort at all.
@@ -252,6 +266,7 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
     knownRuntimes,
     knownModels,
     knownAccounts,
+    accountsUnavailable,
     modelSupportsEffort,
     runtimeSupportsEffort,
     runtimeLabel = runtimeDisplayName,
@@ -261,11 +276,13 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
 
   const runtime = agent.runtime ?? defaultRuntime;
   const effectiveModel = agent.model ?? serverDefaultModel ?? null;
-  // A stored account on any other runtime is a setting that cannot apply, and
-  // is read here as nothing at all — the same silence the Runs on picker keeps
-  // by not drawing the row. Naming it would put a fix in front of a person for
-  // a field they have no way to see.
-  const account = runtime === ACCOUNT_RUNTIME ? (agent.account ?? null) : null;
+  // A stored account is read as nothing at all in two cases. On any runtime but
+  // Claude Code it is a setting that cannot apply — the same silence the Runs on
+  // picker keeps by not drawing the row, because naming it would put a fix in
+  // front of a person for a field they have no way to see. And when the registry
+  // could not be READ, nothing about the reference can be said honestly at all.
+  const accountIsKnowable = runtime === ACCOUNT_RUNTIME && accountsUnavailable !== true;
+  const account = accountIsKnowable ? (agent.account ?? null) : null;
   const registeredAccount =
     account !== null ? knownAccounts?.find((a) => a.id === account) : undefined;
 
@@ -300,7 +317,7 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
     if (account !== null && knownAccounts !== undefined && !registeredAccount) {
       breakages.push({
         kind: 'account-unregistered',
-        message: `The account “${account}” is no longer registered, so this agent bills to the default.`,
+        message: `The account “${account}” isn’t registered on this machine, so this agent bills to the default.`,
       });
     }
   }

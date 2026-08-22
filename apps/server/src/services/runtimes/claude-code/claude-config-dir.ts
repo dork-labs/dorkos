@@ -65,10 +65,19 @@ function inheritedClaudeRoot(): string {
  * undefined before `initConfigManager()` runs (a unit test, an early boot step).
  * Failing there must degrade to the inherited default rather than break a read,
  * so every failure is a debug line and an empty answer.
+ *
+ * That empty answer is reported as `unavailable` rather than left to look like a
+ * registry with nothing in it. The two are indistinguishable in the data and
+ * mean opposite things: an empty registry says an agent's account reference
+ * names nothing, while a failed read says nobody knows what it names. A caller
+ * that conflated them would light every account-carrying agent in the fleet
+ * amber for the length of an outage.
  */
 function readClaudeCodeConfig(config: ConfigReader): {
   defaultAccount: string | null;
   accounts: readonly ClaudeCodeAccount[];
+  /** True when `accounts` is empty because the read failed, not because it is. */
+  unavailable: boolean;
 } {
   try {
     // Through the healing read, NOT straight off the store. `configManager.get`
@@ -82,10 +91,10 @@ function readClaudeCodeConfig(config: ConfigReader): {
     // top two rungs are inert — a hint matched by an id no stored row carries.
     // Neither is a schema concern: `UserConfigSchema` is right either way, and
     // nothing on this path consults it.
-    return readClaudeAccountSettings(config.get('runtimes')?.claudeCode);
+    return { ...readClaudeAccountSettings(config.get('runtimes')?.claudeCode), unavailable: false };
   } catch (err) {
     logger.debug('[claude-config-dir] Claude account config unavailable', { err: String(err) });
-    return { defaultAccount: null, accounts: [] };
+    return { defaultAccount: null, accounts: [], unavailable: true };
   }
 }
 
@@ -305,10 +314,16 @@ export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | 
 export function describeClaudeCodeAccounts(
   config: ConfigReader = configManager
 ): NonNullable<ServerConfig['claudeCode']> {
-  const { defaultAccount, accounts } = readClaudeCodeConfig(config);
+  const { defaultAccount, accounts, unavailable } = readClaudeCodeConfig(config);
   return {
     resolvedAccount: defaultAccount ?? inheritedClaudeRoot(),
     inherited: defaultAccount === null,
+    // Sent only when it is true, so an ordinary response carries no extra key
+    // and a client that never learned about this field reads the same wire it
+    // always did. What it buys the client is the difference between "your
+    // account is not registered" and "nobody can say" — see
+    // `readClaudeCodeConfig`.
+    ...(unavailable ? { accountsUnavailable: true } : {}),
     accounts: accounts.map((account) => ({
       // The id agents and launch hints reference this account by. Never `null`
       // for a REGISTERED account, including on a config the migration has not

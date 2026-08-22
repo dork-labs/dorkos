@@ -242,7 +242,7 @@ describe('describeAgentExecution — the billing account', () => {
       {
         kind: 'account-unregistered',
         message:
-          'The account “retired-client” is no longer registered, so this agent bills to the default.',
+          'The account “retired-client” isn’t registered on this machine, so this agent bills to the default.',
       },
     ]);
     // The row a person has to fix must still name the thing to fix.
@@ -270,6 +270,34 @@ describe('describeAgentExecution — the billing account', () => {
       defaultRuntime: 'claude-code',
       knownRuntimes: ['claude-code'],
       knownAccounts: [],
+    });
+    expect(report.breakages.map((b) => b.kind)).toEqual(['account-unregistered']);
+  });
+
+  it('says nothing at all when the registry could not be READ', () => {
+    // `accountsUnavailable` is the server admitting its empty list is an
+    // absence of knowledge. Judged as an absence of accounts it would call
+    // every account-carrying agent on the machine broken at once.
+    const report = describeAgentExecution({
+      agent: { runtime: 'claude-code', account: 'work' },
+      defaultRuntime: 'claude-code',
+      knownRuntimes: ['claude-code'],
+      knownAccounts: [],
+      accountsUnavailable: true,
+    });
+    expect(report.isException).toBe(false);
+    expect(report.deviations).toEqual([]);
+    expect(report.breakages).toEqual([]);
+  });
+
+  // The discriminator: the same empty list without the flag IS an answer.
+  it('still judges a registered-nowhere account against a registry it could read', () => {
+    const report = describeAgentExecution({
+      agent: { runtime: 'claude-code', account: 'work' },
+      defaultRuntime: 'claude-code',
+      knownRuntimes: ['claude-code'],
+      knownAccounts: [],
+      accountsUnavailable: false,
     });
     expect(report.breakages.map((b) => b.kind)).toEqual(['account-unregistered']);
   });
