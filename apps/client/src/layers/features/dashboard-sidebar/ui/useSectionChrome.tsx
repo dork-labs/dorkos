@@ -3,7 +3,7 @@
  *
  * `buildLibrarySections` decides which sections exist, what is in them and
  * whether they are folded. It says nothing about the inline field that renames
- * a group, the confirmation that deletes one, or the `+` in the header's
+ * a section, the confirmation that deletes one, or the `+` in the header's
  * corner — those are acts, not membership.
  *
  * They used to live in five section components with five hover treatments and
@@ -21,7 +21,11 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import { ListFilter, Plus } from 'lucide-react';
 import type { SidebarGroup, SmartGroupRules } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
-import { useIsMobile, SIDEBAR_SECTION_ACTION_ATTRIBUTE } from '@/layers/shared/model';
+import {
+  useInlineEditorSettle,
+  useIsMobile,
+  SIDEBAR_SECTION_ACTION_ATTRIBUTE,
+} from '@/layers/shared/model';
 import {
   SIDEBAR_HOVER_REVEAL,
   AlertDialog,
@@ -66,7 +70,7 @@ import {
 import { SmartGroupRuleDialog } from './SmartGroupRuleDialog';
 import { useSidebarChrome } from './SidebarChrome';
 
-/** Longest group name the schema accepts (`SidebarGroupSchema.name`). */
+/** Longest section name the schema accepts (`SidebarGroupSchema.name`). */
 const MAX_GROUP_NAME = 40;
 
 /** Everything a section's header and body need beyond the model. */
@@ -79,9 +83,9 @@ export interface SectionChrome {
   action?: ReactNode;
   /** Dialogs the section owns, mounted beside it. */
   dialogs?: ReactNode;
-  /** What sits under the rows — an empty state, the inline group-create field. */
+  /** What sits under the rows — an empty state. */
   footer?: ReactNode;
-  /** A mark drawn right after the label — a smart group's rule glyph. */
+  /** A mark drawn right after the label — a smart section's rule glyph. */
   adornment?: ReactNode;
   /** An inline editor that replaces the label while a rename is in progress. */
   editor?: ReactNode;
@@ -115,6 +119,10 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
   const [renameValue, setRenameValue] = useState('');
   const renameRef = useRef<HTMLInputElement>(null);
   const committedRef = useRef(false);
+  // Same guard the create field wears: the menu item that opened this editor is
+  // still tearing its menu down, and blur-committing a name the reader never
+  // typed is how "Rename section" came to do nothing at all from a right-click.
+  const renameSettle = useInlineEditorSettle(renameRef);
 
   const groupId = section.id.startsWith('group:') ? section.id.slice('group:'.length) : null;
   const group: SidebarGroup | null =
@@ -140,7 +148,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
   };
 
   // "Mark all … read" means every room of that kind, including the ones filed
-  // into a group and drawn somewhere else entirely — so the list it works from
+  // into a section and drawn somewhere else entirely — so the list it works from
   // is the whole kind, never the section's own rows.
   const unreadIds = useMemo(() => {
     const rooms = [...chrome.roomsById.values()];
@@ -225,13 +233,6 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     </SidebarGroupAction>
   );
 
-  const groupCreationField =
-    chrome.groupCreation === null ? null : (
-      <SidebarMenu>
-        <GroupCreateInput onCommit={chrome.commitNewGroup} onCancel={chrome.cancelNewGroup} />
-      </SidebarMenu>
-    );
-
   const base: SectionChrome = {
     menuNodes: [],
     hasSectionAction: false,
@@ -252,6 +253,11 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
         collapsed: section.collapsed,
         hasUnread: unreadIds.channels.length > 0,
         onMarkAllRead: () => markRoomsRead(unreadIds.channels),
+        // Read off the MODEL, which is where `build-library-sections` published
+        // what it actually sorted by — never a second read of prefs that could
+        // tick a radio the list is not honouring.
+        sortMode: section.options?.sortMode === 'recent' ? 'recent' : 'name',
+        onSortModeChange: (mode) => update((prev) => setSectionSortMode(prev, 'channels', mode)),
         onToggleCollapsed: toggleCollapsed,
       }),
       action: deepLinkAction('new-channel', 'New channel'),
@@ -266,6 +272,8 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
         collapsed: section.collapsed,
         hasUnread: unreadIds.dms.length > 0,
         onMarkAllRead: () => markRoomsRead(unreadIds.dms),
+        sortMode: section.options?.sortMode === 'recent' ? 'recent' : 'name',
+        onSortModeChange: (mode) => update((prev) => setSectionSortMode(prev, 'dms', mode)),
         onToggleCollapsed: toggleCollapsed,
       }),
       action: deepLinkAction('new-message', 'New direct message'),
@@ -284,7 +292,6 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
           update((prev) => setSectionDisplayFilter(prev, 'agents', next)),
       }),
       action: deepLinkAction('new-agent', 'New agent'),
-      ...(groupCreationField === null ? {} : { footer: groupCreationField }),
     };
   }
 
@@ -316,7 +323,6 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     };
     return {
       ...base,
-      ...(isSmart ? { icon: ListFilter } : {}),
       menuNodes: buildGroupHeaderMenuNodes({
         group,
         onRename: () => {
@@ -350,7 +356,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
       }),
       adornment: isSmart ? (
         <ListFilter
-          aria-label="Smart group — membership is rule-based"
+          aria-label="Smart section — membership is rule-based"
           className="size-3 shrink-0"
         />
       ) : undefined,
@@ -359,10 +365,12 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
           ref={renameRef}
           value={renameValue}
           maxLength={MAX_GROUP_NAME}
-          aria-label="Group name"
+          aria-label="Section name"
           onChange={(event) => setRenameValue(event.target.value)}
           onKeyDown={handleRenameKeyDown}
-          onBlur={commitRename}
+          onBlur={(event) => {
+            if (renameSettle.shouldHandleBlur(event)) commitRename();
+          }}
           // The header is a context-menu trigger and this field sits inside it.
           // Without the stop, right-clicking to paste opened the GROUP menu,
           // which blurred the editor and blur-committed a half-typed name.
@@ -373,15 +381,15 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
           )}
         />
       ) : undefined,
-      // Information, not disappearance: a group you just made says what to put
-      // in it, and a smart group whose rules match nobody says that instead of
+      // Information, not disappearance: a section you just made says what to put
+      // in it, and a smart section whose rules match nobody says that instead of
       // looking broken.
       footer:
         section.rows.length === 0 ? (
           <p className="text-sidebar-foreground/50 px-3 py-1.5 text-xs italic">
             {isSmart
               ? 'No agents match these rules'
-              : 'Drag agents, channels, or conversations here'}
+              : 'Drag channels, conversations or agents here'}
           </p>
         ) : undefined,
       dialogs: (
@@ -389,7 +397,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
           <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete group &ldquo;{group.name}&rdquo;?</AlertDialogTitle>
+                <AlertDialogTitle>Delete section &ldquo;{group.name}&rdquo;?</AlertDialogTitle>
                 <AlertDialogDescription>
                   Its {section.rows.length}{' '}
                   {section.rows.length === 1 ? 'member moves' : 'members move'} back where they came
@@ -404,7 +412,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
                     setDeleteOpen(false);
                   }}
                 >
-                  Delete group
+                  Delete section
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

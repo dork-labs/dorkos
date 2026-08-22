@@ -64,11 +64,13 @@
      same one. */
   --sidebar-header-x: 12px;
   /* Where a row's 18px glyph slot starts. The label follows at
-     20 + 18 + 8 = 46px, for every row type. */
+     20 + 18 + 8 = 46px, for every row type.
+
+     There is no third token. `--sidebar-nested-x` used to add an indent for a
+     hand-made section's members, back when a section rendered inside Agents;
+     sections are peers now (`specs/sidebar-simplification` D3), so the panel is
+     two x values and nothing is nested. */
   --sidebar-row-x: 20px;
-  /* What a section's members add on top of both: header 24, glyph 32,
-     label 58. One level, never two. */
-  --sidebar-nested-x: 12px;
 }
 
 @media (max-width: 767px) {

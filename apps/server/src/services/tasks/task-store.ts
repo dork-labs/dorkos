@@ -41,6 +41,16 @@ export interface CreateTaskStoreInput {
   maxRuntime?: number | null;
   permissionMode?: string;
   filePath: string;
+  /** Why the schedule should exist, in the proposer's own words. See {@link CreateTaskStoreInput.proposedByAgentPath}. */
+  reason?: string | null;
+  /** The session that proposed it, when an agent did. */
+  proposedBySessionId?: string | null;
+  /**
+   * The proposing session's working directory — the key the agent-identity
+   * service resolves a display name from. Stored rather than the name itself,
+   * so a rename or a revocation is reflected the next time the task is read.
+   */
+  proposedByAgentPath?: string | null;
 }
 
 /**
@@ -180,6 +190,9 @@ export class TaskStore {
         permissionMode: input.permissionMode ?? 'acceptEdits',
         status: 'active',
         filePath: input.filePath,
+        reason: input.reason ?? null,
+        proposedBySessionId: input.proposedBySessionId ?? null,
+        proposedByAgentPath: input.proposedByAgentPath ?? null,
         tags: '[]',
         createdAt: now,
         updatedAt: now,
@@ -214,6 +227,48 @@ export class TaskStore {
 
     this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
 
+    return this.getTask(id);
+  }
+
+  /**
+   * Record who proposed a schedule and why, on a row that already exists.
+   *
+   * Separate from {@link updateTask} rather than folded into it, because these
+   * are not fields a task write may carry. `proposedByAgentPath` is stamped from
+   * a resolved credential and `proposedBySessionId` from the invoking session —
+   * both are things the server KNOWS about a caller, and a caller that could
+   * send them could claim to be any agent it liked.
+   *
+   * `reason` rides along here rather than through the update mapping for the
+   * same reason it is written at all: it belongs to the proposal, and the only
+   * moment it is set is the moment a schedule parks.
+   *
+   * Exists because the REST create path writes a file first and syncs through
+   * `upsertFromFile`, which builds its row from a SKILL.md and so has nowhere to
+   * carry any of this. The MCP path calls `createTask` and needs none of it.
+   *
+   * @param id - The task to stamp.
+   * @param proposal - The fields to write; an omitted field is left alone.
+   * @returns The updated task, or null when no such task exists.
+   */
+  recordProposal(
+    id: string,
+    proposal: {
+      reason?: string | null;
+      proposedBySessionId?: string | null;
+      proposedByAgentPath?: string | null;
+    }
+  ): Task | null {
+    if (!this.getTask(id)) return null;
+
+    const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+    if (proposal.reason !== undefined) updates.reason = proposal.reason;
+    if (proposal.proposedBySessionId !== undefined)
+      updates.proposedBySessionId = proposal.proposedBySessionId;
+    if (proposal.proposedByAgentPath !== undefined)
+      updates.proposedByAgentPath = proposal.proposedByAgentPath;
+
+    this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
     return this.getTask(id);
   }
 
@@ -739,7 +794,15 @@ export class TaskStore {
   }
 }
 
-/** Convert a Drizzle schedule row to a Task object. */
+/**
+ * Convert a Drizzle schedule row to a Task object.
+ *
+ * `proposedByName` and `nextRuns` are left at their empty values here on
+ * purpose. Both are resolved when a task is READ by something that can answer
+ * them — the name from the agent-identity service (async, and the store is a
+ * synchronous data layer), the run times from the scheduler — so the store
+ * never caches an answer that can go stale between a write and a read.
+ */
 function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
   return {
     id: row.id,
@@ -757,7 +820,12 @@ function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     filePath: row.filePath,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    reason: row.reason ?? null,
+    proposedBySessionId: row.proposedBySessionId ?? null,
+    proposedByAgentPath: row.proposedByAgentPath ?? null,
+    proposedByName: null,
     nextRun: null,
+    nextRuns: [],
   } as Task;
 }
 

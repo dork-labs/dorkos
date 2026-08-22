@@ -366,6 +366,40 @@ describe('/api/rooms', () => {
     });
   });
 
+  describe('GET / — bridge on every listed room (sidebar-simplification D2)', () => {
+    it('says which listed rooms are bridged and which are not', async () => {
+      // The cockpit tells a direct message somebody made by hand from one a
+      // bridged private chat projects, and `bridge` is the only field that says
+      // which. It used to be left off the list entirely, so `null` there meant
+      // "not carried" and the rule was unanswerable over the wire.
+      const service = getRoomService();
+      const operatorAuthorId = service.authorRegistry.localHuman().id;
+      const bridged = service.createBridgedRoom({
+        adapterId: 'tg-main',
+        chatId: '950',
+        bindingId: 'binding-950',
+        chatType: 'private',
+        channelType: null,
+        title: 'Miguel',
+        agentPath: ANA_PATH,
+        operatorAuthorId,
+      });
+      const plain = await createChannel();
+
+      const res = await request(app).get('/api/rooms');
+      expect(res.status).toBe(200);
+      const byId = new Map<string, { bridge?: unknown }>(
+        res.body.rooms.map((room: { id: string }) => [room.id, room])
+      );
+      // A bridged PRIVATE chat carries no `platformTitle` and no visibility —
+      // both are group-only facts — so what says "this room is bridged" over the
+      // wire is the object being there at all.
+      expect(byId.get(bridged.id)?.bridge).not.toBeNull();
+      expect(byId.get(bridged.id)?.bridge).toBeDefined();
+      expect(byId.get(plain.id)?.bridge).toBeNull();
+    });
+  });
+
   describe('POST /:id/entries', () => {
     it('accepts with 202 and returns the entry identity, not the entry', async () => {
       const room = await createChannel();

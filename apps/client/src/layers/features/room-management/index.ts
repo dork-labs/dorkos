@@ -37,4 +37,5 @@ export { RoomPanel } from './ui/RoomPanel';
 export { RoomPanelBody } from './ui/RoomPanelBody';
 export { openRoomPanel, ROOM_PANEL_ID, useRoomPanelFocusStore } from './model/room-panel-focus';
 export { routeShowsRoom } from './model/use-route-room';
+export { ONE_DOOR_HINT, oneDoorSubmitLabel, opensAgentSession } from './lib/one-door';
 export type { RoomDetailsFocus, RoomDetailsRoom } from './model/room-details';

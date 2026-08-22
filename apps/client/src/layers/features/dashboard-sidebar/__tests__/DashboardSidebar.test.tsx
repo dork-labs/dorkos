@@ -59,15 +59,32 @@ const channel = (id: string, slug: string) => room({ id, kind: 'channel', slug, 
  * stored on its manifest, and drawing this row from them is what DOR-582 was.
  */
 function dmWith(id: string, agentPath: string, title: string): RoomSummary {
+  return groupDmWith(id, [agentPath], title);
+}
+
+/**
+ * A direct message with several agents in it — a GROUP message, which is the
+ * only hand-made direct message Library lists (`sidebar-simplification` D2).
+ *
+ * Most cases here want a DM with a row in Direct messages, and a one-to-one no
+ * longer has one: it is the agent's own session under a second name, so the
+ * agent's row stands for it. {@link dmWith} is what a one-to-one is spelled
+ * with, and it is used where the suppression itself is the subject.
+ *
+ * @param id - The room id.
+ * @param agentPaths - The agents on the roster.
+ * @param title - What the conversation is called.
+ */
+function groupDmWith(id: string, agentPaths: string[], title: string): RoomSummary {
   const participants: AuthorRef[] = [
     { id: `${id}-you`, kind: 'human', displayName: 'You', handle: null },
-    {
-      id: `${id}-agent`,
-      kind: 'agent',
-      displayName: title,
+    ...agentPaths.map((agentPath, index) => ({
+      id: `${id}-agent-${index}`,
+      kind: 'agent' as const,
+      displayName: `${title} ${index}`,
       handle: null,
       agentRef: agentAuthorRef(agentPath),
-    },
+    })),
   ];
   return room({ id, kind: 'dm', title, participants });
 }
@@ -200,6 +217,11 @@ function parkedSchedule(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     filePath: `/tasks/${overrides.id}.json`,
     createdAt: '2026-08-19T09:00:00.000Z',
     updatedAt: '2026-08-19T09:00:00.000Z',
+    reason: null,
+    proposedBySessionId: null,
+    proposedByAgentPath: null,
+    proposedByName: null,
+    nextRuns: [],
     ...overrides,
   };
 }
@@ -760,20 +782,37 @@ describe('DashboardSidebar', () => {
   describe('BC-28 — Library’s sections', () => {
     it('reads Pins, Channels, Direct messages, Agents', async () => {
       mockSidebarPrefs.mockReturnValue(makePrefs({ pinned: [agent('/projects/alpha')] }));
-      mockRooms.mockReturnValue([channel('r1', 'general'), dmWith('r2', '/projects/beta', 'beta')]);
+      mockRooms.mockReturnValue([
+        channel('r1', 'general'),
+        groupDmWith('r2', ['/projects/alpha', '/projects/beta'], 'beta'),
+      ]);
       renderWithProviders(<DashboardSidebar />);
       await waitFor(() => expect(libraryHeadings().length).toBe(4));
       expect(libraryHeadings()).toEqual(['Pins', 'Channels', 'Direct messages', 'Agents']);
     });
 
-    it('nests a group inside Agents, one level down, as an <h4>', async () => {
+    it('draws no Direct messages section for a one-to-one, which the agent’s row already is', async () => {
+      // One door to an agent (`sidebar-simplification` D2): a 1:1 direct message
+      // is that agent's session under a second name, so Library lists the agent
+      // and not both.
+      mockRooms.mockReturnValue([channel('r1', 'general'), dmWith('r2', '/projects/beta', 'beta')]);
+      renderWithProviders(<DashboardSidebar />);
+      await waitFor(() => expect(libraryHeadings()).toContain('Channels'));
+      expect(libraryHeadings()).not.toContain('Direct messages');
+    });
+
+    it('draws a hand-made section as a peer, above the fixed four (D3)', async () => {
+      // What this catches: a return to the pre-D3 shape, where the section
+      // rendered as an <h4> nested inside the Agents wrapper.
       mockSidebarPrefs.mockReturnValue(
         makePrefs({ groups: [group({ items: [agent('/projects/alpha')] })] })
       );
       renderWithProviders(<DashboardSidebar />);
-      const heading = await screen.findByRole('heading', { name: /Clients/, level: 4 });
-      expect(sectionHeading('Agents').closest('[data-slot="sidebar-group"]')).toContainElement(
-        heading
+      await waitFor(() => expect(libraryHeadings()).toContain('Clients'));
+      expect(libraryHeadings()[0]).toBe('Clients');
+      expect(screen.queryByRole('heading', { name: /Clients/, level: 4 })).not.toBeInTheDocument();
+      expect(sectionHeading('Agents').closest('[data-slot="sidebar-group"]')).not.toContainElement(
+        screen.getByRole('heading', { name: /Clients/, level: 3 })
       );
     });
   });
@@ -822,7 +861,7 @@ describe('DashboardSidebar', () => {
       );
       mockRooms.mockReturnValue([
         { ...channel('r1', 'general'), unreadCount: 2 },
-        dmWith('r2', '/projects/beta', 'beta'),
+        groupDmWith('r2', ['/projects/alpha', '/projects/beta'], 'beta'),
       ]);
       // Today is recency-driven, so a room has to have been OPENED to be in it.
       useInteractionStore.getState().recordOpened('room', 'r1', Date.now() - 5_000);
@@ -885,7 +924,11 @@ describe('DashboardSidebar', () => {
     // and a "the rows are gone" assertion that matched it would pass on the
     // wrong element.
     mockRooms.mockReturnValue([
-      { ...dmWith('r2', '/projects/beta', 'Quiet chat'), unreadCount: 3, working: 2 },
+      {
+        ...groupDmWith('r2', ['/projects/alpha', '/projects/beta'], 'Quiet chat'),
+        unreadCount: 3,
+        working: 2,
+      },
     ]);
     renderWithProviders(<DashboardSidebar />);
     const heading = await screen.findByRole('heading', { name: /Direct messages/, level: 3 });
@@ -928,11 +971,14 @@ describe('DashboardSidebar', () => {
       // true of an empty document and prove nothing.
       expect(await screen.findByRole('menuitem', { name: /Show/ })).toBeInTheDocument();
       expect(screen.queryByRole('menuitem', { name: /New agent/ })).not.toBeInTheDocument();
-      expect(screen.queryByRole('menuitem', { name: /New group/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: /New section/ })).not.toBeInTheDocument();
     });
 
     it('reveals each section "+" on focus as well as on hover — a keyboard has no hover', async () => {
-      mockRooms.mockReturnValue([channel('r1', 'general'), dmWith('d1', '/a/1', 'Alpha')]);
+      mockRooms.mockReturnValue([
+        channel('r1', 'general'),
+        groupDmWith('d1', ['/a/1', '/a/2'], 'Alpha'),
+      ]);
       renderWithProviders(<DashboardSidebar />);
       await waitFor(() => expect(libraryHeadings()).toContain('Channels'));
 
@@ -1064,18 +1110,18 @@ describe('DashboardSidebar', () => {
       expect(localStorage.getItem('dorkos-pinned-agents')).toBeNull();
     });
 
-    it('renders a group you just made, empty, with somewhere to drop into', async () => {
+    it('renders a section you just made, empty, with somewhere to drop into', async () => {
       // The one section allowed to render empty. Every other one appears
-      // because something is in it — but a group that vanished the instant it
+      // because something is in it — but a section that vanished the instant it
       // was created could never be dragged into, which is exactly how it is
       // filled. The browser spec drives that flow end to end.
       mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [] })] }));
       renderWithProviders(<DashboardSidebar />);
-      await screen.findByRole('heading', { name: /Clients/, level: 4 });
-      expect(screen.getByText(/Drag agents, channels, or conversations here/)).toBeInTheDocument();
+      await screen.findByRole('heading', { name: /Clients/, level: 3 });
+      expect(screen.getByText(/Drag channels, conversations or agents here/)).toBeInTheDocument();
     });
 
-    it('tells a smart group with no matches so, rather than hiding it', async () => {
+    it('tells a smart section with no matches so, rather than hiding it', async () => {
       mockSidebarPrefs.mockReturnValue(
         makePrefs({
           groups: [
@@ -1090,11 +1136,11 @@ describe('DashboardSidebar', () => {
         })
       );
       renderWithProviders(<DashboardSidebar />);
-      await screen.findByRole('heading', { name: /Wedged/, level: 4 });
+      await screen.findByRole('heading', { name: /Wedged/, level: 3 });
       expect(screen.getByText('No agents match these rules')).toBeInTheDocument();
     });
 
-    it('keeps a smart group’s members out of the drag layer', async () => {
+    it('keeps a smart section’s members out of the drag layer', async () => {
       mockSidebarPrefs.mockReturnValue(
         makePrefs({
           groups: [
@@ -1109,10 +1155,10 @@ describe('DashboardSidebar', () => {
         })
       );
       renderWithProviders(<DashboardSidebar />);
-      const heading = await screen.findByRole('heading', { name: /Live now/, level: 4 });
+      const heading = await screen.findByRole('heading', { name: /Live now/, level: 3 });
       // A rule-owned row is not a drag source: dragging one out would ask the
       // operator to hand-edit a list the rules rebuild on the next render. The
-      // group HEADER stays draggable (groups reorder), so the assertion is
+      // section HEADER stays draggable (sections reorder), so the assertion is
       // scoped to the rows.
       const body = heading.closest('[data-slot="sidebar-group"]');
       const rows = body?.querySelectorAll('[data-sidebar-row]') ?? [];
@@ -1412,7 +1458,7 @@ describe('Heads up — the zone that justifies the redesign', () => {
       // zone that promises to hold only what needs you.
       mockRooms.mockReturnValue([
         { ...channel('c1', 'deploys'), unreadCount: 12 },
-        { ...dmWith('d1', '/projects/alpha', 'alpha'), unreadCount: 6 },
+        { ...groupDmWith('d1', ['/projects/alpha', '/projects/beta'], 'alpha'), unreadCount: 6 },
       ]);
       seedSessions([
         {

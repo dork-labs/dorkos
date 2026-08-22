@@ -34,6 +34,7 @@
 import path from 'node:path';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import { onProjectorStatusChange } from '../../session/session-state-projector.js';
+import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { notify, resolveStanding } from '../notification-service.js';
 import { armEscalation } from '../escalation-service.js';
 import type { NotificationPayload } from '../notification-registry.js';
@@ -72,7 +73,8 @@ function sessionErrorPayload(
   cwd: string | undefined,
   since: string
 ): NotificationPayload<'session.error'> {
-  return { sessionId, sessionLabel: sessionLabelFor(cwd), since };
+  const agentId = resolveAgentIdForPath(cwd);
+  return { sessionId, sessionLabel: sessionLabelFor(cwd), since, ...(agentId ? { agentId } : {}) };
 }
 
 /**
@@ -105,10 +107,12 @@ export function watchSessionLifecycle(): () => void {
       // projector knows none of them — so an own-action drop here would be a
       // guess. Presence filtering (spec task 4.1) is what will keep this quiet
       // for somebody watching the session it happened in.
+      const agentId = resolveAgentIdForPath(cwd);
       void notify('turn.completed', {
         sessionId,
         sessionLabel: sessionLabelFor(cwd),
         completedAt: new Date().toISOString(),
+        ...(agentId ? { agentId } : {}),
       });
       return;
     }

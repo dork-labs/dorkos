@@ -127,6 +127,7 @@ function NewMenuShowcase() {
     smartGroupPresets: [],
     onCreatePresetSmartGroup: noop,
     onOpenSmartGroupDialog: noop,
+    onNewGroup: noop,
   };
   const small = buildNewMenuNodes({
     ...base,
@@ -137,7 +138,6 @@ function NewMenuShowcase() {
     ...base,
     lastUsedAgentName: 'code-reviewer',
     showSessionShortcut: true,
-    onNewGroup: noop,
     smartGroupPresets: [
       { label: 'Active now', rules: { statuses: ['needs-attention', 'active'] } },
       { label: 'By runtime · Claude Code', rules: { runtimes: ['claude-code'] } },

@@ -410,9 +410,10 @@ Every horizontal inset in the sidebar comes off three custom properties, declare
 | -------------------- | ----- | -------------------------------------------------------------------------------- |
 | `--sidebar-header-x` | 12px  | Where every section header's label starts.                                       |
 | `--sidebar-row-x`    | 20px  | Where a row's 18px glyph slot starts. The label follows at 20 + 18 + 8 = **46**. |
-| `--sidebar-nested-x` | 12px  | What a section's members add to both: header 24, glyph 32, label **58**.         |
 
-Never write a sidebar inset as a literal. `apps/e2e/tests/dashboard-sidebar/sidebar-row-gutter.spec.ts` reads these tokens out of the live document and measures the computed padding against them, so retuning a token moves headers, rows, nested rows and the glyph-action overlay together — and changing one half alone goes red with the number it actually got.
+**Two tokens, because there are two levels.** A third — `--sidebar-nested-x` — indented a hand-made section's members back when a section rendered inside Agents; sections are peers of Channels and Agents now (`specs/sidebar-simplification` D3), so nothing in the panel is nested and the token went with its last consumer.
+
+Never write a sidebar inset as a literal. `apps/e2e/tests/dashboard-sidebar/sidebar-row-gutter.spec.ts` reads these tokens out of the live document and measures the computed padding against them, so retuning one moves every header, every row and the glyph-action overlay together — and changing one half alone goes red with the number it actually got.
 
 **Muted is fewer signals, not less contrast** (DOR-1098). A muted row keeps its label at full contrast and loses the bold, the unread badge and the working dot. The `opacity-60` it used to wear took the label to roughly 3:1 — under the 4.5:1 every label owes — so silencing a conversation made the one thing still worth reading hard to read.
 

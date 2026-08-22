@@ -559,12 +559,18 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   by a test.
 
 > **Amended 2026-08-19 (DOR-1368, D1).** Library has no visible heading above these sections any
-> more, so they are the first thing an operator reads in that part of the panel. The indent is
-> `--sidebar-nested-x` (12px) rather than a hard-coded 14, and it now moves the sub-header AND
-> its rows — header 24, glyph 32, label 58 — instead of the header alone. Every section header in
-> the panel is one component and one look: 11px medium, `text-sidebar-foreground/70`, no icon,
-> `h-7`; the `#`, bubble and robot that used to sit before Channels, Direct messages and Agents
-> are gone, because the rows underneath carry the glyph.
+> more, so they are the first thing an operator reads in that part of the panel. Every section
+> header in the panel is one component and one look: 11px medium,
+> `text-sidebar-foreground/70`, no icon, `h-7`; the `#`, bubble and robot that used to sit before
+> Channels, Direct messages and Agents are gone, because the rows underneath carry the glyph.
+>
+> **Amended 2026-08-21 (DOR-1371, D3).** The order is now
+> `[…the operator's own sections, in their stored order], Pins, Channels, Direct messages, Agents`
+> — **sections first, and as peers rather than as sub-headers inside Agents**. There is no indent
+> left to describe: `SidebarSectionModel.subsections` is removed with its type, the
+> `--sidebar-nested-x` token is removed with its last consumer, and the panel is two x values
+> (header 12, row 20, label 46) for every section including a hand-made one. The Agents section
+> also stops listing the whole fleet — see BC-32.
 
 - **BC-29 — Click anywhere on the section row toggles.** Destinations are always leaf rows, so
   select-vs-expand is never ambiguous. (§2, click-confirmed)
@@ -606,6 +612,30 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   DM exists; no Pins section until something is pinned; group affordances (create group, the
   groups hint) appear at ≥8 agents or ≥2 distinct runtimes. No "advanced mode" toggle exists.
   (design-meta rule 8)
+
+> **Amended 2026-08-21 (DOR-1371, D3).** Three parts of this move.
+>
+> 1. **Making a section by hand is offered to everybody.** A section holds channels and
+>    conversations as well as agents, so the fleet threshold was gating the wrong thing.
+>    `offersGroupAffordances` still gates the SMART presets and `Custom rules…`, which really are
+>    about a fleet.
+> 2. **An empty section still renders**, and it is the one section that may — every other appears
+>    because something is in it, while a section appears because the operator made it, and one
+>    that vanished on creation could never be dragged into. It draws a hint instead: "Drag
+>    channels, conversations or agents here", or "No agents match these rules".
+> 3. **Agents shows recent + pinned, with a floor of 8.** An agent is also a project, so a fleet
+>    grows a row per project and never gives one back. An agent is QUIET when its `attention` is
+>    `inactive` **or** when it has never run and the viewer has never opened it — `attention`
+>    answers `fresh` for the second case, which is the right word for a brand-new agent's dot and
+>    the wrong one for "worth a row forever", and reading only `inactive` left a fifteen-agent
+>    day-one install listing every one of them. The section draws everything that is not quiet,
+>    plus anything pinned; if fewer than eight qualify, the most recently active of the rest fill
+>    up to eight, so a three-agent day-one cockpit still shows all three. Its last row is
+>    `All N agents →`, a command that opens `/team`, present whenever the roster is larger than
+>    what the panel is DRAWING — the Agents section plus whatever sits in the operator's own
+>    sections. The `inactive` boundary is a week measured from the LATER of the agent's own
+>    activity and the viewer's last visit.
+
 - **BC-33 — Dual presence.** A conversation that is both the anchor and a Library member renders
   in both places; the Library copy takes the active tint. This is intentional, not a bug.
 
@@ -614,6 +644,17 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
 - **BC-34 — Clicking an agent opens its most recent human conversation** (a fresh session if
   none). An agent is a teammate, not a folder. The inline 3-session expansion panel is removed;
   depth moves to the session switcher. (§4)
+  _Amended by `sidebar-simplification` D2 (2026-08-19): unchanged in substance, and now the ONLY
+  door to an agent. A hand-made 1:1 direct message was the second one — the same agent, the same
+  working directory, a log holding its final words and none of its work — so Library no longer
+  lists one (`library:dm-suppressed-1to1`) and the agent's row carries its unread instead. Such a
+  room is still in Today, still in ⌘K, and still on the agent's profile; nothing is archived or
+  migrated. Today's membership gains ONE clause for it (`today:dm-suppressed-unread`): a suppressed
+  1:1 with a **directed unread** is eligible whether or not it has ever been opened — otherwise a
+  line an agent opened by itself would have no row anywhere. It is the room's own row, so clicking
+  it opens the conversation; the agent-row dot beside it is a secondary signal, and clicking the
+  agent still opens the session. Both go quiet when the conversation is read. A bridged private chat keeps its row: its other end is a person
+  somewhere else, and no session is that conversation._
 - **BC-35 — The session switcher** is a `ResponsiveDialog` (dialog on desktop, bottom sheet on
   mobile) reachable from the agent row's "N live" chip, a long-press on mobile, and ⌘K. Groups:
   **Live now** (with verbs; concurrent sessions are simply multiple rows), **Recent** (one-line
@@ -675,7 +716,13 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   that exists only while true and never enters Heads up. (§7)
 - **BC-45 — One New button** is the only create surface: Session (`⌘N`; `↵` = last-used agent),
   Channel, Direct message, Agent…, Agent group. A section's hover `+` deep-links into this same
-  menu with the relevant item pre-selected. Every other create entry point in the sidebar is
+  menu with the relevant item pre-selected.
+  _Amended by `sidebar-simplification` D2 (2026-08-19): the third item reads **Group message**,
+  and its id stays `new-message` — renaming a thing is not renaming its address, and the Direct
+  messages header's `+` deep-links to that id. In the panel it opens, exactly one agent selected
+  reads "Open session with X" and lands where the agent's row lands; two or more read "Start group
+  message" and make a room. The rule is stated under the picker: "One agent opens a session. Two
+  or more start a group message."_ Every other create entry point in the sidebar is
   deleted (`AddAgentMenu`, per-section `+` handlers, the inline group-create trigger keeps its
   inline editor but is reached through New). (§7)
 - **BC-46 — The ⌘K pill** ("Jump to anything…") sits under the header.
@@ -784,8 +831,8 @@ showcase page, which fails on contrast violations rather than being eyeballed.
 
 **Resolved: Library only.**
 
-- Draggable: pins (reorder within Pins), group order, membership moves (agent or room into a
-  group), reorder within a manual group, reorder within Agents when `sortMode === 'manual'`.
+- Draggable: pins (reorder within Pins), section order, membership moves (agent or room into a
+  section), reorder within a manual section.
 - **Never draggable: every row in Heads up, Today and Getting started.** These zones are computed;
   dragging them would be a lie about what the user controls (design-meta rule 6). Enforced in
   the **model** — `buildSidebarModel` sets `draggable: false` on every row whose zone is not
@@ -796,6 +843,13 @@ showcase page, which fails on contrast violations rather than being eyeballed.
   edit rules instead.") is unchanged.
 - `resolveSidebarDrop` (the pure prefs reducer) and its 36 existing tests survive intact; the
   new rejection adds cases, changes none.
+
+> **Amended 2026-08-21 (DOR-1371).** "Reorder within Agents when `sortMode === 'manual'`" was
+> never true: the code refuses an ungrouped→ungrouped drop in two places, because the ungrouped
+> list is what is left over and has no hand-made sequence to preserve. The spec is corrected to
+> match the code rather than the other way round — manual curation is what a section is for. The
+> Agents header's Sort submenu offers Name and Recent activity only, and has since DOR-580.
+
 - Mobile keeps drag disabled entirely (`SidebarDnd` already renders children without a
   `DndContext` on mobile); long-press context menus are the only reordering path there, which
   P4 makes explicit rather than accidental.

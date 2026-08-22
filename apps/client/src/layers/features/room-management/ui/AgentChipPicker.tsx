@@ -23,8 +23,14 @@ interface AgentChipPickerProps {
    * members panel stays open on a room that now has more agents in it.
    */
   onSubmit: (chosen: AgentPickerCandidate[]) => void;
-  /** The commit button's label, given how many agents are selected. */
-  submitLabel: (count: number) => string;
+  /**
+   * The commit button's label, given what is selected.
+   *
+   * Takes the agents rather than a count, because one of the three labels names
+   * the agent it is about ("Open session with Ana") — and a label that can name
+   * somebody must be handed who.
+   */
+  submitLabel: (chosen: readonly AgentPickerCandidate[]) => string;
   /** Shown instead of the field when there are no candidates at all. */
   emptyRosterMessage: string;
   /**
@@ -498,7 +504,7 @@ export function AgentChipPicker({
         onClick={commit}
         className="mt-3 w-full shrink-0 md:mt-2"
       >
-        {submitLabel(chosen.length)}
+        {submitLabel(chosen)}
       </Button>
     </div>
   );

@@ -269,6 +269,20 @@ vi.mock('@/layers/entities/attention', () => ({
     retry: vi.fn(),
   }),
   usePendingScheduleApprovals: () => ({ schedules: [], isLoading: false }),
+  // The Inbox popover's own derivation (spec `schedule-approval-experience`
+  // §C4) — mirrors the three stubs above rather than composing them, the same
+  // way the real hook does.
+  useWaitingQueue: () => ({
+    approvals: mockPendingApprovals,
+    asks: [],
+    schedules: [],
+    items: mockPendingApprovals.map((a) => ({
+      id: `approval:${a.approvalId}`,
+      kind: 'permission-prompt' as const,
+    })),
+    isError: mockApprovalsError,
+    retry: vi.fn(),
+  }),
   // The notification center watches these for arrivals to knock about.
   useAttentionSignals: () => [],
   useAttentionSignalsLoading: () => false,

@@ -11,12 +11,18 @@ import {
 import { useAgentCreationStore } from '@/layers/shared/model';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
+import { ONE_DOOR_HINT, oneDoorSubmitLabel } from '../lib/one-door';
 import { AgentRosterPicker } from './AgentRosterPicker';
 
 interface NewDirectMessageMenuProps {
   /**
-   * Open a conversation with these agents, in the order they were picked. One
-   * gives a one-to-one; two or more give a group.
+   * Open a conversation with these agents, in the order they were picked.
+   *
+   * **The caller answers the same rule this panel's button says**
+   * ({@link opensAgentSession}): exactly one agent opens that agent's session,
+   * two or more make a group message. Both read it from `lib/one-door`, so a
+   * button reading "Open session with Ana" can never sit over a handler that
+   * makes a room.
    */
   onStart: (chosen: AgentPickerCandidate[]) => void;
   /**
@@ -41,8 +47,17 @@ interface NewDirectMessageMenuProps {
 }
 
 /**
- * The "+" beside Direct messages: pick one agent for a one-to-one, or several
- * for a group conversation.
+ * The "+" beside Direct messages: pick one agent to open its session, or
+ * several to start a group message.
+ *
+ * **One door to an agent** (`sidebar-simplification` D2). Picking exactly one
+ * agent lands in the same conversation its sidebar row opens, because a 1:1
+ * direct message was that session in disguise — same agent, same working
+ * directory, and a log that showed its final words and none of its work. Two or
+ * more make a room, which is the thing a room is actually for. The rule is
+ * {@link opensAgentSession}, read here for the button's words and by whatever
+ * mounted this for where pressing it lands; the sentence under the picker says
+ * it in advance.
  *
  * The picking itself is {@link AgentRosterPicker}, shared with the members panel
  * so putting agents in a new conversation and putting them in an existing room
@@ -156,7 +171,7 @@ export function NewDirectMessageMenu({
             onOpenChange(false);
             onStart(chosen);
           }}
-          submitLabel={(count) => (count > 1 ? 'Start group conversation' : 'Start conversation')}
+          submitLabel={oneDoorSubmitLabel}
           emptyRosterMessage="You have not added any agents yet."
           emptyRosterAction={
             <Button type="button" size="sm" variant="outline" onClick={startAgentCreation}>
@@ -165,6 +180,10 @@ export function NewDirectMessageMenu({
           }
           allChosenMessage="Everyone you have added is already in this conversation."
         />
+
+        {/* The rule, said before the button changes its words rather than
+            after. */}
+        <p className="text-muted-foreground mt-2 shrink-0 px-2 text-xs">{ONE_DOOR_HINT}</p>
       </ResponsivePopoverContent>
     </ResponsivePopover>
   );

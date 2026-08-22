@@ -364,11 +364,17 @@ Run the REVIEW.md dangling-reference sweep over `docs/`, `contributing/` and `*.
 
 ---
 
-## 8.5 Sessions and DMs overlap — RESOLVED in §14.4
+## 8.5 Sessions and DMs overlap — RESOLVED
 
-**Settled 2026-07-27.** The operator asked for the distinction to be articulated and documented; §14.4 is the answer and this section is kept for the reasoning that led there.
+**Converged 2026-08-19** (`sidebar-simplification` D2, superseding the 2026-07-27 settlement below). This section's own escape hatch is the one that was taken: a hand-made 1:1 DM turned out to be "a session where you didn't pick a directory", so **the two converged and one went**.
 
-The short form: **a session is about a directory, a DM is about who you are talking to, and a channel is about what you are talking about.** All three stay. The outcome this section warned against — shipping all three permanently _without deciding_ — is avoided by writing the distinction down, not by removing one of them.
+The rule now: **the session is the 1:1 conversation; DMs are for two or more participants, and for the lines an agent or a bridge opens.** Picking one agent anywhere in the cockpit opens that agent's session; picking two or more starts a group message. A 1:1 DM that still arises — an agent opening a line with `relay_notify_user`, or a bridged Telegram/Slack private chat — is not a standing second list: the agent-initiated one surfaces in Today with a dot on the agent's row, and the bridged one keeps its row because its other end is a person somewhere else.
+
+Nothing was migrated. Existing 1:1 rooms are simply no longer listed under Direct messages; they keep their history and stay reachable from Today, ⌘K and the agent's profile.
+
+**Settled 2026-07-27, now superseded in part.** The operator asked for the distinction to be articulated and documented; §14.4 is that answer, and it still holds for channels and for group messages. What changed is that the DM column no longer covers the one-participant case.
+
+The short form as it now reads: **a session is about an agent and its directory, a group message is about who you are talking to, and a channel is about what you are talking about.**
 
 The original text follows.
 
@@ -608,18 +614,18 @@ The panel is also where per-member **remove** and the per-room `responseMode` ov
 
 This **resolves §8.5**, which recorded it as an open decision awaiting evidence. The evidence is now in: all three exist, and the distinction that survives contact is about **what the conversation is anchored to**.
 
-|             | Anchored to        | Holds                                  | Ends when                     |
-| ----------- | ------------------ | -------------------------------------- | ----------------------------- |
-| **Session** | a **working tree** | one agent, one runtime                 | the work does                 |
-| **DM**      | a **participant**  | one or more agents, no tree of its own | never — it is a standing line |
-| **Channel** | a **topic**        | any number of agents, by name          | you archive it                |
+|             | Anchored to        | Holds                                           | Ends when                     |
+| ----------- | ------------------ | ----------------------------------------------- | ----------------------------- |
+| **Session** | a **working tree** | one agent, one runtime                          | the work does                 |
+| **DM**      | a **participant**  | two or more agents (§8.5), each in its own tree | never — it is a standing line |
+| **Channel** | a **topic**        | any number of agents, by name                   | you archive it                |
 
 The one-liner, which belongs in the docs verbatim: **a session is about a directory, a DM is about who you are talking to, and a channel is about what you are talking about.**
 
 Consequences worth stating, because they are what make the distinction real rather than decorative:
 
 - A session **binds to a runtime at first write** (ADR-0255), so it can never be multiplexed across agents. A room holds several agents precisely because it is _not_ a session — three agents in a room are three sessions on one stream (ADR 260726-170125).
-- A DM has no `cwd`. Ask an agent to do work in a DM and it works wherever that agent lives, via its workspace binding — which is why "promote this to a session" is the bridge, not a synonym.
+- A DM has no `cwd` **of its own, and that is not the same as having none** (corrected 2026-08-19). A room turn runs in the agent's own directory — `RoomTurnRunner` resolves `cwd` to the agent's project path, which is what `docs/concepts/rooms.mdx` has always said — so a 1:1 DM ran in exactly the place that agent's session runs in. That is what made the two the same conversation, and why §8.5 converged them. What a DM has no say over is WHICH directory: it inherits the agent's, where a session is opened against a directory you chose.
 - A channel is the only one with a **name people type**. That is why it has a slug and the others do not.
 
 **Where this goes:** R7 (DOR-565) is the user-facing docs page, and this table is its spine. §8.5's "outcome to avoid" — shipping all three permanently without deciding — is avoided by writing this down, not by removing one of them.

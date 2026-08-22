@@ -3,6 +3,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { TaskStore, type CreateTaskStoreInput } from '../../tasks/task-store.js';
 import { SessionStateProjector } from '../../session/session-state-projector.js';
+import { setAgentPathLookup, resetAgentPathLookup } from '../../mesh/agent-path-lookup.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { NotificationStore } from '../notification-store.js';
 import { NotificationService, setNotificationService } from '../notification-service.js';
@@ -42,6 +43,9 @@ function taskInput(name: string): CreateTaskStoreInput {
   };
 }
 
+/** The Mesh agent every test's `/Users/dev/acme` session resolves to. */
+const ACME_AGENT_ID = 'agent-acme';
+
 beforeEach(() => {
   db = createTestDb();
   service = new NotificationService(new NotificationStore(db));
@@ -51,11 +55,21 @@ beforeEach(() => {
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation((name, data) => {
     sent.push([name, data]);
   });
+  // The one directory every session-lifecycle/ask test below runs a session
+  // in resolves to a registered agent; every other directory (an unregistered
+  // one, or none at all) genuinely does not — exercising both the stamp and
+  // its honest absence through the same fake registry a real MeshCore would
+  // answer through.
+  setAgentPathLookup({
+    getByPath: (projectPath) =>
+      projectPath === '/Users/dev/acme' ? { id: ACME_AGENT_ID } : undefined,
+  });
 });
 
 afterEach(() => {
   for (const off of unsubscribes) off();
   setNotificationService(null);
+  resetAgentPathLookup();
   vi.restoreAllMocks();
 });
 
@@ -217,6 +231,9 @@ describe('an ask that ends', () => {
       title: 'acme is waiting on your answer',
       body: 'Run a shell command',
       sessionId: 'sess-1',
+      // The agent whose directory the session runs in — resolved from `cwd`
+      // the same way `turn.completed` and `session.error` are (DOR-1408).
+      agentId: ACME_AGENT_ID,
     });
     expect(row.resolvedAt).toBeDefined();
     // Nobody dealt with it, so it is genuinely news.
@@ -247,10 +264,32 @@ describe('an ask that ends', () => {
     expect(row).toMatchObject({ outcome: 'answered' });
     expect(row.readAt).toBeDefined();
   });
+
+  it('leaves agentId unstamped when the directory names no registered agent', async () => {
+    unsubscribes.push(watchAskResolution());
+    const projector = new SessionStateProjector('sess-2b');
+    projector.cwd = '/Users/dev/some-unregistered-project';
+
+    projector.ingest({
+      type: 'question_prompt',
+      id: 'int-2b',
+      question: 'Which branch?',
+    } as never);
+    projector.ingest({
+      type: 'interaction_resolved',
+      id: 'int-2b',
+      resolution: 'answered',
+      at: Date.now(),
+    } as never);
+    await flush();
+
+    const [row] = service.list({ limit: 25, unread: false }).notifications;
+    expect(row.agentId).toBeUndefined();
+  });
 });
 
 describe('a turn that finishes', () => {
-  it('announces once when the session settles from streaming to idle', async () => {
+  it('announces once when the session settles from streaming to idle, and stamps the agent whose directory the session runs in', async () => {
     unsubscribes.push(watchSessionLifecycle());
     const projector = new SessionStateProjector('sess-3');
     projector.cwd = '/Users/dev/acme';
@@ -262,5 +301,73 @@ describe('a turn that finishes', () => {
     const turns = announced().filter((n) => n.kind === 'turn.completed');
     expect(turns).toHaveLength(1);
     expect(turns[0].title).toBe('acme finished');
+
+    const [row] = service.list({ limit: 25, unread: false }).notifications;
+    expect(row).toMatchObject({ kind: 'turn.completed', agentId: ACME_AGENT_ID });
+  });
+
+  it('leaves agentId unstamped when the session runs nowhere a registered agent lives', async () => {
+    unsubscribes.push(watchSessionLifecycle());
+    const projector = new SessionStateProjector('sess-3b');
+    projector.cwd = '/Users/dev/some-unregistered-project';
+
+    projector.ingest({ type: 'turn_start' } as never);
+    projector.ingest({ type: 'turn_end' } as never);
+    await flush();
+
+    const [row] = service.list({ limit: 25, unread: false }).notifications;
+    expect(row).toMatchObject({ kind: 'turn.completed' });
+    expect(row.agentId).toBeUndefined();
+  });
+
+  it('leaves agentId unstamped when the session carries no directory at all', async () => {
+    unsubscribes.push(watchSessionLifecycle());
+    const projector = new SessionStateProjector('sess-3c');
+    // No `projector.cwd` assigned — the case a session's cwd has not resolved yet.
+
+    projector.ingest({ type: 'turn_start' } as never);
+    projector.ingest({ type: 'turn_end' } as never);
+    await flush();
+
+    const [row] = service.list({ limit: 25, unread: false }).notifications;
+    expect(row).toMatchObject({ kind: 'turn.completed', title: 'A session finished' });
+    expect(row.agentId).toBeUndefined();
+  });
+});
+
+describe('a session that errors, and clears', () => {
+  it('stamps the agent whose directory the session runs in on the row the resolution leaves', async () => {
+    unsubscribes.push(watchSessionLifecycle());
+    const projector = new SessionStateProjector('sess-err-1');
+    projector.cwd = '/Users/dev/acme';
+
+    // `session.error` is a STANDING kind (spec `notification-system`):
+    // nothing is stored while it stands, only when it resolves — so the row
+    // only exists once the error clears.
+    projector.ingest({ type: 'status_change', status: { lifecycle: 'error' } } as never);
+    projector.ingest({ type: 'status_change', status: { lifecycle: 'idle' } } as never);
+    await flush();
+
+    const [row] = service.list({ limit: 25, unread: false }).notifications;
+    expect(row).toMatchObject({
+      kind: 'session.error',
+      outcome: 'cleared',
+      title: 'acme stopped on an error',
+      agentId: ACME_AGENT_ID,
+    });
+  });
+
+  it('leaves agentId unstamped when the directory names no registered agent', async () => {
+    unsubscribes.push(watchSessionLifecycle());
+    const projector = new SessionStateProjector('sess-err-2');
+    projector.cwd = '/Users/dev/some-unregistered-project';
+
+    projector.ingest({ type: 'status_change', status: { lifecycle: 'error' } } as never);
+    projector.ingest({ type: 'status_change', status: { lifecycle: 'idle' } } as never);
+    await flush();
+
+    const [row] = service.list({ limit: 25, unread: false }).notifications;
+    expect(row).toMatchObject({ kind: 'session.error', outcome: 'cleared' });
+    expect(row.agentId).toBeUndefined();
   });
 });

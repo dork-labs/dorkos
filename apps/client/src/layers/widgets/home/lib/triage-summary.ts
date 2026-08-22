@@ -8,11 +8,19 @@
  *
  * @module widgets/home/lib/triage-summary
  */
+import { listWaitingKinds } from '@/layers/shared/lib';
 
 /** What the header is holding, in numbers. */
 export interface TriageCounts {
-  /** How many approvals are waiting on a decision. */
-  approvals: number;
+  /**
+   * Prompts agents are parked on — one question apiece, however many agents
+   * raised them. Two prompts from one agent are two things to answer.
+   */
+  questions: number;
+  /** Capability approvals waiting on a decision. */
+  requests: number;
+  /** Schedules an agent proposed and parked, waiting for a yes or a no. */
+  schedules: number;
   /** True when the approval list could not be read at all. */
   approvalsUnavailable: boolean;
   /** How many things went wrong and are still wrong. */
@@ -47,19 +55,27 @@ export interface TriageSummary {
  * header is holding nothing.
  */
 export function triageSummary({
-  approvals,
+  questions,
+  requests,
+  schedules,
   approvalsUnavailable,
   attention,
 }: TriageCounts): TriageSummary {
   const spoken: string[] = [];
   const compact: string[] = [];
 
-  if (approvals === 1) {
-    spoken.push('1 approval is waiting on you.');
-    compact.push('1 waiting');
-  } else if (approvals > 1) {
-    spoken.push(`${approvals} approvals are waiting on you.`);
-    compact.push(`${approvals} waiting`);
+  const waiting = questions + requests + schedules;
+  if (waiting > 0) {
+    // **Three objects, three nouns, never one word standing in for all of them.**
+    // This used to say "N approvals are waiting on you" over a queue that could
+    // hold no approvals at all — a question an agent is parked on is not an
+    // approval, and neither is a schedule somebody has to say yes or no to. The
+    // panel's own summary already named them honestly (`InboxBell`), so the two
+    // surfaces disagreed about the same queue. Same vocabulary, same order.
+    spoken.push(
+      `${listWaitingKinds(questions, requests, schedules)} ${waiting === 1 ? 'is' : 'are'} waiting on you.`
+    );
+    compact.push(`${waiting} waiting`);
   } else if (approvalsUnavailable) {
     // Worth saying on its own: an unreadable list is the case where silence
     // would be mistaken for "nothing is waiting".

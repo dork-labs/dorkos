@@ -28,6 +28,13 @@ import { createMockTransport } from '@dorkos/test-utils';
 let mockConnectionState: ConnectionState = 'connected';
 
 /**
+ * Whether `useIsMobile` reports the phone breakpoint; mutable so a test can
+ * drive the popover into its Drawer (bottom sheet) branch instead of the
+ * default desktop Popover the rest of this suite renders.
+ */
+let mockIsMobile = false;
+
+/**
  * The router this suite does not mount.
  *
  * `useSafeNavigate` only returns `null` in the Obsidian embed; everywhere else
@@ -48,6 +55,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
       failedAttempts: 0,
     }),
     useSafeNavigate: () => mockNavigate,
+    useIsMobile: () => mockIsMobile,
   };
 });
 
@@ -57,6 +65,10 @@ import { useNotifications } from '@/layers/entities/notifications';
 import { useStandingPermissions } from '@/layers/features/approvals';
 import { useConfig } from '@/layers/entities/config';
 import { clearInboxRequest, requestInbox } from '@/layers/entities/notifications';
+import {
+  discardPendingRejections,
+  discardSettlingSchedules,
+} from '@/layers/features/schedule-approval';
 import { InboxBell } from '../ui/InboxBell';
 
 /**
@@ -117,6 +129,11 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     filePath: '/tmp/nightly-sweep/SKILL.md',
     createdAt: new Date(Date.now() - 20 * 60_000).toISOString(),
     updatedAt: new Date(Date.now() - 20 * 60_000).toISOString(),
+    reason: null,
+    proposedBySessionId: null,
+    proposedByAgentPath: null,
+    proposedByName: null,
+    nextRuns: [],
     ...overrides,
   };
 }
@@ -221,6 +238,11 @@ describe('InboxBell', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -496,7 +518,7 @@ describe('InboxBell', () => {
     });
 
     const marker = await screen.findByTestId('inbox-bell');
-    expect(marker).toHaveAccessibleName(/1 agent is waiting on your answer/i);
+    expect(marker).toHaveAccessibleName(/1 question needs your answer/i);
     expect(marker).not.toHaveAccessibleName(/approval/i);
   });
 
@@ -560,7 +582,9 @@ describe('InboxBell', () => {
 
     const marker = await screen.findByTestId('inbox-bell');
     await waitFor(() => expect(marker).toHaveTextContent('2'));
-    expect(marker).toHaveAccessibleName(/2 requests need your approval/i);
+    // Two SCHEDULES, not two "requests" — the noun the pill uses has to match
+    // what is actually waiting.
+    expect(marker).toHaveAccessibleName(/2 schedules want your approval/i);
 
     await userEvent.click(marker);
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
@@ -568,6 +592,43 @@ describe('InboxBell', () => {
     expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
     // Still open, and the schedule that was NOT decided is still answerable.
     expect(screen.getByRole('button', { name: 'Approve Weekly digest' })).toBeInTheDocument();
+  });
+
+  it('keeps the approved schedule on screen once the server stops listing it', async () => {
+    // The disappearance this closes: approving is optimistic, and the refetch
+    // that follows drops the task out of the parked list — which used to take
+    // the card AND this whole pinned section out of the tree, tearing away the
+    // only confirmation an approval gets (measured at 10-60ms).
+    //
+    // Driven through the REAL hold: nothing about `settling-approvals` is mocked
+    // here, so this fails if the registry stops reporting or the section stops
+    // reading it. Seeded defect: revert `shownSchedules` to `schedules` in
+    // either the section's guard or its map, and the card is gone.
+    const listTasks = vi.fn().mockResolvedValue([parkedSchedule()]);
+    const updateTask = vi.fn().mockImplementation(async () => {
+      // The server now calls it active, so the parked list comes back empty.
+      listTasks.mockResolvedValue([parkedSchedule({ status: 'active', enabled: true })]);
+      return parkedSchedule({ status: 'active', enabled: true });
+    });
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listTasks,
+      updateTask,
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    // Both facts in ONE `waitFor`, which is what makes this honest under a busy
+    // machine: it passes the moment the refetch has landed AND the card is still
+    // drawn, rather than racing a fixed sleep against the hold's own window.
+    await waitFor(() => {
+      expect(listTasks).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId('schedule-approval-card')).toBeInTheDocument();
+    });
+    // Still saying what happened, inside a section that has not collapsed.
+    expect(document.querySelector('[data-slot="schedule-receipt"]')).toHaveTextContent('Approved');
+    expect(screen.getByRole('heading', { name: 'Needs You' })).toBeInTheDocument();
   });
 
   it('adds the parked schedule to the approvals already waiting', async () => {
@@ -581,7 +642,8 @@ describe('InboxBell', () => {
 
     const marker = await screen.findByTestId('inbox-bell');
     await waitFor(() => expect(marker).toHaveTextContent('2'));
-    expect(marker).toHaveAccessibleName(/2 requests need your approval/i);
+    // One of each kind, named as both: neither noun swallows the other.
+    expect(marker).toHaveAccessibleName(/1 request and 1 schedule are waiting on you/i);
   });
 
   it('says nothing at all about a schedule that is already running', async () => {
@@ -637,6 +699,11 @@ describe('InboxBell — history and read state', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -859,6 +926,11 @@ describe('InboxBell — opening a bell that has nothing to say', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -934,6 +1006,7 @@ describe('InboxBell — what the panel says', () => {
   beforeEach(() => {
     handlers = new Map();
     mockConnectionState = 'connected';
+    mockIsMobile = false;
     clearInboxRequest();
     mockNavigate.mockClear();
     vi.mocked(useEventSubscription).mockImplementation((event, handler) => {
@@ -943,6 +1016,11 @@ describe('InboxBell — what the panel says', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -1000,7 +1078,9 @@ describe('InboxBell — what the panel says', () => {
     // The panel's own summary, not the pill's accessible name — both say a
     // version of this sentence, and only one of them is under test.
     expect(
-      await screen.findByText('1 agent is waiting on your answer before carrying on.')
+      await screen.findByText(
+        '1 question is waiting on your answer. Nothing carries on until you answer.'
+      )
     ).toBeInTheDocument();
 
     // Somebody answered it, anywhere.
@@ -1059,5 +1139,132 @@ describe('InboxBell — what the panel says', () => {
     await waitFor(() => expect(bell).toHaveTextContent('answered'));
     expect(bell).toHaveAttribute('data-tone', 'waiting');
     expect(bell).not.toHaveTextContent('trusted');
+  });
+
+  it('names schedules as schedules, never as "requests", when they are all that is waiting', async () => {
+    // The bug this pins: a parked schedule is a decision to approve or reject,
+    // not a question, and it is also not a generic capability "request" — it
+    // is its own kind of thing. Seeded defect: fold `schedules` back into
+    // `approvals` in the `waitingSummary` call and this reads "2 requests are
+    // waiting for your approval. Nothing runs until you decide." instead.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listTasks: vi
+        .fn()
+        .mockResolvedValue([
+          parkedSchedule(),
+          parkedSchedule({ id: 'task-2', displayName: 'Weekly digest' }),
+        ]),
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+
+    expect(
+      await screen.findByText('2 schedules want your approval. Nothing runs until you decide.')
+    ).toBeInTheDocument();
+    // No COUNTED "request" anywhere on the panel — the mislabel this pins is a
+    // sentence that reports a number of requests when the number is schedules.
+    //
+    // Scoped to counted phrases rather than the bare word, and that narrowing is
+    // deliberate rather than a retreat: the cards themselves legitimately say
+    // "Requested without an agent identity" for a proposal that carries no agent
+    // path (the shared identity fallback), so a bare `/request/i` sweep now
+    // matches honest copy about identity and would have to be deleted instead.
+    // Seeded defect: fold `schedules` back into `approvals` in the
+    // `waitingSummary` call and the panel reads "2 requests are waiting for your
+    // approval", which this matches.
+    expect(screen.queryByText(/\d+ requests? (is|are|need)/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/requests? (is|are) waiting/i)).not.toBeInTheDocument();
+  });
+
+  it('names all three kinds at once, in the panel listing order, still promising nothing runs', async () => {
+    // Two kinds of coverage a two-kind test cannot give: `countNoun`'s plural
+    // path exercised on a THIRD kind in the same sentence, and the three-part
+    // Oxford join (`a, b, and c`) — indistinguishable from a two-part join
+    // (`a and b`) until a third part is actually present. Seeded defect:
+    // break `countNoun`'s pluralization (drop the trailing `s`) or the Oxford
+    // join (e.g. always `.join(', ')` with no "and") and this goes red.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      listTasks: vi
+        .fn()
+        .mockResolvedValue([
+          parkedSchedule(),
+          parkedSchedule({ id: 'task-2', displayName: 'Weekly digest' }),
+        ]),
+      listPendingInteractions: vi.fn().mockResolvedValue({
+        interactions: [
+          {
+            sessionId: 'session-1',
+            cwd: '/projects/meeting-notes',
+            interaction: {
+              type: 'question',
+              id: 'q-1',
+              startedAt: Date.now(),
+              remainingMs: 600_000,
+              timeoutMs: 600_000,
+              questions: [],
+            },
+          },
+          {
+            sessionId: 'session-2',
+            cwd: '/projects/roadmap',
+            interaction: {
+              type: 'question',
+              id: 'q-2',
+              startedAt: Date.now(),
+              remainingMs: 600_000,
+              timeoutMs: 600_000,
+              questions: [],
+            },
+          },
+        ],
+      }),
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+
+    expect(
+      await screen.findByText(
+        '2 questions, 1 request, and 2 schedules are waiting on you. Nothing runs until you decide.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('keeps every section heading in the accessible tree below the desktop breakpoint', async () => {
+    // The four section headings used `hidden md:block`, which sets `display:
+    // none` below `md` — removing the heading from the ACCESSIBILITY TREE, not
+    // just off screen, and leaving a phone screen reader with one heading for
+    // the entire popover. jsdom never loads the app's compiled stylesheet, so
+    // no query here can observe `display: none` the way a real browser would —
+    // `getByRole('heading', ...)` would find every heading on the old classes
+    // too. What DOES discriminate is the class list itself: `sr-only` (visible
+    // to assistive tech at every width) swapped in for `hidden`, with
+    // `md:not-sr-only` restoring the exact desktop look at `md`. Rendered under
+    // the Drawer (mobile/bottom-sheet) branch, which is where a phone user
+    // actually meets these headings. Seeded defect: put `hidden md:block` back
+    // on any of the four and this goes red.
+    mockIsMobile = true;
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      listTasks: vi.fn().mockResolvedValue([parkedSchedule()]),
+      getConfig: configWithStandingGrants(),
+      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
+      listNotifications: vi.fn().mockResolvedValue({
+        notifications: [buildNotification()],
+        nextCursor: null,
+        unreadCount: 1,
+      }),
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+
+    for (const name of ['Needs You', 'Scheduled Runs', 'Activity', 'Standing Permissions']) {
+      const heading = await screen.findByRole('heading', { name });
+      expect(heading).toBeInTheDocument();
+      expect(heading.className).toContain('sr-only');
+      expect(heading.className).toContain('md:not-sr-only');
+      expect(heading.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    }
   });
 });

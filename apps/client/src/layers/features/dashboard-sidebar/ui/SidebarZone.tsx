@@ -12,10 +12,13 @@
  */
 import type { ReactNode } from 'react';
 import { cn } from '@/layers/shared/lib';
+import { SidebarMenu } from '@/layers/shared/ui';
 import type { SidebarZoneModel } from '../model/build-sidebar-model';
 import { useLiveRegionText } from '../model/use-live-region-text';
 import { AllClearBeat } from './AllClearBeat';
+import { GroupCreateInput } from './GroupCreateInput';
 import { SidebarSection } from './SidebarSection';
+import { useSidebarChrome } from './SidebarChrome';
 
 /** Props for {@link SidebarZone}. */
 export interface SidebarZoneProps {
@@ -112,10 +115,39 @@ export function SidebarZone({
       {allClear ? (
         <AllClearBeat />
       ) : (
-        zone.sections.map((section) => (
-          <SidebarSection key={section.id} section={section} onToggleAll={onToggleAll} />
-        ))
+        <>
+          {/* Above the first section, which is where a new section will land
+              (D3). Gated on the zone having any: a Library with no sections is
+              a Library the builder never emits, and the field's own chrome
+              lives in the same provider those sections do. */}
+          {zone.id === 'library' && zone.sections.length > 0 && <SectionCreateField />}
+          {zone.sections.map((section) => (
+            <SidebarSection key={section.id} section={section} onToggleAll={onToggleAll} />
+          ))}
+        </>
       )}
     </section>
+  );
+}
+
+/**
+ * The inline "name your new section" field, at the top of Library.
+ *
+ * **One place, always the same place** (D3). It used to mount under the Agents
+ * section's rows, which is where a section was going to render — so "New
+ * section…" from a channel's menu put a text field below thirty agent rows, off
+ * the bottom of a 272px panel, with the caret in it and nothing on screen to say
+ * so (defect #9). Sections render above Channels now, so the top of the zone is
+ * both where the field belongs and where it can be seen.
+ *
+ * Renders nothing at all while no create flow is running.
+ */
+function SectionCreateField() {
+  const chrome = useSidebarChrome();
+  if (chrome.groupCreation === null) return null;
+  return (
+    <SidebarMenu>
+      <GroupCreateInput onCommit={chrome.commitNewGroup} onCancel={chrome.cancelNewGroup} />
+    </SidebarMenu>
   );
 }

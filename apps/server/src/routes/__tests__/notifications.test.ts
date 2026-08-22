@@ -223,6 +223,60 @@ describe('GET /api/notifications', () => {
     expect(res.status).toBe(200);
     expect(res.body.notifications).toHaveLength(1);
   });
+
+  it('stays hidden from an agent caller for the four DOR-1408 kinds, even one presenting as the very agentId the row is about', async () => {
+    // Before DOR-1408, `turn.completed`, `session.error`, `ask.pending` and
+    // `dead-letter.created` never carried an `agentId` at all, so this could
+    // never have been tested against them. `notificationEntitlement` gates on
+    // the CALLER's principal kind (`readCallerPrincipal`), never on whether a
+    // row's payload happens to name them — `BroadcastAudience` is typed
+    // `(principal) => boolean` with no notification in scope, so there is no
+    // seam for a payload field to narrow or widen who receives it. Presenting
+    // as `agent-x`, the exact agent every seeded row below is about, is the
+    // adversarial case: if delivery were ever keyed off payload `agentId`
+    // this would be the one caller a bug could let through.
+    await service.notify('turn.completed', {
+      sessionId: 'sess-x',
+      sessionLabel: 'acme',
+      completedAt: '2026-08-20T00:00:00.000Z',
+      agentId: 'agent-x',
+    });
+    await service.resolveStanding(
+      'session.error',
+      {
+        sessionId: 'sess-x',
+        sessionLabel: 'acme',
+        since: '2026-08-20T00:00:00.000Z',
+        agentId: 'agent-x',
+      },
+      { outcome: 'cleared' }
+    );
+    await service.resolveStanding(
+      'ask.pending',
+      {
+        sessionId: 'sess-x',
+        interactionId: 'int-x',
+        sessionLabel: 'acme',
+        summary: 'Run a shell command',
+        agentId: 'agent-x',
+      },
+      { outcome: 'expired' }
+    );
+    await service.notify('dead-letter.created', {
+      deadLetterId: 'dl-x',
+      reason: 'budget exceeded',
+      agentId: 'agent-x',
+    });
+
+    const operatorRes = await request(buildApp()).get('/api/notifications');
+    expect(operatorRes.body.notifications).toHaveLength(4);
+
+    const agentRes = await request(buildApp({ agentIdentity: { agentId: 'agent-x' } })).get(
+      '/api/notifications'
+    );
+    expect(agentRes.status).toBe(200);
+    expect(agentRes.body.notifications).toEqual([]);
+  });
 });
 
 describe('marking notifications read', () => {

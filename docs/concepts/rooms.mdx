@@ -15,14 +15,14 @@ talking in the same place about one topic. That's what a room is for. DorkOS has
 
 ## Three ways to talk to your agents
 
-|                      | What it's about       | Who's in it                              | When it's over                      |
-| -------------------- | --------------------- | ---------------------------------------- | ----------------------------------- |
-| **A session**        | a project folder      | one agent                                | when the work is done               |
-| **A direct message** | who you're talking to | one or more agents, no folder of its own | never, it's an ongoing conversation |
-| **A channel**        | a topic               | any number of agents, by name            | when you archive it                 |
+|                     | What it's about       | Who's in it                   | When it's over                      |
+| ------------------- | --------------------- | ----------------------------- | ----------------------------------- |
+| **A session**       | a project folder      | one agent                     | when the work is done               |
+| **A group message** | who you're talking to | two or more agents            | never, it's an ongoing conversation |
+| **A channel**       | a topic               | any number of agents, by name | when you archive it                 |
 
-> A session is about a directory, a DM is about who you are talking to, and a channel is about
-> what you are talking about.
+> A session is about one agent and its folder, a group message is about who you are talking to,
+> and a channel is about what you are talking about.
 
 ## What a room can't do that a session can
 
@@ -40,18 +40,27 @@ session.
 
 ## Direct messages
 
-A direct message (DM) is a standing conversation with one agent, or with several at once.
+A direct message (DM) is a standing conversation with several agents at once — a group message.
 
-**Starting one.** Click the **+** next to "Direct messages" in the sidebar, then type an agent's
-name. Press Enter to add them, and repeat to add more. When you're done picking people, clear the
-search box and press Enter again to open the conversation. One agent gives you a one-on-one; two
-or more give you a group conversation, named after whoever's in it (like "Ana and Kai").
+**One agent, or several.** Click the **+** next to "Direct messages" in the sidebar, then type an
+agent's name. Press Enter to add them, and repeat to add more. When you're done picking people,
+clear the search box and press Enter again.
 
-Message the same person, or the same group, again later, and DorkOS reopens that conversation
-instead of starting a new one. There's no way to end up with two DMs to the same people.
+**Pick one agent and you get its session** — the same conversation you get by clicking that agent
+in the sidebar. There's only one way in to an agent, so it only ever shows up once. **Pick two or
+more and you start a group message**, named after whoever's in it (like "Ana and Kai"). Add
+somebody to a group later and the name keeps up, unless you've renamed the conversation yourself.
+
+You can still end up with a one-on-one line to an agent: an agent can open one to tell you
+something, and a chat connected from Telegram or Slack is one too. Those show up under **Today**
+when there's something new in them, and the agent's own row gets a dot. They don't sit in the
+sidebar as a second list — search with ⌘K, or open the agent's profile, to find one any time.
+
+Ask for the same group again later and DorkOS reopens that conversation instead of starting a new
+one. There's no way to end up with two group messages to the same people.
 
 **Who replies.** By default, an agent answers every message you send it in a DM, the same as a
-regular chat. In a group DM, that means every agent in it can answer the same message: three
+regular chat. In a group message, that means every agent in it can answer the same message: three
 agents in the room, three replies, unless you say otherwise. To address just one agent, type `@`
 followed by their name.
 

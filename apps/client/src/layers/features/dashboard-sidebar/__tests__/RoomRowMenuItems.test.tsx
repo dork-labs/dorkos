@@ -260,7 +260,7 @@ describe('buildRoomRowMenuNodes', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Mute + Move to group (rooms-in-groups, DOR-581)
+  // Mute + Move to section (rooms-in-groups, DOR-581)
   // -------------------------------------------------------------------------
 
   /** The submenu's contents, which is where every group target lives. */
@@ -323,16 +323,16 @@ describe('buildRoomRowMenuNodes', () => {
     expect(onMoveToGroup).toHaveBeenLastCalledWith(null);
   });
 
-  it('withholds Remove from group from a room that is in none — there is nothing to leave', () => {
+  it('withholds Remove from section from a room that is in none — there is nothing to leave', () => {
     expect(moveItems({ currentGroupId: null }).map((n) => n.id)).not.toContain('remove-from-group');
   });
 
-  it('offers New group even with no groups yet, so the submenu is never a dead end', () => {
+  it('offers New section even with no groups yet, so the submenu is never a dead end', () => {
     const items = moveItems({ groups: [] });
     const newGroup = items.find((n) => n.id === 'new-group');
     // `opensInput` is what earns it the renderer's ellipsis — it mounts the
     // inline name editor rather than creating a group on the spot.
-    expect(newGroup).toMatchObject({ label: 'New group', opensInput: true });
+    expect(newGroup).toMatchObject({ label: 'New section', opensInput: true });
   });
 
   it('starts the group-create flow from the row, without naming a group first', () => {

@@ -96,6 +96,8 @@ import type {
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import {
+  directMessageTitle,
+  isDirectMessageTitleDerived,
   RoomMomentSchema,
   THREAD_PREVIEW_MAX_CHARS,
   withoutActivityTarget,
@@ -133,7 +135,7 @@ import {
   buildBridgeHistoryNotice,
   buildBridgeSecondAgentRefusedNotice,
 } from './notices/notice-copy.js';
-import { RoomRoster, type AddMemberInput } from './room-roster.js';
+import { dmTitleNames, RoomRoster, type AddMemberInput } from './room-roster.js';
 import { parseEntryBody, type NewRoom } from './room-rows.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomBroadcaster } from './room-stream.js';
@@ -299,6 +301,28 @@ export const HISTORY_PAGE_MAX = 200;
 function clampHistoryLimit(limit: number): number {
   if (!Number.isFinite(limit)) return HISTORY_PAGE_MAX;
   return Math.min(HISTORY_PAGE_MAX, Math.max(1, Math.floor(limit)));
+}
+
+/**
+ * The header badge's and room sheet's view of a room's bridge (chats-as-channels
+ * spec §8, §3.4) — `null` for an unbridged room.
+ *
+ * `visibility` is projected through {@link bridgedRoomFraming}, the SAME
+ * derivation `room_context` carries into a turn: the header badge and the model's
+ * own view of the room read one function's output, never two independent
+ * encodings of "how much can this bot see" that could drift apart.
+ *
+ * Takes the bridge rather than a room id, so the room list can resolve every
+ * bridge in one query and project each one here.
+ *
+ * @param bridge - The bridge row, or `null`/`undefined` for an unbridged room.
+ */
+function bridgeInfo(bridge: Bridge | null | undefined): RoomBridgeInfo | null {
+  if (!bridge) return null;
+  return {
+    visibility: bridgedRoomFraming(bridge).visibility,
+    platformTitle: bridge.platformTitle,
+  };
 }
 
 /** Provenance a post carries when a trigger produced it. */
@@ -1503,6 +1527,14 @@ export class RoomService {
    * sidebar cannot draw one without the roster; resolving it here is two
    * queries for the whole list, where asking per room was one request each.
    *
+   * **`bridge` is resolved here too, and it is one more query for the whole
+   * list** ({@link BridgeStore.findBridgesByRooms}). It used to be left absent,
+   * on the grounds that a list draws no bridge badge — but the sidebar now has
+   * to tell a direct message somebody made by hand from one a bridged private
+   * chat projects, and only this field says which (`sidebar-simplification` D2).
+   * So `null` on a listed room now means "not bridged" rather than "not carried",
+   * which is the honest answer and the one every other reader already assumed.
+   *
    * @param viewerAuthorId - Whose rooms to list, and whose unread counts to compute.
    * @param filter.kind - Restrict to one room kind.
    * @param filter.includeArchived - Include archived rooms.
@@ -1526,12 +1558,14 @@ export class RoomService {
     // has never written in, which is a real `false` and not a missing answer:
     // the log is right here and it has been read.
     const postedIn = this.store.roomsPostedInBy(viewerAuthorId);
+    const bridges = this.bridges.findBridgesByRooms(visible.map((room) => room.id));
     return visible.map((room) => {
       const cursor = cursors.get(room.id);
       return {
         ...room,
         unreadCount: cursor === undefined ? null : this.store.countUnread(room.id, cursor),
         participants: participants.get(room.id) ?? null,
+        bridge: bridgeInfo(bridges.get(room.id)),
         viewerHasPosted: postedIn.has(room.id),
         // Always a number, `0` included. A dot that only appears once the next
         // republish tick lands would leave a freshly loaded cockpit blind for up
@@ -1777,8 +1811,13 @@ export class RoomService {
     // author through `add` would widen a seam every other caller of
     // `RoomRoster.add` shares, for one caller.
     const candidate = this.roster.resolve(input);
+    // Who the title named before this call, when there is a title that follows
+    // its roster at all. Read BEFORE the add, because "was this name written by
+    // us" can only be asked of the roster the name was written from.
+    let priorTitleNames: string[] | null = null;
     if (candidate.kind === 'agent') {
       const roster = this.roster.list(roomId);
+      if (room.kind === 'dm') priorTitleNames = dmTitleNames(roster);
       if (this.bridges.findBridgeByRoom(roomId)) {
         const existingAgent = roster.find((member) => member.author.kind === 'agent');
         // Re-adding the room's OWN bound agent is a harmless idempotent no-op
@@ -1810,7 +1849,45 @@ export class RoomService {
 
     const member = this.roster.add(room, input);
     eventFanOut.broadcast('room_member_added', { roomId, authorId: member.authorId });
+    this.followRosterTitle(room, priorTitleNames);
     return member;
+  }
+
+  /**
+   * Re-title a group message that has just gained an agent, when its name was
+   * one this product wrote rather than one a person typed (DOR-772).
+   *
+   * A direct message is named after who is in it, and until now that name was
+   * written once and never looked at again — so a conversation called "Ana" went
+   * on being called "Ana" after Kai joined it, and the sidebar row named one of
+   * the two agents in it. Now the name follows the roster.
+   *
+   * **A name somebody chose is never touched**, which is the whole of
+   * {@link isDirectMessageTitleDerived}: the rename happens only while the
+   * current title is exactly what this product would have written for the roster
+   * as it was a moment ago. Rename a conversation "Launch" and it stays "Launch"
+   * however many agents join it.
+   *
+   * Broadcast like any other rename, so open cockpits move the name rather than
+   * waiting for a reload.
+   *
+   * @param room - The room as it was before the add.
+   * @param priorTitleNames - The agents the title named a moment ago, or `null`
+   *   when this room's title never followed a roster (a channel, or a join that
+   *   added a person).
+   */
+  private followRosterTitle(room: Room, priorTitleNames: readonly string[] | null): void {
+    if (priorTitleNames === null) return;
+    if (!isDirectMessageTitleDerived(room.title, priorTitleNames)) return;
+    const title = directMessageTitle(dmTitleNames(this.roster.list(room.id)));
+    if (title === '' || title === room.title) return;
+    const updated = this.store.updateRoom(room.id, { title });
+    if (!updated) return;
+    eventFanOut.broadcast('room_updated', {
+      roomId: updated.id,
+      title: updated.title,
+      archived: updated.archived,
+    });
   }
 
   /**
@@ -3694,28 +3771,7 @@ export class RoomService {
       // reader it belongs to is the id this call was already scoped by.
       reactionFrequents: this.reactions.frequents(viewerAuthorId),
       ...(bridge ? { deliverNotices: bridge.deliverNotices } : {}),
-      bridge: this.bridgeInfo(room.id),
-    };
-  }
-
-  /**
-   * The header badge's and room sheet's view of this room's bridge (chats-as-
-   * channels spec §8, §3.4) — `null` for an unbridged room.
-   *
-   * `visibility` is projected through {@link bridgedRoomFraming}, the SAME
-   * derivation `room_context` carries into a turn: the header badge and the
-   * model's own view of the room read one function's output, never two
-   * independent encodings of "how much can this bot see" that could drift
-   * apart.
-   *
-   * @param roomId - The room.
-   */
-  private bridgeInfo(roomId: string): RoomBridgeInfo | null {
-    const bridge: Bridge | null = this.bridges.findBridgeByRoom(roomId);
-    if (!bridge) return null;
-    return {
-      visibility: bridgedRoomFraming(bridge).visibility,
-      platformTitle: bridge.platformTitle,
+      bridge: bridgeInfo(bridge),
     };
   }
 

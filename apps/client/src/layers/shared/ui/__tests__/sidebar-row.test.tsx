@@ -19,7 +19,7 @@ import {
   SIDEBAR_ACTIONS_ATTRIBUTE,
   SIDEBAR_ROW_ATTRIBUTE,
   SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
-} from '@/layers/shared/model/use-roving-focus';
+} from '@/layers/shared/model/interaction/use-roving-focus';
 
 beforeAll(() => {
   global.ResizeObserver = class ResizeObserver {

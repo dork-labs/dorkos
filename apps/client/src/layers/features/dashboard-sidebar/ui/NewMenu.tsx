@@ -39,8 +39,12 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { useStartNewSession } from '@/layers/entities/session';
-import { ChannelCreateDialog, NewDirectMessageMenu } from '@/layers/features/room-management';
+import { useDirectoryState, useStartNewSession } from '@/layers/entities/session';
+import {
+  ChannelCreateDialog,
+  NewDirectMessageMenu,
+  opensAgentSession,
+} from '@/layers/features/room-management';
 import { useCreateFlowStore, type NewMenuItemId } from '../model/create-flow-store';
 import { offersGroupAffordances } from '../model/rules/build-library-sections';
 import {
@@ -65,21 +69,22 @@ export interface NewMenuModel {
   /** Open the create-agent dialog. */
   onNewAgent: () => void;
   /**
-   * Start the inline group editor, or absent when this cockpit is not offered
-   * grouping yet.
+   * Start the inline section editor.
    *
-   * Chrome appears by data volume and never by a settings toggle (BC-32):
-   * somebody with three agents on one runtime has nothing to file, and the
-   * inline editor draws inside Library ▸ Agents — a section a fleet that small
-   * has not grown. Same threshold the section header reads, from the same
-   * function.
+   * **Offered to everybody** (D3). It used to be absent below eight agents or
+   * two runtimes, on the reasoning that a small fleet has nothing to file — but
+   * a section holds channels and conversations too, and somebody with three
+   * agents still has a project's channel, its conversation and its agent to put
+   * together. The threshold that remains gates the SMART presets below, which
+   * really are about a fleet.
    */
-  onNewGroup?: () => void;
+  onNewGroup: () => void;
   /**
-   * Smart-group presets, one click each (DOR-338).
+   * Smart-section presets, one click each (DOR-338).
    *
-   * Non-empty whenever {@link NewMenuModel.onNewGroup} is: "Active now" applies
-   * to any fleet, and grouping and presets are gated on the one threshold.
+   * Empty for a small fleet, which is what withdraws the presets and the
+   * `Custom rules` entry from the submenu — the one gate
+   * `offersGroupAffordances` still keeps.
    */
   smartGroupPresets: SmartGroupPreset[];
   /** Make a smart group from one preset's rules. */
@@ -99,50 +104,69 @@ export interface NewMenuModel {
  * @param model - What each item does, and which of them exist here.
  */
 export function buildNewMenuNodes(model: NewMenuModel): SidebarMenuNode[] {
-  const onNewGroup = model.onNewGroup;
-  const groupItem: SidebarMenuNode[] =
-    onNewGroup === undefined
+  // The rule half — presets and the rule form — appears only for a fleet big
+  // enough for rules to mean anything.
+  const smartItems: SidebarMenuNode[] =
+    model.smartGroupPresets.length === 0
       ? []
       : [
+          { kind: 'separator', id: 'sep-smart' },
+          ...model.smartGroupPresets.map(
+            (preset): SidebarMenuNode => ({
+              kind: 'action',
+              id: `new-group-preset:${preset.label}`,
+              label: preset.label,
+              icon: Users,
+              opensInput: false,
+              run: () => model.onCreatePresetSmartGroup(preset),
+            })
+          ),
           {
-            // A submenu, because a group is made two ways: by hand, or from
-            // rules (DOR-338). Both live under the one item, so the menu's top
-            // level stays the five things the design names.
-            kind: 'submenu',
-            id: 'new-group' satisfies NewMenuItemId,
-            label: 'Agent group',
+            kind: 'action',
+            id: 'new-group-custom',
+            label: 'Custom rules',
             icon: Users,
-            items: [
-              {
-                kind: 'action',
-                id: 'new-group-empty',
-                label: 'Empty group',
-                icon: Users,
-                opensInput: true,
-                run: onNewGroup,
-              },
-              { kind: 'separator', id: 'sep-smart' },
-              ...model.smartGroupPresets.map(
-                (preset): SidebarMenuNode => ({
-                  kind: 'action',
-                  id: `new-group-preset:${preset.label}`,
-                  label: preset.label,
-                  icon: Users,
-                  opensInput: false,
-                  run: () => model.onCreatePresetSmartGroup(preset),
-                })
-              ),
-              {
-                kind: 'action',
-                id: 'new-group-custom',
-                label: 'Custom rules',
-                icon: Users,
-                opensInput: true,
-                run: model.onOpenSmartGroupDialog,
-              },
-            ],
+            opensInput: true,
+            run: model.onOpenSmartGroupDialog,
           },
         ];
+  // **A submenu only when there is a choice to make.** A section is made two
+  // ways — by hand, or from rules (DOR-338) — and a small fleet is offered only
+  // the first, so wrapping it costs a keystroke and an arrow to reach a list of
+  // one. Below the threshold the item IS "Section…", and it opens the name
+  // field directly.
+  //
+  // **The id stays `new-group` either way**: it is the deep-link token a
+  // section's `+` opens the menu on and the vocabulary
+  // `one-create-surface.test.ts` asserts. Only the words changed (D3).
+  const groupItem: SidebarMenuNode[] = [
+    smartItems.length === 0
+      ? {
+          kind: 'action',
+          id: 'new-group' satisfies NewMenuItemId,
+          label: 'Section',
+          icon: Users,
+          opensInput: true,
+          run: model.onNewGroup,
+        }
+      : {
+          kind: 'submenu',
+          id: 'new-group' satisfies NewMenuItemId,
+          label: 'Section',
+          icon: Users,
+          items: [
+            {
+              kind: 'action',
+              id: 'new-group-empty',
+              label: 'Empty section',
+              icon: Users,
+              opensInput: true,
+              run: model.onNewGroup,
+            },
+            ...smartItems,
+          ],
+        },
+  ];
 
   return [
     {
@@ -179,7 +203,12 @@ export function buildNewMenuNodes(model: NewMenuModel): SidebarMenuNode[] {
     {
       kind: 'action',
       id: 'new-message' satisfies NewMenuItemId,
-      label: 'Direct message',
+      // "Group message", because that is what this item makes now: picking one
+      // agent in the panel it opens goes to that agent's session instead
+      // (`sidebar-simplification` D2). The id does not move with the label —
+      // `NEW_MENU_ITEM_IDS` is what the Direct messages header's "+" deep-links
+      // to, and renaming a thing is not renaming its address.
+      label: 'Group message',
       icon: AtSign,
       opensInput: true,
       run: model.onNewMessage,
@@ -213,6 +242,7 @@ export function NewMenu() {
 
   const navigate = useNavigate();
   const startNewSession = useStartNewSession();
+  const [, setDirectory] = useDirectoryState();
   const startDirectMessage = useStartDirectMessage();
   const lastUsedAgent = useLastUsedAgent();
   const { update } = useUpdateSidebarPrefs();
@@ -289,8 +319,20 @@ export function NewMenu() {
 
   useNewSessionShortcut(newSession);
 
-  const startDirectMessageWith = useCallback(
+  const startConversationWith = useCallback(
     (chosen: AgentPickerCandidate[]) => {
+      // **One door to an agent** (`sidebar-simplification` D2). One agent opens
+      // its session — the same conversation its sidebar row opens, resolved by
+      // the same resolve-or-mint lookup — because a 1:1 direct message was that
+      // session in disguise. The rule is read from `lib/one-door`, which is also
+      // what the button says, so the words and the destination cannot drift.
+      const [only] = chosen;
+      if (only !== undefined && opensAgentSession(chosen)) {
+        setDirectory(only.agentPath, {
+          onOpened: () => useInteractionStore.getState().recordOpened('agent', only.agentPath),
+        });
+        return;
+      }
       const title = directMessageTitle(chosen.map((candidate) => candidate.displayName));
       // **No `onError` here, and that is the fix rather than an omission**
       // (DOR-1391). A per-call callback is dispatched only while this component
@@ -305,7 +347,7 @@ export function NewMenu() {
         { onSuccess: openRoom }
       );
     },
-    [openRoom, startDirectMessage]
+    [openRoom, setDirectory, startDirectMessage]
   );
 
   const nodes = buildNewMenuNodes({
@@ -314,7 +356,7 @@ export function NewMenu() {
     onNewChannel: () => setChannelDialogOpen(true),
     onNewMessage: () => setPickerOpen(true),
     onNewAgent: () => useAgentCreationStore.getState().open(),
-    ...(offersGroups ? { onNewGroup: () => requestNewGroup() } : {}),
+    onNewGroup: () => requestNewGroup(),
     smartGroupPresets,
     onCreatePresetSmartGroup: (preset) => createSmartGroupFrom(preset.label, preset.rules),
     onOpenSmartGroupDialog: () => setSmartDialogOpen(true),
@@ -383,7 +425,7 @@ export function NewMenu() {
       <NewDirectMessageMenu
         open={pickerOpen}
         onOpenChange={setPickerOpen}
-        onStart={startDirectMessageWith}
+        onStart={startConversationWith}
         hideTrigger
       />
       <SmartGroupRuleDialog

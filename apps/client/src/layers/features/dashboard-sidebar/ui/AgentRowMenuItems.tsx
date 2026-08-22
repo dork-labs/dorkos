@@ -47,12 +47,12 @@ export interface RowMenuModel {
   isMuted: boolean;
   currentGroupId: string | null;
   /**
-   * The groups this agent can be moved into — MANUAL groups only.
+   * The sections this agent can be moved into — MANUAL sections only.
    *
-   * A smart group's membership is derived from its rules and its stored `items`
-   * is only the convert-to-manual materialization target, so a row filed into
-   * one is hidden from its home section and drawn by nobody: it disappears from
-   * the sidebar entirely. The drag layer already refuses that drop
+   * A smart section's membership is derived from its rules and its stored
+   * `items` is only the convert-to-manual materialization target, so a row filed
+   * into one is hidden from its home section and drawn by nobody: it disappears
+   * from the sidebar entirely. The drag layer already refuses that drop
    * (`reject-smart-group`); the menu refuses it by not offering it.
    */
   groups: { id: string; name: string }[];
@@ -116,7 +116,7 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
           {
             kind: 'action' as const,
             id: 'remove-from-group',
-            label: 'Remove from group',
+            label: 'Remove from section',
             icon: FolderMinus,
             opensInput: false,
             run: () => model.onMoveToGroup(null),
@@ -127,7 +127,7 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
     {
       kind: 'action',
       id: 'new-group',
-      label: 'New group',
+      label: 'New section',
       icon: FolderPlus,
       // Earns the ellipsis the renderer appends: it mounts the inline name
       // editor rather than creating anything on the spot — and that is also what
@@ -157,7 +157,7 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
     {
       kind: 'submenu',
       id: 'move-to-group',
-      label: 'Move to group',
+      label: 'Move to section',
       icon: FolderInput,
       items: moveItems,
     },
@@ -210,14 +210,14 @@ export interface AgentRowMenuParams {
   onViewProfile: (() => void) | null;
   /** Start a new session for this agent. */
   onNewSession: () => void;
-  /** Open the inline group-create flow, moving this agent into the new group on commit. */
+  /** Open the inline section-create flow, moving this agent into it on commit. */
   onRequestNewGroup: (ref: SidebarItemRef) => void;
 }
 
 /**
  * The agent row's menu, wired to `ui.sidebar`.
  *
- * Pin/Unpin, Mute/Unmute and Move-to-group read and mutate the stored sidebar
+ * Pin/Unpin, Mute/Unmute and Move-to-section read and mutate the stored sidebar
  * prefs directly (optimistically), so callers only supply the row actions the
  * sidebar does not own.
  *

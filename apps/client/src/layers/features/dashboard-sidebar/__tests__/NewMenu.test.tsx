@@ -24,10 +24,11 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 const mockStartNewSession = vi.fn();
+const mockSetDirectory = vi.fn();
 let mockSelectedCwd: string | null = null;
 vi.mock('@/layers/entities/session', () => ({
   useStartNewSession: () => mockStartNewSession,
-  useDirectoryState: () => [mockSelectedCwd, vi.fn()],
+  useDirectoryState: () => [mockSelectedCwd, mockSetDirectory],
 }));
 
 const mockAgentCreationOpen = vi.fn();
@@ -69,11 +70,43 @@ vi.mock('@/layers/entities/room', async (importOriginal) => {
   return { ...actual, useStartDirectMessage: () => ({ mutate: mockStartDm }) };
 });
 
-vi.mock('@/layers/features/room-management', () => ({
-  ChannelCreateDialog: () => <div data-testid="channel-create-dialog" />,
-  NewDirectMessageMenu: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="dm-picker" /> : null,
-}));
+vi.mock('@/layers/features/room-management', async (importOriginal) => {
+  // The RULE is the real one — the point of these cases is that the menu's
+  // branch and the picker's own label read the same predicate — while the panel
+  // itself is a stub with a commit button per selection size.
+  const actual =
+    await importOriginal<typeof import('@/layers/features/room-management/lib/one-door')>();
+  return {
+    opensAgentSession: actual.opensAgentSession,
+    ChannelCreateDialog: () => <div data-testid="channel-create-dialog" />,
+    NewDirectMessageMenu: ({
+      open,
+      onStart,
+    }: {
+      open: boolean;
+      onStart: (chosen: { agentPath: string; displayName: string }[]) => void;
+    }) =>
+      open ? (
+        <div data-testid="dm-picker">
+          <button
+            type="button"
+            data-testid="dm-picker-commit-one"
+            onClick={() => onStart([{ agentPath: '/projects/alpha', displayName: 'Alpha' }])}
+          />
+          <button
+            type="button"
+            data-testid="dm-picker-commit-two"
+            onClick={() =>
+              onStart([
+                { agentPath: '/projects/alpha', displayName: 'Alpha' },
+                { agentPath: '/projects/beta', displayName: 'Beta' },
+              ])
+            }
+          />
+        </div>
+      ) : null,
+  };
+});
 
 vi.mock('../ui/SmartGroupRuleDialog', () => ({
   SmartGroupRuleDialog: ({ open }: { open: boolean }) =>
@@ -149,34 +182,49 @@ function model(overrides: Partial<NewMenuModel> = {}): NewMenuModel {
     smartGroupPresets: [],
     onCreatePresetSmartGroup: vi.fn(),
     onOpenSmartGroupDialog: vi.fn(),
+    onNewGroup: vi.fn(),
     showSessionShortcut: false,
     ...overrides,
   };
 }
 
 describe('buildNewMenuNodes', () => {
-  it('offers the five items the design names, in order, once grouping is offered', () => {
-    const ids = buildNewMenuNodes(model({ onNewGroup: vi.fn() }))
+  it('offers the five items the design names, in order', () => {
+    const ids = buildNewMenuNodes(model())
       .filter((node) => node.kind === 'action' || node.kind === 'submenu')
       .map((node) => node.id);
     expect(ids).toEqual(['new-session', 'new-channel', 'new-message', 'new-agent', 'new-group']);
   });
 
-  it('withholds only Agent group below the grouping threshold', () => {
-    const ids = buildNewMenuNodes(model())
-      .filter((node) => node.kind === 'action' || node.kind === 'submenu')
-      .map((node) => node.id);
-    expect(ids).toEqual(['new-session', 'new-channel', 'new-message', 'new-agent']);
+  it('offers Section to everybody, however small the fleet (D3)', () => {
+    // What this catches: putting the fleet gate back on the item itself. A
+    // section holds channels and conversations, so somebody with two agents has
+    // something to file — the gate belongs on the RULE presets below.
+    const section = buildNewMenuNodes(model({ smartGroupPresets: [] })).find(
+      (n) => n.id === 'new-group'
+    );
+    expect(section).toMatchObject({ kind: 'action', label: 'Section', opensInput: true });
   });
 
-  it('makes Agent group a submenu — by hand, or from rules', () => {
-    const group = buildNewMenuNodes(
-      model({
-        onNewGroup: vi.fn(),
-        smartGroupPresets: [{ label: 'Active now', rules: { statuses: ['active'] } }],
-      })
+  it('is a plain item below the smart-section threshold, not a submenu of one', () => {
+    // Below the threshold there is exactly one way to make a section, so a
+    // submenu would cost a keystroke and an arrow to reach a list with a single
+    // entry in it. The id stays `new-group` either way — it is the deep-link
+    // token a section's `+` opens the menu on.
+    const small = buildNewMenuNodes(model({ smartGroupPresets: [] })).find(
+      (n) => n.id === 'new-group'
+    );
+    expect(small?.kind).toBe('action');
+
+    const large = buildNewMenuNodes(
+      model({ smartGroupPresets: [{ label: 'Active now', rules: { statuses: ['active'] } }] })
     ).find((n) => n.id === 'new-group');
-    expect(group?.kind).toBe('submenu');
+    expect(large?.kind === 'submenu' && large.items.map((i) => i.id)).toEqual([
+      'new-group-empty',
+      'sep-smart',
+      'new-group-preset:Active now',
+      'new-group-custom',
+    ]);
   });
 
   it('names the last-used agent under Session, and says nothing when it cannot', () => {
@@ -198,10 +246,9 @@ describe('buildNewMenuNodes', () => {
     );
   });
 
-  it('offers a group by hand and every preset under the one Agent group item', () => {
+  it('offers a section by hand and every preset under the one Section item', () => {
     const nodes = buildNewMenuNodes(
       model({
-        onNewGroup: vi.fn(),
         smartGroupPresets: [{ label: 'Active now', rules: { statuses: ['active'] } }],
       })
     );
@@ -220,17 +267,16 @@ describe('buildNewMenuNodes', () => {
 // ---------------------------------------------------------------------------
 
 describe('NewMenu', () => {
-  it('lists the four always-available items for a small cockpit', async () => {
+  it('lists all five items, however small the cockpit', async () => {
     renderMenu();
     await openMenu();
-    expect(itemIds()).toEqual(['new-session', 'new-channel', 'new-message', 'new-agent']);
-  });
-
-  it('adds Agent group once the fleet reaches the grouping threshold (BC-32)', async () => {
-    bigFleet();
-    renderMenu();
-    await openMenu();
-    expect(itemIds()).toContain('new-group');
+    expect(itemIds()).toEqual([
+      'new-session',
+      'new-channel',
+      'new-message',
+      'new-agent',
+      'new-group',
+    ]);
   });
 
   it('starts a session with the last-used agent, and says which one that is', async () => {
@@ -255,12 +301,37 @@ describe('NewMenu', () => {
     expect(await screen.findByTestId('channel-create-dialog')).toBeInTheDocument();
   });
 
-  it('opens the real direct-message picker from Direct message', async () => {
+  it('opens the real picker from Group message', async () => {
     renderMenu();
     await openMenu();
     expect(screen.queryByTestId('dm-picker')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Direct message…' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Group message…' }));
     expect(await screen.findByTestId('dm-picker')).toBeInTheDocument();
+  });
+
+  it('opens that agent’s session when the picker committed exactly one', async () => {
+    renderMenu();
+    await openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Group message…' }));
+    fireEvent.click(await screen.findByTestId('dm-picker-commit-one'));
+
+    // The same door the agent's own sidebar row opens — resolve-or-mint on that
+    // directory — and emphatically not a second conversation.
+    expect(mockSetDirectory).toHaveBeenCalledWith('/projects/alpha', expect.anything());
+    expect(mockStartDm).not.toHaveBeenCalled();
+  });
+
+  it('makes a group message when the picker committed two', async () => {
+    renderMenu();
+    await openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Group message…' }));
+    fireEvent.click(await screen.findByTestId('dm-picker-commit-two'));
+
+    expect(mockSetDirectory).not.toHaveBeenCalled();
+    expect(mockStartDm).toHaveBeenCalledWith(
+      { agentPaths: ['/projects/alpha', '/projects/beta'], title: 'Alpha and Beta' },
+      expect.anything()
+    );
   });
 
   it('opens the agent-creation flow from Agent', async () => {
@@ -270,26 +341,35 @@ describe('NewMenu', () => {
     expect(mockAgentCreationOpen).toHaveBeenCalledOnce();
   });
 
-  it('starts the inline group editor from Agent group ▸ Empty group', async () => {
+  it('starts the inline section editor straight from Section… on a small fleet', () => {
+    renderMenu();
+    return openMenu().then(() => {
+      expect(useCreateFlowStore.getState().groupCreation).toBeNull();
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Section…' }));
+      expect(useCreateFlowStore.getState().groupCreation).toEqual({ pendingRef: null });
+    });
+  });
+
+  it('starts it from Section ▸ Empty section once rules are on offer', async () => {
     bigFleet();
     renderMenu();
     await openMenu();
     expect(useCreateFlowStore.getState().groupCreation).toBeNull();
 
-    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Agent group' }), {
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Section' }), {
       key: 'ArrowRight',
     });
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Empty group…' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Empty section…' }));
 
     expect(useCreateFlowStore.getState().groupCreation).toEqual({ pendingRef: null });
   });
 
-  it('makes a smart group straight from a preset', async () => {
+  it('makes a smart section straight from a preset', async () => {
     bigFleet();
     renderMenu();
     await openMenu();
 
-    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Agent group' }), {
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Section' }), {
       key: 'ArrowRight',
     });
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Active now' }));

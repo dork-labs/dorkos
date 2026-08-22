@@ -503,7 +503,7 @@ describe('buildSidebarAnnouncements', () => {
     const a = announcements(prefs({ groups: [grp({ id: 'g1', name: 'Clients' })] }));
     expect(a.onDragStart(active(agentNode('/api', UNGROUPED)))).toBe('Picked up api-server.');
     expect(a.onDragStart(active({ type: 'group', groupId: 'g1' }))).toBe(
-      'Picked up group Clients.'
+      'Picked up section Clients.'
     );
   });
 
@@ -514,7 +514,7 @@ describe('buildSidebarAnnouncements', () => {
       ...active(agentNode('/api', UNGROUPED)),
       over: over({ type: 'container', container: inGroup('g1') }),
     });
-    expect(msg).toBe('Moved api-server to group Clients.');
+    expect(msg).toBe('Moved api-server to Clients.');
   });
 
   it('announces the ungrouped section actually under the cursor, not always Agents', () => {
@@ -548,7 +548,7 @@ describe('buildSidebarAnnouncements', () => {
         ...active(node),
         over: over({ type: 'container', container: inGroup('g1') }),
       })
-    ).toBe('Moved #room-1 to group Clients.');
+    ).toBe('Moved #room-1 to Clients.');
   });
 
   it('announces pin, unpin, remove-from-group, and reorder operations distinctly', () => {
@@ -587,7 +587,7 @@ describe('buildSidebarAnnouncements', () => {
         ...active(agentNode('/api', inGroup('g1'))),
         over: over({ type: 'container', container: UNGROUPED }),
       })
-    ).toBe('Moved api-server out of its group.');
+    ).toBe('Moved api-server out of its section.');
 
     // reorder within group
     expect(
@@ -595,7 +595,7 @@ describe('buildSidebarAnnouncements', () => {
         ...active(agentNode('/api', inGroup('g1'))),
         over: over(agentNode('/web', inGroup('g1'))),
       })
-    ).toBe('Reordered api-server in group Clients.');
+    ).toBe('Reordered api-server in Clients.');
 
     // reorder pinned
     expect(
@@ -661,6 +661,6 @@ describe('buildSidebarAnnouncements', () => {
         ...active(agentNode('/api', UNGROUPED)),
         over: over({ type: 'group', groupId: 'g1' }),
       })
-    ).toBe('Over group Clients.');
+    ).toBe('Over Clients.');
   });
 });

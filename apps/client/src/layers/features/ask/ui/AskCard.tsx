@@ -18,7 +18,7 @@ import { useCallback, type KeyboardEvent, type ReactNode, type Ref } from 'react
 import { motion, useReducedMotion } from 'motion/react';
 import { Check, X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { askExitTransition } from '../model/ask-exit-transition';
+import { askExitTransition } from '@/layers/shared/lib';
 import {
   AgentAvatar,
   useAgentVisual,

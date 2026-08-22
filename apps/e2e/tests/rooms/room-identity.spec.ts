@@ -108,7 +108,7 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     expect(await visibleText(row)).toBe(slug);
   });
 
-  test('a direct message is named for the agent it is with, in the sidebar and the bar', async ({
+  test('a group message wears the agents it is with, not letters standing in for them', async ({
     page,
     basePage,
     roomsApi,
@@ -120,25 +120,81 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     // the agent list and an unrelated pastel letter in the row beside it
     // (spec `rooms` §12.2). A test asserting "an avatar element exists" passes
     // on both, so these assert the glyph.
-    const agent = await roomsApi.registerAgent(`E2E Otter ${roomsApi.runId}`, '🦦', '#3b82f6');
-    const room = await roomsApi.createDirectMessage(agent.name, [agent]);
+    //
+    // **Asked of a GROUP message, because that is the direct message with a row
+    // now** (`sidebar-simplification` D2): a one-to-one is the agent's own
+    // session under a second name, so Library lists the agent instead. The case
+    // below asks the same question of a one-to-one everywhere it still appears.
+    const otter = await roomsApi.registerAgent(`E2E Otter ${roomsApi.runId}`, '🦦', '#3b82f6');
+    const heron = await roomsApi.registerAgent(`E2E Heron ${roomsApi.runId}`, '🪶', '#a855f7');
+    const title = `${otter.name} and ${heron.name}`;
+    const room = await roomsApi.createDirectMessage(title, [otter, heron]);
     await openCockpit(basePage);
 
-    const row = roomsPage.rowIn(roomsPage.directMessages, agent.name);
+    const row = roomsPage.rowIn(roomsPage.directMessages, title);
     await expect(row).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-    await expect(roomsPage.rowMark(agent.name)).toHaveText(agent.emoji);
-    // What a person actually reads across that row: the agent's face, then its
-    // name. A letter disc renders "E E2E Otter …" here and fails.
-    expect(await visibleText(row)).toBe(`${agent.emoji} ${agent.name}`);
+    // Read the expected faces off the roster rather than assuming the order
+    // they were seeded in — the store answers oldest-first with the author id
+    // breaking a seeded roster's tie, which is not the seeding order.
+    const roster = await roomsApi.getRoom(room.id);
+    const agentEmoji = roster.members
+      .filter((member) => member.author.kind === 'agent')
+      .map((member) => member.author.emoji);
+    expect(agentEmoji.every(Boolean), 'every agent on the roster carries an emoji').toBe(true);
+    await expect(roomsPage.rowMark(title)).toHaveText(agentEmoji.join(''));
+    // What a person actually reads across that row: the faces, then the name.
+    // A letter disc renders "E E2E Otter and …" here and fails. Joined with a
+    // space rather than nothing — each face in the stack is its own element, and
+    // `visibleText` reads one text node at a time.
+    expect(await visibleText(row)).toBe(`${agentEmoji.join(' ')} ${title}`);
 
-    // **The bar owes this test the NAME, and the roster as a count.** The
-    // masthead drew this agent's emoji twice — once as the room's mark, once on
-    // a roster disc — and phase R1 replaced it with the one bar, which draws no
-    // face at all: the fleet directory those faces came from sits in a widget
-    // that layer may not import, and a hashed letter there would contradict the
-    // emoji the sidebar shows two inches away.
+    // **In the BAR, the name and the head count — not the faces.** Phase R1
+    // replaced the masthead with the one bar, which draws a `#`/`@` glyph rather
+    // than a face: the fleet directory those emoji come from lives in a widget
+    // the bar's layer may not import, and a hashed letter there would contradict
+    // the emoji the sidebar row above is showing.
     await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.roomHeading).toHaveAccessibleName(agent.name, {
+    await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(roomsPage.membersChip).toHaveAccessibleName('3 members');
+
+    // **The faces are one press away** (phase R2, spec §3.6). The panel reads the
+    // fleet itself, so each agent's roster row wears the emoji its sidebar row
+    // wears — which is the agreement this whole file is about.
+    await roomsPage.openRoomPanel();
+    await expect(roomsPage.memberFace(otter.name)).toHaveText(otter.emoji, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(roomsPage.memberFace(heron.name)).toHaveText(heron.emoji);
+  });
+
+  test('a one-to-one still wears its agent wherever it is drawn, having left the sidebar', async ({
+    page,
+    basePage,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The suppression is about WHERE a one-to-one is listed, never about what it
+    // looks like (`sidebar-simplification` D2). So the identity question stands,
+    // asked where the room is still drawn. A rule that hid the row AND broke the
+    // identity would pass a test that only checked the row was gone.
+    //
+    // **This was the room with nowhere left to draw a face, and phase R2 is what
+    // gave it one.** It has no sidebar row (suppressed here) and, since phase R1,
+    // no masthead either — so between the two phases the agent's face was drawn
+    // nowhere on this surface at all, and the only honest assertion left was the
+    // name. The room panel closes it: it reads the fleet itself, so both the
+    // room's own mark and the agent's roster row wear the emoji the agent chose.
+    const otter = await roomsApi.registerAgent(`E2E Solo Otter ${roomsApi.runId}`, '🦦', '#3b82f6');
+    const room = await roomsApi.createDirectMessage(otter.name, [otter]);
+    await openCockpit(basePage);
+
+    // No row: the agent's own row is the one door to it.
+    await expect(roomsPage.rowIn(roomsPage.directMessages, otter.name)).toHaveCount(0);
+
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.roomHeading).toHaveAccessibleName(otter.name, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(roomsPage.membersChip).toHaveAccessibleName('2 members');
@@ -148,9 +204,9 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     // wear the emoji the sidebar wears — the third and fourth places the same
     // face has to agree, which is the whole point of this file.
     await roomsPage.openRoomPanel();
-    await expect(roomsPage.memberFace(agent.name)).toHaveText(agent.emoji, {
+    await expect(roomsPage.memberFace(otter.name)).toHaveText(otter.emoji, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.panelRoomMark).toHaveText(agent.emoji);
+    await expect(roomsPage.panelRoomMark).toHaveText(otter.emoji);
   });
 });

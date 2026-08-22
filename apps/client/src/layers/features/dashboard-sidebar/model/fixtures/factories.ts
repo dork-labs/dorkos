@@ -121,6 +121,7 @@ export function agent(
     namespace: null,
     isSystem: false,
     lastActivityAt: FIXTURE_NOW - 2 * HOUR,
+    lastInteractionAt: null,
     attention: 'active',
     ...overrides,
   };

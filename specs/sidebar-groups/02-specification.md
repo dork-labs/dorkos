@@ -221,3 +221,31 @@ Order in effect: R6a → S1 → **R6b** → S2 → S3 → R9. R6b and S2 both to
 - **The migration needs a test with real prior-shape data**, asserting all three fields convert and that a second run is a no-op. Migrations are the one thing that cannot be fixed forward for a user who has already run them.
 - Mixed-group ordering needs a test where an agent and a room tie on `lastActiveAt`, with a deterministic tiebreak. The rooms work has already been bitten once by an unstable sort over tied rows (`specs/rooms/02-specification.md` §12.2 fix round).
 - **S3 requires browser verification, not jsdom.** Drag-and-drop geometry and menu→inline-editor focus are both invisible to jsdom, and this repo has already shipped a Radix menu focus race that only a browser could see.
+
+---
+
+> **Amended 2026-08-21 — a group is a "section", and it renders top-level**
+> (DOR-1371, `specs/sidebar-simplification` D3).
+>
+> This spec's central claim — that a group already holds channels, conversations and agents —
+> shipped in DOR-581 and was invisible for two releases, because the thing was called "Agent
+> group" and rendered as a sub-header inside Agents. Three things change, and none of them touch
+> what is stored:
+>
+> - **The word.** Everything a person reads says **section**: the New menu's `Section ▸ Empty
+section / Custom rules`, `Rename section`, `Delete section`, `Mute section`, `Convert to
+manual section`, `Move to section ▸`, `Remove from section`, `New section…`, the name field's
+>   placeholder, the empty hint ("Drag channels, conversations or agents here") and the drag
+>   announcements. The SCHEMA is untouched: `ui.sidebar.groups`, `SidebarGroupSchema`, the
+>   `group:<id>` model ids and the `new-group` menu-item id all keep their names, because they are
+>   persisted or are a stable vocabulary and renaming them would buy the user nothing.
+> - **The place.** Sections render as **peers** of Pins, Channels, Direct messages and Agents, and
+>   **first** — the part of the panel the operator built, above the parts that grow on their own.
+>   `SidebarSectionModel.subsections` is removed with the type; there is no indent.
+> - **The offer.** `offersGroupAffordances` no longer gates making one by hand. It gates only the
+>   smart presets and `Custom rules…`.
+>
+> Two shipped controls also became honest (research `20260819_sidebar-simplification-review.md`
+> §3.4): a section's **display filter is applied** to its agent rows and published on the model so
+> the header radio reads back from what was drawn, and a section sorted by **Recent activity**
+> uses a room's own `lastActivityAt` instead of sinking every room to the bottom.
