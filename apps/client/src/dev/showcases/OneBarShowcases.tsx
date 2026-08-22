@@ -73,6 +73,18 @@ const QUIET_BAR_STATE = {
   teamViewMode: 'cards',
 } as const;
 
+/**
+ * The mid-run rooms, each with an id of its own.
+ *
+ * **Separate rooms, not a `working` prop on the shared one.** The working count
+ * lives in a store keyed by ROOM ID, exactly as the live fan-out keys it — so a
+ * showcase that seeded a count for `CHANNEL_ROOM` lit every other bar built from
+ * `CHANNEL_ROOM` on the page too, and the quiet bars above stopped being quiet.
+ * Distinct ids keep each demo's state its own.
+ */
+const BUSY_ROOM: RoomWithRoster = { ...CHANNEL_ROOM, id: 'room-busy' };
+const BUSY_PHONE_ROOM: RoomWithRoster = { ...CHANNEL_ROOM, id: 'room-busy-phone' };
+
 /** A room whose name and topic are both longer than any bar can hold. */
 const WORDY_ROOM: RoomWithRoster = {
   ...CHANNEL_ROOM,
@@ -92,7 +104,8 @@ const WORDY_ROOM: RoomWithRoster = {
  * **`working` seeds the live presence store**, which is the only honest way to
  * show the mid-run state: the count comes from the same store the real fan-out
  * writes to, so the chip and the Stop beside it are the real ones behaving the
- * real way. Keyed by room id, so the quiet bars above stay quiet.
+ * real way. The store is keyed by ROOM ID, so a busy demo must use a room id no
+ * quiet demo shares — see {@link BUSY_ROOM}.
  */
 function ChannelBarFrame({
   room,
@@ -256,7 +269,7 @@ export function OneBarShowcases() {
           beside them moves (I3). Compare the room name&apos;s position with the quiet bar above
         </ShowcaseLabel>
         <ShowcaseDemo>
-          <ChannelBarFrame room={CHANNEL_ROOM} working={3} />
+          <ChannelBarFrame room={BUSY_ROOM} working={3} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>
@@ -268,10 +281,12 @@ export function OneBarShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
-          The channel bar at 390px — the topic is gone entirely and Stop keeps only its icon
+          The channel bar in a 390px-wide frame. Note what this CANNOT show: hiding the topic and
+          dropping Stop&apos;s label are `sm:` rules, which answer to the VIEWPORT, not to this box
+          — so on a real phone this row is narrower still. Resize the window to see it
         </ShowcaseLabel>
         <ShowcaseDemo>
-          <ChannelBarFrame room={CHANNEL_ROOM} working={2} width={390} />
+          <ChannelBarFrame room={BUSY_PHONE_ROOM} working={2} width={390} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>
