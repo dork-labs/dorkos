@@ -114,6 +114,7 @@ export {
 export { playNotificationCue, type NotificationCue } from './notification-sound';
 export { playSliderTick, playCelebration } from './sound';
 export { formatCompactAge } from './format-compact-age';
+export { countNoun, listWaitingKinds } from './waiting-kinds';
 export {
   groupSessionsByTime,
   shortenHomePath,

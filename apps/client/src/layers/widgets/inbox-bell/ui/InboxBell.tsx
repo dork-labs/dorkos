@@ -345,12 +345,13 @@ export function InboxBell() {
                   <h2 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
                     Needs You
                   </h2>
-                  {/* While only a receipt is left, the count is zero and the
-                      summary would call `waitingSummary(0, 0, 0)` directly —
-                      which returns ", and undefined are waiting on you.
-                      Nothing runs until you decide." (`listWaitingKinds` has
-                      no guard of its own for the all-zero case). It says what
-                      just happened instead. */}
+                  {/* While only a receipt is left the count is zero, and
+                      `waitingSummary(0, 0, 0)` has nothing to report. It says
+                      what just happened instead of counting nothing.
+                      (`listWaitingKinds` answers `''` for the all-zero case
+                      rather than the ", and undefined are waiting on you" it
+                      used to produce, so this branch is now about SAYING the
+                      right thing rather than about avoiding a broken string.) */}
                   {!unreadable &&
                     (waitingCount === 0 ? (
                       <p className="text-muted-foreground text-xs md:mt-1">Answered.</p>
