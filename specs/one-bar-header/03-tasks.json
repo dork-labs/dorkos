@@ -21,7 +21,7 @@
       "priority": "high",
       "dependencies": [],
       "parallelWith": [],
-      "issue": null
+      "issue": "DOR-1400"
     },
     {
       "id": "H1",
@@ -32,9 +32,11 @@
       "activeForm": "Moving home surfaces into the bar",
       "size": "large",
       "priority": "high",
-      "dependencies": ["F1"],
+      "dependencies": [
+        "F1"
+      ],
       "parallelWith": [],
-      "issue": null
+      "issue": "DOR-1401"
     },
     {
       "id": "R1",
@@ -45,9 +47,12 @@
       "activeForm": "Collapsing the channel header",
       "size": "large",
       "priority": "high",
-      "dependencies": ["F1", "H1"],
+      "dependencies": [
+        "F1",
+        "H1"
+      ],
       "parallelWith": [],
-      "issue": null
+      "issue": "DOR-1402"
     },
     {
       "id": "R2",
@@ -58,9 +63,11 @@
       "activeForm": "Building the room right panel",
       "size": "large",
       "priority": "high",
-      "dependencies": ["R1"],
+      "dependencies": [
+        "R1"
+      ],
       "parallelWith": [],
-      "issue": null
+      "issue": "DOR-1403"
     },
     {
       "id": "S1",
@@ -71,9 +78,14 @@
       "activeForm": "Rebuilding the session bar",
       "size": "medium",
       "priority": "high",
-      "dependencies": ["F1"],
-      "parallelWith": ["R1", "R2"],
-      "issue": null
+      "dependencies": [
+        "F1"
+      ],
+      "parallelWith": [
+        "R1",
+        "R2"
+      ],
+      "issue": "DOR-1404"
     },
     {
       "id": "T1",
@@ -84,9 +96,13 @@
       "activeForm": "Unifying team view tabs",
       "size": "medium",
       "priority": "medium",
-      "dependencies": ["F1"],
-      "parallelWith": ["S1"],
-      "issue": null
+      "dependencies": [
+        "F1"
+      ],
+      "parallelWith": [
+        "S1"
+      ],
+      "issue": "DOR-1405"
     },
     {
       "id": "W1",
@@ -97,9 +113,14 @@
       "activeForm": "Sweeping up",
       "size": "medium",
       "priority": "medium",
-      "dependencies": ["H1", "R2", "S1", "T1"],
+      "dependencies": [
+        "H1",
+        "R2",
+        "S1",
+        "T1"
+      ],
       "parallelWith": [],
-      "issue": null
+      "issue": "DOR-1406"
     }
   ]
 }
