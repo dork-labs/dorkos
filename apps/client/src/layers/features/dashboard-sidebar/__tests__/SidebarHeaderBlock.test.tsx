@@ -28,8 +28,13 @@ let mockSelf: { id: string; displayName: string; isSelf: boolean } | null = {
   displayName: 'Dorian',
   isSelf: true,
 };
+/** Whether the roster read has answered yet — the header's one gate (D6). */
+let mockRosterPending = false;
 vi.mock('@/layers/entities/team', () => ({
-  useTeamRoster: () => ({ data: { members: mockSelf === null ? [] : [mockSelf] } }),
+  useTeamRoster: () => ({
+    data: mockRosterPending ? undefined : { members: mockSelf === null ? [] : [mockSelf] },
+    isPending: mockRosterPending,
+  }),
 }));
 
 const mockOpenSettings = vi.fn();
@@ -87,6 +92,7 @@ beforeEach(() => {
   mockSelf = { id: 'me', displayName: 'Dorian', isSelf: true };
   mockConfig = { version: '0.58.0', latestVersion: null, isDevMode: false };
   mockMenuNodes = null;
+  mockRosterPending = false;
 });
 
 afterEach(() => cleanup());
@@ -293,5 +299,46 @@ describe('SidebarHeaderBlock', () => {
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     fireEvent.click(await screen.findByRole('menuitem', { name: /v0\.58\.0 beta/ }));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Version 0.59.0 is available'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D6 — the team name is reserved, never guessed
+// ---------------------------------------------------------------------------
+
+describe('the team name while the roster is still coming (spec `sidebar-simplification` D6)', () => {
+  it('reserves the space instead of saying "Your team"', () => {
+    // "Your team" is the honest answer for an install with no name to give. It
+    // is the WRONG answer for the second before the roster lands, where the
+    // name is known and simply has not arrived — a returning operator watching
+    // their own name replace a placeholder.
+    mockRosterPending = true;
+    renderBlock();
+
+    expect(screen.getByTestId('sidebar-team-name-skeleton')).toBeInTheDocument();
+    expect(screen.queryByText('Your team')).toBeNull();
+    expect(screen.queryByText("Dorian's team")).toBeNull();
+    // …and the control is still named for a screen reader while it waits.
+    expect(screen.getByTestId('sidebar-header-block')).toHaveAttribute('aria-label', 'Team menu');
+  });
+
+  it('paints the name the moment the roster answers', () => {
+    mockRosterPending = false;
+    renderBlock();
+
+    expect(screen.queryByTestId('sidebar-team-name-skeleton')).toBeNull();
+    expect(screen.getByText("Dorian's team")).toBeInTheDocument();
+  });
+
+  it('still says "Your team" for an install that genuinely has no name', () => {
+    // The counter-proof: the placeholder is about the QUERY, not about the
+    // answer. A roster that has answered with nobody gets the honest fallback,
+    // not bones forever.
+    mockRosterPending = false;
+    mockSelf = null;
+    renderBlock();
+
+    expect(screen.queryByTestId('sidebar-team-name-skeleton')).toBeNull();
+    expect(screen.getByText('Your team')).toBeInTheDocument();
   });
 });

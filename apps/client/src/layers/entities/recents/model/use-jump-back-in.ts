@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import type { SessionListWarning } from '@dorkos/shared/types';
 import { useInteractionTimestamps } from '@/layers/entities/interactions';
 import { useRooms } from '@/layers/entities/room';
-import { useRecentSessions } from '@/layers/entities/session';
+import { RECENT_SESSIONS_WINDOW, useRecentSessions } from '@/layers/entities/session';
 // Same-slice import via the sibling module rather than the slice barrel, which
 // would be a self-referential import.
 import { mergeJumpBackIn, MAX_JUMP_BACK_IN, type JumpBackInModel } from '../lib/jump-back-in';
@@ -27,8 +27,15 @@ import { mergeJumpBackIn, MAX_JUMP_BACK_IN, type JumpBackInModel } from '../lib/
  */
 const FETCH_WINDOW_FACTOR = 3;
 
-/** The smallest window worth asking for — `useRecentSessions`' own default. */
-const MIN_FETCH_WINDOW = 10;
+/**
+ * The smallest window worth asking for — the cockpit's shared one.
+ *
+ * A floor rather than a minimum-that-saves-bytes: the limit is part of the
+ * cache key, so anything narrower would be a second request for the same fact
+ * that the sidebar and the attention list already have open (spec
+ * `sidebar-simplification` D6).
+ */
+const MIN_FETCH_WINDOW = RECENT_SESSIONS_WINDOW;
 
 /** Options for {@link useJumpBackIn}. */
 export interface UseJumpBackInOptions {

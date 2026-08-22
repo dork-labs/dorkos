@@ -18,6 +18,7 @@ import {
   SheetTitle,
 } from '@/layers/shared/ui/sheet';
 import { Skeleton } from '@/layers/shared/ui/skeleton';
+import { SIDEBAR_ROW_INSET } from '@/layers/shared/ui/sidebar-row';
 import {
   Tooltip,
   TooltipContent,
@@ -595,7 +596,16 @@ function SidebarMenuBadge({ className, ...props }: React.ComponentProps<'div'>) 
   );
 }
 
-/** Loading skeleton placeholder for a sidebar menu item. */
+/**
+ * One row's worth of bones, at the panel's own row geometry.
+ *
+ * **The geometry is the whole job.** A skeleton that is a different height or
+ * starts its label on a different x than the row it stands in for makes the
+ * panel jump when the real rows arrive — which is the layout shift the
+ * skeleton exists to prevent. So this reads the same tokens `SidebarRow` does:
+ * the 28px line, the 18px glyph slot at `--sidebar-row-x`, and the 8px gap that
+ * puts the label at 46px.
+ */
 function SidebarMenuSkeleton({
   className,
   showIcon = false,
@@ -614,10 +624,16 @@ function SidebarMenuSkeleton({
     <div
       data-slot="sidebar-menu-skeleton"
       data-sidebar="menu-skeleton"
-      className={cn('flex h-8 items-center gap-2 rounded-md px-2', className)}
+      className={cn(
+        'flex min-h-7 items-center gap-2 rounded-md py-1',
+        SIDEBAR_ROW_INSET,
+        className
+      )}
       {...props}
     >
-      {showIcon && <Skeleton className="size-4 rounded-md" data-sidebar="menu-skeleton-icon" />}
+      {showIcon && (
+        <Skeleton className="size-[18px] shrink-0 rounded-md" data-sidebar="menu-skeleton-icon" />
+      )}
       <Skeleton
         className="h-4 max-w-(--skeleton-width) flex-1"
         data-sidebar="menu-skeleton-text"

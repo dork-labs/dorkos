@@ -68,7 +68,7 @@ export interface BottomSlotProps {
   /** The cards this surface may show, highest priority first. */
   candidates: BottomSlotCandidate[];
   /**
-   * Whether the facts behind `candidates` have answered at least once.
+   * Whether the panel this slot sits under is ready to be looked at.
    *
    * This is what keeps the slot off the list of things that assemble themselves
    * in front of the user on boot (design-decisions §6, item 9). Every candidate
@@ -77,6 +77,13 @@ export interface BottomSlotProps {
    * from a card arriving later and would animate up in the middle of first
    * paint. Whatever is true at the moment this first turns true is simply
    * THERE; only a card that qualifies after that rises.
+   *
+   * **It gates the card's PRESENCE, not just its entrance** (spec
+   * `sidebar-simplification` D6 item 9: "the bottom slot paints with the
+   * panel"). Drawing a card while the panel above it is still a skeleton is not
+   * a warm paint and not a cold reveal — it is the panel arriving in pieces,
+   * bottom first. A browser test caught exactly that: a promo card sitting
+   * under eight skeleton bones.
    */
   ready: boolean;
   /** Extra classes for the slot container. */
@@ -94,7 +101,10 @@ export interface BottomSlotProps {
 export function BottomSlot({ candidates, ready, className }: BottomSlotProps) {
   const shouldReduceMotion = useReducedMotion();
   const isMobile = useIsMobile();
-  const winner = candidates.find((candidate) => candidate.show);
+  // Nothing at all until the panel is ready — see {@link BottomSlotProps.ready}.
+  // The container stays in the DOM either way, so the layout it reserves does
+  // not depend on this.
+  const winner = ready ? candidates.find((candidate) => candidate.show) : undefined;
 
   // **Which card was on screen at boot**, latched once, in an effect — so the
   // render in which `ready` first turns true still reads `undefined` and cannot

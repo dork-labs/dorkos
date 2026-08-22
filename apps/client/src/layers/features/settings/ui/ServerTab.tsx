@@ -3,6 +3,7 @@ import { ExternalLink } from 'lucide-react';
 import { cn, isNewer, openExternalLink, useCopyFeedback } from '@/layers/shared/lib';
 import { Button, CopyButton } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
+import { configKeys } from '@/layers/entities/config';
 
 /** Settings panel tab displaying server status, environment, and endpoints. */
 export function ServerTab() {
@@ -15,7 +16,7 @@ export function ServerTab() {
     refetch,
     isRefetching,
   } = useQuery({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: 30_000,
   });

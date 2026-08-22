@@ -9,11 +9,15 @@
  * @module features/dashboard-sidebar/ui/SidebarZones
  */
 import { useCallback, type ReactNode } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
   setGroupCollapsed,
   setSectionCollapsed,
   useUpdateSidebarPrefs,
 } from '@/layers/entities/config';
+import { useBootState } from '../model/boot/use-boot-state';
+import { SidebarSkeleton } from './boot/SidebarSkeleton';
+import { REVEAL_CONTAINER, REVEAL_ZONE, revealTransition } from './boot/sidebar-reveal';
 import {
   persistedSectionId,
   ZONE_LABEL,
@@ -116,6 +120,8 @@ export function SidebarZones({
   silenceLiveRegion = false,
 }: SidebarZonesProps) {
   const { update } = useUpdateSidebarPrefs();
+  const boot = useBootState();
+  const reducedMotion = useReducedMotion();
   // Getting started leaves the shared slot the frame a real signal wants it and
   // takes a few seconds to come back (BC-52). Everything below draws `drawn`;
   // `model` is still the builder's answer, and the two differ on exactly one
@@ -184,60 +190,99 @@ export function SidebarZones({
   // something is still waiting.
   const orphanedSlot = nowSlot !== null && !hasNowZone && draws('now');
 
+  // Every zone below arrives inside one of these, so the reveal has something
+  // to stagger and a warm boot has an identical DOM to a settled cold one. A
+  // wrapper that only exists during the animation would remount every row the
+  // moment the panel settled.
+  const zoneReveal = { variants: REVEAL_ZONE, transition: revealTransition(reducedMotion) };
+
   return (
     // The damping's "not under a hand" half reads the pointer and focus here,
     // one element above every zone — the smallest wrapper that contains
     // everything the returning zone would push down, and therefore the right
     // boundary for a promise about not moving what somebody is aiming at.
     <div className="flex flex-col gap-1" {...slotHandlers}>
-      {orphanedSlot && (
-        <SidebarZone
-          zone={ALL_CLEAR_ZONE}
-          onToggleAll={onToggleAll}
-          lead={nowSlot}
-          silenceLiveRegion={silenceLiveRegion}
-        />
-      )}
-      {beating && !nowSlotTaken && !orphanedSlot && draws('now') && (
-        <SidebarZone
-          zone={ALL_CLEAR_ZONE}
-          onToggleAll={onToggleAll}
-          allClear
-          silenceLiveRegion={silenceLiveRegion}
-        />
-      )}
-      {drawn.zones
-        .filter((zone) => draws(zone.id))
-        .map((zone) =>
-          // Today is the one zone whose rows react to where the operator's
-          // pointer and focus are (BC-17, BC-36), so it gets a wrapper of its own.
-          // Every other zone is the plain renderer.
-          zone.id === 'today' ? (
-            <TodayZone
-              key={zone.id}
-              zone={zone}
-              onToggleAll={onToggleAll}
-              silenceLiveRegion={silenceLiveRegion}
-            />
-          ) : (
-            <SidebarZone
-              key={zone.id}
-              zone={zone}
-              onToggleAll={onToggleAll}
-              silenceLiveRegion={silenceLiveRegion}
-              {...(zone.id === 'now' ? { lead: nowSlot } : {})}
-            />
-          )
+      {/* **One reveal, and only ever one** (spec D6). `mode="wait"` is what
+          makes it one: the bones fade out before the panel fades in, so the
+          two are never on screen together and the operator sees a single
+          change of state rather than a cross-dissolve of two lists. On a warm
+          boot there was never a skeleton, so `initial={false}` on the zones
+          container means the panel is simply there. */}
+      <AnimatePresence mode="wait" initial={false}>
+        {boot.phase === 'cold' ? (
+          <motion.div
+            key="skeleton"
+            exit={{ opacity: 0 }}
+            transition={revealTransition(reducedMotion)}
+          >
+            <SidebarSkeleton />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="zones"
+            className="flex flex-col gap-1"
+            variants={REVEAL_CONTAINER}
+            initial={boot.startedWarm ? false : 'hidden'}
+            animate="shown"
+          >
+            {orphanedSlot && (
+              <motion.div {...zoneReveal}>
+                <SidebarZone
+                  zone={ALL_CLEAR_ZONE}
+                  onToggleAll={onToggleAll}
+                  lead={nowSlot}
+                  silenceLiveRegion={silenceLiveRegion}
+                />
+              </motion.div>
+            )}
+            {beating && !nowSlotTaken && !orphanedSlot && draws('now') && (
+              <motion.div {...zoneReveal}>
+                <SidebarZone
+                  zone={ALL_CLEAR_ZONE}
+                  onToggleAll={onToggleAll}
+                  allClear
+                  silenceLiveRegion={silenceLiveRegion}
+                />
+              </motion.div>
+            )}
+            {drawn.zones
+              .filter((zone) => draws(zone.id))
+              .map((zone) => (
+                <motion.div key={zone.id} {...zoneReveal}>
+                  {/* Today is the one zone whose rows react to where the
+                      operator's pointer and focus are (BC-17, BC-36), so it
+                      gets a wrapper of its own. Every other zone is the plain
+                      renderer. */}
+                  {zone.id === 'today' ? (
+                    <TodayZone
+                      zone={zone}
+                      onToggleAll={onToggleAll}
+                      silenceLiveRegion={silenceLiveRegion}
+                    />
+                  ) : (
+                    <SidebarZone
+                      zone={zone}
+                      onToggleAll={onToggleAll}
+                      silenceLiveRegion={silenceLiveRegion}
+                      {...(zone.id === 'now' ? { lead: nowSlot } : {})}
+                    />
+                  )}
+                </motion.div>
+              ))}
+            {/* There is no empty-Library branch on purpose. `AgentOnboardingCard`
+                used to hang off `library === undefined`, and that condition is
+                reachable — but only in the wrong moment. `useSidebarState`
+                starts the roster at `[]` and "a roster query that has not
+                answered looks exactly like an empty fleet" (its own words), so
+                on every cold load the card drew for the pre-hydration frames,
+                and it would have stayed for good if the mesh query failed. A
+                hydration gap is not day one, and a flash of the card's
+                fleet-sense nudge is the wrong thing to put in one. Day-one
+                guidance is the Getting started zone's, at the top of the panel
+                where it is read. */}
+          </motion.div>
         )}
-      {/* There is no empty-Library branch on purpose. `AgentOnboardingCard` used
-          to hang off `library === undefined`, and that condition is reachable —
-          but only in the wrong moment. `useSidebarState` starts the roster at
-          `[]` and "a roster query that has not answered looks exactly like an
-          empty fleet" (its own words), so on every cold load the card drew for
-          the pre-hydration frames, and it would have stayed for good if the mesh
-          query failed. A hydration gap is not day one, and a flash of "Add more
-          agents" is the wrong thing to put in one. Day-one guidance is the
-          Getting started zone's, at the top of the panel where it is read. */}
+      </AnimatePresence>
     </div>
   );
 }

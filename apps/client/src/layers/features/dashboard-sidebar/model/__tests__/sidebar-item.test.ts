@@ -128,6 +128,48 @@ describe('agentSidebarItem', () => {
       visual: resolveAgentVisual({ id: '/repo/unregistered' }),
     });
   });
+
+  // ── Faces never flip (DOR-1143, spec `sidebar-simplification` D6) ──
+
+  it('paints the manifest face on the FIRST model, never the path face first', () => {
+    // The two hashes disagree — one hashes the manifest id, the other the
+    // directory — which is why every agent's face and name used to change a
+    // beat after the panel drew. The panel's boot gate is what makes this
+    // possible: no agent row paints before the manifests answer.
+    //
+    // Red when: the gate stops covering manifests and a row is built with
+    // `agent: null` on a directory the roster CAN name.
+    const painted = agentItem(ANA_PATH);
+    const pathFace = resolveAgentVisual({ id: ANA_PATH });
+
+    expect(sidebarItemFaces(painted.visual)[0]).toEqual(resolveAgentVisual(AGENTS[ANA_PATH]!));
+    // …and the two really are different, or the assertion above would hold
+    // whether or not the flip was ever fixed.
+    expect(sidebarItemFaces(painted.visual)[0]).not.toEqual(pathFace);
+  });
+
+  it('keeps a manifest-less directory on its path face across rebuilds', () => {
+    // For a directory with no manifest the path hash is not a placeholder, it
+    // is the answer — so it must be the same answer every time the model is
+    // rebuilt, which is several times a minute on a busy install.
+    const first = agentSidebarItem({
+      path: '/repo/unregistered',
+      agent: null,
+      displayName: 'Unregistered',
+      attention: 'inactive',
+      lastActivityAt: undefined,
+      muted: false,
+    });
+    const later = agentSidebarItem({
+      path: '/repo/unregistered',
+      agent: undefined,
+      displayName: 'Unregistered',
+      attention: 'active',
+      lastActivityAt: '2026-07-20T12:00:00.000Z',
+      muted: true,
+    });
+    expect(sidebarItemFaces(later.visual)[0]).toEqual(sidebarItemFaces(first.visual)[0]);
+  });
 });
 
 describe('roomSidebarItem', () => {

@@ -21,6 +21,7 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { isEditFamilyTool, editToolFilePath } from '@dorkos/shared/diff-tools';
 import { streamManager, executeUiCommand } from '@/layers/shared/lib';
 import { useAppStore, useTransport } from '@/layers/shared/model';
+import { configKeys } from '@/layers/entities/config';
 
 /** Parse the `file_path` from a tool_call event's JSON `input`, or `null`. */
 function filePathFromEvent(event: Extract<SessionEvent, { type: 'tool_call' }>): string | null {
@@ -42,7 +43,7 @@ function filePathFromEvent(event: Extract<SessionEvent, { type: 'tool_call' }>):
 export function useAutoOpenDiff(): void {
   const transport = useTransport();
   const { data: config } = useQuery({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: 60_000,
   });

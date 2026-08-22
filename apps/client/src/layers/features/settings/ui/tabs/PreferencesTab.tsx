@@ -9,6 +9,7 @@ import {
   FieldCardContent,
 } from '@/layers/shared/ui';
 import { WelcomeBackCard } from '../WelcomeBackCard';
+import { configKeys } from '@/layers/entities/config';
 
 /**
  * Preferences tab — chat display, notification, and developer toggles.
@@ -62,10 +63,10 @@ export function PreferencesTab() {
       },
       {
         onSuccess: () => {
-          // useUpdateConfig only invalidates ['config','current']; the
-          // onboarding gate reads the bare ['config'] entry. Invalidate the
-          // prefix so both caches refresh and the overlay reopens immediately.
-          void queryClient.invalidateQueries({ queryKey: ['config'] });
+          // The prefix rather than the one key: every derived config query
+          // hangs off `configKeys.all`, so this is what makes the overlay
+          // reopen immediately.
+          void queryClient.invalidateQueries({ queryKey: configKeys.all });
         },
       }
     );

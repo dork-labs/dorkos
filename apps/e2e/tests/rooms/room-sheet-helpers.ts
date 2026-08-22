@@ -315,6 +315,10 @@ export async function seedRoom(
  */
 export async function openSheet(page: Page, roomId: string): Promise<Locator> {
   await page.goto(`/channels?id=${roomId}`);
+  // The bar's head count, addressed by testid rather than by its accessible
+  // name: that name grows ", N agents working" on a phone, where this chip is
+  // also the room's run-state signal, and a spec that matched the quiet
+  // spelling would fail only when something happened to be running.
   await page.getByTestId('bar-members-chip').click();
   const sheet = page.getByRole('tabpanel');
   await expect(sheet).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { createChannel } from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
 import type { TunnelStatus } from '@dorkos/shared/types';
+import { configKeys } from '@/layers/shared/model';
 
 const CHANNEL_NAME = 'dorkos-tunnel';
 
@@ -27,7 +28,7 @@ export function useTunnelSync(): void {
   useEffect(() => {
     const invalidate = () => {
       queryClient.invalidateQueries({ queryKey: ['tunnel-status'] });
-      queryClient.invalidateQueries({ queryKey: ['config'] });
+      queryClient.invalidateQueries({ queryKey: configKeys.all });
     };
 
     const channel = createChannel<{ type: string }>(CHANNEL_NAME);
@@ -44,10 +45,10 @@ export function useTunnelSync(): void {
     try {
       // The event stream context delivers already-parsed payloads
       queryClient.setQueryData(['tunnel-status'], data as TunnelStatus);
-      queryClient.invalidateQueries({ queryKey: ['config'] });
+      queryClient.invalidateQueries({ queryKey: configKeys.all });
     } catch {
       queryClient.invalidateQueries({ queryKey: ['tunnel-status'] });
-      queryClient.invalidateQueries({ queryKey: ['config'] });
+      queryClient.invalidateQueries({ queryKey: configKeys.all });
     }
   });
 }

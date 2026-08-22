@@ -25,6 +25,7 @@ import {
   ROOMS_SECTIONS,
   TOUR_SPOTLIGHT_SECTIONS,
   SIDEBAR_MODEL_SECTIONS,
+  SIDEBAR_BOOT_SECTIONS,
   ONE_BAR_SECTIONS,
 } from '../playground-registry';
 import { slugify } from '../lib/slugify';
@@ -79,6 +80,7 @@ describe('playground-registry', () => {
       ...ROOMS_SECTIONS,
       ...TOUR_SPOTLIGHT_SECTIONS,
       ...SIDEBAR_MODEL_SECTIONS,
+      ...SIDEBAR_BOOT_SECTIONS,
       ...ONE_BAR_SECTIONS,
     ];
     expect(PLAYGROUND_REGISTRY).toEqual(combined);

@@ -8,12 +8,13 @@
  * @module features/dashboard-sidebar/model/rules/library-rows
  */
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
+import { basename } from '@/layers/shared/lib/basename';
 import type { SidebarRowModel, SidebarUnread } from '../build-sidebar-model';
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
 import type { MuteIndex } from './apply-mute-rules';
 import { deriveUnreadSignal } from './derive-unread-signal';
 import { liveSessionIdsForPath } from './live-sessions';
-import { basename, rowKey } from './targets';
+import { rowKey } from './targets';
 
 /**
  * How many concurrent sessions an agent needs before its row says so.

@@ -39,6 +39,7 @@ import {
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { useTransport } from '@/layers/shared/model';
 import { buildClientReport, getBreadcrumbs } from '@/layers/shared/lib';
+import { configKeys } from '@/layers/entities/config';
 
 /** A single feedback submission from the dialog. */
 export interface FeedbackDraft {
@@ -144,7 +145,7 @@ export function useSendFeedback(): UseSendFeedback {
     },
   });
   const { data: config } = useQuery<ServerConfig>({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: 5 * 60 * 1000,
   });

@@ -1,9 +1,9 @@
 /**
- * The small vocabulary every rule shares: what a row's key is, what a target's
- * interaction key is, and what a path's basename is.
+ * The small vocabulary every rule shares: what a row's key is, and what a
+ * target's interaction key is.
  *
- * Not a rule — three spellings that would otherwise be repeated in sixteen
- * files and drift in one of them.
+ * Not a rule — spellings that would otherwise be repeated in sixteen files and
+ * drift in one of them.
  *
  * @module features/dashboard-sidebar/model/rules/targets
  */
@@ -105,21 +105,6 @@ export function anchorKey(state: SidebarState): string | null {
   if (active === null) return null;
   if (active.kind !== 'session' && active.kind !== 'room') return null;
   return rowKey(active);
-}
-
-/**
- * The last segment of a filesystem path, with any trailing separator ignored.
- *
- * Written here rather than imported from `node:path`, which the browser bundle
- * has no business pulling in for one string operation. Both separators are
- * handled because a cwd on Windows uses the other one.
- *
- * @param path - An absolute or relative directory path.
- */
-export function basename(path: string): string {
-  const trimmed = path.replace(/[/\\]+$/, '');
-  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return cut === -1 ? trimmed : trimmed.slice(cut + 1);
 }
 
 /**

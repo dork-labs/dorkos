@@ -43,21 +43,12 @@ describe('VerbLadderShowcases', () => {
     // Rung 4: the one rung that is about the reader.
     expect(screen.getAllByText('waiting on you').length).toBeGreaterThan(0);
     // Rung 4 is silence, so it is proven by the absence of a second line on the
-    // rows that carry it rather than by a string. (There are two: the rung
-    // itself and the welcome-back demo built from the same idle session.)
+    // rows that carry it rather than by a string.
     const idleRows = screen.getAllByRole('button', { name: /yesterday’s refactor/ });
     expect(idleRows.length).toBeGreaterThan(0);
     for (const idleRow of idleRows) {
       expect(idleRow.querySelector('[data-slot="sidebar-row-second-line"]')).toBeNull();
     }
-  });
-
-  it('draws the welcome-back beat through the real rule, not a hardcoded flag', () => {
-    render(<VerbLadderShowcases />);
-    const glowing = screen
-      .getAllByRole('button', { name: /yesterday’s refactor/ })
-      .filter((node) => node.className.includes('welcome-back-glow'));
-    expect(glowing).toHaveLength(1);
   });
 
   it('puts the three dot signals in both themes, side by side (R1)', () => {

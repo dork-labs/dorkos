@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import type { WizardStep, ConflictStatus } from '../lib/wizard-types';
 import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
+import { configKeys } from '@/layers/entities/config';
 
 interface UseConfigureFormOptions {
   step: WizardStep;
@@ -41,7 +42,7 @@ export function useConfigureForm({
   const transport = useTransport();
 
   const { data: config } = useQuery({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: 30_000,
   });

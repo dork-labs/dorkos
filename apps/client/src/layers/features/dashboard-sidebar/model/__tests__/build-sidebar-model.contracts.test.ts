@@ -78,6 +78,14 @@ const ALLOWED_VALUE_IMPORTS = [
   // looks like rather than a door onto the transport. The barrel itself stays
   // banned.
   '@/layers/shared/lib/overnight-boundary',
+  // The last segment of a path, which names an agent row after its folder when
+  // nothing has given it a display name. Kept off the `shared/lib` barrel for
+  // the same reason as the boundary above — it imports NOTHING — and shared
+  // rather than copied, so these rows and the session bar's directory fallback
+  // read a path the same way. Other spellings of "basename" still exist in the
+  // client for other jobs (tool labels, file chips); this is not a claim that
+  // every one of them was consolidated.
+  '@/layers/shared/lib/basename',
   // Relative siblings inside the model itself.
   /^\.{1,2}\//,
 ];
@@ -277,28 +285,33 @@ describe('P1 AC-1 — purity, asserted over the module source', () => {
     expect(source).not.toMatch(/\bIntl\./);
   });
 
-  it('holds the one non-sibling module on the whitelist to the promise that put it there', () => {
-    // The whitelist entry above is worth exactly as much as this assertion. It
-    // is justified by the module being a leaf — no imports, so nothing
-    // transitive can arrive through it — and the day somebody adds one, the
-    // exemption stops being narrow and this fails instead of nobody noticing.
-    const leaf = stripComments(
-      readFileSync(
-        join(MODEL_DIR, '..', '..', '..', 'shared', 'lib', 'overnight-boundary.ts'),
-        'utf8'
-      )
-    );
-    expect(importsOf(leaf)).toEqual([]);
-    // `importsOf` only recognises `import … from '…'`. A side-effect import
-    // (`import './registers-everything';`) and a `require()` each pull a whole
-    // module graph in without ever taking that shape, and either would turn
-    // this leaf into the door the whitelist entry promises it is not. So the
-    // mechanism is banned, not one spelling of it. Comments are stripped above,
-    // so this module's own prose can neither trip nor satisfy these.
-    expect(leaf).not.toMatch(/\bimport\b/);
-    expect(leaf).not.toMatch(/\brequire\s*\(/);
-    expect(illegalDateUses(leaf)).toEqual([]);
-  });
+  // Every `shared/lib` module the whitelist lets through, by file name. A new
+  // entry up there is only as good as its row here: add one without adding
+  // this, and the exemption is granted on a promise nobody checks. Listing
+  // them by name rather than deriving the list is the point — deriving it from
+  // the whitelist would make a new entry silently self-approving.
+  it.each(['overnight-boundary', 'basename'])(
+    'holds `shared/lib/%s` to the leaf promise that put it on the whitelist',
+    (moduleName) => {
+      // The whitelist entry above is worth exactly as much as this assertion.
+      // It is justified by the module being a leaf — no imports, so nothing
+      // transitive can arrive through it — and the day somebody adds one, the
+      // exemption stops being narrow and this fails instead of nobody noticing.
+      const leaf = stripComments(
+        readFileSync(join(MODEL_DIR, '..', '..', '..', 'shared', 'lib', `${moduleName}.ts`), 'utf8')
+      );
+      expect(importsOf(leaf)).toEqual([]);
+      // `importsOf` only recognises `import … from '…'`. A side-effect import
+      // (`import './registers-everything';`) and a `require()` each pull a whole
+      // module graph in without ever taking that shape, and either would turn
+      // this leaf into the door the whitelist entry promises it is not. So the
+      // mechanism is banned, not one spelling of it. Comments are stripped
+      // above, so a module's own prose can neither trip nor satisfy these.
+      expect(leaf).not.toMatch(/\bimport\b/);
+      expect(leaf).not.toMatch(/\brequire\s*\(/);
+      expect(illegalDateUses(leaf)).toEqual([]);
+    }
+  );
 
   it('proves the leaf check catches the two shapes `importsOf` cannot see', () => {
     // The assertions above pass trivially against a matcher that matches

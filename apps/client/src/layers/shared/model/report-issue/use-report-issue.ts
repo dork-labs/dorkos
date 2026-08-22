@@ -17,6 +17,7 @@ import type { ServerConfig } from '@dorkos/shared/schemas';
 import { useTransport } from '../TransportContext';
 import { buildClientReport } from '../../lib/build-issue-report';
 import { openLink } from '../../lib/link-navigation';
+import { configKeys } from '@/layers/shared/model';
 
 /**
  * Get a callback that opens a prefilled GitHub issue for the given kind.
@@ -26,7 +27,7 @@ import { openLink } from '../../lib/link-navigation';
 export function useReportIssue(): (kind: FeedbackKind) => void {
   const transport = useTransport();
   const { data: config } = useQuery<ServerConfig>({
-    queryKey: ['config'],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: 5 * 60 * 1000,
   });

@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { useRecentSessions } from '../model/use-recent-sessions';
+import { RECENT_SESSIONS_WINDOW, useRecentSessions } from '../model/use-recent-sessions';
 import { sessionKeys } from '../api/query-keys';
 
 const envelope: RecentSessionsResponse = {
@@ -51,13 +51,35 @@ describe('useRecentSessions', () => {
     expect(result.current.data).toEqual(envelope);
   });
 
-  it('defaults the limit to 10', async () => {
+  it('defaults the limit to the cockpit’s one shared window', async () => {
+    // The limit is part of the cache key, so a caller that picks its own number
+    // opens a second request for the same fact. On boot the sidebar, the
+    // attention list, the per-agent attention map and "Jump back in" all want
+    // it, and they used to ask at two widths (spec `sidebar-simplification` D6).
     const { transport, wrapper } = createHarness();
 
     const { result } = renderHook(() => useRecentSessions(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(transport.listRecentSessions).toHaveBeenCalledWith(10);
+    expect(transport.listRecentSessions).toHaveBeenCalledWith(RECENT_SESSIONS_WINDOW);
+  });
+
+  it('narrows for one caller with select, without minting a second entry', async () => {
+    // How a surface takes fewer rows than the shared window carries. Red when
+    // `select` support is dropped and a caller goes back to a smaller limit.
+    const { transport, queryClient, wrapper } = createHarness();
+
+    const { result } = renderHook(
+      () => useRecentSessions(RECENT_SESSIONS_WINDOW, { select: (data) => data.sessions.length }),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBe(envelope.sessions.length);
+    expect(transport.listRecentSessions).toHaveBeenCalledTimes(1);
+    expect(
+      queryClient.getQueryCache().findAll({ queryKey: [...sessionKeys.recentRoot] })
+    ).toHaveLength(1);
   });
 
   it('holds each page for 30s before it will refetch', async () => {

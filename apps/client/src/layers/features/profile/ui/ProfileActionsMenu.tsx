@@ -27,6 +27,7 @@ import {
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 import type { ProfileRelationship } from '../lib/profile-relationship';
 import { useProfileAgent } from '../model/use-profile-agent';
+import { configKeys } from '@/layers/entities/config';
 import {
   ProfileAgentActions,
   useIsAgentBlocked,
@@ -83,7 +84,7 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
       // Both keys, for the same reason every profile edit invalidates both
       // (§4): the roster's `isDefault` is what this menu reads back, and the
       // header's `default` badge is drawn from it.
-      await queryClient.invalidateQueries({ queryKey: ['config'] });
+      await queryClient.invalidateQueries({ queryKey: configKeys.all });
       await queryClient.invalidateQueries({ queryKey: TEAM_ROSTER_KEY });
       toast.success(`${member.displayName} is now the default agent`);
     },

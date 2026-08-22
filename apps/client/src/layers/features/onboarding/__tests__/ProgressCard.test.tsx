@@ -39,11 +39,16 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 });
 
 const mockStartSession = vi.fn();
-vi.mock('@/layers/entities/config', () => ({
+vi.mock('@/layers/entities/config', async (importOriginal) => ({
   useDefaultAgentSession: () => ({
     startSession: mockStartSession,
     defaultAgentDir: '~/.dork/agents/dorkbot',
   }),
+  // Real: it is the one `/config` cache key, and a stub would let these hooks
+  // read an entry nothing in the app writes (spec `sidebar-simplification` D6).
+  configKeys: (await importOriginal<typeof import('@/layers/entities/config')>()).configKeys,
+  CONFIG_STALE_TIME_MS: (await importOriginal<typeof import('@/layers/entities/config')>())
+    .CONFIG_STALE_TIME_MS,
 }));
 
 import { ProgressCard } from '../ui/ProgressCard';

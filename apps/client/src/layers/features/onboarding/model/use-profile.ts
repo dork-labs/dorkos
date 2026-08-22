@@ -11,8 +11,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UserProfile } from '@dorkos/shared/config-schema';
 import { useTransport } from '@/layers/shared/model';
-
-const CONFIG_KEY = ['config'] as const;
+import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
 
 /** What {@link useProfile} hands its consumers. */
 export interface ProfileApi {
@@ -36,15 +35,15 @@ export function useProfile(): ProfileApi {
   const queryClient = useQueryClient();
 
   const { data: config, isLoading } = useQuery({
-    queryKey: [...CONFIG_KEY],
+    queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: CONFIG_STALE_TIME_MS,
   });
 
   const patchProfile = useMutation({
     mutationFn: (patch: Partial<UserProfile>) => transport.updateConfig({ profile: patch }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: [...CONFIG_KEY] });
+      void queryClient.invalidateQueries({ queryKey: configKeys.all });
     },
   });
 

@@ -123,7 +123,7 @@ export function useOnboardingRuntimeDefault({
   /**
    * One write, and every reader moves with it.
    *
-   * Invalidates the `['config']` PREFIX rather than this hook's own key: the
+   * Invalidates the `configKeys.all` PREFIX rather than this hook's own key: the
    * onboarding conversation stamps the first session's birth certificate with
    * the default runtime off a different query under the same root, and the
    * server applies `runtimes.default` live.
