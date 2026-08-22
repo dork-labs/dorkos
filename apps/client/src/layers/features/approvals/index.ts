@@ -23,6 +23,13 @@ export { ApprovalList } from './ui/ApprovalList';
 // person answers on the home tab, resolving the same approval.
 export { ApprovalCard } from './ui/ApprovalCard';
 export { ApprovalsUnavailable } from './ui/ApprovalsUnavailable';
+// Who asked, drawn once for the whole cockpit. A parked schedule is a different
+// object from a capability approval — a `Task`, not a ULID-keyed hold — but the
+// question its card answers ("which agent is this, and do we actually know?") is
+// the same one, down to the fallback for a request carrying no identity at all.
+// Composing this rather than re-deriving it is what keeps one agent the same
+// colour and the same badge on both cards.
+export { RequestingAgent } from './ui/RequestingAgent';
 export { StandingPermissionList } from './ui/StandingPermissionList';
 export { StandingPermissionsUnavailable } from './ui/StandingPermissionsUnavailable';
 export { StandingPermissionsSettings } from './ui/StandingPermissionsSettings';

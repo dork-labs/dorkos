@@ -65,6 +65,10 @@ import { useNotifications } from '@/layers/entities/notifications';
 import { useStandingPermissions } from '@/layers/features/approvals';
 import { useConfig } from '@/layers/entities/config';
 import { clearInboxRequest, requestInbox } from '@/layers/entities/notifications';
+import {
+  discardPendingRejections,
+  discardSettlingSchedules,
+} from '@/layers/features/schedule-approval';
 import { InboxBell } from '../ui/InboxBell';
 
 /**
@@ -234,6 +238,11 @@ describe('InboxBell', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -509,7 +518,7 @@ describe('InboxBell', () => {
     });
 
     const marker = await screen.findByTestId('inbox-bell');
-    expect(marker).toHaveAccessibleName(/1 agent is waiting on your answer/i);
+    expect(marker).toHaveAccessibleName(/1 question needs your answer/i);
     expect(marker).not.toHaveAccessibleName(/approval/i);
   });
 
@@ -585,6 +594,43 @@ describe('InboxBell', () => {
     expect(screen.getByRole('button', { name: 'Approve Weekly digest' })).toBeInTheDocument();
   });
 
+  it('keeps the approved schedule on screen once the server stops listing it', async () => {
+    // The disappearance this closes: approving is optimistic, and the refetch
+    // that follows drops the task out of the parked list — which used to take
+    // the card AND this whole pinned section out of the tree, tearing away the
+    // only confirmation an approval gets (measured at 10-60ms).
+    //
+    // Driven through the REAL hold: nothing about `settling-approvals` is mocked
+    // here, so this fails if the registry stops reporting or the section stops
+    // reading it. Seeded defect: revert `shownSchedules` to `schedules` in
+    // either the section's guard or its map, and the card is gone.
+    const listTasks = vi.fn().mockResolvedValue([parkedSchedule()]);
+    const updateTask = vi.fn().mockImplementation(async () => {
+      // The server now calls it active, so the parked list comes back empty.
+      listTasks.mockResolvedValue([parkedSchedule({ status: 'active', enabled: true })]);
+      return parkedSchedule({ status: 'active', enabled: true });
+    });
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listTasks,
+      updateTask,
+    });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    // Both facts in ONE `waitFor`, which is what makes this honest under a busy
+    // machine: it passes the moment the refetch has landed AND the card is still
+    // drawn, rather than racing a fixed sleep against the hold's own window.
+    await waitFor(() => {
+      expect(listTasks).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId('schedule-approval-card')).toBeInTheDocument();
+    });
+    // Still saying what happened, inside a section that has not collapsed.
+    expect(document.querySelector('[data-slot="schedule-receipt"]')).toHaveTextContent('Approved');
+    expect(screen.getByRole('heading', { name: 'Needs You' })).toBeInTheDocument();
+  });
+
   it('adds the parked schedule to the approvals already waiting', async () => {
     // The discriminating half: one capability approval plus one parked
     // schedule is two, not one. A count that forgot the schedules would still
@@ -653,6 +699,11 @@ describe('InboxBell — history and read state', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -875,6 +926,11 @@ describe('InboxBell — opening a bell that has nothing to say', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -960,6 +1016,11 @@ describe('InboxBell — what the panel says', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
+    discardSettlingSchedules();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -1017,7 +1078,9 @@ describe('InboxBell — what the panel says', () => {
     // The panel's own summary, not the pill's accessible name — both say a
     // version of this sentence, and only one of them is under test.
     expect(
-      await screen.findByText('1 agent is waiting on your answer before carrying on.')
+      await screen.findByText(
+        '1 question is waiting on your answer. Nothing carries on until you answer.'
+      )
     ).toBeInTheDocument();
 
     // Somebody answered it, anywhere.
@@ -1099,7 +1162,19 @@ describe('InboxBell — what the panel says', () => {
     expect(
       await screen.findByText('2 schedules want your approval. Nothing runs until you decide.')
     ).toBeInTheDocument();
-    expect(screen.queryByText(/request/i)).not.toBeInTheDocument();
+    // No COUNTED "request" anywhere on the panel — the mislabel this pins is a
+    // sentence that reports a number of requests when the number is schedules.
+    //
+    // Scoped to counted phrases rather than the bare word, and that narrowing is
+    // deliberate rather than a retreat: the cards themselves legitimately say
+    // "Requested without an agent identity" for a proposal that carries no agent
+    // path (the shared identity fallback), so a bare `/request/i` sweep now
+    // matches honest copy about identity and would have to be deleted instead.
+    // Seeded defect: fold `schedules` back into `approvals` in the
+    // `waitingSummary` call and the panel reads "2 requests are waiting for your
+    // approval", which this matches.
+    expect(screen.queryByText(/\d+ requests? (is|are|need)/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/requests? (is|are) waiting/i)).not.toBeInTheDocument();
   });
 
   it('names all three kinds at once, in the panel listing order, still promising nothing runs', async () => {
