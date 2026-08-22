@@ -6,10 +6,12 @@ import ReactDOM from 'react-dom/client';
 // from the global scope (Obsidian plugin model).
 (globalThis as unknown as Record<string, unknown>).React = React;
 import { QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { RouterProvider } from '@tanstack/react-router';
 import { createAppRouter } from './router';
 import {
   HttpTransport,
+  createBootCache,
   queryClient,
   streamManager,
   executeUiCommand,
@@ -215,7 +217,7 @@ function Root() {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryProviders>
       <TransportProvider transport={transport}>
         <EventStreamProvider>
           <ExtensionProvider deps={extensionDeps}>
@@ -236,7 +238,34 @@ function Root() {
         </EventStreamProvider>
       </TransportProvider>
       {import.meta.env.DEV && <DevToolsPanel />}
-    </QueryClientProvider>
+    </QueryProviders>
+  );
+}
+
+/**
+ * The query client, plus the local memory the sidebar boots from.
+ *
+ * **Two providers, because the restore has to happen twice over.**
+ * `bootCache.restore()` runs before this tree ever renders (see the call below
+ * `ReactDOM.createRoot`), which is what lets the first frame be a finished
+ * sidebar rather than bones —
+ * `PersistQueryClientProvider`'s own restore resolves through a promise and
+ * lands a microtask too late for that. What the provider is here for is the
+ * WRITE side: it subscribes to the cache and keeps the blob current for the next
+ * load. Its restore then re-reads the object we already parsed and hydrates
+ * nothing new.
+ *
+ * On a surface with no local memory — the Obsidian embed, whose server is in the
+ * same process — this is the plain provider and nothing is written anywhere.
+ */
+function QueryProviders({ children }: { children: React.ReactNode }) {
+  if (bootCache === null) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  }
+  return (
+    <PersistQueryClientProvider client={queryClient} persistOptions={bootCache.persistOptions}>
+      {children}
+    </PersistQueryClientProvider>
   );
 }
 
@@ -248,6 +277,14 @@ const transport = new HttpTransport(apiBaseUrl);
 // transport — in packaged Electron the renderer loads from file://, where a
 // relative `/api` cannot reach the localhost server.
 streamManager.useHttpSource(apiBaseUrl);
+
+// The sidebar's local memory (spec `sidebar-simplification` D6). `null` on any
+// surface that must not keep one — see `createBootCache`.
+const bootCache = createBootCache({
+  transport,
+  apiBaseUrl,
+  buster: __APP_VERSION__,
+});
 
 // Router at module scope — creating it inside Root() caused StrictMode to
 // remount the entire provider tree (including EventStreamProvider) on every
@@ -403,6 +440,13 @@ installClientErrorHandlers(transport);
 // never persisted. QueryCache/MutationCache and the durable session stream
 // record their own breadcrumbs directly (query-client.ts, stream-manager.ts).
 installBreadcrumbHandlers();
+
+// Paint from local memory. This runs BEFORE the first render on purpose: the
+// sidebar decides at mount whether it came up warm, and a restore that resolves
+// a microtask later would arrive after that decision was already made — the
+// panel would show bones for a frame and then animate into a shape it already
+// knew (spec `sidebar-simplification` D6).
+bootCache?.restore(queryClient);
 
 ReactDOM.createRoot(document.getElementById('root')!, {
   onCaughtError: (error, errorInfo) => {

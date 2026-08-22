@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Hash } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { BOOT_CACHE_KEY_PREFIX, clearBootCache } from '@/layers/shared/lib';
 import { Button, SectionHeader, SidebarRow, Skeleton } from '@/layers/shared/ui';
 import { SidebarSkeleton } from '@/layers/features/dashboard-sidebar';
 import {
@@ -125,6 +126,74 @@ export function SidebarBootShowcases() {
           </div>
         </Panel>
       </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Local memory — what a warm boot paints from, and how to forget it
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <BootCacheControl />
+      </ShowcaseDemo>
     </PlaygroundSection>
   );
+}
+
+/** One kilobyte, for reporting the blob's size in something readable. */
+const BYTES_PER_KB = 1024;
+
+/**
+ * What this browser remembers of the sidebar, and the button that forgets it.
+ *
+ * The size readout is the point as much as the button is: the allow-list is
+ * supposed to keep this to tens of kilobytes even on a busy install, and the
+ * only honest way to know is to look at the real blob on a real install.
+ */
+function BootCacheControl() {
+  const [reading, setReading] = useState(() => measureBootCache());
+
+  return (
+    <div className="space-y-2">
+      <p className="text-muted-foreground text-[11px]">
+        The cockpit keeps its last answer for the panel’s handful of boot queries in this browser,
+        so a reload paints the finished sidebar in the first frame. Clearing it makes the next load
+        cold again.
+      </p>
+      <ul className="text-muted-foreground space-y-1 font-mono text-[11px]">
+        {reading.length === 0 && <li>Nothing remembered.</li>}
+        {reading.map((entry) => (
+          <li key={entry.key}>
+            {entry.key} — {(entry.bytes / BYTES_PER_KB).toFixed(1)} KB, {entry.queries} queries
+          </li>
+        ))}
+      </ul>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          clearBootCache();
+          setReading(measureBootCache());
+        }}
+      >
+        Clear sidebar cache
+      </Button>
+    </div>
+  );
+}
+
+/** Every remembered cockpit in this browser, with its serialized size. */
+function measureBootCache(): { key: string; bytes: number; queries: number }[] {
+  const entries: { key: string; bytes: number; queries: number }[] = [];
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const key = window.localStorage.key(i);
+    if (key === null || !key.startsWith(BOOT_CACHE_KEY_PREFIX)) continue;
+    const raw = window.localStorage.getItem(key) ?? '';
+    let queries = 0;
+    try {
+      queries = (JSON.parse(raw) as { clientState?: { queries?: unknown[] } }).clientState?.queries
+        ?.length as number;
+    } catch {
+      queries = 0;
+    }
+    entries.push({ key, bytes: new Blob([raw]).size, queries: queries || 0 });
+  }
+  return entries;
 }

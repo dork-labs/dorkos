@@ -19,6 +19,11 @@ export const SIDEBAR_BOOT_SECTIONS: PlaygroundSection[] = [
       'bones',
       'aria-busy',
       'reduced motion',
+      'cache',
+      'clear cache',
+      'local memory',
+      'persisted',
+      'localStorage',
     ],
   },
 ];
